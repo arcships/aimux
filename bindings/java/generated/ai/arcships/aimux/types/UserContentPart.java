@@ -4,21 +4,25 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = UserContentPart.Text.class, name = "text"),
     @JsonSubTypes.Type(value = UserContentPart.Image.class, name = "image"),
-    @JsonSubTypes.Type(value = UserContentPart.File.class, name = "file"),
+    @JsonSubTypes.Type(value = UserContentPart.File.class, name = "file")
 })
-public abstract class UserContentPart extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class UserContentPart {
     private UserContentPart() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public Map<String, Map<String, JsonNode>> getProviderOptions() { return null; }
     public String getText() { return null; }
@@ -29,153 +33,175 @@ public abstract class UserContentPart extends WireValue {
     public final boolean isFile() { return "file".equals(getType()); }
     public final boolean isImage() { return "image".equals(getType()); }
     public final boolean isText() { return "text".equals(getType()); }
-    public static UserContentPart fromJson(JsonNode json) {
-        WireJson.object(json, "UserContentPart", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "file":
-                return File.fromJson(json);
-            case "image":
-                return Image.fromJson(json);
-            case "text":
-                return Text.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown UserContentPart tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Text extends UserContentPart {
-        private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private final String text;
-        private Text(JsonNode json) {
-            WireJson.object(json, "Text", false, "providerOptions", "text", "type");
-            if (!"text".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Text tag");
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Text fromJson(JsonNode json) { return new Text(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "text"; }
         /**
          * Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
          */
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "text");
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            json.set("text", WireJson.tree(text));
-            return json;
+        @JsonProperty("providerOptions")
+        private final Map<String, Map<String, JsonNode>> providerOptions;
+        @JsonProperty("text")
+        private final String text;
+
+        @JsonCreator
+        public Text(
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+            @JsonProperty(value = "text", required = true) String text) {
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+            this.text = text;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "text"; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "text");
+            private Map<String, Map<String, JsonNode>> providerOptions;
+            private String text;
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
             }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public Text build() { return new Text(json); }
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
+            }
+
+            public Text build() { return new Text(providerOptions, text); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Image extends UserContentPart {
+        @JsonProperty("image")
         private final String image;
+        @JsonProperty("mediaType")
         private final String mediaType;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private Image(JsonNode json) {
-            WireJson.object(json, "Image", false, "image", "mediaType", "providerOptions", "type");
-            if (!"image".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Image tag");
-            WireJson.required(json, "image");
-            this.image = WireJson.string(json.get("image"));
-            WireJson.required(json, "mediaType");
-            this.mediaType = WireJson.string(json.get("mediaType"));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public Image(
+            @JsonProperty(value = "image", required = true) String image,
+            @JsonProperty(value = "mediaType", required = true) String mediaType,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+            this.image = image;
+            this.mediaType = mediaType;
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Image fromJson(JsonNode json) { return new Image(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "image"; }
-        public String getImage() { return image == null ? null : image; }
-        public String getMediaType() { return mediaType == null ? null : mediaType; }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "image");
-            json.set("image", WireJson.tree(image));
-            json.set("mediaType", WireJson.tree(mediaType));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "image"; }
+        public String getImage() { return image; }
+        public String getMediaType() { return mediaType; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "image");
+            private String image;
+            private String mediaType;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+
+            public Builder image(String value) {
+                this.image = value;
+                return this;
             }
-            public Builder image(String value) { json.set("image", WireJson.tree(value)); return this; }
-            public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public Image build() { return new Image(json); }
+
+            public Builder mediaType(String value) {
+                this.mediaType = value;
+                return this;
+            }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public Image build() { return new Image(image, mediaType, providerOptions); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class File extends UserContentPart {
+        @JsonProperty("data")
         private final FilePartData data;
+        @JsonProperty("filename")
         private final String filename;
-        private final boolean hasFilename;
+        @JsonProperty("mediaType")
         private final String mediaType;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private File(JsonNode json) {
-            WireJson.object(json, "File", false, "data", "filename", "mediaType", "providerOptions", "type");
-            if (!"file".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid File tag");
-            WireJson.required(json, "data");
-            this.data = FilePartData.fromJson(json.get("data"));
-            this.hasFilename = json.has("filename");
-            this.filename = WireJson.isNull(json.get("filename")) ? null : (WireJson.isNull(json.get("filename")) ? null : WireJson.string(json.get("filename")));
-            WireJson.required(json, "mediaType");
-            this.mediaType = WireJson.string(json.get("mediaType"));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public File(
+            @JsonProperty(value = "data", required = true) FilePartData data,
+            @JsonProperty(value = "filename") String filename,
+            @JsonProperty(value = "mediaType", required = true) String mediaType,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+            this.data = data;
+            this.filename = filename;
+            this.mediaType = mediaType;
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static File fromJson(JsonNode json) { return new File(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "file"; }
-        public FilePartData getData() { return data == null ? null : data; }
-        public String getFilename() { return filename == null ? null : (filename == null ? null : filename); }
-        public String getMediaType() { return mediaType == null ? null : mediaType; }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "file");
-            json.set("data", WireJson.tree(data));
-            if (hasFilename) json.set("filename", WireJson.tree(filename));
-            json.set("mediaType", WireJson.tree(mediaType));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "file"; }
+        public FilePartData getData() { return data; }
+        public String getFilename() { return filename; }
+        public String getMediaType() { return mediaType; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "file");
+            private FilePartData data;
+            private String filename;
+            private String mediaType;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+
+            public Builder data(FilePartData value) {
+                this.data = value;
+                return this;
             }
-            public Builder data(FilePartData value) { json.set("data", WireJson.tree(value)); return this; }
-            public Builder filename(String value) { json.set("filename", WireJson.tree(value)); return this; }
-            public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public File build() { return new File(json); }
+
+            public Builder filename(String value) {
+                this.filename = value;
+                return this;
+            }
+
+            public Builder mediaType(String value) {
+                this.mediaType = value;
+                return this;
+            }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public File build() { return new File(data, filename, mediaType, providerOptions); }
         }
     }
-
 }

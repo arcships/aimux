@@ -24,7 +24,7 @@ public final class Model extends NativeHandle {
         return call(AimuxOps.OP_TEXT_GENERATE_OPEN_AI, request, ChatCompletion.class);
     }
     public void stream(TextRequest request, java.util.function.Consumer<StreamFrame> consumer) {
-        stream(request.toString(), consumer);
+        stream(DtoJson.stringify(request), consumer);
     }
     public JsonNode info() { return call(AimuxOps.OP_MODEL_INFO, "{}"); }
     public JsonNode generate(String paramsJson) { return call(AimuxOps.OP_TEXT_GENERATE, paramsJson); }

@@ -4,29 +4,29 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Coarse model category, used to route to the right modality surface.
  */
 public enum ModelType {
-    CHAT("Chat"),
-    COMPLETION("Completion"),
-    EMBEDDING("Embedding"),
-    RERANK("Rerank"),
-    IMAGE_GEN("ImageGen"),
-    IMAGE_EDIT("ImageEdit"),
-    VIDEO("Video"),
-    AUDIO("Audio"),
-    OTHER("Other");
-    private final String value;
-    ModelType(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static ModelType fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (ModelType item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid ModelType: " + value);
-    }
+    @JsonProperty("Chat")
+    CHAT,
+    @JsonProperty("Completion")
+    COMPLETION,
+    @JsonProperty("Embedding")
+    EMBEDDING,
+    @JsonProperty("Rerank")
+    RERANK,
+    @JsonProperty("ImageGen")
+    IMAGE_GEN,
+    @JsonProperty("ImageEdit")
+    IMAGE_EDIT,
+    @JsonProperty("Video")
+    VIDEO,
+    @JsonProperty("Audio")
+    AUDIO,
+    @JsonProperty("Other")
+    OTHER
 }

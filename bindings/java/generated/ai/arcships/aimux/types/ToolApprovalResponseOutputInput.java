@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,59 +13,77 @@ import java.util.*;
  * `generate-text/tool-approval-response-output.ts:7-35`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolApprovalResponseOutputInput extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolApprovalResponseOutputInput {
+    @JsonProperty("approvalId")
     private final String approvalId;
+    @JsonProperty("approved")
     private final Boolean approved;
+    @JsonProperty("providerExecuted")
     private final Boolean providerExecuted;
-    private final boolean hasProviderExecuted;
+    @JsonProperty("reason")
     private final String reason;
-    private final boolean hasReason;
-    private final TypedToolCallInput toolCall;
-    private ToolApprovalResponseOutputInput(JsonNode json) {
-        WireJson.object(json, "ToolApprovalResponseOutputInput", false, "approvalId", "approved", "providerExecuted", "reason", "toolCall");
-        WireJson.required(json, "approvalId");
-        this.approvalId = WireJson.string(json.get("approvalId"));
-        WireJson.required(json, "approved");
-        this.approved = WireJson.bool(json.get("approved"));
-        this.hasProviderExecuted = json.has("providerExecuted");
-        this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-        this.hasReason = json.has("reason");
-        this.reason = WireJson.isNull(json.get("reason")) ? null : (WireJson.isNull(json.get("reason")) ? null : WireJson.string(json.get("reason")));
-        WireJson.required(json, "toolCall");
-        this.toolCall = TypedToolCallInput.fromJson(json.get("toolCall"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolApprovalResponseOutputInput fromJson(JsonNode json) { return new ToolApprovalResponseOutputInput(json); }
-    public static Builder builder() { return new Builder(); }
-    public String getApprovalId() { return approvalId == null ? null : approvalId; }
-    public Boolean getApproved() { return approved == null ? null : approved; }
-    public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-    public String getReason() { return reason == null ? null : (reason == null ? null : reason); }
     /**
      * The answered call, with its `type` tag (`TypedToolCall`,
      * `tool-approval-response-output.ts:18`).
      */
-    public TypedToolCallInput getToolCall() { return toolCall == null ? null : toolCall; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("approvalId", WireJson.tree(approvalId));
-        json.set("approved", WireJson.tree(approved));
-        if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-        if (hasReason) json.set("reason", WireJson.tree(reason));
-        json.set("toolCall", WireJson.tree(toolCall));
-        return json;
+    @JsonProperty("toolCall")
+    private final TypedToolCallInput toolCall;
+
+    @JsonCreator
+    public ToolApprovalResponseOutputInput(
+        @JsonProperty(value = "approvalId", required = true) String approvalId,
+        @JsonProperty(value = "approved", required = true) Boolean approved,
+        @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+        @JsonProperty(value = "reason") String reason,
+        @JsonProperty(value = "toolCall", required = true) TypedToolCallInput toolCall) {
+        this.approvalId = approvalId;
+        this.approved = approved;
+        this.providerExecuted = providerExecuted;
+        this.reason = reason;
+        this.toolCall = toolCall;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getApprovalId() { return approvalId; }
+    public Boolean getApproved() { return approved; }
+    public Boolean getProviderExecuted() { return providerExecuted; }
+    public String getReason() { return reason; }
+    public TypedToolCallInput getToolCall() { return toolCall; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String approvalId;
+        private Boolean approved;
+        private Boolean providerExecuted;
+        private String reason;
+        private TypedToolCallInput toolCall;
+
+        public Builder approvalId(String value) {
+            this.approvalId = value;
+            return this;
         }
-        public Builder approvalId(String value) { json.set("approvalId", WireJson.tree(value)); return this; }
-        public Builder approved(Boolean value) { json.set("approved", WireJson.tree(value)); return this; }
-        public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-        public Builder reason(String value) { json.set("reason", WireJson.tree(value)); return this; }
-        public Builder toolCall(TypedToolCallInput value) { json.set("toolCall", WireJson.tree(value)); return this; }
-        public ToolApprovalResponseOutputInput build() { return new ToolApprovalResponseOutputInput(json); }
+
+        public Builder approved(Boolean value) {
+            this.approved = value;
+            return this;
+        }
+
+        public Builder providerExecuted(Boolean value) {
+            this.providerExecuted = value;
+            return this;
+        }
+
+        public Builder reason(String value) {
+            this.reason = value;
+            return this;
+        }
+
+        public Builder toolCall(TypedToolCallInput value) {
+            this.toolCall = value;
+            return this;
+        }
+
+        public ToolApprovalResponseOutputInput build() { return new ToolApprovalResponseOutputInput(approvalId, approved, providerExecuted, reason, toolCall); }
     }
 }
-

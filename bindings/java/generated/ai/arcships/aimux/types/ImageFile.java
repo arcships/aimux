@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,105 +12,110 @@ import java.util.*;
  * 
  * Aligned with V4 `ImageModelV4File`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ImageFile.File.class, name = "file"),
-    @JsonSubTypes.Type(value = ImageFile.Url.class, name = "url"),
+    @JsonSubTypes.Type(value = ImageFile.Url.class, name = "url")
 })
-public abstract class ImageFile extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class ImageFile {
     private ImageFile() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public ImageFileData getData() { return null; }
     public String getMediaType() { return null; }
     public String getUrl() { return null; }
     public final boolean isFile() { return "file".equals(getType()); }
     public final boolean isUrl() { return "url".equals(getType()); }
-    public static ImageFile fromJson(JsonNode json) {
-        WireJson.object(json, "ImageFile", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "file":
-                return File.fromJson(json);
-            case "url":
-                return Url.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown ImageFile tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class File extends ImageFile {
-        private final ImageFileData data;
-        private final String mediaType;
-        private File(JsonNode json) {
-            WireJson.object(json, "File", false, "data", "mediaType", "type");
-            if (!"file".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid File tag");
-            WireJson.required(json, "data");
-            this.data = ImageFileData.fromJson(json.get("data"));
-            WireJson.required(json, "mediaType");
-            this.mediaType = WireJson.string(json.get("mediaType"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static File fromJson(JsonNode json) { return new File(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "file"; }
         /**
          * File data as base64 string or binary bytes.
          */
-        public ImageFileData getData() { return data == null ? null : data; }
+        @JsonProperty("data")
+        private final ImageFileData data;
         /**
          * IANA media type, e.g. `"image/png"`.
          */
-        public String getMediaType() { return mediaType == null ? null : mediaType; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "file");
-            json.set("data", WireJson.tree(data));
-            json.set("mediaType", WireJson.tree(mediaType));
-            return json;
+        @JsonProperty("mediaType")
+        private final String mediaType;
+
+        @JsonCreator
+        public File(
+            @JsonProperty(value = "data", required = true) ImageFileData data,
+            @JsonProperty(value = "mediaType", required = true) String mediaType) {
+            this.data = data;
+            this.mediaType = mediaType;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "file"; }
+        public ImageFileData getData() { return data; }
+        public String getMediaType() { return mediaType; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "file");
+            private ImageFileData data;
+            private String mediaType;
+
+            public Builder data(ImageFileData value) {
+                this.data = value;
+                return this;
             }
-            public Builder data(ImageFileData value) { json.set("data", WireJson.tree(value)); return this; }
-            public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-            public File build() { return new File(json); }
+
+            public Builder mediaType(String value) {
+                this.mediaType = value;
+                return this;
+            }
+
+            public File build() { return new File(data, mediaType); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Url extends ImageFile {
-        private final String url;
-        private Url(JsonNode json) {
-            WireJson.object(json, "Url", false, "url", "type");
-            if (!"url".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Url tag");
-            WireJson.required(json, "url");
-            this.url = WireJson.string(json.get("url"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Url fromJson(JsonNode json) { return new Url(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "url"; }
         /**
          * The URL of the image file.
          */
-        public String getUrl() { return url == null ? null : url; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "url");
-            json.set("url", WireJson.tree(url));
-            return json;
+        @JsonProperty("url")
+        private final String url;
+
+        @JsonCreator
+        public Url(
+            @JsonProperty(value = "url", required = true) String url) {
+            this.url = url;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "url"; }
+        public String getUrl() { return url; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "url");
+            private String url;
+
+            public Builder url(String value) {
+                this.url = value;
+                return this;
             }
-            public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-            public Url build() { return new Url(json); }
+
+            public Url build() { return new Url(url); }
         }
     }
-
 }

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,54 +12,73 @@ import java.util.*;
  * JSON nulls survive decoding and re-encoding by an older adapter.
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ErrorEnvelope extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ErrorEnvelope {
+    @JsonProperty("code")
     private final Integer code;
+    @JsonProperty("error")
     private final JsonNode error;
+    @JsonProperty("kind")
     private final ErrorDomain kind;
+    @JsonProperty("message")
     private final String message;
-    private final BigInteger retryAfterMs;
-    private final boolean hasRetryAfterMs;
-    private ErrorEnvelope(JsonNode json) {
-        WireJson.object(json, "ErrorEnvelope", true, "code", "error", "kind", "message", "retryAfterMs");
-        WireJson.required(json, "code");
-        this.code = WireJson.integer(json.get("code"), false, 32).intValue();
-        WireJson.required(json, "error");
-        this.error = WireJson.json(json.get("error"));
-        WireJson.required(json, "kind");
-        this.kind = ErrorDomain.fromJson(json.get("kind"));
-        WireJson.required(json, "message");
-        this.message = WireJson.string(json.get("message"));
-        this.hasRetryAfterMs = json.has("retryAfterMs");
-        this.retryAfterMs = WireJson.isNull(json.get("retryAfterMs")) ? null : WireJson.integer(json.get("retryAfterMs"), true, 64);
+    @JsonProperty("retryAfterMs")
+    private final Long retryAfterMs;
+
+    @JsonCreator
+    public ErrorEnvelope(
+        @JsonProperty(value = "code", required = true) Integer code,
+        @JsonProperty(value = "error", required = true) JsonNode error,
+        @JsonProperty(value = "kind", required = true) ErrorDomain kind,
+        @JsonProperty(value = "message", required = true) String message,
+        @JsonProperty(value = "retryAfterMs") Long retryAfterMs) {
+        this.code = code;
+        this.error = error == null ? null : error.deepCopy();
+        this.kind = kind;
+        this.message = message;
+        this.retryAfterMs = retryAfterMs;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ErrorEnvelope fromJson(JsonNode json) { return new ErrorEnvelope(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Integer getCode() { return code == null ? null : code; }
-    public JsonNode getError() { return error == null ? null : WireJson.json(WireJson.tree(error)); }
-    public ErrorDomain getKind() { return kind == null ? null : kind; }
-    public String getMessage() { return message == null ? null : message; }
-    public BigInteger getRetryAfterMs() { return retryAfterMs == null ? null : retryAfterMs; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("code", WireJson.tree(code));
-        json.set("error", WireJson.tree(error));
-        json.set("kind", WireJson.tree(kind));
-        json.set("message", WireJson.tree(message));
-        if (hasRetryAfterMs) json.set("retryAfterMs", WireJson.tree(retryAfterMs));
-        return json;
-    }
+    public Integer getCode() { return code; }
+    public JsonNode getError() { return error == null ? null : error.deepCopy(); }
+    public ErrorDomain getKind() { return kind; }
+    public String getMessage() { return message; }
+    public Long getRetryAfterMs() { return retryAfterMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Integer code;
+        private JsonNode error;
+        private ErrorDomain kind;
+        private String message;
+        private Long retryAfterMs;
+
+        public Builder code(Integer value) {
+            this.code = value;
+            return this;
         }
-        public Builder code(Integer value) { json.set("code", WireJson.tree(value)); return this; }
-        public Builder error(JsonNode value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder kind(ErrorDomain value) { json.set("kind", WireJson.tree(value)); return this; }
-        public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-        public Builder retryAfterMs(BigInteger value) { json.set("retryAfterMs", WireJson.tree(value)); return this; }
-        public ErrorEnvelope build() { return new ErrorEnvelope(json); }
+
+        public Builder error(JsonNode value) {
+            this.error = value;
+            return this;
+        }
+
+        public Builder kind(ErrorDomain value) {
+            this.kind = value;
+            return this;
+        }
+
+        public Builder message(String value) {
+            this.message = value;
+            return this;
+        }
+
+        public Builder retryAfterMs(Long value) {
+            this.retryAfterMs = value;
+            return this;
+        }
+
+        public ErrorEnvelope build() { return new ErrorEnvelope(code, error, kind, message, retryAfterMs); }
     }
 }
-

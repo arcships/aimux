@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -19,51 +18,61 @@ import java.util.*;
  * servers (e.g. web search, code execution).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderTool extends WireValue {
-    private final Map<String, JsonNode> args;
-    private final NamespacedKind id;
-    private final String name;
-    private ProviderTool(JsonNode json) {
-        WireJson.object(json, "ProviderTool", false, "args", "id", "name");
-        WireJson.required(json, "args");
-        this.args = WireJson.map(json.get("args"), item0 -> WireJson.json(item0));
-        WireJson.required(json, "id");
-        this.id = NamespacedKind.fromJson(json.get("id"));
-        WireJson.required(json, "name");
-        this.name = WireJson.string(json.get("name"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderTool fromJson(JsonNode json) { return new ProviderTool(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderTool {
     /**
      * The arguments for configuring the tool. Must match the expected
      * arguments defined by the provider for this tool.
      */
-    public Map<String, JsonNode> getArgs() { return args == null ? null : WireJson.map(WireJson.tree(args), item0 -> WireJson.json(item0)); }
+    @JsonProperty("args")
+    private final Map<String, JsonNode> args;
     /**
      * The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
      */
-    public NamespacedKind getId() { return id == null ? null : id; }
+    @JsonProperty("id")
+    private final NamespacedKind id;
     /**
      * The name of the tool, unique within this model call.
      */
-    public String getName() { return name == null ? null : name; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("args", WireJson.tree(args));
-        json.set("id", WireJson.tree(id));
-        json.set("name", WireJson.tree(name));
-        return json;
+    @JsonProperty("name")
+    private final String name;
+
+    @JsonCreator
+    public ProviderTool(
+        @JsonProperty(value = "args", required = true) Map<String, JsonNode> args,
+        @JsonProperty(value = "id", required = true) NamespacedKind id,
+        @JsonProperty(value = "name", required = true) String name) {
+        this.args = args == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(args));
+        this.id = id;
+        this.name = name;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, JsonNode> getArgs() { return args; }
+    public NamespacedKind getId() { return id; }
+    public String getName() { return name; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, JsonNode> args;
+        private NamespacedKind id;
+        private String name;
+
+        public Builder args(Map<String, JsonNode> value) {
+            this.args = value;
+            return this;
         }
-        public Builder args(Map<String, JsonNode> value) { json.set("args", WireJson.tree(value)); return this; }
-        public Builder id(NamespacedKind value) { json.set("id", WireJson.tree(value)); return this; }
-        public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-        public ProviderTool build() { return new ProviderTool(json); }
+
+        public Builder id(NamespacedKind value) {
+            this.id = value;
+            return this;
+        }
+
+        public Builder name(String value) {
+            this.name = value;
+            return this;
+        }
+
+        public ProviderTool build() { return new ProviderTool(args, id, name); }
     }
 }
-

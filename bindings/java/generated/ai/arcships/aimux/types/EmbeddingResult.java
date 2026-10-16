@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,71 +13,88 @@ import java.util.*;
  * Aligned with V4 `EmbeddingModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class EmbeddingResult extends WireValue {
-    private final List<List<BigDecimal>> embeddings;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final EmbeddingResponse response;
-    private final boolean hasResponse;
-    private final EmbeddingUsage usage;
-    private final boolean hasUsage;
-    private final List<Warning> warnings;
-    private EmbeddingResult(JsonNode json) {
-        WireJson.object(json, "EmbeddingResult", false, "embeddings", "providerMetadata", "response", "usage", "warnings");
-        WireJson.required(json, "embeddings");
-        this.embeddings = WireJson.array(json.get("embeddings"), item0 -> WireJson.array(item0, item1 -> WireJson.number(item1)));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasResponse = json.has("response");
-        this.response = WireJson.isNull(json.get("response")) ? null : (WireJson.isNull(json.get("response")) ? null : EmbeddingResponse.fromJson(json.get("response")));
-        this.hasUsage = json.has("usage");
-        this.usage = WireJson.isNull(json.get("usage")) ? null : (WireJson.isNull(json.get("usage")) ? null : EmbeddingUsage.fromJson(json.get("usage")));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static EmbeddingResult fromJson(JsonNode json) { return new EmbeddingResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class EmbeddingResult {
     /**
      * Generated embeddings, in the same order as the input `values`.
      */
-    public List<List<BigDecimal>> getEmbeddings() { return embeddings == null ? null : WireJson.array(WireJson.tree(embeddings), item0 -> WireJson.array(item0, item1 -> WireJson.number(item1))); }
+    @JsonProperty("embeddings")
+    private final List<List<BigDecimal>> embeddings;
     /**
      * Additional provider-specific metadata.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Optional response information for debugging.
      */
-    public EmbeddingResponse getResponse() { return response == null ? null : (response == null ? null : response); }
+    @JsonProperty("response")
+    private final EmbeddingResponse response;
     /**
      * Token usage (input tokens only).
      */
-    public EmbeddingUsage getUsage() { return usage == null ? null : (usage == null ? null : usage); }
+    @JsonProperty("usage")
+    private final EmbeddingUsage usage;
     /**
      * Warnings for the call, e.g. unsupported settings.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("embeddings", WireJson.tree(embeddings));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasResponse) json.set("response", WireJson.tree(response));
-        if (hasUsage) json.set("usage", WireJson.tree(usage));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public EmbeddingResult(
+        @JsonProperty(value = "embeddings", required = true) List<List<BigDecimal>> embeddings,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "response") EmbeddingResponse response,
+        @JsonProperty(value = "usage") EmbeddingUsage usage,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.embeddings = embeddings == null ? null : Collections.unmodifiableList(new ArrayList<>(embeddings));
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.response = response;
+        this.usage = usage;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public List<List<BigDecimal>> getEmbeddings() { return embeddings; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public EmbeddingResponse getResponse() { return response; }
+    public EmbeddingUsage getUsage() { return usage; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<List<BigDecimal>> embeddings;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private EmbeddingResponse response;
+        private EmbeddingUsage usage;
+        private List<Warning> warnings;
+
+        public Builder embeddings(List<List<BigDecimal>> value) {
+            this.embeddings = value;
+            return this;
         }
-        public Builder embeddings(List<List<BigDecimal>> value) { json.set("embeddings", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder response(EmbeddingResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder usage(EmbeddingUsage value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public EmbeddingResult build() { return new EmbeddingResult(json); }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder response(EmbeddingResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder usage(EmbeddingUsage value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public EmbeddingResult build() { return new EmbeddingResult(embeddings, providerMetadata, response, usage, warnings); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -17,52 +16,60 @@ import java.util.*;
  * needed (RFC-0027). aimux itself does not combine them.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RuntimeModel extends WireValue {
-    private final BigInteger created;
-    private final boolean hasCreated;
-    private final String id;
-    private final String ownedBy;
-    private final boolean hasOwnedBy;
-    private RuntimeModel(JsonNode json) {
-        WireJson.object(json, "RuntimeModel", false, "created", "id", "ownedBy");
-        this.hasCreated = json.has("created");
-        this.created = WireJson.isNull(json.get("created")) ? null : (WireJson.isNull(json.get("created")) ? null : WireJson.integer(json.get("created"), true, 64));
-        WireJson.required(json, "id");
-        this.id = WireJson.string(json.get("id"));
-        this.hasOwnedBy = json.has("ownedBy");
-        this.ownedBy = WireJson.isNull(json.get("ownedBy")) ? null : (WireJson.isNull(json.get("ownedBy")) ? null : WireJson.string(json.get("ownedBy")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RuntimeModel fromJson(JsonNode json) { return new RuntimeModel(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RuntimeModel {
     /**
      * `created` unix timestamp from OpenAI-compatible `/models` responses.
      */
-    public BigInteger getCreated() { return created == null ? null : (created == null ? null : created); }
+    @JsonProperty("created")
+    private final Long created;
     /**
      * Model identifier, e.g. `"gpt-4o"`.
      */
-    public String getId() { return id == null ? null : id; }
+    @JsonProperty("id")
+    private final String id;
     /**
      * `owned_by` field from OpenAI-compatible `/models` responses.
      */
-    public String getOwnedBy() { return ownedBy == null ? null : (ownedBy == null ? null : ownedBy); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasCreated) json.set("created", WireJson.tree(created));
-        json.set("id", WireJson.tree(id));
-        if (hasOwnedBy) json.set("ownedBy", WireJson.tree(ownedBy));
-        return json;
+    @JsonProperty("ownedBy")
+    private final String ownedBy;
+
+    @JsonCreator
+    public RuntimeModel(
+        @JsonProperty(value = "created") Long created,
+        @JsonProperty(value = "id", required = true) String id,
+        @JsonProperty(value = "ownedBy") String ownedBy) {
+        this.created = created;
+        this.id = id;
+        this.ownedBy = ownedBy;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getCreated() { return created; }
+    public String getId() { return id; }
+    public String getOwnedBy() { return ownedBy; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long created;
+        private String id;
+        private String ownedBy;
+
+        public Builder created(Long value) {
+            this.created = value;
+            return this;
         }
-        public Builder created(BigInteger value) { json.set("created", WireJson.tree(value)); return this; }
-        public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-        public Builder ownedBy(String value) { json.set("ownedBy", WireJson.tree(value)); return this; }
-        public RuntimeModel build() { return new RuntimeModel(json); }
+
+        public Builder id(String value) {
+            this.id = value;
+            return this;
+        }
+
+        public Builder ownedBy(String value) {
+            this.ownedBy = value;
+            return this;
+        }
+
+        public RuntimeModel build() { return new RuntimeModel(created, id, ownedBy); }
     }
 }
-

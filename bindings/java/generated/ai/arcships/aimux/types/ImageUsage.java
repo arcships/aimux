@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,53 +13,60 @@ import java.util.*;
  * Aligned with V4 `ImageModelV4Usage`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ImageUsage extends WireValue {
-    private final Long inputTokens;
-    private final boolean hasInputTokens;
-    private final Long outputTokens;
-    private final boolean hasOutputTokens;
-    private final Long totalTokens;
-    private final boolean hasTotalTokens;
-    private ImageUsage(JsonNode json) {
-        WireJson.object(json, "ImageUsage", false, "inputTokens", "outputTokens", "totalTokens");
-        this.hasInputTokens = json.has("inputTokens");
-        this.inputTokens = WireJson.isNull(json.get("inputTokens")) ? null : (WireJson.isNull(json.get("inputTokens")) ? null : WireJson.integer(json.get("inputTokens"), true, 32).longValue());
-        this.hasOutputTokens = json.has("outputTokens");
-        this.outputTokens = WireJson.isNull(json.get("outputTokens")) ? null : (WireJson.isNull(json.get("outputTokens")) ? null : WireJson.integer(json.get("outputTokens"), true, 32).longValue());
-        this.hasTotalTokens = json.has("totalTokens");
-        this.totalTokens = WireJson.isNull(json.get("totalTokens")) ? null : (WireJson.isNull(json.get("totalTokens")) ? null : WireJson.integer(json.get("totalTokens"), true, 32).longValue());
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ImageUsage fromJson(JsonNode json) { return new ImageUsage(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ImageUsage {
     /**
      * Number of input (prompt) tokens used.
      */
-    public Long getInputTokens() { return inputTokens == null ? null : (inputTokens == null ? null : inputTokens); }
+    @JsonProperty("inputTokens")
+    private final Long inputTokens;
     /**
      * Number of output tokens used, if reported.
      */
-    public Long getOutputTokens() { return outputTokens == null ? null : (outputTokens == null ? null : outputTokens); }
+    @JsonProperty("outputTokens")
+    private final Long outputTokens;
     /**
      * Total tokens as reported by the provider.
      */
-    public Long getTotalTokens() { return totalTokens == null ? null : (totalTokens == null ? null : totalTokens); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasInputTokens) json.set("inputTokens", WireJson.tree(inputTokens));
-        if (hasOutputTokens) json.set("outputTokens", WireJson.tree(outputTokens));
-        if (hasTotalTokens) json.set("totalTokens", WireJson.tree(totalTokens));
-        return json;
+    @JsonProperty("totalTokens")
+    private final Long totalTokens;
+
+    @JsonCreator
+    public ImageUsage(
+        @JsonProperty(value = "inputTokens") Long inputTokens,
+        @JsonProperty(value = "outputTokens") Long outputTokens,
+        @JsonProperty(value = "totalTokens") Long totalTokens) {
+        this.inputTokens = inputTokens;
+        this.outputTokens = outputTokens;
+        this.totalTokens = totalTokens;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getInputTokens() { return inputTokens; }
+    public Long getOutputTokens() { return outputTokens; }
+    public Long getTotalTokens() { return totalTokens; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long inputTokens;
+        private Long outputTokens;
+        private Long totalTokens;
+
+        public Builder inputTokens(Long value) {
+            this.inputTokens = value;
+            return this;
         }
-        public Builder inputTokens(Long value) { json.set("inputTokens", WireJson.tree(value)); return this; }
-        public Builder outputTokens(Long value) { json.set("outputTokens", WireJson.tree(value)); return this; }
-        public Builder totalTokens(Long value) { json.set("totalTokens", WireJson.tree(value)); return this; }
-        public ImageUsage build() { return new ImageUsage(json); }
+
+        public Builder outputTokens(Long value) {
+            this.outputTokens = value;
+            return this;
+        }
+
+        public Builder totalTokens(Long value) {
+            this.totalTokens = value;
+            return this;
+        }
+
+        public ImageUsage build() { return new ImageUsage(inputTokens, outputTokens, totalTokens); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,73 +13,90 @@ import java.util.*;
  * Aligned with V4 `FilesV4UploadFileResult`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class UploadFileResult extends WireValue {
-    private final String filename;
-    private final boolean hasFilename;
-    private final String mediaType;
-    private final boolean hasMediaType;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final Map<String, String> providerReference;
-    private final List<Warning> warnings;
-    private UploadFileResult(JsonNode json) {
-        WireJson.object(json, "UploadFileResult", false, "filename", "mediaType", "providerMetadata", "providerReference", "warnings");
-        this.hasFilename = json.has("filename");
-        this.filename = WireJson.isNull(json.get("filename")) ? null : (WireJson.isNull(json.get("filename")) ? null : WireJson.string(json.get("filename")));
-        this.hasMediaType = json.has("mediaType");
-        this.mediaType = WireJson.isNull(json.get("mediaType")) ? null : (WireJson.isNull(json.get("mediaType")) ? null : WireJson.string(json.get("mediaType")));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "providerReference");
-        this.providerReference = WireJson.map(json.get("providerReference"), item0 -> WireJson.string(item0));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static UploadFileResult fromJson(JsonNode json) { return new UploadFileResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class UploadFileResult {
     /**
      * The filename of the uploaded file, if available from the provider.
      */
-    public String getFilename() { return filename == null ? null : (filename == null ? null : filename); }
+    @JsonProperty("filename")
+    private final String filename;
     /**
      * The IANA media type of the uploaded file, if available from the
      * provider.
      */
-    public String getMediaType() { return mediaType == null ? null : (mediaType == null ? null : mediaType); }
+    @JsonProperty("mediaType")
+    private final String mediaType;
     /**
      * Additional provider-specific metadata, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * A provider reference mapping provider names to provider-specific file
      * identifiers.
      */
-    public Map<String, String> getProviderReference() { return providerReference == null ? null : WireJson.map(WireJson.tree(providerReference), item0 -> WireJson.string(item0)); }
+    @JsonProperty("providerReference")
+    private final Map<String, String> providerReference;
     /**
      * Warnings from the provider.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasFilename) json.set("filename", WireJson.tree(filename));
-        if (hasMediaType) json.set("mediaType", WireJson.tree(mediaType));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("providerReference", WireJson.tree(providerReference));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public UploadFileResult(
+        @JsonProperty(value = "filename") String filename,
+        @JsonProperty(value = "mediaType") String mediaType,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "providerReference", required = true) Map<String, String> providerReference,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.filename = filename;
+        this.mediaType = mediaType;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.providerReference = providerReference == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerReference));
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getFilename() { return filename; }
+    public String getMediaType() { return mediaType; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public Map<String, String> getProviderReference() { return providerReference; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String filename;
+        private String mediaType;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private Map<String, String> providerReference;
+        private List<Warning> warnings;
+
+        public Builder filename(String value) {
+            this.filename = value;
+            return this;
         }
-        public Builder filename(String value) { json.set("filename", WireJson.tree(value)); return this; }
-        public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder providerReference(Map<String, String> value) { json.set("providerReference", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public UploadFileResult build() { return new UploadFileResult(json); }
+
+        public Builder mediaType(String value) {
+            this.mediaType = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder providerReference(Map<String, String> value) {
+            this.providerReference = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public UploadFileResult build() { return new UploadFileResult(filename, mediaType, providerMetadata, providerReference, warnings); }
     }
 }
-

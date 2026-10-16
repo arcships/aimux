@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,35 +12,40 @@ import java.util.*;
  * name then model id.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class Catalogue extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class Catalogue {
+    @JsonProperty("specs")
     private final Map<String, Map<String, ModelSpec>> specs;
-    private final BigInteger updatedAt;
-    private Catalogue(JsonNode json) {
-        WireJson.object(json, "Catalogue", false, "specs", "updatedAt");
-        WireJson.required(json, "specs");
-        this.specs = WireJson.map(json.get("specs"), item0 -> WireJson.map(item0, item1 -> ModelSpec.fromJson(item1)));
-        WireJson.required(json, "updatedAt");
-        this.updatedAt = WireJson.integer(json.get("updatedAt"), true, 64);
+    @JsonProperty("updatedAt")
+    private final Long updatedAt;
+
+    @JsonCreator
+    public Catalogue(
+        @JsonProperty(value = "specs", required = true) Map<String, Map<String, ModelSpec>> specs,
+        @JsonProperty(value = "updatedAt", required = true) Long updatedAt) {
+        this.specs = specs == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(specs));
+        this.updatedAt = updatedAt;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static Catalogue fromJson(JsonNode json) { return new Catalogue(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Map<String, Map<String, ModelSpec>> getSpecs() { return specs == null ? null : WireJson.map(WireJson.tree(specs), item0 -> WireJson.map(item0, item1 -> ModelSpec.fromJson(item1))); }
-    public BigInteger getUpdatedAt() { return updatedAt == null ? null : updatedAt; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("specs", WireJson.tree(specs));
-        json.set("updatedAt", WireJson.tree(updatedAt));
-        return json;
-    }
+    public Map<String, Map<String, ModelSpec>> getSpecs() { return specs; }
+    public Long getUpdatedAt() { return updatedAt; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, Map<String, ModelSpec>> specs;
+        private Long updatedAt;
+
+        public Builder specs(Map<String, Map<String, ModelSpec>> value) {
+            this.specs = value;
+            return this;
         }
-        public Builder specs(Map<String, Map<String, ModelSpec>> value) { json.set("specs", WireJson.tree(value)); return this; }
-        public Builder updatedAt(BigInteger value) { json.set("updatedAt", WireJson.tree(value)); return this; }
-        public Catalogue build() { return new Catalogue(json); }
+
+        public Builder updatedAt(Long value) {
+            this.updatedAt = value;
+            return this;
+        }
+
+        public Catalogue build() { return new Catalogue(specs, updatedAt); }
     }
 }
-

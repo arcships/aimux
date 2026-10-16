@@ -4,58 +4,72 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionChoice extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionChoice {
+    @JsonProperty("finish_reason")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private final String finishReason;
+    @JsonProperty("index")
     private final Long index;
-    private final JsonNode logprobs;
-    private final boolean hasLogprobs;
-    private final ChatCompletionMessage message;
-    private ChatCompletionChoice(JsonNode json) {
-        WireJson.object(json, "ChatCompletionChoice", false, "finish_reason", "index", "logprobs", "message");
-        WireJson.required(json, "finish_reason");
-        this.finishReason = (WireJson.isNull(json.get("finish_reason")) ? null : WireJson.string(json.get("finish_reason")));
-        WireJson.required(json, "index");
-        this.index = WireJson.integer(json.get("index"), true, 32).longValue();
-        this.hasLogprobs = json.has("logprobs");
-        this.logprobs = WireJson.isNull(json.get("logprobs")) ? null : WireJson.json(json.get("logprobs"));
-        WireJson.required(json, "message");
-        this.message = ChatCompletionMessage.fromJson(json.get("message"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionChoice fromJson(JsonNode json) { return new ChatCompletionChoice(json); }
-    public static Builder builder() { return new Builder(); }
-    public String getFinishReason() { return finishReason == null ? null : (finishReason == null ? null : finishReason); }
-    public Long getIndex() { return index == null ? null : index; }
     /**
      * The Chat Completions logprobs object, `{ "content": [...], "refusal":
      * null }`, each entry `{ token, logprob, bytes, top_logprobs }`, when
      * the calling provider returned logprobs.
      */
-    public JsonNode getLogprobs() { return logprobs == null ? null : WireJson.json(WireJson.tree(logprobs)); }
-    public ChatCompletionMessage getMessage() { return message == null ? null : message; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("finish_reason", WireJson.tree(finishReason));
-        json.set("index", WireJson.tree(index));
-        if (hasLogprobs) json.set("logprobs", WireJson.tree(logprobs));
-        json.set("message", WireJson.tree(message));
-        return json;
+    @JsonProperty("logprobs")
+    private final JsonNode logprobs;
+    @JsonProperty("message")
+    private final ChatCompletionMessage message;
+
+    @JsonCreator
+    public ChatCompletionChoice(
+        @JsonProperty(value = "finish_reason", required = true) String finishReason,
+        @JsonProperty(value = "index", required = true) Long index,
+        @JsonProperty(value = "logprobs") JsonNode logprobs,
+        @JsonProperty(value = "message", required = true) ChatCompletionMessage message) {
+        this.finishReason = finishReason;
+        this.index = index;
+        this.logprobs = logprobs == null || logprobs.isNull() ? null : logprobs.deepCopy();
+        this.message = message;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getFinishReason() { return finishReason; }
+    public Long getIndex() { return index; }
+    public JsonNode getLogprobs() { return logprobs == null ? null : logprobs.deepCopy(); }
+    public ChatCompletionMessage getMessage() { return message; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String finishReason;
+        private Long index;
+        private JsonNode logprobs;
+        private ChatCompletionMessage message;
+
+        public Builder finishReason(String value) {
+            this.finishReason = value;
+            return this;
         }
-        public Builder finishReason(String value) { json.set("finish_reason", WireJson.tree(value)); return this; }
-        public Builder index(Long value) { json.set("index", WireJson.tree(value)); return this; }
-        public Builder logprobs(JsonNode value) { json.set("logprobs", WireJson.tree(value)); return this; }
-        public Builder message(ChatCompletionMessage value) { json.set("message", WireJson.tree(value)); return this; }
-        public ChatCompletionChoice build() { return new ChatCompletionChoice(json); }
+
+        public Builder index(Long value) {
+            this.index = value;
+            return this;
+        }
+
+        public Builder logprobs(JsonNode value) {
+            this.logprobs = value;
+            return this;
+        }
+
+        public Builder message(ChatCompletionMessage value) {
+            this.message = value;
+            return this;
+        }
+
+        public ChatCompletionChoice build() { return new ChatCompletionChoice(finishReason, index, logprobs, message); }
     }
 }
-

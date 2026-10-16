@@ -1,9 +1,9 @@
 package ai.arcships.aimux;
 
 import ai.arcships.aimux.types.ErrorEnvelope;
+import ai.arcships.aimux.types.DtoJson;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import java.math.BigInteger;
 
 /** Structured error envelope, retaining the complete AI SDK or domain payload. */
 public abstract class NativeException extends RuntimeException {
@@ -14,12 +14,12 @@ public abstract class NativeException extends RuntimeException {
         this.envelope = envelope;
     }
 
-    public final String getKind() { return envelope.getKind().toJson(); }
+    public final String getKind() { return DtoJson.MAPPER.convertValue(envelope.getKind(), String.class); }
     public final int getCode() { return envelope.getCode(); }
     public final String getErrorName() { return envelope.getError().path("name").asText(); }
     public final JsonNode getError() { return envelope.getError(); }
-    public final JsonNode getEnvelope() { return envelope.toJson(); }
-    public final BigInteger getRetryAfterMs() {
+    public final JsonNode getEnvelope() { return DtoJson.MAPPER.valueToTree(envelope); }
+    public final Long getRetryAfterMs() {
         return envelope.getRetryAfterMs();
     }
 }

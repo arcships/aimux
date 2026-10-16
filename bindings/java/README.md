@@ -66,7 +66,7 @@ Consumer calls, and becomes `BindingException.CallbackFailure` with the original
 cause after native return. Exceptions never cross the C callback.
 
 `NativeException` retains `kind`, `code`, message, the full `error` payload and
-optional unsigned `retryAfterMs` as `BigInteger`. Domain exceptions select
+optional `retryAfterMs` as `Long`. Domain exceptions select
 subclasses by `error.name`; unfamiliar variants use the domain's `Unknown`
 subclass and retain their payload. Retryability comes from `error.isRetryable`.
 A missing retry hint differs from zero. The Java adapter performs no retries.
@@ -114,13 +114,16 @@ sources including generated constants with `javac --release 8`, and discovers
 all binding JUnit tests. Run the JDK 8/11/17/21 runtime matrix and a 32-bit
 JVM/native library separately; a Java 8 bytecode target does not verify them.
 
-DTOs use `ai.arcships.aimux.types.WireJson.MAPPER`, configured to retain arbitrary
-JSON integers and decimals. Tagged unions expose nested variants, and untagged
+DTOs use `ai.arcships.aimux.types.DtoJson.MAPPER`, configured to retain arbitrary
+opaque JSON integers and decimals. Sized integer fields use `Integer` or `Long`;
+unsigned 64-bit values above `Long.MAX_VALUE` cannot be decoded into those fields.
+Tagged unions expose nested variants, and untagged
 unions expose ordered `Branch1`, `Branch2`, and subsequent branches. Byte codecs
-remain strings on the wire; use `WireJson.bytes` for a byte array. `HandleId`
-retains an unsigned decimal string; `WireJson.u64` returns a checked `BigInteger`.
+remain strings on the wire; use `DtoJson.bytes` for a byte array. `HandleId`
+retains an unsigned decimal string; `DtoJson.u64` returns its checked unsigned bits as a `long`.
 Presence fields have `hasX()` and builder `omitX()` methods to distinguish an
-absent key from an explicit null.
+absent key from an explicit null. Other optional fields treat absent and null
+alike and omit an unset value. Required nullable fields always write their key.
 
 Run DTO vectors without Gradle downloads using
 `python3 scripts/check_dto_vectors.py java` from the repository root. This uses

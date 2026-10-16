@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,41 +14,54 @@ import java.util.*;
  * `false` (`ai@7.0.128 src/decide/validate-decision.ts:94-105`).
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class DecisionBooleanCriteria extends WireValue {
-    private final DecisionInput false_;
-    private final boolean hasFalse_;
-    private final DecisionInput true_;
-    private final boolean hasTrue_;
-    private DecisionBooleanCriteria(JsonNode json) {
-        WireJson.object(json, "DecisionBooleanCriteria", true, "false", "true");
-        this.hasFalse_ = json.has("false");
-        this.false_ = WireJson.isNull(json.get("false")) ? null : (WireJson.isNull(json.get("false")) ? null : DecisionInput.fromJson(json.get("false")));
-        this.hasTrue_ = json.has("true");
-        this.true_ = WireJson.isNull(json.get("true")) ? null : (WireJson.isNull(json.get("true")) ? null : DecisionInput.fromJson(json.get("true")));
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class DecisionBooleanCriteria {
+    @JsonProperty("false")
+    @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+    private final FieldPresence<DecisionInput> false_;
+    @JsonProperty("true")
+    @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+    private final FieldPresence<DecisionInput> true_;
+
+    @JsonCreator
+    public DecisionBooleanCriteria(
+        @JsonProperty(value = "false") FieldPresence<DecisionInput> false_,
+        @JsonProperty(value = "true") FieldPresence<DecisionInput> true_) {
+        this.false_ = false_ == null ? FieldPresence.absent() : false_;
+        this.true_ = true_ == null ? FieldPresence.absent() : true_;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static DecisionBooleanCriteria fromJson(JsonNode json) { return new DecisionBooleanCriteria(json); }
+
     public static Builder builder() { return new Builder(); }
-    public DecisionInput getFalse_() { return false_ == null ? null : (false_ == null ? null : false_); }
-    public boolean hasFalse_() { return hasFalse_; }
-    public DecisionInput getTrue_() { return true_ == null ? null : (true_ == null ? null : true_); }
-    public boolean hasTrue_() { return hasTrue_; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasFalse_) json.set("false", WireJson.tree(false_));
-        if (hasTrue_) json.set("true", WireJson.tree(true_));
-        return json;
-    }
+    public DecisionInput getFalse_() { return false_.getValue(); }
+    public boolean hasFalse_() { return false_.isPresent(); }
+    public DecisionInput getTrue_() { return true_.getValue(); }
+    public boolean hasTrue_() { return true_.isPresent(); }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FieldPresence<DecisionInput> false_ = FieldPresence.absent();
+        private FieldPresence<DecisionInput> true_ = FieldPresence.absent();
+
+        public Builder false_(DecisionInput value) {
+            this.false_ = FieldPresence.of(value);
+            return this;
         }
-        public Builder false_(DecisionInput value) { json.set("false", WireJson.tree(value)); return this; }
-        public Builder omitFalse_() { json.remove("false"); return this; }
-        public Builder true_(DecisionInput value) { json.set("true", WireJson.tree(value)); return this; }
-        public Builder omitTrue_() { json.remove("true"); return this; }
-        public DecisionBooleanCriteria build() { return new DecisionBooleanCriteria(json); }
+
+        public Builder omitFalse_() {
+            this.false_ = FieldPresence.absent();
+            return this;
+        }
+
+        public Builder true_(DecisionInput value) {
+            this.true_ = FieldPresence.of(value);
+            return this;
+        }
+
+        public Builder omitTrue_() {
+            this.true_ = FieldPresence.absent();
+            return this;
+        }
+
+        public DecisionBooleanCriteria build() { return new DecisionBooleanCriteria(false_, true_); }
     }
 }
-

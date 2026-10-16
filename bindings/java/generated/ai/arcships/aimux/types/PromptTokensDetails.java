@@ -4,41 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class PromptTokensDetails extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class PromptTokensDetails {
+    @JsonProperty("cache_write_tokens")
     private final Long cacheWriteTokens;
-    private final boolean hasCacheWriteTokens;
+    @JsonProperty("cached_tokens")
     private final Long cachedTokens;
-    private PromptTokensDetails(JsonNode json) {
-        WireJson.object(json, "PromptTokensDetails", false, "cache_write_tokens", "cached_tokens");
-        this.hasCacheWriteTokens = json.has("cache_write_tokens");
-        this.cacheWriteTokens = WireJson.isNull(json.get("cache_write_tokens")) ? null : (WireJson.isNull(json.get("cache_write_tokens")) ? null : WireJson.integer(json.get("cache_write_tokens"), true, 32).longValue());
-        WireJson.required(json, "cached_tokens");
-        this.cachedTokens = WireJson.integer(json.get("cached_tokens"), true, 32).longValue();
+
+    @JsonCreator
+    public PromptTokensDetails(
+        @JsonProperty(value = "cache_write_tokens") Long cacheWriteTokens,
+        @JsonProperty(value = "cached_tokens", required = true) Long cachedTokens) {
+        this.cacheWriteTokens = cacheWriteTokens;
+        this.cachedTokens = cachedTokens;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static PromptTokensDetails fromJson(JsonNode json) { return new PromptTokensDetails(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Long getCacheWriteTokens() { return cacheWriteTokens == null ? null : (cacheWriteTokens == null ? null : cacheWriteTokens); }
-    public Long getCachedTokens() { return cachedTokens == null ? null : cachedTokens; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasCacheWriteTokens) json.set("cache_write_tokens", WireJson.tree(cacheWriteTokens));
-        json.set("cached_tokens", WireJson.tree(cachedTokens));
-        return json;
-    }
+    public Long getCacheWriteTokens() { return cacheWriteTokens; }
+    public Long getCachedTokens() { return cachedTokens; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long cacheWriteTokens;
+        private Long cachedTokens;
+
+        public Builder cacheWriteTokens(Long value) {
+            this.cacheWriteTokens = value;
+            return this;
         }
-        public Builder cacheWriteTokens(Long value) { json.set("cache_write_tokens", WireJson.tree(value)); return this; }
-        public Builder cachedTokens(Long value) { json.set("cached_tokens", WireJson.tree(value)); return this; }
-        public PromptTokensDetails build() { return new PromptTokensDetails(json); }
+
+        public Builder cachedTokens(Long value) {
+            this.cachedTokens = value;
+            return this;
+        }
+
+        public PromptTokensDetails build() { return new PromptTokensDetails(cacheWriteTokens, cachedTokens); }
     }
 }
-

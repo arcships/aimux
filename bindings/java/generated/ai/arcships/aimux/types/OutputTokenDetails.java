@@ -4,51 +4,53 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * `LanguageModelUsage.outputTokenDetails`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OutputTokenDetails extends WireValue {
-    private final Long reasoningTokens;
-    private final boolean hasReasoningTokens;
-    private final Long textTokens;
-    private final boolean hasTextTokens;
-    private OutputTokenDetails(JsonNode json) {
-        WireJson.object(json, "OutputTokenDetails", false, "reasoningTokens", "textTokens");
-        this.hasReasoningTokens = json.has("reasoningTokens");
-        this.reasoningTokens = WireJson.isNull(json.get("reasoningTokens")) ? null : (WireJson.isNull(json.get("reasoningTokens")) ? null : WireJson.integer(json.get("reasoningTokens"), true, 32).longValue());
-        this.hasTextTokens = json.has("textTokens");
-        this.textTokens = WireJson.isNull(json.get("textTokens")) ? null : (WireJson.isNull(json.get("textTokens")) ? null : WireJson.integer(json.get("textTokens"), true, 32).longValue());
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OutputTokenDetails fromJson(JsonNode json) { return new OutputTokenDetails(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OutputTokenDetails {
     /**
      * Output tokens spent on reasoning.
      */
-    public Long getReasoningTokens() { return reasoningTokens == null ? null : (reasoningTokens == null ? null : reasoningTokens); }
+    @JsonProperty("reasoningTokens")
+    private final Long reasoningTokens;
     /**
      * Output tokens of text.
      */
-    public Long getTextTokens() { return textTokens == null ? null : (textTokens == null ? null : textTokens); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasReasoningTokens) json.set("reasoningTokens", WireJson.tree(reasoningTokens));
-        if (hasTextTokens) json.set("textTokens", WireJson.tree(textTokens));
-        return json;
+    @JsonProperty("textTokens")
+    private final Long textTokens;
+
+    @JsonCreator
+    public OutputTokenDetails(
+        @JsonProperty(value = "reasoningTokens") Long reasoningTokens,
+        @JsonProperty(value = "textTokens") Long textTokens) {
+        this.reasoningTokens = reasoningTokens;
+        this.textTokens = textTokens;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getReasoningTokens() { return reasoningTokens; }
+    public Long getTextTokens() { return textTokens; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long reasoningTokens;
+        private Long textTokens;
+
+        public Builder reasoningTokens(Long value) {
+            this.reasoningTokens = value;
+            return this;
         }
-        public Builder reasoningTokens(Long value) { json.set("reasoningTokens", WireJson.tree(value)); return this; }
-        public Builder textTokens(Long value) { json.set("textTokens", WireJson.tree(value)); return this; }
-        public OutputTokenDetails build() { return new OutputTokenDetails(json); }
+
+        public Builder textTokens(Long value) {
+            this.textTokens = value;
+            return this;
+        }
+
+        public OutputTokenDetails build() { return new OutputTokenDetails(reasoningTokens, textTokens); }
     }
 }
-

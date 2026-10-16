@@ -4,52 +4,66 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OperationCapabilities extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OperationCapabilities {
+    @JsonProperty("cancel")
     private final Boolean cancel;
+    @JsonProperty("inputDone")
     private final Boolean inputDone;
+    @JsonProperty("next")
     private final Boolean next;
+    @JsonProperty("push")
     private final Boolean push;
-    private OperationCapabilities(JsonNode json) {
-        WireJson.object(json, "OperationCapabilities", false, "cancel", "inputDone", "next", "push");
-        WireJson.required(json, "cancel");
-        this.cancel = WireJson.bool(json.get("cancel"));
-        WireJson.required(json, "inputDone");
-        this.inputDone = WireJson.bool(json.get("inputDone"));
-        WireJson.required(json, "next");
-        this.next = WireJson.bool(json.get("next"));
-        WireJson.required(json, "push");
-        this.push = WireJson.bool(json.get("push"));
+
+    @JsonCreator
+    public OperationCapabilities(
+        @JsonProperty(value = "cancel", required = true) Boolean cancel,
+        @JsonProperty(value = "inputDone", required = true) Boolean inputDone,
+        @JsonProperty(value = "next", required = true) Boolean next,
+        @JsonProperty(value = "push", required = true) Boolean push) {
+        this.cancel = cancel;
+        this.inputDone = inputDone;
+        this.next = next;
+        this.push = push;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OperationCapabilities fromJson(JsonNode json) { return new OperationCapabilities(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Boolean getCancel() { return cancel == null ? null : cancel; }
-    public Boolean getInputDone() { return inputDone == null ? null : inputDone; }
-    public Boolean getNext() { return next == null ? null : next; }
-    public Boolean getPush() { return push == null ? null : push; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("cancel", WireJson.tree(cancel));
-        json.set("inputDone", WireJson.tree(inputDone));
-        json.set("next", WireJson.tree(next));
-        json.set("push", WireJson.tree(push));
-        return json;
-    }
+    public Boolean getCancel() { return cancel; }
+    public Boolean getInputDone() { return inputDone; }
+    public Boolean getNext() { return next; }
+    public Boolean getPush() { return push; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean cancel;
+        private Boolean inputDone;
+        private Boolean next;
+        private Boolean push;
+
+        public Builder cancel(Boolean value) {
+            this.cancel = value;
+            return this;
         }
-        public Builder cancel(Boolean value) { json.set("cancel", WireJson.tree(value)); return this; }
-        public Builder inputDone(Boolean value) { json.set("inputDone", WireJson.tree(value)); return this; }
-        public Builder next(Boolean value) { json.set("next", WireJson.tree(value)); return this; }
-        public Builder push(Boolean value) { json.set("push", WireJson.tree(value)); return this; }
-        public OperationCapabilities build() { return new OperationCapabilities(json); }
+
+        public Builder inputDone(Boolean value) {
+            this.inputDone = value;
+            return this;
+        }
+
+        public Builder next(Boolean value) {
+            this.next = value;
+            return this;
+        }
+
+        public Builder push(Boolean value) {
+            this.push = value;
+            return this;
+        }
+
+        public OperationCapabilities build() { return new OperationCapabilities(cancel, inputDone, next, push); }
     }
 }
-

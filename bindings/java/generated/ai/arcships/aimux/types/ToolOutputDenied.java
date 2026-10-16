@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,49 +12,62 @@ import java.util.*;
  * `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolOutputDenied extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolOutputDenied {
+    @JsonProperty("dynamic")
     private final Boolean dynamic;
-    private final boolean hasDynamic;
+    @JsonProperty("providerExecuted")
     private final Boolean providerExecuted;
-    private final boolean hasProviderExecuted;
+    @JsonProperty("toolCallId")
     private final String toolCallId;
+    @JsonProperty("toolName")
     private final String toolName;
-    private ToolOutputDenied(JsonNode json) {
-        WireJson.object(json, "ToolOutputDenied", false, "dynamic", "providerExecuted", "toolCallId", "toolName");
-        this.hasDynamic = json.has("dynamic");
-        this.dynamic = WireJson.isNull(json.get("dynamic")) ? null : (WireJson.isNull(json.get("dynamic")) ? null : WireJson.bool(json.get("dynamic")));
-        this.hasProviderExecuted = json.has("providerExecuted");
-        this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-        WireJson.required(json, "toolCallId");
-        this.toolCallId = WireJson.string(json.get("toolCallId"));
-        WireJson.required(json, "toolName");
-        this.toolName = WireJson.string(json.get("toolName"));
+
+    @JsonCreator
+    public ToolOutputDenied(
+        @JsonProperty(value = "dynamic") Boolean dynamic,
+        @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+        @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+        @JsonProperty(value = "toolName", required = true) String toolName) {
+        this.dynamic = dynamic;
+        this.providerExecuted = providerExecuted;
+        this.toolCallId = toolCallId;
+        this.toolName = toolName;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolOutputDenied fromJson(JsonNode json) { return new ToolOutputDenied(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Boolean getDynamic() { return dynamic == null ? null : (dynamic == null ? null : dynamic); }
-    public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-    public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-    public String getToolName() { return toolName == null ? null : toolName; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDynamic) json.set("dynamic", WireJson.tree(dynamic));
-        if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-        json.set("toolCallId", WireJson.tree(toolCallId));
-        json.set("toolName", WireJson.tree(toolName));
-        return json;
-    }
+    public Boolean getDynamic() { return dynamic; }
+    public Boolean getProviderExecuted() { return providerExecuted; }
+    public String getToolCallId() { return toolCallId; }
+    public String getToolName() { return toolName; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean dynamic;
+        private Boolean providerExecuted;
+        private String toolCallId;
+        private String toolName;
+
+        public Builder dynamic(Boolean value) {
+            this.dynamic = value;
+            return this;
         }
-        public Builder dynamic(Boolean value) { json.set("dynamic", WireJson.tree(value)); return this; }
-        public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-        public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-        public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-        public ToolOutputDenied build() { return new ToolOutputDenied(json); }
+
+        public Builder providerExecuted(Boolean value) {
+            this.providerExecuted = value;
+            return this;
+        }
+
+        public Builder toolCallId(String value) {
+            this.toolCallId = value;
+            return this;
+        }
+
+        public Builder toolName(String value) {
+            this.toolName = value;
+            return this;
+        }
+
+        public ToolOutputDenied build() { return new ToolOutputDenied(dynamic, providerExecuted, toolCallId, toolName); }
     }
 }
-

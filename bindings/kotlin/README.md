@@ -56,7 +56,7 @@ task returns. A native operation that ignores Abort can delay Flow cleanup.
 The channel bounds frame count; native stream limits govern frame byte sizes.
 
 The sealed `AimuxException` delegates `code`, `kind`, `errorName`, `error`,
-`envelope` and nullable unsigned `retryAfterMs` (`BigInteger`) to Java. All 22
+`envelope` and nullable `retryAfterMs` (`Long`) to Java. All 22
 known core subtypes have corresponding Kotlin variants with typed Java
 `details`. `BindingError`, `ProtocolError` and `RecordingError` retain their Java
 domain errors. `UnknownError` preserves a future Java exception subtype.

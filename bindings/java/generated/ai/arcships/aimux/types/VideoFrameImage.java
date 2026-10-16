@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,41 +13,46 @@ import java.util.*;
  * Aligned with V4 `VideoModelV4FrameImage`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class VideoFrameImage extends WireValue {
-    private final VideoFrameType frameType;
-    private final VideoFile image;
-    private VideoFrameImage(JsonNode json) {
-        WireJson.object(json, "VideoFrameImage", false, "frameType", "image");
-        WireJson.required(json, "frameType");
-        this.frameType = VideoFrameType.fromJson(json.get("frameType"));
-        WireJson.required(json, "image");
-        this.image = VideoFile.fromJson(json.get("image"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static VideoFrameImage fromJson(JsonNode json) { return new VideoFrameImage(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class VideoFrameImage {
     /**
      * Which frame this image represents.
      */
-    public VideoFrameType getFrameType() { return frameType == null ? null : frameType; }
+    @JsonProperty("frameType")
+    private final VideoFrameType frameType;
     /**
      * The image file used for this frame.
      */
-    public VideoFile getImage() { return image == null ? null : image; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("frameType", WireJson.tree(frameType));
-        json.set("image", WireJson.tree(image));
-        return json;
+    @JsonProperty("image")
+    private final VideoFile image;
+
+    @JsonCreator
+    public VideoFrameImage(
+        @JsonProperty(value = "frameType", required = true) VideoFrameType frameType,
+        @JsonProperty(value = "image", required = true) VideoFile image) {
+        this.frameType = frameType;
+        this.image = image;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public VideoFrameType getFrameType() { return frameType; }
+    public VideoFile getImage() { return image; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private VideoFrameType frameType;
+        private VideoFile image;
+
+        public Builder frameType(VideoFrameType value) {
+            this.frameType = value;
+            return this;
         }
-        public Builder frameType(VideoFrameType value) { json.set("frameType", WireJson.tree(value)); return this; }
-        public Builder image(VideoFile value) { json.set("image", WireJson.tree(value)); return this; }
-        public VideoFrameImage build() { return new VideoFrameImage(json); }
+
+        public Builder image(VideoFile value) {
+            this.image = value;
+            return this;
+        }
+
+        public VideoFrameImage build() { return new VideoFrameImage(frameType, image); }
     }
 }
-

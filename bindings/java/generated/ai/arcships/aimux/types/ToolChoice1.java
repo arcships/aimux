@@ -4,40 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolChoice1 extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolChoice1 {
+    @JsonProperty("toolName")
     private final String toolName;
+    @JsonProperty("type")
     private final ToolChoice1Type type;
-    private ToolChoice1(JsonNode json) {
-        WireJson.object(json, "ToolChoice1", false, "toolName", "type");
-        WireJson.required(json, "toolName");
-        this.toolName = WireJson.string(json.get("toolName"));
-        WireJson.required(json, "type");
-        this.type = ToolChoice1Type.fromJson(json.get("type"));
+
+    @JsonCreator
+    public ToolChoice1(
+        @JsonProperty(value = "toolName", required = true) String toolName,
+        @JsonProperty(value = "type", required = true) ToolChoice1Type type) {
+        this.toolName = toolName;
+        this.type = type;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolChoice1 fromJson(JsonNode json) { return new ToolChoice1(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getToolName() { return toolName == null ? null : toolName; }
-    public ToolChoice1Type getType() { return type == null ? null : type; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("toolName", WireJson.tree(toolName));
-        json.set("type", WireJson.tree(type));
-        return json;
-    }
+    public String getToolName() { return toolName; }
+    public ToolChoice1Type getType() { return type; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String toolName;
+        private ToolChoice1Type type;
+
+        public Builder toolName(String value) {
+            this.toolName = value;
+            return this;
         }
-        public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-        public Builder type(ToolChoice1Type value) { json.set("type", WireJson.tree(value)); return this; }
-        public ToolChoice1 build() { return new ToolChoice1(json); }
+
+        public Builder type(ToolChoice1Type value) {
+            this.type = value;
+            return this;
+        }
+
+        public ToolChoice1 build() { return new ToolChoice1(toolName, type); }
     }
 }
-

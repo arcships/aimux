@@ -4,58 +4,77 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReplayPlannedCall extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReplayPlannedCall {
+    @JsonProperty("callId")
     private final String callId;
+    @JsonProperty("liveSupported")
     private final Boolean liveSupported;
+    @JsonProperty("operation")
     private final RecordingOperation operation;
+    @JsonProperty("provider")
     private final ProviderRecord provider;
+    @JsonProperty("requiresTarget")
     private final Boolean requiresTarget;
-    private ReplayPlannedCall(JsonNode json) {
-        WireJson.object(json, "ReplayPlannedCall", false, "callId", "liveSupported", "operation", "provider", "requiresTarget");
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        WireJson.required(json, "liveSupported");
-        this.liveSupported = WireJson.bool(json.get("liveSupported"));
-        WireJson.required(json, "operation");
-        this.operation = RecordingOperation.fromJson(json.get("operation"));
-        WireJson.required(json, "provider");
-        this.provider = ProviderRecord.fromJson(json.get("provider"));
-        WireJson.required(json, "requiresTarget");
-        this.requiresTarget = WireJson.bool(json.get("requiresTarget"));
+
+    @JsonCreator
+    public ReplayPlannedCall(
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "liveSupported", required = true) Boolean liveSupported,
+        @JsonProperty(value = "operation", required = true) RecordingOperation operation,
+        @JsonProperty(value = "provider", required = true) ProviderRecord provider,
+        @JsonProperty(value = "requiresTarget", required = true) Boolean requiresTarget) {
+        this.callId = callId;
+        this.liveSupported = liveSupported;
+        this.operation = operation;
+        this.provider = provider;
+        this.requiresTarget = requiresTarget;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReplayPlannedCall fromJson(JsonNode json) { return new ReplayPlannedCall(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getCallId() { return callId == null ? null : callId; }
-    public Boolean getLiveSupported() { return liveSupported == null ? null : liveSupported; }
-    public RecordingOperation getOperation() { return operation == null ? null : operation; }
-    public ProviderRecord getProvider() { return provider == null ? null : provider; }
-    public Boolean getRequiresTarget() { return requiresTarget == null ? null : requiresTarget; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("callId", WireJson.tree(callId));
-        json.set("liveSupported", WireJson.tree(liveSupported));
-        json.set("operation", WireJson.tree(operation));
-        json.set("provider", WireJson.tree(provider));
-        json.set("requiresTarget", WireJson.tree(requiresTarget));
-        return json;
-    }
+    public String getCallId() { return callId; }
+    public Boolean getLiveSupported() { return liveSupported; }
+    public RecordingOperation getOperation() { return operation; }
+    public ProviderRecord getProvider() { return provider; }
+    public Boolean getRequiresTarget() { return requiresTarget; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String callId;
+        private Boolean liveSupported;
+        private RecordingOperation operation;
+        private ProviderRecord provider;
+        private Boolean requiresTarget;
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
         }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder liveSupported(Boolean value) { json.set("liveSupported", WireJson.tree(value)); return this; }
-        public Builder operation(RecordingOperation value) { json.set("operation", WireJson.tree(value)); return this; }
-        public Builder provider(ProviderRecord value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder requiresTarget(Boolean value) { json.set("requiresTarget", WireJson.tree(value)); return this; }
-        public ReplayPlannedCall build() { return new ReplayPlannedCall(json); }
+
+        public Builder liveSupported(Boolean value) {
+            this.liveSupported = value;
+            return this;
+        }
+
+        public Builder operation(RecordingOperation value) {
+            this.operation = value;
+            return this;
+        }
+
+        public Builder provider(ProviderRecord value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder requiresTarget(Boolean value) {
+            this.requiresTarget = value;
+            return this;
+        }
+
+        public ReplayPlannedCall build() { return new ReplayPlannedCall(callId, liveSupported, operation, provider, requiresTarget); }
     }
 }
-

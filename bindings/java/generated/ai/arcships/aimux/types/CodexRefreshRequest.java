@@ -4,40 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class CodexRefreshRequest extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class CodexRefreshRequest {
+    @JsonProperty("clientId")
     private final String clientId;
+    @JsonProperty("refreshToken")
     private final String refreshToken;
-    private CodexRefreshRequest(JsonNode json) {
-        WireJson.object(json, "CodexRefreshRequest", true, "clientId", "refreshToken");
-        WireJson.required(json, "clientId");
-        this.clientId = WireJson.string(json.get("clientId"));
-        WireJson.required(json, "refreshToken");
-        this.refreshToken = WireJson.string(json.get("refreshToken"));
+
+    @JsonCreator
+    public CodexRefreshRequest(
+        @JsonProperty(value = "clientId", required = true) String clientId,
+        @JsonProperty(value = "refreshToken", required = true) String refreshToken) {
+        this.clientId = clientId;
+        this.refreshToken = refreshToken;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static CodexRefreshRequest fromJson(JsonNode json) { return new CodexRefreshRequest(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getClientId() { return clientId == null ? null : clientId; }
-    public String getRefreshToken() { return refreshToken == null ? null : refreshToken; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("clientId", WireJson.tree(clientId));
-        json.set("refreshToken", WireJson.tree(refreshToken));
-        return json;
-    }
+    public String getClientId() { return clientId; }
+    public String getRefreshToken() { return refreshToken; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String clientId;
+        private String refreshToken;
+
+        public Builder clientId(String value) {
+            this.clientId = value;
+            return this;
         }
-        public Builder clientId(String value) { json.set("clientId", WireJson.tree(value)); return this; }
-        public Builder refreshToken(String value) { json.set("refreshToken", WireJson.tree(value)); return this; }
-        public CodexRefreshRequest build() { return new CodexRefreshRequest(json); }
+
+        public Builder refreshToken(String value) {
+            this.refreshToken = value;
+            return this;
+        }
+
+        public CodexRefreshRequest build() { return new CodexRefreshRequest(clientId, refreshToken); }
     }
 }
-

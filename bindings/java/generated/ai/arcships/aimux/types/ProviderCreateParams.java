@@ -4,41 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderCreateParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderCreateParams {
+    @JsonProperty("package")
     private final String package_;
+    @JsonProperty("settings")
     private final ProviderSettings settings;
-    private final boolean hasSettings;
-    private ProviderCreateParams(JsonNode json) {
-        WireJson.object(json, "ProviderCreateParams", true, "package", "settings");
-        WireJson.required(json, "package");
-        this.package_ = WireJson.string(json.get("package"));
-        this.hasSettings = json.has("settings");
-        this.settings = WireJson.isNull(json.get("settings")) ? null : ProviderSettings.fromJson(json.get("settings"));
+
+    @JsonCreator
+    public ProviderCreateParams(
+        @JsonProperty(value = "package", required = true) String package_,
+        @JsonProperty(value = "settings") ProviderSettings settings) {
+        this.package_ = package_;
+        this.settings = settings;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderCreateParams fromJson(JsonNode json) { return new ProviderCreateParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getPackage_() { return package_ == null ? null : package_; }
-    public ProviderSettings getSettings() { return settings == null ? null : settings; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("package", WireJson.tree(package_));
-        if (hasSettings) json.set("settings", WireJson.tree(settings));
-        return json;
-    }
+    public String getPackage_() { return package_; }
+    public ProviderSettings getSettings() { return settings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String package_;
+        private ProviderSettings settings;
+
+        public Builder package_(String value) {
+            this.package_ = value;
+            return this;
         }
-        public Builder package_(String value) { json.set("package", WireJson.tree(value)); return this; }
-        public Builder settings(ProviderSettings value) { json.set("settings", WireJson.tree(value)); return this; }
-        public ProviderCreateParams build() { return new ProviderCreateParams(json); }
+
+        public Builder settings(ProviderSettings value) {
+            this.settings = value;
+            return this;
+        }
+
+        public ProviderCreateParams build() { return new ProviderCreateParams(package_, settings); }
     }
 }
-

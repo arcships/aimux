@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,14 +13,8 @@ import java.util.*;
  * Aligned with V4 `VideoModelV4FrameType`.
  */
 public enum VideoFrameType {
-    FIRST_FRAME("first_frame"),
-    LAST_FRAME("last_frame");
-    private final String value;
-    VideoFrameType(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static VideoFrameType fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (VideoFrameType item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid VideoFrameType: " + value);
-    }
+    @JsonProperty("first_frame")
+    FIRST_FRAME,
+    @JsonProperty("last_frame")
+    LAST_FRAME
 }

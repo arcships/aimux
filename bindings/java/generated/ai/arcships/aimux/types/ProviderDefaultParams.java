@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderDefaultParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderDefaultParams {
+    @JsonProperty("package")
     private final String package_;
-    private ProviderDefaultParams(JsonNode json) {
-        WireJson.object(json, "ProviderDefaultParams", true, "package");
-        WireJson.required(json, "package");
-        this.package_ = WireJson.string(json.get("package"));
+
+    @JsonCreator
+    public ProviderDefaultParams(
+        @JsonProperty(value = "package", required = true) String package_) {
+        this.package_ = package_;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderDefaultParams fromJson(JsonNode json) { return new ProviderDefaultParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getPackage_() { return package_ == null ? null : package_; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("package", WireJson.tree(package_));
-        return json;
-    }
+    public String getPackage_() { return package_; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String package_;
+
+        public Builder package_(String value) {
+            this.package_ = value;
+            return this;
         }
-        public Builder package_(String value) { json.set("package", WireJson.tree(value)); return this; }
-        public ProviderDefaultParams build() { return new ProviderDefaultParams(json); }
+
+        public ProviderDefaultParams build() { return new ProviderDefaultParams(package_); }
     }
 }
-

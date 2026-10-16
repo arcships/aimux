@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class LoggingConfig extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class LoggingConfig {
+    @JsonProperty("level")
     private final LogLevel level;
-    private LoggingConfig(JsonNode json) {
-        WireJson.object(json, "LoggingConfig", true, "level");
-        WireJson.required(json, "level");
-        this.level = LogLevel.fromJson(json.get("level"));
+
+    @JsonCreator
+    public LoggingConfig(
+        @JsonProperty(value = "level", required = true) LogLevel level) {
+        this.level = level;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static LoggingConfig fromJson(JsonNode json) { return new LoggingConfig(json); }
+
     public static Builder builder() { return new Builder(); }
-    public LogLevel getLevel() { return level == null ? null : level; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("level", WireJson.tree(level));
-        return json;
-    }
+    public LogLevel getLevel() { return level; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private LogLevel level;
+
+        public Builder level(LogLevel value) {
+            this.level = value;
+            return this;
         }
-        public Builder level(LogLevel value) { json.set("level", WireJson.tree(value)); return this; }
-        public LoggingConfig build() { return new LoggingConfig(json); }
+
+        public LoggingConfig build() { return new LoggingConfig(level); }
     }
 }
-

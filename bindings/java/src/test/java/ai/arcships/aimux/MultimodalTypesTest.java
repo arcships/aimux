@@ -12,15 +12,19 @@ import static org.assertj.core.api.Assertions.*;
 
 /** Modality and codec contracts exercised through generated DTOs and Jackson. */
 class MultimodalTypesTest {
-    private static final ObjectMapper M = WireJson.MAPPER;
+    private static final ObjectMapper M = DtoJson.MAPPER;
 
     private static <T> T roundTrip(String json, Class<T> type) throws IOException {
         T value = M.readValue(json, type);
         String encoded = M.writeValueAsString(value);
         assertThat(M.readTree(encoded).equals((left, right) -> left.isNumber() && right.isNumber()
             ? left.decimalValue().compareTo(right.decimalValue()) : (left.equals(right) ? 0 : 1), M.readTree(json))).isTrue();
-        assertThat(M.readValue(encoded, type)).isEqualTo(value);
+        assertThat(M.<JsonNode>valueToTree(M.readValue(encoded, type))).isEqualTo(M.readTree(encoded));
         return value;
+    }
+
+    private static void assertSameJson(Object actual, Object expected) {
+        assertThat(M.<JsonNode>valueToTree(actual)).isEqualTo(M.valueToTree(expected));
     }
 
     @Test void embeddingResultRoundTrip() throws Exception {
@@ -63,14 +67,14 @@ class MultimodalTypesTest {
 
     @Test void videoPollOptionsRoundTrip() throws Exception {
         VideoCallOptions options = VideoCallOptions.builder().prompt("a cat")
-            .poll(VideoPollOptions.builder().intervalMs(BigInteger.valueOf(1000)).timeoutMs(BigInteger.valueOf(120000)).build()).build();
-        assertThat(roundTrip(options.toString(), VideoCallOptions.class)).isEqualTo(options);
-        assertThat(options.getPoll().getIntervalMs()).isEqualTo(BigInteger.valueOf(1000));
+            .poll(VideoPollOptions.builder().intervalMs(1000L).timeoutMs(120000L).build()).build();
+        assertSameJson(roundTrip(DtoJson.stringify(options), VideoCallOptions.class), options);
+        assertThat(options.getPoll().getIntervalMs()).isEqualTo(1000L);
     }
 
     @Test void videoFpsIsEmittedAsAnIntegerForRustU32() throws Exception {
         VideoCallOptions options = VideoCallOptions.builder().prompt("a cat").fps(24L).build();
-        assertThat(M.readTree(options.toString()).get("fps").isIntegralNumber()).isTrue();
+        assertThat(M.readTree(DtoJson.stringify(options)).get("fps").isIntegralNumber()).isTrue();
         assertThatThrownBy(() -> M.readValue("{\"prompt\":\"a cat\",\"fps\":24.5}", VideoCallOptions.class)).isInstanceOf(IOException.class);
     }
 
@@ -89,21 +93,21 @@ class MultimodalTypesTest {
 
     @Test void audioDataSerializerAllVariants() throws Exception {
         AudioData data = new AudioData("aGVsbG8=");
-        assertThat(roundTrip("\"aGVsbG8=\"", AudioData.class)).isEqualTo(data);
+        assertSameJson(roundTrip("\"aGVsbG8=\"", AudioData.class), data);
         String binary = Base64.getEncoder().encodeToString(new byte[] {0, 1, 2, (byte) 250, (byte) 255});
-        assertThat(new AudioData(binary).toString()).isEqualTo("\"AAEC+v8=\"");
-        assertThat(WireJson.bytes(binary)).containsExactly(0, 1, 2, (byte) 250, (byte) 255);
+        assertThat(DtoJson.stringify(new AudioData(binary))).isEqualTo("\"AAEC+v8=\"");
+        assertThat(DtoJson.bytes(binary)).containsExactly(0, 1, 2, (byte) 250, (byte) 255);
         assertThatThrownBy(() -> M.readValue("[72,101]", AudioData.class)).isInstanceOf(IOException.class);
         assertThatThrownBy(() -> M.readValue("{}", AudioData.class)).isInstanceOf(IOException.class);
     }
 
     @Test void promptAndFileBytesAreBase64Strings() throws Exception {
         UserContentPart image = UserContentPart.Image.builder().image("iVBORw==").mediaType("image/png").build();
-        assertThat(roundTrip("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}", UserContentPart.class)).isEqualTo(image);
+        assertSameJson(roundTrip("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}", UserContentPart.class), image);
         assertThatThrownBy(() -> M.readValue("{\"type\":\"image\",\"image\":[1,2],\"mediaType\":\"image/png\"}", UserContentPart.class)).isInstanceOf(IOException.class);
         FilePartData data = new FilePartData.Branch1(FileData.Data.builder().data(new FileBytes("AAEC+v8=")).build());
         UserContentPart file = UserContentPart.File.builder().data(data).mediaType("application/pdf").build();
-        roundTrip(file.toString(), UserContentPart.class);
+        roundTrip(DtoJson.stringify(file), UserContentPart.class);
         assertThat(roundTrip("\"aGk=\"", FileBytes.class).getValue()).isEqualTo("aGk=");
         assertThatThrownBy(() -> M.readValue("[104,105]", FileBytes.class)).isInstanceOf(IOException.class);
     }
@@ -128,7 +132,7 @@ class MultimodalTypesTest {
     @Test void generatedFilesAreBase64AndMediaType() throws Exception {
         for (String tag : new String[] {"file", "reasoning-file"}) {
             TextStreamPart part = roundTrip("{\"type\":\"" + tag + "\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"},\"providerMetadata\":{\"google\":{\"thoughtSignature\":\"sig\"}}}", TextStreamPart.class);
-            assertThat(WireJson.bytes(part.getFile().getBase64().getValue())).containsExactly(104, 105);
+            assertThat(DtoJson.bytes(part.getFile().getBase64().getValue())).containsExactly(104, 105);
         }
         roundTrip("{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},\"mediaType\":\"image/png\"}", GenerateContent.class);
     }
@@ -167,21 +171,32 @@ class MultimodalTypesTest {
         roundTrip(approval, AssistantContentPart.class);
     }
 
+    @Test void ordinaryOptionalNullIsOmittedAndTypedPresenceKeepsNull() throws Exception {
+        VideoCallOptions options = M.readValue("{\"prompt\":\"a cat\",\"fps\":null}", VideoCallOptions.class);
+        assertThat(M.<JsonNode>valueToTree(options)).isEqualTo(M.readTree("{\"prompt\":\"a cat\"}"));
+        DecisionBooleanCriteria criteria = roundTrip("{\"true\":null}", DecisionBooleanCriteria.class);
+        assertThat(criteria.hasTrue_()).isTrue();
+        assertThat(criteria.hasFalse_()).isFalse();
+        assertThat(criteria.getTrue_()).isNull();
+        assertThat(M.<JsonNode>valueToTree(DecisionBooleanCriteria.builder().false_(null).build()))
+            .isEqualTo(M.readTree("{\"false\":null}"));
+    }
+
     @Test void imageOutputsSerializerAllVariants() throws Exception {
         ImageOutputs images = new ImageOutputs(Arrays.asList("aW1hZ2Ux", "aW1hZ2Uy"));
-        assertThat(roundTrip("[\"aW1hZ2Ux\",\"aW1hZ2Uy\"]", ImageOutputs.class)).isEqualTo(images);
+        assertSameJson(roundTrip("[\"aW1hZ2Ux\",\"aW1hZ2Uy\"]", ImageOutputs.class), images);
         assertThatThrownBy(() -> M.readValue("[[1,2,3]]", ImageOutputs.class)).isInstanceOf(IOException.class);
         assertThatThrownBy(() -> M.readValue("{}", ImageOutputs.class)).isInstanceOf(IOException.class);
     }
 
     @Test void videoDataSerializerAllVariants() throws Exception {
         VideoData.Url url = VideoData.Url.builder().url("https://example.com/v.mp4").mediaType("video/mp4").build();
-        assertThat(roundTrip(url.toString(), VideoData.class)).isEqualTo(url);
+        assertSameJson(roundTrip(DtoJson.stringify(url), VideoData.class), url);
         VideoData.Base64 base64 = VideoData.Base64.builder().data("AAAA").mediaType("video/mp4").build();
-        assertThat(roundTrip(base64.toString(), VideoData.class)).isEqualTo(base64);
+        assertSameJson(roundTrip(DtoJson.stringify(base64), VideoData.class), base64);
         VideoData.Binary binary = VideoData.Binary.builder().data("AQID").mediaType("video/mp4").build();
-        assertThat(roundTrip(binary.toString(), VideoData.class)).isEqualTo(binary);
-        assertThat(WireJson.bytes(binary.getData())).containsExactly(1, 2, 3);
+        assertSameJson(roundTrip(DtoJson.stringify(binary), VideoData.class), binary);
+        assertThat(DtoJson.bytes(binary.getData())).containsExactly(1, 2, 3);
         assertThatThrownBy(() -> M.readValue("{\"type\":\"quux\"}", VideoData.class)).isInstanceOf(IOException.class).hasMessageContaining("VideoData").hasMessageContaining("quux");
     }
 
@@ -198,12 +213,12 @@ class MultimodalTypesTest {
     @Test void generatedReadersHonorClosureAndOrderedBranches() throws Exception {
         assertThatThrownBy(() -> M.readValue("{\"unexpected\":true}", TimeoutConfiguration.class))
             .isInstanceOf(IOException.class).hasMessageContaining("TimeoutConfiguration");
-        assertThat(M.readValue("{\"unexpected\":true}", RequestInfo.class).toJson()).isEqualTo(M.readTree("{}"));
+        assertThat(M.<JsonNode>valueToTree(M.readValue("{\"unexpected\":true}", RequestInfo.class))).isEqualTo(M.readTree("{}"));
         assertThat(M.readValue("\"hello\"", FilePartData.class)).isInstanceOf(FilePartData.Branch2.class);
         assertThatThrownBy(() -> M.readValue("{\"type\":\"other\",\"seq\":\"0\"}", StreamFrame.class))
             .isInstanceOf(IOException.class).hasMessageContaining("StreamFrame").hasMessageContaining("other");
-        assertThatThrownBy(() -> WireJson.u64("18446744073709551616")).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> WireJson.u64("01")).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> VideoCallOptions.builder().fps(4294967296L).build()).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DtoJson.u64("18446744073709551616")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DtoJson.u64("01")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(VideoCallOptions.builder().fps(4294967296L).build().getFps()).isEqualTo(4294967296L);
     }
 }

@@ -4,20 +4,14 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum Outcome {
-    SUCCESS("success"),
-    ERROR("error"),
-    CANCELLED("cancelled");
-    private final String value;
-    Outcome(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static Outcome fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (Outcome item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid Outcome: " + value);
-    }
+    @JsonProperty("success")
+    SUCCESS,
+    @JsonProperty("error")
+    ERROR,
+    @JsonProperty("cancelled")
+    CANCELLED
 }

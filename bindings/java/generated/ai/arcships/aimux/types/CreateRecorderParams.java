@@ -4,40 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class CreateRecorderParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class CreateRecorderParams {
+    @JsonProperty("backend")
     private final BackendConfig backend;
+    @JsonProperty("capturePolicy")
     private final CapturePolicy capturePolicy;
-    private CreateRecorderParams(JsonNode json) {
-        WireJson.object(json, "CreateRecorderParams", true, "backend", "capturePolicy");
-        WireJson.required(json, "backend");
-        this.backend = BackendConfig.fromJson(json.get("backend"));
-        WireJson.required(json, "capturePolicy");
-        this.capturePolicy = CapturePolicy.fromJson(json.get("capturePolicy"));
+
+    @JsonCreator
+    public CreateRecorderParams(
+        @JsonProperty(value = "backend", required = true) BackendConfig backend,
+        @JsonProperty(value = "capturePolicy", required = true) CapturePolicy capturePolicy) {
+        this.backend = backend;
+        this.capturePolicy = capturePolicy;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static CreateRecorderParams fromJson(JsonNode json) { return new CreateRecorderParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public BackendConfig getBackend() { return backend == null ? null : backend; }
-    public CapturePolicy getCapturePolicy() { return capturePolicy == null ? null : capturePolicy; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("backend", WireJson.tree(backend));
-        json.set("capturePolicy", WireJson.tree(capturePolicy));
-        return json;
-    }
+    public BackendConfig getBackend() { return backend; }
+    public CapturePolicy getCapturePolicy() { return capturePolicy; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private BackendConfig backend;
+        private CapturePolicy capturePolicy;
+
+        public Builder backend(BackendConfig value) {
+            this.backend = value;
+            return this;
         }
-        public Builder backend(BackendConfig value) { json.set("backend", WireJson.tree(value)); return this; }
-        public Builder capturePolicy(CapturePolicy value) { json.set("capturePolicy", WireJson.tree(value)); return this; }
-        public CreateRecorderParams build() { return new CreateRecorderParams(json); }
+
+        public Builder capturePolicy(CapturePolicy value) {
+            this.capturePolicy = value;
+            return this;
+        }
+
+        public CreateRecorderParams build() { return new CreateRecorderParams(backend, capturePolicy); }
     }
 }
-

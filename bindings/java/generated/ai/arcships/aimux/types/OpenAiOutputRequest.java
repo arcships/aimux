@@ -4,40 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OpenAiOutputRequest extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OpenAiOutputRequest {
+    @JsonProperty("metadataNamespace")
     private final String metadataNamespace;
+    @JsonProperty("result")
     private final GenerateTextResultInput result;
-    private OpenAiOutputRequest(JsonNode json) {
-        WireJson.object(json, "OpenAiOutputRequest", true, "metadataNamespace", "result");
-        WireJson.required(json, "metadataNamespace");
-        this.metadataNamespace = WireJson.string(json.get("metadataNamespace"));
-        WireJson.required(json, "result");
-        this.result = GenerateTextResultInput.fromJson(json.get("result"));
+
+    @JsonCreator
+    public OpenAiOutputRequest(
+        @JsonProperty(value = "metadataNamespace", required = true) String metadataNamespace,
+        @JsonProperty(value = "result", required = true) GenerateTextResultInput result) {
+        this.metadataNamespace = metadataNamespace;
+        this.result = result;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OpenAiOutputRequest fromJson(JsonNode json) { return new OpenAiOutputRequest(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getMetadataNamespace() { return metadataNamespace == null ? null : metadataNamespace; }
-    public GenerateTextResultInput getResult() { return result == null ? null : result; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("metadataNamespace", WireJson.tree(metadataNamespace));
-        json.set("result", WireJson.tree(result));
-        return json;
-    }
+    public String getMetadataNamespace() { return metadataNamespace; }
+    public GenerateTextResultInput getResult() { return result; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String metadataNamespace;
+        private GenerateTextResultInput result;
+
+        public Builder metadataNamespace(String value) {
+            this.metadataNamespace = value;
+            return this;
         }
-        public Builder metadataNamespace(String value) { json.set("metadataNamespace", WireJson.tree(value)); return this; }
-        public Builder result(GenerateTextResultInput value) { json.set("result", WireJson.tree(value)); return this; }
-        public OpenAiOutputRequest build() { return new OpenAiOutputRequest(json); }
+
+        public Builder result(GenerateTextResultInput value) {
+            this.result = value;
+            return this;
+        }
+
+        public OpenAiOutputRequest build() { return new OpenAiOutputRequest(metadataNamespace, result); }
     }
 }
-

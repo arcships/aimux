@@ -2,6 +2,7 @@ package ai.arcships.aimux;
 
 import ai.arcships.aimux.types.StreamFrame;
 import ai.arcships.aimux.types.Outcome;
+import ai.arcships.aimux.types.DtoJson;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.jna.Library;
@@ -9,7 +10,6 @@ import com.sun.jna.Native;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import java.math.BigInteger;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -127,7 +127,7 @@ class AbiContractTest {
         AimuxException api = (AimuxException) error;
         assertThat(api.isRetryable()).isTrue();
         assertThat(api.getStatusCode()).isEqualTo(429);
-        assertThat(api.getRetryAfterMs()).isEqualTo(BigInteger.ZERO);
+        assertThat(api.getRetryAfterMs()).isEqualTo(0L);
         assertThat(api.getError().path("responseHeaders").path("x-request-id").asText()).isEqualTo("r1");
         assertThatThrownBy(() -> aimux.call("test.binding", "{}"))
             .isInstanceOf(BindingException.InvalidHandle.class);
@@ -157,9 +157,8 @@ class AbiContractTest {
         assertVariants("recording", 100, "Init", "OpenFile", "Spawn", "WriterGone", "FlushTimeout", "Write");
         NativeException absent = envelope("aimux", 11, "AI_APICallError");
         assertThat(absent.getRetryAfterMs()).isNull();
-        NativeException max = AimuxResult.decode(AimuxResult.parse("{\"kind\":\"aimux\",\"code\":11,\"message\":\"x\","
-            + "\"retryAfterMs\":18446744073709551615,\"error\":{\"name\":\"AI_APICallError\"}}"));
-        assertThat(max.getRetryAfterMs()).isEqualTo(new BigInteger("18446744073709551615"));
+        assertThatThrownBy(() -> AimuxResult.decode(AimuxResult.parse("{\"kind\":\"aimux\",\"code\":11,\"message\":\"x\","
+            + "\"retryAfterMs\":18446744073709551615,\"error\":{\"name\":\"AI_APICallError\"}}"))).isInstanceOf(IllegalStateException.class);
     }
 
     private static NativeException envelope(String kind, int code, String name) {
@@ -214,7 +213,7 @@ class AbiContractTest {
             });
         }
         assertThat(frames).hasSize(3);
-        assertThat(((StreamFrame.Event) frames.get(0)).getEvent().toJson().path("text").asText()).isEqualTo("你好 🌏");
+        assertThat(DtoJson.MAPPER.<JsonNode>valueToTree(((StreamFrame.Event) frames.get(0)).getEvent()).path("text").asText()).isEqualTo("你好 🌏");
         assertThat(((StreamFrame.End) frames.get(2)).getOutcome()).isEqualTo(Outcome.SUCCESS);
     }
 

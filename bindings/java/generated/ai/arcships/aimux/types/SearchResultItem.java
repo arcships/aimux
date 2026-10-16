@@ -4,92 +4,110 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A single search result item.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SearchResultItem extends WireValue {
-    private final String content;
-    private final boolean hasContent;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final String rawContent;
-    private final boolean hasRawContent;
-    private final BigDecimal score;
-    private final boolean hasScore;
-    private final String title;
-    private final boolean hasTitle;
-    private final String url;
-    private final boolean hasUrl;
-    private SearchResultItem(JsonNode json) {
-        WireJson.object(json, "SearchResultItem", false, "content", "providerMetadata", "rawContent", "score", "title", "url");
-        this.hasContent = json.has("content");
-        this.content = WireJson.isNull(json.get("content")) ? null : (WireJson.isNull(json.get("content")) ? null : WireJson.string(json.get("content")));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasRawContent = json.has("rawContent");
-        this.rawContent = WireJson.isNull(json.get("rawContent")) ? null : (WireJson.isNull(json.get("rawContent")) ? null : WireJson.string(json.get("rawContent")));
-        this.hasScore = json.has("score");
-        this.score = WireJson.isNull(json.get("score")) ? null : (WireJson.isNull(json.get("score")) ? null : WireJson.number(json.get("score")));
-        this.hasTitle = json.has("title");
-        this.title = WireJson.isNull(json.get("title")) ? null : (WireJson.isNull(json.get("title")) ? null : WireJson.string(json.get("title")));
-        this.hasUrl = json.has("url");
-        this.url = WireJson.isNull(json.get("url")) ? null : (WireJson.isNull(json.get("url")) ? null : WireJson.string(json.get("url")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SearchResultItem fromJson(JsonNode json) { return new SearchResultItem(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SearchResultItem {
     /**
      * A snippet/summary of the result content.
      */
-    public String getContent() { return content == null ? null : (content == null ? null : content); }
+    @JsonProperty("content")
+    private final String content;
     /**
      * Provider-specific metadata for this result.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Raw page content (when `include_raw_content` is requested and
      * supported by the provider).
      */
-    public String getRawContent() { return rawContent == null ? null : (rawContent == null ? null : rawContent); }
+    @JsonProperty("rawContent")
+    private final String rawContent;
     /**
      * A relevance score (0.0–1.0) if the provider returns one.
      */
-    public BigDecimal getScore() { return score == null ? null : (score == null ? null : score); }
+    @JsonProperty("score")
+    private final BigDecimal score;
     /**
      * The title of the result (e.g. page title).
      */
-    public String getTitle() { return title == null ? null : (title == null ? null : title); }
+    @JsonProperty("title")
+    private final String title;
     /**
      * The URL of the result.
      */
-    public String getUrl() { return url == null ? null : (url == null ? null : url); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasContent) json.set("content", WireJson.tree(content));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasRawContent) json.set("rawContent", WireJson.tree(rawContent));
-        if (hasScore) json.set("score", WireJson.tree(score));
-        if (hasTitle) json.set("title", WireJson.tree(title));
-        if (hasUrl) json.set("url", WireJson.tree(url));
-        return json;
+    @JsonProperty("url")
+    private final String url;
+
+    @JsonCreator
+    public SearchResultItem(
+        @JsonProperty(value = "content") String content,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "rawContent") String rawContent,
+        @JsonProperty(value = "score") BigDecimal score,
+        @JsonProperty(value = "title") String title,
+        @JsonProperty(value = "url") String url) {
+        this.content = content;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.rawContent = rawContent;
+        this.score = score;
+        this.title = title;
+        this.url = url;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getContent() { return content; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getRawContent() { return rawContent; }
+    public BigDecimal getScore() { return score; }
+    public String getTitle() { return title; }
+    public String getUrl() { return url; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String content;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String rawContent;
+        private BigDecimal score;
+        private String title;
+        private String url;
+
+        public Builder content(String value) {
+            this.content = value;
+            return this;
         }
-        public Builder content(String value) { json.set("content", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder rawContent(String value) { json.set("rawContent", WireJson.tree(value)); return this; }
-        public Builder score(BigDecimal value) { json.set("score", WireJson.tree(value)); return this; }
-        public Builder title(String value) { json.set("title", WireJson.tree(value)); return this; }
-        public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-        public SearchResultItem build() { return new SearchResultItem(json); }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder rawContent(String value) {
+            this.rawContent = value;
+            return this;
+        }
+
+        public Builder score(BigDecimal value) {
+            this.score = value;
+            return this;
+        }
+
+        public Builder title(String value) {
+            this.title = value;
+            return this;
+        }
+
+        public Builder url(String value) {
+            this.url = value;
+            return this;
+        }
+
+        public SearchResultItem build() { return new SearchResultItem(content, providerMetadata, rawContent, score, title, url); }
     }
 }
-

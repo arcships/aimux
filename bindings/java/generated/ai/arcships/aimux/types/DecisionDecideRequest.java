@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,36 +13,40 @@ import java.util.*;
  * owner before entering the handler and supplies its signal in `Ctx`.
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class DecisionDecideRequest extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class DecisionDecideRequest {
+    @JsonProperty("abort")
     private final HandleIdInput abort;
-    private final boolean hasAbort;
+    @JsonProperty("options")
     private final DecideOptions options;
-    private DecisionDecideRequest(JsonNode json) {
-        WireJson.object(json, "DecisionDecideRequest", true, "abort", "options");
-        this.hasAbort = json.has("abort");
-        this.abort = WireJson.isNull(json.get("abort")) ? null : (WireJson.isNull(json.get("abort")) ? null : HandleIdInput.fromJson(json.get("abort")));
-        WireJson.required(json, "options");
-        this.options = DecideOptions.fromJson(json.get("options"));
+
+    @JsonCreator
+    public DecisionDecideRequest(
+        @JsonProperty(value = "abort") HandleIdInput abort,
+        @JsonProperty(value = "options", required = true) DecideOptions options) {
+        this.abort = abort;
+        this.options = options;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static DecisionDecideRequest fromJson(JsonNode json) { return new DecisionDecideRequest(json); }
+
     public static Builder builder() { return new Builder(); }
-    public HandleIdInput getAbort() { return abort == null ? null : (abort == null ? null : abort); }
-    public DecideOptions getOptions() { return options == null ? null : options; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAbort) json.set("abort", WireJson.tree(abort));
-        json.set("options", WireJson.tree(options));
-        return json;
-    }
+    public HandleIdInput getAbort() { return abort; }
+    public DecideOptions getOptions() { return options; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private HandleIdInput abort;
+        private DecideOptions options;
+
+        public Builder abort(HandleIdInput value) {
+            this.abort = value;
+            return this;
         }
-        public Builder abort(HandleIdInput value) { json.set("abort", WireJson.tree(value)); return this; }
-        public Builder options(DecideOptions value) { json.set("options", WireJson.tree(value)); return this; }
-        public DecisionDecideRequest build() { return new DecisionDecideRequest(json); }
+
+        public Builder options(DecideOptions value) {
+            this.options = value;
+            return this;
+        }
+
+        public DecisionDecideRequest build() { return new DecisionDecideRequest(abort, options); }
     }
 }
-

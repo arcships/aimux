@@ -4,126 +4,176 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderCustomParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderCustomParams {
+    @JsonProperty("decisionModels")
     private final Map<String, HandleIdInput> decisionModels;
-    private final boolean hasDecisionModels;
+    @JsonProperty("defaultMethod")
     private final String defaultMethod;
-    private final boolean hasDefaultMethod;
+    @JsonProperty("embeddingModels")
     private final Map<String, HandleIdInput> embeddingModels;
-    private final boolean hasEmbeddingModels;
+    @JsonProperty("fallbackProvider")
     private final HandleIdInput fallbackProvider;
-    private final boolean hasFallbackProvider;
+    @JsonProperty("files")
     private final HandleIdInput files;
-    private final boolean hasFiles;
+    @JsonProperty("imageModelMiddleware")
     private final List<HandleIdInput> imageModelMiddleware;
-    private final boolean hasImageModelMiddleware;
+    @JsonProperty("imageModels")
     private final Map<String, HandleIdInput> imageModels;
-    private final boolean hasImageModels;
+    @JsonProperty("languageModelMiddleware")
     private final List<HandleIdInput> languageModelMiddleware;
-    private final boolean hasLanguageModelMiddleware;
+    @JsonProperty("languageModels")
     private final Map<String, HandleIdInput> languageModels;
-    private final boolean hasLanguageModels;
+    @JsonProperty("rerankingModels")
     private final Map<String, HandleIdInput> rerankingModels;
-    private final boolean hasRerankingModels;
+    @JsonProperty("searchModels")
     private final Map<String, HandleIdInput> searchModels;
-    private final boolean hasSearchModels;
+    @JsonProperty("speechModels")
     private final Map<String, HandleIdInput> speechModels;
-    private final boolean hasSpeechModels;
+    @JsonProperty("transcriptionModels")
     private final Map<String, HandleIdInput> transcriptionModels;
-    private final boolean hasTranscriptionModels;
+    @JsonProperty("videoModels")
     private final Map<String, HandleIdInput> videoModels;
-    private final boolean hasVideoModels;
-    private ProviderCustomParams(JsonNode json) {
-        WireJson.object(json, "ProviderCustomParams", true, "decisionModels", "defaultMethod", "embeddingModels", "fallbackProvider", "files", "imageModelMiddleware", "imageModels", "languageModelMiddleware", "languageModels", "rerankingModels", "searchModels", "speechModels", "transcriptionModels", "videoModels");
-        this.hasDecisionModels = json.has("decisionModels");
-        this.decisionModels = WireJson.isNull(json.get("decisionModels")) ? null : WireJson.map(json.get("decisionModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasDefaultMethod = json.has("defaultMethod");
-        this.defaultMethod = WireJson.isNull(json.get("defaultMethod")) ? null : (WireJson.isNull(json.get("defaultMethod")) ? null : WireJson.string(json.get("defaultMethod")));
-        this.hasEmbeddingModels = json.has("embeddingModels");
-        this.embeddingModels = WireJson.isNull(json.get("embeddingModels")) ? null : WireJson.map(json.get("embeddingModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasFallbackProvider = json.has("fallbackProvider");
-        this.fallbackProvider = WireJson.isNull(json.get("fallbackProvider")) ? null : (WireJson.isNull(json.get("fallbackProvider")) ? null : HandleIdInput.fromJson(json.get("fallbackProvider")));
-        this.hasFiles = json.has("files");
-        this.files = WireJson.isNull(json.get("files")) ? null : (WireJson.isNull(json.get("files")) ? null : HandleIdInput.fromJson(json.get("files")));
-        this.hasImageModelMiddleware = json.has("imageModelMiddleware");
-        this.imageModelMiddleware = WireJson.isNull(json.get("imageModelMiddleware")) ? null : WireJson.array(json.get("imageModelMiddleware"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasImageModels = json.has("imageModels");
-        this.imageModels = WireJson.isNull(json.get("imageModels")) ? null : WireJson.map(json.get("imageModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasLanguageModelMiddleware = json.has("languageModelMiddleware");
-        this.languageModelMiddleware = WireJson.isNull(json.get("languageModelMiddleware")) ? null : WireJson.array(json.get("languageModelMiddleware"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasLanguageModels = json.has("languageModels");
-        this.languageModels = WireJson.isNull(json.get("languageModels")) ? null : WireJson.map(json.get("languageModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasRerankingModels = json.has("rerankingModels");
-        this.rerankingModels = WireJson.isNull(json.get("rerankingModels")) ? null : WireJson.map(json.get("rerankingModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasSearchModels = json.has("searchModels");
-        this.searchModels = WireJson.isNull(json.get("searchModels")) ? null : WireJson.map(json.get("searchModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasSpeechModels = json.has("speechModels");
-        this.speechModels = WireJson.isNull(json.get("speechModels")) ? null : WireJson.map(json.get("speechModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasTranscriptionModels = json.has("transcriptionModels");
-        this.transcriptionModels = WireJson.isNull(json.get("transcriptionModels")) ? null : WireJson.map(json.get("transcriptionModels"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasVideoModels = json.has("videoModels");
-        this.videoModels = WireJson.isNull(json.get("videoModels")) ? null : WireJson.map(json.get("videoModels"), item0 -> HandleIdInput.fromJson(item0));
+
+    @JsonCreator
+    public ProviderCustomParams(
+        @JsonProperty(value = "decisionModels") Map<String, HandleIdInput> decisionModels,
+        @JsonProperty(value = "defaultMethod") String defaultMethod,
+        @JsonProperty(value = "embeddingModels") Map<String, HandleIdInput> embeddingModels,
+        @JsonProperty(value = "fallbackProvider") HandleIdInput fallbackProvider,
+        @JsonProperty(value = "files") HandleIdInput files,
+        @JsonProperty(value = "imageModelMiddleware") List<HandleIdInput> imageModelMiddleware,
+        @JsonProperty(value = "imageModels") Map<String, HandleIdInput> imageModels,
+        @JsonProperty(value = "languageModelMiddleware") List<HandleIdInput> languageModelMiddleware,
+        @JsonProperty(value = "languageModels") Map<String, HandleIdInput> languageModels,
+        @JsonProperty(value = "rerankingModels") Map<String, HandleIdInput> rerankingModels,
+        @JsonProperty(value = "searchModels") Map<String, HandleIdInput> searchModels,
+        @JsonProperty(value = "speechModels") Map<String, HandleIdInput> speechModels,
+        @JsonProperty(value = "transcriptionModels") Map<String, HandleIdInput> transcriptionModels,
+        @JsonProperty(value = "videoModels") Map<String, HandleIdInput> videoModels) {
+        this.decisionModels = decisionModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(decisionModels));
+        this.defaultMethod = defaultMethod;
+        this.embeddingModels = embeddingModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(embeddingModels));
+        this.fallbackProvider = fallbackProvider;
+        this.files = files;
+        this.imageModelMiddleware = imageModelMiddleware == null ? null : Collections.unmodifiableList(new ArrayList<>(imageModelMiddleware));
+        this.imageModels = imageModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(imageModels));
+        this.languageModelMiddleware = languageModelMiddleware == null ? null : Collections.unmodifiableList(new ArrayList<>(languageModelMiddleware));
+        this.languageModels = languageModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(languageModels));
+        this.rerankingModels = rerankingModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(rerankingModels));
+        this.searchModels = searchModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(searchModels));
+        this.speechModels = speechModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(speechModels));
+        this.transcriptionModels = transcriptionModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(transcriptionModels));
+        this.videoModels = videoModels == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(videoModels));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderCustomParams fromJson(JsonNode json) { return new ProviderCustomParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Map<String, HandleIdInput> getDecisionModels() { return decisionModels == null ? null : WireJson.map(WireJson.tree(decisionModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public String getDefaultMethod() { return defaultMethod == null ? null : (defaultMethod == null ? null : defaultMethod); }
-    public Map<String, HandleIdInput> getEmbeddingModels() { return embeddingModels == null ? null : WireJson.map(WireJson.tree(embeddingModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public HandleIdInput getFallbackProvider() { return fallbackProvider == null ? null : (fallbackProvider == null ? null : fallbackProvider); }
-    public HandleIdInput getFiles() { return files == null ? null : (files == null ? null : files); }
-    public List<HandleIdInput> getImageModelMiddleware() { return imageModelMiddleware == null ? null : WireJson.array(WireJson.tree(imageModelMiddleware), item0 -> HandleIdInput.fromJson(item0)); }
-    public Map<String, HandleIdInput> getImageModels() { return imageModels == null ? null : WireJson.map(WireJson.tree(imageModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public List<HandleIdInput> getLanguageModelMiddleware() { return languageModelMiddleware == null ? null : WireJson.array(WireJson.tree(languageModelMiddleware), item0 -> HandleIdInput.fromJson(item0)); }
-    public Map<String, HandleIdInput> getLanguageModels() { return languageModels == null ? null : WireJson.map(WireJson.tree(languageModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public Map<String, HandleIdInput> getRerankingModels() { return rerankingModels == null ? null : WireJson.map(WireJson.tree(rerankingModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public Map<String, HandleIdInput> getSearchModels() { return searchModels == null ? null : WireJson.map(WireJson.tree(searchModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public Map<String, HandleIdInput> getSpeechModels() { return speechModels == null ? null : WireJson.map(WireJson.tree(speechModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public Map<String, HandleIdInput> getTranscriptionModels() { return transcriptionModels == null ? null : WireJson.map(WireJson.tree(transcriptionModels), item0 -> HandleIdInput.fromJson(item0)); }
-    public Map<String, HandleIdInput> getVideoModels() { return videoModels == null ? null : WireJson.map(WireJson.tree(videoModels), item0 -> HandleIdInput.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDecisionModels) json.set("decisionModels", WireJson.tree(decisionModels));
-        if (hasDefaultMethod) json.set("defaultMethod", WireJson.tree(defaultMethod));
-        if (hasEmbeddingModels) json.set("embeddingModels", WireJson.tree(embeddingModels));
-        if (hasFallbackProvider) json.set("fallbackProvider", WireJson.tree(fallbackProvider));
-        if (hasFiles) json.set("files", WireJson.tree(files));
-        if (hasImageModelMiddleware) json.set("imageModelMiddleware", WireJson.tree(imageModelMiddleware));
-        if (hasImageModels) json.set("imageModels", WireJson.tree(imageModels));
-        if (hasLanguageModelMiddleware) json.set("languageModelMiddleware", WireJson.tree(languageModelMiddleware));
-        if (hasLanguageModels) json.set("languageModels", WireJson.tree(languageModels));
-        if (hasRerankingModels) json.set("rerankingModels", WireJson.tree(rerankingModels));
-        if (hasSearchModels) json.set("searchModels", WireJson.tree(searchModels));
-        if (hasSpeechModels) json.set("speechModels", WireJson.tree(speechModels));
-        if (hasTranscriptionModels) json.set("transcriptionModels", WireJson.tree(transcriptionModels));
-        if (hasVideoModels) json.set("videoModels", WireJson.tree(videoModels));
-        return json;
-    }
+    public Map<String, HandleIdInput> getDecisionModels() { return decisionModels; }
+    public String getDefaultMethod() { return defaultMethod; }
+    public Map<String, HandleIdInput> getEmbeddingModels() { return embeddingModels; }
+    public HandleIdInput getFallbackProvider() { return fallbackProvider; }
+    public HandleIdInput getFiles() { return files; }
+    public List<HandleIdInput> getImageModelMiddleware() { return imageModelMiddleware; }
+    public Map<String, HandleIdInput> getImageModels() { return imageModels; }
+    public List<HandleIdInput> getLanguageModelMiddleware() { return languageModelMiddleware; }
+    public Map<String, HandleIdInput> getLanguageModels() { return languageModels; }
+    public Map<String, HandleIdInput> getRerankingModels() { return rerankingModels; }
+    public Map<String, HandleIdInput> getSearchModels() { return searchModels; }
+    public Map<String, HandleIdInput> getSpeechModels() { return speechModels; }
+    public Map<String, HandleIdInput> getTranscriptionModels() { return transcriptionModels; }
+    public Map<String, HandleIdInput> getVideoModels() { return videoModels; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, HandleIdInput> decisionModels;
+        private String defaultMethod;
+        private Map<String, HandleIdInput> embeddingModels;
+        private HandleIdInput fallbackProvider;
+        private HandleIdInput files;
+        private List<HandleIdInput> imageModelMiddleware;
+        private Map<String, HandleIdInput> imageModels;
+        private List<HandleIdInput> languageModelMiddleware;
+        private Map<String, HandleIdInput> languageModels;
+        private Map<String, HandleIdInput> rerankingModels;
+        private Map<String, HandleIdInput> searchModels;
+        private Map<String, HandleIdInput> speechModels;
+        private Map<String, HandleIdInput> transcriptionModels;
+        private Map<String, HandleIdInput> videoModels;
+
+        public Builder decisionModels(Map<String, HandleIdInput> value) {
+            this.decisionModels = value;
+            return this;
         }
-        public Builder decisionModels(Map<String, HandleIdInput> value) { json.set("decisionModels", WireJson.tree(value)); return this; }
-        public Builder defaultMethod(String value) { json.set("defaultMethod", WireJson.tree(value)); return this; }
-        public Builder embeddingModels(Map<String, HandleIdInput> value) { json.set("embeddingModels", WireJson.tree(value)); return this; }
-        public Builder fallbackProvider(HandleIdInput value) { json.set("fallbackProvider", WireJson.tree(value)); return this; }
-        public Builder files(HandleIdInput value) { json.set("files", WireJson.tree(value)); return this; }
-        public Builder imageModelMiddleware(List<HandleIdInput> value) { json.set("imageModelMiddleware", WireJson.tree(value)); return this; }
-        public Builder imageModels(Map<String, HandleIdInput> value) { json.set("imageModels", WireJson.tree(value)); return this; }
-        public Builder languageModelMiddleware(List<HandleIdInput> value) { json.set("languageModelMiddleware", WireJson.tree(value)); return this; }
-        public Builder languageModels(Map<String, HandleIdInput> value) { json.set("languageModels", WireJson.tree(value)); return this; }
-        public Builder rerankingModels(Map<String, HandleIdInput> value) { json.set("rerankingModels", WireJson.tree(value)); return this; }
-        public Builder searchModels(Map<String, HandleIdInput> value) { json.set("searchModels", WireJson.tree(value)); return this; }
-        public Builder speechModels(Map<String, HandleIdInput> value) { json.set("speechModels", WireJson.tree(value)); return this; }
-        public Builder transcriptionModels(Map<String, HandleIdInput> value) { json.set("transcriptionModels", WireJson.tree(value)); return this; }
-        public Builder videoModels(Map<String, HandleIdInput> value) { json.set("videoModels", WireJson.tree(value)); return this; }
-        public ProviderCustomParams build() { return new ProviderCustomParams(json); }
+
+        public Builder defaultMethod(String value) {
+            this.defaultMethod = value;
+            return this;
+        }
+
+        public Builder embeddingModels(Map<String, HandleIdInput> value) {
+            this.embeddingModels = value;
+            return this;
+        }
+
+        public Builder fallbackProvider(HandleIdInput value) {
+            this.fallbackProvider = value;
+            return this;
+        }
+
+        public Builder files(HandleIdInput value) {
+            this.files = value;
+            return this;
+        }
+
+        public Builder imageModelMiddleware(List<HandleIdInput> value) {
+            this.imageModelMiddleware = value;
+            return this;
+        }
+
+        public Builder imageModels(Map<String, HandleIdInput> value) {
+            this.imageModels = value;
+            return this;
+        }
+
+        public Builder languageModelMiddleware(List<HandleIdInput> value) {
+            this.languageModelMiddleware = value;
+            return this;
+        }
+
+        public Builder languageModels(Map<String, HandleIdInput> value) {
+            this.languageModels = value;
+            return this;
+        }
+
+        public Builder rerankingModels(Map<String, HandleIdInput> value) {
+            this.rerankingModels = value;
+            return this;
+        }
+
+        public Builder searchModels(Map<String, HandleIdInput> value) {
+            this.searchModels = value;
+            return this;
+        }
+
+        public Builder speechModels(Map<String, HandleIdInput> value) {
+            this.speechModels = value;
+            return this;
+        }
+
+        public Builder transcriptionModels(Map<String, HandleIdInput> value) {
+            this.transcriptionModels = value;
+            return this;
+        }
+
+        public Builder videoModels(Map<String, HandleIdInput> value) {
+            this.videoModels = value;
+            return this;
+        }
+
+        public ProviderCustomParams build() { return new ProviderCustomParams(decisionModels, defaultMethod, embeddingModels, fallbackProvider, files, imageModelMiddleware, imageModels, languageModelMiddleware, languageModels, rerankingModels, searchModels, speechModels, transcriptionModels, videoModels); }
     }
 }
-

@@ -4,42 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class StreamOptions extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class StreamOptions {
+    @JsonProperty("includeReasoning")
     private final Boolean includeReasoning;
-    private final boolean hasIncludeReasoning;
+    @JsonProperty("includeUsage")
     private final Boolean includeUsage;
-    private final boolean hasIncludeUsage;
-    private StreamOptions(JsonNode json) {
-        WireJson.object(json, "StreamOptions", true, "includeReasoning", "includeUsage");
-        this.hasIncludeReasoning = json.has("includeReasoning");
-        this.includeReasoning = WireJson.isNull(json.get("includeReasoning")) ? null : WireJson.bool(json.get("includeReasoning"));
-        this.hasIncludeUsage = json.has("includeUsage");
-        this.includeUsage = WireJson.isNull(json.get("includeUsage")) ? null : WireJson.bool(json.get("includeUsage"));
+
+    @JsonCreator
+    public StreamOptions(
+        @JsonProperty(value = "includeReasoning") Boolean includeReasoning,
+        @JsonProperty(value = "includeUsage") Boolean includeUsage) {
+        this.includeReasoning = includeReasoning;
+        this.includeUsage = includeUsage;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static StreamOptions fromJson(JsonNode json) { return new StreamOptions(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Boolean getIncludeReasoning() { return includeReasoning == null ? null : includeReasoning; }
-    public Boolean getIncludeUsage() { return includeUsage == null ? null : includeUsage; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasIncludeReasoning) json.set("includeReasoning", WireJson.tree(includeReasoning));
-        if (hasIncludeUsage) json.set("includeUsage", WireJson.tree(includeUsage));
-        return json;
-    }
+    public Boolean getIncludeReasoning() { return includeReasoning; }
+    public Boolean getIncludeUsage() { return includeUsage; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean includeReasoning;
+        private Boolean includeUsage;
+
+        public Builder includeReasoning(Boolean value) {
+            this.includeReasoning = value;
+            return this;
         }
-        public Builder includeReasoning(Boolean value) { json.set("includeReasoning", WireJson.tree(value)); return this; }
-        public Builder includeUsage(Boolean value) { json.set("includeUsage", WireJson.tree(value)); return this; }
-        public StreamOptions build() { return new StreamOptions(json); }
+
+        public Builder includeUsage(Boolean value) {
+            this.includeUsage = value;
+            return this;
+        }
+
+        public StreamOptions build() { return new StreamOptions(includeReasoning, includeUsage); }
     }
 }
-

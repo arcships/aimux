@@ -4,60 +4,77 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionUsage extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionUsage {
+    @JsonProperty("completion_tokens")
     private final Long completionTokens;
+    @JsonProperty("completion_tokens_details")
     private final CompletionTokensDetails completionTokensDetails;
-    private final boolean hasCompletionTokensDetails;
+    @JsonProperty("prompt_tokens")
     private final Long promptTokens;
+    @JsonProperty("prompt_tokens_details")
     private final PromptTokensDetails promptTokensDetails;
-    private final boolean hasPromptTokensDetails;
+    @JsonProperty("total_tokens")
     private final Long totalTokens;
-    private ChatCompletionUsage(JsonNode json) {
-        WireJson.object(json, "ChatCompletionUsage", false, "completion_tokens", "completion_tokens_details", "prompt_tokens", "prompt_tokens_details", "total_tokens");
-        WireJson.required(json, "completion_tokens");
-        this.completionTokens = WireJson.integer(json.get("completion_tokens"), true, 32).longValue();
-        this.hasCompletionTokensDetails = json.has("completion_tokens_details");
-        this.completionTokensDetails = WireJson.isNull(json.get("completion_tokens_details")) ? null : (WireJson.isNull(json.get("completion_tokens_details")) ? null : CompletionTokensDetails.fromJson(json.get("completion_tokens_details")));
-        WireJson.required(json, "prompt_tokens");
-        this.promptTokens = WireJson.integer(json.get("prompt_tokens"), true, 32).longValue();
-        this.hasPromptTokensDetails = json.has("prompt_tokens_details");
-        this.promptTokensDetails = WireJson.isNull(json.get("prompt_tokens_details")) ? null : (WireJson.isNull(json.get("prompt_tokens_details")) ? null : PromptTokensDetails.fromJson(json.get("prompt_tokens_details")));
-        WireJson.required(json, "total_tokens");
-        this.totalTokens = WireJson.integer(json.get("total_tokens"), true, 32).longValue();
+
+    @JsonCreator
+    public ChatCompletionUsage(
+        @JsonProperty(value = "completion_tokens", required = true) Long completionTokens,
+        @JsonProperty(value = "completion_tokens_details") CompletionTokensDetails completionTokensDetails,
+        @JsonProperty(value = "prompt_tokens", required = true) Long promptTokens,
+        @JsonProperty(value = "prompt_tokens_details") PromptTokensDetails promptTokensDetails,
+        @JsonProperty(value = "total_tokens", required = true) Long totalTokens) {
+        this.completionTokens = completionTokens;
+        this.completionTokensDetails = completionTokensDetails;
+        this.promptTokens = promptTokens;
+        this.promptTokensDetails = promptTokensDetails;
+        this.totalTokens = totalTokens;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionUsage fromJson(JsonNode json) { return new ChatCompletionUsage(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Long getCompletionTokens() { return completionTokens == null ? null : completionTokens; }
-    public CompletionTokensDetails getCompletionTokensDetails() { return completionTokensDetails == null ? null : (completionTokensDetails == null ? null : completionTokensDetails); }
-    public Long getPromptTokens() { return promptTokens == null ? null : promptTokens; }
-    public PromptTokensDetails getPromptTokensDetails() { return promptTokensDetails == null ? null : (promptTokensDetails == null ? null : promptTokensDetails); }
-    public Long getTotalTokens() { return totalTokens == null ? null : totalTokens; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("completion_tokens", WireJson.tree(completionTokens));
-        if (hasCompletionTokensDetails) json.set("completion_tokens_details", WireJson.tree(completionTokensDetails));
-        json.set("prompt_tokens", WireJson.tree(promptTokens));
-        if (hasPromptTokensDetails) json.set("prompt_tokens_details", WireJson.tree(promptTokensDetails));
-        json.set("total_tokens", WireJson.tree(totalTokens));
-        return json;
-    }
+    public Long getCompletionTokens() { return completionTokens; }
+    public CompletionTokensDetails getCompletionTokensDetails() { return completionTokensDetails; }
+    public Long getPromptTokens() { return promptTokens; }
+    public PromptTokensDetails getPromptTokensDetails() { return promptTokensDetails; }
+    public Long getTotalTokens() { return totalTokens; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long completionTokens;
+        private CompletionTokensDetails completionTokensDetails;
+        private Long promptTokens;
+        private PromptTokensDetails promptTokensDetails;
+        private Long totalTokens;
+
+        public Builder completionTokens(Long value) {
+            this.completionTokens = value;
+            return this;
         }
-        public Builder completionTokens(Long value) { json.set("completion_tokens", WireJson.tree(value)); return this; }
-        public Builder completionTokensDetails(CompletionTokensDetails value) { json.set("completion_tokens_details", WireJson.tree(value)); return this; }
-        public Builder promptTokens(Long value) { json.set("prompt_tokens", WireJson.tree(value)); return this; }
-        public Builder promptTokensDetails(PromptTokensDetails value) { json.set("prompt_tokens_details", WireJson.tree(value)); return this; }
-        public Builder totalTokens(Long value) { json.set("total_tokens", WireJson.tree(value)); return this; }
-        public ChatCompletionUsage build() { return new ChatCompletionUsage(json); }
+
+        public Builder completionTokensDetails(CompletionTokensDetails value) {
+            this.completionTokensDetails = value;
+            return this;
+        }
+
+        public Builder promptTokens(Long value) {
+            this.promptTokens = value;
+            return this;
+        }
+
+        public Builder promptTokensDetails(PromptTokensDetails value) {
+            this.promptTokensDetails = value;
+            return this;
+        }
+
+        public Builder totalTokens(Long value) {
+            this.totalTokens = value;
+            return this;
+        }
+
+        public ChatCompletionUsage build() { return new ChatCompletionUsage(completionTokens, completionTokensDetails, promptTokens, promptTokensDetails, totalTokens); }
     }
 }
-

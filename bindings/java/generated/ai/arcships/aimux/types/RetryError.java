@@ -4,43 +4,47 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Complete error history for a retried model operation.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RetryError extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RetryError {
+    @JsonProperty("errors")
     private final List<AiMuxError> errors;
+    @JsonProperty("reason")
     private final RetryErrorReason reason;
-    private RetryError(JsonNode json) {
-        WireJson.object(json, "RetryError", false, "errors", "reason");
-        WireJson.required(json, "errors");
-        this.errors = WireJson.array(json.get("errors"), item0 -> AiMuxError.fromJson(item0));
-        WireJson.required(json, "reason");
-        this.reason = RetryErrorReason.fromJson(json.get("reason"));
+
+    @JsonCreator
+    public RetryError(
+        @JsonProperty(value = "errors", required = true) List<AiMuxError> errors,
+        @JsonProperty(value = "reason", required = true) RetryErrorReason reason) {
+        this.errors = errors == null ? null : Collections.unmodifiableList(new ArrayList<>(errors));
+        this.reason = reason;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RetryError fromJson(JsonNode json) { return new RetryError(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<AiMuxError> getErrors() { return errors == null ? null : WireJson.array(WireJson.tree(errors), item0 -> AiMuxError.fromJson(item0)); }
-    public RetryErrorReason getReason() { return reason == null ? null : reason; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("errors", WireJson.tree(errors));
-        json.set("reason", WireJson.tree(reason));
-        return json;
-    }
+    public List<AiMuxError> getErrors() { return errors; }
+    public RetryErrorReason getReason() { return reason; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<AiMuxError> errors;
+        private RetryErrorReason reason;
+
+        public Builder errors(List<AiMuxError> value) {
+            this.errors = value;
+            return this;
         }
-        public Builder errors(List<AiMuxError> value) { json.set("errors", WireJson.tree(value)); return this; }
-        public Builder reason(RetryErrorReason value) { json.set("reason", WireJson.tree(value)); return this; }
-        public RetryError build() { return new RetryError(json); }
+
+        public Builder reason(RetryErrorReason value) {
+            this.reason = value;
+            return this;
+        }
+
+        public RetryError build() { return new RetryError(errors, reason); }
     }
 }
-

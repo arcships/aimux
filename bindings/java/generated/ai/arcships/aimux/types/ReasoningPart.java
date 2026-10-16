@@ -4,111 +4,118 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Text or a generated file produced during reasoning.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ReasoningPart.Reasoning.class, name = "reasoning"),
-    @JsonSubTypes.Type(value = ReasoningPart.ReasoningFile.class, name = "reasoning-file"),
+    @JsonSubTypes.Type(value = ReasoningPart.ReasoningFile.class, name = "reasoning-file")
 })
-public abstract class ReasoningPart extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class ReasoningPart {
     private ReasoningPart() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public Map<String, Map<String, JsonNode>> getProviderMetadata() { return null; }
     public String getText() { return null; }
     public GeneratedFile getFile() { return null; }
     public final boolean isReasoning() { return "reasoning".equals(getType()); }
     public final boolean isReasoningFile() { return "reasoning-file".equals(getType()); }
-    public static ReasoningPart fromJson(JsonNode json) {
-        WireJson.object(json, "ReasoningPart", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "reasoning":
-                return Reasoning.fromJson(json);
-            case "reasoning-file":
-                return ReasoningFile.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown ReasoningPart tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Reasoning extends ReasoningPart {
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("text")
         private final String text;
-        private Reasoning(JsonNode json) {
-            WireJson.object(json, "Reasoning", false, "providerMetadata", "text", "type");
-            if (!"reasoning".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Reasoning tag");
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
+
+        @JsonCreator
+        public Reasoning(
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "text", required = true) String text) {
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.text = text;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Reasoning fromJson(JsonNode json) { return new Reasoning(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "reasoning"; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "reasoning");
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("text", WireJson.tree(text));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "reasoning"; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "reasoning");
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String text;
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
             }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public Reasoning build() { return new Reasoning(json); }
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
+            }
+
+            public Reasoning build() { return new Reasoning(providerMetadata, text); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ReasoningFile extends ReasoningPart {
+        @JsonProperty("file")
         private final GeneratedFile file;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private ReasoningFile(JsonNode json) {
-            WireJson.object(json, "ReasoningFile", false, "file", "providerMetadata", "type");
-            if (!"reasoning-file".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ReasoningFile tag");
-            WireJson.required(json, "file");
-            this.file = GeneratedFile.fromJson(json.get("file"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public ReasoningFile(
+            @JsonProperty(value = "file", required = true) GeneratedFile file,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata) {
+            this.file = file;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ReasoningFile fromJson(JsonNode json) { return new ReasoningFile(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "reasoning-file"; }
-        public GeneratedFile getFile() { return file == null ? null : file; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "reasoning-file");
-            json.set("file", WireJson.tree(file));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "reasoning-file"; }
+        public GeneratedFile getFile() { return file; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "reasoning-file");
+            private GeneratedFile file;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+
+            public Builder file(GeneratedFile value) {
+                this.file = value;
+                return this;
             }
-            public Builder file(GeneratedFile value) { json.set("file", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public ReasoningFile build() { return new ReasoningFile(json); }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public ReasoningFile build() { return new ReasoningFile(file, providerMetadata); }
         }
     }
-
 }

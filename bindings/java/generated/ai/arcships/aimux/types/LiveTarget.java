@@ -4,92 +4,91 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "kind", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "kind")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = LiveTarget.Model.class, name = "model"),
-    @JsonSubTypes.Type(value = LiveTarget.Registry.class, name = "registry"),
+    @JsonSubTypes.Type(value = LiveTarget.Registry.class, name = "registry")
 })
-public abstract class LiveTarget extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class LiveTarget {
     private LiveTarget() {}
+
+    @JsonProperty("kind")
     public abstract String getKind();
     public HandleIdInput getHandle() { return null; }
     public final boolean isModel() { return "model".equals(getKind()); }
     public final boolean isRegistry() { return "registry".equals(getKind()); }
-    public static LiveTarget fromJson(JsonNode json) {
-        WireJson.object(json, "LiveTarget", false);
-        String tag = WireJson.string(json.get("kind"));
-        switch (tag) {
-            case "model":
-                return Model.fromJson(json);
-            case "registry":
-                return Registry.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown LiveTarget tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Model extends LiveTarget {
+        @JsonProperty("handle")
         private final HandleIdInput handle;
-        private Model(JsonNode json) {
-            WireJson.object(json, "Model", true, "handle", "kind");
-            if (!"model".equals(WireJson.string(json.get("kind")))) throw new IllegalArgumentException("Invalid Model tag");
-            WireJson.required(json, "handle");
-            this.handle = HandleIdInput.fromJson(json.get("handle"));
+
+        @JsonCreator
+        public Model(
+            @JsonProperty(value = "handle", required = true) HandleIdInput handle) {
+            this.handle = handle;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Model fromJson(JsonNode json) { return new Model(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getKind() { return "model"; }
-        public HandleIdInput getHandle() { return handle == null ? null : handle; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("kind", "model");
-            json.set("handle", WireJson.tree(handle));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("kind")
+        public String getKind() { return "model"; }
+        public HandleIdInput getHandle() { return handle; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("kind", "model");
+            private HandleIdInput handle;
+
+            public Builder handle(HandleIdInput value) {
+                this.handle = value;
+                return this;
             }
-            public Builder handle(HandleIdInput value) { json.set("handle", WireJson.tree(value)); return this; }
-            public Model build() { return new Model(json); }
+
+            public Model build() { return new Model(handle); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Registry extends LiveTarget {
+        @JsonProperty("handle")
         private final HandleIdInput handle;
-        private Registry(JsonNode json) {
-            WireJson.object(json, "Registry", true, "handle", "kind");
-            if (!"registry".equals(WireJson.string(json.get("kind")))) throw new IllegalArgumentException("Invalid Registry tag");
-            WireJson.required(json, "handle");
-            this.handle = HandleIdInput.fromJson(json.get("handle"));
+
+        @JsonCreator
+        public Registry(
+            @JsonProperty(value = "handle", required = true) HandleIdInput handle) {
+            this.handle = handle;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Registry fromJson(JsonNode json) { return new Registry(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getKind() { return "registry"; }
-        public HandleIdInput getHandle() { return handle == null ? null : handle; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("kind", "registry");
-            json.set("handle", WireJson.tree(handle));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("kind")
+        public String getKind() { return "registry"; }
+        public HandleIdInput getHandle() { return handle; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("kind", "registry");
+            private HandleIdInput handle;
+
+            public Builder handle(HandleIdInput value) {
+                this.handle = value;
+                return this;
             }
-            public Builder handle(HandleIdInput value) { json.set("handle", WireJson.tree(value)); return this; }
-            public Registry build() { return new Registry(json); }
+
+            public Registry build() { return new Registry(handle); }
         }
     }
-
 }

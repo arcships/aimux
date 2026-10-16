@@ -81,7 +81,7 @@ final class NativeFuture implements Future<JsonNode> {
                 long handle = lease == null ? 0 : lease.id;
                 if (consumer == null) return aimux.call(handle, op, params, signal.id);
                 aimux.stream(handle, op, params, signal.id, consumer);
-                return WireJson.MAPPER.nullNode();
+                return DtoJson.MAPPER.nullNode();
             }
         }
     }

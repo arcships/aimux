@@ -4,59 +4,67 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * ① 输入侧:完整调用参数,足以重建 generate_text 调用。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class InputRecord extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class InputRecord {
+    @JsonProperty("operation")
     private final RecordingOperation operation;
-    private final boolean hasOperation;
-    private final JsonNode options;
-    private final List<LanguageModelMessage> prompt;
-    private InputRecord(JsonNode json) {
-        WireJson.object(json, "InputRecord", false, "operation", "options", "prompt");
-        this.hasOperation = json.has("operation");
-        this.operation = WireJson.isNull(json.get("operation")) ? null : RecordingOperation.fromJson(json.get("operation"));
-        WireJson.required(json, "options");
-        this.options = WireJson.json(json.get("options"));
-        WireJson.required(json, "prompt");
-        this.prompt = WireJson.array(json.get("prompt"), item0 -> LanguageModelMessage.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static InputRecord fromJson(JsonNode json) { return new InputRecord(json); }
-    public static Builder builder() { return new Builder(); }
-    public RecordingOperation getOperation() { return operation == null ? null : operation; }
     /**
      * 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
      * 加上所在操作的 `max_retries` / `timeout` / `session_id`
      * (`OperationSettings`);headers/provider_options 已递归脱敏。
      */
-    public JsonNode getOptions() { return options == null ? null : WireJson.json(WireJson.tree(options)); }
+    @JsonProperty("options")
+    private final JsonNode options;
     /**
      * 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。Loads as
      * empty when this version cannot read it ([`Self::unreadable_prompt`]).
      */
-    public List<LanguageModelMessage> getPrompt() { return prompt == null ? null : WireJson.array(WireJson.tree(prompt), item0 -> LanguageModelMessage.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasOperation) json.set("operation", WireJson.tree(operation));
-        json.set("options", WireJson.tree(options));
-        json.set("prompt", WireJson.tree(prompt));
-        return json;
+    @JsonProperty("prompt")
+    private final List<LanguageModelMessage> prompt;
+
+    @JsonCreator
+    public InputRecord(
+        @JsonProperty(value = "operation") RecordingOperation operation,
+        @JsonProperty(value = "options", required = true) JsonNode options,
+        @JsonProperty(value = "prompt", required = true) List<LanguageModelMessage> prompt) {
+        this.operation = operation;
+        this.options = options == null ? null : options.deepCopy();
+        this.prompt = prompt == null ? null : Collections.unmodifiableList(new ArrayList<>(prompt));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public RecordingOperation getOperation() { return operation; }
+    public JsonNode getOptions() { return options == null ? null : options.deepCopy(); }
+    public List<LanguageModelMessage> getPrompt() { return prompt; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private RecordingOperation operation;
+        private JsonNode options;
+        private List<LanguageModelMessage> prompt;
+
+        public Builder operation(RecordingOperation value) {
+            this.operation = value;
+            return this;
         }
-        public Builder operation(RecordingOperation value) { json.set("operation", WireJson.tree(value)); return this; }
-        public Builder options(JsonNode value) { json.set("options", WireJson.tree(value)); return this; }
-        public Builder prompt(List<LanguageModelMessage> value) { json.set("prompt", WireJson.tree(value)); return this; }
-        public InputRecord build() { return new InputRecord(json); }
+
+        public Builder options(JsonNode value) {
+            this.options = value;
+            return this;
+        }
+
+        public Builder prompt(List<LanguageModelMessage> value) {
+            this.prompt = value;
+            return this;
+        }
+
+        public InputRecord build() { return new InputRecord(operation, options, prompt); }
     }
 }
-

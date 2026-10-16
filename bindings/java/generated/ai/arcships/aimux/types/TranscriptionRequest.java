@@ -4,41 +4,39 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Optional request information for a transcription call.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TranscriptionRequest extends WireValue {
-    private final String body;
-    private final boolean hasBody;
-    private TranscriptionRequest(JsonNode json) {
-        WireJson.object(json, "TranscriptionRequest", false, "body");
-        this.hasBody = json.has("body");
-        this.body = WireJson.isNull(json.get("body")) ? null : (WireJson.isNull(json.get("body")) ? null : WireJson.string(json.get("body")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TranscriptionRequest fromJson(JsonNode json) { return new TranscriptionRequest(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TranscriptionRequest {
     /**
      * Raw request HTTP body that was sent (JSON stringified).
      */
-    public String getBody() { return body == null ? null : (body == null ? null : body); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasBody) json.set("body", WireJson.tree(body));
-        return json;
+    @JsonProperty("body")
+    private final String body;
+
+    @JsonCreator
+    public TranscriptionRequest(
+        @JsonProperty(value = "body") String body) {
+        this.body = body;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getBody() { return body; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String body;
+
+        public Builder body(String value) {
+            this.body = value;
+            return this;
         }
-        public Builder body(String value) { json.set("body", WireJson.tree(value)); return this; }
-        public TranscriptionRequest build() { return new TranscriptionRequest(json); }
+
+        public TranscriptionRequest build() { return new TranscriptionRequest(body); }
     }
 }
-

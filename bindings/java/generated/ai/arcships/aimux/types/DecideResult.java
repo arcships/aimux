@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,65 +12,88 @@ import java.util.*;
  * `ai@7.0.128 src/decide/decision-result.ts:22-39`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class DecideResult extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class DecideResult {
+    @JsonProperty("answers")
     private final Map<String, DecisionAnswer> answers;
+    @JsonProperty("providerMetadata")
     private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final ResponseInfo response;
-    private final DecisionRounding rounding;
-    private final boolean hasRounding;
-    private final DecideUsage usage;
-    private final List<Warning> warnings;
-    private DecideResult(JsonNode json) {
-        WireJson.object(json, "DecideResult", false, "answers", "providerMetadata", "response", "rounding", "usage", "warnings");
-        WireJson.required(json, "answers");
-        this.answers = WireJson.map(json.get("answers"), item0 -> DecisionAnswer.fromJson(item0));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "response");
-        this.response = ResponseInfo.fromJson(json.get("response"));
-        this.hasRounding = json.has("rounding");
-        this.rounding = WireJson.isNull(json.get("rounding")) ? null : (WireJson.isNull(json.get("rounding")) ? null : DecisionRounding.fromJson(json.get("rounding")));
-        WireJson.required(json, "usage");
-        this.usage = DecideUsage.fromJson(json.get("usage"));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static DecideResult fromJson(JsonNode json) { return new DecideResult(json); }
-    public static Builder builder() { return new Builder(); }
-    public Map<String, DecisionAnswer> getAnswers() { return answers == null ? null : WireJson.map(WireJson.tree(answers), item0 -> DecisionAnswer.fromJson(item0)); }
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
     /**
      * The model's response information; the timestamp defaults to the end of
      * the call and the model id to the model's.
      */
-    public ResponseInfo getResponse() { return response == null ? null : response; }
-    public DecisionRounding getRounding() { return rounding == null ? null : (rounding == null ? null : rounding); }
-    public DecideUsage getUsage() { return usage == null ? null : usage; }
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("answers", WireJson.tree(answers));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("response", WireJson.tree(response));
-        if (hasRounding) json.set("rounding", WireJson.tree(rounding));
-        json.set("usage", WireJson.tree(usage));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("response")
+    private final ResponseInfo response;
+    @JsonProperty("rounding")
+    private final DecisionRounding rounding;
+    @JsonProperty("usage")
+    private final DecideUsage usage;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public DecideResult(
+        @JsonProperty(value = "answers", required = true) Map<String, DecisionAnswer> answers,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "response", required = true) ResponseInfo response,
+        @JsonProperty(value = "rounding") DecisionRounding rounding,
+        @JsonProperty(value = "usage", required = true) DecideUsage usage,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.answers = answers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(answers));
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.response = response;
+        this.rounding = rounding;
+        this.usage = usage;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, DecisionAnswer> getAnswers() { return answers; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public ResponseInfo getResponse() { return response; }
+    public DecisionRounding getRounding() { return rounding; }
+    public DecideUsage getUsage() { return usage; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, DecisionAnswer> answers;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private ResponseInfo response;
+        private DecisionRounding rounding;
+        private DecideUsage usage;
+        private List<Warning> warnings;
+
+        public Builder answers(Map<String, DecisionAnswer> value) {
+            this.answers = value;
+            return this;
         }
-        public Builder answers(Map<String, DecisionAnswer> value) { json.set("answers", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder response(ResponseInfo value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder rounding(DecisionRounding value) { json.set("rounding", WireJson.tree(value)); return this; }
-        public Builder usage(DecideUsage value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public DecideResult build() { return new DecideResult(json); }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder response(ResponseInfo value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder rounding(DecisionRounding value) {
+            this.rounding = value;
+            return this;
+        }
+
+        public Builder usage(DecideUsage value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public DecideResult build() { return new DecideResult(answers, providerMetadata, response, rounding, usage, warnings); }
     }
 }
-

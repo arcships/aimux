@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,81 +13,105 @@ import java.util.*;
  * Aligned with V4 `SpeechModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SpeechResult extends WireValue {
-    private final AudioData audio;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final SpeechRequest request;
-    private final boolean hasRequest;
-    private final SpeechResponse response;
-    private final Map<String, JsonNode> usage;
-    private final List<Warning> warnings;
-    private SpeechResult(JsonNode json) {
-        WireJson.object(json, "SpeechResult", false, "audio", "providerMetadata", "request", "response", "usage", "warnings");
-        WireJson.required(json, "audio");
-        this.audio = AudioData.fromJson(json.get("audio"));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasRequest = json.has("request");
-        this.request = WireJson.isNull(json.get("request")) ? null : (WireJson.isNull(json.get("request")) ? null : SpeechRequest.fromJson(json.get("request")));
-        WireJson.required(json, "response");
-        this.response = SpeechResponse.fromJson(json.get("response"));
-        WireJson.required(json, "usage");
-        this.usage = (WireJson.isNull(json.get("usage")) ? null : WireJson.map(json.get("usage"), item0 -> WireJson.json(item0)));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SpeechResult fromJson(JsonNode json) { return new SpeechResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SpeechResult {
     /**
      * Generated audio (base64 string or binary data).
      */
-    public AudioData getAudio() { return audio == null ? null : audio; }
+    @JsonProperty("audio")
+    private final AudioData audio;
     /**
      * Additional provider-specific metadata, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Optional request information for telemetry and debugging.
      */
-    public SpeechRequest getRequest() { return request == null ? null : (request == null ? null : request); }
+    @JsonProperty("request")
+    private final SpeechRequest request;
     /**
      * Response information for telemetry and debugging.
      */
-    public SpeechResponse getResponse() { return response == null ? null : response; }
+    @JsonProperty("response")
+    private final SpeechResponse response;
     /**
      * Usage information reported by the provider, in the provider's native
      * JSON shape (`SpeechModelV4Result.usage?: JSONObject`,
      * `@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`).
      */
-    public Map<String, JsonNode> getUsage() { return usage == null ? null : (usage == null ? null : WireJson.map(WireJson.tree(usage), item0 -> WireJson.json(item0))); }
+    @JsonProperty("usage")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    private final Map<String, JsonNode> usage;
     /**
      * Warnings for the call, e.g. unsupported settings.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("audio", WireJson.tree(audio));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasRequest) json.set("request", WireJson.tree(request));
-        json.set("response", WireJson.tree(response));
-        json.set("usage", WireJson.tree(usage));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public SpeechResult(
+        @JsonProperty(value = "audio", required = true) AudioData audio,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "request") SpeechRequest request,
+        @JsonProperty(value = "response", required = true) SpeechResponse response,
+        @JsonProperty(value = "usage", required = true) Map<String, JsonNode> usage,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.audio = audio;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.request = request;
+        this.response = response;
+        this.usage = usage == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(usage));
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public AudioData getAudio() { return audio; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public SpeechRequest getRequest() { return request; }
+    public SpeechResponse getResponse() { return response; }
+    public Map<String, JsonNode> getUsage() { return usage; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private AudioData audio;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private SpeechRequest request;
+        private SpeechResponse response;
+        private Map<String, JsonNode> usage;
+        private List<Warning> warnings;
+
+        public Builder audio(AudioData value) {
+            this.audio = value;
+            return this;
         }
-        public Builder audio(AudioData value) { json.set("audio", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder request(SpeechRequest value) { json.set("request", WireJson.tree(value)); return this; }
-        public Builder response(SpeechResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder usage(Map<String, JsonNode> value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public SpeechResult build() { return new SpeechResult(json); }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder request(SpeechRequest value) {
+            this.request = value;
+            return this;
+        }
+
+        public Builder response(SpeechResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder usage(Map<String, JsonNode> value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public SpeechResult build() { return new SpeechResult(audio, providerMetadata, request, response, usage, warnings); }
     }
 }
-

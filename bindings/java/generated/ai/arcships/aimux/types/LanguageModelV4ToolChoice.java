@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -16,140 +15,124 @@ import java.util.*;
  * 
  * Always an object tagged by `type`, unlike the user-level [`ToolChoice`].
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = LanguageModelV4ToolChoice.Auto.class, name = "auto"),
     @JsonSubTypes.Type(value = LanguageModelV4ToolChoice.None.class, name = "none"),
     @JsonSubTypes.Type(value = LanguageModelV4ToolChoice.Required.class, name = "required"),
-    @JsonSubTypes.Type(value = LanguageModelV4ToolChoice.ToolVariant.class, name = "tool"),
+    @JsonSubTypes.Type(value = LanguageModelV4ToolChoice.ToolVariant.class, name = "tool")
 })
-public abstract class LanguageModelV4ToolChoice extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class LanguageModelV4ToolChoice {
     private LanguageModelV4ToolChoice() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public String getToolName() { return null; }
     public final boolean isAuto() { return "auto".equals(getType()); }
     public final boolean isNone() { return "none".equals(getType()); }
     public final boolean isRequired() { return "required".equals(getType()); }
     public final boolean isTool() { return "tool".equals(getType()); }
-    public static LanguageModelV4ToolChoice fromJson(JsonNode json) {
-        WireJson.object(json, "LanguageModelV4ToolChoice", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "auto":
-                return Auto.fromJson(json);
-            case "none":
-                return None.fromJson(json);
-            case "required":
-                return Required.fromJson(json);
-            case "tool":
-                return ToolVariant.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown LanguageModelV4ToolChoice tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Auto extends LanguageModelV4ToolChoice {
-        private Auto(JsonNode json) {
-            WireJson.object(json, "Auto", false, "type");
-            if (!"auto".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Auto tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Auto fromJson(JsonNode json) { return new Auto(json); }
+
+        @JsonCreator
+        public Auto() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "auto"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "auto");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "auto"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "auto");
-            }
-            public Auto build() { return new Auto(json); }
+
+            public Auto build() { return new Auto(); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class None extends LanguageModelV4ToolChoice {
-        private None(JsonNode json) {
-            WireJson.object(json, "None", false, "type");
-            if (!"none".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid None tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static None fromJson(JsonNode json) { return new None(json); }
+
+        @JsonCreator
+        public None() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "none"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "none");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "none"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "none");
-            }
-            public None build() { return new None(json); }
+
+            public None build() { return new None(); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Required extends LanguageModelV4ToolChoice {
-        private Required(JsonNode json) {
-            WireJson.object(json, "Required", false, "type");
-            if (!"required".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Required tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Required fromJson(JsonNode json) { return new Required(json); }
+
+        @JsonCreator
+        public Required() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "required"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "required");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "required"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "required");
-            }
-            public Required build() { return new Required(json); }
+
+            public Required build() { return new Required(); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolVariant extends LanguageModelV4ToolChoice {
+        @JsonProperty("toolName")
         private final String toolName;
-        private ToolVariant(JsonNode json) {
-            WireJson.object(json, "ToolVariant", false, "toolName", "type");
-            if (!"tool".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolVariant tag");
-            WireJson.required(json, "toolName");
-            this.toolName = WireJson.string(json.get("toolName"));
+
+        @JsonCreator
+        public ToolVariant(
+            @JsonProperty(value = "toolName", required = true) String toolName) {
+            this.toolName = toolName;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolVariant fromJson(JsonNode json) { return new ToolVariant(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool"; }
-        public String getToolName() { return toolName == null ? null : toolName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool");
-            json.set("toolName", WireJson.tree(toolName));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool"; }
+        public String getToolName() { return toolName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool");
+            private String toolName;
+
+            public Builder toolName(String value) {
+                this.toolName = value;
+                return this;
             }
-            public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-            public ToolVariant build() { return new ToolVariant(json); }
+
+            public ToolVariant build() { return new ToolVariant(toolName); }
         }
     }
-
 }

@@ -4,76 +4,92 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Runtime control is lifted separately from the canonical upload options.
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class UploadFileParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class UploadFileParams {
+    @JsonProperty("abort")
     private final HandleIdInput abort;
-    private final boolean hasAbort;
-    private final UploadFileData data;
-    private final String filename;
-    private final boolean hasFilename;
-    private final String mediaType;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private UploadFileParams(JsonNode json) {
-        WireJson.object(json, "UploadFileParams", true, "abort", "data", "filename", "mediaType", "providerOptions");
-        this.hasAbort = json.has("abort");
-        this.abort = WireJson.isNull(json.get("abort")) ? null : (WireJson.isNull(json.get("abort")) ? null : HandleIdInput.fromJson(json.get("abort")));
-        WireJson.required(json, "data");
-        this.data = UploadFileData.fromJson(json.get("data"));
-        this.hasFilename = json.has("filename");
-        this.filename = WireJson.isNull(json.get("filename")) ? null : (WireJson.isNull(json.get("filename")) ? null : WireJson.string(json.get("filename")));
-        WireJson.required(json, "mediaType");
-        this.mediaType = WireJson.string(json.get("mediaType"));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static UploadFileParams fromJson(JsonNode json) { return new UploadFileParams(json); }
-    public static Builder builder() { return new Builder(); }
-    public HandleIdInput getAbort() { return abort == null ? null : (abort == null ? null : abort); }
     /**
      * The file data (raw bytes/base64 or inline text).
      */
-    public UploadFileData getData() { return data == null ? null : data; }
+    @JsonProperty("data")
+    private final UploadFileData data;
     /**
      * The filename of the file.
      */
-    public String getFilename() { return filename == null ? null : (filename == null ? null : filename); }
+    @JsonProperty("filename")
+    private final String filename;
     /**
      * The IANA media type of the file, e.g. `"application/pdf"`.
      */
-    public String getMediaType() { return mediaType == null ? null : mediaType; }
+    @JsonProperty("mediaType")
+    private final String mediaType;
     /**
      * Additional provider-specific options, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAbort) json.set("abort", WireJson.tree(abort));
-        json.set("data", WireJson.tree(data));
-        if (hasFilename) json.set("filename", WireJson.tree(filename));
-        json.set("mediaType", WireJson.tree(mediaType));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        return json;
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
+
+    @JsonCreator
+    public UploadFileParams(
+        @JsonProperty(value = "abort") HandleIdInput abort,
+        @JsonProperty(value = "data", required = true) UploadFileData data,
+        @JsonProperty(value = "filename") String filename,
+        @JsonProperty(value = "mediaType", required = true) String mediaType,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+        this.abort = abort;
+        this.data = data;
+        this.filename = filename;
+        this.mediaType = mediaType;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public HandleIdInput getAbort() { return abort; }
+    public UploadFileData getData() { return data; }
+    public String getFilename() { return filename; }
+    public String getMediaType() { return mediaType; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private HandleIdInput abort;
+        private UploadFileData data;
+        private String filename;
+        private String mediaType;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+
+        public Builder abort(HandleIdInput value) {
+            this.abort = value;
+            return this;
         }
-        public Builder abort(HandleIdInput value) { json.set("abort", WireJson.tree(value)); return this; }
-        public Builder data(UploadFileData value) { json.set("data", WireJson.tree(value)); return this; }
-        public Builder filename(String value) { json.set("filename", WireJson.tree(value)); return this; }
-        public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public UploadFileParams build() { return new UploadFileParams(json); }
+
+        public Builder data(UploadFileData value) {
+            this.data = value;
+            return this;
+        }
+
+        public Builder filename(String value) {
+            this.filename = value;
+            return this;
+        }
+
+        public Builder mediaType(String value) {
+            this.mediaType = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public UploadFileParams build() { return new UploadFileParams(abort, data, filename, mediaType, providerOptions); }
     }
 }
-

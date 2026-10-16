@@ -4,20 +4,14 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum OperationState {
-    RUNNING("running"),
-    INPUT_CLOSED("inputClosed"),
-    TERMINAL("terminal");
-    private final String value;
-    OperationState(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static OperationState fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (OperationState item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid OperationState: " + value);
-    }
+    @JsonProperty("running")
+    RUNNING,
+    @JsonProperty("inputClosed")
+    INPUT_CLOSED,
+    @JsonProperty("terminal")
+    TERMINAL
 }

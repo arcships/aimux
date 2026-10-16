@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RecorderExport extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RecorderExport {
+    @JsonProperty("jsonl")
     private final String jsonl;
-    private RecorderExport(JsonNode json) {
-        WireJson.object(json, "RecorderExport", false, "jsonl");
-        WireJson.required(json, "jsonl");
-        this.jsonl = WireJson.string(json.get("jsonl"));
+
+    @JsonCreator
+    public RecorderExport(
+        @JsonProperty(value = "jsonl", required = true) String jsonl) {
+        this.jsonl = jsonl;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RecorderExport fromJson(JsonNode json) { return new RecorderExport(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getJsonl() { return jsonl == null ? null : jsonl; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("jsonl", WireJson.tree(jsonl));
-        return json;
-    }
+    public String getJsonl() { return jsonl; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String jsonl;
+
+        public Builder jsonl(String value) {
+            this.jsonl = value;
+            return this;
         }
-        public Builder jsonl(String value) { json.set("jsonl", WireJson.tree(value)); return this; }
-        public RecorderExport build() { return new RecorderExport(json); }
+
+        public RecorderExport build() { return new RecorderExport(jsonl); }
     }
 }
-

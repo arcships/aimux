@@ -4,40 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionFunction extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionFunction {
+    @JsonProperty("arguments")
     private final String arguments;
+    @JsonProperty("name")
     private final String name;
-    private ChatCompletionFunction(JsonNode json) {
-        WireJson.object(json, "ChatCompletionFunction", false, "arguments", "name");
-        WireJson.required(json, "arguments");
-        this.arguments = WireJson.string(json.get("arguments"));
-        WireJson.required(json, "name");
-        this.name = WireJson.string(json.get("name"));
+
+    @JsonCreator
+    public ChatCompletionFunction(
+        @JsonProperty(value = "arguments", required = true) String arguments,
+        @JsonProperty(value = "name", required = true) String name) {
+        this.arguments = arguments;
+        this.name = name;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionFunction fromJson(JsonNode json) { return new ChatCompletionFunction(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getArguments() { return arguments == null ? null : arguments; }
-    public String getName() { return name == null ? null : name; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("arguments", WireJson.tree(arguments));
-        json.set("name", WireJson.tree(name));
-        return json;
-    }
+    public String getArguments() { return arguments; }
+    public String getName() { return name; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String arguments;
+        private String name;
+
+        public Builder arguments(String value) {
+            this.arguments = value;
+            return this;
         }
-        public Builder arguments(String value) { json.set("arguments", WireJson.tree(value)); return this; }
-        public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-        public ChatCompletionFunction build() { return new ChatCompletionFunction(json); }
+
+        public Builder name(String value) {
+            this.name = value;
+            return this;
+        }
+
+        public ChatCompletionFunction build() { return new ChatCompletionFunction(arguments, name); }
     }
 }
-

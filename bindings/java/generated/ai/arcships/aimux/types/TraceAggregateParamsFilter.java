@@ -4,59 +4,69 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Query filter (RFC-0015 §5.3).
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TraceAggregateParamsFilter extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TraceAggregateParamsFilter {
+    @JsonProperty("model")
     private final String model;
-    private final boolean hasModel;
+    @JsonProperty("provider")
     private final String provider;
-    private final boolean hasProvider;
+    @JsonProperty("sessionId")
     private final String sessionId;
-    private final boolean hasSessionId;
+    @JsonProperty("sinceUnixMs")
     private final Long sinceUnixMs;
-    private final boolean hasSinceUnixMs;
-    private TraceAggregateParamsFilter(JsonNode json) {
-        WireJson.object(json, "TraceAggregateParamsFilter", true, "model", "provider", "sessionId", "sinceUnixMs");
-        this.hasModel = json.has("model");
-        this.model = WireJson.isNull(json.get("model")) ? null : (WireJson.isNull(json.get("model")) ? null : WireJson.string(json.get("model")));
-        this.hasProvider = json.has("provider");
-        this.provider = WireJson.isNull(json.get("provider")) ? null : (WireJson.isNull(json.get("provider")) ? null : WireJson.string(json.get("provider")));
-        this.hasSessionId = json.has("sessionId");
-        this.sessionId = WireJson.isNull(json.get("sessionId")) ? null : (WireJson.isNull(json.get("sessionId")) ? null : WireJson.string(json.get("sessionId")));
-        this.hasSinceUnixMs = json.has("sinceUnixMs");
-        this.sinceUnixMs = WireJson.isNull(json.get("sinceUnixMs")) ? null : (WireJson.isNull(json.get("sinceUnixMs")) ? null : WireJson.integer(json.get("sinceUnixMs"), false, 64).longValue());
+
+    @JsonCreator
+    public TraceAggregateParamsFilter(
+        @JsonProperty(value = "model") String model,
+        @JsonProperty(value = "provider") String provider,
+        @JsonProperty(value = "sessionId") String sessionId,
+        @JsonProperty(value = "sinceUnixMs") Long sinceUnixMs) {
+        this.model = model;
+        this.provider = provider;
+        this.sessionId = sessionId;
+        this.sinceUnixMs = sinceUnixMs;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TraceAggregateParamsFilter fromJson(JsonNode json) { return new TraceAggregateParamsFilter(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getModel() { return model == null ? null : (model == null ? null : model); }
-    public String getProvider() { return provider == null ? null : (provider == null ? null : provider); }
-    public String getSessionId() { return sessionId == null ? null : (sessionId == null ? null : sessionId); }
-    public Long getSinceUnixMs() { return sinceUnixMs == null ? null : (sinceUnixMs == null ? null : sinceUnixMs); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasModel) json.set("model", WireJson.tree(model));
-        if (hasProvider) json.set("provider", WireJson.tree(provider));
-        if (hasSessionId) json.set("sessionId", WireJson.tree(sessionId));
-        if (hasSinceUnixMs) json.set("sinceUnixMs", WireJson.tree(sinceUnixMs));
-        return json;
-    }
+    public String getModel() { return model; }
+    public String getProvider() { return provider; }
+    public String getSessionId() { return sessionId; }
+    public Long getSinceUnixMs() { return sinceUnixMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String model;
+        private String provider;
+        private String sessionId;
+        private Long sinceUnixMs;
+
+        public Builder model(String value) {
+            this.model = value;
+            return this;
         }
-        public Builder model(String value) { json.set("model", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder sessionId(String value) { json.set("sessionId", WireJson.tree(value)); return this; }
-        public Builder sinceUnixMs(Long value) { json.set("sinceUnixMs", WireJson.tree(value)); return this; }
-        public TraceAggregateParamsFilter build() { return new TraceAggregateParamsFilter(json); }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder sessionId(String value) {
+            this.sessionId = value;
+            return this;
+        }
+
+        public Builder sinceUnixMs(Long value) {
+            this.sinceUnixMs = value;
+            return this;
+        }
+
+        public TraceAggregateParamsFilter build() { return new TraceAggregateParamsFilter(model, provider, sessionId, sinceUnixMs); }
     }
 }
-

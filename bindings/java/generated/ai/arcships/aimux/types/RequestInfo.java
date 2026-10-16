@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,35 +13,39 @@ import java.util.*;
  * Aligned with the `request?` object that appears on some V4 model results.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RequestInfo extends WireValue {
-    private final JsonNode body;
-    private final boolean hasBody;
-    private RequestInfo(JsonNode json) {
-        WireJson.object(json, "RequestInfo", false, "body");
-        this.hasBody = json.has("body");
-        this.body = WireJson.isNull(json.get("body")) ? null : WireJson.json(json.get("body"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RequestInfo fromJson(JsonNode json) { return new RequestInfo(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RequestInfo {
     /**
      * The request body that was sent (opaque JSON).
      */
-    public JsonNode getBody() { return body == null ? null : WireJson.json(WireJson.tree(body)); }
-    public boolean hasBody() { return hasBody; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasBody) json.set("body", WireJson.tree(body));
-        return json;
+    @JsonProperty("body")
+    @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+    private final FieldPresence<JsonNode> body;
+
+    @JsonCreator
+    public RequestInfo(
+        @JsonProperty(value = "body") FieldPresence<JsonNode> body) {
+        this.body = body == null ? FieldPresence.absent() : body;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public JsonNode getBody() { return body.getValue() == null ? null : body.getValue().deepCopy(); }
+    public boolean hasBody() { return body.isPresent(); }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FieldPresence<JsonNode> body = FieldPresence.absent();
+
+        public Builder body(JsonNode value) {
+            this.body = FieldPresence.of(value == null ? null : value.deepCopy());
+            return this;
         }
-        public Builder body(JsonNode value) { json.set("body", WireJson.tree(value)); return this; }
-        public Builder omitBody() { json.remove("body"); return this; }
-        public RequestInfo build() { return new RequestInfo(json); }
+
+        public Builder omitBody() {
+            this.body = FieldPresence.absent();
+            return this;
+        }
+
+        public RequestInfo build() { return new RequestInfo(body); }
     }
 }
-

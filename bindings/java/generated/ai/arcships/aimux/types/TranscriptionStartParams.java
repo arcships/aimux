@@ -4,70 +4,88 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TranscriptionStartParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TranscriptionStartParams {
+    @JsonProperty("abort")
     private final HandleIdInput abort;
-    private final boolean hasAbort;
+    @JsonProperty("headers")
     private final Map<String, String> headers;
-    private final boolean hasHeaders;
+    @JsonProperty("includeRawChunks")
     private final Boolean includeRawChunks;
-    private final boolean hasIncludeRawChunks;
+    @JsonProperty("inputAudioFormat")
     private final InputAudioFormat inputAudioFormat;
-    private final boolean hasInputAudioFormat;
+    @JsonProperty("providerOptions")
     private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
+    @JsonProperty("timeout")
     private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private TranscriptionStartParams(JsonNode json) {
-        WireJson.object(json, "TranscriptionStartParams", true, "abort", "headers", "includeRawChunks", "inputAudioFormat", "providerOptions", "timeout");
-        this.hasAbort = json.has("abort");
-        this.abort = WireJson.isNull(json.get("abort")) ? null : (WireJson.isNull(json.get("abort")) ? null : HandleIdInput.fromJson(json.get("abort")));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasIncludeRawChunks = json.has("includeRawChunks");
-        this.includeRawChunks = WireJson.isNull(json.get("includeRawChunks")) ? null : WireJson.bool(json.get("includeRawChunks"));
-        this.hasInputAudioFormat = json.has("inputAudioFormat");
-        this.inputAudioFormat = WireJson.isNull(json.get("inputAudioFormat")) ? null : (WireJson.isNull(json.get("inputAudioFormat")) ? null : InputAudioFormat.fromJson(json.get("inputAudioFormat")));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
+
+    @JsonCreator
+    public TranscriptionStartParams(
+        @JsonProperty(value = "abort") HandleIdInput abort,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "includeRawChunks") Boolean includeRawChunks,
+        @JsonProperty(value = "inputAudioFormat") InputAudioFormat inputAudioFormat,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout) {
+        this.abort = abort;
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.includeRawChunks = includeRawChunks;
+        this.inputAudioFormat = inputAudioFormat;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.timeout = timeout;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TranscriptionStartParams fromJson(JsonNode json) { return new TranscriptionStartParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public HandleIdInput getAbort() { return abort == null ? null : (abort == null ? null : abort); }
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
-    public Boolean getIncludeRawChunks() { return includeRawChunks == null ? null : includeRawChunks; }
-    public InputAudioFormat getInputAudioFormat() { return inputAudioFormat == null ? null : (inputAudioFormat == null ? null : inputAudioFormat); }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAbort) json.set("abort", WireJson.tree(abort));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasIncludeRawChunks) json.set("includeRawChunks", WireJson.tree(includeRawChunks));
-        if (hasInputAudioFormat) json.set("inputAudioFormat", WireJson.tree(inputAudioFormat));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        return json;
-    }
+    public HandleIdInput getAbort() { return abort; }
+    public Map<String, String> getHeaders() { return headers; }
+    public Boolean getIncludeRawChunks() { return includeRawChunks; }
+    public InputAudioFormat getInputAudioFormat() { return inputAudioFormat; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private HandleIdInput abort;
+        private Map<String, String> headers;
+        private Boolean includeRawChunks;
+        private InputAudioFormat inputAudioFormat;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private TimeoutConfiguration timeout;
+
+        public Builder abort(HandleIdInput value) {
+            this.abort = value;
+            return this;
         }
-        public Builder abort(HandleIdInput value) { json.set("abort", WireJson.tree(value)); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder includeRawChunks(Boolean value) { json.set("includeRawChunks", WireJson.tree(value)); return this; }
-        public Builder inputAudioFormat(InputAudioFormat value) { json.set("inputAudioFormat", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public TranscriptionStartParams build() { return new TranscriptionStartParams(json); }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder includeRawChunks(Boolean value) {
+            this.includeRawChunks = value;
+            return this;
+        }
+
+        public Builder inputAudioFormat(InputAudioFormat value) {
+            this.inputAudioFormat = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public TranscriptionStartParams build() { return new TranscriptionStartParams(abort, headers, includeRawChunks, inputAudioFormat, providerOptions, timeout); }
     }
 }
-

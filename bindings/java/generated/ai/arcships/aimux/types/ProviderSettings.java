@@ -4,105 +4,143 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderSettings extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderSettings {
+    @JsonProperty("apiKey")
     private final String apiKey;
-    private final boolean hasApiKey;
+    @JsonProperty("baseUrl")
     private final String baseUrl;
-    private final boolean hasBaseUrl;
+    @JsonProperty("credentialResolver")
     private final HandleIdInput credentialResolver;
-    private final boolean hasCredentialResolver;
+    @JsonProperty("endpoint")
     private final String endpoint;
-    private final boolean hasEndpoint;
+    @JsonProperty("fetch")
     private final HandleIdInput fetch;
-    private final boolean hasFetch;
+    @JsonProperty("headers")
     private final Map<String, String> headers;
-    private final boolean hasHeaders;
+    @JsonProperty("organization")
     private final String organization;
-    private final boolean hasOrganization;
+    @JsonProperty("params")
     private final Map<String, String> params;
-    private final boolean hasParams;
+    @JsonProperty("probabilitySource")
     private final String probabilitySource;
-    private final boolean hasProbabilitySource;
+    @JsonProperty("project")
     private final String project;
-    private final boolean hasProject;
+    @JsonProperty("webSocket")
     private final HandleIdInput webSocket;
-    private final boolean hasWebSocket;
-    private ProviderSettings(JsonNode json) {
-        WireJson.object(json, "ProviderSettings", true, "apiKey", "baseUrl", "credentialResolver", "endpoint", "fetch", "headers", "organization", "params", "probabilitySource", "project", "webSocket");
-        this.hasApiKey = json.has("apiKey");
-        this.apiKey = WireJson.isNull(json.get("apiKey")) ? null : (WireJson.isNull(json.get("apiKey")) ? null : WireJson.string(json.get("apiKey")));
-        this.hasBaseUrl = json.has("baseUrl");
-        this.baseUrl = WireJson.isNull(json.get("baseUrl")) ? null : (WireJson.isNull(json.get("baseUrl")) ? null : WireJson.string(json.get("baseUrl")));
-        this.hasCredentialResolver = json.has("credentialResolver");
-        this.credentialResolver = WireJson.isNull(json.get("credentialResolver")) ? null : (WireJson.isNull(json.get("credentialResolver")) ? null : HandleIdInput.fromJson(json.get("credentialResolver")));
-        this.hasEndpoint = json.has("endpoint");
-        this.endpoint = WireJson.isNull(json.get("endpoint")) ? null : (WireJson.isNull(json.get("endpoint")) ? null : WireJson.string(json.get("endpoint")));
-        this.hasFetch = json.has("fetch");
-        this.fetch = WireJson.isNull(json.get("fetch")) ? null : (WireJson.isNull(json.get("fetch")) ? null : HandleIdInput.fromJson(json.get("fetch")));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> (WireJson.isNull(item0) ? null : WireJson.string(item0)));
-        this.hasOrganization = json.has("organization");
-        this.organization = WireJson.isNull(json.get("organization")) ? null : (WireJson.isNull(json.get("organization")) ? null : WireJson.string(json.get("organization")));
-        this.hasParams = json.has("params");
-        this.params = WireJson.isNull(json.get("params")) ? null : WireJson.map(json.get("params"), item0 -> WireJson.string(item0));
-        this.hasProbabilitySource = json.has("probabilitySource");
-        this.probabilitySource = WireJson.isNull(json.get("probabilitySource")) ? null : (WireJson.isNull(json.get("probabilitySource")) ? null : WireJson.string(json.get("probabilitySource")));
-        this.hasProject = json.has("project");
-        this.project = WireJson.isNull(json.get("project")) ? null : (WireJson.isNull(json.get("project")) ? null : WireJson.string(json.get("project")));
-        this.hasWebSocket = json.has("webSocket");
-        this.webSocket = WireJson.isNull(json.get("webSocket")) ? null : (WireJson.isNull(json.get("webSocket")) ? null : HandleIdInput.fromJson(json.get("webSocket")));
+
+    @JsonCreator
+    public ProviderSettings(
+        @JsonProperty(value = "apiKey") String apiKey,
+        @JsonProperty(value = "baseUrl") String baseUrl,
+        @JsonProperty(value = "credentialResolver") HandleIdInput credentialResolver,
+        @JsonProperty(value = "endpoint") String endpoint,
+        @JsonProperty(value = "fetch") HandleIdInput fetch,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "organization") String organization,
+        @JsonProperty(value = "params") Map<String, String> params,
+        @JsonProperty(value = "probabilitySource") String probabilitySource,
+        @JsonProperty(value = "project") String project,
+        @JsonProperty(value = "webSocket") HandleIdInput webSocket) {
+        this.apiKey = apiKey;
+        this.baseUrl = baseUrl;
+        this.credentialResolver = credentialResolver;
+        this.endpoint = endpoint;
+        this.fetch = fetch;
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.organization = organization;
+        this.params = params == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(params));
+        this.probabilitySource = probabilitySource;
+        this.project = project;
+        this.webSocket = webSocket;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderSettings fromJson(JsonNode json) { return new ProviderSettings(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getApiKey() { return apiKey == null ? null : (apiKey == null ? null : apiKey); }
-    public String getBaseUrl() { return baseUrl == null ? null : (baseUrl == null ? null : baseUrl); }
-    public HandleIdInput getCredentialResolver() { return credentialResolver == null ? null : (credentialResolver == null ? null : credentialResolver); }
-    public String getEndpoint() { return endpoint == null ? null : (endpoint == null ? null : endpoint); }
-    public HandleIdInput getFetch() { return fetch == null ? null : (fetch == null ? null : fetch); }
-    public Map<String, String> getHeaders() { return headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> (WireJson.isNull(item0) ? null : WireJson.string(item0))); }
-    public String getOrganization() { return organization == null ? null : (organization == null ? null : organization); }
-    public Map<String, String> getParams() { return params == null ? null : WireJson.map(WireJson.tree(params), item0 -> WireJson.string(item0)); }
-    public String getProbabilitySource() { return probabilitySource == null ? null : (probabilitySource == null ? null : probabilitySource); }
-    public String getProject() { return project == null ? null : (project == null ? null : project); }
-    public HandleIdInput getWebSocket() { return webSocket == null ? null : (webSocket == null ? null : webSocket); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasApiKey) json.set("apiKey", WireJson.tree(apiKey));
-        if (hasBaseUrl) json.set("baseUrl", WireJson.tree(baseUrl));
-        if (hasCredentialResolver) json.set("credentialResolver", WireJson.tree(credentialResolver));
-        if (hasEndpoint) json.set("endpoint", WireJson.tree(endpoint));
-        if (hasFetch) json.set("fetch", WireJson.tree(fetch));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasOrganization) json.set("organization", WireJson.tree(organization));
-        if (hasParams) json.set("params", WireJson.tree(params));
-        if (hasProbabilitySource) json.set("probabilitySource", WireJson.tree(probabilitySource));
-        if (hasProject) json.set("project", WireJson.tree(project));
-        if (hasWebSocket) json.set("webSocket", WireJson.tree(webSocket));
-        return json;
-    }
+    public String getApiKey() { return apiKey; }
+    public String getBaseUrl() { return baseUrl; }
+    public HandleIdInput getCredentialResolver() { return credentialResolver; }
+    public String getEndpoint() { return endpoint; }
+    public HandleIdInput getFetch() { return fetch; }
+    public Map<String, String> getHeaders() { return headers; }
+    public String getOrganization() { return organization; }
+    public Map<String, String> getParams() { return params; }
+    public String getProbabilitySource() { return probabilitySource; }
+    public String getProject() { return project; }
+    public HandleIdInput getWebSocket() { return webSocket; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String apiKey;
+        private String baseUrl;
+        private HandleIdInput credentialResolver;
+        private String endpoint;
+        private HandleIdInput fetch;
+        private Map<String, String> headers;
+        private String organization;
+        private Map<String, String> params;
+        private String probabilitySource;
+        private String project;
+        private HandleIdInput webSocket;
+
+        public Builder apiKey(String value) {
+            this.apiKey = value;
+            return this;
         }
-        public Builder apiKey(String value) { json.set("apiKey", WireJson.tree(value)); return this; }
-        public Builder baseUrl(String value) { json.set("baseUrl", WireJson.tree(value)); return this; }
-        public Builder credentialResolver(HandleIdInput value) { json.set("credentialResolver", WireJson.tree(value)); return this; }
-        public Builder endpoint(String value) { json.set("endpoint", WireJson.tree(value)); return this; }
-        public Builder fetch(HandleIdInput value) { json.set("fetch", WireJson.tree(value)); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder organization(String value) { json.set("organization", WireJson.tree(value)); return this; }
-        public Builder params(Map<String, String> value) { json.set("params", WireJson.tree(value)); return this; }
-        public Builder probabilitySource(String value) { json.set("probabilitySource", WireJson.tree(value)); return this; }
-        public Builder project(String value) { json.set("project", WireJson.tree(value)); return this; }
-        public Builder webSocket(HandleIdInput value) { json.set("webSocket", WireJson.tree(value)); return this; }
-        public ProviderSettings build() { return new ProviderSettings(json); }
+
+        public Builder baseUrl(String value) {
+            this.baseUrl = value;
+            return this;
+        }
+
+        public Builder credentialResolver(HandleIdInput value) {
+            this.credentialResolver = value;
+            return this;
+        }
+
+        public Builder endpoint(String value) {
+            this.endpoint = value;
+            return this;
+        }
+
+        public Builder fetch(HandleIdInput value) {
+            this.fetch = value;
+            return this;
+        }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder organization(String value) {
+            this.organization = value;
+            return this;
+        }
+
+        public Builder params(Map<String, String> value) {
+            this.params = value;
+            return this;
+        }
+
+        public Builder probabilitySource(String value) {
+            this.probabilitySource = value;
+            return this;
+        }
+
+        public Builder project(String value) {
+            this.project = value;
+            return this;
+        }
+
+        public Builder webSocket(HandleIdInput value) {
+            this.webSocket = value;
+            return this;
+        }
+
+        public ProviderSettings build() { return new ProviderSettings(apiKey, baseUrl, credentialResolver, endpoint, fetch, headers, organization, params, probabilitySource, project, webSocket); }
     }
 }
-

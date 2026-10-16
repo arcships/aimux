@@ -4,86 +4,79 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = Strategy.Rule.class, name = "rule"),
-    @JsonSubTypes.Type(value = Strategy.Weighted.class, name = "weighted"),
+    @JsonSubTypes.Type(value = Strategy.Weighted.class, name = "weighted")
 })
-public abstract class Strategy extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class Strategy {
     private Strategy() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public List<BigDecimal> getWeights() { return null; }
     public final boolean isRule() { return "rule".equals(getType()); }
     public final boolean isWeighted() { return "weighted".equals(getType()); }
-    public static Strategy fromJson(JsonNode json) {
-        WireJson.object(json, "Strategy", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "rule":
-                return Rule.fromJson(json);
-            case "weighted":
-                return Weighted.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown Strategy tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Rule extends Strategy {
-        private Rule(JsonNode json) {
-            WireJson.object(json, "Rule", true, "type");
-            if (!"rule".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Rule tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Rule fromJson(JsonNode json) { return new Rule(json); }
+
+        @JsonCreator
+        public Rule() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "rule"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "rule");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "rule"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "rule");
-            }
-            public Rule build() { return new Rule(json); }
+
+            public Rule build() { return new Rule(); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Weighted extends Strategy {
+        @JsonProperty("weights")
         private final List<BigDecimal> weights;
-        private Weighted(JsonNode json) {
-            WireJson.object(json, "Weighted", true, "weights", "type");
-            if (!"weighted".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Weighted tag");
-            WireJson.required(json, "weights");
-            this.weights = WireJson.array(json.get("weights"), item0 -> WireJson.number(item0));
+
+        @JsonCreator
+        public Weighted(
+            @JsonProperty(value = "weights", required = true) List<BigDecimal> weights) {
+            this.weights = weights == null ? null : Collections.unmodifiableList(new ArrayList<>(weights));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Weighted fromJson(JsonNode json) { return new Weighted(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "weighted"; }
-        public List<BigDecimal> getWeights() { return weights == null ? null : WireJson.array(WireJson.tree(weights), item0 -> WireJson.number(item0)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "weighted");
-            json.set("weights", WireJson.tree(weights));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "weighted"; }
+        public List<BigDecimal> getWeights() { return weights; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "weighted");
+            private List<BigDecimal> weights;
+
+            public Builder weights(List<BigDecimal> value) {
+                this.weights = value;
+                return this;
             }
-            public Builder weights(List<BigDecimal> value) { json.set("weights", WireJson.tree(value)); return this; }
-            public Weighted build() { return new Weighted(json); }
+
+            public Weighted build() { return new Weighted(weights); }
         }
     }
-
 }

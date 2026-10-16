@@ -4,52 +4,66 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ModelRef extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ModelRef {
+    @JsonProperty("key")
     private final String key;
+    @JsonProperty("method")
     private final ModelMethod method;
+    @JsonProperty("modelId")
     private final String modelId;
+    @JsonProperty("namespace")
     private final String namespace;
-    private ModelRef(JsonNode json) {
-        WireJson.object(json, "ModelRef", true, "key", "method", "modelId", "namespace");
-        WireJson.required(json, "key");
-        this.key = WireJson.string(json.get("key"));
-        WireJson.required(json, "method");
-        this.method = ModelMethod.fromJson(json.get("method"));
-        WireJson.required(json, "modelId");
-        this.modelId = WireJson.string(json.get("modelId"));
-        WireJson.required(json, "namespace");
-        this.namespace = WireJson.string(json.get("namespace"));
+
+    @JsonCreator
+    public ModelRef(
+        @JsonProperty(value = "key", required = true) String key,
+        @JsonProperty(value = "method", required = true) ModelMethod method,
+        @JsonProperty(value = "modelId", required = true) String modelId,
+        @JsonProperty(value = "namespace", required = true) String namespace) {
+        this.key = key;
+        this.method = method;
+        this.modelId = modelId;
+        this.namespace = namespace;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ModelRef fromJson(JsonNode json) { return new ModelRef(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getKey() { return key == null ? null : key; }
-    public ModelMethod getMethod() { return method == null ? null : method; }
-    public String getModelId() { return modelId == null ? null : modelId; }
-    public String getNamespace() { return namespace == null ? null : namespace; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("key", WireJson.tree(key));
-        json.set("method", WireJson.tree(method));
-        json.set("modelId", WireJson.tree(modelId));
-        json.set("namespace", WireJson.tree(namespace));
-        return json;
-    }
+    public String getKey() { return key; }
+    public ModelMethod getMethod() { return method; }
+    public String getModelId() { return modelId; }
+    public String getNamespace() { return namespace; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String key;
+        private ModelMethod method;
+        private String modelId;
+        private String namespace;
+
+        public Builder key(String value) {
+            this.key = value;
+            return this;
         }
-        public Builder key(String value) { json.set("key", WireJson.tree(value)); return this; }
-        public Builder method(ModelMethod value) { json.set("method", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder namespace(String value) { json.set("namespace", WireJson.tree(value)); return this; }
-        public ModelRef build() { return new ModelRef(json); }
+
+        public Builder method(ModelMethod value) {
+            this.method = value;
+            return this;
+        }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder namespace(String value) {
+            this.namespace = value;
+            return this;
+        }
+
+        public ModelRef build() { return new ModelRef(key, method, modelId, namespace); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,59 +12,84 @@ import java.util.*;
  * (`OutputChunkTimingStats`, `step-result.ts:39-57`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OutputChunkTimingStats extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OutputChunkTimingStats {
+    @JsonProperty("avg")
     private final BigDecimal avg;
+    @JsonProperty("max")
     private final BigDecimal max;
+    @JsonProperty("median")
     private final BigDecimal median;
+    @JsonProperty("min")
     private final BigDecimal min;
+    @JsonProperty("p10")
     private final BigDecimal p10;
+    @JsonProperty("p90")
     private final BigDecimal p90;
-    private OutputChunkTimingStats(JsonNode json) {
-        WireJson.object(json, "OutputChunkTimingStats", false, "avg", "max", "median", "min", "p10", "p90");
-        WireJson.required(json, "avg");
-        this.avg = WireJson.number(json.get("avg"));
-        WireJson.required(json, "max");
-        this.max = WireJson.number(json.get("max"));
-        WireJson.required(json, "median");
-        this.median = WireJson.number(json.get("median"));
-        WireJson.required(json, "min");
-        this.min = WireJson.number(json.get("min"));
-        WireJson.required(json, "p10");
-        this.p10 = WireJson.number(json.get("p10"));
-        WireJson.required(json, "p90");
-        this.p90 = WireJson.number(json.get("p90"));
+
+    @JsonCreator
+    public OutputChunkTimingStats(
+        @JsonProperty(value = "avg", required = true) BigDecimal avg,
+        @JsonProperty(value = "max", required = true) BigDecimal max,
+        @JsonProperty(value = "median", required = true) BigDecimal median,
+        @JsonProperty(value = "min", required = true) BigDecimal min,
+        @JsonProperty(value = "p10", required = true) BigDecimal p10,
+        @JsonProperty(value = "p90", required = true) BigDecimal p90) {
+        this.avg = avg;
+        this.max = max;
+        this.median = median;
+        this.min = min;
+        this.p10 = p10;
+        this.p90 = p90;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OutputChunkTimingStats fromJson(JsonNode json) { return new OutputChunkTimingStats(json); }
+
     public static Builder builder() { return new Builder(); }
-    public BigDecimal getAvg() { return avg == null ? null : avg; }
-    public BigDecimal getMax() { return max == null ? null : max; }
-    public BigDecimal getMedian() { return median == null ? null : median; }
-    public BigDecimal getMin() { return min == null ? null : min; }
-    public BigDecimal getP10() { return p10 == null ? null : p10; }
-    public BigDecimal getP90() { return p90 == null ? null : p90; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("avg", WireJson.tree(avg));
-        json.set("max", WireJson.tree(max));
-        json.set("median", WireJson.tree(median));
-        json.set("min", WireJson.tree(min));
-        json.set("p10", WireJson.tree(p10));
-        json.set("p90", WireJson.tree(p90));
-        return json;
-    }
+    public BigDecimal getAvg() { return avg; }
+    public BigDecimal getMax() { return max; }
+    public BigDecimal getMedian() { return median; }
+    public BigDecimal getMin() { return min; }
+    public BigDecimal getP10() { return p10; }
+    public BigDecimal getP90() { return p90; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private BigDecimal avg;
+        private BigDecimal max;
+        private BigDecimal median;
+        private BigDecimal min;
+        private BigDecimal p10;
+        private BigDecimal p90;
+
+        public Builder avg(BigDecimal value) {
+            this.avg = value;
+            return this;
         }
-        public Builder avg(BigDecimal value) { json.set("avg", WireJson.tree(value)); return this; }
-        public Builder max(BigDecimal value) { json.set("max", WireJson.tree(value)); return this; }
-        public Builder median(BigDecimal value) { json.set("median", WireJson.tree(value)); return this; }
-        public Builder min(BigDecimal value) { json.set("min", WireJson.tree(value)); return this; }
-        public Builder p10(BigDecimal value) { json.set("p10", WireJson.tree(value)); return this; }
-        public Builder p90(BigDecimal value) { json.set("p90", WireJson.tree(value)); return this; }
-        public OutputChunkTimingStats build() { return new OutputChunkTimingStats(json); }
+
+        public Builder max(BigDecimal value) {
+            this.max = value;
+            return this;
+        }
+
+        public Builder median(BigDecimal value) {
+            this.median = value;
+            return this;
+        }
+
+        public Builder min(BigDecimal value) {
+            this.min = value;
+            return this;
+        }
+
+        public Builder p10(BigDecimal value) {
+            this.p10 = value;
+            return this;
+        }
+
+        public Builder p90(BigDecimal value) {
+            this.p90 = value;
+            return this;
+        }
+
+        public OutputChunkTimingStats build() { return new OutputChunkTimingStats(avg, max, median, min, p10, p90); }
     }
 }
-

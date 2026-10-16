@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,52 +12,62 @@ import java.util.*;
  * in Recording (RFC-0023) / TraceRecord (RFC-0015)).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SessionCall extends WireValue {
-    private final String callId;
-    private final String recordedAt;
-    private final Long step;
-    private SessionCall(JsonNode json) {
-        WireJson.object(json, "SessionCall", false, "callId", "recordedAt", "step");
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        WireJson.required(json, "recordedAt");
-        this.recordedAt = WireJson.string(json.get("recordedAt"));
-        WireJson.required(json, "step");
-        this.step = WireJson.integer(json.get("step"), true, 32).longValue();
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SessionCall fromJson(JsonNode json) { return new SessionCall(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SessionCall {
     /**
      * Call-level unique id. This is the association key for the future
      * Recording / TraceRecord `call_id` (RFC-0015/0023): once those land,
      * this field carries their value.
      */
-    public String getCallId() { return callId == null ? null : callId; }
+    @JsonProperty("callId")
+    private final String callId;
     /**
      * When the call was recorded (RFC 3339 UTC, millisecond precision).
      */
-    public String getRecordedAt() { return recordedAt == null ? null : recordedAt; }
+    @JsonProperty("recordedAt")
+    private final String recordedAt;
     /**
      * Step within the session (0-based).
      */
-    public Long getStep() { return step == null ? null : step; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("callId", WireJson.tree(callId));
-        json.set("recordedAt", WireJson.tree(recordedAt));
-        json.set("step", WireJson.tree(step));
-        return json;
+    @JsonProperty("step")
+    private final Long step;
+
+    @JsonCreator
+    public SessionCall(
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "recordedAt", required = true) String recordedAt,
+        @JsonProperty(value = "step", required = true) Long step) {
+        this.callId = callId;
+        this.recordedAt = recordedAt;
+        this.step = step;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getCallId() { return callId; }
+    public String getRecordedAt() { return recordedAt; }
+    public Long getStep() { return step; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String callId;
+        private String recordedAt;
+        private Long step;
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
         }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder recordedAt(String value) { json.set("recordedAt", WireJson.tree(value)); return this; }
-        public Builder step(Long value) { json.set("step", WireJson.tree(value)); return this; }
-        public SessionCall build() { return new SessionCall(json); }
+
+        public Builder recordedAt(String value) {
+            this.recordedAt = value;
+            return this;
+        }
+
+        public Builder step(Long value) {
+            this.step = value;
+            return this;
+        }
+
+        public SessionCall build() { return new SessionCall(callId, recordedAt, step); }
     }
 }
-

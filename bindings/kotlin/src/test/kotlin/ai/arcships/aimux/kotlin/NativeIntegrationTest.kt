@@ -1,5 +1,7 @@
 package ai.arcships.aimux.kotlin
 
+import ai.arcships.aimux.types.DtoJson
+import com.fasterxml.jackson.databind.JsonNode
 import ai.arcships.aimux.Aimux
 import ai.arcships.aimux.AimuxException as JavaAimuxException
 import ai.arcships.aimux.KotlinInteropFixtures
@@ -85,7 +87,7 @@ class NativeIntegrationTest {
                         )
                         assertTrue(frames.single().isEnd)
                         assertEquals(Outcome.CANCELLED, frames.single().outcome)
-                        assertEquals(source.envelope, frames.single().error.toJson())
+                        assertEquals(source.envelope, DtoJson.MAPPER.valueToTree<JsonNode>(frames.single().error))
                     }
                 }
             }
@@ -156,7 +158,7 @@ class NativeIntegrationTest {
                 } catch (error: InvalidPromptError) {
                     assertTrue(values.last().isEnd)
                     assertEquals(Outcome.ERROR, values.last().outcome)
-                    assertEquals(error.envelope, values.last().error.toJson())
+                    assertEquals(error.envelope, DtoJson.MAPPER.valueToTree<JsonNode>(values.last().error))
                 }
                 val first = withTimeout(5000) {
                     aimuxFlow<StreamFrame>(1) { executor, consumer ->

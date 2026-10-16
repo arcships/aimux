@@ -4,110 +4,139 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A tool call requested by the model.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolCallInput extends WireValue {
-    private final Boolean dynamic;
-    private final boolean hasDynamic;
-    private final AiMuxErrorInput error;
-    private final boolean hasError;
-    private final JsonNode input;
-    private final Boolean invalid;
-    private final boolean hasInvalid;
-    private final Boolean providerExecuted;
-    private final boolean hasProviderExecuted;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final String toolCallId;
-    private final String toolName;
-    private ToolCallInput(JsonNode json) {
-        WireJson.object(json, "ToolCallInput", false, "dynamic", "error", "input", "invalid", "providerExecuted", "providerMetadata", "toolCallId", "toolName");
-        this.hasDynamic = json.has("dynamic");
-        this.dynamic = WireJson.isNull(json.get("dynamic")) ? null : (WireJson.isNull(json.get("dynamic")) ? null : WireJson.bool(json.get("dynamic")));
-        this.hasError = json.has("error");
-        this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : AiMuxErrorInput.fromJson(json.get("error")));
-        WireJson.required(json, "input");
-        this.input = WireJson.json(json.get("input"));
-        this.hasInvalid = json.has("invalid");
-        this.invalid = WireJson.isNull(json.get("invalid")) ? null : (WireJson.isNull(json.get("invalid")) ? null : WireJson.bool(json.get("invalid")));
-        this.hasProviderExecuted = json.has("providerExecuted");
-        this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "toolCallId");
-        this.toolCallId = WireJson.string(json.get("toolCallId"));
-        WireJson.required(json, "toolName");
-        this.toolName = WireJson.string(json.get("toolName"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolCallInput fromJson(JsonNode json) { return new ToolCallInput(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolCallInput {
     /**
      * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
      */
-    public Boolean getDynamic() { return dynamic == null ? null : (dynamic == null ? null : dynamic); }
+    @JsonProperty("dynamic")
+    private final Boolean dynamic;
     /**
      * Typed failure associated with an invalid tool call.
      */
-    public AiMuxErrorInput getError() { return error == null ? null : (error == null ? null : error); }
+    @JsonProperty("error")
+    private final AiMuxErrorInput error;
     /**
      * Parsed arguments, or the original string when `invalid` is true and the
      * provider input was not valid JSON.
      */
-    public JsonNode getInput() { return input == null ? null : WireJson.json(WireJson.tree(input)); }
+    @JsonProperty("input")
+    private final JsonNode input;
     /**
      * Set when lookup, JSON parsing, or schema validation still failed after
      * the optional repair attempt.
      */
-    public Boolean getInvalid() { return invalid == null ? null : (invalid == null ? null : invalid); }
+    @JsonProperty("invalid")
+    private final Boolean invalid;
     /**
      * Whether the tool call will be executed by the provider.
      */
-    public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
+    @JsonProperty("providerExecuted")
+    private final Boolean providerExecuted;
     /**
      * Additional provider-specific metadata associated with this call.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Provider-assigned call id.
      */
-    public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
+    @JsonProperty("toolCallId")
+    private final String toolCallId;
     /**
      * Tool name.
      */
-    public String getToolName() { return toolName == null ? null : toolName; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDynamic) json.set("dynamic", WireJson.tree(dynamic));
-        if (hasError) json.set("error", WireJson.tree(error));
-        json.set("input", WireJson.tree(input));
-        if (hasInvalid) json.set("invalid", WireJson.tree(invalid));
-        if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("toolCallId", WireJson.tree(toolCallId));
-        json.set("toolName", WireJson.tree(toolName));
-        return json;
+    @JsonProperty("toolName")
+    private final String toolName;
+
+    @JsonCreator
+    public ToolCallInput(
+        @JsonProperty(value = "dynamic") Boolean dynamic,
+        @JsonProperty(value = "error") AiMuxErrorInput error,
+        @JsonProperty(value = "input", required = true) JsonNode input,
+        @JsonProperty(value = "invalid") Boolean invalid,
+        @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+        @JsonProperty(value = "toolName", required = true) String toolName) {
+        this.dynamic = dynamic;
+        this.error = error;
+        this.input = input == null ? null : input.deepCopy();
+        this.invalid = invalid;
+        this.providerExecuted = providerExecuted;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.toolCallId = toolCallId;
+        this.toolName = toolName;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Boolean getDynamic() { return dynamic; }
+    public AiMuxErrorInput getError() { return error; }
+    public JsonNode getInput() { return input == null ? null : input.deepCopy(); }
+    public Boolean getInvalid() { return invalid; }
+    public Boolean getProviderExecuted() { return providerExecuted; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getToolCallId() { return toolCallId; }
+    public String getToolName() { return toolName; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean dynamic;
+        private AiMuxErrorInput error;
+        private JsonNode input;
+        private Boolean invalid;
+        private Boolean providerExecuted;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String toolCallId;
+        private String toolName;
+
+        public Builder dynamic(Boolean value) {
+            this.dynamic = value;
+            return this;
         }
-        public Builder dynamic(Boolean value) { json.set("dynamic", WireJson.tree(value)); return this; }
-        public Builder error(AiMuxErrorInput value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder input(JsonNode value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder invalid(Boolean value) { json.set("invalid", WireJson.tree(value)); return this; }
-        public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-        public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-        public ToolCallInput build() { return new ToolCallInput(json); }
+
+        public Builder error(AiMuxErrorInput value) {
+            this.error = value;
+            return this;
+        }
+
+        public Builder input(JsonNode value) {
+            this.input = value;
+            return this;
+        }
+
+        public Builder invalid(Boolean value) {
+            this.invalid = value;
+            return this;
+        }
+
+        public Builder providerExecuted(Boolean value) {
+            this.providerExecuted = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder toolCallId(String value) {
+            this.toolCallId = value;
+            return this;
+        }
+
+        public Builder toolName(String value) {
+            this.toolName = value;
+            return this;
+        }
+
+        public ToolCallInput build() { return new ToolCallInput(dynamic, error, input, invalid, providerExecuted, providerMetadata, toolCallId, toolName); }
     }
 }
-

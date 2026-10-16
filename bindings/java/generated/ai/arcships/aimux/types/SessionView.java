@@ -4,55 +4,64 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Aggregated view of one session (session_id → ordered calls).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SessionView extends WireValue {
-    private final List<SessionCall> calls;
-    private final String sessionId;
-    private final SessionSource source;
-    private SessionView(JsonNode json) {
-        WireJson.object(json, "SessionView", false, "calls", "sessionId", "source");
-        WireJson.required(json, "calls");
-        this.calls = WireJson.array(json.get("calls"), item0 -> SessionCall.fromJson(item0));
-        WireJson.required(json, "sessionId");
-        this.sessionId = WireJson.string(json.get("sessionId"));
-        WireJson.required(json, "source");
-        this.source = SessionSource.fromJson(json.get("source"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SessionView fromJson(JsonNode json) { return new SessionView(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SessionView {
     /**
      * Ordered calls (by step).
      */
-    public List<SessionCall> getCalls() { return calls == null ? null : WireJson.array(WireJson.tree(calls), item0 -> SessionCall.fromJson(item0)); }
-    public String getSessionId() { return sessionId == null ? null : sessionId; }
+    @JsonProperty("calls")
+    private final List<SessionCall> calls;
+    @JsonProperty("sessionId")
+    private final String sessionId;
     /**
      * Where the session id came from (first call's source).
      */
-    public SessionSource getSource() { return source == null ? null : source; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("calls", WireJson.tree(calls));
-        json.set("sessionId", WireJson.tree(sessionId));
-        json.set("source", WireJson.tree(source));
-        return json;
+    @JsonProperty("source")
+    private final SessionSource source;
+
+    @JsonCreator
+    public SessionView(
+        @JsonProperty(value = "calls", required = true) List<SessionCall> calls,
+        @JsonProperty(value = "sessionId", required = true) String sessionId,
+        @JsonProperty(value = "source", required = true) SessionSource source) {
+        this.calls = calls == null ? null : Collections.unmodifiableList(new ArrayList<>(calls));
+        this.sessionId = sessionId;
+        this.source = source;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public List<SessionCall> getCalls() { return calls; }
+    public String getSessionId() { return sessionId; }
+    public SessionSource getSource() { return source; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<SessionCall> calls;
+        private String sessionId;
+        private SessionSource source;
+
+        public Builder calls(List<SessionCall> value) {
+            this.calls = value;
+            return this;
         }
-        public Builder calls(List<SessionCall> value) { json.set("calls", WireJson.tree(value)); return this; }
-        public Builder sessionId(String value) { json.set("sessionId", WireJson.tree(value)); return this; }
-        public Builder source(SessionSource value) { json.set("source", WireJson.tree(value)); return this; }
-        public SessionView build() { return new SessionView(json); }
+
+        public Builder sessionId(String value) {
+            this.sessionId = value;
+            return this;
+        }
+
+        public Builder source(SessionSource value) {
+            this.source = value;
+            return this;
+        }
+
+        public SessionView build() { return new SessionView(calls, sessionId, source); }
     }
 }
-

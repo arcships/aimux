@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,70 +13,88 @@ import java.util.*;
  * Aligned with V4 `ImageModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ImageResult extends WireValue {
-    private final ImageOutputs images;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final ImageResponse response;
-    private final ImageUsage usage;
-    private final boolean hasUsage;
-    private final List<Warning> warnings;
-    private ImageResult(JsonNode json) {
-        WireJson.object(json, "ImageResult", false, "images", "providerMetadata", "response", "usage", "warnings");
-        WireJson.required(json, "images");
-        this.images = ImageOutputs.fromJson(json.get("images"));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "response");
-        this.response = ImageResponse.fromJson(json.get("response"));
-        this.hasUsage = json.has("usage");
-        this.usage = WireJson.isNull(json.get("usage")) ? null : (WireJson.isNull(json.get("usage")) ? null : ImageUsage.fromJson(json.get("usage")));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ImageResult fromJson(JsonNode json) { return new ImageResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ImageResult {
     /**
      * Generated images (base64 strings or binary data).
      */
-    public ImageOutputs getImages() { return images == null ? null : images; }
+    @JsonProperty("images")
+    private final ImageOutputs images;
     /**
      * Additional provider-specific metadata, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Response information for telemetry and debugging.
      */
-    public ImageResponse getResponse() { return response == null ? null : response; }
+    @JsonProperty("response")
+    private final ImageResponse response;
     /**
      * Optional token usage for the call (if the provider reports it).
      */
-    public ImageUsage getUsage() { return usage == null ? null : (usage == null ? null : usage); }
+    @JsonProperty("usage")
+    private final ImageUsage usage;
     /**
      * Warnings for the call, e.g. unsupported features.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("images", WireJson.tree(images));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("response", WireJson.tree(response));
-        if (hasUsage) json.set("usage", WireJson.tree(usage));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public ImageResult(
+        @JsonProperty(value = "images", required = true) ImageOutputs images,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "response", required = true) ImageResponse response,
+        @JsonProperty(value = "usage") ImageUsage usage,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.images = images;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.response = response;
+        this.usage = usage;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public ImageOutputs getImages() { return images; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public ImageResponse getResponse() { return response; }
+    public ImageUsage getUsage() { return usage; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private ImageOutputs images;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private ImageResponse response;
+        private ImageUsage usage;
+        private List<Warning> warnings;
+
+        public Builder images(ImageOutputs value) {
+            this.images = value;
+            return this;
         }
-        public Builder images(ImageOutputs value) { json.set("images", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder response(ImageResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder usage(ImageUsage value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public ImageResult build() { return new ImageResult(json); }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder response(ImageResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder usage(ImageUsage value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public ImageResult build() { return new ImageResult(images, providerMetadata, response, usage, warnings); }
     }
 }
-

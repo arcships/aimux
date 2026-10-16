@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,13 +12,18 @@ import java.util.*;
  * provider-defined tool. Mirrors the V4
  * `Array<LanguageModelV4FunctionTool | LanguageModelV4ProviderTool>`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = Tool.Function.class, name = "function"),
-    @JsonSubTypes.Type(value = Tool.Provider.class, name = "provider"),
+    @JsonSubTypes.Type(value = Tool.Provider.class, name = "provider")
 })
-public abstract class Tool extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class Tool {
     private Tool() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public String getDescription() { return null; }
     public List<FunctionToolInputExample> getInputExamples() { return null; }
@@ -31,154 +35,180 @@ public abstract class Tool extends WireValue {
     public NamespacedKind getId() { return null; }
     public final boolean isFunction() { return "function".equals(getType()); }
     public final boolean isProvider() { return "provider".equals(getType()); }
-    public static Tool fromJson(JsonNode json) {
-        WireJson.object(json, "Tool", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "function":
-                return Function.fromJson(json);
-            case "provider":
-                return Provider.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown Tool tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Function extends Tool {
-        private final String description;
-        private final boolean hasDescription;
-        private final List<FunctionToolInputExample> inputExamples;
-        private final boolean hasInputExamples;
-        private final JsonNode inputSchema;
-        private final String name;
-        private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private final Boolean strict;
-        private final boolean hasStrict;
-        private Function(JsonNode json) {
-            WireJson.object(json, "Function", false, "description", "inputExamples", "inputSchema", "name", "providerOptions", "strict", "type");
-            if (!"function".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Function tag");
-            this.hasDescription = json.has("description");
-            this.description = WireJson.isNull(json.get("description")) ? null : (WireJson.isNull(json.get("description")) ? null : WireJson.string(json.get("description")));
-            this.hasInputExamples = json.has("inputExamples");
-            this.inputExamples = WireJson.isNull(json.get("inputExamples")) ? null : (WireJson.isNull(json.get("inputExamples")) ? null : WireJson.array(json.get("inputExamples"), item0 -> FunctionToolInputExample.fromJson(item0)));
-            WireJson.required(json, "inputSchema");
-            this.inputSchema = WireJson.json(json.get("inputSchema"));
-            WireJson.required(json, "name");
-            this.name = WireJson.string(json.get("name"));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            this.hasStrict = json.has("strict");
-            this.strict = WireJson.isNull(json.get("strict")) ? null : (WireJson.isNull(json.get("strict")) ? null : WireJson.bool(json.get("strict")));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Function fromJson(JsonNode json) { return new Function(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "function"; }
         /**
          * Human-readable description.
          */
-        public String getDescription() { return description == null ? null : (description == null ? null : description); }
+        @JsonProperty("description")
+        private final String description;
         /**
          * Example inputs for the tool (V4 `inputExamples`), used by some providers
          * to emit `input_examples` in the request body.
          */
-        public List<FunctionToolInputExample> getInputExamples() { return inputExamples == null ? null : (inputExamples == null ? null : WireJson.array(WireJson.tree(inputExamples), item0 -> FunctionToolInputExample.fromJson(item0))); }
+        @JsonProperty("inputExamples")
+        private final List<FunctionToolInputExample> inputExamples;
         /**
          * JSON Schema describing the tool's parameters.
          */
-        public JsonNode getInputSchema() { return inputSchema == null ? null : WireJson.json(WireJson.tree(inputSchema)); }
+        @JsonProperty("inputSchema")
+        private final JsonNode inputSchema;
         /**
          * Unique tool name.
          */
-        public String getName() { return name == null ? null : name; }
+        @JsonProperty("name")
+        private final String name;
         /**
          * Provider-specific options, keyed by provider name
          * (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
          * V4 `providerOptions` field on function tools.
          */
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+        @JsonProperty("providerOptions")
+        private final Map<String, Map<String, JsonNode>> providerOptions;
         /**
          * Whether the tool supports strict schema enforcement (OpenAI strict mode).
          */
-        public Boolean getStrict() { return strict == null ? null : (strict == null ? null : strict); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "function");
-            if (hasDescription) json.set("description", WireJson.tree(description));
-            if (hasInputExamples) json.set("inputExamples", WireJson.tree(inputExamples));
-            json.set("inputSchema", WireJson.tree(inputSchema));
-            json.set("name", WireJson.tree(name));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            if (hasStrict) json.set("strict", WireJson.tree(strict));
-            return json;
+        @JsonProperty("strict")
+        private final Boolean strict;
+
+        @JsonCreator
+        public Function(
+            @JsonProperty(value = "description") String description,
+            @JsonProperty(value = "inputExamples") List<FunctionToolInputExample> inputExamples,
+            @JsonProperty(value = "inputSchema", required = true) JsonNode inputSchema,
+            @JsonProperty(value = "name", required = true) String name,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+            @JsonProperty(value = "strict") Boolean strict) {
+            this.description = description;
+            this.inputExamples = inputExamples == null ? null : Collections.unmodifiableList(new ArrayList<>(inputExamples));
+            this.inputSchema = inputSchema == null ? null : inputSchema.deepCopy();
+            this.name = name;
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+            this.strict = strict;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "function"; }
+        public String getDescription() { return description; }
+        public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
+        public JsonNode getInputSchema() { return inputSchema == null ? null : inputSchema.deepCopy(); }
+        public String getName() { return name; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+        public Boolean getStrict() { return strict; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "function");
+            private String description;
+            private List<FunctionToolInputExample> inputExamples;
+            private JsonNode inputSchema;
+            private String name;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+            private Boolean strict;
+
+            public Builder description(String value) {
+                this.description = value;
+                return this;
             }
-            public Builder description(String value) { json.set("description", WireJson.tree(value)); return this; }
-            public Builder inputExamples(List<FunctionToolInputExample> value) { json.set("inputExamples", WireJson.tree(value)); return this; }
-            public Builder inputSchema(JsonNode value) { json.set("inputSchema", WireJson.tree(value)); return this; }
-            public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public Builder strict(Boolean value) { json.set("strict", WireJson.tree(value)); return this; }
-            public Function build() { return new Function(json); }
+
+            public Builder inputExamples(List<FunctionToolInputExample> value) {
+                this.inputExamples = value;
+                return this;
+            }
+
+            public Builder inputSchema(JsonNode value) {
+                this.inputSchema = value;
+                return this;
+            }
+
+            public Builder name(String value) {
+                this.name = value;
+                return this;
+            }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public Builder strict(Boolean value) {
+                this.strict = value;
+                return this;
+            }
+
+            public Function build() { return new Function(description, inputExamples, inputSchema, name, providerOptions, strict); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Provider extends Tool {
-        private final Map<String, JsonNode> args;
-        private final NamespacedKind id;
-        private final String name;
-        private Provider(JsonNode json) {
-            WireJson.object(json, "Provider", false, "args", "id", "name", "type");
-            if (!"provider".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Provider tag");
-            WireJson.required(json, "args");
-            this.args = WireJson.map(json.get("args"), item0 -> WireJson.json(item0));
-            WireJson.required(json, "id");
-            this.id = NamespacedKind.fromJson(json.get("id"));
-            WireJson.required(json, "name");
-            this.name = WireJson.string(json.get("name"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Provider fromJson(JsonNode json) { return new Provider(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "provider"; }
         /**
          * The arguments for configuring the tool. Must match the expected
          * arguments defined by the provider for this tool.
          */
-        public Map<String, JsonNode> getArgs() { return args == null ? null : WireJson.map(WireJson.tree(args), item0 -> WireJson.json(item0)); }
+        @JsonProperty("args")
+        private final Map<String, JsonNode> args;
         /**
          * The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
          */
-        public NamespacedKind getId() { return id == null ? null : id; }
+        @JsonProperty("id")
+        private final NamespacedKind id;
         /**
          * The name of the tool, unique within this model call.
          */
-        public String getName() { return name == null ? null : name; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "provider");
-            json.set("args", WireJson.tree(args));
-            json.set("id", WireJson.tree(id));
-            json.set("name", WireJson.tree(name));
-            return json;
+        @JsonProperty("name")
+        private final String name;
+
+        @JsonCreator
+        public Provider(
+            @JsonProperty(value = "args", required = true) Map<String, JsonNode> args,
+            @JsonProperty(value = "id", required = true) NamespacedKind id,
+            @JsonProperty(value = "name", required = true) String name) {
+            this.args = args == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(args));
+            this.id = id;
+            this.name = name;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "provider"; }
+        public Map<String, JsonNode> getArgs() { return args; }
+        public NamespacedKind getId() { return id; }
+        public String getName() { return name; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "provider");
+            private Map<String, JsonNode> args;
+            private NamespacedKind id;
+            private String name;
+
+            public Builder args(Map<String, JsonNode> value) {
+                this.args = value;
+                return this;
             }
-            public Builder args(Map<String, JsonNode> value) { json.set("args", WireJson.tree(value)); return this; }
-            public Builder id(NamespacedKind value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-            public Provider build() { return new Provider(json); }
+
+            public Builder id(NamespacedKind value) {
+                this.id = value;
+                return this;
+            }
+
+            public Builder name(String value) {
+                this.name = value;
+                return this;
+            }
+
+            public Provider build() { return new Provider(args, id, name); }
         }
     }
-
 }

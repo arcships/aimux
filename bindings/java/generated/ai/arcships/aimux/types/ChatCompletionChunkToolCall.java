@@ -4,54 +4,66 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionChunkToolCall extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionChunkToolCall {
+    @JsonProperty("function")
     private final ChatCompletionChunkFunction function;
+    @JsonProperty("id")
     private final String id;
-    private final boolean hasId;
+    @JsonProperty("index")
     private final Long index;
+    @JsonProperty("type")
     private final String type;
-    private final boolean hasType;
-    private ChatCompletionChunkToolCall(JsonNode json) {
-        WireJson.object(json, "ChatCompletionChunkToolCall", false, "function", "id", "index", "type");
-        WireJson.required(json, "function");
-        this.function = ChatCompletionChunkFunction.fromJson(json.get("function"));
-        this.hasId = json.has("id");
-        this.id = WireJson.isNull(json.get("id")) ? null : (WireJson.isNull(json.get("id")) ? null : WireJson.string(json.get("id")));
-        WireJson.required(json, "index");
-        this.index = WireJson.integer(json.get("index"), true, 32).longValue();
-        this.hasType = json.has("type");
-        this.type = WireJson.isNull(json.get("type")) ? null : (WireJson.isNull(json.get("type")) ? null : WireJson.string(json.get("type")));
+
+    @JsonCreator
+    public ChatCompletionChunkToolCall(
+        @JsonProperty(value = "function", required = true) ChatCompletionChunkFunction function,
+        @JsonProperty(value = "id") String id,
+        @JsonProperty(value = "index", required = true) Long index,
+        @JsonProperty(value = "type") String type) {
+        this.function = function;
+        this.id = id;
+        this.index = index;
+        this.type = type;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionChunkToolCall fromJson(JsonNode json) { return new ChatCompletionChunkToolCall(json); }
+
     public static Builder builder() { return new Builder(); }
-    public ChatCompletionChunkFunction getFunction() { return function == null ? null : function; }
-    public String getId() { return id == null ? null : (id == null ? null : id); }
-    public Long getIndex() { return index == null ? null : index; }
-    public String getType() { return type == null ? null : (type == null ? null : type); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("function", WireJson.tree(function));
-        if (hasId) json.set("id", WireJson.tree(id));
-        json.set("index", WireJson.tree(index));
-        if (hasType) json.set("type", WireJson.tree(type));
-        return json;
-    }
+    public ChatCompletionChunkFunction getFunction() { return function; }
+    public String getId() { return id; }
+    public Long getIndex() { return index; }
+    public String getType() { return type; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private ChatCompletionChunkFunction function;
+        private String id;
+        private Long index;
+        private String type;
+
+        public Builder function(ChatCompletionChunkFunction value) {
+            this.function = value;
+            return this;
         }
-        public Builder function(ChatCompletionChunkFunction value) { json.set("function", WireJson.tree(value)); return this; }
-        public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-        public Builder index(Long value) { json.set("index", WireJson.tree(value)); return this; }
-        public Builder type(String value) { json.set("type", WireJson.tree(value)); return this; }
-        public ChatCompletionChunkToolCall build() { return new ChatCompletionChunkToolCall(json); }
+
+        public Builder id(String value) {
+            this.id = value;
+            return this;
+        }
+
+        public Builder index(Long value) {
+            this.index = value;
+            return this;
+        }
+
+        public Builder type(String value) {
+            this.type = value;
+            return this;
+        }
+
+        public ChatCompletionChunkToolCall build() { return new ChatCompletionChunkToolCall(function, id, index, type); }
     }
 }
-

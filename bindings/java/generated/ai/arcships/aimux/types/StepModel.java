@@ -4,43 +4,47 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * The model that ran a step (`StepResult.model`, `step-result.ts:155-161`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class StepModel extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class StepModel {
+    @JsonProperty("modelId")
     private final String modelId;
+    @JsonProperty("provider")
     private final String provider;
-    private StepModel(JsonNode json) {
-        WireJson.object(json, "StepModel", false, "modelId", "provider");
-        WireJson.required(json, "modelId");
-        this.modelId = WireJson.string(json.get("modelId"));
-        WireJson.required(json, "provider");
-        this.provider = WireJson.string(json.get("provider"));
+
+    @JsonCreator
+    public StepModel(
+        @JsonProperty(value = "modelId", required = true) String modelId,
+        @JsonProperty(value = "provider", required = true) String provider) {
+        this.modelId = modelId;
+        this.provider = provider;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static StepModel fromJson(JsonNode json) { return new StepModel(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getModelId() { return modelId == null ? null : modelId; }
-    public String getProvider() { return provider == null ? null : provider; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("modelId", WireJson.tree(modelId));
-        json.set("provider", WireJson.tree(provider));
-        return json;
-    }
+    public String getModelId() { return modelId; }
+    public String getProvider() { return provider; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String modelId;
+        private String provider;
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
         }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public StepModel build() { return new StepModel(json); }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public StepModel build() { return new StepModel(modelId, provider); }
     }
 }
-

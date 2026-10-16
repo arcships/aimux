@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SessionStoreCreateParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SessionStoreCreateParams {
+    @JsonProperty("infer")
     private final Boolean infer;
-    private SessionStoreCreateParams(JsonNode json) {
-        WireJson.object(json, "SessionStoreCreateParams", true, "infer");
-        WireJson.required(json, "infer");
-        this.infer = WireJson.bool(json.get("infer"));
+
+    @JsonCreator
+    public SessionStoreCreateParams(
+        @JsonProperty(value = "infer", required = true) Boolean infer) {
+        this.infer = infer;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SessionStoreCreateParams fromJson(JsonNode json) { return new SessionStoreCreateParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Boolean getInfer() { return infer == null ? null : infer; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("infer", WireJson.tree(infer));
-        return json;
-    }
+    public Boolean getInfer() { return infer; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean infer;
+
+        public Builder infer(Boolean value) {
+            this.infer = value;
+            return this;
         }
-        public Builder infer(Boolean value) { json.set("infer", WireJson.tree(value)); return this; }
-        public SessionStoreCreateParams build() { return new SessionStoreCreateParams(json); }
+
+        public SessionStoreCreateParams build() { return new SessionStoreCreateParams(infer); }
     }
 }
-

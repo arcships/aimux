@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -16,135 +15,186 @@ import java.util.*;
  * getters (`text`, `toolCalls`, ...) and without `undefined` fields.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class StepResultInput extends WireValue {
-    private final String callId;
-    private final List<ContentPartInput> content;
-    private final FinishReasonUnified finishReason;
-    private final StepModel model;
-    private final StepResultPerformanceInput performance;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final String rawFinishReason;
-    private final boolean hasRawFinishReason;
-    private final RequestInfo request;
-    private final boolean hasRequest;
-    private final StepResponseInput response;
-    private final Long stepNumber;
-    private final LanguageModelUsageInput usage;
-    private final List<Warning> warnings;
-    private final boolean hasWarnings;
-    private StepResultInput(JsonNode json) {
-        WireJson.object(json, "StepResultInput", false, "callId", "content", "finishReason", "model", "performance", "providerMetadata", "rawFinishReason", "request", "response", "stepNumber", "usage", "warnings");
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        WireJson.required(json, "content");
-        this.content = WireJson.array(json.get("content"), item0 -> ContentPartInput.fromJson(item0));
-        WireJson.required(json, "finishReason");
-        this.finishReason = FinishReasonUnified.fromJson(json.get("finishReason"));
-        WireJson.required(json, "model");
-        this.model = StepModel.fromJson(json.get("model"));
-        WireJson.required(json, "performance");
-        this.performance = StepResultPerformanceInput.fromJson(json.get("performance"));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasRawFinishReason = json.has("rawFinishReason");
-        this.rawFinishReason = WireJson.isNull(json.get("rawFinishReason")) ? null : (WireJson.isNull(json.get("rawFinishReason")) ? null : WireJson.string(json.get("rawFinishReason")));
-        this.hasRequest = json.has("request");
-        this.request = WireJson.isNull(json.get("request")) ? null : RequestInfo.fromJson(json.get("request"));
-        WireJson.required(json, "response");
-        this.response = StepResponseInput.fromJson(json.get("response"));
-        WireJson.required(json, "stepNumber");
-        this.stepNumber = WireJson.integer(json.get("stepNumber"), true, 32).longValue();
-        WireJson.required(json, "usage");
-        this.usage = LanguageModelUsageInput.fromJson(json.get("usage"));
-        this.hasWarnings = json.has("warnings");
-        this.warnings = WireJson.isNull(json.get("warnings")) ? null : WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static StepResultInput fromJson(JsonNode json) { return new StepResultInput(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class StepResultInput {
     /**
      * Identifies the generation call the step belongs to.
      */
-    public String getCallId() { return callId == null ? null : callId; }
+    @JsonProperty("callId")
+    private final String callId;
     /**
      * The content generated in this step, in order.
      */
-    public List<ContentPartInput> getContent() { return content == null ? null : WireJson.array(WireJson.tree(content), item0 -> ContentPartInput.fromJson(item0)); }
+    @JsonProperty("content")
+    private final List<ContentPartInput> content;
     /**
      * Why the step finished.
      */
-    public FinishReasonUnified getFinishReason() { return finishReason == null ? null : finishReason; }
+    @JsonProperty("finishReason")
+    private final FinishReasonUnified finishReason;
     /**
      * The model that ran the step.
      */
-    public StepModel getModel() { return model == null ? null : model; }
+    @JsonProperty("model")
+    private final StepModel model;
     /**
      * Timing of this step.
      */
-    public StepResultPerformanceInput getPerformance() { return performance == null ? null : performance; }
+    @JsonProperty("performance")
+    private final StepResultPerformanceInput performance;
     /**
      * Provider metadata of the model call.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * The provider's own finish reason.
      */
-    public String getRawFinishReason() { return rawFinishReason == null ? null : (rawFinishReason == null ? null : rawFinishReason); }
+    @JsonProperty("rawFinishReason")
+    private final String rawFinishReason;
     /**
      * The request of the model call.
      */
-    public RequestInfo getRequest() { return request == null ? null : request; }
+    @JsonProperty("request")
+    private final RequestInfo request;
     /**
      * The response of the model call, with the step's response messages.
      */
-    public StepResponseInput getResponse() { return response == null ? null : response; }
+    @JsonProperty("response")
+    private final StepResponseInput response;
     /**
      * Zero-based step index.
      */
-    public Long getStepNumber() { return stepNumber == null ? null : stepNumber; }
+    @JsonProperty("stepNumber")
+    private final Long stepNumber;
     /**
      * Token usage of this step.
      */
-    public LanguageModelUsageInput getUsage() { return usage == null ? null : usage; }
+    @JsonProperty("usage")
+    private final LanguageModelUsageInput usage;
     /**
      * Warnings of the model call.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("callId", WireJson.tree(callId));
-        json.set("content", WireJson.tree(content));
-        json.set("finishReason", WireJson.tree(finishReason));
-        json.set("model", WireJson.tree(model));
-        json.set("performance", WireJson.tree(performance));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasRawFinishReason) json.set("rawFinishReason", WireJson.tree(rawFinishReason));
-        if (hasRequest) json.set("request", WireJson.tree(request));
-        json.set("response", WireJson.tree(response));
-        json.set("stepNumber", WireJson.tree(stepNumber));
-        json.set("usage", WireJson.tree(usage));
-        if (hasWarnings) json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public StepResultInput(
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "content", required = true) List<ContentPartInput> content,
+        @JsonProperty(value = "finishReason", required = true) FinishReasonUnified finishReason,
+        @JsonProperty(value = "model", required = true) StepModel model,
+        @JsonProperty(value = "performance", required = true) StepResultPerformanceInput performance,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "rawFinishReason") String rawFinishReason,
+        @JsonProperty(value = "request") RequestInfo request,
+        @JsonProperty(value = "response", required = true) StepResponseInput response,
+        @JsonProperty(value = "stepNumber", required = true) Long stepNumber,
+        @JsonProperty(value = "usage", required = true) LanguageModelUsageInput usage,
+        @JsonProperty(value = "warnings") List<Warning> warnings) {
+        this.callId = callId;
+        this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
+        this.finishReason = finishReason;
+        this.model = model;
+        this.performance = performance;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.rawFinishReason = rawFinishReason;
+        this.request = request;
+        this.response = response;
+        this.stepNumber = stepNumber;
+        this.usage = usage;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getCallId() { return callId; }
+    public List<ContentPartInput> getContent() { return content; }
+    public FinishReasonUnified getFinishReason() { return finishReason; }
+    public StepModel getModel() { return model; }
+    public StepResultPerformanceInput getPerformance() { return performance; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getRawFinishReason() { return rawFinishReason; }
+    public RequestInfo getRequest() { return request; }
+    public StepResponseInput getResponse() { return response; }
+    public Long getStepNumber() { return stepNumber; }
+    public LanguageModelUsageInput getUsage() { return usage; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String callId;
+        private List<ContentPartInput> content;
+        private FinishReasonUnified finishReason;
+        private StepModel model;
+        private StepResultPerformanceInput performance;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String rawFinishReason;
+        private RequestInfo request;
+        private StepResponseInput response;
+        private Long stepNumber;
+        private LanguageModelUsageInput usage;
+        private List<Warning> warnings;
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
         }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder content(List<ContentPartInput> value) { json.set("content", WireJson.tree(value)); return this; }
-        public Builder finishReason(FinishReasonUnified value) { json.set("finishReason", WireJson.tree(value)); return this; }
-        public Builder model(StepModel value) { json.set("model", WireJson.tree(value)); return this; }
-        public Builder performance(StepResultPerformanceInput value) { json.set("performance", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder rawFinishReason(String value) { json.set("rawFinishReason", WireJson.tree(value)); return this; }
-        public Builder request(RequestInfo value) { json.set("request", WireJson.tree(value)); return this; }
-        public Builder response(StepResponseInput value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder stepNumber(Long value) { json.set("stepNumber", WireJson.tree(value)); return this; }
-        public Builder usage(LanguageModelUsageInput value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public StepResultInput build() { return new StepResultInput(json); }
+
+        public Builder content(List<ContentPartInput> value) {
+            this.content = value;
+            return this;
+        }
+
+        public Builder finishReason(FinishReasonUnified value) {
+            this.finishReason = value;
+            return this;
+        }
+
+        public Builder model(StepModel value) {
+            this.model = value;
+            return this;
+        }
+
+        public Builder performance(StepResultPerformanceInput value) {
+            this.performance = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder rawFinishReason(String value) {
+            this.rawFinishReason = value;
+            return this;
+        }
+
+        public Builder request(RequestInfo value) {
+            this.request = value;
+            return this;
+        }
+
+        public Builder response(StepResponseInput value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder stepNumber(Long value) {
+            this.stepNumber = value;
+            return this;
+        }
+
+        public Builder usage(LanguageModelUsageInput value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public StepResultInput build() { return new StepResultInput(callId, content, finishReason, model, performance, providerMetadata, rawFinishReason, request, response, stepNumber, usage, warnings); }
     }
 }
-

@@ -4,40 +4,54 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum HandleKind {
-    PROVIDER("Provider"),
-    REGISTRY("Registry"),
-    LANGUAGE("Language"),
-    EMBEDDING("Embedding"),
-    IMAGE("Image"),
-    SPEECH("Speech"),
-    TRANSCRIPTION("Transcription"),
-    RERANKING("Reranking"),
-    VIDEO("Video"),
-    SEARCH("Search"),
-    DECISION("Decision"),
-    FILES("Files"),
-    OPERATION("Operation"),
-    ABORT("Abort"),
-    FETCH("Fetch"),
-    WEB_SOCKET("WebSocket"),
-    DOWNLOAD("Download"),
-    CREDENTIAL_RESOLVER("CredentialResolver"),
-    MIDDLEWARE("Middleware"),
-    TRACE_STORE("TraceStore"),
-    RECORDER("Recorder"),
-    SESSION_STORE("SessionStore"),
-    REPLAY_SESSION("ReplaySession");
-    private final String value;
-    HandleKind(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static HandleKind fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (HandleKind item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid HandleKind: " + value);
-    }
+    @JsonProperty("Provider")
+    PROVIDER,
+    @JsonProperty("Registry")
+    REGISTRY,
+    @JsonProperty("Language")
+    LANGUAGE,
+    @JsonProperty("Embedding")
+    EMBEDDING,
+    @JsonProperty("Image")
+    IMAGE,
+    @JsonProperty("Speech")
+    SPEECH,
+    @JsonProperty("Transcription")
+    TRANSCRIPTION,
+    @JsonProperty("Reranking")
+    RERANKING,
+    @JsonProperty("Video")
+    VIDEO,
+    @JsonProperty("Search")
+    SEARCH,
+    @JsonProperty("Decision")
+    DECISION,
+    @JsonProperty("Files")
+    FILES,
+    @JsonProperty("Operation")
+    OPERATION,
+    @JsonProperty("Abort")
+    ABORT,
+    @JsonProperty("Fetch")
+    FETCH,
+    @JsonProperty("WebSocket")
+    WEB_SOCKET,
+    @JsonProperty("Download")
+    DOWNLOAD,
+    @JsonProperty("CredentialResolver")
+    CREDENTIAL_RESOLVER,
+    @JsonProperty("Middleware")
+    MIDDLEWARE,
+    @JsonProperty("TraceStore")
+    TRACE_STORE,
+    @JsonProperty("Recorder")
+    RECORDER,
+    @JsonProperty("SessionStore")
+    SESSION_STORE,
+    @JsonProperty("ReplaySession")
+    REPLAY_SESSION
 }

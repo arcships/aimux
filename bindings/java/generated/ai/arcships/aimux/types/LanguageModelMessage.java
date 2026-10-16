@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,186 +13,204 @@ import java.util.*;
  * `provider_options` is message-level (e.g. `anthropic.cacheControl`),
  * mirroring `LanguageModelV4Message.providerOptions`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "role", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "role")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = LanguageModelMessage.System.class, name = "system"),
     @JsonSubTypes.Type(value = LanguageModelMessage.User.class, name = "user"),
     @JsonSubTypes.Type(value = LanguageModelMessage.Assistant.class, name = "assistant"),
-    @JsonSubTypes.Type(value = LanguageModelMessage.ToolVariant.class, name = "tool"),
+    @JsonSubTypes.Type(value = LanguageModelMessage.ToolVariant.class, name = "tool")
 })
-public abstract class LanguageModelMessage extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class LanguageModelMessage {
     private LanguageModelMessage() {}
+
+    @JsonProperty("role")
     public abstract String getRole();
     public Map<String, Map<String, JsonNode>> getProviderOptions() { return null; }
     public final boolean isAssistant() { return "assistant".equals(getRole()); }
     public final boolean isSystem() { return "system".equals(getRole()); }
     public final boolean isTool() { return "tool".equals(getRole()); }
     public final boolean isUser() { return "user".equals(getRole()); }
-    public static LanguageModelMessage fromJson(JsonNode json) {
-        WireJson.object(json, "LanguageModelMessage", false);
-        String tag = WireJson.string(json.get("role"));
-        switch (tag) {
-            case "assistant":
-                return Assistant.fromJson(json);
-            case "system":
-                return System.fromJson(json);
-            case "tool":
-                return ToolVariant.fromJson(json);
-            case "user":
-                return User.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown LanguageModelMessage tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class System extends LanguageModelMessage {
+        @JsonProperty("content")
         private final String content;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private System(JsonNode json) {
-            WireJson.object(json, "System", false, "content", "providerOptions", "role");
-            if (!"system".equals(WireJson.string(json.get("role")))) throw new IllegalArgumentException("Invalid System tag");
-            WireJson.required(json, "content");
-            this.content = WireJson.string(json.get("content"));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public System(
+            @JsonProperty(value = "content", required = true) String content,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+            this.content = content;
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static System fromJson(JsonNode json) { return new System(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getRole() { return "system"; }
-        public String getContent() { return content == null ? null : content; }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("role", "system");
-            json.set("content", WireJson.tree(content));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("role")
+        public String getRole() { return "system"; }
+        public String getContent() { return content; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("role", "system");
+            private String content;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+
+            public Builder content(String value) {
+                this.content = value;
+                return this;
             }
-            public Builder content(String value) { json.set("content", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public System build() { return new System(json); }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public System build() { return new System(content, providerOptions); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class User extends LanguageModelMessage {
+        @JsonProperty("content")
         private final List<UserPart> content;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private User(JsonNode json) {
-            WireJson.object(json, "User", false, "content", "providerOptions", "role");
-            if (!"user".equals(WireJson.string(json.get("role")))) throw new IllegalArgumentException("Invalid User tag");
-            WireJson.required(json, "content");
-            this.content = WireJson.array(json.get("content"), item0 -> UserPart.fromJson(item0));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public User(
+            @JsonProperty(value = "content", required = true) List<UserPart> content,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+            this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static User fromJson(JsonNode json) { return new User(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getRole() { return "user"; }
-        public List<UserPart> getContent() { return content == null ? null : WireJson.array(WireJson.tree(content), item0 -> UserPart.fromJson(item0)); }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("role", "user");
-            json.set("content", WireJson.tree(content));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("role")
+        public String getRole() { return "user"; }
+        public List<UserPart> getContent() { return content; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("role", "user");
+            private List<UserPart> content;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+
+            public Builder content(List<UserPart> value) {
+                this.content = value;
+                return this;
             }
-            public Builder content(List<UserPart> value) { json.set("content", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public User build() { return new User(json); }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public User build() { return new User(content, providerOptions); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Assistant extends LanguageModelMessage {
+        @JsonProperty("content")
         private final List<AssistantPart> content;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private Assistant(JsonNode json) {
-            WireJson.object(json, "Assistant", false, "content", "providerOptions", "role");
-            if (!"assistant".equals(WireJson.string(json.get("role")))) throw new IllegalArgumentException("Invalid Assistant tag");
-            WireJson.required(json, "content");
-            this.content = WireJson.array(json.get("content"), item0 -> AssistantPart.fromJson(item0));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public Assistant(
+            @JsonProperty(value = "content", required = true) List<AssistantPart> content,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+            this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Assistant fromJson(JsonNode json) { return new Assistant(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getRole() { return "assistant"; }
-        public List<AssistantPart> getContent() { return content == null ? null : WireJson.array(WireJson.tree(content), item0 -> AssistantPart.fromJson(item0)); }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("role", "assistant");
-            json.set("content", WireJson.tree(content));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("role")
+        public String getRole() { return "assistant"; }
+        public List<AssistantPart> getContent() { return content; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("role", "assistant");
+            private List<AssistantPart> content;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+
+            public Builder content(List<AssistantPart> value) {
+                this.content = value;
+                return this;
             }
-            public Builder content(List<AssistantPart> value) { json.set("content", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public Assistant build() { return new Assistant(json); }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public Assistant build() { return new Assistant(content, providerOptions); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolVariant extends LanguageModelMessage {
+        @JsonProperty("content")
         private final List<ToolPart> content;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
-        private ToolVariant(JsonNode json) {
-            WireJson.object(json, "ToolVariant", false, "content", "providerOptions", "role");
-            if (!"tool".equals(WireJson.string(json.get("role")))) throw new IllegalArgumentException("Invalid ToolVariant tag");
-            WireJson.required(json, "content");
-            this.content = WireJson.array(json.get("content"), item0 -> ToolPart.fromJson(item0));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public ToolVariant(
+            @JsonProperty(value = "content", required = true) List<ToolPart> content,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+            this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolVariant fromJson(JsonNode json) { return new ToolVariant(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getRole() { return "tool"; }
-        public List<ToolPart> getContent() { return content == null ? null : WireJson.array(WireJson.tree(content), item0 -> ToolPart.fromJson(item0)); }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("role", "tool");
-            json.set("content", WireJson.tree(content));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("role")
+        public String getRole() { return "tool"; }
+        public List<ToolPart> getContent() { return content; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("role", "tool");
+            private List<ToolPart> content;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+
+            public Builder content(List<ToolPart> value) {
+                this.content = value;
+                return this;
             }
-            public Builder content(List<ToolPart> value) { json.set("content", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public ToolVariant build() { return new ToolVariant(json); }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public ToolVariant build() { return new ToolVariant(content, providerOptions); }
         }
     }
-
 }

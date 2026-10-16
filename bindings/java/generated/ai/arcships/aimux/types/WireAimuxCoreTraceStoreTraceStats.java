@@ -4,17 +4,16 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonDeserialize(using = JsonDeserializer.None.class)
-public final class WireAimuxCoreTraceStoreTraceStats extends WireValue {
+public final class WireAimuxCoreTraceStoreTraceStats {
+    @JsonValue
     private final List<TraceStats> value;
-    public WireAimuxCoreTraceStoreTraceStats(List<TraceStats> value) { this.value = WireJson.array(WireJson.tree(value), item0 -> TraceStats.fromJson(item0)); }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static WireAimuxCoreTraceStoreTraceStats fromJson(JsonNode json) { return new WireAimuxCoreTraceStoreTraceStats(WireJson.array(json, item0 -> TraceStats.fromJson(item0))); }
-    public List<TraceStats> getValue() { return WireJson.array(WireJson.tree(value), item0 -> TraceStats.fromJson(item0)); }
-    @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-}
 
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public WireAimuxCoreTraceStoreTraceStats(List<TraceStats> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+
+    public List<TraceStats> getValue() { return value; }
+}

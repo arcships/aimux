@@ -4,22 +4,15 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Reference-failure policy.
  */
 public enum MoaFailMode {
-    BEST_EFFORT("best_effort"),
-    FAIL_FAST("fail_fast");
-    private final String value;
-    MoaFailMode(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static MoaFailMode fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (MoaFailMode item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid MoaFailMode: " + value);
-    }
+    @JsonProperty("best_effort")
+    BEST_EFFORT,
+    @JsonProperty("fail_fast")
+    FAIL_FAST
 }

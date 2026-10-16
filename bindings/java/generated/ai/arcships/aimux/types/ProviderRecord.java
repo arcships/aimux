@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,52 +14,62 @@ import java.util.*;
  * 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderRecord extends WireValue {
-    private final String modelId;
-    private final String provider;
-    private final String providerId;
-    private ProviderRecord(JsonNode json) {
-        WireJson.object(json, "ProviderRecord", false, "modelId", "provider", "providerId");
-        WireJson.required(json, "modelId");
-        this.modelId = WireJson.string(json.get("modelId"));
-        WireJson.required(json, "provider");
-        this.provider = WireJson.string(json.get("provider"));
-        WireJson.required(json, "providerId");
-        this.providerId = WireJson.string(json.get("providerId"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderRecord fromJson(JsonNode json) { return new ProviderRecord(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderRecord {
     /**
      * `model.model_id()`,如 "gpt-4o"。
      */
-    public String getModelId() { return modelId == null ? null : modelId; }
+    @JsonProperty("modelId")
+    private final String modelId;
     /**
      * `model.provider()`,如 "openai.chat"。
      */
-    public String getProvider() { return provider == null ? null : provider; }
+    @JsonProperty("provider")
+    private final String provider;
     /**
      * provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
      * Empty in a recording written by aimux 0.5 or earlier, which has none
      * ([`Self::registry_id`]).
      */
-    public String getProviderId() { return providerId == null ? null : providerId; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("modelId", WireJson.tree(modelId));
-        json.set("provider", WireJson.tree(provider));
-        json.set("providerId", WireJson.tree(providerId));
-        return json;
+    @JsonProperty("providerId")
+    private final String providerId;
+
+    @JsonCreator
+    public ProviderRecord(
+        @JsonProperty(value = "modelId", required = true) String modelId,
+        @JsonProperty(value = "provider", required = true) String provider,
+        @JsonProperty(value = "providerId", required = true) String providerId) {
+        this.modelId = modelId;
+        this.provider = provider;
+        this.providerId = providerId;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getModelId() { return modelId; }
+    public String getProvider() { return provider; }
+    public String getProviderId() { return providerId; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String modelId;
+        private String provider;
+        private String providerId;
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
         }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder providerId(String value) { json.set("providerId", WireJson.tree(value)); return this; }
-        public ProviderRecord build() { return new ProviderRecord(json); }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder providerId(String value) {
+            this.providerId = value;
+            return this;
+        }
+
+        public ProviderRecord build() { return new ProviderRecord(modelId, provider, providerId); }
     }
 }
-

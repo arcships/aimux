@@ -4,38 +4,36 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TraceAggregateParams extends WireValue {
-    private final TraceAggregateParamsFilter filter;
-    private final boolean hasFilter;
-    private TraceAggregateParams(JsonNode json) {
-        WireJson.object(json, "TraceAggregateParams", true, "filter");
-        this.hasFilter = json.has("filter");
-        this.filter = WireJson.isNull(json.get("filter")) ? null : TraceAggregateParamsFilter.fromJson(json.get("filter"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TraceAggregateParams fromJson(JsonNode json) { return new TraceAggregateParams(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TraceAggregateParams {
     /**
      * Query filter (RFC-0015 §5.3).
      */
-    public TraceAggregateParamsFilter getFilter() { return filter == null ? null : filter; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasFilter) json.set("filter", WireJson.tree(filter));
-        return json;
+    @JsonProperty("filter")
+    private final TraceAggregateParamsFilter filter;
+
+    @JsonCreator
+    public TraceAggregateParams(
+        @JsonProperty(value = "filter") TraceAggregateParamsFilter filter) {
+        this.filter = filter;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public TraceAggregateParamsFilter getFilter() { return filter; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private TraceAggregateParamsFilter filter;
+
+        public Builder filter(TraceAggregateParamsFilter value) {
+            this.filter = value;
+            return this;
         }
-        public Builder filter(TraceAggregateParamsFilter value) { json.set("filter", WireJson.tree(value)); return this; }
-        public TraceAggregateParams build() { return new TraceAggregateParams(json); }
+
+        public TraceAggregateParams build() { return new TraceAggregateParams(filter); }
     }
 }
-

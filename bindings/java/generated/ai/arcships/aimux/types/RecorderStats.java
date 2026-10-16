@@ -4,140 +4,175 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = RecorderStats.Ring.class, name = "ring"),
-    @JsonSubTypes.Type(value = RecorderStats.Jsonl.class, name = "jsonl"),
+    @JsonSubTypes.Type(value = RecorderStats.Jsonl.class, name = "jsonl")
 })
-public abstract class RecorderStats extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class RecorderStats {
     private RecorderStats() {}
+
+    @JsonProperty("type")
     public abstract String getType();
-    public BigInteger getCompleted() { return null; }
-    public BigInteger getDropped() { return null; }
+    public Long getCompleted() { return null; }
+    public Long getDropped() { return null; }
     public List<String> getInconsistentCallIds() { return null; }
-    public BigInteger getPending() { return null; }
-    public BigInteger getPendingEvicted() { return null; }
+    public Long getPending() { return null; }
+    public Long getPendingEvicted() { return null; }
     public String getLastWriteError() { return null; }
     public String getPath() { return null; }
     public final boolean isJsonl() { return "jsonl".equals(getType()); }
     public final boolean isRing() { return "ring".equals(getType()); }
-    public static RecorderStats fromJson(JsonNode json) {
-        WireJson.object(json, "RecorderStats", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "jsonl":
-                return Jsonl.fromJson(json);
-            case "ring":
-                return Ring.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown RecorderStats tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Ring extends RecorderStats {
-        private final BigInteger completed;
-        private final BigInteger dropped;
+        @JsonProperty("completed")
+        private final Long completed;
+        @JsonProperty("dropped")
+        private final Long dropped;
+        @JsonProperty("inconsistentCallIds")
         private final List<String> inconsistentCallIds;
-        private final BigInteger pending;
-        private final BigInteger pendingEvicted;
-        private Ring(JsonNode json) {
-            WireJson.object(json, "Ring", false, "completed", "dropped", "inconsistentCallIds", "pending", "pendingEvicted", "type");
-            if (!"ring".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Ring tag");
-            WireJson.required(json, "completed");
-            this.completed = WireJson.integer(json.get("completed"), true, 64);
-            WireJson.required(json, "dropped");
-            this.dropped = WireJson.integer(json.get("dropped"), true, 64);
-            WireJson.required(json, "inconsistentCallIds");
-            this.inconsistentCallIds = WireJson.array(json.get("inconsistentCallIds"), item0 -> WireJson.string(item0));
-            WireJson.required(json, "pending");
-            this.pending = WireJson.integer(json.get("pending"), true, 64);
-            WireJson.required(json, "pendingEvicted");
-            this.pendingEvicted = WireJson.integer(json.get("pendingEvicted"), true, 64);
+        @JsonProperty("pending")
+        private final Long pending;
+        @JsonProperty("pendingEvicted")
+        private final Long pendingEvicted;
+
+        @JsonCreator
+        public Ring(
+            @JsonProperty(value = "completed", required = true) Long completed,
+            @JsonProperty(value = "dropped", required = true) Long dropped,
+            @JsonProperty(value = "inconsistentCallIds", required = true) List<String> inconsistentCallIds,
+            @JsonProperty(value = "pending", required = true) Long pending,
+            @JsonProperty(value = "pendingEvicted", required = true) Long pendingEvicted) {
+            this.completed = completed;
+            this.dropped = dropped;
+            this.inconsistentCallIds = inconsistentCallIds == null ? null : Collections.unmodifiableList(new ArrayList<>(inconsistentCallIds));
+            this.pending = pending;
+            this.pendingEvicted = pendingEvicted;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Ring fromJson(JsonNode json) { return new Ring(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "ring"; }
-        public BigInteger getCompleted() { return completed == null ? null : completed; }
-        public BigInteger getDropped() { return dropped == null ? null : dropped; }
-        public List<String> getInconsistentCallIds() { return inconsistentCallIds == null ? null : WireJson.array(WireJson.tree(inconsistentCallIds), item0 -> WireJson.string(item0)); }
-        public BigInteger getPending() { return pending == null ? null : pending; }
-        public BigInteger getPendingEvicted() { return pendingEvicted == null ? null : pendingEvicted; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "ring");
-            json.set("completed", WireJson.tree(completed));
-            json.set("dropped", WireJson.tree(dropped));
-            json.set("inconsistentCallIds", WireJson.tree(inconsistentCallIds));
-            json.set("pending", WireJson.tree(pending));
-            json.set("pendingEvicted", WireJson.tree(pendingEvicted));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "ring"; }
+        public Long getCompleted() { return completed; }
+        public Long getDropped() { return dropped; }
+        public List<String> getInconsistentCallIds() { return inconsistentCallIds; }
+        public Long getPending() { return pending; }
+        public Long getPendingEvicted() { return pendingEvicted; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "ring");
+            private Long completed;
+            private Long dropped;
+            private List<String> inconsistentCallIds;
+            private Long pending;
+            private Long pendingEvicted;
+
+            public Builder completed(Long value) {
+                this.completed = value;
+                return this;
             }
-            public Builder completed(BigInteger value) { json.set("completed", WireJson.tree(value)); return this; }
-            public Builder dropped(BigInteger value) { json.set("dropped", WireJson.tree(value)); return this; }
-            public Builder inconsistentCallIds(List<String> value) { json.set("inconsistentCallIds", WireJson.tree(value)); return this; }
-            public Builder pending(BigInteger value) { json.set("pending", WireJson.tree(value)); return this; }
-            public Builder pendingEvicted(BigInteger value) { json.set("pendingEvicted", WireJson.tree(value)); return this; }
-            public Ring build() { return new Ring(json); }
+
+            public Builder dropped(Long value) {
+                this.dropped = value;
+                return this;
+            }
+
+            public Builder inconsistentCallIds(List<String> value) {
+                this.inconsistentCallIds = value;
+                return this;
+            }
+
+            public Builder pending(Long value) {
+                this.pending = value;
+                return this;
+            }
+
+            public Builder pendingEvicted(Long value) {
+                this.pendingEvicted = value;
+                return this;
+            }
+
+            public Ring build() { return new Ring(completed, dropped, inconsistentCallIds, pending, pendingEvicted); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Jsonl extends RecorderStats {
-        private final BigInteger dropped;
+        @JsonProperty("dropped")
+        private final Long dropped;
+        @JsonProperty("inconsistentCallIds")
         private final List<String> inconsistentCallIds;
+        @JsonProperty("lastWriteError")
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         private final String lastWriteError;
+        @JsonProperty("path")
         private final String path;
-        private Jsonl(JsonNode json) {
-            WireJson.object(json, "Jsonl", false, "dropped", "inconsistentCallIds", "lastWriteError", "path", "type");
-            if (!"jsonl".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Jsonl tag");
-            WireJson.required(json, "dropped");
-            this.dropped = WireJson.integer(json.get("dropped"), true, 64);
-            WireJson.required(json, "inconsistentCallIds");
-            this.inconsistentCallIds = WireJson.array(json.get("inconsistentCallIds"), item0 -> WireJson.string(item0));
-            WireJson.required(json, "lastWriteError");
-            this.lastWriteError = (WireJson.isNull(json.get("lastWriteError")) ? null : WireJson.string(json.get("lastWriteError")));
-            WireJson.required(json, "path");
-            this.path = WireJson.string(json.get("path"));
+
+        @JsonCreator
+        public Jsonl(
+            @JsonProperty(value = "dropped", required = true) Long dropped,
+            @JsonProperty(value = "inconsistentCallIds", required = true) List<String> inconsistentCallIds,
+            @JsonProperty(value = "lastWriteError", required = true) String lastWriteError,
+            @JsonProperty(value = "path", required = true) String path) {
+            this.dropped = dropped;
+            this.inconsistentCallIds = inconsistentCallIds == null ? null : Collections.unmodifiableList(new ArrayList<>(inconsistentCallIds));
+            this.lastWriteError = lastWriteError;
+            this.path = path;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Jsonl fromJson(JsonNode json) { return new Jsonl(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "jsonl"; }
-        public BigInteger getDropped() { return dropped == null ? null : dropped; }
-        public List<String> getInconsistentCallIds() { return inconsistentCallIds == null ? null : WireJson.array(WireJson.tree(inconsistentCallIds), item0 -> WireJson.string(item0)); }
-        public String getLastWriteError() { return lastWriteError == null ? null : (lastWriteError == null ? null : lastWriteError); }
-        public String getPath() { return path == null ? null : path; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "jsonl");
-            json.set("dropped", WireJson.tree(dropped));
-            json.set("inconsistentCallIds", WireJson.tree(inconsistentCallIds));
-            json.set("lastWriteError", WireJson.tree(lastWriteError));
-            json.set("path", WireJson.tree(path));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "jsonl"; }
+        public Long getDropped() { return dropped; }
+        public List<String> getInconsistentCallIds() { return inconsistentCallIds; }
+        public String getLastWriteError() { return lastWriteError; }
+        public String getPath() { return path; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "jsonl");
+            private Long dropped;
+            private List<String> inconsistentCallIds;
+            private String lastWriteError;
+            private String path;
+
+            public Builder dropped(Long value) {
+                this.dropped = value;
+                return this;
             }
-            public Builder dropped(BigInteger value) { json.set("dropped", WireJson.tree(value)); return this; }
-            public Builder inconsistentCallIds(List<String> value) { json.set("inconsistentCallIds", WireJson.tree(value)); return this; }
-            public Builder lastWriteError(String value) { json.set("lastWriteError", WireJson.tree(value)); return this; }
-            public Builder path(String value) { json.set("path", WireJson.tree(value)); return this; }
-            public Jsonl build() { return new Jsonl(json); }
+
+            public Builder inconsistentCallIds(List<String> value) {
+                this.inconsistentCallIds = value;
+                return this;
+            }
+
+            public Builder lastWriteError(String value) {
+                this.lastWriteError = value;
+                return this;
+            }
+
+            public Builder path(String value) {
+                this.path = value;
+                return this;
+            }
+
+            public Jsonl build() { return new Jsonl(dropped, inconsistentCallIds, lastWriteError, path); }
         }
     }
-
 }

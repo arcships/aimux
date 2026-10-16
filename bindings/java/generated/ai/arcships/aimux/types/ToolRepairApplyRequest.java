@@ -4,47 +4,55 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolRepairApplyRequest extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolRepairApplyRequest {
+    @JsonProperty("options")
     private final GenerateTextOptions options;
-    private final boolean hasOptions;
+    @JsonProperty("reply")
     private final ToolCallRepairReply reply;
+    @JsonProperty("toolCall")
     private final ToolCallInput toolCall;
-    private ToolRepairApplyRequest(JsonNode json) {
-        WireJson.object(json, "ToolRepairApplyRequest", true, "options", "reply", "toolCall");
-        this.hasOptions = json.has("options");
-        this.options = WireJson.isNull(json.get("options")) ? null : GenerateTextOptions.fromJson(json.get("options"));
-        WireJson.required(json, "reply");
-        this.reply = ToolCallRepairReply.fromJson(json.get("reply"));
-        WireJson.required(json, "toolCall");
-        this.toolCall = ToolCallInput.fromJson(json.get("toolCall"));
+
+    @JsonCreator
+    public ToolRepairApplyRequest(
+        @JsonProperty(value = "options") GenerateTextOptions options,
+        @JsonProperty(value = "reply", required = true) ToolCallRepairReply reply,
+        @JsonProperty(value = "toolCall", required = true) ToolCallInput toolCall) {
+        this.options = options;
+        this.reply = reply;
+        this.toolCall = toolCall;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolRepairApplyRequest fromJson(JsonNode json) { return new ToolRepairApplyRequest(json); }
+
     public static Builder builder() { return new Builder(); }
-    public GenerateTextOptions getOptions() { return options == null ? null : options; }
-    public ToolCallRepairReply getReply() { return reply == null ? null : reply; }
-    public ToolCallInput getToolCall() { return toolCall == null ? null : toolCall; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasOptions) json.set("options", WireJson.tree(options));
-        json.set("reply", WireJson.tree(reply));
-        json.set("toolCall", WireJson.tree(toolCall));
-        return json;
-    }
+    public GenerateTextOptions getOptions() { return options; }
+    public ToolCallRepairReply getReply() { return reply; }
+    public ToolCallInput getToolCall() { return toolCall; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private GenerateTextOptions options;
+        private ToolCallRepairReply reply;
+        private ToolCallInput toolCall;
+
+        public Builder options(GenerateTextOptions value) {
+            this.options = value;
+            return this;
         }
-        public Builder options(GenerateTextOptions value) { json.set("options", WireJson.tree(value)); return this; }
-        public Builder reply(ToolCallRepairReply value) { json.set("reply", WireJson.tree(value)); return this; }
-        public Builder toolCall(ToolCallInput value) { json.set("toolCall", WireJson.tree(value)); return this; }
-        public ToolRepairApplyRequest build() { return new ToolRepairApplyRequest(json); }
+
+        public Builder reply(ToolCallRepairReply value) {
+            this.reply = value;
+            return this;
+        }
+
+        public Builder toolCall(ToolCallInput value) {
+            this.toolCall = value;
+            return this;
+        }
+
+        public ToolRepairApplyRequest build() { return new ToolRepairApplyRequest(options, reply, toolCall); }
     }
 }
-

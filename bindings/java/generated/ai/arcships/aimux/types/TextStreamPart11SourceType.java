@@ -4,18 +4,10 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum TextStreamPart11SourceType {
-    DOCUMENT("document");
-    private final String value;
-    TextStreamPart11SourceType(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static TextStreamPart11SourceType fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (TextStreamPart11SourceType item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid TextStreamPart11SourceType: " + value);
-    }
+    @JsonProperty("document")
+    DOCUMENT
 }

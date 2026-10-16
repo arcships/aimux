@@ -4,44 +4,47 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Provider-specific content identified by its provider and kind.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class CustomPart extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class CustomPart {
+    @JsonProperty("kind")
     private final NamespacedKind kind;
+    @JsonProperty("providerOptions")
     private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private CustomPart(JsonNode json) {
-        WireJson.object(json, "CustomPart", false, "kind", "providerOptions");
-        WireJson.required(json, "kind");
-        this.kind = NamespacedKind.fromJson(json.get("kind"));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+    @JsonCreator
+    public CustomPart(
+        @JsonProperty(value = "kind", required = true) NamespacedKind kind,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+        this.kind = kind;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static CustomPart fromJson(JsonNode json) { return new CustomPart(json); }
+
     public static Builder builder() { return new Builder(); }
-    public NamespacedKind getKind() { return kind == null ? null : kind; }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("kind", WireJson.tree(kind));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        return json;
-    }
+    public NamespacedKind getKind() { return kind; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private NamespacedKind kind;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+
+        public Builder kind(NamespacedKind value) {
+            this.kind = value;
+            return this;
         }
-        public Builder kind(NamespacedKind value) { json.set("kind", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public CustomPart build() { return new CustomPart(json); }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public CustomPart build() { return new CustomPart(kind, providerOptions); }
     }
 }
-

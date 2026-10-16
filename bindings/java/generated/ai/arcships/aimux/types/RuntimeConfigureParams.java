@@ -4,42 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RuntimeConfigureParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RuntimeConfigureParams {
+    @JsonProperty("logging")
     private final LoggingConfig logging;
-    private final boolean hasLogging;
+    @JsonProperty("proxy")
     private final RuntimeConfigureParamsProxy proxy;
-    private final boolean hasProxy;
-    private RuntimeConfigureParams(JsonNode json) {
-        WireJson.object(json, "RuntimeConfigureParams", true, "logging", "proxy");
-        this.hasLogging = json.has("logging");
-        this.logging = WireJson.isNull(json.get("logging")) ? null : (WireJson.isNull(json.get("logging")) ? null : LoggingConfig.fromJson(json.get("logging")));
-        this.hasProxy = json.has("proxy");
-        this.proxy = WireJson.isNull(json.get("proxy")) ? null : (WireJson.isNull(json.get("proxy")) ? null : RuntimeConfigureParamsProxy.fromJson(json.get("proxy")));
+
+    @JsonCreator
+    public RuntimeConfigureParams(
+        @JsonProperty(value = "logging") LoggingConfig logging,
+        @JsonProperty(value = "proxy") RuntimeConfigureParamsProxy proxy) {
+        this.logging = logging;
+        this.proxy = proxy;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RuntimeConfigureParams fromJson(JsonNode json) { return new RuntimeConfigureParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public LoggingConfig getLogging() { return logging == null ? null : (logging == null ? null : logging); }
-    public RuntimeConfigureParamsProxy getProxy() { return proxy == null ? null : (proxy == null ? null : proxy); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasLogging) json.set("logging", WireJson.tree(logging));
-        if (hasProxy) json.set("proxy", WireJson.tree(proxy));
-        return json;
-    }
+    public LoggingConfig getLogging() { return logging; }
+    public RuntimeConfigureParamsProxy getProxy() { return proxy; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private LoggingConfig logging;
+        private RuntimeConfigureParamsProxy proxy;
+
+        public Builder logging(LoggingConfig value) {
+            this.logging = value;
+            return this;
         }
-        public Builder logging(LoggingConfig value) { json.set("logging", WireJson.tree(value)); return this; }
-        public Builder proxy(RuntimeConfigureParamsProxy value) { json.set("proxy", WireJson.tree(value)); return this; }
-        public RuntimeConfigureParams build() { return new RuntimeConfigureParams(json); }
+
+        public Builder proxy(RuntimeConfigureParamsProxy value) {
+            this.proxy = value;
+            return this;
+        }
+
+        public RuntimeConfigureParams build() { return new RuntimeConfigureParams(logging, proxy); }
     }
 }
-

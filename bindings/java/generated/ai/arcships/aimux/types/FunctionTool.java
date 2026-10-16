@@ -4,92 +4,112 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A tool definition passed to the model in `CallOptions.tools`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class FunctionTool extends WireValue {
-    private final String description;
-    private final boolean hasDescription;
-    private final List<FunctionToolInputExample> inputExamples;
-    private final boolean hasInputExamples;
-    private final JsonNode inputSchema;
-    private final String name;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final Boolean strict;
-    private final boolean hasStrict;
-    private FunctionTool(JsonNode json) {
-        WireJson.object(json, "FunctionTool", false, "description", "inputExamples", "inputSchema", "name", "providerOptions", "strict");
-        this.hasDescription = json.has("description");
-        this.description = WireJson.isNull(json.get("description")) ? null : (WireJson.isNull(json.get("description")) ? null : WireJson.string(json.get("description")));
-        this.hasInputExamples = json.has("inputExamples");
-        this.inputExamples = WireJson.isNull(json.get("inputExamples")) ? null : (WireJson.isNull(json.get("inputExamples")) ? null : WireJson.array(json.get("inputExamples"), item0 -> FunctionToolInputExample.fromJson(item0)));
-        WireJson.required(json, "inputSchema");
-        this.inputSchema = WireJson.json(json.get("inputSchema"));
-        WireJson.required(json, "name");
-        this.name = WireJson.string(json.get("name"));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasStrict = json.has("strict");
-        this.strict = WireJson.isNull(json.get("strict")) ? null : (WireJson.isNull(json.get("strict")) ? null : WireJson.bool(json.get("strict")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static FunctionTool fromJson(JsonNode json) { return new FunctionTool(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class FunctionTool {
     /**
      * Human-readable description.
      */
-    public String getDescription() { return description == null ? null : (description == null ? null : description); }
+    @JsonProperty("description")
+    private final String description;
     /**
      * Example inputs for the tool (V4 `inputExamples`), used by some providers
      * to emit `input_examples` in the request body.
      */
-    public List<FunctionToolInputExample> getInputExamples() { return inputExamples == null ? null : (inputExamples == null ? null : WireJson.array(WireJson.tree(inputExamples), item0 -> FunctionToolInputExample.fromJson(item0))); }
+    @JsonProperty("inputExamples")
+    private final List<FunctionToolInputExample> inputExamples;
     /**
      * JSON Schema describing the tool's parameters.
      */
-    public JsonNode getInputSchema() { return inputSchema == null ? null : WireJson.json(WireJson.tree(inputSchema)); }
+    @JsonProperty("inputSchema")
+    private final JsonNode inputSchema;
     /**
      * Unique tool name.
      */
-    public String getName() { return name == null ? null : name; }
+    @JsonProperty("name")
+    private final String name;
     /**
      * Provider-specific options, keyed by provider name
      * (e.g. `{"anthropic": {"eagerInputStreaming": true}}`). Aligned with the
      * V4 `providerOptions` field on function tools.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * Whether the tool supports strict schema enforcement (OpenAI strict mode).
      */
-    public Boolean getStrict() { return strict == null ? null : (strict == null ? null : strict); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDescription) json.set("description", WireJson.tree(description));
-        if (hasInputExamples) json.set("inputExamples", WireJson.tree(inputExamples));
-        json.set("inputSchema", WireJson.tree(inputSchema));
-        json.set("name", WireJson.tree(name));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        if (hasStrict) json.set("strict", WireJson.tree(strict));
-        return json;
+    @JsonProperty("strict")
+    private final Boolean strict;
+
+    @JsonCreator
+    public FunctionTool(
+        @JsonProperty(value = "description") String description,
+        @JsonProperty(value = "inputExamples") List<FunctionToolInputExample> inputExamples,
+        @JsonProperty(value = "inputSchema", required = true) JsonNode inputSchema,
+        @JsonProperty(value = "name", required = true) String name,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "strict") Boolean strict) {
+        this.description = description;
+        this.inputExamples = inputExamples == null ? null : Collections.unmodifiableList(new ArrayList<>(inputExamples));
+        this.inputSchema = inputSchema == null ? null : inputSchema.deepCopy();
+        this.name = name;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.strict = strict;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getDescription() { return description; }
+    public List<FunctionToolInputExample> getInputExamples() { return inputExamples; }
+    public JsonNode getInputSchema() { return inputSchema == null ? null : inputSchema.deepCopy(); }
+    public String getName() { return name; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public Boolean getStrict() { return strict; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String description;
+        private List<FunctionToolInputExample> inputExamples;
+        private JsonNode inputSchema;
+        private String name;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private Boolean strict;
+
+        public Builder description(String value) {
+            this.description = value;
+            return this;
         }
-        public Builder description(String value) { json.set("description", WireJson.tree(value)); return this; }
-        public Builder inputExamples(List<FunctionToolInputExample> value) { json.set("inputExamples", WireJson.tree(value)); return this; }
-        public Builder inputSchema(JsonNode value) { json.set("inputSchema", WireJson.tree(value)); return this; }
-        public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder strict(Boolean value) { json.set("strict", WireJson.tree(value)); return this; }
-        public FunctionTool build() { return new FunctionTool(json); }
+
+        public Builder inputExamples(List<FunctionToolInputExample> value) {
+            this.inputExamples = value;
+            return this;
+        }
+
+        public Builder inputSchema(JsonNode value) {
+            this.inputSchema = value;
+            return this;
+        }
+
+        public Builder name(String value) {
+            this.name = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder strict(Boolean value) {
+            this.strict = value;
+            return this;
+        }
+
+        public FunctionTool build() { return new FunctionTool(description, inputExamples, inputSchema, name, providerOptions, strict); }
     }
 }
-

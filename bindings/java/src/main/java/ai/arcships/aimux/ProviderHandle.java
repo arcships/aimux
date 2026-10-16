@@ -13,7 +13,7 @@ public final class ProviderHandle extends NativeHandle {
     private long modelId(String method, String modelId) {
         ProviderModelParams request = ProviderModelParams.builder()
             .method(method).modelId(java.util.Objects.requireNonNull(modelId, "modelId")).build();
-        return AimuxResult.handle(call(AimuxOps.OP_PROVIDER_MODEL, request.toString()));
+        return AimuxResult.handle(call(AimuxOps.OP_PROVIDER_MODEL, DtoJson.stringify(request)));
     }
 
     public Model languageModel(String modelId) { return new Model(aimux, modelId("languageModel", modelId)); }

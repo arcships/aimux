@@ -4,44 +4,47 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TimingRecord extends WireValue {
-    private final BigInteger latencyMs;
-    private final BigInteger ttfbMs;
-    private final boolean hasTtfbMs;
-    private TimingRecord(JsonNode json) {
-        WireJson.object(json, "TimingRecord", false, "latencyMs", "ttfbMs");
-        WireJson.required(json, "latencyMs");
-        this.latencyMs = WireJson.integer(json.get("latencyMs"), true, 64);
-        this.hasTtfbMs = json.has("ttfbMs");
-        this.ttfbMs = WireJson.isNull(json.get("ttfbMs")) ? null : (WireJson.isNull(json.get("ttfbMs")) ? null : WireJson.integer(json.get("ttfbMs"), true, 64));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TimingRecord fromJson(JsonNode json) { return new TimingRecord(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TimingRecord {
     /**
      * ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
      */
-    public BigInteger getLatencyMs() { return latencyMs == null ? null : latencyMs; }
-    public BigInteger getTtfbMs() { return ttfbMs == null ? null : (ttfbMs == null ? null : ttfbMs); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("latencyMs", WireJson.tree(latencyMs));
-        if (hasTtfbMs) json.set("ttfbMs", WireJson.tree(ttfbMs));
-        return json;
+    @JsonProperty("latencyMs")
+    private final Long latencyMs;
+    @JsonProperty("ttfbMs")
+    private final Long ttfbMs;
+
+    @JsonCreator
+    public TimingRecord(
+        @JsonProperty(value = "latencyMs", required = true) Long latencyMs,
+        @JsonProperty(value = "ttfbMs") Long ttfbMs) {
+        this.latencyMs = latencyMs;
+        this.ttfbMs = ttfbMs;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getLatencyMs() { return latencyMs; }
+    public Long getTtfbMs() { return ttfbMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long latencyMs;
+        private Long ttfbMs;
+
+        public Builder latencyMs(Long value) {
+            this.latencyMs = value;
+            return this;
         }
-        public Builder latencyMs(BigInteger value) { json.set("latencyMs", WireJson.tree(value)); return this; }
-        public Builder ttfbMs(BigInteger value) { json.set("ttfbMs", WireJson.tree(value)); return this; }
-        public TimingRecord build() { return new TimingRecord(json); }
+
+        public Builder ttfbMs(Long value) {
+            this.ttfbMs = value;
+            return this;
+        }
+
+        public TimingRecord build() { return new TimingRecord(latencyMs, ttfbMs); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,99 +12,150 @@ import java.util.*;
  * side by side, never merged into a single number).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TraceStats extends WireValue {
-    private final BigInteger claimedCacheReadTotal;
-    private final BigInteger claimedCacheWriteTotal;
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TraceStats {
+    @JsonProperty("claimedCacheReadTotal")
+    private final Long claimedCacheReadTotal;
+    @JsonProperty("claimedCacheWriteTotal")
+    private final Long claimedCacheWriteTotal;
+    @JsonProperty("clientUpperBoundHitRate")
     private final BigDecimal clientUpperBoundHitRate;
-    private final boolean hasClientUpperBoundHitRate;
-    private final BigInteger errors;
-    private final BigInteger inputTokensTotal;
+    @JsonProperty("errors")
+    private final Long errors;
+    @JsonProperty("inputTokensTotal")
+    private final Long inputTokensTotal;
+    @JsonProperty("model")
     private final String model;
+    @JsonProperty("provider")
     private final String provider;
+    @JsonProperty("reportedHitRate")
     private final BigDecimal reportedHitRate;
-    private final boolean hasReportedHitRate;
-    private final BigInteger requests;
-    private final BigInteger ttftP50Ms;
-    private final boolean hasTtftP50Ms;
-    private final BigInteger ttftP95Ms;
-    private final boolean hasTtftP95Ms;
-    private final Map<String, BigInteger> verdictCounts;
-    private TraceStats(JsonNode json) {
-        WireJson.object(json, "TraceStats", false, "claimedCacheReadTotal", "claimedCacheWriteTotal", "clientUpperBoundHitRate", "errors", "inputTokensTotal", "model", "provider", "reportedHitRate", "requests", "ttftP50Ms", "ttftP95Ms", "verdictCounts");
-        WireJson.required(json, "claimedCacheReadTotal");
-        this.claimedCacheReadTotal = WireJson.integer(json.get("claimedCacheReadTotal"), true, 64);
-        WireJson.required(json, "claimedCacheWriteTotal");
-        this.claimedCacheWriteTotal = WireJson.integer(json.get("claimedCacheWriteTotal"), true, 64);
-        this.hasClientUpperBoundHitRate = json.has("clientUpperBoundHitRate");
-        this.clientUpperBoundHitRate = WireJson.isNull(json.get("clientUpperBoundHitRate")) ? null : (WireJson.isNull(json.get("clientUpperBoundHitRate")) ? null : WireJson.number(json.get("clientUpperBoundHitRate")));
-        WireJson.required(json, "errors");
-        this.errors = WireJson.integer(json.get("errors"), true, 64);
-        WireJson.required(json, "inputTokensTotal");
-        this.inputTokensTotal = WireJson.integer(json.get("inputTokensTotal"), true, 64);
-        WireJson.required(json, "model");
-        this.model = WireJson.string(json.get("model"));
-        WireJson.required(json, "provider");
-        this.provider = WireJson.string(json.get("provider"));
-        this.hasReportedHitRate = json.has("reportedHitRate");
-        this.reportedHitRate = WireJson.isNull(json.get("reportedHitRate")) ? null : (WireJson.isNull(json.get("reportedHitRate")) ? null : WireJson.number(json.get("reportedHitRate")));
-        WireJson.required(json, "requests");
-        this.requests = WireJson.integer(json.get("requests"), true, 64);
-        this.hasTtftP50Ms = json.has("ttftP50Ms");
-        this.ttftP50Ms = WireJson.isNull(json.get("ttftP50Ms")) ? null : (WireJson.isNull(json.get("ttftP50Ms")) ? null : WireJson.integer(json.get("ttftP50Ms"), true, 64));
-        this.hasTtftP95Ms = json.has("ttftP95Ms");
-        this.ttftP95Ms = WireJson.isNull(json.get("ttftP95Ms")) ? null : (WireJson.isNull(json.get("ttftP95Ms")) ? null : WireJson.integer(json.get("ttftP95Ms"), true, 64));
-        WireJson.required(json, "verdictCounts");
-        this.verdictCounts = WireJson.map(json.get("verdictCounts"), item0 -> WireJson.integer(item0, true, 64));
+    @JsonProperty("requests")
+    private final Long requests;
+    @JsonProperty("ttftP50Ms")
+    private final Long ttftP50Ms;
+    @JsonProperty("ttftP95Ms")
+    private final Long ttftP95Ms;
+    @JsonProperty("verdictCounts")
+    private final Map<String, Long> verdictCounts;
+
+    @JsonCreator
+    public TraceStats(
+        @JsonProperty(value = "claimedCacheReadTotal", required = true) Long claimedCacheReadTotal,
+        @JsonProperty(value = "claimedCacheWriteTotal", required = true) Long claimedCacheWriteTotal,
+        @JsonProperty(value = "clientUpperBoundHitRate") BigDecimal clientUpperBoundHitRate,
+        @JsonProperty(value = "errors", required = true) Long errors,
+        @JsonProperty(value = "inputTokensTotal", required = true) Long inputTokensTotal,
+        @JsonProperty(value = "model", required = true) String model,
+        @JsonProperty(value = "provider", required = true) String provider,
+        @JsonProperty(value = "reportedHitRate") BigDecimal reportedHitRate,
+        @JsonProperty(value = "requests", required = true) Long requests,
+        @JsonProperty(value = "ttftP50Ms") Long ttftP50Ms,
+        @JsonProperty(value = "ttftP95Ms") Long ttftP95Ms,
+        @JsonProperty(value = "verdictCounts", required = true) Map<String, Long> verdictCounts) {
+        this.claimedCacheReadTotal = claimedCacheReadTotal;
+        this.claimedCacheWriteTotal = claimedCacheWriteTotal;
+        this.clientUpperBoundHitRate = clientUpperBoundHitRate;
+        this.errors = errors;
+        this.inputTokensTotal = inputTokensTotal;
+        this.model = model;
+        this.provider = provider;
+        this.reportedHitRate = reportedHitRate;
+        this.requests = requests;
+        this.ttftP50Ms = ttftP50Ms;
+        this.ttftP95Ms = ttftP95Ms;
+        this.verdictCounts = verdictCounts == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(verdictCounts));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TraceStats fromJson(JsonNode json) { return new TraceStats(json); }
+
     public static Builder builder() { return new Builder(); }
-    public BigInteger getClaimedCacheReadTotal() { return claimedCacheReadTotal == null ? null : claimedCacheReadTotal; }
-    public BigInteger getClaimedCacheWriteTotal() { return claimedCacheWriteTotal == null ? null : claimedCacheWriteTotal; }
-    public BigDecimal getClientUpperBoundHitRate() { return clientUpperBoundHitRate == null ? null : (clientUpperBoundHitRate == null ? null : clientUpperBoundHitRate); }
-    public BigInteger getErrors() { return errors == null ? null : errors; }
-    public BigInteger getInputTokensTotal() { return inputTokensTotal == null ? null : inputTokensTotal; }
-    public String getModel() { return model == null ? null : model; }
-    public String getProvider() { return provider == null ? null : provider; }
-    public BigDecimal getReportedHitRate() { return reportedHitRate == null ? null : (reportedHitRate == null ? null : reportedHitRate); }
-    public BigInteger getRequests() { return requests == null ? null : requests; }
-    public BigInteger getTtftP50Ms() { return ttftP50Ms == null ? null : (ttftP50Ms == null ? null : ttftP50Ms); }
-    public BigInteger getTtftP95Ms() { return ttftP95Ms == null ? null : (ttftP95Ms == null ? null : ttftP95Ms); }
-    public Map<String, BigInteger> getVerdictCounts() { return verdictCounts == null ? null : WireJson.map(WireJson.tree(verdictCounts), item0 -> WireJson.integer(item0, true, 64)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("claimedCacheReadTotal", WireJson.tree(claimedCacheReadTotal));
-        json.set("claimedCacheWriteTotal", WireJson.tree(claimedCacheWriteTotal));
-        if (hasClientUpperBoundHitRate) json.set("clientUpperBoundHitRate", WireJson.tree(clientUpperBoundHitRate));
-        json.set("errors", WireJson.tree(errors));
-        json.set("inputTokensTotal", WireJson.tree(inputTokensTotal));
-        json.set("model", WireJson.tree(model));
-        json.set("provider", WireJson.tree(provider));
-        if (hasReportedHitRate) json.set("reportedHitRate", WireJson.tree(reportedHitRate));
-        json.set("requests", WireJson.tree(requests));
-        if (hasTtftP50Ms) json.set("ttftP50Ms", WireJson.tree(ttftP50Ms));
-        if (hasTtftP95Ms) json.set("ttftP95Ms", WireJson.tree(ttftP95Ms));
-        json.set("verdictCounts", WireJson.tree(verdictCounts));
-        return json;
-    }
+    public Long getClaimedCacheReadTotal() { return claimedCacheReadTotal; }
+    public Long getClaimedCacheWriteTotal() { return claimedCacheWriteTotal; }
+    public BigDecimal getClientUpperBoundHitRate() { return clientUpperBoundHitRate; }
+    public Long getErrors() { return errors; }
+    public Long getInputTokensTotal() { return inputTokensTotal; }
+    public String getModel() { return model; }
+    public String getProvider() { return provider; }
+    public BigDecimal getReportedHitRate() { return reportedHitRate; }
+    public Long getRequests() { return requests; }
+    public Long getTtftP50Ms() { return ttftP50Ms; }
+    public Long getTtftP95Ms() { return ttftP95Ms; }
+    public Map<String, Long> getVerdictCounts() { return verdictCounts; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long claimedCacheReadTotal;
+        private Long claimedCacheWriteTotal;
+        private BigDecimal clientUpperBoundHitRate;
+        private Long errors;
+        private Long inputTokensTotal;
+        private String model;
+        private String provider;
+        private BigDecimal reportedHitRate;
+        private Long requests;
+        private Long ttftP50Ms;
+        private Long ttftP95Ms;
+        private Map<String, Long> verdictCounts;
+
+        public Builder claimedCacheReadTotal(Long value) {
+            this.claimedCacheReadTotal = value;
+            return this;
         }
-        public Builder claimedCacheReadTotal(BigInteger value) { json.set("claimedCacheReadTotal", WireJson.tree(value)); return this; }
-        public Builder claimedCacheWriteTotal(BigInteger value) { json.set("claimedCacheWriteTotal", WireJson.tree(value)); return this; }
-        public Builder clientUpperBoundHitRate(BigDecimal value) { json.set("clientUpperBoundHitRate", WireJson.tree(value)); return this; }
-        public Builder errors(BigInteger value) { json.set("errors", WireJson.tree(value)); return this; }
-        public Builder inputTokensTotal(BigInteger value) { json.set("inputTokensTotal", WireJson.tree(value)); return this; }
-        public Builder model(String value) { json.set("model", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder reportedHitRate(BigDecimal value) { json.set("reportedHitRate", WireJson.tree(value)); return this; }
-        public Builder requests(BigInteger value) { json.set("requests", WireJson.tree(value)); return this; }
-        public Builder ttftP50Ms(BigInteger value) { json.set("ttftP50Ms", WireJson.tree(value)); return this; }
-        public Builder ttftP95Ms(BigInteger value) { json.set("ttftP95Ms", WireJson.tree(value)); return this; }
-        public Builder verdictCounts(Map<String, BigInteger> value) { json.set("verdictCounts", WireJson.tree(value)); return this; }
-        public TraceStats build() { return new TraceStats(json); }
+
+        public Builder claimedCacheWriteTotal(Long value) {
+            this.claimedCacheWriteTotal = value;
+            return this;
+        }
+
+        public Builder clientUpperBoundHitRate(BigDecimal value) {
+            this.clientUpperBoundHitRate = value;
+            return this;
+        }
+
+        public Builder errors(Long value) {
+            this.errors = value;
+            return this;
+        }
+
+        public Builder inputTokensTotal(Long value) {
+            this.inputTokensTotal = value;
+            return this;
+        }
+
+        public Builder model(String value) {
+            this.model = value;
+            return this;
+        }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder reportedHitRate(BigDecimal value) {
+            this.reportedHitRate = value;
+            return this;
+        }
+
+        public Builder requests(Long value) {
+            this.requests = value;
+            return this;
+        }
+
+        public Builder ttftP50Ms(Long value) {
+            this.ttftP50Ms = value;
+            return this;
+        }
+
+        public Builder ttftP95Ms(Long value) {
+            this.ttftP95Ms = value;
+            return this;
+        }
+
+        public Builder verdictCounts(Map<String, Long> value) {
+            this.verdictCounts = value;
+            return this;
+        }
+
+        public TraceStats build() { return new TraceStats(claimedCacheReadTotal, claimedCacheWriteTotal, clientUpperBoundHitRate, errors, inputTokensTotal, model, provider, reportedHitRate, requests, ttftP50Ms, ttftP95Ms, verdictCounts); }
     }
 }
-

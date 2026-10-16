@@ -4,42 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderWrapParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderWrapParams {
+    @JsonProperty("imageModelMiddleware")
     private final List<HandleIdInput> imageModelMiddleware;
-    private final boolean hasImageModelMiddleware;
+    @JsonProperty("languageModelMiddleware")
     private final List<HandleIdInput> languageModelMiddleware;
-    private final boolean hasLanguageModelMiddleware;
-    private ProviderWrapParams(JsonNode json) {
-        WireJson.object(json, "ProviderWrapParams", true, "imageModelMiddleware", "languageModelMiddleware");
-        this.hasImageModelMiddleware = json.has("imageModelMiddleware");
-        this.imageModelMiddleware = WireJson.isNull(json.get("imageModelMiddleware")) ? null : WireJson.array(json.get("imageModelMiddleware"), item0 -> HandleIdInput.fromJson(item0));
-        this.hasLanguageModelMiddleware = json.has("languageModelMiddleware");
-        this.languageModelMiddleware = WireJson.isNull(json.get("languageModelMiddleware")) ? null : WireJson.array(json.get("languageModelMiddleware"), item0 -> HandleIdInput.fromJson(item0));
+
+    @JsonCreator
+    public ProviderWrapParams(
+        @JsonProperty(value = "imageModelMiddleware") List<HandleIdInput> imageModelMiddleware,
+        @JsonProperty(value = "languageModelMiddleware") List<HandleIdInput> languageModelMiddleware) {
+        this.imageModelMiddleware = imageModelMiddleware == null ? null : Collections.unmodifiableList(new ArrayList<>(imageModelMiddleware));
+        this.languageModelMiddleware = languageModelMiddleware == null ? null : Collections.unmodifiableList(new ArrayList<>(languageModelMiddleware));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderWrapParams fromJson(JsonNode json) { return new ProviderWrapParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<HandleIdInput> getImageModelMiddleware() { return imageModelMiddleware == null ? null : WireJson.array(WireJson.tree(imageModelMiddleware), item0 -> HandleIdInput.fromJson(item0)); }
-    public List<HandleIdInput> getLanguageModelMiddleware() { return languageModelMiddleware == null ? null : WireJson.array(WireJson.tree(languageModelMiddleware), item0 -> HandleIdInput.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasImageModelMiddleware) json.set("imageModelMiddleware", WireJson.tree(imageModelMiddleware));
-        if (hasLanguageModelMiddleware) json.set("languageModelMiddleware", WireJson.tree(languageModelMiddleware));
-        return json;
-    }
+    public List<HandleIdInput> getImageModelMiddleware() { return imageModelMiddleware; }
+    public List<HandleIdInput> getLanguageModelMiddleware() { return languageModelMiddleware; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<HandleIdInput> imageModelMiddleware;
+        private List<HandleIdInput> languageModelMiddleware;
+
+        public Builder imageModelMiddleware(List<HandleIdInput> value) {
+            this.imageModelMiddleware = value;
+            return this;
         }
-        public Builder imageModelMiddleware(List<HandleIdInput> value) { json.set("imageModelMiddleware", WireJson.tree(value)); return this; }
-        public Builder languageModelMiddleware(List<HandleIdInput> value) { json.set("languageModelMiddleware", WireJson.tree(value)); return this; }
-        public ProviderWrapParams build() { return new ProviderWrapParams(json); }
+
+        public Builder languageModelMiddleware(List<HandleIdInput> value) {
+            this.languageModelMiddleware = value;
+            return this;
+        }
+
+        public ProviderWrapParams build() { return new ProviderWrapParams(imageModelMiddleware, languageModelMiddleware); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,73 +13,89 @@ import java.util.*;
  * Aligned with V4 `EmbeddingModelV4CallOptions`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class EmbeddingCallOptions extends WireValue {
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private final List<String> values;
-    private EmbeddingCallOptions(JsonNode json) {
-        WireJson.object(json, "EmbeddingCallOptions", false, "headers", "maxRetries", "providerOptions", "timeout", "values");
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-        WireJson.required(json, "values");
-        this.values = WireJson.array(json.get("values"), item0 -> WireJson.string(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static EmbeddingCallOptions fromJson(JsonNode json) { return new EmbeddingCallOptions(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class EmbeddingCallOptions {
     /**
      * Additional HTTP headers to send with the request.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
      * retrying. `None` uses 2, the AI SDK default.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
     /**
      * Additional provider-specific options, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * Per-call operation timeout.
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
     /**
      * List of text values to generate embeddings for.
      */
-    public List<String> getValues() { return values == null ? null : WireJson.array(WireJson.tree(values), item0 -> WireJson.string(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        json.set("values", WireJson.tree(values));
-        return json;
+    @JsonProperty("values")
+    private final List<String> values;
+
+    @JsonCreator
+    public EmbeddingCallOptions(
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout,
+        @JsonProperty(value = "values", required = true) List<String> values) {
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.maxRetries = maxRetries;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.timeout = timeout;
+        this.values = values == null ? null : Collections.unmodifiableList(new ArrayList<>(values));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, String> getHeaders() { return headers; }
+    public Long getMaxRetries() { return maxRetries; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+    public List<String> getValues() { return values; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, String> headers;
+        private Long maxRetries;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private TimeoutConfiguration timeout;
+        private List<String> values;
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
         }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public Builder values(List<String> value) { json.set("values", WireJson.tree(value)); return this; }
-        public EmbeddingCallOptions build() { return new EmbeddingCallOptions(json); }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public Builder values(List<String> value) {
+            this.values = value;
+            return this;
+        }
+
+        public EmbeddingCallOptions build() { return new EmbeddingCallOptions(headers, maxRetries, providerOptions, timeout, values); }
     }
 }
-

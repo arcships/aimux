@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReplayPlan extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReplayPlan {
+    @JsonProperty("calls")
     private final List<ReplayPlannedCall> calls;
-    private ReplayPlan(JsonNode json) {
-        WireJson.object(json, "ReplayPlan", false, "calls");
-        WireJson.required(json, "calls");
-        this.calls = WireJson.array(json.get("calls"), item0 -> ReplayPlannedCall.fromJson(item0));
+
+    @JsonCreator
+    public ReplayPlan(
+        @JsonProperty(value = "calls", required = true) List<ReplayPlannedCall> calls) {
+        this.calls = calls == null ? null : Collections.unmodifiableList(new ArrayList<>(calls));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReplayPlan fromJson(JsonNode json) { return new ReplayPlan(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<ReplayPlannedCall> getCalls() { return calls == null ? null : WireJson.array(WireJson.tree(calls), item0 -> ReplayPlannedCall.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("calls", WireJson.tree(calls));
-        return json;
-    }
+    public List<ReplayPlannedCall> getCalls() { return calls; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<ReplayPlannedCall> calls;
+
+        public Builder calls(List<ReplayPlannedCall> value) {
+            this.calls = value;
+            return this;
         }
-        public Builder calls(List<ReplayPlannedCall> value) { json.set("calls", WireJson.tree(value)); return this; }
-        public ReplayPlan build() { return new ReplayPlan(json); }
+
+        public ReplayPlan build() { return new ReplayPlan(calls); }
     }
 }
-

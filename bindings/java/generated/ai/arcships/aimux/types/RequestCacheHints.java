@@ -4,40 +4,39 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Request-side cache hints (best-effort, e.g. Anthropic `cache_control`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RequestCacheHints extends WireValue {
-    private final Boolean requestedWrite;
-    private RequestCacheHints(JsonNode json) {
-        WireJson.object(json, "RequestCacheHints", false, "requestedWrite");
-        WireJson.required(json, "requestedWrite");
-        this.requestedWrite = WireJson.bool(json.get("requestedWrite"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RequestCacheHints fromJson(JsonNode json) { return new RequestCacheHints(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RequestCacheHints {
     /**
      * Whether any message requested `cache_control` (write) this call.
      */
-    public Boolean getRequestedWrite() { return requestedWrite == null ? null : requestedWrite; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("requestedWrite", WireJson.tree(requestedWrite));
-        return json;
+    @JsonProperty("requestedWrite")
+    private final Boolean requestedWrite;
+
+    @JsonCreator
+    public RequestCacheHints(
+        @JsonProperty(value = "requestedWrite", required = true) Boolean requestedWrite) {
+        this.requestedWrite = requestedWrite;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Boolean getRequestedWrite() { return requestedWrite; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean requestedWrite;
+
+        public Builder requestedWrite(Boolean value) {
+            this.requestedWrite = value;
+            return this;
         }
-        public Builder requestedWrite(Boolean value) { json.set("requestedWrite", WireJson.tree(value)); return this; }
-        public RequestCacheHints build() { return new RequestCacheHints(json); }
+
+        public RequestCacheHints build() { return new RequestCacheHints(requestedWrite); }
     }
 }
-

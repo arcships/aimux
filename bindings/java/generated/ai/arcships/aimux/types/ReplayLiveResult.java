@@ -4,42 +4,52 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonDeserialize(using = ReplayLiveResult.Deserializer.class)
-public abstract class ReplayLiveResult extends WireValue {
+public abstract class ReplayLiveResult {
     private ReplayLiveResult() {}
-    public static ReplayLiveResult fromJson(JsonNode json) {
-        try { return new Branch1(GenerateTextResult.fromJson(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        try { return new Branch2(DecideResult.fromJson(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        throw new IllegalArgumentException("No ReplayLiveResult branch accepts: " + json);
-    }
+
     public static final class Deserializer extends JsonDeserializer<ReplayLiveResult> {
-        @Override public ReplayLiveResult deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context) throws java.io.IOException {
-            try { return fromJson(parser.getCodec().readTree(parser)); }
-            catch (IllegalArgumentException error) { throw JsonMappingException.from(parser, error.getMessage(), error); }
+        @Override
+        public ReplayLiveResult deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+            throws java.io.IOException {
+            JsonNode value = context.readTree(parser);
+            JsonMappingException failure = null;
+            try {
+                return parser.getCodec().treeToValue(value, Branch1.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            try {
+                return parser.getCodec().treeToValue(value, Branch2.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            throw failure;
         }
     }
+
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch1 extends ReplayLiveResult {
+        @JsonValue
         private final GenerateTextResult value;
-        public Branch1(GenerateTextResult value) { this.value = GenerateTextResult.fromJson(WireJson.tree(value)); }
+
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch1 fromJson(JsonNode json) { return new Branch1(GenerateTextResult.fromJson(json)); }
+        public Branch1(GenerateTextResult value) { this.value = value; }
+
         public GenerateTextResult getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch2 extends ReplayLiveResult {
+        @JsonValue
         private final DecideResult value;
-        public Branch2(DecideResult value) { this.value = DecideResult.fromJson(WireJson.tree(value)); }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch2 fromJson(JsonNode json) { return new Branch2(DecideResult.fromJson(json)); }
-        public DecideResult getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-    }
 
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public Branch2(DecideResult value) { this.value = value; }
+
+        public DecideResult getValue() { return value; }
+    }
 }

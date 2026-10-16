@@ -4,80 +4,96 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * The result of [`SearchModel::do_search`].
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SearchResult extends WireValue {
-    private final String answer;
-    private final boolean hasAnswer;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final SearchResponse response;
-    private final boolean hasResponse;
-    private final List<SearchResultItem> results;
-    private final List<Warning> warnings;
-    private SearchResult(JsonNode json) {
-        WireJson.object(json, "SearchResult", false, "answer", "providerMetadata", "response", "results", "warnings");
-        this.hasAnswer = json.has("answer");
-        this.answer = WireJson.isNull(json.get("answer")) ? null : (WireJson.isNull(json.get("answer")) ? null : WireJson.string(json.get("answer")));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasResponse = json.has("response");
-        this.response = WireJson.isNull(json.get("response")) ? null : (WireJson.isNull(json.get("response")) ? null : SearchResponse.fromJson(json.get("response")));
-        WireJson.required(json, "results");
-        this.results = WireJson.array(json.get("results"), item0 -> SearchResultItem.fromJson(item0));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SearchResult fromJson(JsonNode json) { return new SearchResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SearchResult {
     /**
      * An optional direct answer / summary (some providers return
      * an AI-generated answer alongside results).
      */
-    public String getAnswer() { return answer == null ? null : (answer == null ? null : answer); }
+    @JsonProperty("answer")
+    private final String answer;
     /**
      * Additional provider-specific metadata.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Optional response information for debugging.
      */
-    public SearchResponse getResponse() { return response == null ? null : (response == null ? null : response); }
+    @JsonProperty("response")
+    private final SearchResponse response;
     /**
      * Ordered list of search results.
      */
-    public List<SearchResultItem> getResults() { return results == null ? null : WireJson.array(WireJson.tree(results), item0 -> SearchResultItem.fromJson(item0)); }
+    @JsonProperty("results")
+    private final List<SearchResultItem> results;
     /**
      * Warnings for the call.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAnswer) json.set("answer", WireJson.tree(answer));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasResponse) json.set("response", WireJson.tree(response));
-        json.set("results", WireJson.tree(results));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public SearchResult(
+        @JsonProperty(value = "answer") String answer,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "response") SearchResponse response,
+        @JsonProperty(value = "results", required = true) List<SearchResultItem> results,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.answer = answer;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.response = response;
+        this.results = results == null ? null : Collections.unmodifiableList(new ArrayList<>(results));
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getAnswer() { return answer; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public SearchResponse getResponse() { return response; }
+    public List<SearchResultItem> getResults() { return results; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String answer;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private SearchResponse response;
+        private List<SearchResultItem> results;
+        private List<Warning> warnings;
+
+        public Builder answer(String value) {
+            this.answer = value;
+            return this;
         }
-        public Builder answer(String value) { json.set("answer", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder response(SearchResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder results(List<SearchResultItem> value) { json.set("results", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public SearchResult build() { return new SearchResult(json); }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder response(SearchResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder results(List<SearchResultItem> value) {
+            this.results = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public SearchResult build() { return new SearchResult(answer, providerMetadata, response, results, warnings); }
     }
 }
-

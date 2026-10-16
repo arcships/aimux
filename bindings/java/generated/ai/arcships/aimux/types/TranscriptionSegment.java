@@ -4,58 +4,67 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A transcript segment with timing information.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TranscriptionSegment extends WireValue {
-    private final BigDecimal endSecond;
-    private final BigDecimal startSecond;
-    private final String text;
-    private TranscriptionSegment(JsonNode json) {
-        WireJson.object(json, "TranscriptionSegment", false, "endSecond", "startSecond", "text");
-        WireJson.required(json, "endSecond");
-        this.endSecond = WireJson.number(json.get("endSecond"));
-        WireJson.required(json, "startSecond");
-        this.startSecond = WireJson.number(json.get("startSecond"));
-        WireJson.required(json, "text");
-        this.text = WireJson.string(json.get("text"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TranscriptionSegment fromJson(JsonNode json) { return new TranscriptionSegment(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TranscriptionSegment {
     /**
      * The end time of this segment in seconds.
      */
-    public BigDecimal getEndSecond() { return endSecond == null ? null : endSecond; }
+    @JsonProperty("endSecond")
+    private final BigDecimal endSecond;
     /**
      * The start time of this segment in seconds.
      */
-    public BigDecimal getStartSecond() { return startSecond == null ? null : startSecond; }
+    @JsonProperty("startSecond")
+    private final BigDecimal startSecond;
     /**
      * The text content of this segment.
      */
-    public String getText() { return text == null ? null : text; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("endSecond", WireJson.tree(endSecond));
-        json.set("startSecond", WireJson.tree(startSecond));
-        json.set("text", WireJson.tree(text));
-        return json;
+    @JsonProperty("text")
+    private final String text;
+
+    @JsonCreator
+    public TranscriptionSegment(
+        @JsonProperty(value = "endSecond", required = true) BigDecimal endSecond,
+        @JsonProperty(value = "startSecond", required = true) BigDecimal startSecond,
+        @JsonProperty(value = "text", required = true) String text) {
+        this.endSecond = endSecond;
+        this.startSecond = startSecond;
+        this.text = text;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public BigDecimal getEndSecond() { return endSecond; }
+    public BigDecimal getStartSecond() { return startSecond; }
+    public String getText() { return text; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private BigDecimal endSecond;
+        private BigDecimal startSecond;
+        private String text;
+
+        public Builder endSecond(BigDecimal value) {
+            this.endSecond = value;
+            return this;
         }
-        public Builder endSecond(BigDecimal value) { json.set("endSecond", WireJson.tree(value)); return this; }
-        public Builder startSecond(BigDecimal value) { json.set("startSecond", WireJson.tree(value)); return this; }
-        public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-        public TranscriptionSegment build() { return new TranscriptionSegment(json); }
+
+        public Builder startSecond(BigDecimal value) {
+            this.startSecond = value;
+            return this;
+        }
+
+        public Builder text(String value) {
+            this.text = value;
+            return this;
+        }
+
+        public TranscriptionSegment build() { return new TranscriptionSegment(endSecond, startSecond, text); }
     }
 }
-

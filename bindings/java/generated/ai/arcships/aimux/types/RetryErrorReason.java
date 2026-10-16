@@ -4,22 +4,15 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Why the retry wrapper stopped retrying.
  */
 public enum RetryErrorReason {
-    MAX_RETRIES_EXCEEDED("maxRetriesExceeded"),
-    ERROR_NOT_RETRYABLE("errorNotRetryable");
-    private final String value;
-    RetryErrorReason(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static RetryErrorReason fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (RetryErrorReason item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid RetryErrorReason: " + value);
-    }
+    @JsonProperty("maxRetriesExceeded")
+    MAX_RETRIES_EXCEEDED,
+    @JsonProperty("errorNotRetryable")
+    ERROR_NOT_RETRYABLE
 }

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,13 +12,18 @@ import java.util.*;
  * payload of both `GenerateContent::Source` and `StreamPart::Source`, and the
  * element of the text results' `sources`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "sourceType", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "sourceType")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = Source.Url.class, name = "url"),
-    @JsonSubTypes.Type(value = Source.Document.class, name = "document"),
+    @JsonSubTypes.Type(value = Source.Document.class, name = "document")
 })
-public abstract class Source extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class Source {
     private Source() {}
+
+    @JsonProperty("sourceType")
     public abstract String getSourceType();
     public String getId() { return null; }
     public Map<String, Map<String, JsonNode>> getProviderMetadata() { return null; }
@@ -28,123 +32,149 @@ public abstract class Source extends WireValue {
     public String getMediaType() { return null; }
     public final boolean isDocument() { return "document".equals(getSourceType()); }
     public final boolean isUrl() { return "url".equals(getSourceType()); }
-    public static Source fromJson(JsonNode json) {
-        WireJson.object(json, "Source", false);
-        String tag = WireJson.string(json.get("sourceType"));
-        switch (tag) {
-            case "document":
-                return Document.fromJson(json);
-            case "url":
-                return Url.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown Source tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Url extends Source {
+        @JsonProperty("id")
         private final String id;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("title")
         private final String title;
-        private final boolean hasTitle;
+        @JsonProperty("url")
         private final String url;
-        private Url(JsonNode json) {
-            WireJson.object(json, "Url", false, "id", "providerMetadata", "title", "url", "sourceType");
-            if (!"url".equals(WireJson.string(json.get("sourceType")))) throw new IllegalArgumentException("Invalid Url tag");
-            WireJson.required(json, "id");
-            this.id = WireJson.string(json.get("id"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            this.hasTitle = json.has("title");
-            this.title = WireJson.isNull(json.get("title")) ? null : (WireJson.isNull(json.get("title")) ? null : WireJson.string(json.get("title")));
-            WireJson.required(json, "url");
-            this.url = WireJson.string(json.get("url"));
+
+        @JsonCreator
+        public Url(
+            @JsonProperty(value = "id", required = true) String id,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "title") String title,
+            @JsonProperty(value = "url", required = true) String url) {
+            this.id = id;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.title = title;
+            this.url = url;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Url fromJson(JsonNode json) { return new Url(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getSourceType() { return "url"; }
-        public String getId() { return id == null ? null : id; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getTitle() { return title == null ? null : (title == null ? null : title); }
-        public String getUrl() { return url == null ? null : url; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("sourceType", "url");
-            json.set("id", WireJson.tree(id));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            if (hasTitle) json.set("title", WireJson.tree(title));
-            json.set("url", WireJson.tree(url));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("sourceType")
+        public String getSourceType() { return "url"; }
+        public String getId() { return id; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getTitle() { return title; }
+        public String getUrl() { return url; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("sourceType", "url");
+            private String id;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String title;
+            private String url;
+
+            public Builder id(String value) {
+                this.id = value;
+                return this;
             }
-            public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder title(String value) { json.set("title", WireJson.tree(value)); return this; }
-            public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-            public Url build() { return new Url(json); }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder title(String value) {
+                this.title = value;
+                return this;
+            }
+
+            public Builder url(String value) {
+                this.url = value;
+                return this;
+            }
+
+            public Url build() { return new Url(id, providerMetadata, title, url); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Document extends Source {
+        @JsonProperty("filename")
         private final String filename;
-        private final boolean hasFilename;
+        @JsonProperty("id")
         private final String id;
+        @JsonProperty("mediaType")
         private final String mediaType;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("title")
         private final String title;
-        private Document(JsonNode json) {
-            WireJson.object(json, "Document", false, "filename", "id", "mediaType", "providerMetadata", "title", "sourceType");
-            if (!"document".equals(WireJson.string(json.get("sourceType")))) throw new IllegalArgumentException("Invalid Document tag");
-            this.hasFilename = json.has("filename");
-            this.filename = WireJson.isNull(json.get("filename")) ? null : (WireJson.isNull(json.get("filename")) ? null : WireJson.string(json.get("filename")));
-            WireJson.required(json, "id");
-            this.id = WireJson.string(json.get("id"));
-            WireJson.required(json, "mediaType");
-            this.mediaType = WireJson.string(json.get("mediaType"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "title");
-            this.title = WireJson.string(json.get("title"));
+
+        @JsonCreator
+        public Document(
+            @JsonProperty(value = "filename") String filename,
+            @JsonProperty(value = "id", required = true) String id,
+            @JsonProperty(value = "mediaType", required = true) String mediaType,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "title", required = true) String title) {
+            this.filename = filename;
+            this.id = id;
+            this.mediaType = mediaType;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.title = title;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Document fromJson(JsonNode json) { return new Document(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getSourceType() { return "document"; }
-        public String getFilename() { return filename == null ? null : (filename == null ? null : filename); }
-        public String getId() { return id == null ? null : id; }
-        public String getMediaType() { return mediaType == null ? null : mediaType; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getTitle() { return title == null ? null : title; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("sourceType", "document");
-            if (hasFilename) json.set("filename", WireJson.tree(filename));
-            json.set("id", WireJson.tree(id));
-            json.set("mediaType", WireJson.tree(mediaType));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("title", WireJson.tree(title));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("sourceType")
+        public String getSourceType() { return "document"; }
+        public String getFilename() { return filename; }
+        public String getId() { return id; }
+        public String getMediaType() { return mediaType; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getTitle() { return title; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("sourceType", "document");
+            private String filename;
+            private String id;
+            private String mediaType;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String title;
+
+            public Builder filename(String value) {
+                this.filename = value;
+                return this;
             }
-            public Builder filename(String value) { json.set("filename", WireJson.tree(value)); return this; }
-            public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder title(String value) { json.set("title", WireJson.tree(value)); return this; }
-            public Document build() { return new Document(json); }
+
+            public Builder id(String value) {
+                this.id = value;
+                return this;
+            }
+
+            public Builder mediaType(String value) {
+                this.mediaType = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder title(String value) {
+                this.title = value;
+                return this;
+            }
+
+            public Document build() { return new Document(filename, id, mediaType, providerMetadata, title); }
         }
     }
-
 }

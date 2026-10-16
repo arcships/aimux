@@ -4,336 +4,657 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /** DTO lookup for contract vectors. */
 public final class DtoTypes {
     private DtoTypes() {}
-    public static JsonNode roundTrip(String type, JsonNode value) {
+
+    public static JsonNode roundTrip(String type, JsonNode value) throws java.io.IOException {
         switch (type) {
-            case "AiMuxError": return WireJson.tree(WireJson.decode(value, AiMuxError.class));
-            case "AiMuxErrorInput": return WireJson.tree(WireJson.decode(value, AiMuxErrorInput.class));
-            case "ApiCallError": return WireJson.tree(WireJson.decode(value, ApiCallError.class));
-            case "ApiCallErrorInput": return WireJson.tree(WireJson.decode(value, ApiCallErrorInput.class));
-            case "AspectRatio": return WireJson.tree(WireJson.decode(value, AspectRatio.class));
-            case "AssistantContent": return WireJson.tree(WireJson.decode(value, AssistantContent.class));
-            case "AssistantContentPart": return WireJson.tree(WireJson.decode(value, AssistantContentPart.class));
-            case "AssistantPart": return WireJson.tree(WireJson.decode(value, AssistantPart.class));
-            case "AudioData": return WireJson.tree(WireJson.decode(value, AudioData.class));
-            case "AudioInput": return WireJson.tree(WireJson.decode(value, AudioInput.class));
-            case "AuditMode": return WireJson.tree(WireJson.decode(value, AuditMode.class));
-            case "AuditMode2": return WireJson.tree(WireJson.decode(value, AuditMode2.class));
-            case "BackendConfig": return WireJson.tree(WireJson.decode(value, BackendConfig.class));
-            case "BreakKind": return WireJson.tree(WireJson.decode(value, BreakKind.class));
-            case "CancelResult": return WireJson.tree(WireJson.decode(value, CancelResult.class));
-            case "CapturePolicy": return WireJson.tree(WireJson.decode(value, CapturePolicy.class));
-            case "Catalogue": return WireJson.tree(WireJson.decode(value, Catalogue.class));
-            case "CatalogueFetchRequest": return WireJson.tree(WireJson.decode(value, CatalogueFetchRequest.class));
-            case "CatalogueSource": return WireJson.tree(WireJson.decode(value, CatalogueSource.class));
-            case "ChatCompletion": return WireJson.tree(WireJson.decode(value, ChatCompletion.class));
-            case "ChatCompletionChoice": return WireJson.tree(WireJson.decode(value, ChatCompletionChoice.class));
-            case "ChatCompletionChunk": return WireJson.tree(WireJson.decode(value, ChatCompletionChunk.class));
-            case "ChatCompletionChunkChoice": return WireJson.tree(WireJson.decode(value, ChatCompletionChunkChoice.class));
-            case "ChatCompletionChunkFunction": return WireJson.tree(WireJson.decode(value, ChatCompletionChunkFunction.class));
-            case "ChatCompletionChunkToolCall": return WireJson.tree(WireJson.decode(value, ChatCompletionChunkToolCall.class));
-            case "ChatCompletionDelta": return WireJson.tree(WireJson.decode(value, ChatCompletionDelta.class));
-            case "ChatCompletionFunction": return WireJson.tree(WireJson.decode(value, ChatCompletionFunction.class));
-            case "ChatCompletionMessage": return WireJson.tree(WireJson.decode(value, ChatCompletionMessage.class));
-            case "ChatCompletionToolCall": return WireJson.tree(WireJson.decode(value, ChatCompletionToolCall.class));
-            case "ChatCompletionUsage": return WireJson.tree(WireJson.decode(value, ChatCompletionUsage.class));
-            case "CodexRefreshRequest": return WireJson.tree(WireJson.decode(value, CodexRefreshRequest.class));
-            case "CodexTokens": return WireJson.tree(WireJson.decode(value, CodexTokens.class));
-            case "CompletionTokensDetails": return WireJson.tree(WireJson.decode(value, CompletionTokensDetails.class));
-            case "ContentPart": return WireJson.tree(WireJson.decode(value, ContentPart.class));
-            case "ContentPart4SourceType": return WireJson.tree(WireJson.decode(value, ContentPart4SourceType.class));
-            case "ContentPart5SourceType": return WireJson.tree(WireJson.decode(value, ContentPart5SourceType.class));
-            case "ContentPartInput": return WireJson.tree(WireJson.decode(value, ContentPartInput.class));
-            case "ContentPartInput4SourceType": return WireJson.tree(WireJson.decode(value, ContentPartInput4SourceType.class));
-            case "ContentPartInput5SourceType": return WireJson.tree(WireJson.decode(value, ContentPartInput5SourceType.class));
-            case "CreateRecorderParams": return WireJson.tree(WireJson.decode(value, CreateRecorderParams.class));
-            case "CredentialParams": return WireJson.tree(WireJson.decode(value, CredentialParams.class));
-            case "CustomPart": return WireJson.tree(WireJson.decode(value, CustomPart.class));
-            case "DecideOptions": return WireJson.tree(WireJson.decode(value, DecideOptions.class));
-            case "DecideResult": return WireJson.tree(WireJson.decode(value, DecideResult.class));
-            case "DecideUsage": return WireJson.tree(WireJson.decode(value, DecideUsage.class));
-            case "DecisionAnswer": return WireJson.tree(WireJson.decode(value, DecisionAnswer.class));
-            case "DecisionBooleanCriteria": return WireJson.tree(WireJson.decode(value, DecisionBooleanCriteria.class));
-            case "DecisionDecideRequest": return WireJson.tree(WireJson.decode(value, DecisionDecideRequest.class));
-            case "DecisionInput": return WireJson.tree(WireJson.decode(value, DecisionInput.class));
-            case "DecisionQuestion": return WireJson.tree(WireJson.decode(value, DecisionQuestion.class));
-            case "DecisionRounding": return WireJson.tree(WireJson.decode(value, DecisionRounding.class));
-            case "EmbeddingCallOptions": return WireJson.tree(WireJson.decode(value, EmbeddingCallOptions.class));
-            case "EmbeddingResponse": return WireJson.tree(WireJson.decode(value, EmbeddingResponse.class));
-            case "EmbeddingResult": return WireJson.tree(WireJson.decode(value, EmbeddingResult.class));
-            case "EmbeddingUsage": return WireJson.tree(WireJson.decode(value, EmbeddingUsage.class));
-            case "EmptyParams": return WireJson.tree(WireJson.decode(value, EmptyParams.class));
-            case "EmptyParams2": return WireJson.tree(WireJson.decode(value, EmptyParams2.class));
-            case "ErrorDomain": return WireJson.tree(WireJson.decode(value, ErrorDomain.class));
-            case "ErrorEnvelope": return WireJson.tree(WireJson.decode(value, ErrorEnvelope.class));
-            case "Fallback": return WireJson.tree(WireJson.decode(value, Fallback.class));
-            case "FileBytes": return WireJson.tree(WireJson.decode(value, FileBytes.class));
-            case "FileData": return WireJson.tree(WireJson.decode(value, FileData.class));
-            case "FilePart": return WireJson.tree(WireJson.decode(value, FilePart.class));
-            case "FilePartData": return WireJson.tree(WireJson.decode(value, FilePartData.class));
-            case "Fingerprint": return WireJson.tree(WireJson.decode(value, Fingerprint.class));
-            case "FinishReasonUnified": return WireJson.tree(WireJson.decode(value, FinishReasonUnified.class));
-            case "FunctionTool": return WireJson.tree(WireJson.decode(value, FunctionTool.class));
-            case "FunctionToolInputExample": return WireJson.tree(WireJson.decode(value, FunctionToolInputExample.class));
-            case "GenerateContent": return WireJson.tree(WireJson.decode(value, GenerateContent.class));
-            case "GenerateContent2SourceType": return WireJson.tree(WireJson.decode(value, GenerateContent2SourceType.class));
-            case "GenerateContent3SourceType": return WireJson.tree(WireJson.decode(value, GenerateContent3SourceType.class));
-            case "GenerateObjectResponse": return WireJson.tree(WireJson.decode(value, GenerateObjectResponse.class));
-            case "GenerateObjectResult": return WireJson.tree(WireJson.decode(value, GenerateObjectResult.class));
-            case "GenerateTextOptions": return WireJson.tree(WireJson.decode(value, GenerateTextOptions.class));
-            case "GenerateTextResult": return WireJson.tree(WireJson.decode(value, GenerateTextResult.class));
-            case "GenerateTextResultInput": return WireJson.tree(WireJson.decode(value, GenerateTextResultInput.class));
-            case "GeneratedFile": return WireJson.tree(WireJson.decode(value, GeneratedFile.class));
-            case "GeneratedFileData": return WireJson.tree(WireJson.decode(value, GeneratedFileData.class));
-            case "GeneratedFileOutput": return WireJson.tree(WireJson.decode(value, GeneratedFileOutput.class));
-            case "HandleId": return WireJson.tree(WireJson.decode(value, HandleId.class));
-            case "HandleIdInput": return WireJson.tree(WireJson.decode(value, HandleIdInput.class));
-            case "HandleKind": return WireJson.tree(WireJson.decode(value, HandleKind.class));
-            case "HandleResult": return WireJson.tree(WireJson.decode(value, HandleResult.class));
-            case "HandleResult2": return WireJson.tree(WireJson.decode(value, HandleResult2.class));
-            case "HandleResult3": return WireJson.tree(WireJson.decode(value, HandleResult3.class));
-            case "HttpExchange": return WireJson.tree(WireJson.decode(value, HttpExchange.class));
-            case "HttpRecord": return WireJson.tree(WireJson.decode(value, HttpRecord.class));
-            case "ImageCallOptions": return WireJson.tree(WireJson.decode(value, ImageCallOptions.class));
-            case "ImageFile": return WireJson.tree(WireJson.decode(value, ImageFile.class));
-            case "ImageFileData": return WireJson.tree(WireJson.decode(value, ImageFileData.class));
-            case "ImageOutputs": return WireJson.tree(WireJson.decode(value, ImageOutputs.class));
-            case "ImageResponse": return WireJson.tree(WireJson.decode(value, ImageResponse.class));
-            case "ImageResult": return WireJson.tree(WireJson.decode(value, ImageResult.class));
-            case "ImageUsage": return WireJson.tree(WireJson.decode(value, ImageUsage.class));
-            case "InputAudioFormat": return WireJson.tree(WireJson.decode(value, InputAudioFormat.class));
-            case "InputRecord": return WireJson.tree(WireJson.decode(value, InputRecord.class));
-            case "InputTokenDetails": return WireJson.tree(WireJson.decode(value, InputTokenDetails.class));
-            case "LanguageModelFile": return WireJson.tree(WireJson.decode(value, LanguageModelFile.class));
-            case "LanguageModelMessage": return WireJson.tree(WireJson.decode(value, LanguageModelMessage.class));
-            case "LanguageModelUsage": return WireJson.tree(WireJson.decode(value, LanguageModelUsage.class));
-            case "LanguageModelUsageInput": return WireJson.tree(WireJson.decode(value, LanguageModelUsageInput.class));
-            case "LanguageModelV4ToolChoice": return WireJson.tree(WireJson.decode(value, LanguageModelV4ToolChoice.class));
-            case "LiveTarget": return WireJson.tree(WireJson.decode(value, LiveTarget.class));
-            case "LogLevel": return WireJson.tree(WireJson.decode(value, LogLevel.class));
-            case "LoggingConfig": return WireJson.tree(WireJson.decode(value, LoggingConfig.class));
-            case "MiddlewareParams": return WireJson.tree(WireJson.decode(value, MiddlewareParams.class));
-            case "MoaFailMode": return WireJson.tree(WireJson.decode(value, MoaFailMode.class));
-            case "MoaParams": return WireJson.tree(WireJson.decode(value, MoaParams.class));
-            case "Modality": return WireJson.tree(WireJson.decode(value, Modality.class));
-            case "ModelCapabilities": return WireJson.tree(WireJson.decode(value, ModelCapabilities.class));
-            case "ModelCost": return WireJson.tree(WireJson.decode(value, ModelCost.class));
-            case "ModelInfo": return WireJson.tree(WireJson.decode(value, ModelInfo.class));
-            case "ModelInfoParams": return WireJson.tree(WireJson.decode(value, ModelInfoParams.class));
-            case "ModelLimits": return WireJson.tree(WireJson.decode(value, ModelLimits.class));
-            case "ModelMessage": return WireJson.tree(WireJson.decode(value, ModelMessage.class));
-            case "ModelMethod": return WireJson.tree(WireJson.decode(value, ModelMethod.class));
-            case "ModelModalities": return WireJson.tree(WireJson.decode(value, ModelModalities.class));
-            case "ModelPrompt": return WireJson.tree(WireJson.decode(value, ModelPrompt.class));
-            case "ModelRef": return WireJson.tree(WireJson.decode(value, ModelRef.class));
-            case "ModelResolveParams": return WireJson.tree(WireJson.decode(value, ModelResolveParams.class));
-            case "ModelSpec": return WireJson.tree(WireJson.decode(value, ModelSpec.class));
-            case "ModelType": return WireJson.tree(WireJson.decode(value, ModelType.class));
-            case "ModelWrapParams": return WireJson.tree(WireJson.decode(value, ModelWrapParams.class));
-            case "NamespacedKind": return WireJson.tree(WireJson.decode(value, NamespacedKind.class));
-            case "OpenAiOutputRequest": return WireJson.tree(WireJson.decode(value, OpenAiOutputRequest.class));
-            case "OpenAiTextRequest": return WireJson.tree(WireJson.decode(value, OpenAiTextRequest.class));
-            case "OperationCapabilities": return WireJson.tree(WireJson.decode(value, OperationCapabilities.class));
-            case "OperationNextParams": return WireJson.tree(WireJson.decode(value, OperationNextParams.class));
-            case "OperationOutcome": return WireJson.tree(WireJson.decode(value, OperationOutcome.class));
-            case "OperationPollResult": return WireJson.tree(WireJson.decode(value, OperationPollResult.class));
-            case "OperationState": return WireJson.tree(WireJson.decode(value, OperationState.class));
-            case "OperationStatus": return WireJson.tree(WireJson.decode(value, OperationStatus.class));
-            case "Options": return WireJson.tree(WireJson.decode(value, Options.class));
-            case "Outcome": return WireJson.tree(WireJson.decode(value, Outcome.class));
-            case "OutcomeRecord": return WireJson.tree(WireJson.decode(value, OutcomeRecord.class));
-            case "OutcomeStatus": return WireJson.tree(WireJson.decode(value, OutcomeStatus.class));
-            case "Output": return WireJson.tree(WireJson.decode(value, Output.class));
-            case "OutputChunkTimingStats": return WireJson.tree(WireJson.decode(value, OutputChunkTimingStats.class));
-            case "OutputTokenDetails": return WireJson.tree(WireJson.decode(value, OutputTokenDetails.class));
-            case "PrefixBreak": return WireJson.tree(WireJson.decode(value, PrefixBreak.class));
-            case "PromptTokensDetails": return WireJson.tree(WireJson.decode(value, PromptTokensDetails.class));
-            case "ProviderCreateParams": return WireJson.tree(WireJson.decode(value, ProviderCreateParams.class));
-            case "ProviderCustomParams": return WireJson.tree(WireJson.decode(value, ProviderCustomParams.class));
-            case "ProviderDefaultParams": return WireJson.tree(WireJson.decode(value, ProviderDefaultParams.class));
-            case "ProviderInvokeParams": return WireJson.tree(WireJson.decode(value, ProviderInvokeParams.class));
-            case "ProviderModelParams": return WireJson.tree(WireJson.decode(value, ProviderModelParams.class));
-            case "ProviderRecord": return WireJson.tree(WireJson.decode(value, ProviderRecord.class));
-            case "ProviderSettings": return WireJson.tree(WireJson.decode(value, ProviderSettings.class));
-            case "ProviderTool": return WireJson.tree(WireJson.decode(value, ProviderTool.class));
-            case "ProviderWrapParams": return WireJson.tree(WireJson.decode(value, ProviderWrapParams.class));
-            case "RawToolApprovalRequest": return WireJson.tree(WireJson.decode(value, RawToolApprovalRequest.class));
-            case "RawToolCall": return WireJson.tree(WireJson.decode(value, RawToolCall.class));
-            case "ReasoningEffort": return WireJson.tree(WireJson.decode(value, ReasoningEffort.class));
-            case "ReasoningFilePart": return WireJson.tree(WireJson.decode(value, ReasoningFilePart.class));
-            case "ReasoningFilePartData": return WireJson.tree(WireJson.decode(value, ReasoningFilePartData.class));
-            case "ReasoningMode": return WireJson.tree(WireJson.decode(value, ReasoningMode.class));
-            case "ReasoningOutput": return WireJson.tree(WireJson.decode(value, ReasoningOutput.class));
-            case "ReasoningPart": return WireJson.tree(WireJson.decode(value, ReasoningPart.class));
-            case "ReasoningPart2": return WireJson.tree(WireJson.decode(value, ReasoningPart2.class));
-            case "ReasoningSpec": return WireJson.tree(WireJson.decode(value, ReasoningSpec.class));
-            case "ReasoningVisibility": return WireJson.tree(WireJson.decode(value, ReasoningVisibility.class));
-            case "RecorderExport": return WireJson.tree(WireJson.decode(value, RecorderExport.class));
-            case "RecorderHandleResult": return WireJson.tree(WireJson.decode(value, RecorderHandleResult.class));
-            case "RecorderStats": return WireJson.tree(WireJson.decode(value, RecorderStats.class));
-            case "Recording": return WireJson.tree(WireJson.decode(value, Recording.class));
-            case "RecordingOperation": return WireJson.tree(WireJson.decode(value, RecordingOperation.class));
-            case "RegistryCreateParams": return WireJson.tree(WireJson.decode(value, RegistryCreateParams.class));
-            case "RegistryEntry": return WireJson.tree(WireJson.decode(value, RegistryEntry.class));
-            case "RegistryProviderParams": return WireJson.tree(WireJson.decode(value, RegistryProviderParams.class));
-            case "ReplayCreateParams": return WireJson.tree(WireJson.decode(value, ReplayCreateParams.class));
-            case "ReplayInspection": return WireJson.tree(WireJson.decode(value, ReplayInspection.class));
-            case "ReplayLiveParams": return WireJson.tree(WireJson.decode(value, ReplayLiveParams.class));
-            case "ReplayLiveResult": return WireJson.tree(WireJson.decode(value, ReplayLiveResult.class));
-            case "ReplayPlan": return WireJson.tree(WireJson.decode(value, ReplayPlan.class));
-            case "ReplayPlannedCall": return WireJson.tree(WireJson.decode(value, ReplayPlannedCall.class));
-            case "ReplayRecordingInfo": return WireJson.tree(WireJson.decode(value, ReplayRecordingInfo.class));
-            case "ReplaySessionHandle": return WireJson.tree(WireJson.decode(value, ReplaySessionHandle.class));
-            case "RequestCacheHints": return WireJson.tree(WireJson.decode(value, RequestCacheHints.class));
-            case "RequestInfo": return WireJson.tree(WireJson.decode(value, RequestInfo.class));
-            case "RerankingCallOptions": return WireJson.tree(WireJson.decode(value, RerankingCallOptions.class));
-            case "RerankingDocuments": return WireJson.tree(WireJson.decode(value, RerankingDocuments.class));
-            case "RerankingRank": return WireJson.tree(WireJson.decode(value, RerankingRank.class));
-            case "RerankingResponse": return WireJson.tree(WireJson.decode(value, RerankingResponse.class));
-            case "RerankingResult": return WireJson.tree(WireJson.decode(value, RerankingResult.class));
-            case "ResponseInfo": return WireJson.tree(WireJson.decode(value, ResponseInfo.class));
-            case "ResponseRecord": return WireJson.tree(WireJson.decode(value, ResponseRecord.class));
-            case "RetryError": return WireJson.tree(WireJson.decode(value, RetryError.class));
-            case "RetryErrorInput": return WireJson.tree(WireJson.decode(value, RetryErrorInput.class));
-            case "RetryErrorReason": return WireJson.tree(WireJson.decode(value, RetryErrorReason.class));
-            case "RouterParams": return WireJson.tree(WireJson.decode(value, RouterParams.class));
-            case "RuntimeConfigureParams": return WireJson.tree(WireJson.decode(value, RuntimeConfigureParams.class));
-            case "RuntimeConfigureParamsProxy": return WireJson.tree(WireJson.decode(value, RuntimeConfigureParamsProxy.class));
-            case "RuntimeDescribeParams": return WireJson.tree(WireJson.decode(value, RuntimeDescribeParams.class));
-            case "RuntimeModel": return WireJson.tree(WireJson.decode(value, RuntimeModel.class));
-            case "SearchCallOptions": return WireJson.tree(WireJson.decode(value, SearchCallOptions.class));
-            case "SearchResponse": return WireJson.tree(WireJson.decode(value, SearchResponse.class));
-            case "SearchResult": return WireJson.tree(WireJson.decode(value, SearchResult.class));
-            case "SearchResultItem": return WireJson.tree(WireJson.decode(value, SearchResultItem.class));
-            case "SessionCall": return WireJson.tree(WireJson.decode(value, SessionCall.class));
-            case "SessionChainView": return WireJson.tree(WireJson.decode(value, SessionChainView.class));
-            case "SessionSource": return WireJson.tree(WireJson.decode(value, SessionSource.class));
-            case "SessionStepStat": return WireJson.tree(WireJson.decode(value, SessionStepStat.class));
-            case "SessionStoreCallsParams": return WireJson.tree(WireJson.decode(value, SessionStoreCallsParams.class));
-            case "SessionStoreCreateParams": return WireJson.tree(WireJson.decode(value, SessionStoreCreateParams.class));
-            case "SessionStoreHandle": return WireJson.tree(WireJson.decode(value, SessionStoreHandle.class));
-            case "SessionView": return WireJson.tree(WireJson.decode(value, SessionView.class));
-            case "Size": return WireJson.tree(WireJson.decode(value, Size.class));
-            case "Source": return WireJson.tree(WireJson.decode(value, Source.class));
-            case "SpeechCallOptions": return WireJson.tree(WireJson.decode(value, SpeechCallOptions.class));
-            case "SpeechRequest": return WireJson.tree(WireJson.decode(value, SpeechRequest.class));
-            case "SpeechResponse": return WireJson.tree(WireJson.decode(value, SpeechResponse.class));
-            case "SpeechResult": return WireJson.tree(WireJson.decode(value, SpeechResult.class));
-            case "StepModel": return WireJson.tree(WireJson.decode(value, StepModel.class));
-            case "StepResponse": return WireJson.tree(WireJson.decode(value, StepResponse.class));
-            case "StepResponseInput": return WireJson.tree(WireJson.decode(value, StepResponseInput.class));
-            case "StepResponseMetadata": return WireJson.tree(WireJson.decode(value, StepResponseMetadata.class));
-            case "StepResult": return WireJson.tree(WireJson.decode(value, StepResult.class));
-            case "StepResultInput": return WireJson.tree(WireJson.decode(value, StepResultInput.class));
-            case "StepResultPerformance": return WireJson.tree(WireJson.decode(value, StepResultPerformance.class));
-            case "StepResultPerformanceInput": return WireJson.tree(WireJson.decode(value, StepResultPerformanceInput.class));
-            case "Strategy": return WireJson.tree(WireJson.decode(value, Strategy.class));
-            case "StreamFrame": return WireJson.tree(WireJson.decode(value, StreamFrame.class));
-            case "StreamFrame0Event": return WireJson.tree(WireJson.decode(value, StreamFrame0Event.class));
-            case "StreamOptions": return WireJson.tree(WireJson.decode(value, StreamOptions.class));
-            case "TaggedToolResult": return WireJson.tree(WireJson.decode(value, TaggedToolResult.class));
-            case "TaggedToolResultType": return WireJson.tree(WireJson.decode(value, TaggedToolResultType.class));
-            case "TerminalSummary": return WireJson.tree(WireJson.decode(value, TerminalSummary.class));
-            case "TextPart": return WireJson.tree(WireJson.decode(value, TextPart.class));
-            case "TextRequest": return WireJson.tree(WireJson.decode(value, TextRequest.class));
-            case "TextStreamPart": return WireJson.tree(WireJson.decode(value, TextStreamPart.class));
-            case "TextStreamPart10SourceType": return WireJson.tree(WireJson.decode(value, TextStreamPart10SourceType.class));
-            case "TextStreamPart11SourceType": return WireJson.tree(WireJson.decode(value, TextStreamPart11SourceType.class));
-            case "TimeoutConfiguration": return WireJson.tree(WireJson.decode(value, TimeoutConfiguration.class));
-            case "Timestamp": return WireJson.tree(WireJson.decode(value, Timestamp.class));
-            case "TimingRecord": return WireJson.tree(WireJson.decode(value, TimingRecord.class));
-            case "Tool": return WireJson.tree(WireJson.decode(value, Tool.class));
-            case "ToolApprovalRequestOutput": return WireJson.tree(WireJson.decode(value, ToolApprovalRequestOutput.class));
-            case "ToolApprovalRequestOutputInput": return WireJson.tree(WireJson.decode(value, ToolApprovalRequestOutputInput.class));
-            case "ToolApprovalResponseOutput": return WireJson.tree(WireJson.decode(value, ToolApprovalResponseOutput.class));
-            case "ToolApprovalResponseOutputInput": return WireJson.tree(WireJson.decode(value, ToolApprovalResponseOutputInput.class));
-            case "ToolApprovalResponsePart": return WireJson.tree(WireJson.decode(value, ToolApprovalResponsePart.class));
-            case "ToolCall": return WireJson.tree(WireJson.decode(value, ToolCall.class));
-            case "ToolCallInput": return WireJson.tree(WireJson.decode(value, ToolCallInput.class));
-            case "ToolCallPart": return WireJson.tree(WireJson.decode(value, ToolCallPart.class));
-            case "ToolCallRepairReply": return WireJson.tree(WireJson.decode(value, ToolCallRepairReply.class));
-            case "ToolCallRepairReply0ToolCall": return WireJson.tree(WireJson.decode(value, ToolCallRepairReply0ToolCall.class));
-            case "ToolCallRepairReply0ToolCallType": return WireJson.tree(WireJson.decode(value, ToolCallRepairReply0ToolCallType.class));
-            case "ToolChoice": return WireJson.tree(WireJson.decode(value, ToolChoice.class));
-            case "ToolChoice0": return WireJson.tree(WireJson.decode(value, ToolChoice0.class));
-            case "ToolChoice1": return WireJson.tree(WireJson.decode(value, ToolChoice1.class));
-            case "ToolChoice1Type": return WireJson.tree(WireJson.decode(value, ToolChoice1Type.class));
-            case "ToolChoiceViolationError": return WireJson.tree(WireJson.decode(value, ToolChoiceViolationError.class));
-            case "ToolContentPart": return WireJson.tree(WireJson.decode(value, ToolContentPart.class));
-            case "ToolOutputDenied": return WireJson.tree(WireJson.decode(value, ToolOutputDenied.class));
-            case "ToolPart": return WireJson.tree(WireJson.decode(value, ToolPart.class));
-            case "ToolRepairApplyRequest": return WireJson.tree(WireJson.decode(value, ToolRepairApplyRequest.class));
-            case "ToolRepairApplyResultRequest": return WireJson.tree(WireJson.decode(value, ToolRepairApplyResultRequest.class));
-            case "ToolRepairContextRequest": return WireJson.tree(WireJson.decode(value, ToolRepairContextRequest.class));
-            case "ToolRepairContextResult": return WireJson.tree(WireJson.decode(value, ToolRepairContextResult.class));
-            case "ToolRepairContextSchema": return WireJson.tree(WireJson.decode(value, ToolRepairContextSchema.class));
-            case "ToolRepairContextSchemaToolCall": return WireJson.tree(WireJson.decode(value, ToolRepairContextSchemaToolCall.class));
-            case "ToolRepairContextSchemaToolCallType": return WireJson.tree(WireJson.decode(value, ToolRepairContextSchemaToolCallType.class));
-            case "ToolResult": return WireJson.tree(WireJson.decode(value, ToolResult.class));
-            case "ToolResultContent": return WireJson.tree(WireJson.decode(value, ToolResultContent.class));
-            case "ToolResultContentPart": return WireJson.tree(WireJson.decode(value, ToolResultContentPart.class));
-            case "ToolResultFileId": return WireJson.tree(WireJson.decode(value, ToolResultFileId.class));
-            case "ToolResultOutput": return WireJson.tree(WireJson.decode(value, ToolResultOutput.class));
-            case "ToolResultOutput2": return WireJson.tree(WireJson.decode(value, ToolResultOutput2.class));
-            case "ToolResultPart": return WireJson.tree(WireJson.decode(value, ToolResultPart.class));
-            case "ToolResultPart2": return WireJson.tree(WireJson.decode(value, ToolResultPart2.class));
-            case "TraceAggregateParams": return WireJson.tree(WireJson.decode(value, TraceAggregateParams.class));
-            case "TraceAggregateParamsFilter": return WireJson.tree(WireJson.decode(value, TraceAggregateParamsFilter.class));
-            case "TraceCreateParams": return WireJson.tree(WireJson.decode(value, TraceCreateParams.class));
-            case "TraceRecord": return WireJson.tree(WireJson.decode(value, TraceRecord.class));
-            case "TraceSessionParams": return WireJson.tree(WireJson.decode(value, TraceSessionParams.class));
-            case "TraceStats": return WireJson.tree(WireJson.decode(value, TraceStats.class));
-            case "TranscriptionCallOptions": return WireJson.tree(WireJson.decode(value, TranscriptionCallOptions.class));
-            case "TranscriptionRequest": return WireJson.tree(WireJson.decode(value, TranscriptionRequest.class));
-            case "TranscriptionResponse": return WireJson.tree(WireJson.decode(value, TranscriptionResponse.class));
-            case "TranscriptionResult": return WireJson.tree(WireJson.decode(value, TranscriptionResult.class));
-            case "TranscriptionSegment": return WireJson.tree(WireJson.decode(value, TranscriptionSegment.class));
-            case "TranscriptionStartParams": return WireJson.tree(WireJson.decode(value, TranscriptionStartParams.class));
-            case "TranscriptionStreamPart": return WireJson.tree(WireJson.decode(value, TranscriptionStreamPart.class));
-            case "TransportParams": return WireJson.tree(WireJson.decode(value, TransportParams.class));
-            case "TransportParams0Proxy": return WireJson.tree(WireJson.decode(value, TransportParams0Proxy.class));
-            case "TransportParams1Proxy": return WireJson.tree(WireJson.decode(value, TransportParams1Proxy.class));
-            case "TypedSource": return WireJson.tree(WireJson.decode(value, TypedSource.class));
-            case "TypedSource0Type": return WireJson.tree(WireJson.decode(value, TypedSource0Type.class));
-            case "TypedSource1Type": return WireJson.tree(WireJson.decode(value, TypedSource1Type.class));
-            case "TypedToolCall": return WireJson.tree(WireJson.decode(value, TypedToolCall.class));
-            case "TypedToolCallInput": return WireJson.tree(WireJson.decode(value, TypedToolCallInput.class));
-            case "TypedToolCallInputType": return WireJson.tree(WireJson.decode(value, TypedToolCallInputType.class));
-            case "TypedToolCallType": return WireJson.tree(WireJson.decode(value, TypedToolCallType.class));
-            case "TypedToolError": return WireJson.tree(WireJson.decode(value, TypedToolError.class));
-            case "TypedToolResult": return WireJson.tree(WireJson.decode(value, TypedToolResult.class));
-            case "UploadFileData": return WireJson.tree(WireJson.decode(value, UploadFileData.class));
-            case "UploadFileParams": return WireJson.tree(WireJson.decode(value, UploadFileParams.class));
-            case "UploadFileResult": return WireJson.tree(WireJson.decode(value, UploadFileResult.class));
-            case "UsageSnapshot": return WireJson.tree(WireJson.decode(value, UsageSnapshot.class));
-            case "UserContent": return WireJson.tree(WireJson.decode(value, UserContent.class));
-            case "UserContentPart": return WireJson.tree(WireJson.decode(value, UserContentPart.class));
-            case "UserPart": return WireJson.tree(WireJson.decode(value, UserPart.class));
-            case "Verdict": return WireJson.tree(WireJson.decode(value, Verdict.class));
-            case "VerdictConfidence": return WireJson.tree(WireJson.decode(value, VerdictConfidence.class));
-            case "VerdictKind": return WireJson.tree(WireJson.decode(value, VerdictKind.class));
-            case "VideoCallOptions": return WireJson.tree(WireJson.decode(value, VideoCallOptions.class));
-            case "VideoData": return WireJson.tree(WireJson.decode(value, VideoData.class));
-            case "VideoFile": return WireJson.tree(WireJson.decode(value, VideoFile.class));
-            case "VideoFileData": return WireJson.tree(WireJson.decode(value, VideoFileData.class));
-            case "VideoFrameImage": return WireJson.tree(WireJson.decode(value, VideoFrameImage.class));
-            case "VideoFrameType": return WireJson.tree(WireJson.decode(value, VideoFrameType.class));
-            case "VideoPollOptions": return WireJson.tree(WireJson.decode(value, VideoPollOptions.class));
-            case "VideoResponse": return WireJson.tree(WireJson.decode(value, VideoResponse.class));
-            case "VideoResult": return WireJson.tree(WireJson.decode(value, VideoResult.class));
-            case "Warning": return WireJson.tree(WireJson.decode(value, Warning.class));
-            case "_aimux_core_model_catalogue_RuntimeModel_": return WireJson.tree(WireJson.decode(value, WireAimuxCoreModelCatalogueRuntimeModel.class));
-            case "_aimux_core_session_SessionCall_": return WireJson.tree(WireJson.decode(value, WireAimuxCoreSessionSessionCall.class));
-            case "_aimux_core_session_SessionView_": return WireJson.tree(WireJson.decode(value, WireAimuxCoreSessionSessionView.class));
-            case "_aimux_core_trace_store_SessionStepStat_": return WireJson.tree(WireJson.decode(value, WireAimuxCoreTraceStoreSessionStepStat.class));
-            case "_aimux_core_trace_store_TraceStats_": return WireJson.tree(WireJson.decode(value, WireAimuxCoreTraceStoreTraceStats.class));
-            default: throw new IllegalArgumentException("Unknown DTO type: " + type);
+            case "AiMuxError":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AiMuxError.class));
+            case "AiMuxErrorInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AiMuxErrorInput.class));
+            case "ApiCallError":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ApiCallError.class));
+            case "ApiCallErrorInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ApiCallErrorInput.class));
+            case "AspectRatio":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AspectRatio.class));
+            case "AssistantContent":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AssistantContent.class));
+            case "AssistantContentPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AssistantContentPart.class));
+            case "AssistantPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AssistantPart.class));
+            case "AudioData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AudioData.class));
+            case "AudioInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AudioInput.class));
+            case "AuditMode":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AuditMode.class));
+            case "AuditMode2":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, AuditMode2.class));
+            case "BackendConfig":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, BackendConfig.class));
+            case "BreakKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, BreakKind.class));
+            case "CancelResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CancelResult.class));
+            case "CapturePolicy":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CapturePolicy.class));
+            case "Catalogue":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Catalogue.class));
+            case "CatalogueFetchRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CatalogueFetchRequest.class));
+            case "CatalogueSource":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CatalogueSource.class));
+            case "ChatCompletion":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletion.class));
+            case "ChatCompletionChoice":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionChoice.class));
+            case "ChatCompletionChunk":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionChunk.class));
+            case "ChatCompletionChunkChoice":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionChunkChoice.class));
+            case "ChatCompletionChunkFunction":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionChunkFunction.class));
+            case "ChatCompletionChunkToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionChunkToolCall.class));
+            case "ChatCompletionDelta":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionDelta.class));
+            case "ChatCompletionFunction":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionFunction.class));
+            case "ChatCompletionMessage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionMessage.class));
+            case "ChatCompletionToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionToolCall.class));
+            case "ChatCompletionUsage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ChatCompletionUsage.class));
+            case "CodexRefreshRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CodexRefreshRequest.class));
+            case "CodexTokens":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CodexTokens.class));
+            case "CompletionTokensDetails":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CompletionTokensDetails.class));
+            case "ContentPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPart.class));
+            case "ContentPart4SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPart4SourceType.class));
+            case "ContentPart5SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPart5SourceType.class));
+            case "ContentPartInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPartInput.class));
+            case "ContentPartInput4SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPartInput4SourceType.class));
+            case "ContentPartInput5SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ContentPartInput5SourceType.class));
+            case "CreateRecorderParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CreateRecorderParams.class));
+            case "CredentialParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CredentialParams.class));
+            case "CustomPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, CustomPart.class));
+            case "DecideOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecideOptions.class));
+            case "DecideResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecideResult.class));
+            case "DecideUsage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecideUsage.class));
+            case "DecisionAnswer":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecisionAnswer.class));
+            case "DecisionBooleanCriteria":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecisionBooleanCriteria.class));
+            case "DecisionDecideRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecisionDecideRequest.class));
+            case "DecisionInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecisionInput.class));
+            case "DecisionQuestion":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecisionQuestion.class));
+            case "DecisionRounding":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, DecisionRounding.class));
+            case "EmbeddingCallOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmbeddingCallOptions.class));
+            case "EmbeddingResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmbeddingResponse.class));
+            case "EmbeddingResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmbeddingResult.class));
+            case "EmbeddingUsage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmbeddingUsage.class));
+            case "EmptyParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmptyParams.class));
+            case "EmptyParams2":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmptyParams2.class));
+            case "ErrorDomain":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ErrorDomain.class));
+            case "ErrorEnvelope":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ErrorEnvelope.class));
+            case "Fallback":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Fallback.class));
+            case "FileBytes":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FileBytes.class));
+            case "FileData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FileData.class));
+            case "FilePart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FilePart.class));
+            case "FilePartData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FilePartData.class));
+            case "Fingerprint":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Fingerprint.class));
+            case "FinishReasonUnified":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FinishReasonUnified.class));
+            case "FunctionTool":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FunctionTool.class));
+            case "FunctionToolInputExample":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, FunctionToolInputExample.class));
+            case "GenerateContent":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateContent.class));
+            case "GenerateContent2SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateContent2SourceType.class));
+            case "GenerateContent3SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateContent3SourceType.class));
+            case "GenerateObjectResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateObjectResponse.class));
+            case "GenerateObjectResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateObjectResult.class));
+            case "GenerateTextOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateTextOptions.class));
+            case "GenerateTextResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateTextResult.class));
+            case "GenerateTextResultInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GenerateTextResultInput.class));
+            case "GeneratedFile":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GeneratedFile.class));
+            case "GeneratedFileData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GeneratedFileData.class));
+            case "GeneratedFileOutput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, GeneratedFileOutput.class));
+            case "HandleId":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleId.class));
+            case "HandleIdInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleIdInput.class));
+            case "HandleKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleKind.class));
+            case "HandleResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleResult.class));
+            case "HandleResult2":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleResult2.class));
+            case "HandleResult3":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HandleResult3.class));
+            case "HttpExchange":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HttpExchange.class));
+            case "HttpRecord":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, HttpRecord.class));
+            case "ImageCallOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageCallOptions.class));
+            case "ImageFile":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageFile.class));
+            case "ImageFileData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageFileData.class));
+            case "ImageOutputs":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageOutputs.class));
+            case "ImageResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageResponse.class));
+            case "ImageResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageResult.class));
+            case "ImageUsage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ImageUsage.class));
+            case "InputAudioFormat":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, InputAudioFormat.class));
+            case "InputRecord":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, InputRecord.class));
+            case "InputTokenDetails":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, InputTokenDetails.class));
+            case "LanguageModelFile":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelFile.class));
+            case "LanguageModelMessage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelMessage.class));
+            case "LanguageModelUsage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelUsage.class));
+            case "LanguageModelUsageInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelUsageInput.class));
+            case "LanguageModelV4ToolChoice":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LanguageModelV4ToolChoice.class));
+            case "LiveTarget":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LiveTarget.class));
+            case "LogLevel":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LogLevel.class));
+            case "LoggingConfig":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, LoggingConfig.class));
+            case "MiddlewareParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, MiddlewareParams.class));
+            case "MoaFailMode":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, MoaFailMode.class));
+            case "MoaParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, MoaParams.class));
+            case "Modality":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Modality.class));
+            case "ModelCapabilities":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelCapabilities.class));
+            case "ModelCost":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelCost.class));
+            case "ModelInfo":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelInfo.class));
+            case "ModelInfoParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelInfoParams.class));
+            case "ModelLimits":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelLimits.class));
+            case "ModelMessage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelMessage.class));
+            case "ModelMethod":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelMethod.class));
+            case "ModelModalities":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelModalities.class));
+            case "ModelPrompt":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelPrompt.class));
+            case "ModelRef":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelRef.class));
+            case "ModelResolveParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelResolveParams.class));
+            case "ModelSpec":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelSpec.class));
+            case "ModelType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelType.class));
+            case "ModelWrapParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ModelWrapParams.class));
+            case "NamespacedKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, NamespacedKind.class));
+            case "OpenAiOutputRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OpenAiOutputRequest.class));
+            case "OpenAiTextRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OpenAiTextRequest.class));
+            case "OperationCapabilities":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OperationCapabilities.class));
+            case "OperationNextParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OperationNextParams.class));
+            case "OperationOutcome":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OperationOutcome.class));
+            case "OperationPollResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OperationPollResult.class));
+            case "OperationState":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OperationState.class));
+            case "OperationStatus":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OperationStatus.class));
+            case "Options":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Options.class));
+            case "Outcome":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Outcome.class));
+            case "OutcomeRecord":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OutcomeRecord.class));
+            case "OutcomeStatus":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OutcomeStatus.class));
+            case "Output":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Output.class));
+            case "OutputChunkTimingStats":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OutputChunkTimingStats.class));
+            case "OutputTokenDetails":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, OutputTokenDetails.class));
+            case "PrefixBreak":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, PrefixBreak.class));
+            case "PromptTokensDetails":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, PromptTokensDetails.class));
+            case "ProviderCreateParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderCreateParams.class));
+            case "ProviderCustomParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderCustomParams.class));
+            case "ProviderDefaultParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderDefaultParams.class));
+            case "ProviderInvokeParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderInvokeParams.class));
+            case "ProviderModelParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderModelParams.class));
+            case "ProviderRecord":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderRecord.class));
+            case "ProviderSettings":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderSettings.class));
+            case "ProviderTool":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderTool.class));
+            case "ProviderWrapParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ProviderWrapParams.class));
+            case "RawToolApprovalRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RawToolApprovalRequest.class));
+            case "RawToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RawToolCall.class));
+            case "ReasoningEffort":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningEffort.class));
+            case "ReasoningFilePart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningFilePart.class));
+            case "ReasoningFilePartData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningFilePartData.class));
+            case "ReasoningMode":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningMode.class));
+            case "ReasoningOutput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningOutput.class));
+            case "ReasoningPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningPart.class));
+            case "ReasoningPart2":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningPart2.class));
+            case "ReasoningSpec":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningSpec.class));
+            case "ReasoningVisibility":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReasoningVisibility.class));
+            case "RecorderExport":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RecorderExport.class));
+            case "RecorderHandleResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RecorderHandleResult.class));
+            case "RecorderStats":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RecorderStats.class));
+            case "Recording":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Recording.class));
+            case "RecordingOperation":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RecordingOperation.class));
+            case "RegistryCreateParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryCreateParams.class));
+            case "RegistryEntry":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryEntry.class));
+            case "RegistryProviderParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RegistryProviderParams.class));
+            case "ReplayCreateParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayCreateParams.class));
+            case "ReplayInspection":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayInspection.class));
+            case "ReplayLiveParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayLiveParams.class));
+            case "ReplayLiveResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayLiveResult.class));
+            case "ReplayPlan":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayPlan.class));
+            case "ReplayPlannedCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayPlannedCall.class));
+            case "ReplayRecordingInfo":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplayRecordingInfo.class));
+            case "ReplaySessionHandle":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ReplaySessionHandle.class));
+            case "RequestCacheHints":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RequestCacheHints.class));
+            case "RequestInfo":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RequestInfo.class));
+            case "RerankingCallOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RerankingCallOptions.class));
+            case "RerankingDocuments":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RerankingDocuments.class));
+            case "RerankingRank":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RerankingRank.class));
+            case "RerankingResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RerankingResponse.class));
+            case "RerankingResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RerankingResult.class));
+            case "ResponseInfo":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ResponseInfo.class));
+            case "ResponseRecord":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ResponseRecord.class));
+            case "RetryError":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RetryError.class));
+            case "RetryErrorInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RetryErrorInput.class));
+            case "RetryErrorReason":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RetryErrorReason.class));
+            case "RouterParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RouterParams.class));
+            case "RuntimeConfigureParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RuntimeConfigureParams.class));
+            case "RuntimeConfigureParamsProxy":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RuntimeConfigureParamsProxy.class));
+            case "RuntimeDescribeParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RuntimeDescribeParams.class));
+            case "RuntimeModel":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, RuntimeModel.class));
+            case "SearchCallOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SearchCallOptions.class));
+            case "SearchResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SearchResponse.class));
+            case "SearchResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SearchResult.class));
+            case "SearchResultItem":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SearchResultItem.class));
+            case "SessionCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionCall.class));
+            case "SessionChainView":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionChainView.class));
+            case "SessionSource":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionSource.class));
+            case "SessionStepStat":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionStepStat.class));
+            case "SessionStoreCallsParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionStoreCallsParams.class));
+            case "SessionStoreCreateParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionStoreCreateParams.class));
+            case "SessionStoreHandle":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionStoreHandle.class));
+            case "SessionView":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SessionView.class));
+            case "Size":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Size.class));
+            case "Source":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Source.class));
+            case "SpeechCallOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SpeechCallOptions.class));
+            case "SpeechRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SpeechRequest.class));
+            case "SpeechResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SpeechResponse.class));
+            case "SpeechResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SpeechResult.class));
+            case "StepModel":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepModel.class));
+            case "StepResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResponse.class));
+            case "StepResponseInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResponseInput.class));
+            case "StepResponseMetadata":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResponseMetadata.class));
+            case "StepResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResult.class));
+            case "StepResultInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResultInput.class));
+            case "StepResultPerformance":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResultPerformance.class));
+            case "StepResultPerformanceInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StepResultPerformanceInput.class));
+            case "Strategy":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Strategy.class));
+            case "StreamFrame":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamFrame.class));
+            case "StreamFrame0Event":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamFrame0Event.class));
+            case "StreamOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, StreamOptions.class));
+            case "TaggedToolResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TaggedToolResult.class));
+            case "TaggedToolResultType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TaggedToolResultType.class));
+            case "TerminalSummary":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TerminalSummary.class));
+            case "TextPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextPart.class));
+            case "TextRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextRequest.class));
+            case "TextStreamPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextStreamPart.class));
+            case "TextStreamPart10SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextStreamPart10SourceType.class));
+            case "TextStreamPart11SourceType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TextStreamPart11SourceType.class));
+            case "TimeoutConfiguration":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TimeoutConfiguration.class));
+            case "Timestamp":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Timestamp.class));
+            case "TimingRecord":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TimingRecord.class));
+            case "Tool":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Tool.class));
+            case "ToolApprovalRequestOutput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolApprovalRequestOutput.class));
+            case "ToolApprovalRequestOutputInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolApprovalRequestOutputInput.class));
+            case "ToolApprovalResponseOutput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolApprovalResponseOutput.class));
+            case "ToolApprovalResponseOutputInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolApprovalResponseOutputInput.class));
+            case "ToolApprovalResponsePart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolApprovalResponsePart.class));
+            case "ToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCall.class));
+            case "ToolCallInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallInput.class));
+            case "ToolCallPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallPart.class));
+            case "ToolCallRepairReply":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallRepairReply.class));
+            case "ToolCallRepairReply0ToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallRepairReply0ToolCall.class));
+            case "ToolCallRepairReply0ToolCallType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolCallRepairReply0ToolCallType.class));
+            case "ToolChoice":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice.class));
+            case "ToolChoice0":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice0.class));
+            case "ToolChoice1":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice1.class));
+            case "ToolChoice1Type":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoice1Type.class));
+            case "ToolChoiceViolationError":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolChoiceViolationError.class));
+            case "ToolContentPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolContentPart.class));
+            case "ToolOutputDenied":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolOutputDenied.class));
+            case "ToolPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolPart.class));
+            case "ToolRepairApplyRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairApplyRequest.class));
+            case "ToolRepairApplyResultRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairApplyResultRequest.class));
+            case "ToolRepairContextRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextRequest.class));
+            case "ToolRepairContextResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextResult.class));
+            case "ToolRepairContextSchema":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextSchema.class));
+            case "ToolRepairContextSchemaToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextSchemaToolCall.class));
+            case "ToolRepairContextSchemaToolCallType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolRepairContextSchemaToolCallType.class));
+            case "ToolResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResult.class));
+            case "ToolResultContent":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultContent.class));
+            case "ToolResultContentPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultContentPart.class));
+            case "ToolResultFileId":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultFileId.class));
+            case "ToolResultOutput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultOutput.class));
+            case "ToolResultOutput2":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultOutput2.class));
+            case "ToolResultPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultPart.class));
+            case "ToolResultPart2":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ToolResultPart2.class));
+            case "TraceAggregateParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceAggregateParams.class));
+            case "TraceAggregateParamsFilter":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceAggregateParamsFilter.class));
+            case "TraceCreateParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceCreateParams.class));
+            case "TraceRecord":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceRecord.class));
+            case "TraceSessionParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceSessionParams.class));
+            case "TraceStats":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TraceStats.class));
+            case "TranscriptionCallOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionCallOptions.class));
+            case "TranscriptionRequest":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionRequest.class));
+            case "TranscriptionResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionResponse.class));
+            case "TranscriptionResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionResult.class));
+            case "TranscriptionSegment":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionSegment.class));
+            case "TranscriptionStartParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionStartParams.class));
+            case "TranscriptionStreamPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TranscriptionStreamPart.class));
+            case "TransportParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TransportParams.class));
+            case "TransportParams0Proxy":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TransportParams0Proxy.class));
+            case "TransportParams1Proxy":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TransportParams1Proxy.class));
+            case "TypedSource":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedSource.class));
+            case "TypedSource0Type":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedSource0Type.class));
+            case "TypedSource1Type":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedSource1Type.class));
+            case "TypedToolCall":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCall.class));
+            case "TypedToolCallInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCallInput.class));
+            case "TypedToolCallInputType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCallInputType.class));
+            case "TypedToolCallType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolCallType.class));
+            case "TypedToolError":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolError.class));
+            case "TypedToolResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, TypedToolResult.class));
+            case "UploadFileData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, UploadFileData.class));
+            case "UploadFileParams":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, UploadFileParams.class));
+            case "UploadFileResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, UploadFileResult.class));
+            case "UsageSnapshot":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, UsageSnapshot.class));
+            case "UserContent":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, UserContent.class));
+            case "UserContentPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, UserContentPart.class));
+            case "UserPart":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, UserPart.class));
+            case "Verdict":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Verdict.class));
+            case "VerdictConfidence":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VerdictConfidence.class));
+            case "VerdictKind":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VerdictKind.class));
+            case "VideoCallOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoCallOptions.class));
+            case "VideoData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoData.class));
+            case "VideoFile":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoFile.class));
+            case "VideoFileData":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoFileData.class));
+            case "VideoFrameImage":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoFrameImage.class));
+            case "VideoFrameType":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoFrameType.class));
+            case "VideoPollOptions":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoPollOptions.class));
+            case "VideoResponse":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoResponse.class));
+            case "VideoResult":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, VideoResult.class));
+            case "Warning":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Warning.class));
+            case "_aimux_core_model_catalogue_RuntimeModel_":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreModelCatalogueRuntimeModel.class));
+            case "_aimux_core_session_SessionCall_":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreSessionSessionCall.class));
+            case "_aimux_core_session_SessionView_":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreSessionSessionView.class));
+            case "_aimux_core_trace_store_SessionStepStat_":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreTraceStoreSessionStepStat.class));
+            case "_aimux_core_trace_store_TraceStats_":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, WireAimuxCoreTraceStoreTraceStats.class));
+            default:
+                throw new IllegalArgumentException("Unknown DTO type: " + type);
         }
     }
 }

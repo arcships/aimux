@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReplayCreateParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReplayCreateParams {
+    @JsonProperty("recordingsJsonl")
     private final String recordingsJsonl;
-    private ReplayCreateParams(JsonNode json) {
-        WireJson.object(json, "ReplayCreateParams", true, "recordingsJsonl");
-        WireJson.required(json, "recordingsJsonl");
-        this.recordingsJsonl = WireJson.string(json.get("recordingsJsonl"));
+
+    @JsonCreator
+    public ReplayCreateParams(
+        @JsonProperty(value = "recordingsJsonl", required = true) String recordingsJsonl) {
+        this.recordingsJsonl = recordingsJsonl;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReplayCreateParams fromJson(JsonNode json) { return new ReplayCreateParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getRecordingsJsonl() { return recordingsJsonl == null ? null : recordingsJsonl; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("recordingsJsonl", WireJson.tree(recordingsJsonl));
-        return json;
-    }
+    public String getRecordingsJsonl() { return recordingsJsonl; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String recordingsJsonl;
+
+        public Builder recordingsJsonl(String value) {
+            this.recordingsJsonl = value;
+            return this;
         }
-        public Builder recordingsJsonl(String value) { json.set("recordingsJsonl", WireJson.tree(value)); return this; }
-        public ReplayCreateParams build() { return new ReplayCreateParams(json); }
+
+        public ReplayCreateParams build() { return new ReplayCreateParams(recordingsJsonl); }
     }
 }
-

@@ -4,21 +4,16 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum BreakKind {
-    SYSTEM_CHANGED("SystemChanged"),
-    TOOLS_CHANGED("ToolsChanged"),
-    CONVERSATION_RESET("ConversationReset"),
-    UNKNOWN("Unknown");
-    private final String value;
-    BreakKind(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static BreakKind fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (BreakKind item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid BreakKind: " + value);
-    }
+    @JsonProperty("SystemChanged")
+    SYSTEM_CHANGED,
+    @JsonProperty("ToolsChanged")
+    TOOLS_CHANGED,
+    @JsonProperty("ConversationReset")
+    CONVERSATION_RESET,
+    @JsonProperty("Unknown")
+    UNKNOWN
 }

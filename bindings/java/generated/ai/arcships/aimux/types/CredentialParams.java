@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class CredentialParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class CredentialParams {
+    @JsonProperty("kind")
     private final String kind;
-    private CredentialParams(JsonNode json) {
-        WireJson.object(json, "CredentialParams", true, "kind");
-        WireJson.required(json, "kind");
-        this.kind = WireJson.string(json.get("kind"));
+
+    @JsonCreator
+    public CredentialParams(
+        @JsonProperty(value = "kind", required = true) String kind) {
+        this.kind = kind;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static CredentialParams fromJson(JsonNode json) { return new CredentialParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getKind() { return kind == null ? null : kind; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("kind", WireJson.tree(kind));
-        return json;
-    }
+    public String getKind() { return kind; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String kind;
+
+        public Builder kind(String value) {
+            this.kind = value;
+            return this;
         }
-        public Builder kind(String value) { json.set("kind", WireJson.tree(value)); return this; }
-        public CredentialParams build() { return new CredentialParams(json); }
+
+        public CredentialParams build() { return new CredentialParams(kind); }
     }
 }
-

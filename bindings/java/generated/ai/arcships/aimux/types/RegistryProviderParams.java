@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RegistryProviderParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RegistryProviderParams {
+    @JsonProperty("key")
     private final String key;
-    private RegistryProviderParams(JsonNode json) {
-        WireJson.object(json, "RegistryProviderParams", true, "key");
-        WireJson.required(json, "key");
-        this.key = WireJson.string(json.get("key"));
+
+    @JsonCreator
+    public RegistryProviderParams(
+        @JsonProperty(value = "key", required = true) String key) {
+        this.key = key;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RegistryProviderParams fromJson(JsonNode json) { return new RegistryProviderParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getKey() { return key == null ? null : key; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("key", WireJson.tree(key));
-        return json;
-    }
+    public String getKey() { return key; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String key;
+
+        public Builder key(String value) {
+            this.key = value;
+            return this;
         }
-        public Builder key(String value) { json.set("key", WireJson.tree(value)); return this; }
-        public RegistryProviderParams build() { return new RegistryProviderParams(json); }
+
+        public RegistryProviderParams build() { return new RegistryProviderParams(key); }
     }
 }
-

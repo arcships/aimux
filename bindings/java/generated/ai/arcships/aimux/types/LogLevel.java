@@ -4,23 +4,20 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum LogLevel {
-    OFF("off"),
-    ERROR("error"),
-    WARN("warn"),
-    INFO("info"),
-    DEBUG("debug"),
-    TRACE("trace");
-    private final String value;
-    LogLevel(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static LogLevel fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (LogLevel item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid LogLevel: " + value);
-    }
+    @JsonProperty("off")
+    OFF,
+    @JsonProperty("error")
+    ERROR,
+    @JsonProperty("warn")
+    WARN,
+    @JsonProperty("info")
+    INFO,
+    @JsonProperty("debug")
+    DEBUG,
+    @JsonProperty("trace")
+    TRACE
 }

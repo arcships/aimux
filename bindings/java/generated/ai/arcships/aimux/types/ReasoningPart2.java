@@ -4,44 +4,47 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Reasoning / thinking content part.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReasoningPart2 extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReasoningPart2 {
+    @JsonProperty("providerOptions")
     private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
+    @JsonProperty("text")
     private final String text;
-    private ReasoningPart2(JsonNode json) {
-        WireJson.object(json, "ReasoningPart2", false, "providerOptions", "text");
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "text");
-        this.text = WireJson.string(json.get("text"));
+
+    @JsonCreator
+    public ReasoningPart2(
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "text", required = true) String text) {
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.text = text;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReasoningPart2 fromJson(JsonNode json) { return new ReasoningPart2(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public String getText() { return text == null ? null : text; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        json.set("text", WireJson.tree(text));
-        return json;
-    }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public String getText() { return text; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private String text;
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
         }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-        public ReasoningPart2 build() { return new ReasoningPart2(json); }
+
+        public Builder text(String value) {
+            this.text = value;
+            return this;
+        }
+
+        public ReasoningPart2 build() { return new ReasoningPart2(providerOptions, text); }
     }
 }
-

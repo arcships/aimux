@@ -4,55 +4,66 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OpenAiTextRequest extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OpenAiTextRequest {
+    @JsonProperty("abort")
     private final HandleIdInput abort;
-    private final boolean hasAbort;
+    @JsonProperty("options")
     private final Options options;
-    private final boolean hasOptions;
+    @JsonProperty("prompt")
     private final ModelPrompt prompt;
+    @JsonProperty("streamOptions")
     private final StreamOptions streamOptions;
-    private final boolean hasStreamOptions;
-    private OpenAiTextRequest(JsonNode json) {
-        WireJson.object(json, "OpenAiTextRequest", true, "abort", "options", "prompt", "streamOptions");
-        this.hasAbort = json.has("abort");
-        this.abort = WireJson.isNull(json.get("abort")) ? null : (WireJson.isNull(json.get("abort")) ? null : HandleIdInput.fromJson(json.get("abort")));
-        this.hasOptions = json.has("options");
-        this.options = WireJson.isNull(json.get("options")) ? null : Options.fromJson(json.get("options"));
-        WireJson.required(json, "prompt");
-        this.prompt = ModelPrompt.fromJson(json.get("prompt"));
-        this.hasStreamOptions = json.has("streamOptions");
-        this.streamOptions = WireJson.isNull(json.get("streamOptions")) ? null : StreamOptions.fromJson(json.get("streamOptions"));
+
+    @JsonCreator
+    public OpenAiTextRequest(
+        @JsonProperty(value = "abort") HandleIdInput abort,
+        @JsonProperty(value = "options") Options options,
+        @JsonProperty(value = "prompt", required = true) ModelPrompt prompt,
+        @JsonProperty(value = "streamOptions") StreamOptions streamOptions) {
+        this.abort = abort;
+        this.options = options;
+        this.prompt = prompt;
+        this.streamOptions = streamOptions;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OpenAiTextRequest fromJson(JsonNode json) { return new OpenAiTextRequest(json); }
+
     public static Builder builder() { return new Builder(); }
-    public HandleIdInput getAbort() { return abort == null ? null : (abort == null ? null : abort); }
-    public Options getOptions() { return options == null ? null : options; }
-    public ModelPrompt getPrompt() { return prompt == null ? null : prompt; }
-    public StreamOptions getStreamOptions() { return streamOptions == null ? null : streamOptions; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAbort) json.set("abort", WireJson.tree(abort));
-        if (hasOptions) json.set("options", WireJson.tree(options));
-        json.set("prompt", WireJson.tree(prompt));
-        if (hasStreamOptions) json.set("streamOptions", WireJson.tree(streamOptions));
-        return json;
-    }
+    public HandleIdInput getAbort() { return abort; }
+    public Options getOptions() { return options; }
+    public ModelPrompt getPrompt() { return prompt; }
+    public StreamOptions getStreamOptions() { return streamOptions; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private HandleIdInput abort;
+        private Options options;
+        private ModelPrompt prompt;
+        private StreamOptions streamOptions;
+
+        public Builder abort(HandleIdInput value) {
+            this.abort = value;
+            return this;
         }
-        public Builder abort(HandleIdInput value) { json.set("abort", WireJson.tree(value)); return this; }
-        public Builder options(Options value) { json.set("options", WireJson.tree(value)); return this; }
-        public Builder prompt(ModelPrompt value) { json.set("prompt", WireJson.tree(value)); return this; }
-        public Builder streamOptions(StreamOptions value) { json.set("streamOptions", WireJson.tree(value)); return this; }
-        public OpenAiTextRequest build() { return new OpenAiTextRequest(json); }
+
+        public Builder options(Options value) {
+            this.options = value;
+            return this;
+        }
+
+        public Builder prompt(ModelPrompt value) {
+            this.prompt = value;
+            return this;
+        }
+
+        public Builder streamOptions(StreamOptions value) {
+            this.streamOptions = value;
+            return this;
+        }
+
+        public OpenAiTextRequest build() { return new OpenAiTextRequest(abort, options, prompt, streamOptions); }
     }
 }
-

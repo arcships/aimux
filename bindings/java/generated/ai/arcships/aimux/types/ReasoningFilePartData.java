@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,37 +13,48 @@ import java.util.*;
  * URL, or a string (base64 or a URL).
  */
 @JsonDeserialize(using = ReasoningFilePartData.Deserializer.class)
-public abstract class ReasoningFilePartData extends WireValue {
+public abstract class ReasoningFilePartData {
     private ReasoningFilePartData() {}
-    public static ReasoningFilePartData fromJson(JsonNode json) {
-        try { return new Branch1(GeneratedFileData.fromJson(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        try { return new Branch2(WireJson.string(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        throw new IllegalArgumentException("No ReasoningFilePartData branch accepts: " + json);
-    }
+
     public static final class Deserializer extends JsonDeserializer<ReasoningFilePartData> {
-        @Override public ReasoningFilePartData deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context) throws java.io.IOException {
-            try { return fromJson(parser.getCodec().readTree(parser)); }
-            catch (IllegalArgumentException error) { throw JsonMappingException.from(parser, error.getMessage(), error); }
+        @Override
+        public ReasoningFilePartData deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+            throws java.io.IOException {
+            JsonNode value = context.readTree(parser);
+            JsonMappingException failure = null;
+            try {
+                return parser.getCodec().treeToValue(value, Branch1.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            try {
+                return parser.getCodec().treeToValue(value, Branch2.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            throw failure;
         }
     }
+
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch1 extends ReasoningFilePartData {
+        @JsonValue
         private final GeneratedFileData value;
-        public Branch1(GeneratedFileData value) { this.value = GeneratedFileData.fromJson(WireJson.tree(value)); }
+
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch1 fromJson(JsonNode json) { return new Branch1(GeneratedFileData.fromJson(json)); }
+        public Branch1(GeneratedFileData value) { this.value = value; }
+
         public GeneratedFileData getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch2 extends ReasoningFilePartData {
+        @JsonValue
         private final String value;
-        public Branch2(String value) { this.value = WireJson.string(WireJson.tree(value)); }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch2 fromJson(JsonNode json) { return new Branch2(WireJson.string(json)); }
-        public String getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-    }
 
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public Branch2(String value) { this.value = value; }
+
+        public String getValue() { return value; }
+    }
 }

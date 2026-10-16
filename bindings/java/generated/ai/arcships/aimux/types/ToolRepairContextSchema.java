@@ -4,64 +4,89 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolRepairContextSchema extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolRepairContextSchema {
+    @JsonProperty("error")
     private final AiMuxError error;
+    @JsonProperty("inputSchema")
     private final JsonNode inputSchema;
+    @JsonProperty("instructions")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private final String instructions;
+    @JsonProperty("messages")
     private final List<ModelMessage> messages;
+    @JsonProperty("toolCall")
     private final ToolRepairContextSchemaToolCall toolCall;
+    @JsonProperty("tools")
     private final List<Tool> tools;
-    private ToolRepairContextSchema(JsonNode json) {
-        WireJson.object(json, "ToolRepairContextSchema", false, "error", "inputSchema", "instructions", "messages", "toolCall", "tools");
-        WireJson.required(json, "error");
-        this.error = AiMuxError.fromJson(json.get("error"));
-        WireJson.required(json, "inputSchema");
-        this.inputSchema = WireJson.json(json.get("inputSchema"));
-        WireJson.required(json, "instructions");
-        this.instructions = (WireJson.isNull(json.get("instructions")) ? null : WireJson.string(json.get("instructions")));
-        WireJson.required(json, "messages");
-        this.messages = WireJson.array(json.get("messages"), item0 -> ModelMessage.fromJson(item0));
-        WireJson.required(json, "toolCall");
-        this.toolCall = ToolRepairContextSchemaToolCall.fromJson(json.get("toolCall"));
-        WireJson.required(json, "tools");
-        this.tools = WireJson.array(json.get("tools"), item0 -> Tool.fromJson(item0));
+
+    @JsonCreator
+    public ToolRepairContextSchema(
+        @JsonProperty(value = "error", required = true) AiMuxError error,
+        @JsonProperty(value = "inputSchema", required = true) JsonNode inputSchema,
+        @JsonProperty(value = "instructions", required = true) String instructions,
+        @JsonProperty(value = "messages", required = true) List<ModelMessage> messages,
+        @JsonProperty(value = "toolCall", required = true) ToolRepairContextSchemaToolCall toolCall,
+        @JsonProperty(value = "tools", required = true) List<Tool> tools) {
+        this.error = error;
+        this.inputSchema = inputSchema == null ? null : inputSchema.deepCopy();
+        this.instructions = instructions;
+        this.messages = messages == null ? null : Collections.unmodifiableList(new ArrayList<>(messages));
+        this.toolCall = toolCall;
+        this.tools = tools == null ? null : Collections.unmodifiableList(new ArrayList<>(tools));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolRepairContextSchema fromJson(JsonNode json) { return new ToolRepairContextSchema(json); }
+
     public static Builder builder() { return new Builder(); }
-    public AiMuxError getError() { return error == null ? null : error; }
-    public JsonNode getInputSchema() { return inputSchema == null ? null : WireJson.json(WireJson.tree(inputSchema)); }
-    public String getInstructions() { return instructions == null ? null : (instructions == null ? null : instructions); }
-    public List<ModelMessage> getMessages() { return messages == null ? null : WireJson.array(WireJson.tree(messages), item0 -> ModelMessage.fromJson(item0)); }
-    public ToolRepairContextSchemaToolCall getToolCall() { return toolCall == null ? null : toolCall; }
-    public List<Tool> getTools() { return tools == null ? null : WireJson.array(WireJson.tree(tools), item0 -> Tool.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("error", WireJson.tree(error));
-        json.set("inputSchema", WireJson.tree(inputSchema));
-        json.set("instructions", WireJson.tree(instructions));
-        json.set("messages", WireJson.tree(messages));
-        json.set("toolCall", WireJson.tree(toolCall));
-        json.set("tools", WireJson.tree(tools));
-        return json;
-    }
+    public AiMuxError getError() { return error; }
+    public JsonNode getInputSchema() { return inputSchema == null ? null : inputSchema.deepCopy(); }
+    public String getInstructions() { return instructions; }
+    public List<ModelMessage> getMessages() { return messages; }
+    public ToolRepairContextSchemaToolCall getToolCall() { return toolCall; }
+    public List<Tool> getTools() { return tools; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private AiMuxError error;
+        private JsonNode inputSchema;
+        private String instructions;
+        private List<ModelMessage> messages;
+        private ToolRepairContextSchemaToolCall toolCall;
+        private List<Tool> tools;
+
+        public Builder error(AiMuxError value) {
+            this.error = value;
+            return this;
         }
-        public Builder error(AiMuxError value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder inputSchema(JsonNode value) { json.set("inputSchema", WireJson.tree(value)); return this; }
-        public Builder instructions(String value) { json.set("instructions", WireJson.tree(value)); return this; }
-        public Builder messages(List<ModelMessage> value) { json.set("messages", WireJson.tree(value)); return this; }
-        public Builder toolCall(ToolRepairContextSchemaToolCall value) { json.set("toolCall", WireJson.tree(value)); return this; }
-        public Builder tools(List<Tool> value) { json.set("tools", WireJson.tree(value)); return this; }
-        public ToolRepairContextSchema build() { return new ToolRepairContextSchema(json); }
+
+        public Builder inputSchema(JsonNode value) {
+            this.inputSchema = value;
+            return this;
+        }
+
+        public Builder instructions(String value) {
+            this.instructions = value;
+            return this;
+        }
+
+        public Builder messages(List<ModelMessage> value) {
+            this.messages = value;
+            return this;
+        }
+
+        public Builder toolCall(ToolRepairContextSchemaToolCall value) {
+            this.toolCall = value;
+            return this;
+        }
+
+        public Builder tools(List<Tool> value) {
+            this.tools = value;
+            return this;
+        }
+
+        public ToolRepairContextSchema build() { return new ToolRepairContextSchema(error, inputSchema, instructions, messages, toolCall, tools); }
     }
 }
-

@@ -4,82 +4,111 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A verdict for one call.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class Verdict extends WireValue {
-    private final BigInteger claimed;
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class Verdict {
+    @JsonProperty("claimed")
+    private final Long claimed;
+    @JsonProperty("confidence")
     private final VerdictConfidence confidence;
-    private final BigInteger expectedMax;
-    private final VerdictKind kind;
-    private final BigInteger lcpBytes;
-    private final List<String> notes;
-    private final List<String> violated;
-    private Verdict(JsonNode json) {
-        WireJson.object(json, "Verdict", false, "claimed", "confidence", "expectedMax", "kind", "lcpBytes", "notes", "violated");
-        WireJson.required(json, "claimed");
-        this.claimed = WireJson.integer(json.get("claimed"), true, 64);
-        WireJson.required(json, "confidence");
-        this.confidence = VerdictConfidence.fromJson(json.get("confidence"));
-        WireJson.required(json, "expectedMax");
-        this.expectedMax = WireJson.integer(json.get("expectedMax"), true, 64);
-        WireJson.required(json, "kind");
-        this.kind = VerdictKind.fromJson(json.get("kind"));
-        WireJson.required(json, "lcpBytes");
-        this.lcpBytes = WireJson.integer(json.get("lcpBytes"), true, 64);
-        WireJson.required(json, "notes");
-        this.notes = WireJson.array(json.get("notes"), item0 -> WireJson.string(item0));
-        WireJson.required(json, "violated");
-        this.violated = WireJson.array(json.get("violated"), item0 -> WireJson.string(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static Verdict fromJson(JsonNode json) { return new Verdict(json); }
-    public static Builder builder() { return new Builder(); }
-    public BigInteger getClaimed() { return claimed == null ? null : claimed; }
-    public VerdictConfidence getConfidence() { return confidence == null ? null : confidence; }
     /**
      * Expected upper bound U (tokens).
      */
-    public BigInteger getExpectedMax() { return expectedMax == null ? null : expectedMax; }
-    public VerdictKind getKind() { return kind == null ? null : kind; }
+    @JsonProperty("expectedMax")
+    private final Long expectedMax;
+    @JsonProperty("kind")
+    private final VerdictKind kind;
     /**
      * Client-side LCP (bytes).
      */
-    public BigInteger getLcpBytes() { return lcpBytes == null ? null : lcpBytes; }
-    public List<String> getNotes() { return notes == null ? null : WireJson.array(WireJson.tree(notes), item0 -> WireJson.string(item0)); }
+    @JsonProperty("lcpBytes")
+    private final Long lcpBytes;
+    @JsonProperty("notes")
+    private final List<String> notes;
     /**
      * Violated rule ids (R-1.1 / R-1.2 / …).
      */
-    public List<String> getViolated() { return violated == null ? null : WireJson.array(WireJson.tree(violated), item0 -> WireJson.string(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("claimed", WireJson.tree(claimed));
-        json.set("confidence", WireJson.tree(confidence));
-        json.set("expectedMax", WireJson.tree(expectedMax));
-        json.set("kind", WireJson.tree(kind));
-        json.set("lcpBytes", WireJson.tree(lcpBytes));
-        json.set("notes", WireJson.tree(notes));
-        json.set("violated", WireJson.tree(violated));
-        return json;
+    @JsonProperty("violated")
+    private final List<String> violated;
+
+    @JsonCreator
+    public Verdict(
+        @JsonProperty(value = "claimed", required = true) Long claimed,
+        @JsonProperty(value = "confidence", required = true) VerdictConfidence confidence,
+        @JsonProperty(value = "expectedMax", required = true) Long expectedMax,
+        @JsonProperty(value = "kind", required = true) VerdictKind kind,
+        @JsonProperty(value = "lcpBytes", required = true) Long lcpBytes,
+        @JsonProperty(value = "notes", required = true) List<String> notes,
+        @JsonProperty(value = "violated", required = true) List<String> violated) {
+        this.claimed = claimed;
+        this.confidence = confidence;
+        this.expectedMax = expectedMax;
+        this.kind = kind;
+        this.lcpBytes = lcpBytes;
+        this.notes = notes == null ? null : Collections.unmodifiableList(new ArrayList<>(notes));
+        this.violated = violated == null ? null : Collections.unmodifiableList(new ArrayList<>(violated));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getClaimed() { return claimed; }
+    public VerdictConfidence getConfidence() { return confidence; }
+    public Long getExpectedMax() { return expectedMax; }
+    public VerdictKind getKind() { return kind; }
+    public Long getLcpBytes() { return lcpBytes; }
+    public List<String> getNotes() { return notes; }
+    public List<String> getViolated() { return violated; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long claimed;
+        private VerdictConfidence confidence;
+        private Long expectedMax;
+        private VerdictKind kind;
+        private Long lcpBytes;
+        private List<String> notes;
+        private List<String> violated;
+
+        public Builder claimed(Long value) {
+            this.claimed = value;
+            return this;
         }
-        public Builder claimed(BigInteger value) { json.set("claimed", WireJson.tree(value)); return this; }
-        public Builder confidence(VerdictConfidence value) { json.set("confidence", WireJson.tree(value)); return this; }
-        public Builder expectedMax(BigInteger value) { json.set("expectedMax", WireJson.tree(value)); return this; }
-        public Builder kind(VerdictKind value) { json.set("kind", WireJson.tree(value)); return this; }
-        public Builder lcpBytes(BigInteger value) { json.set("lcpBytes", WireJson.tree(value)); return this; }
-        public Builder notes(List<String> value) { json.set("notes", WireJson.tree(value)); return this; }
-        public Builder violated(List<String> value) { json.set("violated", WireJson.tree(value)); return this; }
-        public Verdict build() { return new Verdict(json); }
+
+        public Builder confidence(VerdictConfidence value) {
+            this.confidence = value;
+            return this;
+        }
+
+        public Builder expectedMax(Long value) {
+            this.expectedMax = value;
+            return this;
+        }
+
+        public Builder kind(VerdictKind value) {
+            this.kind = value;
+            return this;
+        }
+
+        public Builder lcpBytes(Long value) {
+            this.lcpBytes = value;
+            return this;
+        }
+
+        public Builder notes(List<String> value) {
+            this.notes = value;
+            return this;
+        }
+
+        public Builder violated(List<String> value) {
+            this.violated = value;
+            return this;
+        }
+
+        public Verdict build() { return new Verdict(claimed, confidence, expectedMax, kind, lcpBytes, notes, violated); }
     }
 }
-

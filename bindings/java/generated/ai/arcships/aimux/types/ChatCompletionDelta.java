@@ -4,56 +4,66 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionDelta extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionDelta {
+    @JsonProperty("content")
     private final String content;
-    private final boolean hasContent;
+    @JsonProperty("reasoning_content")
     private final String reasoningContent;
-    private final boolean hasReasoningContent;
+    @JsonProperty("role")
     private final String role;
-    private final boolean hasRole;
+    @JsonProperty("tool_calls")
     private final List<ChatCompletionChunkToolCall> toolCalls;
-    private final boolean hasToolCalls;
-    private ChatCompletionDelta(JsonNode json) {
-        WireJson.object(json, "ChatCompletionDelta", false, "content", "reasoning_content", "role", "tool_calls");
-        this.hasContent = json.has("content");
-        this.content = WireJson.isNull(json.get("content")) ? null : (WireJson.isNull(json.get("content")) ? null : WireJson.string(json.get("content")));
-        this.hasReasoningContent = json.has("reasoning_content");
-        this.reasoningContent = WireJson.isNull(json.get("reasoning_content")) ? null : (WireJson.isNull(json.get("reasoning_content")) ? null : WireJson.string(json.get("reasoning_content")));
-        this.hasRole = json.has("role");
-        this.role = WireJson.isNull(json.get("role")) ? null : (WireJson.isNull(json.get("role")) ? null : WireJson.string(json.get("role")));
-        this.hasToolCalls = json.has("tool_calls");
-        this.toolCalls = WireJson.isNull(json.get("tool_calls")) ? null : (WireJson.isNull(json.get("tool_calls")) ? null : WireJson.array(json.get("tool_calls"), item0 -> ChatCompletionChunkToolCall.fromJson(item0)));
+
+    @JsonCreator
+    public ChatCompletionDelta(
+        @JsonProperty(value = "content") String content,
+        @JsonProperty(value = "reasoning_content") String reasoningContent,
+        @JsonProperty(value = "role") String role,
+        @JsonProperty(value = "tool_calls") List<ChatCompletionChunkToolCall> toolCalls) {
+        this.content = content;
+        this.reasoningContent = reasoningContent;
+        this.role = role;
+        this.toolCalls = toolCalls == null ? null : Collections.unmodifiableList(new ArrayList<>(toolCalls));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionDelta fromJson(JsonNode json) { return new ChatCompletionDelta(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getContent() { return content == null ? null : (content == null ? null : content); }
-    public String getReasoningContent() { return reasoningContent == null ? null : (reasoningContent == null ? null : reasoningContent); }
-    public String getRole() { return role == null ? null : (role == null ? null : role); }
-    public List<ChatCompletionChunkToolCall> getToolCalls() { return toolCalls == null ? null : (toolCalls == null ? null : WireJson.array(WireJson.tree(toolCalls), item0 -> ChatCompletionChunkToolCall.fromJson(item0))); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasContent) json.set("content", WireJson.tree(content));
-        if (hasReasoningContent) json.set("reasoning_content", WireJson.tree(reasoningContent));
-        if (hasRole) json.set("role", WireJson.tree(role));
-        if (hasToolCalls) json.set("tool_calls", WireJson.tree(toolCalls));
-        return json;
-    }
+    public String getContent() { return content; }
+    public String getReasoningContent() { return reasoningContent; }
+    public String getRole() { return role; }
+    public List<ChatCompletionChunkToolCall> getToolCalls() { return toolCalls; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String content;
+        private String reasoningContent;
+        private String role;
+        private List<ChatCompletionChunkToolCall> toolCalls;
+
+        public Builder content(String value) {
+            this.content = value;
+            return this;
         }
-        public Builder content(String value) { json.set("content", WireJson.tree(value)); return this; }
-        public Builder reasoningContent(String value) { json.set("reasoning_content", WireJson.tree(value)); return this; }
-        public Builder role(String value) { json.set("role", WireJson.tree(value)); return this; }
-        public Builder toolCalls(List<ChatCompletionChunkToolCall> value) { json.set("tool_calls", WireJson.tree(value)); return this; }
-        public ChatCompletionDelta build() { return new ChatCompletionDelta(json); }
+
+        public Builder reasoningContent(String value) {
+            this.reasoningContent = value;
+            return this;
+        }
+
+        public Builder role(String value) {
+            this.role = value;
+            return this;
+        }
+
+        public Builder toolCalls(List<ChatCompletionChunkToolCall> value) {
+            this.toolCalls = value;
+            return this;
+        }
+
+        public ChatCompletionDelta build() { return new ChatCompletionDelta(content, reasoningContent, role, toolCalls); }
     }
 }
-

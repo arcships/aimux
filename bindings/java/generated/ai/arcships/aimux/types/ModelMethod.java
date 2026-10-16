@@ -4,26 +4,26 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum ModelMethod {
-    LANGUAGE_MODEL("languageModel"),
-    EMBEDDING_MODEL("embeddingModel"),
-    IMAGE_MODEL("imageModel"),
-    SPEECH_MODEL("speechModel"),
-    TRANSCRIPTION_MODEL("transcriptionModel"),
-    RERANKING_MODEL("rerankingModel"),
-    VIDEO_MODEL("videoModel"),
-    SEARCH_MODEL("searchModel"),
-    DECISION("decision");
-    private final String value;
-    ModelMethod(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static ModelMethod fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (ModelMethod item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid ModelMethod: " + value);
-    }
+    @JsonProperty("languageModel")
+    LANGUAGE_MODEL,
+    @JsonProperty("embeddingModel")
+    EMBEDDING_MODEL,
+    @JsonProperty("imageModel")
+    IMAGE_MODEL,
+    @JsonProperty("speechModel")
+    SPEECH_MODEL,
+    @JsonProperty("transcriptionModel")
+    TRANSCRIPTION_MODEL,
+    @JsonProperty("rerankingModel")
+    RERANKING_MODEL,
+    @JsonProperty("videoModel")
+    VIDEO_MODEL,
+    @JsonProperty("searchModel")
+    SEARCH_MODEL,
+    @JsonProperty("decision")
+    DECISION
 }

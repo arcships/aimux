@@ -4,55 +4,66 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class MiddlewareParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class MiddlewareParams {
+    @JsonProperty("auditMode")
     private final AuditMode auditMode;
-    private final boolean hasAuditMode;
+    @JsonProperty("kind")
     private final String kind;
+    @JsonProperty("scopeName")
     private final String scopeName;
-    private final boolean hasScopeName;
+    @JsonProperty("traceStore")
     private final HandleIdInput traceStore;
-    private final boolean hasTraceStore;
-    private MiddlewareParams(JsonNode json) {
-        WireJson.object(json, "MiddlewareParams", true, "auditMode", "kind", "scopeName", "traceStore");
-        this.hasAuditMode = json.has("auditMode");
-        this.auditMode = WireJson.isNull(json.get("auditMode")) ? null : (WireJson.isNull(json.get("auditMode")) ? null : AuditMode.fromJson(json.get("auditMode")));
-        WireJson.required(json, "kind");
-        this.kind = WireJson.string(json.get("kind"));
-        this.hasScopeName = json.has("scopeName");
-        this.scopeName = WireJson.isNull(json.get("scopeName")) ? null : (WireJson.isNull(json.get("scopeName")) ? null : WireJson.string(json.get("scopeName")));
-        this.hasTraceStore = json.has("traceStore");
-        this.traceStore = WireJson.isNull(json.get("traceStore")) ? null : (WireJson.isNull(json.get("traceStore")) ? null : HandleIdInput.fromJson(json.get("traceStore")));
+
+    @JsonCreator
+    public MiddlewareParams(
+        @JsonProperty(value = "auditMode") AuditMode auditMode,
+        @JsonProperty(value = "kind", required = true) String kind,
+        @JsonProperty(value = "scopeName") String scopeName,
+        @JsonProperty(value = "traceStore") HandleIdInput traceStore) {
+        this.auditMode = auditMode;
+        this.kind = kind;
+        this.scopeName = scopeName;
+        this.traceStore = traceStore;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static MiddlewareParams fromJson(JsonNode json) { return new MiddlewareParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public AuditMode getAuditMode() { return auditMode == null ? null : (auditMode == null ? null : auditMode); }
-    public String getKind() { return kind == null ? null : kind; }
-    public String getScopeName() { return scopeName == null ? null : (scopeName == null ? null : scopeName); }
-    public HandleIdInput getTraceStore() { return traceStore == null ? null : (traceStore == null ? null : traceStore); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAuditMode) json.set("auditMode", WireJson.tree(auditMode));
-        json.set("kind", WireJson.tree(kind));
-        if (hasScopeName) json.set("scopeName", WireJson.tree(scopeName));
-        if (hasTraceStore) json.set("traceStore", WireJson.tree(traceStore));
-        return json;
-    }
+    public AuditMode getAuditMode() { return auditMode; }
+    public String getKind() { return kind; }
+    public String getScopeName() { return scopeName; }
+    public HandleIdInput getTraceStore() { return traceStore; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private AuditMode auditMode;
+        private String kind;
+        private String scopeName;
+        private HandleIdInput traceStore;
+
+        public Builder auditMode(AuditMode value) {
+            this.auditMode = value;
+            return this;
         }
-        public Builder auditMode(AuditMode value) { json.set("auditMode", WireJson.tree(value)); return this; }
-        public Builder kind(String value) { json.set("kind", WireJson.tree(value)); return this; }
-        public Builder scopeName(String value) { json.set("scopeName", WireJson.tree(value)); return this; }
-        public Builder traceStore(HandleIdInput value) { json.set("traceStore", WireJson.tree(value)); return this; }
-        public MiddlewareParams build() { return new MiddlewareParams(json); }
+
+        public Builder kind(String value) {
+            this.kind = value;
+            return this;
+        }
+
+        public Builder scopeName(String value) {
+            this.scopeName = value;
+            return this;
+        }
+
+        public Builder traceStore(HandleIdInput value) {
+            this.traceStore = value;
+            return this;
+        }
+
+        public MiddlewareParams build() { return new MiddlewareParams(auditMode, kind, scopeName, traceStore); }
     }
 }
-

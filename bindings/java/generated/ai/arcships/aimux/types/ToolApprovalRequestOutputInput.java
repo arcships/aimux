@@ -4,68 +4,84 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Approval request exposed by text generation.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolApprovalRequestOutputInput extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolApprovalRequestOutputInput {
+    @JsonProperty("approvalId")
     private final String approvalId;
+    @JsonProperty("isAutomatic")
     private final Boolean isAutomatic;
-    private final boolean hasIsAutomatic;
+    @JsonProperty("reason")
     private final String reason;
-    private final boolean hasReason;
+    @JsonProperty("signature")
     private final String signature;
-    private final boolean hasSignature;
-    private final TypedToolCallInput toolCall;
-    private ToolApprovalRequestOutputInput(JsonNode json) {
-        WireJson.object(json, "ToolApprovalRequestOutputInput", false, "approvalId", "isAutomatic", "reason", "signature", "toolCall");
-        WireJson.required(json, "approvalId");
-        this.approvalId = WireJson.string(json.get("approvalId"));
-        this.hasIsAutomatic = json.has("isAutomatic");
-        this.isAutomatic = WireJson.isNull(json.get("isAutomatic")) ? null : (WireJson.isNull(json.get("isAutomatic")) ? null : WireJson.bool(json.get("isAutomatic")));
-        this.hasReason = json.has("reason");
-        this.reason = WireJson.isNull(json.get("reason")) ? null : (WireJson.isNull(json.get("reason")) ? null : WireJson.string(json.get("reason")));
-        this.hasSignature = json.has("signature");
-        this.signature = WireJson.isNull(json.get("signature")) ? null : (WireJson.isNull(json.get("signature")) ? null : WireJson.string(json.get("signature")));
-        WireJson.required(json, "toolCall");
-        this.toolCall = TypedToolCallInput.fromJson(json.get("toolCall"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolApprovalRequestOutputInput fromJson(JsonNode json) { return new ToolApprovalRequestOutputInput(json); }
-    public static Builder builder() { return new Builder(); }
-    public String getApprovalId() { return approvalId == null ? null : approvalId; }
-    public Boolean getIsAutomatic() { return isAutomatic == null ? null : (isAutomatic == null ? null : isAutomatic); }
-    public String getReason() { return reason == null ? null : (reason == null ? null : reason); }
-    public String getSignature() { return signature == null ? null : (signature == null ? null : signature); }
     /**
      * The call to approve, with its `type` tag (`ai`
      * `generate-text/tool-approval-request-output.ts:20`).
      */
-    public TypedToolCallInput getToolCall() { return toolCall == null ? null : toolCall; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("approvalId", WireJson.tree(approvalId));
-        if (hasIsAutomatic) json.set("isAutomatic", WireJson.tree(isAutomatic));
-        if (hasReason) json.set("reason", WireJson.tree(reason));
-        if (hasSignature) json.set("signature", WireJson.tree(signature));
-        json.set("toolCall", WireJson.tree(toolCall));
-        return json;
+    @JsonProperty("toolCall")
+    private final TypedToolCallInput toolCall;
+
+    @JsonCreator
+    public ToolApprovalRequestOutputInput(
+        @JsonProperty(value = "approvalId", required = true) String approvalId,
+        @JsonProperty(value = "isAutomatic") Boolean isAutomatic,
+        @JsonProperty(value = "reason") String reason,
+        @JsonProperty(value = "signature") String signature,
+        @JsonProperty(value = "toolCall", required = true) TypedToolCallInput toolCall) {
+        this.approvalId = approvalId;
+        this.isAutomatic = isAutomatic;
+        this.reason = reason;
+        this.signature = signature;
+        this.toolCall = toolCall;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getApprovalId() { return approvalId; }
+    public Boolean getIsAutomatic() { return isAutomatic; }
+    public String getReason() { return reason; }
+    public String getSignature() { return signature; }
+    public TypedToolCallInput getToolCall() { return toolCall; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String approvalId;
+        private Boolean isAutomatic;
+        private String reason;
+        private String signature;
+        private TypedToolCallInput toolCall;
+
+        public Builder approvalId(String value) {
+            this.approvalId = value;
+            return this;
         }
-        public Builder approvalId(String value) { json.set("approvalId", WireJson.tree(value)); return this; }
-        public Builder isAutomatic(Boolean value) { json.set("isAutomatic", WireJson.tree(value)); return this; }
-        public Builder reason(String value) { json.set("reason", WireJson.tree(value)); return this; }
-        public Builder signature(String value) { json.set("signature", WireJson.tree(value)); return this; }
-        public Builder toolCall(TypedToolCallInput value) { json.set("toolCall", WireJson.tree(value)); return this; }
-        public ToolApprovalRequestOutputInput build() { return new ToolApprovalRequestOutputInput(json); }
+
+        public Builder isAutomatic(Boolean value) {
+            this.isAutomatic = value;
+            return this;
+        }
+
+        public Builder reason(String value) {
+            this.reason = value;
+            return this;
+        }
+
+        public Builder signature(String value) {
+            this.signature = value;
+            return this;
+        }
+
+        public Builder toolCall(TypedToolCallInput value) {
+            this.toolCall = value;
+            return this;
+        }
+
+        public ToolApprovalRequestOutputInput build() { return new ToolApprovalRequestOutputInput(approvalId, isAutomatic, reason, signature, toolCall); }
     }
 }
-

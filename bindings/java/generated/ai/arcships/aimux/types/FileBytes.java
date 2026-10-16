@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -21,12 +20,12 @@ import java.util.*;
  * they hold the same bytes, whatever their form.
  */
 @JsonDeserialize(using = JsonDeserializer.None.class)
-public final class FileBytes extends WireValue {
+public final class FileBytes {
+    @JsonValue
     private final String value;
-    public FileBytes(String value) { this.value = WireJson.string(WireJson.tree(value)); }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static FileBytes fromJson(JsonNode json) { return new FileBytes(WireJson.string(json)); }
-    public String getValue() { return value; }
-    @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-}
 
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public FileBytes(String value) { this.value = value; }
+
+    public String getValue() { return value; }
+}

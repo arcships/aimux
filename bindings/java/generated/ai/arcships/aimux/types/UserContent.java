@@ -4,45 +4,55 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * The content of a user message: a string or parts (upstream `UserContent`).
  */
 @JsonDeserialize(using = UserContent.Deserializer.class)
-public abstract class UserContent extends WireValue {
+public abstract class UserContent {
     private UserContent() {}
-    public static UserContent fromJson(JsonNode json) {
-        try { return new Branch1(WireJson.string(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        try { return new Branch2(WireJson.array(json, item0 -> UserContentPart.fromJson(item0))); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        throw new IllegalArgumentException("No UserContent branch accepts: " + json);
-    }
+
     public static final class Deserializer extends JsonDeserializer<UserContent> {
-        @Override public UserContent deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context) throws java.io.IOException {
-            try { return fromJson(parser.getCodec().readTree(parser)); }
-            catch (IllegalArgumentException error) { throw JsonMappingException.from(parser, error.getMessage(), error); }
+        @Override
+        public UserContent deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+            throws java.io.IOException {
+            JsonNode value = context.readTree(parser);
+            JsonMappingException failure = null;
+            try {
+                return parser.getCodec().treeToValue(value, Branch1.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            try {
+                return parser.getCodec().treeToValue(value, Branch2.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            throw failure;
         }
     }
+
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch1 extends UserContent {
+        @JsonValue
         private final String value;
-        public Branch1(String value) { this.value = WireJson.string(WireJson.tree(value)); }
+
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch1 fromJson(JsonNode json) { return new Branch1(WireJson.string(json)); }
+        public Branch1(String value) { this.value = value; }
+
         public String getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch2 extends UserContent {
+        @JsonValue
         private final List<UserContentPart> value;
-        public Branch2(List<UserContentPart> value) { this.value = WireJson.array(WireJson.tree(value), item0 -> UserContentPart.fromJson(item0)); }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch2 fromJson(JsonNode json) { return new Branch2(WireJson.array(json, item0 -> UserContentPart.fromJson(item0))); }
-        public List<UserContentPart> getValue() { return WireJson.array(WireJson.tree(value), item0 -> UserContentPart.fromJson(item0)); }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-    }
 
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public Branch2(List<UserContentPart> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+
+        public List<UserContentPart> getValue() { return value; }
+    }
 }

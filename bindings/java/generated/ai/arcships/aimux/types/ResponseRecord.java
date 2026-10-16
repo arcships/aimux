@@ -4,67 +4,83 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ResponseRecord extends WireValue {
-    private final String body;
-    private final boolean hasBody;
-    private final List<List<String>> headers;
-    private final Integer status;
-    private final BigInteger streamChunks;
-    private final boolean hasStreamChunks;
-    private final BigInteger ttfbMs;
-    private final boolean hasTtfbMs;
-    private ResponseRecord(JsonNode json) {
-        WireJson.object(json, "ResponseRecord", false, "body", "headers", "status", "streamChunks", "ttfbMs");
-        this.hasBody = json.has("body");
-        this.body = WireJson.isNull(json.get("body")) ? null : (WireJson.isNull(json.get("body")) ? null : WireJson.string(json.get("body")));
-        WireJson.required(json, "headers");
-        this.headers = WireJson.array(json.get("headers"), item0 -> WireJson.array(item0, item1 -> WireJson.string(item1)));
-        WireJson.required(json, "status");
-        this.status = WireJson.integer(json.get("status"), true, 16).intValue();
-        this.hasStreamChunks = json.has("streamChunks");
-        this.streamChunks = WireJson.isNull(json.get("streamChunks")) ? null : (WireJson.isNull(json.get("streamChunks")) ? null : WireJson.integer(json.get("streamChunks"), true, 64));
-        this.hasTtfbMs = json.has("ttfbMs");
-        this.ttfbMs = WireJson.isNull(json.get("ttfbMs")) ? null : (WireJson.isNull(json.get("ttfbMs")) ? null : WireJson.integer(json.get("ttfbMs"), true, 64));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ResponseRecord fromJson(JsonNode json) { return new ResponseRecord(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ResponseRecord {
     /**
      * 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
      */
-    public String getBody() { return body == null ? null : (body == null ? null : body); }
-    public List<List<String>> getHeaders() { return headers == null ? null : WireJson.array(WireJson.tree(headers), item0 -> WireJson.array(item0, item1 -> WireJson.string(item1))); }
-    public Integer getStatus() { return status == null ? null : status; }
-    public BigInteger getStreamChunks() { return streamChunks == null ? null : (streamChunks == null ? null : streamChunks); }
+    @JsonProperty("body")
+    private final String body;
+    @JsonProperty("headers")
+    private final List<List<String>> headers;
+    @JsonProperty("status")
+    private final Integer status;
+    @JsonProperty("streamChunks")
+    private final Long streamChunks;
     /**
      * 首字节延迟(流式)。
      */
-    public BigInteger getTtfbMs() { return ttfbMs == null ? null : (ttfbMs == null ? null : ttfbMs); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasBody) json.set("body", WireJson.tree(body));
-        json.set("headers", WireJson.tree(headers));
-        json.set("status", WireJson.tree(status));
-        if (hasStreamChunks) json.set("streamChunks", WireJson.tree(streamChunks));
-        if (hasTtfbMs) json.set("ttfbMs", WireJson.tree(ttfbMs));
-        return json;
+    @JsonProperty("ttfbMs")
+    private final Long ttfbMs;
+
+    @JsonCreator
+    public ResponseRecord(
+        @JsonProperty(value = "body") String body,
+        @JsonProperty(value = "headers", required = true) List<List<String>> headers,
+        @JsonProperty(value = "status", required = true) Integer status,
+        @JsonProperty(value = "streamChunks") Long streamChunks,
+        @JsonProperty(value = "ttfbMs") Long ttfbMs) {
+        this.body = body;
+        this.headers = headers == null ? null : Collections.unmodifiableList(new ArrayList<>(headers));
+        this.status = status;
+        this.streamChunks = streamChunks;
+        this.ttfbMs = ttfbMs;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getBody() { return body; }
+    public List<List<String>> getHeaders() { return headers; }
+    public Integer getStatus() { return status; }
+    public Long getStreamChunks() { return streamChunks; }
+    public Long getTtfbMs() { return ttfbMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String body;
+        private List<List<String>> headers;
+        private Integer status;
+        private Long streamChunks;
+        private Long ttfbMs;
+
+        public Builder body(String value) {
+            this.body = value;
+            return this;
         }
-        public Builder body(String value) { json.set("body", WireJson.tree(value)); return this; }
-        public Builder headers(List<List<String>> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder status(Integer value) { json.set("status", WireJson.tree(value)); return this; }
-        public Builder streamChunks(BigInteger value) { json.set("streamChunks", WireJson.tree(value)); return this; }
-        public Builder ttfbMs(BigInteger value) { json.set("ttfbMs", WireJson.tree(value)); return this; }
-        public ResponseRecord build() { return new ResponseRecord(json); }
+
+        public Builder headers(List<List<String>> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder status(Integer value) {
+            this.status = value;
+            return this;
+        }
+
+        public Builder streamChunks(Long value) {
+            this.streamChunks = value;
+            return this;
+        }
+
+        public Builder ttfbMs(Long value) {
+            this.ttfbMs = value;
+            return this;
+        }
+
+        public ResponseRecord build() { return new ResponseRecord(body, headers, status, streamChunks, ttfbMs); }
     }
 }
-

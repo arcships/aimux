@@ -4,41 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderModelParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderModelParams {
+    @JsonProperty("method")
     private final String method;
-    private final boolean hasMethod;
+    @JsonProperty("modelId")
     private final String modelId;
-    private ProviderModelParams(JsonNode json) {
-        WireJson.object(json, "ProviderModelParams", true, "method", "modelId");
-        this.hasMethod = json.has("method");
-        this.method = WireJson.isNull(json.get("method")) ? null : (WireJson.isNull(json.get("method")) ? null : WireJson.string(json.get("method")));
-        WireJson.required(json, "modelId");
-        this.modelId = WireJson.string(json.get("modelId"));
+
+    @JsonCreator
+    public ProviderModelParams(
+        @JsonProperty(value = "method") String method,
+        @JsonProperty(value = "modelId", required = true) String modelId) {
+        this.method = method;
+        this.modelId = modelId;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderModelParams fromJson(JsonNode json) { return new ProviderModelParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getMethod() { return method == null ? null : (method == null ? null : method); }
-    public String getModelId() { return modelId == null ? null : modelId; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasMethod) json.set("method", WireJson.tree(method));
-        json.set("modelId", WireJson.tree(modelId));
-        return json;
-    }
+    public String getMethod() { return method; }
+    public String getModelId() { return modelId; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String method;
+        private String modelId;
+
+        public Builder method(String value) {
+            this.method = value;
+            return this;
         }
-        public Builder method(String value) { json.set("method", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public ProviderModelParams build() { return new ProviderModelParams(json); }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public ProviderModelParams build() { return new ProviderModelParams(method, modelId); }
     }
 }
-

@@ -4,135 +4,170 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Options passed to [`SearchModel::do_search`].
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SearchCallOptions extends WireValue {
-    private final List<String> excludeDomains;
-    private final boolean hasExcludeDomains;
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final List<String> includeDomains;
-    private final boolean hasIncludeDomains;
-    private final Boolean includeRawContent;
-    private final boolean hasIncludeRawContent;
-    private final Long maxResults;
-    private final boolean hasMaxResults;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final String query;
-    private final String timeRange;
-    private final boolean hasTimeRange;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private SearchCallOptions(JsonNode json) {
-        WireJson.object(json, "SearchCallOptions", false, "excludeDomains", "headers", "includeDomains", "includeRawContent", "maxResults", "maxRetries", "providerOptions", "query", "timeRange", "timeout");
-        this.hasExcludeDomains = json.has("excludeDomains");
-        this.excludeDomains = WireJson.isNull(json.get("excludeDomains")) ? null : (WireJson.isNull(json.get("excludeDomains")) ? null : WireJson.array(json.get("excludeDomains"), item0 -> WireJson.string(item0)));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasIncludeDomains = json.has("includeDomains");
-        this.includeDomains = WireJson.isNull(json.get("includeDomains")) ? null : (WireJson.isNull(json.get("includeDomains")) ? null : WireJson.array(json.get("includeDomains"), item0 -> WireJson.string(item0)));
-        this.hasIncludeRawContent = json.has("includeRawContent");
-        this.includeRawContent = WireJson.isNull(json.get("includeRawContent")) ? null : (WireJson.isNull(json.get("includeRawContent")) ? null : WireJson.bool(json.get("includeRawContent")));
-        this.hasMaxResults = json.has("maxResults");
-        this.maxResults = WireJson.isNull(json.get("maxResults")) ? null : (WireJson.isNull(json.get("maxResults")) ? null : WireJson.integer(json.get("maxResults"), true, 32).longValue());
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "query");
-        this.query = WireJson.string(json.get("query"));
-        this.hasTimeRange = json.has("timeRange");
-        this.timeRange = WireJson.isNull(json.get("timeRange")) ? null : (WireJson.isNull(json.get("timeRange")) ? null : WireJson.string(json.get("timeRange")));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SearchCallOptions fromJson(JsonNode json) { return new SearchCallOptions(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SearchCallOptions {
     /**
      * Optional list of domains to exclude from results.
      */
-    public List<String> getExcludeDomains() { return excludeDomains == null ? null : (excludeDomains == null ? null : WireJson.array(WireJson.tree(excludeDomains), item0 -> WireJson.string(item0))); }
+    @JsonProperty("excludeDomains")
+    private final List<String> excludeDomains;
     /**
      * Additional HTTP headers to send with the request.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * Optional list of domains to include in results.
      */
-    public List<String> getIncludeDomains() { return includeDomains == null ? null : (includeDomains == null ? null : WireJson.array(WireJson.tree(includeDomains), item0 -> WireJson.string(item0))); }
+    @JsonProperty("includeDomains")
+    private final List<String> includeDomains;
     /**
      * Whether to include raw page content in results.
      * 
      * Provider support varies; providers that cannot honor this should
      * issue a warning rather than erroring.
      */
-    public Boolean getIncludeRawContent() { return includeRawContent == null ? null : (includeRawContent == null ? null : includeRawContent); }
+    @JsonProperty("includeRawContent")
+    private final Boolean includeRawContent;
     /**
      * Maximum number of results to return.
      */
-    public Long getMaxResults() { return maxResults == null ? null : (maxResults == null ? null : maxResults); }
+    @JsonProperty("maxResults")
+    private final Long maxResults;
     /**
      * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
      * retrying. `None` uses 2, the AI SDK default.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
     /**
      * Additional provider-specific options, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * The search query string.
      */
-    public String getQuery() { return query == null ? null : query; }
+    @JsonProperty("query")
+    private final String query;
     /**
      * Optional time range filter (e.g. `"day"`, `"week"`, `"month"`,
      * `"year"`). Provider support varies.
      */
-    public String getTimeRange() { return timeRange == null ? null : (timeRange == null ? null : timeRange); }
+    @JsonProperty("timeRange")
+    private final String timeRange;
     /**
      * Per-call operation timeout.
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasExcludeDomains) json.set("excludeDomains", WireJson.tree(excludeDomains));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasIncludeDomains) json.set("includeDomains", WireJson.tree(includeDomains));
-        if (hasIncludeRawContent) json.set("includeRawContent", WireJson.tree(includeRawContent));
-        if (hasMaxResults) json.set("maxResults", WireJson.tree(maxResults));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        json.set("query", WireJson.tree(query));
-        if (hasTimeRange) json.set("timeRange", WireJson.tree(timeRange));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        return json;
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
+
+    @JsonCreator
+    public SearchCallOptions(
+        @JsonProperty(value = "excludeDomains") List<String> excludeDomains,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "includeDomains") List<String> includeDomains,
+        @JsonProperty(value = "includeRawContent") Boolean includeRawContent,
+        @JsonProperty(value = "maxResults") Long maxResults,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "query", required = true) String query,
+        @JsonProperty(value = "timeRange") String timeRange,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout) {
+        this.excludeDomains = excludeDomains == null ? null : Collections.unmodifiableList(new ArrayList<>(excludeDomains));
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.includeDomains = includeDomains == null ? null : Collections.unmodifiableList(new ArrayList<>(includeDomains));
+        this.includeRawContent = includeRawContent;
+        this.maxResults = maxResults;
+        this.maxRetries = maxRetries;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.query = query;
+        this.timeRange = timeRange;
+        this.timeout = timeout;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public List<String> getExcludeDomains() { return excludeDomains; }
+    public Map<String, String> getHeaders() { return headers; }
+    public List<String> getIncludeDomains() { return includeDomains; }
+    public Boolean getIncludeRawContent() { return includeRawContent; }
+    public Long getMaxResults() { return maxResults; }
+    public Long getMaxRetries() { return maxRetries; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public String getQuery() { return query; }
+    public String getTimeRange() { return timeRange; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<String> excludeDomains;
+        private Map<String, String> headers;
+        private List<String> includeDomains;
+        private Boolean includeRawContent;
+        private Long maxResults;
+        private Long maxRetries;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private String query;
+        private String timeRange;
+        private TimeoutConfiguration timeout;
+
+        public Builder excludeDomains(List<String> value) {
+            this.excludeDomains = value;
+            return this;
         }
-        public Builder excludeDomains(List<String> value) { json.set("excludeDomains", WireJson.tree(value)); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder includeDomains(List<String> value) { json.set("includeDomains", WireJson.tree(value)); return this; }
-        public Builder includeRawContent(Boolean value) { json.set("includeRawContent", WireJson.tree(value)); return this; }
-        public Builder maxResults(Long value) { json.set("maxResults", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder query(String value) { json.set("query", WireJson.tree(value)); return this; }
-        public Builder timeRange(String value) { json.set("timeRange", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public SearchCallOptions build() { return new SearchCallOptions(json); }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder includeDomains(List<String> value) {
+            this.includeDomains = value;
+            return this;
+        }
+
+        public Builder includeRawContent(Boolean value) {
+            this.includeRawContent = value;
+            return this;
+        }
+
+        public Builder maxResults(Long value) {
+            this.maxResults = value;
+            return this;
+        }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder query(String value) {
+            this.query = value;
+            return this;
+        }
+
+        public Builder timeRange(String value) {
+            this.timeRange = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public SearchCallOptions build() { return new SearchCallOptions(excludeDomains, headers, includeDomains, includeRawContent, maxResults, maxRetries, providerOptions, query, timeRange, timeout); }
     }
 }
-

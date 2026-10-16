@@ -2,6 +2,7 @@ package ai.arcships.aimux;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import ai.arcships.aimux.types.ErrorEnvelope;
+import ai.arcships.aimux.types.DtoJson;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** Test access to Java's decoder; production Kotlin never decodes envelopes. */
@@ -17,7 +18,7 @@ public final class KotlinInteropFixtures {
     }
 
     private static final class FutureError extends NativeException {
-        FutureError(JsonNode envelope) { super(ErrorEnvelope.fromJson(envelope)); }
+        FutureError(JsonNode envelope) { super(DtoJson.decode(envelope, ErrorEnvelope.class)); }
     }
 
     public static Model acceptModel(Model value) { return value; }

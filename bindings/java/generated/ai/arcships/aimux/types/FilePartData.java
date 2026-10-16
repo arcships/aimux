@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -18,48 +17,64 @@ import java.util.*;
  * (a `data:` URL becomes inline data), base64 otherwise.
  */
 @JsonDeserialize(using = FilePartData.Deserializer.class)
-public abstract class FilePartData extends WireValue {
+public abstract class FilePartData {
     private FilePartData() {}
-    public static FilePartData fromJson(JsonNode json) {
-        try { return new Branch1(FileData.fromJson(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        try { return new Branch2(WireJson.string(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        try { return new Branch3(WireJson.map(json, item0 -> WireJson.string(item0))); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        throw new IllegalArgumentException("No FilePartData branch accepts: " + json);
-    }
+
     public static final class Deserializer extends JsonDeserializer<FilePartData> {
-        @Override public FilePartData deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context) throws java.io.IOException {
-            try { return fromJson(parser.getCodec().readTree(parser)); }
-            catch (IllegalArgumentException error) { throw JsonMappingException.from(parser, error.getMessage(), error); }
+        @Override
+        public FilePartData deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+            throws java.io.IOException {
+            JsonNode value = context.readTree(parser);
+            JsonMappingException failure = null;
+            try {
+                return parser.getCodec().treeToValue(value, Branch1.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            try {
+                return parser.getCodec().treeToValue(value, Branch2.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            try {
+                return parser.getCodec().treeToValue(value, Branch3.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            throw failure;
         }
     }
+
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch1 extends FilePartData {
+        @JsonValue
         private final FileData value;
-        public Branch1(FileData value) { this.value = FileData.fromJson(WireJson.tree(value)); }
+
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch1 fromJson(JsonNode json) { return new Branch1(FileData.fromJson(json)); }
+        public Branch1(FileData value) { this.value = value; }
+
         public FileData getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch2 extends FilePartData {
+        @JsonValue
         private final String value;
-        public Branch2(String value) { this.value = WireJson.string(WireJson.tree(value)); }
+
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch2 fromJson(JsonNode json) { return new Branch2(WireJson.string(json)); }
+        public Branch2(String value) { this.value = value; }
+
         public String getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch3 extends FilePartData {
+        @JsonValue
         private final Map<String, String> value;
-        public Branch3(Map<String, String> value) { this.value = WireJson.map(WireJson.tree(value), item0 -> WireJson.string(item0)); }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch3 fromJson(JsonNode json) { return new Branch3(WireJson.map(json, item0 -> WireJson.string(item0))); }
-        public Map<String, String> getValue() { return WireJson.map(WireJson.tree(value), item0 -> WireJson.string(item0)); }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-    }
 
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public Branch3(Map<String, String> value) { this.value = value == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(value)); }
+
+        public Map<String, String> getValue() { return value; }
+    }
 }

@@ -4,17 +4,21 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = StreamFrame.Event.class, name = "event"),
-    @JsonSubTypes.Type(value = StreamFrame.End.class, name = "end"),
+    @JsonSubTypes.Type(value = StreamFrame.End.class, name = "end")
 })
-public abstract class StreamFrame extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class StreamFrame {
     private StreamFrame() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public StreamFrame0Event getEvent() { return null; }
     public String getSeq() { return null; }
@@ -22,96 +26,105 @@ public abstract class StreamFrame extends WireValue {
     public Outcome getOutcome() { return null; }
     public final boolean isEnd() { return "end".equals(getType()); }
     public final boolean isEvent() { return "event".equals(getType()); }
-    public static StreamFrame fromJson(JsonNode json) {
-        WireJson.object(json, "StreamFrame", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "end":
-                return End.fromJson(json);
-            case "event":
-                return Event.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown StreamFrame tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Event extends StreamFrame {
+        @JsonProperty("event")
         private final StreamFrame0Event event;
+        @JsonProperty("seq")
         private final String seq;
-        private Event(JsonNode json) {
-            WireJson.object(json, "Event", true, "event", "seq", "type");
-            if (!"event".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Event tag");
-            WireJson.required(json, "event");
-            this.event = StreamFrame0Event.fromJson(json.get("event"));
-            WireJson.required(json, "seq");
-            this.seq = WireJson.u64String(json.get("seq"));
+
+        @JsonCreator
+        public Event(
+            @JsonProperty(value = "event", required = true) StreamFrame0Event event,
+            @JsonProperty(value = "seq", required = true) String seq) {
+            this.event = event;
+            this.seq = seq;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Event fromJson(JsonNode json) { return new Event(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "event"; }
-        public StreamFrame0Event getEvent() { return event == null ? null : event; }
-        public String getSeq() { return seq == null ? null : seq; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "event");
-            json.set("event", WireJson.tree(event));
-            json.set("seq", WireJson.tree(seq));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "event"; }
+        public StreamFrame0Event getEvent() { return event; }
+        public String getSeq() { return seq; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "event");
+            private StreamFrame0Event event;
+            private String seq;
+
+            public Builder event(StreamFrame0Event value) {
+                this.event = value;
+                return this;
             }
-            public Builder event(StreamFrame0Event value) { json.set("event", WireJson.tree(value)); return this; }
-            public Builder seq(String value) { json.set("seq", WireJson.tree(value)); return this; }
-            public Event build() { return new Event(json); }
+
+            public Builder seq(String value) {
+                this.seq = value;
+                return this;
+            }
+
+            public Event build() { return new Event(event, seq); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class End extends StreamFrame {
+        @JsonProperty("error")
         private final ErrorEnvelope error;
-        private final boolean hasError;
+        @JsonProperty("outcome")
         private final Outcome outcome;
+        @JsonProperty("seq")
         private final String seq;
-        private End(JsonNode json) {
-            WireJson.object(json, "End", true, "error", "outcome", "seq", "type");
-            if (!"end".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid End tag");
-            this.hasError = json.has("error");
-            this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : ErrorEnvelope.fromJson(json.get("error")));
-            WireJson.required(json, "outcome");
-            this.outcome = Outcome.fromJson(json.get("outcome"));
-            WireJson.required(json, "seq");
-            this.seq = WireJson.u64String(json.get("seq"));
+
+        @JsonCreator
+        public End(
+            @JsonProperty(value = "error") ErrorEnvelope error,
+            @JsonProperty(value = "outcome", required = true) Outcome outcome,
+            @JsonProperty(value = "seq", required = true) String seq) {
+            this.error = error;
+            this.outcome = outcome;
+            this.seq = seq;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static End fromJson(JsonNode json) { return new End(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "end"; }
-        public ErrorEnvelope getError() { return error == null ? null : (error == null ? null : error); }
-        public Outcome getOutcome() { return outcome == null ? null : outcome; }
-        public String getSeq() { return seq == null ? null : seq; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "end");
-            if (hasError) json.set("error", WireJson.tree(error));
-            json.set("outcome", WireJson.tree(outcome));
-            json.set("seq", WireJson.tree(seq));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "end"; }
+        public ErrorEnvelope getError() { return error; }
+        public Outcome getOutcome() { return outcome; }
+        public String getSeq() { return seq; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "end");
+            private ErrorEnvelope error;
+            private Outcome outcome;
+            private String seq;
+
+            public Builder error(ErrorEnvelope value) {
+                this.error = value;
+                return this;
             }
-            public Builder error(ErrorEnvelope value) { json.set("error", WireJson.tree(value)); return this; }
-            public Builder outcome(Outcome value) { json.set("outcome", WireJson.tree(value)); return this; }
-            public Builder seq(String value) { json.set("seq", WireJson.tree(value)); return this; }
-            public End build() { return new End(json); }
+
+            public Builder outcome(Outcome value) {
+                this.outcome = value;
+                return this;
+            }
+
+            public Builder seq(String value) {
+                this.seq = value;
+                return this;
+            }
+
+            public End build() { return new End(error, outcome, seq); }
         }
     }
-
 }

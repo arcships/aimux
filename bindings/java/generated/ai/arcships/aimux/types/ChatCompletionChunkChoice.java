@@ -4,53 +4,67 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionChunkChoice extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionChunkChoice {
+    @JsonProperty("delta")
     private final ChatCompletionDelta delta;
+    @JsonProperty("finish_reason")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     private final String finishReason;
+    @JsonProperty("index")
     private final Long index;
+    @JsonProperty("logprobs")
     private final JsonNode logprobs;
-    private final boolean hasLogprobs;
-    private ChatCompletionChunkChoice(JsonNode json) {
-        WireJson.object(json, "ChatCompletionChunkChoice", false, "delta", "finish_reason", "index", "logprobs");
-        WireJson.required(json, "delta");
-        this.delta = ChatCompletionDelta.fromJson(json.get("delta"));
-        WireJson.required(json, "finish_reason");
-        this.finishReason = (WireJson.isNull(json.get("finish_reason")) ? null : WireJson.string(json.get("finish_reason")));
-        WireJson.required(json, "index");
-        this.index = WireJson.integer(json.get("index"), true, 32).longValue();
-        this.hasLogprobs = json.has("logprobs");
-        this.logprobs = WireJson.isNull(json.get("logprobs")) ? null : WireJson.json(json.get("logprobs"));
+
+    @JsonCreator
+    public ChatCompletionChunkChoice(
+        @JsonProperty(value = "delta", required = true) ChatCompletionDelta delta,
+        @JsonProperty(value = "finish_reason", required = true) String finishReason,
+        @JsonProperty(value = "index", required = true) Long index,
+        @JsonProperty(value = "logprobs") JsonNode logprobs) {
+        this.delta = delta;
+        this.finishReason = finishReason;
+        this.index = index;
+        this.logprobs = logprobs == null || logprobs.isNull() ? null : logprobs.deepCopy();
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionChunkChoice fromJson(JsonNode json) { return new ChatCompletionChunkChoice(json); }
+
     public static Builder builder() { return new Builder(); }
-    public ChatCompletionDelta getDelta() { return delta == null ? null : delta; }
-    public String getFinishReason() { return finishReason == null ? null : (finishReason == null ? null : finishReason); }
-    public Long getIndex() { return index == null ? null : index; }
-    public JsonNode getLogprobs() { return logprobs == null ? null : WireJson.json(WireJson.tree(logprobs)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("delta", WireJson.tree(delta));
-        json.set("finish_reason", WireJson.tree(finishReason));
-        json.set("index", WireJson.tree(index));
-        if (hasLogprobs) json.set("logprobs", WireJson.tree(logprobs));
-        return json;
-    }
+    public ChatCompletionDelta getDelta() { return delta; }
+    public String getFinishReason() { return finishReason; }
+    public Long getIndex() { return index; }
+    public JsonNode getLogprobs() { return logprobs == null ? null : logprobs.deepCopy(); }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private ChatCompletionDelta delta;
+        private String finishReason;
+        private Long index;
+        private JsonNode logprobs;
+
+        public Builder delta(ChatCompletionDelta value) {
+            this.delta = value;
+            return this;
         }
-        public Builder delta(ChatCompletionDelta value) { json.set("delta", WireJson.tree(value)); return this; }
-        public Builder finishReason(String value) { json.set("finish_reason", WireJson.tree(value)); return this; }
-        public Builder index(Long value) { json.set("index", WireJson.tree(value)); return this; }
-        public Builder logprobs(JsonNode value) { json.set("logprobs", WireJson.tree(value)); return this; }
-        public ChatCompletionChunkChoice build() { return new ChatCompletionChunkChoice(json); }
+
+        public Builder finishReason(String value) {
+            this.finishReason = value;
+            return this;
+        }
+
+        public Builder index(Long value) {
+            this.index = value;
+            return this;
+        }
+
+        public Builder logprobs(JsonNode value) {
+            this.logprobs = value;
+            return this;
+        }
+
+        public ChatCompletionChunkChoice build() { return new ChatCompletionChunkChoice(delta, finishReason, index, logprobs); }
     }
 }
-

@@ -4,83 +4,102 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Optional response information for a reranking call.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RerankingResponse extends WireValue {
-    private final JsonNode body;
-    private final boolean hasBody;
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final String id;
-    private final boolean hasId;
-    private final String modelId;
-    private final boolean hasModelId;
-    private final Timestamp timestamp;
-    private final boolean hasTimestamp;
-    private RerankingResponse(JsonNode json) {
-        WireJson.object(json, "RerankingResponse", false, "body", "headers", "id", "modelId", "timestamp");
-        this.hasBody = json.has("body");
-        this.body = WireJson.isNull(json.get("body")) ? null : WireJson.json(json.get("body"));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasId = json.has("id");
-        this.id = WireJson.isNull(json.get("id")) ? null : (WireJson.isNull(json.get("id")) ? null : WireJson.string(json.get("id")));
-        this.hasModelId = json.has("modelId");
-        this.modelId = WireJson.isNull(json.get("modelId")) ? null : (WireJson.isNull(json.get("modelId")) ? null : WireJson.string(json.get("modelId")));
-        this.hasTimestamp = json.has("timestamp");
-        this.timestamp = WireJson.isNull(json.get("timestamp")) ? null : (WireJson.isNull(json.get("timestamp")) ? null : Timestamp.fromJson(json.get("timestamp")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RerankingResponse fromJson(JsonNode json) { return new RerankingResponse(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RerankingResponse {
     /**
      * Response body (opaque JSON).
      */
-    public JsonNode getBody() { return body == null ? null : WireJson.json(WireJson.tree(body)); }
-    public boolean hasBody() { return hasBody; }
+    @JsonProperty("body")
+    @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+    private final FieldPresence<JsonNode> body;
     /**
      * Response headers.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * ID for the generated response, if the provider sends one.
      */
-    public String getId() { return id == null ? null : (id == null ? null : id); }
+    @JsonProperty("id")
+    private final String id;
     /**
      * The ID of the model that was used to generate the response.
      */
-    public String getModelId() { return modelId == null ? null : (modelId == null ? null : modelId); }
+    @JsonProperty("modelId")
+    private final String modelId;
     /**
      * Timestamp for the start of the generated response (`toISOString()` in the JSON).
      */
-    public Timestamp getTimestamp() { return timestamp == null ? null : (timestamp == null ? null : timestamp); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasBody) json.set("body", WireJson.tree(body));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasId) json.set("id", WireJson.tree(id));
-        if (hasModelId) json.set("modelId", WireJson.tree(modelId));
-        if (hasTimestamp) json.set("timestamp", WireJson.tree(timestamp));
-        return json;
+    @JsonProperty("timestamp")
+    private final Timestamp timestamp;
+
+    @JsonCreator
+    public RerankingResponse(
+        @JsonProperty(value = "body") FieldPresence<JsonNode> body,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "id") String id,
+        @JsonProperty(value = "modelId") String modelId,
+        @JsonProperty(value = "timestamp") Timestamp timestamp) {
+        this.body = body == null ? FieldPresence.absent() : body;
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.id = id;
+        this.modelId = modelId;
+        this.timestamp = timestamp;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public JsonNode getBody() { return body.getValue() == null ? null : body.getValue().deepCopy(); }
+    public boolean hasBody() { return body.isPresent(); }
+    public Map<String, String> getHeaders() { return headers; }
+    public String getId() { return id; }
+    public String getModelId() { return modelId; }
+    public Timestamp getTimestamp() { return timestamp; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FieldPresence<JsonNode> body = FieldPresence.absent();
+        private Map<String, String> headers;
+        private String id;
+        private String modelId;
+        private Timestamp timestamp;
+
+        public Builder body(JsonNode value) {
+            this.body = FieldPresence.of(value == null ? null : value.deepCopy());
+            return this;
         }
-        public Builder body(JsonNode value) { json.set("body", WireJson.tree(value)); return this; }
-        public Builder omitBody() { json.remove("body"); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder timestamp(Timestamp value) { json.set("timestamp", WireJson.tree(value)); return this; }
-        public RerankingResponse build() { return new RerankingResponse(json); }
+
+        public Builder omitBody() {
+            this.body = FieldPresence.absent();
+            return this;
+        }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder id(String value) {
+            this.id = value;
+            return this;
+        }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder timestamp(Timestamp value) {
+            this.timestamp = value;
+            return this;
+        }
+
+        public RerankingResponse build() { return new RerankingResponse(body, headers, id, modelId, timestamp); }
     }
 }
-

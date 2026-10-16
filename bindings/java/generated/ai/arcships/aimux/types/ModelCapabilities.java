@@ -4,67 +4,81 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Model-level capability flags (more precise than provider-level `supports_*`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ModelCapabilities extends WireValue {
-    private final Boolean attachment;
-    private final Boolean structuredOutput;
-    private final Boolean temperature;
-    private final Boolean toolCall;
-    private ModelCapabilities(JsonNode json) {
-        WireJson.object(json, "ModelCapabilities", false, "attachment", "structuredOutput", "temperature", "toolCall");
-        WireJson.required(json, "attachment");
-        this.attachment = WireJson.bool(json.get("attachment"));
-        WireJson.required(json, "structuredOutput");
-        this.structuredOutput = WireJson.bool(json.get("structuredOutput"));
-        WireJson.required(json, "temperature");
-        this.temperature = WireJson.bool(json.get("temperature"));
-        WireJson.required(json, "toolCall");
-        this.toolCall = WireJson.bool(json.get("toolCall"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ModelCapabilities fromJson(JsonNode json) { return new ModelCapabilities(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ModelCapabilities {
     /**
      * Accepts multimodal attachments (image/audio/pdf input).
      */
-    public Boolean getAttachment() { return attachment == null ? null : attachment; }
+    @JsonProperty("attachment")
+    private final Boolean attachment;
     /**
      * Supports structured / JSON-schema output.
      */
-    public Boolean getStructuredOutput() { return structuredOutput == null ? null : structuredOutput; }
+    @JsonProperty("structuredOutput")
+    private final Boolean structuredOutput;
     /**
      * Accepts a `temperature` parameter.
      */
-    public Boolean getTemperature() { return temperature == null ? null : temperature; }
+    @JsonProperty("temperature")
+    private final Boolean temperature;
     /**
      * Supports function/tool calling.
      */
-    public Boolean getToolCall() { return toolCall == null ? null : toolCall; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("attachment", WireJson.tree(attachment));
-        json.set("structuredOutput", WireJson.tree(structuredOutput));
-        json.set("temperature", WireJson.tree(temperature));
-        json.set("toolCall", WireJson.tree(toolCall));
-        return json;
+    @JsonProperty("toolCall")
+    private final Boolean toolCall;
+
+    @JsonCreator
+    public ModelCapabilities(
+        @JsonProperty(value = "attachment", required = true) Boolean attachment,
+        @JsonProperty(value = "structuredOutput", required = true) Boolean structuredOutput,
+        @JsonProperty(value = "temperature", required = true) Boolean temperature,
+        @JsonProperty(value = "toolCall", required = true) Boolean toolCall) {
+        this.attachment = attachment;
+        this.structuredOutput = structuredOutput;
+        this.temperature = temperature;
+        this.toolCall = toolCall;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Boolean getAttachment() { return attachment; }
+    public Boolean getStructuredOutput() { return structuredOutput; }
+    public Boolean getTemperature() { return temperature; }
+    public Boolean getToolCall() { return toolCall; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean attachment;
+        private Boolean structuredOutput;
+        private Boolean temperature;
+        private Boolean toolCall;
+
+        public Builder attachment(Boolean value) {
+            this.attachment = value;
+            return this;
         }
-        public Builder attachment(Boolean value) { json.set("attachment", WireJson.tree(value)); return this; }
-        public Builder structuredOutput(Boolean value) { json.set("structuredOutput", WireJson.tree(value)); return this; }
-        public Builder temperature(Boolean value) { json.set("temperature", WireJson.tree(value)); return this; }
-        public Builder toolCall(Boolean value) { json.set("toolCall", WireJson.tree(value)); return this; }
-        public ModelCapabilities build() { return new ModelCapabilities(json); }
+
+        public Builder structuredOutput(Boolean value) {
+            this.structuredOutput = value;
+            return this;
+        }
+
+        public Builder temperature(Boolean value) {
+            this.temperature = value;
+            return this;
+        }
+
+        public Builder toolCall(Boolean value) {
+            this.toolCall = value;
+            return this;
+        }
+
+        public ModelCapabilities build() { return new ModelCapabilities(attachment, structuredOutput, temperature, toolCall); }
     }
 }
-

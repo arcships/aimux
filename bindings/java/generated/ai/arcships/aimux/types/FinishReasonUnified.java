@@ -4,26 +4,23 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Unified finish reason enum (aligned with V4 `LanguageModelV4FinishReason`).
  */
 public enum FinishReasonUnified {
-    STOP("stop"),
-    LENGTH("length"),
-    CONTENT_FILTER("content-filter"),
-    TOOL_CALLS("tool-calls"),
-    ERROR("error"),
-    OTHER("other");
-    private final String value;
-    FinishReasonUnified(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static FinishReasonUnified fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (FinishReasonUnified item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid FinishReasonUnified: " + value);
-    }
+    @JsonProperty("stop")
+    STOP,
+    @JsonProperty("length")
+    LENGTH,
+    @JsonProperty("content-filter")
+    CONTENT_FILTER,
+    @JsonProperty("tool-calls")
+    TOOL_CALLS,
+    @JsonProperty("error")
+    ERROR,
+    @JsonProperty("other")
+    OTHER
 }

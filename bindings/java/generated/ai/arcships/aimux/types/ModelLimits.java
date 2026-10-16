@@ -4,61 +4,67 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Token / request limits for a model.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ModelLimits extends WireValue {
-    private final BigInteger context;
-    private final boolean hasContext;
-    private final BigInteger input;
-    private final boolean hasInput;
-    private final BigInteger output;
-    private final boolean hasOutput;
-    private ModelLimits(JsonNode json) {
-        WireJson.object(json, "ModelLimits", false, "context", "input", "output");
-        this.hasContext = json.has("context");
-        this.context = WireJson.isNull(json.get("context")) ? null : (WireJson.isNull(json.get("context")) ? null : WireJson.integer(json.get("context"), true, 64));
-        this.hasInput = json.has("input");
-        this.input = WireJson.isNull(json.get("input")) ? null : (WireJson.isNull(json.get("input")) ? null : WireJson.integer(json.get("input"), true, 64));
-        this.hasOutput = json.has("output");
-        this.output = WireJson.isNull(json.get("output")) ? null : (WireJson.isNull(json.get("output")) ? null : WireJson.integer(json.get("output"), true, 64));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ModelLimits fromJson(JsonNode json) { return new ModelLimits(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ModelLimits {
     /**
      * Maximum total context window (input + output), in tokens.
      */
-    public BigInteger getContext() { return context == null ? null : (context == null ? null : context); }
+    @JsonProperty("context")
+    private final Long context;
     /**
      * Maximum input tokens (when distinct from `context`).
      */
-    public BigInteger getInput() { return input == null ? null : (input == null ? null : input); }
+    @JsonProperty("input")
+    private final Long input;
     /**
      * Maximum output tokens.
      */
-    public BigInteger getOutput() { return output == null ? null : (output == null ? null : output); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasContext) json.set("context", WireJson.tree(context));
-        if (hasInput) json.set("input", WireJson.tree(input));
-        if (hasOutput) json.set("output", WireJson.tree(output));
-        return json;
+    @JsonProperty("output")
+    private final Long output;
+
+    @JsonCreator
+    public ModelLimits(
+        @JsonProperty(value = "context") Long context,
+        @JsonProperty(value = "input") Long input,
+        @JsonProperty(value = "output") Long output) {
+        this.context = context;
+        this.input = input;
+        this.output = output;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getContext() { return context; }
+    public Long getInput() { return input; }
+    public Long getOutput() { return output; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long context;
+        private Long input;
+        private Long output;
+
+        public Builder context(Long value) {
+            this.context = value;
+            return this;
         }
-        public Builder context(BigInteger value) { json.set("context", WireJson.tree(value)); return this; }
-        public Builder input(BigInteger value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder output(BigInteger value) { json.set("output", WireJson.tree(value)); return this; }
-        public ModelLimits build() { return new ModelLimits(json); }
+
+        public Builder input(Long value) {
+            this.input = value;
+            return this;
+        }
+
+        public Builder output(Long value) {
+            this.output = value;
+            return this;
+        }
+
+        public ModelLimits build() { return new ModelLimits(context, input, output); }
     }
 }
-

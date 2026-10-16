@@ -4,50 +4,53 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * The input audio format for a streaming transcription request.
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class InputAudioFormat extends WireValue {
-    private final String formatType;
-    private final Long rate;
-    private final boolean hasRate;
-    private InputAudioFormat(JsonNode json) {
-        WireJson.object(json, "InputAudioFormat", true, "formatType", "rate");
-        WireJson.required(json, "formatType");
-        this.formatType = WireJson.string(json.get("formatType"));
-        this.hasRate = json.has("rate");
-        this.rate = WireJson.isNull(json.get("rate")) ? null : (WireJson.isNull(json.get("rate")) ? null : WireJson.integer(json.get("rate"), true, 32).longValue());
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static InputAudioFormat fromJson(JsonNode json) { return new InputAudioFormat(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class InputAudioFormat {
     /**
      * Audio format type, e.g. `"audio/pcm"`, `"audio/pcmu"`, `"audio/pcma"`.
      */
-    public String getFormatType() { return formatType == null ? null : formatType; }
+    @JsonProperty("formatType")
+    private final String formatType;
     /**
      * Sample rate in Hz. Only applicable for formats that require a rate.
      */
-    public Long getRate() { return rate == null ? null : (rate == null ? null : rate); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("formatType", WireJson.tree(formatType));
-        if (hasRate) json.set("rate", WireJson.tree(rate));
-        return json;
+    @JsonProperty("rate")
+    private final Long rate;
+
+    @JsonCreator
+    public InputAudioFormat(
+        @JsonProperty(value = "formatType", required = true) String formatType,
+        @JsonProperty(value = "rate") Long rate) {
+        this.formatType = formatType;
+        this.rate = rate;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getFormatType() { return formatType; }
+    public Long getRate() { return rate; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String formatType;
+        private Long rate;
+
+        public Builder formatType(String value) {
+            this.formatType = value;
+            return this;
         }
-        public Builder formatType(String value) { json.set("formatType", WireJson.tree(value)); return this; }
-        public Builder rate(Long value) { json.set("rate", WireJson.tree(value)); return this; }
-        public InputAudioFormat build() { return new InputAudioFormat(json); }
+
+        public Builder rate(Long value) {
+            this.rate = value;
+            return this;
+        }
+
+        public InputAudioFormat build() { return new InputAudioFormat(formatType, rate); }
     }
 }
-

@@ -4,28 +4,27 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A single input or output modality.
  */
 public enum Modality {
-    TEXT("Text"),
-    IMAGE("Image"),
-    AUDIO("Audio"),
-    VIDEO("Video"),
-    PDF("Pdf"),
-    OTHER("Other"),
-    EMBEDDING("Embedding"),
-    SCORE("Score");
-    private final String value;
-    Modality(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static Modality fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (Modality item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid Modality: " + value);
-    }
+    @JsonProperty("Text")
+    TEXT,
+    @JsonProperty("Image")
+    IMAGE,
+    @JsonProperty("Audio")
+    AUDIO,
+    @JsonProperty("Video")
+    VIDEO,
+    @JsonProperty("Pdf")
+    PDF,
+    @JsonProperty("Other")
+    OTHER,
+    @JsonProperty("Embedding")
+    EMBEDDING,
+    @JsonProperty("Score")
+    SCORE
 }

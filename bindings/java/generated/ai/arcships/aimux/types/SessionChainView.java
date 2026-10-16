@@ -4,55 +4,69 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Session chain view (append-only order + prefix stability, RFC-0015 §5.3).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SessionChainView extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SessionChainView {
+    @JsonProperty("breaks")
     private final List<PrefixBreak> breaks;
+    @JsonProperty("prefixStability")
     private final BigDecimal prefixStability;
+    @JsonProperty("recordIds")
     private final List<String> recordIds;
+    @JsonProperty("sessionId")
     private final String sessionId;
-    private SessionChainView(JsonNode json) {
-        WireJson.object(json, "SessionChainView", false, "breaks", "prefixStability", "recordIds", "sessionId");
-        WireJson.required(json, "breaks");
-        this.breaks = WireJson.array(json.get("breaks"), item0 -> PrefixBreak.fromJson(item0));
-        WireJson.required(json, "prefixStability");
-        this.prefixStability = WireJson.number(json.get("prefixStability"));
-        WireJson.required(json, "recordIds");
-        this.recordIds = WireJson.array(json.get("recordIds"), item0 -> WireJson.string(item0));
-        WireJson.required(json, "sessionId");
-        this.sessionId = WireJson.string(json.get("sessionId"));
+
+    @JsonCreator
+    public SessionChainView(
+        @JsonProperty(value = "breaks", required = true) List<PrefixBreak> breaks,
+        @JsonProperty(value = "prefixStability", required = true) BigDecimal prefixStability,
+        @JsonProperty(value = "recordIds", required = true) List<String> recordIds,
+        @JsonProperty(value = "sessionId", required = true) String sessionId) {
+        this.breaks = breaks == null ? null : Collections.unmodifiableList(new ArrayList<>(breaks));
+        this.prefixStability = prefixStability;
+        this.recordIds = recordIds == null ? null : Collections.unmodifiableList(new ArrayList<>(recordIds));
+        this.sessionId = sessionId;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SessionChainView fromJson(JsonNode json) { return new SessionChainView(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<PrefixBreak> getBreaks() { return breaks == null ? null : WireJson.array(WireJson.tree(breaks), item0 -> PrefixBreak.fromJson(item0)); }
-    public BigDecimal getPrefixStability() { return prefixStability == null ? null : prefixStability; }
-    public List<String> getRecordIds() { return recordIds == null ? null : WireJson.array(WireJson.tree(recordIds), item0 -> WireJson.string(item0)); }
-    public String getSessionId() { return sessionId == null ? null : sessionId; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("breaks", WireJson.tree(breaks));
-        json.set("prefixStability", WireJson.tree(prefixStability));
-        json.set("recordIds", WireJson.tree(recordIds));
-        json.set("sessionId", WireJson.tree(sessionId));
-        return json;
-    }
+    public List<PrefixBreak> getBreaks() { return breaks; }
+    public BigDecimal getPrefixStability() { return prefixStability; }
+    public List<String> getRecordIds() { return recordIds; }
+    public String getSessionId() { return sessionId; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<PrefixBreak> breaks;
+        private BigDecimal prefixStability;
+        private List<String> recordIds;
+        private String sessionId;
+
+        public Builder breaks(List<PrefixBreak> value) {
+            this.breaks = value;
+            return this;
         }
-        public Builder breaks(List<PrefixBreak> value) { json.set("breaks", WireJson.tree(value)); return this; }
-        public Builder prefixStability(BigDecimal value) { json.set("prefixStability", WireJson.tree(value)); return this; }
-        public Builder recordIds(List<String> value) { json.set("recordIds", WireJson.tree(value)); return this; }
-        public Builder sessionId(String value) { json.set("sessionId", WireJson.tree(value)); return this; }
-        public SessionChainView build() { return new SessionChainView(json); }
+
+        public Builder prefixStability(BigDecimal value) {
+            this.prefixStability = value;
+            return this;
+        }
+
+        public Builder recordIds(List<String> value) {
+            this.recordIds = value;
+            return this;
+        }
+
+        public Builder sessionId(String value) {
+            this.sessionId = value;
+            return this;
+        }
+
+        public SessionChainView build() { return new SessionChainView(breaks, prefixStability, recordIds, sessionId); }
     }
 }
-

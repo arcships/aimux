@@ -1,7 +1,7 @@
 package ai.arcships.aimux;
 
 import ai.arcships.aimux.types.DtoTypes;
-import ai.arcships.aimux.types.WireJson;
+import ai.arcships.aimux.types.DtoJson;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
@@ -13,13 +13,13 @@ import java.nio.file.Paths;
 public final class DtoVectors {
     public static void main(String[] args) throws Exception {
         Path directory = Paths.get(args[0]);
-        JsonNode index = WireJson.MAPPER.readTree(directory.resolve("index.json").toFile());
+        JsonNode index = DtoJson.MAPPER.readTree(directory.resolve("index.json").toFile());
         for (JsonNode entry : index) {
-            ObjectNode result = WireJson.MAPPER.createObjectNode();
+            ObjectNode result = DtoJson.MAPPER.createObjectNode();
             String file = entry.get("file").textValue();
             result.put("file", file);
             try {
-                JsonNode value = WireJson.parse(new String(Files.readAllBytes(directory.resolve(file)), StandardCharsets.UTF_8));
+                JsonNode value = DtoJson.parse(new String(Files.readAllBytes(directory.resolve(file)), StandardCharsets.UTF_8));
                 result.set("value", DtoTypes.roundTrip(entry.get("type").textValue(), value));
                 result.put("ok", true);
             } catch (Exception error) {

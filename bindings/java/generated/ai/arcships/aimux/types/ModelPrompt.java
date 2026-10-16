@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,37 +13,48 @@ import java.util.*;
  * Can be a simple string (converted to a single user message) or a list of messages.
  */
 @JsonDeserialize(using = ModelPrompt.Deserializer.class)
-public abstract class ModelPrompt extends WireValue {
+public abstract class ModelPrompt {
     private ModelPrompt() {}
-    public static ModelPrompt fromJson(JsonNode json) {
-        try { return new Branch1(WireJson.string(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        try { return new Branch2(WireJson.array(json, item0 -> ModelMessage.fromJson(item0))); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        throw new IllegalArgumentException("No ModelPrompt branch accepts: " + json);
-    }
+
     public static final class Deserializer extends JsonDeserializer<ModelPrompt> {
-        @Override public ModelPrompt deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context) throws java.io.IOException {
-            try { return fromJson(parser.getCodec().readTree(parser)); }
-            catch (IllegalArgumentException error) { throw JsonMappingException.from(parser, error.getMessage(), error); }
+        @Override
+        public ModelPrompt deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+            throws java.io.IOException {
+            JsonNode value = context.readTree(parser);
+            JsonMappingException failure = null;
+            try {
+                return parser.getCodec().treeToValue(value, Branch1.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            try {
+                return parser.getCodec().treeToValue(value, Branch2.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            throw failure;
         }
     }
+
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch1 extends ModelPrompt {
+        @JsonValue
         private final String value;
-        public Branch1(String value) { this.value = WireJson.string(WireJson.tree(value)); }
+
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch1 fromJson(JsonNode json) { return new Branch1(WireJson.string(json)); }
+        public Branch1(String value) { this.value = value; }
+
         public String getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch2 extends ModelPrompt {
+        @JsonValue
         private final List<ModelMessage> value;
-        public Branch2(List<ModelMessage> value) { this.value = WireJson.array(WireJson.tree(value), item0 -> ModelMessage.fromJson(item0)); }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch2 fromJson(JsonNode json) { return new Branch2(WireJson.array(json, item0 -> ModelMessage.fromJson(item0))); }
-        public List<ModelMessage> getValue() { return WireJson.array(WireJson.tree(value), item0 -> ModelMessage.fromJson(item0)); }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-    }
 
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public Branch2(List<ModelMessage> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+
+        public List<ModelMessage> getValue() { return value; }
+    }
 }

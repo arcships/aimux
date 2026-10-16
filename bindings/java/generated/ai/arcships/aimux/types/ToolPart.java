@@ -4,20 +4,24 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Parts allowed in a tool message.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ToolPart.ToolResultVariant.class, name = "tool-result"),
-    @JsonSubTypes.Type(value = ToolPart.ToolApprovalResponse.class, name = "tool-approval-response"),
+    @JsonSubTypes.Type(value = ToolPart.ToolApprovalResponse.class, name = "tool-approval-response")
 })
-public abstract class ToolPart extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class ToolPart {
     private ToolPart() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public ToolResultOutput2 getOutput() { return null; }
     public Map<String, Map<String, JsonNode>> getProviderOptions() { return null; }
@@ -28,116 +32,138 @@ public abstract class ToolPart extends WireValue {
     public String getReason() { return null; }
     public final boolean isToolApprovalResponse() { return "tool-approval-response".equals(getType()); }
     public final boolean isToolResult() { return "tool-result".equals(getType()); }
-    public static ToolPart fromJson(JsonNode json) {
-        WireJson.object(json, "ToolPart", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "tool-approval-response":
-                return ToolApprovalResponse.fromJson(json);
-            case "tool-result":
-                return ToolResultVariant.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown ToolPart tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolResultVariant extends ToolPart {
+        @JsonProperty("output")
         private final ToolResultOutput2 output;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
+        @JsonProperty("toolCallId")
         private final String toolCallId;
+        @JsonProperty("toolName")
         private final String toolName;
-        private ToolResultVariant(JsonNode json) {
-            WireJson.object(json, "ToolResultVariant", false, "output", "providerOptions", "toolCallId", "toolName", "type");
-            if (!"tool-result".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolResultVariant tag");
-            WireJson.required(json, "output");
-            this.output = ToolResultOutput2.fromJson(json.get("output"));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "toolCallId");
-            this.toolCallId = WireJson.string(json.get("toolCallId"));
-            WireJson.required(json, "toolName");
-            this.toolName = WireJson.string(json.get("toolName"));
+
+        @JsonCreator
+        public ToolResultVariant(
+            @JsonProperty(value = "output", required = true) ToolResultOutput2 output,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+            @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+            @JsonProperty(value = "toolName", required = true) String toolName) {
+            this.output = output;
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+            this.toolCallId = toolCallId;
+            this.toolName = toolName;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolResultVariant fromJson(JsonNode json) { return new ToolResultVariant(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool-result"; }
-        public ToolResultOutput2 getOutput() { return output == null ? null : output; }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-        public String getToolName() { return toolName == null ? null : toolName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool-result");
-            json.set("output", WireJson.tree(output));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            json.set("toolCallId", WireJson.tree(toolCallId));
-            json.set("toolName", WireJson.tree(toolName));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool-result"; }
+        public ToolResultOutput2 getOutput() { return output; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+        public String getToolCallId() { return toolCallId; }
+        public String getToolName() { return toolName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool-result");
+            private ToolResultOutput2 output;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+            private String toolCallId;
+            private String toolName;
+
+            public Builder output(ToolResultOutput2 value) {
+                this.output = value;
+                return this;
             }
-            public Builder output(ToolResultOutput2 value) { json.set("output", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-            public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-            public ToolResultVariant build() { return new ToolResultVariant(json); }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public Builder toolCallId(String value) {
+                this.toolCallId = value;
+                return this;
+            }
+
+            public Builder toolName(String value) {
+                this.toolName = value;
+                return this;
+            }
+
+            public ToolResultVariant build() { return new ToolResultVariant(output, providerOptions, toolCallId, toolName); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolApprovalResponse extends ToolPart {
+        @JsonProperty("approvalId")
         private final String approvalId;
+        @JsonProperty("approved")
         private final Boolean approved;
+        @JsonProperty("providerOptions")
         private final Map<String, Map<String, JsonNode>> providerOptions;
-        private final boolean hasProviderOptions;
+        @JsonProperty("reason")
         private final String reason;
-        private final boolean hasReason;
-        private ToolApprovalResponse(JsonNode json) {
-            WireJson.object(json, "ToolApprovalResponse", false, "approvalId", "approved", "providerOptions", "reason", "type");
-            if (!"tool-approval-response".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolApprovalResponse tag");
-            WireJson.required(json, "approvalId");
-            this.approvalId = WireJson.string(json.get("approvalId"));
-            WireJson.required(json, "approved");
-            this.approved = WireJson.bool(json.get("approved"));
-            this.hasProviderOptions = json.has("providerOptions");
-            this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            this.hasReason = json.has("reason");
-            this.reason = WireJson.isNull(json.get("reason")) ? null : (WireJson.isNull(json.get("reason")) ? null : WireJson.string(json.get("reason")));
+
+        @JsonCreator
+        public ToolApprovalResponse(
+            @JsonProperty(value = "approvalId", required = true) String approvalId,
+            @JsonProperty(value = "approved", required = true) Boolean approved,
+            @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+            @JsonProperty(value = "reason") String reason) {
+            this.approvalId = approvalId;
+            this.approved = approved;
+            this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+            this.reason = reason;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolApprovalResponse fromJson(JsonNode json) { return new ToolApprovalResponse(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool-approval-response"; }
-        public String getApprovalId() { return approvalId == null ? null : approvalId; }
-        public Boolean getApproved() { return approved == null ? null : approved; }
-        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getReason() { return reason == null ? null : (reason == null ? null : reason); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool-approval-response");
-            json.set("approvalId", WireJson.tree(approvalId));
-            json.set("approved", WireJson.tree(approved));
-            if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-            if (hasReason) json.set("reason", WireJson.tree(reason));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool-approval-response"; }
+        public String getApprovalId() { return approvalId; }
+        public Boolean getApproved() { return approved; }
+        public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+        public String getReason() { return reason; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool-approval-response");
+            private String approvalId;
+            private Boolean approved;
+            private Map<String, Map<String, JsonNode>> providerOptions;
+            private String reason;
+
+            public Builder approvalId(String value) {
+                this.approvalId = value;
+                return this;
             }
-            public Builder approvalId(String value) { json.set("approvalId", WireJson.tree(value)); return this; }
-            public Builder approved(Boolean value) { json.set("approved", WireJson.tree(value)); return this; }
-            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-            public Builder reason(String value) { json.set("reason", WireJson.tree(value)); return this; }
-            public ToolApprovalResponse build() { return new ToolApprovalResponse(json); }
+
+            public Builder approved(Boolean value) {
+                this.approved = value;
+                return this;
+            }
+
+            public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+                this.providerOptions = value;
+                return this;
+            }
+
+            public Builder reason(String value) {
+                this.reason = value;
+                return this;
+            }
+
+            public ToolApprovalResponse build() { return new ToolApprovalResponse(approvalId, approved, providerOptions, reason); }
         }
     }
-
 }

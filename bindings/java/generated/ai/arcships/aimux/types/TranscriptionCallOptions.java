@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,85 +13,106 @@ import java.util.*;
  * Aligned with V4 `TranscriptionModelV4CallOptions`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TranscriptionCallOptions extends WireValue {
-    private final AudioInput audio;
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final String mediaType;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private TranscriptionCallOptions(JsonNode json) {
-        WireJson.object(json, "TranscriptionCallOptions", false, "audio", "headers", "maxRetries", "mediaType", "providerOptions", "timeout");
-        WireJson.required(json, "audio");
-        this.audio = AudioInput.fromJson(json.get("audio"));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        WireJson.required(json, "mediaType");
-        this.mediaType = WireJson.string(json.get("mediaType"));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TranscriptionCallOptions fromJson(JsonNode json) { return new TranscriptionCallOptions(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TranscriptionCallOptions {
     /**
      * Audio to transcribe: raw bytes, a base64-encoded string, or a URL
      * that [`transcribe`] downloads.
      */
-    public AudioInput getAudio() { return audio == null ? null : audio; }
+    @JsonProperty("audio")
+    private final AudioInput audio;
     /**
      * Additional HTTP headers to send with the request.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
      * retrying. `None` uses 2, the AI SDK default.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
     /**
      * The IANA media type of the audio data, e.g. `"audio/mp3"`. For a URL,
      * the media type the download reports replaces it, as the AI SDK uses
      * the downloaded media type (`transcribe.ts:227-233`).
      */
-    public String getMediaType() { return mediaType == null ? null : mediaType; }
+    @JsonProperty("mediaType")
+    private final String mediaType;
     /**
      * Additional provider-specific options, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * Per-call operation timeout.
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("audio", WireJson.tree(audio));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        json.set("mediaType", WireJson.tree(mediaType));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        return json;
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
+
+    @JsonCreator
+    public TranscriptionCallOptions(
+        @JsonProperty(value = "audio", required = true) AudioInput audio,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "mediaType", required = true) String mediaType,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout) {
+        this.audio = audio;
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.maxRetries = maxRetries;
+        this.mediaType = mediaType;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.timeout = timeout;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public AudioInput getAudio() { return audio; }
+    public Map<String, String> getHeaders() { return headers; }
+    public Long getMaxRetries() { return maxRetries; }
+    public String getMediaType() { return mediaType; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private AudioInput audio;
+        private Map<String, String> headers;
+        private Long maxRetries;
+        private String mediaType;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private TimeoutConfiguration timeout;
+
+        public Builder audio(AudioInput value) {
+            this.audio = value;
+            return this;
         }
-        public Builder audio(AudioInput value) { json.set("audio", WireJson.tree(value)); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public TranscriptionCallOptions build() { return new TranscriptionCallOptions(json); }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder mediaType(String value) {
+            this.mediaType = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public TranscriptionCallOptions build() { return new TranscriptionCallOptions(audio, headers, maxRetries, mediaType, providerOptions, timeout); }
     }
 }
-

@@ -4,142 +4,139 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "kind", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "kind")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = TransportParams.Fetch.class, name = "fetch"),
     @JsonSubTypes.Type(value = TransportParams.Ws.class, name = "ws"),
-    @JsonSubTypes.Type(value = TransportParams.Download.class, name = "download"),
+    @JsonSubTypes.Type(value = TransportParams.Download.class, name = "download")
 })
-public abstract class TransportParams extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class TransportParams {
     private TransportParams() {}
+
+    @JsonProperty("kind")
     public abstract String getKind();
-    public BigInteger getMaxBytes() { return null; }
+    public Long getMaxBytes() { return null; }
     public final boolean isDownload() { return "download".equals(getKind()); }
     public final boolean isFetch() { return "fetch".equals(getKind()); }
     public final boolean isWs() { return "ws".equals(getKind()); }
-    public static TransportParams fromJson(JsonNode json) {
-        WireJson.object(json, "TransportParams", false);
-        String tag = WireJson.string(json.get("kind"));
-        switch (tag) {
-            case "download":
-                return Download.fromJson(json);
-            case "fetch":
-                return Fetch.fromJson(json);
-            case "ws":
-                return Ws.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown TransportParams tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Fetch extends TransportParams {
-        private final TransportParams0Proxy proxy;
-        private final boolean hasProxy;
-        private Fetch(JsonNode json) {
-            WireJson.object(json, "Fetch", true, "proxy", "kind");
-            if (!"fetch".equals(WireJson.string(json.get("kind")))) throw new IllegalArgumentException("Invalid Fetch tag");
-            this.hasProxy = json.has("proxy");
-            this.proxy = WireJson.isNull(json.get("proxy")) ? null : TransportParams0Proxy.fromJson(json.get("proxy"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Fetch fromJson(JsonNode json) { return new Fetch(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getKind() { return "fetch"; }
         /**
          * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
          * hop, or the WebSocket connector. With every field empty, HTTP follows the
          * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
          * reqwest does, and the WebSocket connector connects directly.
          */
-        public TransportParams0Proxy getProxy() { return proxy == null ? null : proxy; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("kind", "fetch");
-            if (hasProxy) json.set("proxy", WireJson.tree(proxy));
-            return json;
+        @JsonProperty("proxy")
+        private final TransportParams0Proxy proxy;
+
+        @JsonCreator
+        public Fetch(
+            @JsonProperty(value = "proxy") TransportParams0Proxy proxy) {
+            this.proxy = proxy;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("kind")
+        public String getKind() { return "fetch"; }
+        public TransportParams0Proxy getProxy() { return proxy; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("kind", "fetch");
+            private TransportParams0Proxy proxy;
+
+            public Builder proxy(TransportParams0Proxy value) {
+                this.proxy = value;
+                return this;
             }
-            public Builder proxy(TransportParams0Proxy value) { json.set("proxy", WireJson.tree(value)); return this; }
-            public Fetch build() { return new Fetch(json); }
+
+            public Fetch build() { return new Fetch(proxy); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Ws extends TransportParams {
-        private final TransportParams1Proxy proxy;
-        private final boolean hasProxy;
-        private Ws(JsonNode json) {
-            WireJson.object(json, "Ws", true, "proxy", "kind");
-            if (!"ws".equals(WireJson.string(json.get("kind")))) throw new IllegalArgumentException("Invalid Ws tag");
-            this.hasProxy = json.has("proxy");
-            this.proxy = WireJson.isNull(json.get("proxy")) ? null : TransportParams1Proxy.fromJson(json.get("proxy"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Ws fromJson(JsonNode json) { return new Ws(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getKind() { return "ws"; }
         /**
          * Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
          * hop, or the WebSocket connector. With every field empty, HTTP follows the
          * `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` environment, as
          * reqwest does, and the WebSocket connector connects directly.
          */
-        public TransportParams1Proxy getProxy() { return proxy == null ? null : proxy; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("kind", "ws");
-            if (hasProxy) json.set("proxy", WireJson.tree(proxy));
-            return json;
+        @JsonProperty("proxy")
+        private final TransportParams1Proxy proxy;
+
+        @JsonCreator
+        public Ws(
+            @JsonProperty(value = "proxy") TransportParams1Proxy proxy) {
+            this.proxy = proxy;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("kind")
+        public String getKind() { return "ws"; }
+        public TransportParams1Proxy getProxy() { return proxy; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("kind", "ws");
+            private TransportParams1Proxy proxy;
+
+            public Builder proxy(TransportParams1Proxy value) {
+                this.proxy = value;
+                return this;
             }
-            public Builder proxy(TransportParams1Proxy value) { json.set("proxy", WireJson.tree(value)); return this; }
-            public Ws build() { return new Ws(json); }
+
+            public Ws build() { return new Ws(proxy); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Download extends TransportParams {
-        private final BigInteger maxBytes;
-        private final boolean hasMaxBytes;
-        private Download(JsonNode json) {
-            WireJson.object(json, "Download", true, "maxBytes", "kind");
-            if (!"download".equals(WireJson.string(json.get("kind")))) throw new IllegalArgumentException("Invalid Download tag");
-            this.hasMaxBytes = json.has("maxBytes");
-            this.maxBytes = WireJson.isNull(json.get("maxBytes")) ? null : (WireJson.isNull(json.get("maxBytes")) ? null : WireJson.integer(json.get("maxBytes"), true, 64));
+        @JsonProperty("maxBytes")
+        private final Long maxBytes;
+
+        @JsonCreator
+        public Download(
+            @JsonProperty(value = "maxBytes") Long maxBytes) {
+            this.maxBytes = maxBytes;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Download fromJson(JsonNode json) { return new Download(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getKind() { return "download"; }
-        public BigInteger getMaxBytes() { return maxBytes == null ? null : (maxBytes == null ? null : maxBytes); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("kind", "download");
-            if (hasMaxBytes) json.set("maxBytes", WireJson.tree(maxBytes));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("kind")
+        public String getKind() { return "download"; }
+        public Long getMaxBytes() { return maxBytes; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("kind", "download");
+            private Long maxBytes;
+
+            public Builder maxBytes(Long value) {
+                this.maxBytes = value;
+                return this;
             }
-            public Builder maxBytes(BigInteger value) { json.set("maxBytes", WireJson.tree(value)); return this; }
-            public Download build() { return new Download(json); }
+
+            public Download build() { return new Download(maxBytes); }
         }
     }
-
 }

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -20,173 +19,264 @@ import java.util.*;
  * `steps`, `total_usage` and `output` are read back.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class GenerateTextResult extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class GenerateTextResult {
+    @JsonProperty("content")
     private final List<ContentPart> content;
+    @JsonProperty("files")
     private final List<GeneratedFile> files;
+    @JsonProperty("finishReason")
     private final FinishReasonUnified finishReason;
-    private final JsonNode output;
-    private final boolean hasOutput;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final String rawFinishReason;
-    private final boolean hasRawFinishReason;
-    private final List<ReasoningPart> reasoning;
-    private final String reasoningText;
-    private final boolean hasReasoningText;
-    private final RequestInfo request;
-    private final StepResponse response;
-    private final List<ModelMessage> responseMessages;
-    private final List<TypedSource> sources;
-    private final List<StepResult> steps;
-    private final String text;
-    private final List<TypedToolCall> toolCalls;
-    private final List<TaggedToolResult> toolResults;
-    private final LanguageModelUsage totalUsage;
-    private final LanguageModelUsage usage;
-    private final List<Warning> warnings;
-    private GenerateTextResult(JsonNode json) {
-        WireJson.object(json, "GenerateTextResult", false, "content", "files", "finishReason", "output", "providerMetadata", "rawFinishReason", "reasoning", "reasoningText", "request", "response", "responseMessages", "sources", "steps", "text", "toolCalls", "toolResults", "totalUsage", "usage", "warnings");
-        WireJson.required(json, "content");
-        this.content = WireJson.array(json.get("content"), item0 -> ContentPart.fromJson(item0));
-        WireJson.required(json, "files");
-        this.files = WireJson.array(json.get("files"), item0 -> GeneratedFile.fromJson(item0));
-        WireJson.required(json, "finishReason");
-        this.finishReason = FinishReasonUnified.fromJson(json.get("finishReason"));
-        this.hasOutput = json.has("output");
-        this.output = WireJson.isNull(json.get("output")) ? null : WireJson.json(json.get("output"));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasRawFinishReason = json.has("rawFinishReason");
-        this.rawFinishReason = WireJson.isNull(json.get("rawFinishReason")) ? null : (WireJson.isNull(json.get("rawFinishReason")) ? null : WireJson.string(json.get("rawFinishReason")));
-        WireJson.required(json, "reasoning");
-        this.reasoning = WireJson.array(json.get("reasoning"), item0 -> ReasoningPart.fromJson(item0));
-        this.hasReasoningText = json.has("reasoningText");
-        this.reasoningText = WireJson.isNull(json.get("reasoningText")) ? null : (WireJson.isNull(json.get("reasoningText")) ? null : WireJson.string(json.get("reasoningText")));
-        WireJson.required(json, "request");
-        this.request = RequestInfo.fromJson(json.get("request"));
-        WireJson.required(json, "response");
-        this.response = StepResponse.fromJson(json.get("response"));
-        WireJson.required(json, "responseMessages");
-        this.responseMessages = WireJson.array(json.get("responseMessages"), item0 -> ModelMessage.fromJson(item0));
-        WireJson.required(json, "sources");
-        this.sources = WireJson.array(json.get("sources"), item0 -> TypedSource.fromJson(item0));
-        WireJson.required(json, "steps");
-        this.steps = WireJson.array(json.get("steps"), item0 -> StepResult.fromJson(item0));
-        WireJson.required(json, "text");
-        this.text = WireJson.string(json.get("text"));
-        WireJson.required(json, "toolCalls");
-        this.toolCalls = WireJson.array(json.get("toolCalls"), item0 -> TypedToolCall.fromJson(item0));
-        WireJson.required(json, "toolResults");
-        this.toolResults = WireJson.array(json.get("toolResults"), item0 -> TaggedToolResult.fromJson(item0));
-        WireJson.required(json, "totalUsage");
-        this.totalUsage = LanguageModelUsage.fromJson(json.get("totalUsage"));
-        WireJson.required(json, "usage");
-        this.usage = LanguageModelUsage.fromJson(json.get("usage"));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static GenerateTextResult fromJson(JsonNode json) { return new GenerateTextResult(json); }
-    public static Builder builder() { return new Builder(); }
-    public List<ContentPart> getContent() { return content == null ? null : WireJson.array(WireJson.tree(content), item0 -> ContentPart.fromJson(item0)); }
-    public List<GeneratedFile> getFiles() { return files == null ? null : WireJson.array(WireJson.tree(files), item0 -> GeneratedFile.fromJson(item0)); }
-    public FinishReasonUnified getFinishReason() { return finishReason == null ? null : finishReason; }
     /**
      * Absent when the output was not parsed.
      */
-    public JsonNode getOutput() { return output == null ? null : WireJson.json(WireJson.tree(output)); }
-    public boolean hasOutput() { return hasOutput; }
+    @JsonProperty("output")
+    @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+    private final FieldPresence<JsonNode> output;
     /**
      * Deprecated upstream: the last step's provider metadata.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public String getRawFinishReason() { return rawFinishReason == null ? null : (rawFinishReason == null ? null : rawFinishReason); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
+    @JsonProperty("rawFinishReason")
+    private final String rawFinishReason;
     /**
      * Deprecated upstream: the last step's reasoning.
      */
-    public List<ReasoningPart> getReasoning() { return reasoning == null ? null : WireJson.array(WireJson.tree(reasoning), item0 -> ReasoningPart.fromJson(item0)); }
+    @JsonProperty("reasoning")
+    private final List<ReasoningPart> reasoning;
     /**
      * Deprecated upstream: the last step's reasoning text.
      */
-    public String getReasoningText() { return reasoningText == null ? null : (reasoningText == null ? null : reasoningText); }
+    @JsonProperty("reasoningText")
+    private final String reasoningText;
     /**
      * Deprecated upstream: the last step's request.
      */
-    public RequestInfo getRequest() { return request == null ? null : request; }
+    @JsonProperty("request")
+    private final RequestInfo request;
     /**
      * Deprecated upstream: the last step's response.
      */
-    public StepResponse getResponse() { return response == null ? null : response; }
-    public List<ModelMessage> getResponseMessages() { return responseMessages == null ? null : WireJson.array(WireJson.tree(responseMessages), item0 -> ModelMessage.fromJson(item0)); }
+    @JsonProperty("response")
+    private final StepResponse response;
+    @JsonProperty("responseMessages")
+    private final List<ModelMessage> responseMessages;
     /**
      * Each with its `type` tag (`generate-text-result.ts:73`).
      */
-    public List<TypedSource> getSources() { return sources == null ? null : WireJson.array(WireJson.tree(sources), item0 -> TypedSource.fromJson(item0)); }
-    public List<StepResult> getSteps() { return steps == null ? null : WireJson.array(WireJson.tree(steps), item0 -> StepResult.fromJson(item0)); }
-    public String getText() { return text == null ? null : text; }
+    @JsonProperty("sources")
+    private final List<TypedSource> sources;
+    @JsonProperty("steps")
+    private final List<StepResult> steps;
+    @JsonProperty("text")
+    private final String text;
     /**
      * Each with its `type` tag (`generate-text-result.ts:78`).
      */
-    public List<TypedToolCall> getToolCalls() { return toolCalls == null ? null : WireJson.array(WireJson.tree(toolCalls), item0 -> TypedToolCall.fromJson(item0)); }
+    @JsonProperty("toolCalls")
+    private final List<TypedToolCall> toolCalls;
     /**
      * Each with its `type` tag (`generate-text-result.ts:93`).
      */
-    public List<TaggedToolResult> getToolResults() { return toolResults == null ? null : WireJson.array(WireJson.tree(toolResults), item0 -> TaggedToolResult.fromJson(item0)); }
+    @JsonProperty("toolResults")
+    private final List<TaggedToolResult> toolResults;
     /**
      * Deprecated upstream: equal to `usage`.
      */
-    public LanguageModelUsage getTotalUsage() { return totalUsage == null ? null : totalUsage; }
-    public LanguageModelUsage getUsage() { return usage == null ? null : usage; }
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("content", WireJson.tree(content));
-        json.set("files", WireJson.tree(files));
-        json.set("finishReason", WireJson.tree(finishReason));
-        if (hasOutput) json.set("output", WireJson.tree(output));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasRawFinishReason) json.set("rawFinishReason", WireJson.tree(rawFinishReason));
-        json.set("reasoning", WireJson.tree(reasoning));
-        if (hasReasoningText) json.set("reasoningText", WireJson.tree(reasoningText));
-        json.set("request", WireJson.tree(request));
-        json.set("response", WireJson.tree(response));
-        json.set("responseMessages", WireJson.tree(responseMessages));
-        json.set("sources", WireJson.tree(sources));
-        json.set("steps", WireJson.tree(steps));
-        json.set("text", WireJson.tree(text));
-        json.set("toolCalls", WireJson.tree(toolCalls));
-        json.set("toolResults", WireJson.tree(toolResults));
-        json.set("totalUsage", WireJson.tree(totalUsage));
-        json.set("usage", WireJson.tree(usage));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("totalUsage")
+    private final LanguageModelUsage totalUsage;
+    @JsonProperty("usage")
+    private final LanguageModelUsage usage;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public GenerateTextResult(
+        @JsonProperty(value = "content", required = true) List<ContentPart> content,
+        @JsonProperty(value = "files", required = true) List<GeneratedFile> files,
+        @JsonProperty(value = "finishReason", required = true) FinishReasonUnified finishReason,
+        @JsonProperty(value = "output") FieldPresence<JsonNode> output,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "rawFinishReason") String rawFinishReason,
+        @JsonProperty(value = "reasoning", required = true) List<ReasoningPart> reasoning,
+        @JsonProperty(value = "reasoningText") String reasoningText,
+        @JsonProperty(value = "request", required = true) RequestInfo request,
+        @JsonProperty(value = "response", required = true) StepResponse response,
+        @JsonProperty(value = "responseMessages", required = true) List<ModelMessage> responseMessages,
+        @JsonProperty(value = "sources", required = true) List<TypedSource> sources,
+        @JsonProperty(value = "steps", required = true) List<StepResult> steps,
+        @JsonProperty(value = "text", required = true) String text,
+        @JsonProperty(value = "toolCalls", required = true) List<TypedToolCall> toolCalls,
+        @JsonProperty(value = "toolResults", required = true) List<TaggedToolResult> toolResults,
+        @JsonProperty(value = "totalUsage", required = true) LanguageModelUsage totalUsage,
+        @JsonProperty(value = "usage", required = true) LanguageModelUsage usage,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
+        this.files = files == null ? null : Collections.unmodifiableList(new ArrayList<>(files));
+        this.finishReason = finishReason;
+        this.output = output == null ? FieldPresence.absent() : output;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.rawFinishReason = rawFinishReason;
+        this.reasoning = reasoning == null ? null : Collections.unmodifiableList(new ArrayList<>(reasoning));
+        this.reasoningText = reasoningText;
+        this.request = request;
+        this.response = response;
+        this.responseMessages = responseMessages == null ? null : Collections.unmodifiableList(new ArrayList<>(responseMessages));
+        this.sources = sources == null ? null : Collections.unmodifiableList(new ArrayList<>(sources));
+        this.steps = steps == null ? null : Collections.unmodifiableList(new ArrayList<>(steps));
+        this.text = text;
+        this.toolCalls = toolCalls == null ? null : Collections.unmodifiableList(new ArrayList<>(toolCalls));
+        this.toolResults = toolResults == null ? null : Collections.unmodifiableList(new ArrayList<>(toolResults));
+        this.totalUsage = totalUsage;
+        this.usage = usage;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public List<ContentPart> getContent() { return content; }
+    public List<GeneratedFile> getFiles() { return files; }
+    public FinishReasonUnified getFinishReason() { return finishReason; }
+    public JsonNode getOutput() { return output.getValue() == null ? null : output.getValue().deepCopy(); }
+    public boolean hasOutput() { return output.isPresent(); }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getRawFinishReason() { return rawFinishReason; }
+    public List<ReasoningPart> getReasoning() { return reasoning; }
+    public String getReasoningText() { return reasoningText; }
+    public RequestInfo getRequest() { return request; }
+    public StepResponse getResponse() { return response; }
+    public List<ModelMessage> getResponseMessages() { return responseMessages; }
+    public List<TypedSource> getSources() { return sources; }
+    public List<StepResult> getSteps() { return steps; }
+    public String getText() { return text; }
+    public List<TypedToolCall> getToolCalls() { return toolCalls; }
+    public List<TaggedToolResult> getToolResults() { return toolResults; }
+    public LanguageModelUsage getTotalUsage() { return totalUsage; }
+    public LanguageModelUsage getUsage() { return usage; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<ContentPart> content;
+        private List<GeneratedFile> files;
+        private FinishReasonUnified finishReason;
+        private FieldPresence<JsonNode> output = FieldPresence.absent();
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String rawFinishReason;
+        private List<ReasoningPart> reasoning;
+        private String reasoningText;
+        private RequestInfo request;
+        private StepResponse response;
+        private List<ModelMessage> responseMessages;
+        private List<TypedSource> sources;
+        private List<StepResult> steps;
+        private String text;
+        private List<TypedToolCall> toolCalls;
+        private List<TaggedToolResult> toolResults;
+        private LanguageModelUsage totalUsage;
+        private LanguageModelUsage usage;
+        private List<Warning> warnings;
+
+        public Builder content(List<ContentPart> value) {
+            this.content = value;
+            return this;
         }
-        public Builder content(List<ContentPart> value) { json.set("content", WireJson.tree(value)); return this; }
-        public Builder files(List<GeneratedFile> value) { json.set("files", WireJson.tree(value)); return this; }
-        public Builder finishReason(FinishReasonUnified value) { json.set("finishReason", WireJson.tree(value)); return this; }
-        public Builder output(JsonNode value) { json.set("output", WireJson.tree(value)); return this; }
-        public Builder omitOutput() { json.remove("output"); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder rawFinishReason(String value) { json.set("rawFinishReason", WireJson.tree(value)); return this; }
-        public Builder reasoning(List<ReasoningPart> value) { json.set("reasoning", WireJson.tree(value)); return this; }
-        public Builder reasoningText(String value) { json.set("reasoningText", WireJson.tree(value)); return this; }
-        public Builder request(RequestInfo value) { json.set("request", WireJson.tree(value)); return this; }
-        public Builder response(StepResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder responseMessages(List<ModelMessage> value) { json.set("responseMessages", WireJson.tree(value)); return this; }
-        public Builder sources(List<TypedSource> value) { json.set("sources", WireJson.tree(value)); return this; }
-        public Builder steps(List<StepResult> value) { json.set("steps", WireJson.tree(value)); return this; }
-        public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-        public Builder toolCalls(List<TypedToolCall> value) { json.set("toolCalls", WireJson.tree(value)); return this; }
-        public Builder toolResults(List<TaggedToolResult> value) { json.set("toolResults", WireJson.tree(value)); return this; }
-        public Builder totalUsage(LanguageModelUsage value) { json.set("totalUsage", WireJson.tree(value)); return this; }
-        public Builder usage(LanguageModelUsage value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public GenerateTextResult build() { return new GenerateTextResult(json); }
+
+        public Builder files(List<GeneratedFile> value) {
+            this.files = value;
+            return this;
+        }
+
+        public Builder finishReason(FinishReasonUnified value) {
+            this.finishReason = value;
+            return this;
+        }
+
+        public Builder output(JsonNode value) {
+            this.output = FieldPresence.of(value == null ? null : value.deepCopy());
+            return this;
+        }
+
+        public Builder omitOutput() {
+            this.output = FieldPresence.absent();
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder rawFinishReason(String value) {
+            this.rawFinishReason = value;
+            return this;
+        }
+
+        public Builder reasoning(List<ReasoningPart> value) {
+            this.reasoning = value;
+            return this;
+        }
+
+        public Builder reasoningText(String value) {
+            this.reasoningText = value;
+            return this;
+        }
+
+        public Builder request(RequestInfo value) {
+            this.request = value;
+            return this;
+        }
+
+        public Builder response(StepResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder responseMessages(List<ModelMessage> value) {
+            this.responseMessages = value;
+            return this;
+        }
+
+        public Builder sources(List<TypedSource> value) {
+            this.sources = value;
+            return this;
+        }
+
+        public Builder steps(List<StepResult> value) {
+            this.steps = value;
+            return this;
+        }
+
+        public Builder text(String value) {
+            this.text = value;
+            return this;
+        }
+
+        public Builder toolCalls(List<TypedToolCall> value) {
+            this.toolCalls = value;
+            return this;
+        }
+
+        public Builder toolResults(List<TaggedToolResult> value) {
+            this.toolResults = value;
+            return this;
+        }
+
+        public Builder totalUsage(LanguageModelUsage value) {
+            this.totalUsage = value;
+            return this;
+        }
+
+        public Builder usage(LanguageModelUsage value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public GenerateTextResult build() { return new GenerateTextResult(content, files, finishReason, output, providerMetadata, rawFinishReason, reasoning, reasoningText, request, response, responseMessages, sources, steps, text, toolCalls, toolResults, totalUsage, usage, warnings); }
     }
 }
-

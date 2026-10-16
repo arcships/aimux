@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,7 +14,8 @@ import java.util.*;
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "name", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "name")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = AiMuxErrorInput.AIAPICallError.class, name = "AI_APICallError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.AIRetryError.class, name = "AI_RetryError"),
@@ -38,10 +38,14 @@ import java.util.*;
     @JsonSubTypes.Type(value = AiMuxErrorInput.AIToolChoiceViolationError.class, name = "AI_ToolChoiceViolationError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.TimeoutError.class, name = "TimeoutError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.AbortError.class, name = "AbortError"),
-    @JsonSubTypes.Type(value = AiMuxErrorInput.AIError.class, name = "AI_Error"),
+    @JsonSubTypes.Type(value = AiMuxErrorInput.AIError.class, name = "AI_Error")
 })
-public abstract class AiMuxErrorInput extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class AiMuxErrorInput {
     private AiMuxErrorInput() {}
+
+    @JsonProperty("name")
     public abstract String getName();
     public JsonNode getData() { return null; }
     public Boolean getIsRetryable() { return null; }
@@ -93,139 +97,58 @@ public abstract class AiMuxErrorInput extends WireValue {
     public final boolean isAIUnsupportedFunctionalityError() { return "AI_UnsupportedFunctionalityError".equals(getName()); }
     public final boolean isAbortError() { return "AbortError".equals(getName()); }
     public final boolean isTimeoutError() { return "TimeoutError".equals(getName()); }
-    public static AiMuxErrorInput fromJson(JsonNode json) {
-        WireJson.object(json, "AiMuxErrorInput", false);
-        String tag = WireJson.string(json.get("name"));
-        switch (tag) {
-            case "AI_APICallError":
-                return AIAPICallError.fromJson(json);
-            case "AI_Error":
-                return AIError.fromJson(json);
-            case "AI_InvalidArgumentError":
-                return AIInvalidArgumentError.fromJson(json);
-            case "AI_InvalidPromptError":
-                return AIInvalidPromptError.fromJson(json);
-            case "AI_InvalidResponseDataError":
-                return AIInvalidResponseDataError.fromJson(json);
-            case "AI_InvalidToolInputError":
-                return AIInvalidToolInputError.fromJson(json);
-            case "AI_JSONParseError":
-                return AIJSONParseError.fromJson(json);
-            case "AI_LoadAPIKeyError":
-                return AILoadAPIKeyError.fromJson(json);
-            case "AI_LoadSettingError":
-                return AILoadSettingError.fromJson(json);
-            case "AI_MissingToolResultsError":
-                return AIMissingToolResultsError.fromJson(json);
-            case "AI_NoOutputGeneratedError":
-                return AINoOutputGeneratedError.fromJson(json);
-            case "AI_NoSuchModelError":
-                return AINoSuchModelError.fromJson(json);
-            case "AI_NoSuchProviderError":
-                return AINoSuchProviderError.fromJson(json);
-            case "AI_NoSuchToolError":
-                return AINoSuchToolError.fromJson(json);
-            case "AI_RetryError":
-                return AIRetryError.fromJson(json);
-            case "AI_TokenExpiredError":
-                return AITokenExpiredError.fromJson(json);
-            case "AI_ToolCallNotFoundForApprovalError":
-                return AIToolCallNotFoundForApprovalError.fromJson(json);
-            case "AI_ToolCallRepairError":
-                return AIToolCallRepairError.fromJson(json);
-            case "AI_ToolChoiceViolationError":
-                return AIToolChoiceViolationError.fromJson(json);
-            case "AI_UnsupportedFunctionalityError":
-                return AIUnsupportedFunctionalityError.fromJson(json);
-            case "AbortError":
-                return AbortError.fromJson(json);
-            case "TimeoutError":
-                return TimeoutError.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown AiMuxErrorInput tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIAPICallError extends AiMuxErrorInput {
-        private final JsonNode data;
-        private final boolean hasData;
-        private final Boolean isRetryable;
-        private final boolean hasIsRetryable;
-        private final String message;
-        private final String providerCode;
-        private final boolean hasProviderCode;
-        private final JsonNode requestBodyValues;
-        private final String responseBody;
-        private final boolean hasResponseBody;
-        private final Map<String, String> responseHeaders;
-        private final boolean hasResponseHeaders;
-        private final Integer statusCode;
-        private final boolean hasStatusCode;
-        private final String url;
-        private AIAPICallError(JsonNode json) {
-            WireJson.object(json, "AIAPICallError", false, "data", "isRetryable", "message", "providerCode", "requestBodyValues", "responseBody", "responseHeaders", "statusCode", "url", "name");
-            if (!"AI_APICallError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIAPICallError tag");
-            this.hasData = json.has("data");
-            this.data = WireJson.isNull(json.get("data")) ? null : WireJson.json(json.get("data"));
-            this.hasIsRetryable = json.has("isRetryable");
-            this.isRetryable = WireJson.isNull(json.get("isRetryable")) ? null : WireJson.bool(json.get("isRetryable"));
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
-            this.hasProviderCode = json.has("providerCode");
-            this.providerCode = WireJson.isNull(json.get("providerCode")) ? null : (WireJson.isNull(json.get("providerCode")) ? null : WireJson.string(json.get("providerCode")));
-            WireJson.required(json, "requestBodyValues");
-            this.requestBodyValues = WireJson.json(json.get("requestBodyValues"));
-            this.hasResponseBody = json.has("responseBody");
-            this.responseBody = WireJson.isNull(json.get("responseBody")) ? null : (WireJson.isNull(json.get("responseBody")) ? null : WireJson.string(json.get("responseBody")));
-            this.hasResponseHeaders = json.has("responseHeaders");
-            this.responseHeaders = WireJson.isNull(json.get("responseHeaders")) ? null : (WireJson.isNull(json.get("responseHeaders")) ? null : WireJson.map(json.get("responseHeaders"), item0 -> WireJson.string(item0)));
-            this.hasStatusCode = json.has("statusCode");
-            this.statusCode = WireJson.isNull(json.get("statusCode")) ? null : (WireJson.isNull(json.get("statusCode")) ? null : WireJson.integer(json.get("statusCode"), true, 16).intValue());
-            WireJson.required(json, "url");
-            this.url = WireJson.string(json.get("url"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIAPICallError fromJson(JsonNode json) { return new AIAPICallError(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_APICallError"; }
         /**
          * Parsed provider error data.
          */
-        public JsonNode getData() { return data == null ? null : WireJson.json(WireJson.tree(data)); }
-        public boolean hasData() { return hasData; }
+        @JsonProperty("data")
+        @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+        private final FieldPresence<JsonNode> data;
         /**
          * Whether retrying can help (`APICallError.isRetryable`) — stored at
          * construction, exactly like the AI SDK: the response path computes it
          * from the status (408/409/429 or 5xx), and the transport path (no response, so
          * no status to compute from) sets it to `true` explicitly.
          */
-        public Boolean getIsRetryable() { return isRetryable == null ? null : isRetryable; }
+        @JsonProperty("isRetryable")
+        private final Boolean isRetryable;
         /**
          * Human-readable failure text. Provider text is verbatim when available;
          * locally detected transport/parse failures include their source detail.
          * Never includes an HTTP status prefix.
          */
-        public String getMessage() { return message == null ? null : message; }
+        @JsonProperty("message")
+        private final String message;
         /**
          * Provider's machine-readable code (OpenAI's `code`/`type`,
          * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
          * status. Our normalized take on `APICallError.data`.
          */
-        public String getProviderCode() { return providerCode == null ? null : (providerCode == null ? null : providerCode); }
+        @JsonProperty("providerCode")
+        private final String providerCode;
         /**
          * Sanitized request values used to create the API request.
          */
-        public JsonNode getRequestBodyValues() { return requestBodyValues == null ? null : WireJson.json(WireJson.tree(requestBodyValues)); }
+        @JsonProperty("requestBodyValues")
+        private final JsonNode requestBodyValues;
         /**
          * The raw response body, verbatim (`APICallError.responseBody`) — the
          * lossless evidence when `message`/`provider_code` are extractions.
          * `None` when the error did not come from a response body.
          */
-        public String getResponseBody() { return responseBody == null ? null : (responseBody == null ? null : responseBody); }
+        @JsonProperty("responseBody")
+        private final String responseBody;
         /**
          * Sanitized response headers.
          */
-        public Map<String, String> getResponseHeaders() { return responseHeaders == null ? null : (responseHeaders == null ? null : WireJson.map(WireJson.tree(responseHeaders), item0 -> WireJson.string(item0))); }
+        @JsonProperty("responseHeaders")
+        private final Map<String, String> responseHeaders;
         /**
          * HTTP status of the response, when it came from one
          * (`APICallError.statusCode`). The HTTP layer fills the observed status
@@ -235,818 +158,1035 @@ public abstract class AiMuxErrorInput extends WireValue {
          * Anthropic from its error type); errors built without an HTTP exchange
          * leave it `None`.
          */
-        public Integer getStatusCode() { return statusCode == null ? null : (statusCode == null ? null : statusCode); }
+        @JsonProperty("statusCode")
+        private final Integer statusCode;
         /**
          * Sanitized request URL. Required for every API-derived failure.
          */
-        public String getUrl() { return url == null ? null : url; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_APICallError");
-            if (hasData) json.set("data", WireJson.tree(data));
-            if (hasIsRetryable) json.set("isRetryable", WireJson.tree(isRetryable));
-            json.set("message", WireJson.tree(message));
-            if (hasProviderCode) json.set("providerCode", WireJson.tree(providerCode));
-            json.set("requestBodyValues", WireJson.tree(requestBodyValues));
-            if (hasResponseBody) json.set("responseBody", WireJson.tree(responseBody));
-            if (hasResponseHeaders) json.set("responseHeaders", WireJson.tree(responseHeaders));
-            if (hasStatusCode) json.set("statusCode", WireJson.tree(statusCode));
-            json.set("url", WireJson.tree(url));
-            return json;
+        @JsonProperty("url")
+        private final String url;
+
+        @JsonCreator
+        public AIAPICallError(
+            @JsonProperty(value = "data") FieldPresence<JsonNode> data,
+            @JsonProperty(value = "isRetryable") Boolean isRetryable,
+            @JsonProperty(value = "message", required = true) String message,
+            @JsonProperty(value = "providerCode") String providerCode,
+            @JsonProperty(value = "requestBodyValues", required = true) JsonNode requestBodyValues,
+            @JsonProperty(value = "responseBody") String responseBody,
+            @JsonProperty(value = "responseHeaders") Map<String, String> responseHeaders,
+            @JsonProperty(value = "statusCode") Integer statusCode,
+            @JsonProperty(value = "url", required = true) String url) {
+            this.data = data == null ? FieldPresence.absent() : data;
+            this.isRetryable = isRetryable;
+            this.message = message;
+            this.providerCode = providerCode;
+            this.requestBodyValues = requestBodyValues == null ? null : requestBodyValues.deepCopy();
+            this.responseBody = responseBody;
+            this.responseHeaders = responseHeaders == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(responseHeaders));
+            this.statusCode = statusCode;
+            this.url = url;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_APICallError"; }
+        public JsonNode getData() { return data.getValue() == null ? null : data.getValue().deepCopy(); }
+        public boolean hasData() { return data.isPresent(); }
+        public Boolean getIsRetryable() { return isRetryable; }
+        public String getMessage() { return message; }
+        public String getProviderCode() { return providerCode; }
+        public JsonNode getRequestBodyValues() { return requestBodyValues == null ? null : requestBodyValues.deepCopy(); }
+        public String getResponseBody() { return responseBody; }
+        public Map<String, String> getResponseHeaders() { return responseHeaders; }
+        public Integer getStatusCode() { return statusCode; }
+        public String getUrl() { return url; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_APICallError");
+            private FieldPresence<JsonNode> data = FieldPresence.absent();
+            private Boolean isRetryable;
+            private String message;
+            private String providerCode;
+            private JsonNode requestBodyValues;
+            private String responseBody;
+            private Map<String, String> responseHeaders;
+            private Integer statusCode;
+            private String url;
+
+            public Builder data(JsonNode value) {
+                this.data = FieldPresence.of(value == null ? null : value.deepCopy());
+                return this;
             }
-            public Builder data(JsonNode value) { json.set("data", WireJson.tree(value)); return this; }
-            public Builder omitData() { json.remove("data"); return this; }
-            public Builder isRetryable(Boolean value) { json.set("isRetryable", WireJson.tree(value)); return this; }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public Builder providerCode(String value) { json.set("providerCode", WireJson.tree(value)); return this; }
-            public Builder requestBodyValues(JsonNode value) { json.set("requestBodyValues", WireJson.tree(value)); return this; }
-            public Builder responseBody(String value) { json.set("responseBody", WireJson.tree(value)); return this; }
-            public Builder responseHeaders(Map<String, String> value) { json.set("responseHeaders", WireJson.tree(value)); return this; }
-            public Builder statusCode(Integer value) { json.set("statusCode", WireJson.tree(value)); return this; }
-            public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-            public AIAPICallError build() { return new AIAPICallError(json); }
+
+            public Builder omitData() {
+                this.data = FieldPresence.absent();
+                return this;
+            }
+
+            public Builder isRetryable(Boolean value) {
+                this.isRetryable = value;
+                return this;
+            }
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
+            }
+
+            public Builder providerCode(String value) {
+                this.providerCode = value;
+                return this;
+            }
+
+            public Builder requestBodyValues(JsonNode value) {
+                this.requestBodyValues = value;
+                return this;
+            }
+
+            public Builder responseBody(String value) {
+                this.responseBody = value;
+                return this;
+            }
+
+            public Builder responseHeaders(Map<String, String> value) {
+                this.responseHeaders = value;
+                return this;
+            }
+
+            public Builder statusCode(Integer value) {
+                this.statusCode = value;
+                return this;
+            }
+
+            public Builder url(String value) {
+                this.url = value;
+                return this;
+            }
+
+            public AIAPICallError build() { return new AIAPICallError(data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIRetryError extends AiMuxErrorInput {
+        @JsonProperty("errors")
         private final List<AiMuxErrorInput> errors;
+        @JsonProperty("reason")
         private final RetryErrorReason reason;
-        private AIRetryError(JsonNode json) {
-            WireJson.object(json, "AIRetryError", false, "errors", "reason", "name");
-            if (!"AI_RetryError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIRetryError tag");
-            WireJson.required(json, "errors");
-            this.errors = WireJson.array(json.get("errors"), item0 -> AiMuxErrorInput.fromJson(item0));
-            WireJson.required(json, "reason");
-            this.reason = RetryErrorReason.fromJson(json.get("reason"));
+
+        @JsonCreator
+        public AIRetryError(
+            @JsonProperty(value = "errors", required = true) List<AiMuxErrorInput> errors,
+            @JsonProperty(value = "reason", required = true) RetryErrorReason reason) {
+            this.errors = errors == null ? null : Collections.unmodifiableList(new ArrayList<>(errors));
+            this.reason = reason;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIRetryError fromJson(JsonNode json) { return new AIRetryError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_RetryError"; }
-        public List<AiMuxErrorInput> getErrors() { return errors == null ? null : WireJson.array(WireJson.tree(errors), item0 -> AiMuxErrorInput.fromJson(item0)); }
-        public RetryErrorReason getReason() { return reason == null ? null : reason; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_RetryError");
-            json.set("errors", WireJson.tree(errors));
-            json.set("reason", WireJson.tree(reason));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_RetryError"; }
+        public List<AiMuxErrorInput> getErrors() { return errors; }
+        public RetryErrorReason getReason() { return reason; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_RetryError");
+            private List<AiMuxErrorInput> errors;
+            private RetryErrorReason reason;
+
+            public Builder errors(List<AiMuxErrorInput> value) {
+                this.errors = value;
+                return this;
             }
-            public Builder errors(List<AiMuxErrorInput> value) { json.set("errors", WireJson.tree(value)); return this; }
-            public Builder reason(RetryErrorReason value) { json.set("reason", WireJson.tree(value)); return this; }
-            public AIRetryError build() { return new AIRetryError(json); }
+
+            public Builder reason(RetryErrorReason value) {
+                this.reason = value;
+                return this;
+            }
+
+            public AIRetryError build() { return new AIRetryError(errors, reason); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIJSONParseError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AIJSONParseError(JsonNode json) {
-            WireJson.object(json, "AIJSONParseError", false, "message", "name");
-            if (!"AI_JSONParseError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIJSONParseError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AIJSONParseError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIJSONParseError fromJson(JsonNode json) { return new AIJSONParseError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_JSONParseError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_JSONParseError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_JSONParseError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_JSONParseError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AIJSONParseError build() { return new AIJSONParseError(json); }
+
+            public AIJSONParseError build() { return new AIJSONParseError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AINoOutputGeneratedError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AINoOutputGeneratedError(JsonNode json) {
-            WireJson.object(json, "AINoOutputGeneratedError", false, "message", "name");
-            if (!"AI_NoOutputGeneratedError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AINoOutputGeneratedError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AINoOutputGeneratedError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AINoOutputGeneratedError fromJson(JsonNode json) { return new AINoOutputGeneratedError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_NoOutputGeneratedError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_NoOutputGeneratedError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_NoOutputGeneratedError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_NoOutputGeneratedError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AINoOutputGeneratedError build() { return new AINoOutputGeneratedError(json); }
+
+            public AINoOutputGeneratedError build() { return new AINoOutputGeneratedError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidResponseDataError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AIInvalidResponseDataError(JsonNode json) {
-            WireJson.object(json, "AIInvalidResponseDataError", false, "message", "name");
-            if (!"AI_InvalidResponseDataError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIInvalidResponseDataError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AIInvalidResponseDataError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIInvalidResponseDataError fromJson(JsonNode json) { return new AIInvalidResponseDataError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_InvalidResponseDataError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_InvalidResponseDataError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_InvalidResponseDataError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_InvalidResponseDataError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AIInvalidResponseDataError build() { return new AIInvalidResponseDataError(json); }
+
+            public AIInvalidResponseDataError build() { return new AIInvalidResponseDataError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIToolCallNotFoundForApprovalError extends AiMuxErrorInput {
+        @JsonProperty("approvalId")
         private final String approvalId;
+        @JsonProperty("toolCallId")
         private final String toolCallId;
-        private AIToolCallNotFoundForApprovalError(JsonNode json) {
-            WireJson.object(json, "AIToolCallNotFoundForApprovalError", false, "approvalId", "toolCallId", "name");
-            if (!"AI_ToolCallNotFoundForApprovalError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIToolCallNotFoundForApprovalError tag");
-            WireJson.required(json, "approvalId");
-            this.approvalId = WireJson.string(json.get("approvalId"));
-            WireJson.required(json, "toolCallId");
-            this.toolCallId = WireJson.string(json.get("toolCallId"));
+
+        @JsonCreator
+        public AIToolCallNotFoundForApprovalError(
+            @JsonProperty(value = "approvalId", required = true) String approvalId,
+            @JsonProperty(value = "toolCallId", required = true) String toolCallId) {
+            this.approvalId = approvalId;
+            this.toolCallId = toolCallId;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIToolCallNotFoundForApprovalError fromJson(JsonNode json) { return new AIToolCallNotFoundForApprovalError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_ToolCallNotFoundForApprovalError"; }
-        public String getApprovalId() { return approvalId == null ? null : approvalId; }
-        public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_ToolCallNotFoundForApprovalError");
-            json.set("approvalId", WireJson.tree(approvalId));
-            json.set("toolCallId", WireJson.tree(toolCallId));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_ToolCallNotFoundForApprovalError"; }
+        public String getApprovalId() { return approvalId; }
+        public String getToolCallId() { return toolCallId; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_ToolCallNotFoundForApprovalError");
+            private String approvalId;
+            private String toolCallId;
+
+            public Builder approvalId(String value) {
+                this.approvalId = value;
+                return this;
             }
-            public Builder approvalId(String value) { json.set("approvalId", WireJson.tree(value)); return this; }
-            public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-            public AIToolCallNotFoundForApprovalError build() { return new AIToolCallNotFoundForApprovalError(json); }
+
+            public Builder toolCallId(String value) {
+                this.toolCallId = value;
+                return this;
+            }
+
+            public AIToolCallNotFoundForApprovalError build() { return new AIToolCallNotFoundForApprovalError(approvalId, toolCallId); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AINoSuchToolError extends AiMuxErrorInput {
+        @JsonProperty("availableTools")
         private final List<String> availableTools;
-        private final boolean hasAvailableTools;
+        @JsonProperty("toolInput")
         private final String toolInput;
-        private final boolean hasToolInput;
+        @JsonProperty("toolName")
         private final String toolName;
-        private AINoSuchToolError(JsonNode json) {
-            WireJson.object(json, "AINoSuchToolError", false, "availableTools", "toolInput", "toolName", "name");
-            if (!"AI_NoSuchToolError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AINoSuchToolError tag");
-            this.hasAvailableTools = json.has("availableTools");
-            this.availableTools = WireJson.isNull(json.get("availableTools")) ? null : (WireJson.isNull(json.get("availableTools")) ? null : WireJson.array(json.get("availableTools"), item0 -> WireJson.string(item0)));
-            this.hasToolInput = json.has("toolInput");
-            this.toolInput = WireJson.isNull(json.get("toolInput")) ? null : (WireJson.isNull(json.get("toolInput")) ? null : WireJson.string(json.get("toolInput")));
-            WireJson.required(json, "toolName");
-            this.toolName = WireJson.string(json.get("toolName"));
+
+        @JsonCreator
+        public AINoSuchToolError(
+            @JsonProperty(value = "availableTools") List<String> availableTools,
+            @JsonProperty(value = "toolInput") String toolInput,
+            @JsonProperty(value = "toolName", required = true) String toolName) {
+            this.availableTools = availableTools == null ? null : Collections.unmodifiableList(new ArrayList<>(availableTools));
+            this.toolInput = toolInput;
+            this.toolName = toolName;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AINoSuchToolError fromJson(JsonNode json) { return new AINoSuchToolError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_NoSuchToolError"; }
-        public List<String> getAvailableTools() { return availableTools == null ? null : (availableTools == null ? null : WireJson.array(WireJson.tree(availableTools), item0 -> WireJson.string(item0))); }
-        public String getToolInput() { return toolInput == null ? null : (toolInput == null ? null : toolInput); }
-        public String getToolName() { return toolName == null ? null : toolName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_NoSuchToolError");
-            if (hasAvailableTools) json.set("availableTools", WireJson.tree(availableTools));
-            if (hasToolInput) json.set("toolInput", WireJson.tree(toolInput));
-            json.set("toolName", WireJson.tree(toolName));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_NoSuchToolError"; }
+        public List<String> getAvailableTools() { return availableTools; }
+        public String getToolInput() { return toolInput; }
+        public String getToolName() { return toolName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_NoSuchToolError");
+            private List<String> availableTools;
+            private String toolInput;
+            private String toolName;
+
+            public Builder availableTools(List<String> value) {
+                this.availableTools = value;
+                return this;
             }
-            public Builder availableTools(List<String> value) { json.set("availableTools", WireJson.tree(value)); return this; }
-            public Builder toolInput(String value) { json.set("toolInput", WireJson.tree(value)); return this; }
-            public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-            public AINoSuchToolError build() { return new AINoSuchToolError(json); }
+
+            public Builder toolInput(String value) {
+                this.toolInput = value;
+                return this;
+            }
+
+            public Builder toolName(String value) {
+                this.toolName = value;
+                return this;
+            }
+
+            public AINoSuchToolError build() { return new AINoSuchToolError(availableTools, toolInput, toolName); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidToolInputError extends AiMuxErrorInput {
+        @JsonProperty("cause")
         private final String cause;
+        @JsonProperty("toolInput")
         private final String toolInput;
+        @JsonProperty("toolName")
         private final String toolName;
-        private AIInvalidToolInputError(JsonNode json) {
-            WireJson.object(json, "AIInvalidToolInputError", false, "cause", "toolInput", "toolName", "name");
-            if (!"AI_InvalidToolInputError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIInvalidToolInputError tag");
-            WireJson.required(json, "cause");
-            this.cause = WireJson.string(json.get("cause"));
-            WireJson.required(json, "toolInput");
-            this.toolInput = WireJson.string(json.get("toolInput"));
-            WireJson.required(json, "toolName");
-            this.toolName = WireJson.string(json.get("toolName"));
+
+        @JsonCreator
+        public AIInvalidToolInputError(
+            @JsonProperty(value = "cause", required = true) String cause,
+            @JsonProperty(value = "toolInput", required = true) String toolInput,
+            @JsonProperty(value = "toolName", required = true) String toolName) {
+            this.cause = cause;
+            this.toolInput = toolInput;
+            this.toolName = toolName;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIInvalidToolInputError fromJson(JsonNode json) { return new AIInvalidToolInputError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_InvalidToolInputError"; }
-        public String getCause() { return cause == null ? null : cause; }
-        public String getToolInput() { return toolInput == null ? null : toolInput; }
-        public String getToolName() { return toolName == null ? null : toolName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_InvalidToolInputError");
-            json.set("cause", WireJson.tree(cause));
-            json.set("toolInput", WireJson.tree(toolInput));
-            json.set("toolName", WireJson.tree(toolName));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_InvalidToolInputError"; }
+        public String getCause() { return cause; }
+        public String getToolInput() { return toolInput; }
+        public String getToolName() { return toolName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_InvalidToolInputError");
+            private String cause;
+            private String toolInput;
+            private String toolName;
+
+            public Builder cause(String value) {
+                this.cause = value;
+                return this;
             }
-            public Builder cause(String value) { json.set("cause", WireJson.tree(value)); return this; }
-            public Builder toolInput(String value) { json.set("toolInput", WireJson.tree(value)); return this; }
-            public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-            public AIInvalidToolInputError build() { return new AIInvalidToolInputError(json); }
+
+            public Builder toolInput(String value) {
+                this.toolInput = value;
+                return this;
+            }
+
+            public Builder toolName(String value) {
+                this.toolName = value;
+                return this;
+            }
+
+            public AIInvalidToolInputError build() { return new AIInvalidToolInputError(cause, toolInput, toolName); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIToolCallRepairError extends AiMuxErrorInput {
+        @JsonProperty("cause")
         private final AiMuxErrorInput cause;
+        @JsonProperty("originalError")
         private final AiMuxErrorInput originalError;
-        private AIToolCallRepairError(JsonNode json) {
-            WireJson.object(json, "AIToolCallRepairError", false, "cause", "originalError", "name");
-            if (!"AI_ToolCallRepairError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIToolCallRepairError tag");
-            WireJson.required(json, "cause");
-            this.cause = AiMuxErrorInput.fromJson(json.get("cause"));
-            WireJson.required(json, "originalError");
-            this.originalError = AiMuxErrorInput.fromJson(json.get("originalError"));
+
+        @JsonCreator
+        public AIToolCallRepairError(
+            @JsonProperty(value = "cause", required = true) AiMuxErrorInput cause,
+            @JsonProperty(value = "originalError", required = true) AiMuxErrorInput originalError) {
+            this.cause = cause;
+            this.originalError = originalError;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIToolCallRepairError fromJson(JsonNode json) { return new AIToolCallRepairError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_ToolCallRepairError"; }
-        public AiMuxErrorInput getCause() { return cause == null ? null : cause; }
-        public AiMuxErrorInput getOriginalError() { return originalError == null ? null : originalError; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_ToolCallRepairError");
-            json.set("cause", WireJson.tree(cause));
-            json.set("originalError", WireJson.tree(originalError));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_ToolCallRepairError"; }
+        public AiMuxErrorInput getCause() { return cause; }
+        public AiMuxErrorInput getOriginalError() { return originalError; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_ToolCallRepairError");
+            private AiMuxErrorInput cause;
+            private AiMuxErrorInput originalError;
+
+            public Builder cause(AiMuxErrorInput value) {
+                this.cause = value;
+                return this;
             }
-            public Builder cause(AiMuxErrorInput value) { json.set("cause", WireJson.tree(value)); return this; }
-            public Builder originalError(AiMuxErrorInput value) { json.set("originalError", WireJson.tree(value)); return this; }
-            public AIToolCallRepairError build() { return new AIToolCallRepairError(json); }
+
+            public Builder originalError(AiMuxErrorInput value) {
+                this.originalError = value;
+                return this;
+            }
+
+            public AIToolCallRepairError build() { return new AIToolCallRepairError(cause, originalError); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidArgumentError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AIInvalidArgumentError(JsonNode json) {
-            WireJson.object(json, "AIInvalidArgumentError", false, "message", "name");
-            if (!"AI_InvalidArgumentError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIInvalidArgumentError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AIInvalidArgumentError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIInvalidArgumentError fromJson(JsonNode json) { return new AIInvalidArgumentError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_InvalidArgumentError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_InvalidArgumentError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_InvalidArgumentError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_InvalidArgumentError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AIInvalidArgumentError build() { return new AIInvalidArgumentError(json); }
+
+            public AIInvalidArgumentError build() { return new AIInvalidArgumentError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidPromptError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AIInvalidPromptError(JsonNode json) {
-            WireJson.object(json, "AIInvalidPromptError", false, "message", "name");
-            if (!"AI_InvalidPromptError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIInvalidPromptError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AIInvalidPromptError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIInvalidPromptError fromJson(JsonNode json) { return new AIInvalidPromptError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_InvalidPromptError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_InvalidPromptError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_InvalidPromptError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_InvalidPromptError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AIInvalidPromptError build() { return new AIInvalidPromptError(json); }
+
+            public AIInvalidPromptError build() { return new AIInvalidPromptError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AILoadAPIKeyError extends AiMuxErrorInput {
+        @JsonProperty("description")
         private final String description;
+        @JsonProperty("envVar")
         private final String envVar;
-        private AILoadAPIKeyError(JsonNode json) {
-            WireJson.object(json, "AILoadAPIKeyError", false, "description", "envVar", "name");
-            if (!"AI_LoadAPIKeyError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AILoadAPIKeyError tag");
-            WireJson.required(json, "description");
-            this.description = WireJson.string(json.get("description"));
-            WireJson.required(json, "envVar");
-            this.envVar = WireJson.string(json.get("envVar"));
+
+        @JsonCreator
+        public AILoadAPIKeyError(
+            @JsonProperty(value = "description", required = true) String description,
+            @JsonProperty(value = "envVar", required = true) String envVar) {
+            this.description = description;
+            this.envVar = envVar;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AILoadAPIKeyError fromJson(JsonNode json) { return new AILoadAPIKeyError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_LoadAPIKeyError"; }
-        public String getDescription() { return description == null ? null : description; }
-        public String getEnvVar() { return envVar == null ? null : envVar; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_LoadAPIKeyError");
-            json.set("description", WireJson.tree(description));
-            json.set("envVar", WireJson.tree(envVar));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_LoadAPIKeyError"; }
+        public String getDescription() { return description; }
+        public String getEnvVar() { return envVar; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_LoadAPIKeyError");
+            private String description;
+            private String envVar;
+
+            public Builder description(String value) {
+                this.description = value;
+                return this;
             }
-            public Builder description(String value) { json.set("description", WireJson.tree(value)); return this; }
-            public Builder envVar(String value) { json.set("envVar", WireJson.tree(value)); return this; }
-            public AILoadAPIKeyError build() { return new AILoadAPIKeyError(json); }
+
+            public Builder envVar(String value) {
+                this.envVar = value;
+                return this;
+            }
+
+            public AILoadAPIKeyError build() { return new AILoadAPIKeyError(description, envVar); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AILoadSettingError extends AiMuxErrorInput {
+        @JsonProperty("envVar")
         private final String envVar;
-        private final String settingName;
-        private AILoadSettingError(JsonNode json) {
-            WireJson.object(json, "AILoadSettingError", false, "envVar", "settingName", "name");
-            if (!"AI_LoadSettingError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AILoadSettingError tag");
-            WireJson.required(json, "envVar");
-            this.envVar = WireJson.string(json.get("envVar"));
-            WireJson.required(json, "settingName");
-            this.settingName = WireJson.string(json.get("settingName"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AILoadSettingError fromJson(JsonNode json) { return new AILoadSettingError(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_LoadSettingError"; }
-        public String getEnvVar() { return envVar == null ? null : envVar; }
         /**
          * `name` is the union's tag key, so the setting's name is `settingName`.
          */
-        public String getSettingName() { return settingName == null ? null : settingName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_LoadSettingError");
-            json.set("envVar", WireJson.tree(envVar));
-            json.set("settingName", WireJson.tree(settingName));
-            return json;
+        @JsonProperty("settingName")
+        private final String settingName;
+
+        @JsonCreator
+        public AILoadSettingError(
+            @JsonProperty(value = "envVar", required = true) String envVar,
+            @JsonProperty(value = "settingName", required = true) String settingName) {
+            this.envVar = envVar;
+            this.settingName = settingName;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_LoadSettingError"; }
+        public String getEnvVar() { return envVar; }
+        public String getSettingName() { return settingName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_LoadSettingError");
+            private String envVar;
+            private String settingName;
+
+            public Builder envVar(String value) {
+                this.envVar = value;
+                return this;
             }
-            public Builder envVar(String value) { json.set("envVar", WireJson.tree(value)); return this; }
-            public Builder settingName(String value) { json.set("settingName", WireJson.tree(value)); return this; }
-            public AILoadSettingError build() { return new AILoadSettingError(json); }
+
+            public Builder settingName(String value) {
+                this.settingName = value;
+                return this;
+            }
+
+            public AILoadSettingError build() { return new AILoadSettingError(envVar, settingName); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AITokenExpiredError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AITokenExpiredError(JsonNode json) {
-            WireJson.object(json, "AITokenExpiredError", false, "message", "name");
-            if (!"AI_TokenExpiredError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AITokenExpiredError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AITokenExpiredError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AITokenExpiredError fromJson(JsonNode json) { return new AITokenExpiredError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_TokenExpiredError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_TokenExpiredError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_TokenExpiredError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_TokenExpiredError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AITokenExpiredError build() { return new AITokenExpiredError(json); }
+
+            public AITokenExpiredError build() { return new AITokenExpiredError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIUnsupportedFunctionalityError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AIUnsupportedFunctionalityError(JsonNode json) {
-            WireJson.object(json, "AIUnsupportedFunctionalityError", false, "message", "name");
-            if (!"AI_UnsupportedFunctionalityError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIUnsupportedFunctionalityError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AIUnsupportedFunctionalityError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIUnsupportedFunctionalityError fromJson(JsonNode json) { return new AIUnsupportedFunctionalityError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_UnsupportedFunctionalityError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_UnsupportedFunctionalityError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_UnsupportedFunctionalityError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_UnsupportedFunctionalityError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AIUnsupportedFunctionalityError build() { return new AIUnsupportedFunctionalityError(json); }
+
+            public AIUnsupportedFunctionalityError build() { return new AIUnsupportedFunctionalityError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AINoSuchModelError extends AiMuxErrorInput {
+        @JsonProperty("modelId")
         private final String modelId;
+        @JsonProperty("modelType")
         private final String modelType;
-        private final boolean hasModelType;
-        private AINoSuchModelError(JsonNode json) {
-            WireJson.object(json, "AINoSuchModelError", false, "modelId", "modelType", "name");
-            if (!"AI_NoSuchModelError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AINoSuchModelError tag");
-            WireJson.required(json, "modelId");
-            this.modelId = WireJson.string(json.get("modelId"));
-            this.hasModelType = json.has("modelType");
-            this.modelType = WireJson.isNull(json.get("modelType")) ? null : WireJson.string(json.get("modelType"));
+
+        @JsonCreator
+        public AINoSuchModelError(
+            @JsonProperty(value = "modelId", required = true) String modelId,
+            @JsonProperty(value = "modelType") String modelType) {
+            this.modelId = modelId;
+            this.modelType = modelType;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AINoSuchModelError fromJson(JsonNode json) { return new AINoSuchModelError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_NoSuchModelError"; }
-        public String getModelId() { return modelId == null ? null : modelId; }
-        public String getModelType() { return modelType == null ? null : modelType; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_NoSuchModelError");
-            json.set("modelId", WireJson.tree(modelId));
-            if (hasModelType) json.set("modelType", WireJson.tree(modelType));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_NoSuchModelError"; }
+        public String getModelId() { return modelId; }
+        public String getModelType() { return modelType; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_NoSuchModelError");
+            private String modelId;
+            private String modelType;
+
+            public Builder modelId(String value) {
+                this.modelId = value;
+                return this;
             }
-            public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-            public Builder modelType(String value) { json.set("modelType", WireJson.tree(value)); return this; }
-            public AINoSuchModelError build() { return new AINoSuchModelError(json); }
+
+            public Builder modelType(String value) {
+                this.modelType = value;
+                return this;
+            }
+
+            public AINoSuchModelError build() { return new AINoSuchModelError(modelId, modelType); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AINoSuchProviderError extends AiMuxErrorInput {
+        @JsonProperty("availableProviders")
         private final List<String> availableProviders;
+        @JsonProperty("modelId")
         private final String modelId;
+        @JsonProperty("modelType")
         private final String modelType;
+        @JsonProperty("providerId")
         private final String providerId;
-        private AINoSuchProviderError(JsonNode json) {
-            WireJson.object(json, "AINoSuchProviderError", false, "availableProviders", "modelId", "modelType", "providerId", "name");
-            if (!"AI_NoSuchProviderError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AINoSuchProviderError tag");
-            WireJson.required(json, "availableProviders");
-            this.availableProviders = WireJson.array(json.get("availableProviders"), item0 -> WireJson.string(item0));
-            WireJson.required(json, "modelId");
-            this.modelId = WireJson.string(json.get("modelId"));
-            WireJson.required(json, "modelType");
-            this.modelType = WireJson.string(json.get("modelType"));
-            WireJson.required(json, "providerId");
-            this.providerId = WireJson.string(json.get("providerId"));
+
+        @JsonCreator
+        public AINoSuchProviderError(
+            @JsonProperty(value = "availableProviders", required = true) List<String> availableProviders,
+            @JsonProperty(value = "modelId", required = true) String modelId,
+            @JsonProperty(value = "modelType", required = true) String modelType,
+            @JsonProperty(value = "providerId", required = true) String providerId) {
+            this.availableProviders = availableProviders == null ? null : Collections.unmodifiableList(new ArrayList<>(availableProviders));
+            this.modelId = modelId;
+            this.modelType = modelType;
+            this.providerId = providerId;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AINoSuchProviderError fromJson(JsonNode json) { return new AINoSuchProviderError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_NoSuchProviderError"; }
-        public List<String> getAvailableProviders() { return availableProviders == null ? null : WireJson.array(WireJson.tree(availableProviders), item0 -> WireJson.string(item0)); }
-        public String getModelId() { return modelId == null ? null : modelId; }
-        public String getModelType() { return modelType == null ? null : modelType; }
-        public String getProviderId() { return providerId == null ? null : providerId; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_NoSuchProviderError");
-            json.set("availableProviders", WireJson.tree(availableProviders));
-            json.set("modelId", WireJson.tree(modelId));
-            json.set("modelType", WireJson.tree(modelType));
-            json.set("providerId", WireJson.tree(providerId));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_NoSuchProviderError"; }
+        public List<String> getAvailableProviders() { return availableProviders; }
+        public String getModelId() { return modelId; }
+        public String getModelType() { return modelType; }
+        public String getProviderId() { return providerId; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_NoSuchProviderError");
+            private List<String> availableProviders;
+            private String modelId;
+            private String modelType;
+            private String providerId;
+
+            public Builder availableProviders(List<String> value) {
+                this.availableProviders = value;
+                return this;
             }
-            public Builder availableProviders(List<String> value) { json.set("availableProviders", WireJson.tree(value)); return this; }
-            public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-            public Builder modelType(String value) { json.set("modelType", WireJson.tree(value)); return this; }
-            public Builder providerId(String value) { json.set("providerId", WireJson.tree(value)); return this; }
-            public AINoSuchProviderError build() { return new AINoSuchProviderError(json); }
+
+            public Builder modelId(String value) {
+                this.modelId = value;
+                return this;
+            }
+
+            public Builder modelType(String value) {
+                this.modelType = value;
+                return this;
+            }
+
+            public Builder providerId(String value) {
+                this.providerId = value;
+                return this;
+            }
+
+            public AINoSuchProviderError build() { return new AINoSuchProviderError(availableProviders, modelId, modelType, providerId); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIMissingToolResultsError extends AiMuxErrorInput {
+        @JsonProperty("toolCallIds")
         private final List<String> toolCallIds;
-        private AIMissingToolResultsError(JsonNode json) {
-            WireJson.object(json, "AIMissingToolResultsError", false, "toolCallIds", "name");
-            if (!"AI_MissingToolResultsError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIMissingToolResultsError tag");
-            WireJson.required(json, "toolCallIds");
-            this.toolCallIds = WireJson.array(json.get("toolCallIds"), item0 -> WireJson.string(item0));
+
+        @JsonCreator
+        public AIMissingToolResultsError(
+            @JsonProperty(value = "toolCallIds", required = true) List<String> toolCallIds) {
+            this.toolCallIds = toolCallIds == null ? null : Collections.unmodifiableList(new ArrayList<>(toolCallIds));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIMissingToolResultsError fromJson(JsonNode json) { return new AIMissingToolResultsError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_MissingToolResultsError"; }
-        public List<String> getToolCallIds() { return toolCallIds == null ? null : WireJson.array(WireJson.tree(toolCallIds), item0 -> WireJson.string(item0)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_MissingToolResultsError");
-            json.set("toolCallIds", WireJson.tree(toolCallIds));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_MissingToolResultsError"; }
+        public List<String> getToolCallIds() { return toolCallIds; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_MissingToolResultsError");
+            private List<String> toolCallIds;
+
+            public Builder toolCallIds(List<String> value) {
+                this.toolCallIds = value;
+                return this;
             }
-            public Builder toolCallIds(List<String> value) { json.set("toolCallIds", WireJson.tree(value)); return this; }
-            public AIMissingToolResultsError build() { return new AIMissingToolResultsError(json); }
+
+            public AIMissingToolResultsError build() { return new AIMissingToolResultsError(toolCallIds); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIToolChoiceViolationError extends AiMuxErrorInput {
-        private final List<GenerateContent> content;
-        private final FinishReasonUnified finishReason;
-        private final String modelId;
-        private final String provider;
-        private final LanguageModelV4ToolChoice toolChoice;
-        private AIToolChoiceViolationError(JsonNode json) {
-            WireJson.object(json, "AIToolChoiceViolationError", false, "content", "finishReason", "modelId", "provider", "toolChoice", "name");
-            if (!"AI_ToolChoiceViolationError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIToolChoiceViolationError tag");
-            WireJson.required(json, "content");
-            this.content = WireJson.array(json.get("content"), item0 -> GenerateContent.fromJson(item0));
-            WireJson.required(json, "finishReason");
-            this.finishReason = FinishReasonUnified.fromJson(json.get("finishReason"));
-            WireJson.required(json, "modelId");
-            this.modelId = WireJson.string(json.get("modelId"));
-            WireJson.required(json, "provider");
-            this.provider = WireJson.string(json.get("provider"));
-            WireJson.required(json, "toolChoice");
-            this.toolChoice = LanguageModelV4ToolChoice.fromJson(json.get("toolChoice"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIToolChoiceViolationError fromJson(JsonNode json) { return new AIToolChoiceViolationError(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_ToolChoiceViolationError"; }
         /**
          * The content the model returned, before tool-call parsing, so a tool
          * call returned as text or reasoning can be recovered.
          */
-        public List<GenerateContent> getContent() { return content == null ? null : WireJson.array(WireJson.tree(content), item0 -> GenerateContent.fromJson(item0)); }
+        @JsonProperty("content")
+        private final List<GenerateContent> content;
         /**
          * Why the model finished.
          */
-        public FinishReasonUnified getFinishReason() { return finishReason == null ? null : finishReason; }
+        @JsonProperty("finishReason")
+        private final FinishReasonUnified finishReason;
         /**
          * The model that returned the response.
          */
-        public String getModelId() { return modelId == null ? null : modelId; }
+        @JsonProperty("modelId")
+        private final String modelId;
         /**
          * The provider that returned the response.
          */
-        public String getProvider() { return provider == null ? null : provider; }
+        @JsonProperty("provider")
+        private final String provider;
         /**
          * The enforced tool choice (`required`, or `tool` with a name) that the
          * response did not satisfy.
          */
-        public LanguageModelV4ToolChoice getToolChoice() { return toolChoice == null ? null : toolChoice; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_ToolChoiceViolationError");
-            json.set("content", WireJson.tree(content));
-            json.set("finishReason", WireJson.tree(finishReason));
-            json.set("modelId", WireJson.tree(modelId));
-            json.set("provider", WireJson.tree(provider));
-            json.set("toolChoice", WireJson.tree(toolChoice));
-            return json;
+        @JsonProperty("toolChoice")
+        private final LanguageModelV4ToolChoice toolChoice;
+
+        @JsonCreator
+        public AIToolChoiceViolationError(
+            @JsonProperty(value = "content", required = true) List<GenerateContent> content,
+            @JsonProperty(value = "finishReason", required = true) FinishReasonUnified finishReason,
+            @JsonProperty(value = "modelId", required = true) String modelId,
+            @JsonProperty(value = "provider", required = true) String provider,
+            @JsonProperty(value = "toolChoice", required = true) LanguageModelV4ToolChoice toolChoice) {
+            this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
+            this.finishReason = finishReason;
+            this.modelId = modelId;
+            this.provider = provider;
+            this.toolChoice = toolChoice;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_ToolChoiceViolationError"; }
+        public List<GenerateContent> getContent() { return content; }
+        public FinishReasonUnified getFinishReason() { return finishReason; }
+        public String getModelId() { return modelId; }
+        public String getProvider() { return provider; }
+        public LanguageModelV4ToolChoice getToolChoice() { return toolChoice; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_ToolChoiceViolationError");
+            private List<GenerateContent> content;
+            private FinishReasonUnified finishReason;
+            private String modelId;
+            private String provider;
+            private LanguageModelV4ToolChoice toolChoice;
+
+            public Builder content(List<GenerateContent> value) {
+                this.content = value;
+                return this;
             }
-            public Builder content(List<GenerateContent> value) { json.set("content", WireJson.tree(value)); return this; }
-            public Builder finishReason(FinishReasonUnified value) { json.set("finishReason", WireJson.tree(value)); return this; }
-            public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-            public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-            public Builder toolChoice(LanguageModelV4ToolChoice value) { json.set("toolChoice", WireJson.tree(value)); return this; }
-            public AIToolChoiceViolationError build() { return new AIToolChoiceViolationError(json); }
+
+            public Builder finishReason(FinishReasonUnified value) {
+                this.finishReason = value;
+                return this;
+            }
+
+            public Builder modelId(String value) {
+                this.modelId = value;
+                return this;
+            }
+
+            public Builder provider(String value) {
+                this.provider = value;
+                return this;
+            }
+
+            public Builder toolChoice(LanguageModelV4ToolChoice value) {
+                this.toolChoice = value;
+                return this;
+            }
+
+            public AIToolChoiceViolationError build() { return new AIToolChoiceViolationError(content, finishReason, modelId, provider, toolChoice); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class TimeoutError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private TimeoutError(JsonNode json) {
-            WireJson.object(json, "TimeoutError", false, "message", "name");
-            if (!"TimeoutError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid TimeoutError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public TimeoutError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static TimeoutError fromJson(JsonNode json) { return new TimeoutError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "TimeoutError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "TimeoutError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "TimeoutError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "TimeoutError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public TimeoutError build() { return new TimeoutError(json); }
+
+            public TimeoutError build() { return new TimeoutError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AbortError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AbortError(JsonNode json) {
-            WireJson.object(json, "AbortError", false, "message", "name");
-            if (!"AbortError".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AbortError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AbortError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AbortError fromJson(JsonNode json) { return new AbortError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AbortError"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AbortError");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AbortError"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AbortError");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AbortError build() { return new AbortError(json); }
+
+            public AbortError build() { return new AbortError(message); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIError extends AiMuxErrorInput {
+        @JsonProperty("message")
         private final String message;
-        private AIError(JsonNode json) {
-            WireJson.object(json, "AIError", false, "message", "name");
-            if (!"AI_Error".equals(WireJson.string(json.get("name")))) throw new IllegalArgumentException("Invalid AIError tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public AIError(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static AIError fromJson(JsonNode json) { return new AIError(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getName() { return "AI_Error"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("name", "AI_Error");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_Error"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("name", "AI_Error");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public AIError build() { return new AIError(json); }
+
+            public AIError build() { return new AIError(message); }
         }
     }
-
 }

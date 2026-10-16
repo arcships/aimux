@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -21,12 +20,12 @@ import java.util.*;
  * JSON; parsing yields `Base64`.
  */
 @JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ImageOutputs extends WireValue {
+public final class ImageOutputs {
+    @JsonValue
     private final List<String> value;
-    public ImageOutputs(List<String> value) { this.value = WireJson.array(WireJson.tree(value), item0 -> WireJson.string(item0)); }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ImageOutputs fromJson(JsonNode json) { return new ImageOutputs(WireJson.array(json, item0 -> WireJson.string(item0))); }
-    public List<String> getValue() { return WireJson.array(WireJson.tree(value), item0 -> WireJson.string(item0)); }
-    @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-}
 
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public ImageOutputs(List<String> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+
+    public List<String> getValue() { return value; }
+}

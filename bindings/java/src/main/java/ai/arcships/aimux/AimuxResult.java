@@ -12,7 +12,7 @@ final class AimuxResult {
 
     static JsonNode parse(String value) {
         Objects.requireNonNull(value, "JSON");
-        return WireJson.parse(value);
+        return DtoJson.parse(value);
     }
 
     static String params(String json) {
@@ -43,7 +43,7 @@ final class AimuxResult {
         if (error == null) return;
         try {
             int code = ffi.aimux_error_code(error);
-            ErrorEnvelope envelope = ErrorEnvelope.fromJson(parse(takeString(ffi, ffi.aimux_error_json(error))));
+            ErrorEnvelope envelope = DtoJson.decode(parse(takeString(ffi, ffi.aimux_error_json(error))), ErrorEnvelope.class);
             if (envelope.getCode() != code) {
                 throw new IllegalStateException("Native error code/envelope mismatch");
             }
@@ -52,7 +52,7 @@ final class AimuxResult {
     }
 
     static NativeException decode(JsonNode envelope) {
-        try { return decode(ErrorEnvelope.fromJson(envelope)); }
+        try { return decode(DtoJson.decode(envelope, ErrorEnvelope.class)); }
         catch (IllegalArgumentException error) { throw new IllegalStateException("Malformed native error envelope", error); }
     }
 
@@ -72,7 +72,7 @@ final class AimuxResult {
     static BindingException.CallbackFailure callbackFailure(Throwable cause) {
         ErrorEnvelope envelope = ErrorEnvelope.builder().kind(ErrorDomain.BINDING).code(206)
             .message("Stream consumer failed")
-            .error(WireJson.MAPPER.createObjectNode().put("name", "CallbackFailure")).build();
+            .error(DtoJson.MAPPER.createObjectNode().put("name", "CallbackFailure")).build();
         BindingException.CallbackFailure failure = new BindingException.CallbackFailure(envelope);
         failure.initCause(cause);
         return failure;
@@ -80,9 +80,9 @@ final class AimuxResult {
 
     static long handle(JsonNode value) {
         try {
-            HandleId id = value.isObject() ? RecorderHandleResult.fromJson(value).getHandle() : HandleId.fromJson(value);
+            HandleId id = value.isObject() ? DtoJson.decode(value, RecorderHandleResult.class).getHandle() : DtoJson.decode(value, HandleId.class);
             if ("0".equals(id.getValue())) throw new IllegalStateException("Expected a nonzero handle");
-            return WireJson.u64(id.getValue()).longValue();
+            return DtoJson.u64(id.getValue());
         } catch (IllegalArgumentException error) {
             throw new IllegalStateException("Invalid native handle", error);
         }

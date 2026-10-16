@@ -52,7 +52,7 @@ public final class TypedModel implements AutoCloseable {
     }
 
     private static <T> T decode(JsonNode value, Class<T> type) {
-        try { return WireJson.MAPPER.treeToValue(value, type); }
+        try { return DtoJson.MAPPER.treeToValue(value, type); }
         catch (IOException e) { throw new IllegalStateException("Invalid " + type.getSimpleName(), e); }
     }
 

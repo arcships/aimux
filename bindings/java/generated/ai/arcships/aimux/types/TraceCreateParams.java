@@ -4,49 +4,55 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TraceCreateParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TraceCreateParams {
+    @JsonProperty("auditMode")
     private final AuditMode2 auditMode;
-    private final boolean hasAuditMode;
-    private final BigInteger capacity;
-    private final boolean hasCapacity;
-    private final BigInteger perScopeCapacity;
-    private final boolean hasPerScopeCapacity;
-    private TraceCreateParams(JsonNode json) {
-        WireJson.object(json, "TraceCreateParams", true, "auditMode", "capacity", "perScopeCapacity");
-        this.hasAuditMode = json.has("auditMode");
-        this.auditMode = WireJson.isNull(json.get("auditMode")) ? null : AuditMode2.fromJson(json.get("auditMode"));
-        this.hasCapacity = json.has("capacity");
-        this.capacity = WireJson.isNull(json.get("capacity")) ? null : WireJson.integer(json.get("capacity"), true, 64);
-        this.hasPerScopeCapacity = json.has("perScopeCapacity");
-        this.perScopeCapacity = WireJson.isNull(json.get("perScopeCapacity")) ? null : WireJson.integer(json.get("perScopeCapacity"), true, 64);
+    @JsonProperty("capacity")
+    private final Long capacity;
+    @JsonProperty("perScopeCapacity")
+    private final Long perScopeCapacity;
+
+    @JsonCreator
+    public TraceCreateParams(
+        @JsonProperty(value = "auditMode") AuditMode2 auditMode,
+        @JsonProperty(value = "capacity") Long capacity,
+        @JsonProperty(value = "perScopeCapacity") Long perScopeCapacity) {
+        this.auditMode = auditMode;
+        this.capacity = capacity;
+        this.perScopeCapacity = perScopeCapacity;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TraceCreateParams fromJson(JsonNode json) { return new TraceCreateParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public AuditMode2 getAuditMode() { return auditMode == null ? null : auditMode; }
-    public BigInteger getCapacity() { return capacity == null ? null : capacity; }
-    public BigInteger getPerScopeCapacity() { return perScopeCapacity == null ? null : perScopeCapacity; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAuditMode) json.set("auditMode", WireJson.tree(auditMode));
-        if (hasCapacity) json.set("capacity", WireJson.tree(capacity));
-        if (hasPerScopeCapacity) json.set("perScopeCapacity", WireJson.tree(perScopeCapacity));
-        return json;
-    }
+    public AuditMode2 getAuditMode() { return auditMode; }
+    public Long getCapacity() { return capacity; }
+    public Long getPerScopeCapacity() { return perScopeCapacity; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private AuditMode2 auditMode;
+        private Long capacity;
+        private Long perScopeCapacity;
+
+        public Builder auditMode(AuditMode2 value) {
+            this.auditMode = value;
+            return this;
         }
-        public Builder auditMode(AuditMode2 value) { json.set("auditMode", WireJson.tree(value)); return this; }
-        public Builder capacity(BigInteger value) { json.set("capacity", WireJson.tree(value)); return this; }
-        public Builder perScopeCapacity(BigInteger value) { json.set("perScopeCapacity", WireJson.tree(value)); return this; }
-        public TraceCreateParams build() { return new TraceCreateParams(json); }
+
+        public Builder capacity(Long value) {
+            this.capacity = value;
+            return this;
+        }
+
+        public Builder perScopeCapacity(Long value) {
+            this.perScopeCapacity = value;
+            return this;
+        }
+
+        public TraceCreateParams build() { return new TraceCreateParams(auditMode, capacity, perScopeCapacity); }
     }
 }
-

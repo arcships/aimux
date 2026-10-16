@@ -4,94 +4,92 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = BackendConfig.Ring.class, name = "ring"),
-    @JsonSubTypes.Type(value = BackendConfig.Jsonl.class, name = "jsonl"),
+    @JsonSubTypes.Type(value = BackendConfig.Jsonl.class, name = "jsonl")
 })
-public abstract class BackendConfig extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class BackendConfig {
     private BackendConfig() {}
+
+    @JsonProperty("type")
     public abstract String getType();
-    public BigInteger getCapacity() { return null; }
+    public Long getCapacity() { return null; }
     public String getDirectory() { return null; }
     public final boolean isJsonl() { return "jsonl".equals(getType()); }
     public final boolean isRing() { return "ring".equals(getType()); }
-    public static BackendConfig fromJson(JsonNode json) {
-        WireJson.object(json, "BackendConfig", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "jsonl":
-                return Jsonl.fromJson(json);
-            case "ring":
-                return Ring.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown BackendConfig tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Ring extends BackendConfig {
-        private final BigInteger capacity;
-        private final boolean hasCapacity;
-        private Ring(JsonNode json) {
-            WireJson.object(json, "Ring", true, "capacity", "type");
-            if (!"ring".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Ring tag");
-            this.hasCapacity = json.has("capacity");
-            this.capacity = WireJson.isNull(json.get("capacity")) ? null : (WireJson.isNull(json.get("capacity")) ? null : WireJson.integer(json.get("capacity"), true, 64));
+        @JsonProperty("capacity")
+        private final Long capacity;
+
+        @JsonCreator
+        public Ring(
+            @JsonProperty(value = "capacity") Long capacity) {
+            this.capacity = capacity;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Ring fromJson(JsonNode json) { return new Ring(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "ring"; }
-        public BigInteger getCapacity() { return capacity == null ? null : (capacity == null ? null : capacity); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "ring");
-            if (hasCapacity) json.set("capacity", WireJson.tree(capacity));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "ring"; }
+        public Long getCapacity() { return capacity; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "ring");
+            private Long capacity;
+
+            public Builder capacity(Long value) {
+                this.capacity = value;
+                return this;
             }
-            public Builder capacity(BigInteger value) { json.set("capacity", WireJson.tree(value)); return this; }
-            public Ring build() { return new Ring(json); }
+
+            public Ring build() { return new Ring(capacity); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Jsonl extends BackendConfig {
+        @JsonProperty("directory")
         private final String directory;
-        private Jsonl(JsonNode json) {
-            WireJson.object(json, "Jsonl", true, "directory", "type");
-            if (!"jsonl".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Jsonl tag");
-            WireJson.required(json, "directory");
-            this.directory = WireJson.string(json.get("directory"));
+
+        @JsonCreator
+        public Jsonl(
+            @JsonProperty(value = "directory", required = true) String directory) {
+            this.directory = directory;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Jsonl fromJson(JsonNode json) { return new Jsonl(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "jsonl"; }
-        public String getDirectory() { return directory == null ? null : directory; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "jsonl");
-            json.set("directory", WireJson.tree(directory));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "jsonl"; }
+        public String getDirectory() { return directory; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "jsonl");
+            private String directory;
+
+            public Builder directory(String value) {
+                this.directory = value;
+                return this;
             }
-            public Builder directory(String value) { json.set("directory", WireJson.tree(value)); return this; }
-            public Jsonl build() { return new Jsonl(json); }
+
+            public Jsonl build() { return new Jsonl(directory); }
         }
     }
-
 }

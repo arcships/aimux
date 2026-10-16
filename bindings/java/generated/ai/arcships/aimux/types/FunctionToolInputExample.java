@@ -4,37 +4,36 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * An example input for a function tool.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class FunctionToolInputExample extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class FunctionToolInputExample {
+    @JsonProperty("input")
     private final Map<String, JsonNode> input;
-    private FunctionToolInputExample(JsonNode json) {
-        WireJson.object(json, "FunctionToolInputExample", false, "input");
-        WireJson.required(json, "input");
-        this.input = WireJson.map(json.get("input"), item0 -> WireJson.json(item0));
+
+    @JsonCreator
+    public FunctionToolInputExample(
+        @JsonProperty(value = "input", required = true) Map<String, JsonNode> input) {
+        this.input = input == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(input));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static FunctionToolInputExample fromJson(JsonNode json) { return new FunctionToolInputExample(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Map<String, JsonNode> getInput() { return input == null ? null : WireJson.map(WireJson.tree(input), item0 -> WireJson.json(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("input", WireJson.tree(input));
-        return json;
-    }
+    public Map<String, JsonNode> getInput() { return input; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, JsonNode> input;
+
+        public Builder input(Map<String, JsonNode> value) {
+            this.input = value;
+            return this;
         }
-        public Builder input(Map<String, JsonNode> value) { json.set("input", WireJson.tree(value)); return this; }
-        public FunctionToolInputExample build() { return new FunctionToolInputExample(json); }
+
+        public FunctionToolInputExample build() { return new FunctionToolInputExample(input); }
     }
 }
-

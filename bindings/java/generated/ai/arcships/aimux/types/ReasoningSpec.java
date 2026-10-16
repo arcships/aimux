@@ -4,108 +4,137 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Reasoning / thinking portrait for a model (advisory).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReasoningSpec extends WireValue {
-    private final BigInteger budgetMin;
-    private final boolean hasBudgetMin;
-    private final Boolean defaultEnabled;
-    private final String effortDefault;
-    private final boolean hasEffortDefault;
-    private final List<String> effortOptions;
-    private final boolean hasEffortOptions;
-    private final Boolean interleaved;
-    private final ReasoningMode mode;
-    private final boolean hasMode;
-    private final Boolean supported;
-    private final ReasoningVisibility visibility;
-    private final boolean hasVisibility;
-    private ReasoningSpec(JsonNode json) {
-        WireJson.object(json, "ReasoningSpec", false, "budgetMin", "defaultEnabled", "effortDefault", "effortOptions", "interleaved", "mode", "supported", "visibility");
-        this.hasBudgetMin = json.has("budgetMin");
-        this.budgetMin = WireJson.isNull(json.get("budgetMin")) ? null : (WireJson.isNull(json.get("budgetMin")) ? null : WireJson.integer(json.get("budgetMin"), true, 64));
-        WireJson.required(json, "defaultEnabled");
-        this.defaultEnabled = WireJson.bool(json.get("defaultEnabled"));
-        this.hasEffortDefault = json.has("effortDefault");
-        this.effortDefault = WireJson.isNull(json.get("effortDefault")) ? null : (WireJson.isNull(json.get("effortDefault")) ? null : WireJson.string(json.get("effortDefault")));
-        this.hasEffortOptions = json.has("effortOptions");
-        this.effortOptions = WireJson.isNull(json.get("effortOptions")) ? null : WireJson.array(json.get("effortOptions"), item0 -> WireJson.string(item0));
-        WireJson.required(json, "interleaved");
-        this.interleaved = WireJson.bool(json.get("interleaved"));
-        this.hasMode = json.has("mode");
-        this.mode = WireJson.isNull(json.get("mode")) ? null : (WireJson.isNull(json.get("mode")) ? null : ReasoningMode.fromJson(json.get("mode")));
-        WireJson.required(json, "supported");
-        this.supported = WireJson.bool(json.get("supported"));
-        this.hasVisibility = json.has("visibility");
-        this.visibility = WireJson.isNull(json.get("visibility")) ? null : (WireJson.isNull(json.get("visibility")) ? null : ReasoningVisibility.fromJson(json.get("visibility")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReasoningSpec fromJson(JsonNode json) { return new ReasoningSpec(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReasoningSpec {
     /**
      * Minimum token budget (when `mode` is Budget/Mixed).
      */
-    public BigInteger getBudgetMin() { return budgetMin == null ? null : (budgetMin == null ? null : budgetMin); }
+    @JsonProperty("budgetMin")
+    private final Long budgetMin;
     /**
      * Whether reasoning should be on by default.
      */
-    public Boolean getDefaultEnabled() { return defaultEnabled == null ? null : defaultEnabled; }
+    @JsonProperty("defaultEnabled")
+    private final Boolean defaultEnabled;
     /**
      * Default effort level (when `mode` is Effort/Mixed).
      */
-    public String getEffortDefault() { return effortDefault == null ? null : (effortDefault == null ? null : effortDefault); }
+    @JsonProperty("effortDefault")
+    private final String effortDefault;
     /**
      * Supported effort levels.
      */
-    public List<String> getEffortOptions() { return effortOptions == null ? null : WireJson.array(WireJson.tree(effortOptions), item0 -> WireJson.string(item0)); }
+    @JsonProperty("effortOptions")
+    private final List<String> effortOptions;
     /**
      * Interleaved reasoning (thinking blocks between tool calls).
      */
-    public Boolean getInterleaved() { return interleaved == null ? null : interleaved; }
+    @JsonProperty("interleaved")
+    private final Boolean interleaved;
     /**
      * Primary control mode.
      */
-    public ReasoningMode getMode() { return mode == null ? null : (mode == null ? null : mode); }
+    @JsonProperty("mode")
+    private final ReasoningMode mode;
     /**
      * Whether the model family supports reasoning at all.
      */
-    public Boolean getSupported() { return supported == null ? null : supported; }
+    @JsonProperty("supported")
+    private final Boolean supported;
     /**
      * Output visibility.
      */
-    public ReasoningVisibility getVisibility() { return visibility == null ? null : (visibility == null ? null : visibility); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasBudgetMin) json.set("budgetMin", WireJson.tree(budgetMin));
-        json.set("defaultEnabled", WireJson.tree(defaultEnabled));
-        if (hasEffortDefault) json.set("effortDefault", WireJson.tree(effortDefault));
-        if (hasEffortOptions) json.set("effortOptions", WireJson.tree(effortOptions));
-        json.set("interleaved", WireJson.tree(interleaved));
-        if (hasMode) json.set("mode", WireJson.tree(mode));
-        json.set("supported", WireJson.tree(supported));
-        if (hasVisibility) json.set("visibility", WireJson.tree(visibility));
-        return json;
+    @JsonProperty("visibility")
+    private final ReasoningVisibility visibility;
+
+    @JsonCreator
+    public ReasoningSpec(
+        @JsonProperty(value = "budgetMin") Long budgetMin,
+        @JsonProperty(value = "defaultEnabled", required = true) Boolean defaultEnabled,
+        @JsonProperty(value = "effortDefault") String effortDefault,
+        @JsonProperty(value = "effortOptions") List<String> effortOptions,
+        @JsonProperty(value = "interleaved", required = true) Boolean interleaved,
+        @JsonProperty(value = "mode") ReasoningMode mode,
+        @JsonProperty(value = "supported", required = true) Boolean supported,
+        @JsonProperty(value = "visibility") ReasoningVisibility visibility) {
+        this.budgetMin = budgetMin;
+        this.defaultEnabled = defaultEnabled;
+        this.effortDefault = effortDefault;
+        this.effortOptions = effortOptions == null ? null : Collections.unmodifiableList(new ArrayList<>(effortOptions));
+        this.interleaved = interleaved;
+        this.mode = mode;
+        this.supported = supported;
+        this.visibility = visibility;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getBudgetMin() { return budgetMin; }
+    public Boolean getDefaultEnabled() { return defaultEnabled; }
+    public String getEffortDefault() { return effortDefault; }
+    public List<String> getEffortOptions() { return effortOptions; }
+    public Boolean getInterleaved() { return interleaved; }
+    public ReasoningMode getMode() { return mode; }
+    public Boolean getSupported() { return supported; }
+    public ReasoningVisibility getVisibility() { return visibility; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long budgetMin;
+        private Boolean defaultEnabled;
+        private String effortDefault;
+        private List<String> effortOptions;
+        private Boolean interleaved;
+        private ReasoningMode mode;
+        private Boolean supported;
+        private ReasoningVisibility visibility;
+
+        public Builder budgetMin(Long value) {
+            this.budgetMin = value;
+            return this;
         }
-        public Builder budgetMin(BigInteger value) { json.set("budgetMin", WireJson.tree(value)); return this; }
-        public Builder defaultEnabled(Boolean value) { json.set("defaultEnabled", WireJson.tree(value)); return this; }
-        public Builder effortDefault(String value) { json.set("effortDefault", WireJson.tree(value)); return this; }
-        public Builder effortOptions(List<String> value) { json.set("effortOptions", WireJson.tree(value)); return this; }
-        public Builder interleaved(Boolean value) { json.set("interleaved", WireJson.tree(value)); return this; }
-        public Builder mode(ReasoningMode value) { json.set("mode", WireJson.tree(value)); return this; }
-        public Builder supported(Boolean value) { json.set("supported", WireJson.tree(value)); return this; }
-        public Builder visibility(ReasoningVisibility value) { json.set("visibility", WireJson.tree(value)); return this; }
-        public ReasoningSpec build() { return new ReasoningSpec(json); }
+
+        public Builder defaultEnabled(Boolean value) {
+            this.defaultEnabled = value;
+            return this;
+        }
+
+        public Builder effortDefault(String value) {
+            this.effortDefault = value;
+            return this;
+        }
+
+        public Builder effortOptions(List<String> value) {
+            this.effortOptions = value;
+            return this;
+        }
+
+        public Builder interleaved(Boolean value) {
+            this.interleaved = value;
+            return this;
+        }
+
+        public Builder mode(ReasoningMode value) {
+            this.mode = value;
+            return this;
+        }
+
+        public Builder supported(Boolean value) {
+            this.supported = value;
+            return this;
+        }
+
+        public Builder visibility(ReasoningVisibility value) {
+            this.visibility = value;
+            return this;
+        }
+
+        public ReasoningSpec build() { return new ReasoningSpec(budgetMin, defaultEnabled, effortDefault, effortOptions, interleaved, mode, supported, visibility); }
     }
 }
-

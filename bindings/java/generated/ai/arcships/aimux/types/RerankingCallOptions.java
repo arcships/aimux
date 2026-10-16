@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,92 +13,117 @@ import java.util.*;
  * Aligned with V4 `RerankingModelV4CallOptions`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RerankingCallOptions extends WireValue {
-    private final RerankingDocuments documents;
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final String query;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private final Long topN;
-    private final boolean hasTopN;
-    private RerankingCallOptions(JsonNode json) {
-        WireJson.object(json, "RerankingCallOptions", false, "documents", "headers", "maxRetries", "providerOptions", "query", "timeout", "topN");
-        WireJson.required(json, "documents");
-        this.documents = RerankingDocuments.fromJson(json.get("documents"));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "query");
-        this.query = WireJson.string(json.get("query"));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-        this.hasTopN = json.has("topN");
-        this.topN = WireJson.isNull(json.get("topN")) ? null : (WireJson.isNull(json.get("topN")) ? null : WireJson.integer(json.get("topN"), true, 32).longValue());
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RerankingCallOptions fromJson(JsonNode json) { return new RerankingCallOptions(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RerankingCallOptions {
     /**
      * Documents to rerank.
      */
-    public RerankingDocuments getDocuments() { return documents == null ? null : documents; }
+    @JsonProperty("documents")
+    private final RerankingDocuments documents;
     /**
      * Additional HTTP headers to send with the request.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
      * retrying. `None` uses 2, the AI SDK default.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
     /**
      * Additional provider-specific options, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * The query to rerank the documents against.
      */
-    public String getQuery() { return query == null ? null : query; }
+    @JsonProperty("query")
+    private final String query;
     /**
      * Per-call operation timeout.
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
     /**
      * Optional limit: return only the top `n` documents.
      */
-    public Long getTopN() { return topN == null ? null : (topN == null ? null : topN); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("documents", WireJson.tree(documents));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        json.set("query", WireJson.tree(query));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        if (hasTopN) json.set("topN", WireJson.tree(topN));
-        return json;
+    @JsonProperty("topN")
+    private final Long topN;
+
+    @JsonCreator
+    public RerankingCallOptions(
+        @JsonProperty(value = "documents", required = true) RerankingDocuments documents,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "query", required = true) String query,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout,
+        @JsonProperty(value = "topN") Long topN) {
+        this.documents = documents;
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.maxRetries = maxRetries;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.query = query;
+        this.timeout = timeout;
+        this.topN = topN;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public RerankingDocuments getDocuments() { return documents; }
+    public Map<String, String> getHeaders() { return headers; }
+    public Long getMaxRetries() { return maxRetries; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public String getQuery() { return query; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+    public Long getTopN() { return topN; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private RerankingDocuments documents;
+        private Map<String, String> headers;
+        private Long maxRetries;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private String query;
+        private TimeoutConfiguration timeout;
+        private Long topN;
+
+        public Builder documents(RerankingDocuments value) {
+            this.documents = value;
+            return this;
         }
-        public Builder documents(RerankingDocuments value) { json.set("documents", WireJson.tree(value)); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder query(String value) { json.set("query", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public Builder topN(Long value) { json.set("topN", WireJson.tree(value)); return this; }
-        public RerankingCallOptions build() { return new RerankingCallOptions(json); }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder query(String value) {
+            this.query = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public Builder topN(Long value) {
+            this.topN = value;
+            return this;
+        }
+
+        public RerankingCallOptions build() { return new RerankingCallOptions(documents, headers, maxRetries, providerOptions, query, timeout, topN); }
     }
 }
-

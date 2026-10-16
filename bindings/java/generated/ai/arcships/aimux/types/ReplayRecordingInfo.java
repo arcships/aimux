@@ -4,64 +4,88 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReplayRecordingInfo extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReplayRecordingInfo {
+    @JsonProperty("callId")
     private final String callId;
+    @JsonProperty("complete")
     private final Boolean complete;
-    private final BigInteger exchangeCount;
+    @JsonProperty("exchangeCount")
+    private final Long exchangeCount;
+    @JsonProperty("operation")
     private final RecordingOperation operation;
+    @JsonProperty("provider")
     private final ProviderRecord provider;
+    @JsonProperty("transportClosed")
     private final Boolean transportClosed;
-    private ReplayRecordingInfo(JsonNode json) {
-        WireJson.object(json, "ReplayRecordingInfo", false, "callId", "complete", "exchangeCount", "operation", "provider", "transportClosed");
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        WireJson.required(json, "complete");
-        this.complete = WireJson.bool(json.get("complete"));
-        WireJson.required(json, "exchangeCount");
-        this.exchangeCount = WireJson.integer(json.get("exchangeCount"), true, 64);
-        WireJson.required(json, "operation");
-        this.operation = RecordingOperation.fromJson(json.get("operation"));
-        WireJson.required(json, "provider");
-        this.provider = ProviderRecord.fromJson(json.get("provider"));
-        WireJson.required(json, "transportClosed");
-        this.transportClosed = WireJson.bool(json.get("transportClosed"));
+
+    @JsonCreator
+    public ReplayRecordingInfo(
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "complete", required = true) Boolean complete,
+        @JsonProperty(value = "exchangeCount", required = true) Long exchangeCount,
+        @JsonProperty(value = "operation", required = true) RecordingOperation operation,
+        @JsonProperty(value = "provider", required = true) ProviderRecord provider,
+        @JsonProperty(value = "transportClosed", required = true) Boolean transportClosed) {
+        this.callId = callId;
+        this.complete = complete;
+        this.exchangeCount = exchangeCount;
+        this.operation = operation;
+        this.provider = provider;
+        this.transportClosed = transportClosed;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReplayRecordingInfo fromJson(JsonNode json) { return new ReplayRecordingInfo(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getCallId() { return callId == null ? null : callId; }
-    public Boolean getComplete() { return complete == null ? null : complete; }
-    public BigInteger getExchangeCount() { return exchangeCount == null ? null : exchangeCount; }
-    public RecordingOperation getOperation() { return operation == null ? null : operation; }
-    public ProviderRecord getProvider() { return provider == null ? null : provider; }
-    public Boolean getTransportClosed() { return transportClosed == null ? null : transportClosed; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("callId", WireJson.tree(callId));
-        json.set("complete", WireJson.tree(complete));
-        json.set("exchangeCount", WireJson.tree(exchangeCount));
-        json.set("operation", WireJson.tree(operation));
-        json.set("provider", WireJson.tree(provider));
-        json.set("transportClosed", WireJson.tree(transportClosed));
-        return json;
-    }
+    public String getCallId() { return callId; }
+    public Boolean getComplete() { return complete; }
+    public Long getExchangeCount() { return exchangeCount; }
+    public RecordingOperation getOperation() { return operation; }
+    public ProviderRecord getProvider() { return provider; }
+    public Boolean getTransportClosed() { return transportClosed; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String callId;
+        private Boolean complete;
+        private Long exchangeCount;
+        private RecordingOperation operation;
+        private ProviderRecord provider;
+        private Boolean transportClosed;
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
         }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder complete(Boolean value) { json.set("complete", WireJson.tree(value)); return this; }
-        public Builder exchangeCount(BigInteger value) { json.set("exchangeCount", WireJson.tree(value)); return this; }
-        public Builder operation(RecordingOperation value) { json.set("operation", WireJson.tree(value)); return this; }
-        public Builder provider(ProviderRecord value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder transportClosed(Boolean value) { json.set("transportClosed", WireJson.tree(value)); return this; }
-        public ReplayRecordingInfo build() { return new ReplayRecordingInfo(json); }
+
+        public Builder complete(Boolean value) {
+            this.complete = value;
+            return this;
+        }
+
+        public Builder exchangeCount(Long value) {
+            this.exchangeCount = value;
+            return this;
+        }
+
+        public Builder operation(RecordingOperation value) {
+            this.operation = value;
+            return this;
+        }
+
+        public Builder provider(ProviderRecord value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder transportClosed(Boolean value) {
+            this.transportClosed = value;
+            return this;
+        }
+
+        public ReplayRecordingInfo build() { return new ReplayRecordingInfo(callId, complete, exchangeCount, operation, provider, transportClosed); }
     }
 }
-

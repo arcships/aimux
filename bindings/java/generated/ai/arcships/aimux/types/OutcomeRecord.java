@@ -4,83 +4,102 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * 最终结果摘要。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OutcomeRecord extends WireValue {
-    private final JsonNode decisionResult;
-    private final boolean hasDecisionResult;
-    private final String error;
-    private final boolean hasError;
-    private final JsonNode errorValue;
-    private final boolean hasErrorValue;
-    private final String finishReason;
-    private final boolean hasFinishReason;
-    private final OutcomeStatus status;
-    private final JsonNode usage;
-    private final boolean hasUsage;
-    private OutcomeRecord(JsonNode json) {
-        WireJson.object(json, "OutcomeRecord", false, "decisionResult", "error", "errorValue", "finishReason", "status", "usage");
-        this.hasDecisionResult = json.has("decisionResult");
-        this.decisionResult = WireJson.isNull(json.get("decisionResult")) ? null : WireJson.json(json.get("decisionResult"));
-        this.hasError = json.has("error");
-        this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : WireJson.string(json.get("error")));
-        this.hasErrorValue = json.has("errorValue");
-        this.errorValue = WireJson.isNull(json.get("errorValue")) ? null : WireJson.json(json.get("errorValue"));
-        this.hasFinishReason = json.has("finishReason");
-        this.finishReason = WireJson.isNull(json.get("finishReason")) ? null : (WireJson.isNull(json.get("finishReason")) ? null : WireJson.string(json.get("finishReason")));
-        WireJson.required(json, "status");
-        this.status = OutcomeStatus.fromJson(json.get("status"));
-        this.hasUsage = json.has("usage");
-        this.usage = WireJson.isNull(json.get("usage")) ? null : WireJson.json(json.get("usage"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OutcomeRecord fromJson(JsonNode json) { return new OutcomeRecord(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OutcomeRecord {
     /**
      * The result `decide` returned (`DecideResult`), independent of a
      * provider's wire format.
      */
-    public JsonNode getDecisionResult() { return decisionResult == null ? null : WireJson.json(WireJson.tree(decisionResult)); }
-    public String getError() { return error == null ? null : (error == null ? null : error); }
+    @JsonProperty("decisionResult")
+    private final JsonNode decisionResult;
+    @JsonProperty("error")
+    private final String error;
     /**
      * Lossless structured domain error. In particular, `RetryError.errors`
      * keeps the complete attempt history rather than only its display text.
      */
-    public JsonNode getErrorValue() { return errorValue == null ? null : WireJson.json(WireJson.tree(errorValue)); }
-    public String getFinishReason() { return finishReason == null ? null : (finishReason == null ? null : finishReason); }
-    public OutcomeStatus getStatus() { return status == null ? null : status; }
+    @JsonProperty("errorValue")
+    private final JsonNode errorValue;
+    @JsonProperty("finishReason")
+    private final String finishReason;
+    @JsonProperty("status")
+    private final OutcomeStatus status;
     /**
      * 序列化的 Usage。
      */
-    public JsonNode getUsage() { return usage == null ? null : WireJson.json(WireJson.tree(usage)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDecisionResult) json.set("decisionResult", WireJson.tree(decisionResult));
-        if (hasError) json.set("error", WireJson.tree(error));
-        if (hasErrorValue) json.set("errorValue", WireJson.tree(errorValue));
-        if (hasFinishReason) json.set("finishReason", WireJson.tree(finishReason));
-        json.set("status", WireJson.tree(status));
-        if (hasUsage) json.set("usage", WireJson.tree(usage));
-        return json;
+    @JsonProperty("usage")
+    private final JsonNode usage;
+
+    @JsonCreator
+    public OutcomeRecord(
+        @JsonProperty(value = "decisionResult") JsonNode decisionResult,
+        @JsonProperty(value = "error") String error,
+        @JsonProperty(value = "errorValue") JsonNode errorValue,
+        @JsonProperty(value = "finishReason") String finishReason,
+        @JsonProperty(value = "status", required = true) OutcomeStatus status,
+        @JsonProperty(value = "usage") JsonNode usage) {
+        this.decisionResult = decisionResult == null || decisionResult.isNull() ? null : decisionResult.deepCopy();
+        this.error = error;
+        this.errorValue = errorValue == null || errorValue.isNull() ? null : errorValue.deepCopy();
+        this.finishReason = finishReason;
+        this.status = status;
+        this.usage = usage == null || usage.isNull() ? null : usage.deepCopy();
     }
+
+    public static Builder builder() { return new Builder(); }
+    public JsonNode getDecisionResult() { return decisionResult == null ? null : decisionResult.deepCopy(); }
+    public String getError() { return error; }
+    public JsonNode getErrorValue() { return errorValue == null ? null : errorValue.deepCopy(); }
+    public String getFinishReason() { return finishReason; }
+    public OutcomeStatus getStatus() { return status; }
+    public JsonNode getUsage() { return usage == null ? null : usage.deepCopy(); }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private JsonNode decisionResult;
+        private String error;
+        private JsonNode errorValue;
+        private String finishReason;
+        private OutcomeStatus status;
+        private JsonNode usage;
+
+        public Builder decisionResult(JsonNode value) {
+            this.decisionResult = value;
+            return this;
         }
-        public Builder decisionResult(JsonNode value) { json.set("decisionResult", WireJson.tree(value)); return this; }
-        public Builder error(String value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder errorValue(JsonNode value) { json.set("errorValue", WireJson.tree(value)); return this; }
-        public Builder finishReason(String value) { json.set("finishReason", WireJson.tree(value)); return this; }
-        public Builder status(OutcomeStatus value) { json.set("status", WireJson.tree(value)); return this; }
-        public Builder usage(JsonNode value) { json.set("usage", WireJson.tree(value)); return this; }
-        public OutcomeRecord build() { return new OutcomeRecord(json); }
+
+        public Builder error(String value) {
+            this.error = value;
+            return this;
+        }
+
+        public Builder errorValue(JsonNode value) {
+            this.errorValue = value;
+            return this;
+        }
+
+        public Builder finishReason(String value) {
+            this.finishReason = value;
+            return this;
+        }
+
+        public Builder status(OutcomeStatus value) {
+            this.status = value;
+            return this;
+        }
+
+        public Builder usage(JsonNode value) {
+            this.usage = value;
+            return this;
+        }
+
+        public OutcomeRecord build() { return new OutcomeRecord(decisionResult, error, errorValue, finishReason, status, usage); }
     }
 }
-

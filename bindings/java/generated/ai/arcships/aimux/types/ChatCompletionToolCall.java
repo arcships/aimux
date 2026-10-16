@@ -4,46 +4,55 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionToolCall extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionToolCall {
+    @JsonProperty("function")
     private final ChatCompletionFunction function;
+    @JsonProperty("id")
     private final String id;
+    @JsonProperty("type")
     private final String type;
-    private ChatCompletionToolCall(JsonNode json) {
-        WireJson.object(json, "ChatCompletionToolCall", false, "function", "id", "type");
-        WireJson.required(json, "function");
-        this.function = ChatCompletionFunction.fromJson(json.get("function"));
-        WireJson.required(json, "id");
-        this.id = WireJson.string(json.get("id"));
-        WireJson.required(json, "type");
-        this.type = WireJson.string(json.get("type"));
+
+    @JsonCreator
+    public ChatCompletionToolCall(
+        @JsonProperty(value = "function", required = true) ChatCompletionFunction function,
+        @JsonProperty(value = "id", required = true) String id,
+        @JsonProperty(value = "type", required = true) String type) {
+        this.function = function;
+        this.id = id;
+        this.type = type;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionToolCall fromJson(JsonNode json) { return new ChatCompletionToolCall(json); }
+
     public static Builder builder() { return new Builder(); }
-    public ChatCompletionFunction getFunction() { return function == null ? null : function; }
-    public String getId() { return id == null ? null : id; }
-    public String getType() { return type == null ? null : type; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("function", WireJson.tree(function));
-        json.set("id", WireJson.tree(id));
-        json.set("type", WireJson.tree(type));
-        return json;
-    }
+    public ChatCompletionFunction getFunction() { return function; }
+    public String getId() { return id; }
+    public String getType() { return type; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private ChatCompletionFunction function;
+        private String id;
+        private String type;
+
+        public Builder function(ChatCompletionFunction value) {
+            this.function = value;
+            return this;
         }
-        public Builder function(ChatCompletionFunction value) { json.set("function", WireJson.tree(value)); return this; }
-        public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-        public Builder type(String value) { json.set("type", WireJson.tree(value)); return this; }
-        public ChatCompletionToolCall build() { return new ChatCompletionToolCall(json); }
+
+        public Builder id(String value) {
+            this.id = value;
+            return this;
+        }
+
+        public Builder type(String value) {
+            this.type = value;
+            return this;
+        }
+
+        public ChatCompletionToolCall build() { return new ChatCompletionToolCall(function, id, type); }
     }
 }
-

@@ -4,61 +4,77 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RouterParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RouterParams {
+    @JsonProperty("children")
     private final List<String> children;
+    @JsonProperty("fallback")
     private final Fallback fallback;
-    private final boolean hasFallback;
+    @JsonProperty("modelId")
     private final String modelId;
-    private final boolean hasModelId;
+    @JsonProperty("providerName")
     private final String providerName;
-    private final boolean hasProviderName;
+    @JsonProperty("strategy")
     private final Strategy strategy;
-    private RouterParams(JsonNode json) {
-        WireJson.object(json, "RouterParams", true, "children", "fallback", "modelId", "providerName", "strategy");
-        WireJson.required(json, "children");
-        this.children = WireJson.array(json.get("children"), item0 -> WireJson.string(item0));
-        this.hasFallback = json.has("fallback");
-        this.fallback = WireJson.isNull(json.get("fallback")) ? null : Fallback.fromJson(json.get("fallback"));
-        this.hasModelId = json.has("modelId");
-        this.modelId = WireJson.isNull(json.get("modelId")) ? null : (WireJson.isNull(json.get("modelId")) ? null : WireJson.string(json.get("modelId")));
-        this.hasProviderName = json.has("providerName");
-        this.providerName = WireJson.isNull(json.get("providerName")) ? null : (WireJson.isNull(json.get("providerName")) ? null : WireJson.string(json.get("providerName")));
-        WireJson.required(json, "strategy");
-        this.strategy = Strategy.fromJson(json.get("strategy"));
+
+    @JsonCreator
+    public RouterParams(
+        @JsonProperty(value = "children", required = true) List<String> children,
+        @JsonProperty(value = "fallback") Fallback fallback,
+        @JsonProperty(value = "modelId") String modelId,
+        @JsonProperty(value = "providerName") String providerName,
+        @JsonProperty(value = "strategy", required = true) Strategy strategy) {
+        this.children = children == null ? null : Collections.unmodifiableList(new ArrayList<>(children));
+        this.fallback = fallback;
+        this.modelId = modelId;
+        this.providerName = providerName;
+        this.strategy = strategy;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RouterParams fromJson(JsonNode json) { return new RouterParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<String> getChildren() { return children == null ? null : WireJson.array(WireJson.tree(children), item0 -> WireJson.string(item0)); }
-    public Fallback getFallback() { return fallback == null ? null : fallback; }
-    public String getModelId() { return modelId == null ? null : (modelId == null ? null : modelId); }
-    public String getProviderName() { return providerName == null ? null : (providerName == null ? null : providerName); }
-    public Strategy getStrategy() { return strategy == null ? null : strategy; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("children", WireJson.tree(children));
-        if (hasFallback) json.set("fallback", WireJson.tree(fallback));
-        if (hasModelId) json.set("modelId", WireJson.tree(modelId));
-        if (hasProviderName) json.set("providerName", WireJson.tree(providerName));
-        json.set("strategy", WireJson.tree(strategy));
-        return json;
-    }
+    public List<String> getChildren() { return children; }
+    public Fallback getFallback() { return fallback; }
+    public String getModelId() { return modelId; }
+    public String getProviderName() { return providerName; }
+    public Strategy getStrategy() { return strategy; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<String> children;
+        private Fallback fallback;
+        private String modelId;
+        private String providerName;
+        private Strategy strategy;
+
+        public Builder children(List<String> value) {
+            this.children = value;
+            return this;
         }
-        public Builder children(List<String> value) { json.set("children", WireJson.tree(value)); return this; }
-        public Builder fallback(Fallback value) { json.set("fallback", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder providerName(String value) { json.set("providerName", WireJson.tree(value)); return this; }
-        public Builder strategy(Strategy value) { json.set("strategy", WireJson.tree(value)); return this; }
-        public RouterParams build() { return new RouterParams(json); }
+
+        public Builder fallback(Fallback value) {
+            this.fallback = value;
+            return this;
+        }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder providerName(String value) {
+            this.providerName = value;
+            return this;
+        }
+
+        public Builder strategy(Strategy value) {
+            this.strategy = value;
+            return this;
+        }
+
+        public RouterParams build() { return new RouterParams(children, fallback, modelId, providerName, strategy); }
     }
 }
-

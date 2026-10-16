@@ -4,18 +4,10 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum ContentPart4SourceType {
-    URL("url");
-    private final String value;
-    ContentPart4SourceType(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static ContentPart4SourceType fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (ContentPart4SourceType item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid ContentPart4SourceType: " + value);
-    }
+    @JsonProperty("url")
+    URL
 }

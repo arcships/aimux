@@ -4,50 +4,58 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A file generated as part of reasoning.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReasoningFilePart extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReasoningFilePart {
+    @JsonProperty("data")
     private final GeneratedFileData data;
+    @JsonProperty("mediaType")
     private final String mediaType;
+    @JsonProperty("providerOptions")
     private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private ReasoningFilePart(JsonNode json) {
-        WireJson.object(json, "ReasoningFilePart", false, "data", "mediaType", "providerOptions");
-        WireJson.required(json, "data");
-        this.data = GeneratedFileData.fromJson(json.get("data"));
-        WireJson.required(json, "mediaType");
-        this.mediaType = WireJson.string(json.get("mediaType"));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+    @JsonCreator
+    public ReasoningFilePart(
+        @JsonProperty(value = "data", required = true) GeneratedFileData data,
+        @JsonProperty(value = "mediaType", required = true) String mediaType,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+        this.data = data;
+        this.mediaType = mediaType;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReasoningFilePart fromJson(JsonNode json) { return new ReasoningFilePart(json); }
+
     public static Builder builder() { return new Builder(); }
-    public GeneratedFileData getData() { return data == null ? null : data; }
-    public String getMediaType() { return mediaType == null ? null : mediaType; }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("data", WireJson.tree(data));
-        json.set("mediaType", WireJson.tree(mediaType));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        return json;
-    }
+    public GeneratedFileData getData() { return data; }
+    public String getMediaType() { return mediaType; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private GeneratedFileData data;
+        private String mediaType;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+
+        public Builder data(GeneratedFileData value) {
+            this.data = value;
+            return this;
         }
-        public Builder data(GeneratedFileData value) { json.set("data", WireJson.tree(value)); return this; }
-        public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public ReasoningFilePart build() { return new ReasoningFilePart(json); }
+
+        public Builder mediaType(String value) {
+            this.mediaType = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public ReasoningFilePart build() { return new ReasoningFilePart(data, mediaType, providerOptions); }
     }
 }
-

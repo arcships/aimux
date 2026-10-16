@@ -22,7 +22,7 @@ RUNNERS = {
 DOUBLE_NUMBERS = {"node"}
 
 # Native 64-bit signed integers cannot hold u64 values above 2^63-1 (a registered difference): such vectors may fail.
-INT64_NUMBERS = {"dart"}
+INT64_NUMBERS = {"dart", "java"}
 
 
 def beyond_int64(value):

@@ -4,100 +4,146 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OperationStatus extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OperationStatus {
+    @JsonProperty("capabilities")
     private final OperationCapabilities capabilities;
+    @JsonProperty("cleanupFailure")
     private final String cleanupFailure;
-    private final boolean hasCleanupFailure;
+    @JsonProperty("consumerClosed")
     private final Boolean consumerClosed;
-    private final String inputDoneSequence;
-    private final boolean hasInputDoneSequence;
-    private final BigInteger queuedInputBytes;
-    private final BigInteger queuedInputItems;
-    private final BigInteger queuedOutputBytes;
-    private final BigInteger queuedOutputItems;
-    private final OperationState state;
-    private final String subkind;
-    private final TerminalSummary terminal;
-    private final boolean hasTerminal;
-    private OperationStatus(JsonNode json) {
-        WireJson.object(json, "OperationStatus", false, "capabilities", "cleanupFailure", "consumerClosed", "inputDoneSequence", "queuedInputBytes", "queuedInputItems", "queuedOutputBytes", "queuedOutputItems", "state", "subkind", "terminal");
-        WireJson.required(json, "capabilities");
-        this.capabilities = OperationCapabilities.fromJson(json.get("capabilities"));
-        this.hasCleanupFailure = json.has("cleanupFailure");
-        this.cleanupFailure = WireJson.isNull(json.get("cleanupFailure")) ? null : (WireJson.isNull(json.get("cleanupFailure")) ? null : WireJson.string(json.get("cleanupFailure")));
-        WireJson.required(json, "consumerClosed");
-        this.consumerClosed = WireJson.bool(json.get("consumerClosed"));
-        this.hasInputDoneSequence = json.has("inputDoneSequence");
-        this.inputDoneSequence = WireJson.isNull(json.get("inputDoneSequence")) ? null : (WireJson.isNull(json.get("inputDoneSequence")) ? null : WireJson.string(json.get("inputDoneSequence")));
-        WireJson.required(json, "queuedInputBytes");
-        this.queuedInputBytes = WireJson.integer(json.get("queuedInputBytes"), true, 64);
-        WireJson.required(json, "queuedInputItems");
-        this.queuedInputItems = WireJson.integer(json.get("queuedInputItems"), true, 64);
-        WireJson.required(json, "queuedOutputBytes");
-        this.queuedOutputBytes = WireJson.integer(json.get("queuedOutputBytes"), true, 64);
-        WireJson.required(json, "queuedOutputItems");
-        this.queuedOutputItems = WireJson.integer(json.get("queuedOutputItems"), true, 64);
-        WireJson.required(json, "state");
-        this.state = OperationState.fromJson(json.get("state"));
-        WireJson.required(json, "subkind");
-        this.subkind = WireJson.string(json.get("subkind"));
-        this.hasTerminal = json.has("terminal");
-        this.terminal = WireJson.isNull(json.get("terminal")) ? null : (WireJson.isNull(json.get("terminal")) ? null : TerminalSummary.fromJson(json.get("terminal")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OperationStatus fromJson(JsonNode json) { return new OperationStatus(json); }
-    public static Builder builder() { return new Builder(); }
-    public OperationCapabilities getCapabilities() { return capabilities == null ? null : capabilities; }
-    public String getCleanupFailure() { return cleanupFailure == null ? null : (cleanupFailure == null ? null : cleanupFailure); }
-    public Boolean getConsumerClosed() { return consumerClosed == null ? null : consumerClosed; }
     /**
      * The close boundary in the same admission sequence as pushes.
      */
-    public String getInputDoneSequence() { return inputDoneSequence == null ? null : (inputDoneSequence == null ? null : inputDoneSequence); }
-    public BigInteger getQueuedInputBytes() { return queuedInputBytes == null ? null : queuedInputBytes; }
-    public BigInteger getQueuedInputItems() { return queuedInputItems == null ? null : queuedInputItems; }
-    public BigInteger getQueuedOutputBytes() { return queuedOutputBytes == null ? null : queuedOutputBytes; }
-    public BigInteger getQueuedOutputItems() { return queuedOutputItems == null ? null : queuedOutputItems; }
-    public OperationState getState() { return state == null ? null : state; }
-    public String getSubkind() { return subkind == null ? null : subkind; }
-    public TerminalSummary getTerminal() { return terminal == null ? null : (terminal == null ? null : terminal); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("capabilities", WireJson.tree(capabilities));
-        if (hasCleanupFailure) json.set("cleanupFailure", WireJson.tree(cleanupFailure));
-        json.set("consumerClosed", WireJson.tree(consumerClosed));
-        if (hasInputDoneSequence) json.set("inputDoneSequence", WireJson.tree(inputDoneSequence));
-        json.set("queuedInputBytes", WireJson.tree(queuedInputBytes));
-        json.set("queuedInputItems", WireJson.tree(queuedInputItems));
-        json.set("queuedOutputBytes", WireJson.tree(queuedOutputBytes));
-        json.set("queuedOutputItems", WireJson.tree(queuedOutputItems));
-        json.set("state", WireJson.tree(state));
-        json.set("subkind", WireJson.tree(subkind));
-        if (hasTerminal) json.set("terminal", WireJson.tree(terminal));
-        return json;
+    @JsonProperty("inputDoneSequence")
+    private final String inputDoneSequence;
+    @JsonProperty("queuedInputBytes")
+    private final Long queuedInputBytes;
+    @JsonProperty("queuedInputItems")
+    private final Long queuedInputItems;
+    @JsonProperty("queuedOutputBytes")
+    private final Long queuedOutputBytes;
+    @JsonProperty("queuedOutputItems")
+    private final Long queuedOutputItems;
+    @JsonProperty("state")
+    private final OperationState state;
+    @JsonProperty("subkind")
+    private final String subkind;
+    @JsonProperty("terminal")
+    private final TerminalSummary terminal;
+
+    @JsonCreator
+    public OperationStatus(
+        @JsonProperty(value = "capabilities", required = true) OperationCapabilities capabilities,
+        @JsonProperty(value = "cleanupFailure") String cleanupFailure,
+        @JsonProperty(value = "consumerClosed", required = true) Boolean consumerClosed,
+        @JsonProperty(value = "inputDoneSequence") String inputDoneSequence,
+        @JsonProperty(value = "queuedInputBytes", required = true) Long queuedInputBytes,
+        @JsonProperty(value = "queuedInputItems", required = true) Long queuedInputItems,
+        @JsonProperty(value = "queuedOutputBytes", required = true) Long queuedOutputBytes,
+        @JsonProperty(value = "queuedOutputItems", required = true) Long queuedOutputItems,
+        @JsonProperty(value = "state", required = true) OperationState state,
+        @JsonProperty(value = "subkind", required = true) String subkind,
+        @JsonProperty(value = "terminal") TerminalSummary terminal) {
+        this.capabilities = capabilities;
+        this.cleanupFailure = cleanupFailure;
+        this.consumerClosed = consumerClosed;
+        this.inputDoneSequence = inputDoneSequence;
+        this.queuedInputBytes = queuedInputBytes;
+        this.queuedInputItems = queuedInputItems;
+        this.queuedOutputBytes = queuedOutputBytes;
+        this.queuedOutputItems = queuedOutputItems;
+        this.state = state;
+        this.subkind = subkind;
+        this.terminal = terminal;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public OperationCapabilities getCapabilities() { return capabilities; }
+    public String getCleanupFailure() { return cleanupFailure; }
+    public Boolean getConsumerClosed() { return consumerClosed; }
+    public String getInputDoneSequence() { return inputDoneSequence; }
+    public Long getQueuedInputBytes() { return queuedInputBytes; }
+    public Long getQueuedInputItems() { return queuedInputItems; }
+    public Long getQueuedOutputBytes() { return queuedOutputBytes; }
+    public Long getQueuedOutputItems() { return queuedOutputItems; }
+    public OperationState getState() { return state; }
+    public String getSubkind() { return subkind; }
+    public TerminalSummary getTerminal() { return terminal; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private OperationCapabilities capabilities;
+        private String cleanupFailure;
+        private Boolean consumerClosed;
+        private String inputDoneSequence;
+        private Long queuedInputBytes;
+        private Long queuedInputItems;
+        private Long queuedOutputBytes;
+        private Long queuedOutputItems;
+        private OperationState state;
+        private String subkind;
+        private TerminalSummary terminal;
+
+        public Builder capabilities(OperationCapabilities value) {
+            this.capabilities = value;
+            return this;
         }
-        public Builder capabilities(OperationCapabilities value) { json.set("capabilities", WireJson.tree(value)); return this; }
-        public Builder cleanupFailure(String value) { json.set("cleanupFailure", WireJson.tree(value)); return this; }
-        public Builder consumerClosed(Boolean value) { json.set("consumerClosed", WireJson.tree(value)); return this; }
-        public Builder inputDoneSequence(String value) { json.set("inputDoneSequence", WireJson.tree(value)); return this; }
-        public Builder queuedInputBytes(BigInteger value) { json.set("queuedInputBytes", WireJson.tree(value)); return this; }
-        public Builder queuedInputItems(BigInteger value) { json.set("queuedInputItems", WireJson.tree(value)); return this; }
-        public Builder queuedOutputBytes(BigInteger value) { json.set("queuedOutputBytes", WireJson.tree(value)); return this; }
-        public Builder queuedOutputItems(BigInteger value) { json.set("queuedOutputItems", WireJson.tree(value)); return this; }
-        public Builder state(OperationState value) { json.set("state", WireJson.tree(value)); return this; }
-        public Builder subkind(String value) { json.set("subkind", WireJson.tree(value)); return this; }
-        public Builder terminal(TerminalSummary value) { json.set("terminal", WireJson.tree(value)); return this; }
-        public OperationStatus build() { return new OperationStatus(json); }
+
+        public Builder cleanupFailure(String value) {
+            this.cleanupFailure = value;
+            return this;
+        }
+
+        public Builder consumerClosed(Boolean value) {
+            this.consumerClosed = value;
+            return this;
+        }
+
+        public Builder inputDoneSequence(String value) {
+            this.inputDoneSequence = value;
+            return this;
+        }
+
+        public Builder queuedInputBytes(Long value) {
+            this.queuedInputBytes = value;
+            return this;
+        }
+
+        public Builder queuedInputItems(Long value) {
+            this.queuedInputItems = value;
+            return this;
+        }
+
+        public Builder queuedOutputBytes(Long value) {
+            this.queuedOutputBytes = value;
+            return this;
+        }
+
+        public Builder queuedOutputItems(Long value) {
+            this.queuedOutputItems = value;
+            return this;
+        }
+
+        public Builder state(OperationState value) {
+            this.state = value;
+            return this;
+        }
+
+        public Builder subkind(String value) {
+            this.subkind = value;
+            return this;
+        }
+
+        public Builder terminal(TerminalSummary value) {
+            this.terminal = value;
+            return this;
+        }
+
+        public OperationStatus build() { return new OperationStatus(capabilities, cleanupFailure, consumerClosed, inputDoneSequence, queuedInputBytes, queuedInputItems, queuedOutputBytes, queuedOutputItems, state, subkind, terminal); }
     }
 }
-

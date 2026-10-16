@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,97 +12,130 @@ import java.util.*;
  * `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class GenerateObjectResult extends WireValue {
-    private final FinishReasonUnified finishReason;
-    private final JsonNode object;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final String reasoning;
-    private final boolean hasReasoning;
-    private final RequestInfo request;
-    private final GenerateObjectResponse response;
-    private final LanguageModelUsage usage;
-    private final List<Warning> warnings;
-    private GenerateObjectResult(JsonNode json) {
-        WireJson.object(json, "GenerateObjectResult", false, "finishReason", "object", "providerMetadata", "reasoning", "request", "response", "usage", "warnings");
-        WireJson.required(json, "finishReason");
-        this.finishReason = FinishReasonUnified.fromJson(json.get("finishReason"));
-        WireJson.required(json, "object");
-        this.object = WireJson.json(json.get("object"));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasReasoning = json.has("reasoning");
-        this.reasoning = WireJson.isNull(json.get("reasoning")) ? null : (WireJson.isNull(json.get("reasoning")) ? null : WireJson.string(json.get("reasoning")));
-        WireJson.required(json, "request");
-        this.request = RequestInfo.fromJson(json.get("request"));
-        WireJson.required(json, "response");
-        this.response = GenerateObjectResponse.fromJson(json.get("response"));
-        WireJson.required(json, "usage");
-        this.usage = LanguageModelUsage.fromJson(json.get("usage"));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static GenerateObjectResult fromJson(JsonNode json) { return new GenerateObjectResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class GenerateObjectResult {
     /**
      * Why the model call finished.
      */
-    public FinishReasonUnified getFinishReason() { return finishReason == null ? null : finishReason; }
+    @JsonProperty("finishReason")
+    private final FinishReasonUnified finishReason;
     /**
      * The generated object, as parsed by the output.
      */
-    public JsonNode getObject() { return object == null ? null : WireJson.json(WireJson.tree(object)); }
+    @JsonProperty("object")
+    private final JsonNode object;
     /**
      * Provider metadata of the model call.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * The reasoning text, `None` when there is none.
      */
-    public String getReasoning() { return reasoning == null ? null : (reasoning == null ? null : reasoning); }
+    @JsonProperty("reasoning")
+    private final String reasoning;
     /**
      * The request of the model call.
      */
-    public RequestInfo getRequest() { return request == null ? null : request; }
+    @JsonProperty("request")
+    private final RequestInfo request;
     /**
      * The response of the model call, without messages.
      */
-    public GenerateObjectResponse getResponse() { return response == null ? null : response; }
+    @JsonProperty("response")
+    private final GenerateObjectResponse response;
     /**
      * Token usage of the model call.
      */
-    public LanguageModelUsage getUsage() { return usage == null ? null : usage; }
+    @JsonProperty("usage")
+    private final LanguageModelUsage usage;
     /**
      * Warnings of the model call.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("finishReason", WireJson.tree(finishReason));
-        json.set("object", WireJson.tree(object));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasReasoning) json.set("reasoning", WireJson.tree(reasoning));
-        json.set("request", WireJson.tree(request));
-        json.set("response", WireJson.tree(response));
-        json.set("usage", WireJson.tree(usage));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public GenerateObjectResult(
+        @JsonProperty(value = "finishReason", required = true) FinishReasonUnified finishReason,
+        @JsonProperty(value = "object", required = true) JsonNode object,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "reasoning") String reasoning,
+        @JsonProperty(value = "request", required = true) RequestInfo request,
+        @JsonProperty(value = "response", required = true) GenerateObjectResponse response,
+        @JsonProperty(value = "usage", required = true) LanguageModelUsage usage,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.finishReason = finishReason;
+        this.object = object == null ? null : object.deepCopy();
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.reasoning = reasoning;
+        this.request = request;
+        this.response = response;
+        this.usage = usage;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public FinishReasonUnified getFinishReason() { return finishReason; }
+    public JsonNode getObject() { return object == null ? null : object.deepCopy(); }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getReasoning() { return reasoning; }
+    public RequestInfo getRequest() { return request; }
+    public GenerateObjectResponse getResponse() { return response; }
+    public LanguageModelUsage getUsage() { return usage; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FinishReasonUnified finishReason;
+        private JsonNode object;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String reasoning;
+        private RequestInfo request;
+        private GenerateObjectResponse response;
+        private LanguageModelUsage usage;
+        private List<Warning> warnings;
+
+        public Builder finishReason(FinishReasonUnified value) {
+            this.finishReason = value;
+            return this;
         }
-        public Builder finishReason(FinishReasonUnified value) { json.set("finishReason", WireJson.tree(value)); return this; }
-        public Builder object(JsonNode value) { json.set("object", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder reasoning(String value) { json.set("reasoning", WireJson.tree(value)); return this; }
-        public Builder request(RequestInfo value) { json.set("request", WireJson.tree(value)); return this; }
-        public Builder response(GenerateObjectResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder usage(LanguageModelUsage value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public GenerateObjectResult build() { return new GenerateObjectResult(json); }
+
+        public Builder object(JsonNode value) {
+            this.object = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder reasoning(String value) {
+            this.reasoning = value;
+            return this;
+        }
+
+        public Builder request(RequestInfo value) {
+            this.request = value;
+            return this;
+        }
+
+        public Builder response(GenerateObjectResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder usage(LanguageModelUsage value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public GenerateObjectResult build() { return new GenerateObjectResult(finishReason, object, providerMetadata, reasoning, request, response, usage, warnings); }
     }
 }
-

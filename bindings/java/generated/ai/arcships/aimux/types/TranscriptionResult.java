@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,99 +13,130 @@ import java.util.*;
  * Aligned with V4 `TranscriptionModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TranscriptionResult extends WireValue {
-    private final BigDecimal durationInSeconds;
-    private final boolean hasDurationInSeconds;
-    private final String language;
-    private final boolean hasLanguage;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final TranscriptionRequest request;
-    private final boolean hasRequest;
-    private final TranscriptionResponse response;
-    private final List<TranscriptionSegment> segments;
-    private final String text;
-    private final List<Warning> warnings;
-    private TranscriptionResult(JsonNode json) {
-        WireJson.object(json, "TranscriptionResult", false, "durationInSeconds", "language", "providerMetadata", "request", "response", "segments", "text", "warnings");
-        this.hasDurationInSeconds = json.has("durationInSeconds");
-        this.durationInSeconds = WireJson.isNull(json.get("durationInSeconds")) ? null : (WireJson.isNull(json.get("durationInSeconds")) ? null : WireJson.number(json.get("durationInSeconds")));
-        this.hasLanguage = json.has("language");
-        this.language = WireJson.isNull(json.get("language")) ? null : (WireJson.isNull(json.get("language")) ? null : WireJson.string(json.get("language")));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasRequest = json.has("request");
-        this.request = WireJson.isNull(json.get("request")) ? null : (WireJson.isNull(json.get("request")) ? null : TranscriptionRequest.fromJson(json.get("request")));
-        WireJson.required(json, "response");
-        this.response = TranscriptionResponse.fromJson(json.get("response"));
-        WireJson.required(json, "segments");
-        this.segments = WireJson.array(json.get("segments"), item0 -> TranscriptionSegment.fromJson(item0));
-        WireJson.required(json, "text");
-        this.text = WireJson.string(json.get("text"));
-        WireJson.required(json, "warnings");
-        this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TranscriptionResult fromJson(JsonNode json) { return new TranscriptionResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TranscriptionResult {
     /**
      * The total duration of the audio in seconds, if determined.
      */
-    public BigDecimal getDurationInSeconds() { return durationInSeconds == null ? null : (durationInSeconds == null ? null : durationInSeconds); }
+    @JsonProperty("durationInSeconds")
+    private final BigDecimal durationInSeconds;
     /**
      * The detected language (ISO 639-1 code, e.g. `"en"`), if detected.
      */
-    public String getLanguage() { return language == null ? null : (language == null ? null : language); }
+    @JsonProperty("language")
+    private final String language;
     /**
      * Additional provider-specific metadata, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Optional request information for telemetry and debugging.
      */
-    public TranscriptionRequest getRequest() { return request == null ? null : (request == null ? null : request); }
+    @JsonProperty("request")
+    private final TranscriptionRequest request;
     /**
      * Response information for telemetry and debugging.
      */
-    public TranscriptionResponse getResponse() { return response == null ? null : response; }
+    @JsonProperty("response")
+    private final TranscriptionResponse response;
     /**
      * Transcript segments with timing information.
      */
-    public List<TranscriptionSegment> getSegments() { return segments == null ? null : WireJson.array(WireJson.tree(segments), item0 -> TranscriptionSegment.fromJson(item0)); }
+    @JsonProperty("segments")
+    private final List<TranscriptionSegment> segments;
     /**
      * The complete transcribed text from the audio.
      */
-    public String getText() { return text == null ? null : text; }
+    @JsonProperty("text")
+    private final String text;
     /**
      * Warnings for the call, e.g. unsupported settings.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDurationInSeconds) json.set("durationInSeconds", WireJson.tree(durationInSeconds));
-        if (hasLanguage) json.set("language", WireJson.tree(language));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        if (hasRequest) json.set("request", WireJson.tree(request));
-        json.set("response", WireJson.tree(response));
-        json.set("segments", WireJson.tree(segments));
-        json.set("text", WireJson.tree(text));
-        json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public TranscriptionResult(
+        @JsonProperty(value = "durationInSeconds") BigDecimal durationInSeconds,
+        @JsonProperty(value = "language") String language,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "request") TranscriptionRequest request,
+        @JsonProperty(value = "response", required = true) TranscriptionResponse response,
+        @JsonProperty(value = "segments", required = true) List<TranscriptionSegment> segments,
+        @JsonProperty(value = "text", required = true) String text,
+        @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+        this.durationInSeconds = durationInSeconds;
+        this.language = language;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.request = request;
+        this.response = response;
+        this.segments = segments == null ? null : Collections.unmodifiableList(new ArrayList<>(segments));
+        this.text = text;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public BigDecimal getDurationInSeconds() { return durationInSeconds; }
+    public String getLanguage() { return language; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public TranscriptionRequest getRequest() { return request; }
+    public TranscriptionResponse getResponse() { return response; }
+    public List<TranscriptionSegment> getSegments() { return segments; }
+    public String getText() { return text; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private BigDecimal durationInSeconds;
+        private String language;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private TranscriptionRequest request;
+        private TranscriptionResponse response;
+        private List<TranscriptionSegment> segments;
+        private String text;
+        private List<Warning> warnings;
+
+        public Builder durationInSeconds(BigDecimal value) {
+            this.durationInSeconds = value;
+            return this;
         }
-        public Builder durationInSeconds(BigDecimal value) { json.set("durationInSeconds", WireJson.tree(value)); return this; }
-        public Builder language(String value) { json.set("language", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder request(TranscriptionRequest value) { json.set("request", WireJson.tree(value)); return this; }
-        public Builder response(TranscriptionResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder segments(List<TranscriptionSegment> value) { json.set("segments", WireJson.tree(value)); return this; }
-        public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public TranscriptionResult build() { return new TranscriptionResult(json); }
+
+        public Builder language(String value) {
+            this.language = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder request(TranscriptionRequest value) {
+            this.request = value;
+            return this;
+        }
+
+        public Builder response(TranscriptionResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder segments(List<TranscriptionSegment> value) {
+            this.segments = value;
+            return this;
+        }
+
+        public Builder text(String value) {
+            this.text = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public TranscriptionResult build() { return new TranscriptionResult(durationInSeconds, language, providerMetadata, request, response, segments, text, warnings); }
     }
 }
-

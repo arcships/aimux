@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,37 +13,40 @@ import java.util.*;
  * value (`decision-model-v4-result.ts:39-42`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class DecisionRounding extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class DecisionRounding {
+    @JsonProperty("probabilityDecimals")
     private final Long probabilityDecimals;
-    private final boolean hasProbabilityDecimals;
+    @JsonProperty("scoreDecimals")
     private final Long scoreDecimals;
-    private final boolean hasScoreDecimals;
-    private DecisionRounding(JsonNode json) {
-        WireJson.object(json, "DecisionRounding", false, "probabilityDecimals", "scoreDecimals");
-        this.hasProbabilityDecimals = json.has("probabilityDecimals");
-        this.probabilityDecimals = WireJson.isNull(json.get("probabilityDecimals")) ? null : (WireJson.isNull(json.get("probabilityDecimals")) ? null : WireJson.integer(json.get("probabilityDecimals"), true, 32).longValue());
-        this.hasScoreDecimals = json.has("scoreDecimals");
-        this.scoreDecimals = WireJson.isNull(json.get("scoreDecimals")) ? null : (WireJson.isNull(json.get("scoreDecimals")) ? null : WireJson.integer(json.get("scoreDecimals"), true, 32).longValue());
+
+    @JsonCreator
+    public DecisionRounding(
+        @JsonProperty(value = "probabilityDecimals") Long probabilityDecimals,
+        @JsonProperty(value = "scoreDecimals") Long scoreDecimals) {
+        this.probabilityDecimals = probabilityDecimals;
+        this.scoreDecimals = scoreDecimals;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static DecisionRounding fromJson(JsonNode json) { return new DecisionRounding(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Long getProbabilityDecimals() { return probabilityDecimals == null ? null : (probabilityDecimals == null ? null : probabilityDecimals); }
-    public Long getScoreDecimals() { return scoreDecimals == null ? null : (scoreDecimals == null ? null : scoreDecimals); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasProbabilityDecimals) json.set("probabilityDecimals", WireJson.tree(probabilityDecimals));
-        if (hasScoreDecimals) json.set("scoreDecimals", WireJson.tree(scoreDecimals));
-        return json;
-    }
+    public Long getProbabilityDecimals() { return probabilityDecimals; }
+    public Long getScoreDecimals() { return scoreDecimals; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long probabilityDecimals;
+        private Long scoreDecimals;
+
+        public Builder probabilityDecimals(Long value) {
+            this.probabilityDecimals = value;
+            return this;
         }
-        public Builder probabilityDecimals(Long value) { json.set("probabilityDecimals", WireJson.tree(value)); return this; }
-        public Builder scoreDecimals(Long value) { json.set("scoreDecimals", WireJson.tree(value)); return this; }
-        public DecisionRounding build() { return new DecisionRounding(json); }
+
+        public Builder scoreDecimals(Long value) {
+            this.scoreDecimals = value;
+            return this;
+        }
+
+        public DecisionRounding build() { return new DecisionRounding(probabilityDecimals, scoreDecimals); }
     }
 }
-

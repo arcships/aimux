@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,89 +14,89 @@ import java.util.*;
  * `SharedV4FileData` (URLs and provider references are not valid uploads), so
  * this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = UploadFileData.Data.class, name = "data"),
-    @JsonSubTypes.Type(value = UploadFileData.Text.class, name = "text"),
+    @JsonSubTypes.Type(value = UploadFileData.Text.class, name = "text")
 })
-public abstract class UploadFileData extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class UploadFileData {
     private UploadFileData() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public FileBytes getData() { return null; }
     public String getText() { return null; }
     public final boolean isData() { return "data".equals(getType()); }
     public final boolean isText() { return "text".equals(getType()); }
-    public static UploadFileData fromJson(JsonNode json) {
-        WireJson.object(json, "UploadFileData", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "data":
-                return Data.fromJson(json);
-            case "text":
-                return Text.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown UploadFileData tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Data extends UploadFileData {
+        @JsonProperty("data")
         private final FileBytes data;
-        private Data(JsonNode json) {
-            WireJson.object(json, "Data", true, "data", "type");
-            if (!"data".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Data tag");
-            WireJson.required(json, "data");
-            this.data = FileBytes.fromJson(json.get("data"));
+
+        @JsonCreator
+        public Data(
+            @JsonProperty(value = "data", required = true) FileBytes data) {
+            this.data = data;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Data fromJson(JsonNode json) { return new Data(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "data"; }
-        public FileBytes getData() { return data == null ? null : data; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "data");
-            json.set("data", WireJson.tree(data));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "data"; }
+        public FileBytes getData() { return data; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "data");
+            private FileBytes data;
+
+            public Builder data(FileBytes value) {
+                this.data = value;
+                return this;
             }
-            public Builder data(FileBytes value) { json.set("data", WireJson.tree(value)); return this; }
-            public Data build() { return new Data(json); }
+
+            public Data build() { return new Data(data); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Text extends UploadFileData {
+        @JsonProperty("text")
         private final String text;
-        private Text(JsonNode json) {
-            WireJson.object(json, "Text", true, "text", "type");
-            if (!"text".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Text tag");
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
+
+        @JsonCreator
+        public Text(
+            @JsonProperty(value = "text", required = true) String text) {
+            this.text = text;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Text fromJson(JsonNode json) { return new Text(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "text"; }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "text");
-            json.set("text", WireJson.tree(text));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "text"; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "text");
+            private String text;
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
             }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public Text build() { return new Text(json); }
+
+            public Text build() { return new Text(text); }
         }
     }
-
 }

@@ -4,156 +4,170 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A judgment to make about the shared state (`DecisionModelV4Question`).
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = DecisionQuestion.Choice.class, name = "choice"),
     @JsonSubTypes.Type(value = DecisionQuestion.Score.class, name = "score"),
-    @JsonSubTypes.Type(value = DecisionQuestion.BooleanVariant.class, name = "boolean"),
+    @JsonSubTypes.Type(value = DecisionQuestion.BooleanVariant.class, name = "boolean")
 })
-public abstract class DecisionQuestion extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class DecisionQuestion {
     private DecisionQuestion() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public DecisionInput getInstructions() { return null; }
     public final boolean isBoolean_() { return "boolean".equals(getType()); }
     public final boolean isChoice() { return "choice".equals(getType()); }
     public final boolean isScore() { return "score".equals(getType()); }
-    public static DecisionQuestion fromJson(JsonNode json) {
-        WireJson.object(json, "DecisionQuestion", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "boolean":
-                return BooleanVariant.fromJson(json);
-            case "choice":
-                return Choice.fromJson(json);
-            case "score":
-                return Score.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown DecisionQuestion tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Choice extends DecisionQuestion {
-        private final Map<String, DecisionInput> criteria;
-        private final DecisionInput instructions;
-        private Choice(JsonNode json) {
-            WireJson.object(json, "Choice", false, "criteria", "instructions", "type");
-            if (!"choice".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Choice tag");
-            WireJson.required(json, "criteria");
-            this.criteria = WireJson.map(json.get("criteria"), item0 -> (WireJson.isNull(item0) ? null : DecisionInput.fromJson(item0)));
-            WireJson.required(json, "instructions");
-            this.instructions = DecisionInput.fromJson(json.get("instructions"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Choice fromJson(JsonNode json) { return new Choice(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "choice"; }
         /**
          * Nonempty map of option names to descriptions; `None` means no
          * description. Insertion order is the option order.
          */
-        public Map<String, DecisionInput> getCriteria() { return criteria == null ? null : WireJson.map(WireJson.tree(criteria), item0 -> (WireJson.isNull(item0) ? null : DecisionInput.fromJson(item0))); }
-        public DecisionInput getInstructions() { return instructions == null ? null : instructions; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "choice");
-            json.set("criteria", WireJson.tree(criteria));
-            json.set("instructions", WireJson.tree(instructions));
-            return json;
+        @JsonProperty("criteria")
+        private final Map<String, DecisionInput> criteria;
+        @JsonProperty("instructions")
+        private final DecisionInput instructions;
+
+        @JsonCreator
+        public Choice(
+            @JsonProperty(value = "criteria", required = true) Map<String, DecisionInput> criteria,
+            @JsonProperty(value = "instructions", required = true) DecisionInput instructions) {
+            this.criteria = criteria == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(criteria));
+            this.instructions = instructions;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "choice"; }
+        public Map<String, DecisionInput> getCriteria() { return criteria; }
+        public DecisionInput getInstructions() { return instructions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "choice");
+            private Map<String, DecisionInput> criteria;
+            private DecisionInput instructions;
+
+            public Builder criteria(Map<String, DecisionInput> value) {
+                this.criteria = value;
+                return this;
             }
-            public Builder criteria(Map<String, DecisionInput> value) { json.set("criteria", WireJson.tree(value)); return this; }
-            public Builder instructions(DecisionInput value) { json.set("instructions", WireJson.tree(value)); return this; }
-            public Choice build() { return new Choice(json); }
+
+            public Builder instructions(DecisionInput value) {
+                this.instructions = value;
+                return this;
+            }
+
+            public Choice build() { return new Choice(criteria, instructions); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Score extends DecisionQuestion {
-        private final List<DecisionInput> criteria;
-        private final DecisionInput instructions;
-        private Score(JsonNode json) {
-            WireJson.object(json, "Score", false, "criteria", "instructions", "type");
-            if (!"score".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Score tag");
-            WireJson.required(json, "criteria");
-            this.criteria = WireJson.array(json.get("criteria"), item0 -> (WireJson.isNull(item0) ? null : DecisionInput.fromJson(item0)));
-            WireJson.required(json, "instructions");
-            this.instructions = DecisionInput.fromJson(json.get("instructions"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Score fromJson(JsonNode json) { return new Score(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "score"; }
         /**
          * At least two ordered levels, indexed from zero.
          */
-        public List<DecisionInput> getCriteria() { return criteria == null ? null : WireJson.array(WireJson.tree(criteria), item0 -> (WireJson.isNull(item0) ? null : DecisionInput.fromJson(item0))); }
-        public DecisionInput getInstructions() { return instructions == null ? null : instructions; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "score");
-            json.set("criteria", WireJson.tree(criteria));
-            json.set("instructions", WireJson.tree(instructions));
-            return json;
+        @JsonProperty("criteria")
+        private final List<DecisionInput> criteria;
+        @JsonProperty("instructions")
+        private final DecisionInput instructions;
+
+        @JsonCreator
+        public Score(
+            @JsonProperty(value = "criteria", required = true) List<DecisionInput> criteria,
+            @JsonProperty(value = "instructions", required = true) DecisionInput instructions) {
+            this.criteria = criteria == null ? null : Collections.unmodifiableList(new ArrayList<>(criteria));
+            this.instructions = instructions;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "score"; }
+        public List<DecisionInput> getCriteria() { return criteria; }
+        public DecisionInput getInstructions() { return instructions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "score");
+            private List<DecisionInput> criteria;
+            private DecisionInput instructions;
+
+            public Builder criteria(List<DecisionInput> value) {
+                this.criteria = value;
+                return this;
             }
-            public Builder criteria(List<DecisionInput> value) { json.set("criteria", WireJson.tree(value)); return this; }
-            public Builder instructions(DecisionInput value) { json.set("instructions", WireJson.tree(value)); return this; }
-            public Score build() { return new Score(json); }
+
+            public Builder instructions(DecisionInput value) {
+                this.instructions = value;
+                return this;
+            }
+
+            public Score build() { return new Score(criteria, instructions); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class BooleanVariant extends DecisionQuestion {
+        @JsonProperty("criteria")
         private final DecisionBooleanCriteria criteria;
-        private final boolean hasCriteria;
+        @JsonProperty("instructions")
         private final DecisionInput instructions;
-        private BooleanVariant(JsonNode json) {
-            WireJson.object(json, "BooleanVariant", false, "criteria", "instructions", "type");
-            if (!"boolean".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid BooleanVariant tag");
-            this.hasCriteria = json.has("criteria");
-            this.criteria = WireJson.isNull(json.get("criteria")) ? null : (WireJson.isNull(json.get("criteria")) ? null : DecisionBooleanCriteria.fromJson(json.get("criteria")));
-            WireJson.required(json, "instructions");
-            this.instructions = DecisionInput.fromJson(json.get("instructions"));
+
+        @JsonCreator
+        public BooleanVariant(
+            @JsonProperty(value = "criteria") DecisionBooleanCriteria criteria,
+            @JsonProperty(value = "instructions", required = true) DecisionInput instructions) {
+            this.criteria = criteria;
+            this.instructions = instructions;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static BooleanVariant fromJson(JsonNode json) { return new BooleanVariant(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "boolean"; }
-        public DecisionBooleanCriteria getCriteria() { return criteria == null ? null : (criteria == null ? null : criteria); }
-        public DecisionInput getInstructions() { return instructions == null ? null : instructions; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "boolean");
-            if (hasCriteria) json.set("criteria", WireJson.tree(criteria));
-            json.set("instructions", WireJson.tree(instructions));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "boolean"; }
+        public DecisionBooleanCriteria getCriteria() { return criteria; }
+        public DecisionInput getInstructions() { return instructions; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "boolean");
+            private DecisionBooleanCriteria criteria;
+            private DecisionInput instructions;
+
+            public Builder criteria(DecisionBooleanCriteria value) {
+                this.criteria = value;
+                return this;
             }
-            public Builder criteria(DecisionBooleanCriteria value) { json.set("criteria", WireJson.tree(value)); return this; }
-            public Builder instructions(DecisionInput value) { json.set("instructions", WireJson.tree(value)); return this; }
-            public BooleanVariant build() { return new BooleanVariant(json); }
+
+            public Builder instructions(DecisionInput value) {
+                this.instructions = value;
+                return this;
+            }
+
+            public BooleanVariant build() { return new BooleanVariant(criteria, instructions); }
         }
     }
-
 }

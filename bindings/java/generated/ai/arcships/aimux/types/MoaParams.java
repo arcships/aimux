@@ -4,92 +4,116 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class MoaParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class MoaParams {
+    @JsonProperty("aggregator")
     private final String aggregator;
-    private final String aggregatorInstructions;
-    private final boolean hasAggregatorInstructions;
-    private final MoaFailMode failMode;
-    private final boolean hasFailMode;
-    private final String modelId;
-    private final boolean hasModelId;
-    private final String providerName;
-    private final boolean hasProviderName;
-    private final List<String> references;
-    private final Boolean stripReferenceTools;
-    private final boolean hasStripReferenceTools;
-    private MoaParams(JsonNode json) {
-        WireJson.object(json, "MoaParams", true, "aggregator", "aggregatorInstructions", "failMode", "modelId", "providerName", "references", "stripReferenceTools");
-        WireJson.required(json, "aggregator");
-        this.aggregator = WireJson.string(json.get("aggregator"));
-        this.hasAggregatorInstructions = json.has("aggregatorInstructions");
-        this.aggregatorInstructions = WireJson.isNull(json.get("aggregatorInstructions")) ? null : (WireJson.isNull(json.get("aggregatorInstructions")) ? null : WireJson.string(json.get("aggregatorInstructions")));
-        this.hasFailMode = json.has("failMode");
-        this.failMode = WireJson.isNull(json.get("failMode")) ? null : MoaFailMode.fromJson(json.get("failMode"));
-        this.hasModelId = json.has("modelId");
-        this.modelId = WireJson.isNull(json.get("modelId")) ? null : WireJson.string(json.get("modelId"));
-        this.hasProviderName = json.has("providerName");
-        this.providerName = WireJson.isNull(json.get("providerName")) ? null : WireJson.string(json.get("providerName"));
-        WireJson.required(json, "references");
-        this.references = WireJson.array(json.get("references"), item0 -> WireJson.string(item0));
-        this.hasStripReferenceTools = json.has("stripReferenceTools");
-        this.stripReferenceTools = WireJson.isNull(json.get("stripReferenceTools")) ? null : WireJson.bool(json.get("stripReferenceTools"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static MoaParams fromJson(JsonNode json) { return new MoaParams(json); }
-    public static Builder builder() { return new Builder(); }
-    public String getAggregator() { return aggregator == null ? null : aggregator; }
     /**
      * Optional aggregator system instruction prepended to the reference user
      * message. `None` uses a built-in default.
      */
-    public String getAggregatorInstructions() { return aggregatorInstructions == null ? null : (aggregatorInstructions == null ? null : aggregatorInstructions); }
+    @JsonProperty("aggregatorInstructions")
+    private final String aggregatorInstructions;
     /**
      * Reference-failure policy.
      */
-    public MoaFailMode getFailMode() { return failMode == null ? null : failMode; }
+    @JsonProperty("failMode")
+    private final MoaFailMode failMode;
     /**
      * `model_id()` value (default `"moa"`).
      */
-    public String getModelId() { return modelId == null ? null : modelId; }
+    @JsonProperty("modelId")
+    private final String modelId;
     /**
      * `provider()` value (default `"moa"`).
      */
-    public String getProviderName() { return providerName == null ? null : providerName; }
-    public List<String> getReferences() { return references == null ? null : WireJson.array(WireJson.tree(references), item0 -> WireJson.string(item0)); }
+    @JsonProperty("providerName")
+    private final String providerName;
+    @JsonProperty("references")
+    private final List<String> references;
     /**
      * Strip `tools` / `tool_choice` from reference calls so references stay
      * cheap (Hermes: references don't carry tool schemas). Default `true`.
      */
-    public Boolean getStripReferenceTools() { return stripReferenceTools == null ? null : stripReferenceTools; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("aggregator", WireJson.tree(aggregator));
-        if (hasAggregatorInstructions) json.set("aggregatorInstructions", WireJson.tree(aggregatorInstructions));
-        if (hasFailMode) json.set("failMode", WireJson.tree(failMode));
-        if (hasModelId) json.set("modelId", WireJson.tree(modelId));
-        if (hasProviderName) json.set("providerName", WireJson.tree(providerName));
-        json.set("references", WireJson.tree(references));
-        if (hasStripReferenceTools) json.set("stripReferenceTools", WireJson.tree(stripReferenceTools));
-        return json;
+    @JsonProperty("stripReferenceTools")
+    private final Boolean stripReferenceTools;
+
+    @JsonCreator
+    public MoaParams(
+        @JsonProperty(value = "aggregator", required = true) String aggregator,
+        @JsonProperty(value = "aggregatorInstructions") String aggregatorInstructions,
+        @JsonProperty(value = "failMode") MoaFailMode failMode,
+        @JsonProperty(value = "modelId") String modelId,
+        @JsonProperty(value = "providerName") String providerName,
+        @JsonProperty(value = "references", required = true) List<String> references,
+        @JsonProperty(value = "stripReferenceTools") Boolean stripReferenceTools) {
+        this.aggregator = aggregator;
+        this.aggregatorInstructions = aggregatorInstructions;
+        this.failMode = failMode;
+        this.modelId = modelId;
+        this.providerName = providerName;
+        this.references = references == null ? null : Collections.unmodifiableList(new ArrayList<>(references));
+        this.stripReferenceTools = stripReferenceTools;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getAggregator() { return aggregator; }
+    public String getAggregatorInstructions() { return aggregatorInstructions; }
+    public MoaFailMode getFailMode() { return failMode; }
+    public String getModelId() { return modelId; }
+    public String getProviderName() { return providerName; }
+    public List<String> getReferences() { return references; }
+    public Boolean getStripReferenceTools() { return stripReferenceTools; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String aggregator;
+        private String aggregatorInstructions;
+        private MoaFailMode failMode;
+        private String modelId;
+        private String providerName;
+        private List<String> references;
+        private Boolean stripReferenceTools;
+
+        public Builder aggregator(String value) {
+            this.aggregator = value;
+            return this;
         }
-        public Builder aggregator(String value) { json.set("aggregator", WireJson.tree(value)); return this; }
-        public Builder aggregatorInstructions(String value) { json.set("aggregatorInstructions", WireJson.tree(value)); return this; }
-        public Builder failMode(MoaFailMode value) { json.set("failMode", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder providerName(String value) { json.set("providerName", WireJson.tree(value)); return this; }
-        public Builder references(List<String> value) { json.set("references", WireJson.tree(value)); return this; }
-        public Builder stripReferenceTools(Boolean value) { json.set("stripReferenceTools", WireJson.tree(value)); return this; }
-        public MoaParams build() { return new MoaParams(json); }
+
+        public Builder aggregatorInstructions(String value) {
+            this.aggregatorInstructions = value;
+            return this;
+        }
+
+        public Builder failMode(MoaFailMode value) {
+            this.failMode = value;
+            return this;
+        }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder providerName(String value) {
+            this.providerName = value;
+            return this;
+        }
+
+        public Builder references(List<String> value) {
+            this.references = value;
+            return this;
+        }
+
+        public Builder stripReferenceTools(Boolean value) {
+            this.stripReferenceTools = value;
+            return this;
+        }
+
+        public MoaParams build() { return new MoaParams(aggregator, aggregatorInstructions, failMode, modelId, providerName, references, stripReferenceTools); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,60 +13,84 @@ import java.util.*;
  * Mirrors the OpenAI `chat.completion.chunk` object.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionChunk extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionChunk {
+    @JsonProperty("choices")
     private final List<ChatCompletionChunkChoice> choices;
-    private final BigInteger created;
+    @JsonProperty("created")
+    private final Long created;
+    @JsonProperty("id")
     private final String id;
+    @JsonProperty("model")
     private final String model;
+    @JsonProperty("object")
     private final String object;
+    @JsonProperty("usage")
     private final ChatCompletionUsage usage;
-    private final boolean hasUsage;
-    private ChatCompletionChunk(JsonNode json) {
-        WireJson.object(json, "ChatCompletionChunk", false, "choices", "created", "id", "model", "object", "usage");
-        WireJson.required(json, "choices");
-        this.choices = WireJson.array(json.get("choices"), item0 -> ChatCompletionChunkChoice.fromJson(item0));
-        WireJson.required(json, "created");
-        this.created = WireJson.integer(json.get("created"), true, 64);
-        WireJson.required(json, "id");
-        this.id = WireJson.string(json.get("id"));
-        WireJson.required(json, "model");
-        this.model = WireJson.string(json.get("model"));
-        WireJson.required(json, "object");
-        this.object = WireJson.string(json.get("object"));
-        this.hasUsage = json.has("usage");
-        this.usage = WireJson.isNull(json.get("usage")) ? null : (WireJson.isNull(json.get("usage")) ? null : ChatCompletionUsage.fromJson(json.get("usage")));
+
+    @JsonCreator
+    public ChatCompletionChunk(
+        @JsonProperty(value = "choices", required = true) List<ChatCompletionChunkChoice> choices,
+        @JsonProperty(value = "created", required = true) Long created,
+        @JsonProperty(value = "id", required = true) String id,
+        @JsonProperty(value = "model", required = true) String model,
+        @JsonProperty(value = "object", required = true) String object,
+        @JsonProperty(value = "usage") ChatCompletionUsage usage) {
+        this.choices = choices == null ? null : Collections.unmodifiableList(new ArrayList<>(choices));
+        this.created = created;
+        this.id = id;
+        this.model = model;
+        this.object = object;
+        this.usage = usage;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionChunk fromJson(JsonNode json) { return new ChatCompletionChunk(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<ChatCompletionChunkChoice> getChoices() { return choices == null ? null : WireJson.array(WireJson.tree(choices), item0 -> ChatCompletionChunkChoice.fromJson(item0)); }
-    public BigInteger getCreated() { return created == null ? null : created; }
-    public String getId() { return id == null ? null : id; }
-    public String getModel() { return model == null ? null : model; }
-    public String getObject() { return object == null ? null : object; }
-    public ChatCompletionUsage getUsage() { return usage == null ? null : (usage == null ? null : usage); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("choices", WireJson.tree(choices));
-        json.set("created", WireJson.tree(created));
-        json.set("id", WireJson.tree(id));
-        json.set("model", WireJson.tree(model));
-        json.set("object", WireJson.tree(object));
-        if (hasUsage) json.set("usage", WireJson.tree(usage));
-        return json;
-    }
+    public List<ChatCompletionChunkChoice> getChoices() { return choices; }
+    public Long getCreated() { return created; }
+    public String getId() { return id; }
+    public String getModel() { return model; }
+    public String getObject() { return object; }
+    public ChatCompletionUsage getUsage() { return usage; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<ChatCompletionChunkChoice> choices;
+        private Long created;
+        private String id;
+        private String model;
+        private String object;
+        private ChatCompletionUsage usage;
+
+        public Builder choices(List<ChatCompletionChunkChoice> value) {
+            this.choices = value;
+            return this;
         }
-        public Builder choices(List<ChatCompletionChunkChoice> value) { json.set("choices", WireJson.tree(value)); return this; }
-        public Builder created(BigInteger value) { json.set("created", WireJson.tree(value)); return this; }
-        public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-        public Builder model(String value) { json.set("model", WireJson.tree(value)); return this; }
-        public Builder object(String value) { json.set("object", WireJson.tree(value)); return this; }
-        public Builder usage(ChatCompletionUsage value) { json.set("usage", WireJson.tree(value)); return this; }
-        public ChatCompletionChunk build() { return new ChatCompletionChunk(json); }
+
+        public Builder created(Long value) {
+            this.created = value;
+            return this;
+        }
+
+        public Builder id(String value) {
+            this.id = value;
+            return this;
+        }
+
+        public Builder model(String value) {
+            this.model = value;
+            return this;
+        }
+
+        public Builder object(String value) {
+            this.object = value;
+            return this;
+        }
+
+        public Builder usage(ChatCompletionUsage value) {
+            this.usage = value;
+            return this;
+        }
+
+        public ChatCompletionChunk build() { return new ChatCompletionChunk(choices, created, id, model, object, usage); }
     }
 }
-

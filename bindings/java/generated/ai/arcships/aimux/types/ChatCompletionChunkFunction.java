@@ -4,42 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ChatCompletionChunkFunction extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ChatCompletionChunkFunction {
+    @JsonProperty("arguments")
     private final String arguments;
-    private final boolean hasArguments;
+    @JsonProperty("name")
     private final String name;
-    private final boolean hasName;
-    private ChatCompletionChunkFunction(JsonNode json) {
-        WireJson.object(json, "ChatCompletionChunkFunction", false, "arguments", "name");
-        this.hasArguments = json.has("arguments");
-        this.arguments = WireJson.isNull(json.get("arguments")) ? null : (WireJson.isNull(json.get("arguments")) ? null : WireJson.string(json.get("arguments")));
-        this.hasName = json.has("name");
-        this.name = WireJson.isNull(json.get("name")) ? null : (WireJson.isNull(json.get("name")) ? null : WireJson.string(json.get("name")));
+
+    @JsonCreator
+    public ChatCompletionChunkFunction(
+        @JsonProperty(value = "arguments") String arguments,
+        @JsonProperty(value = "name") String name) {
+        this.arguments = arguments;
+        this.name = name;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ChatCompletionChunkFunction fromJson(JsonNode json) { return new ChatCompletionChunkFunction(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getArguments() { return arguments == null ? null : (arguments == null ? null : arguments); }
-    public String getName() { return name == null ? null : (name == null ? null : name); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasArguments) json.set("arguments", WireJson.tree(arguments));
-        if (hasName) json.set("name", WireJson.tree(name));
-        return json;
-    }
+    public String getArguments() { return arguments; }
+    public String getName() { return name; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String arguments;
+        private String name;
+
+        public Builder arguments(String value) {
+            this.arguments = value;
+            return this;
         }
-        public Builder arguments(String value) { json.set("arguments", WireJson.tree(value)); return this; }
-        public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-        public ChatCompletionChunkFunction build() { return new ChatCompletionChunkFunction(json); }
+
+        public Builder name(String value) {
+            this.name = value;
+            return this;
+        }
+
+        public ChatCompletionChunkFunction build() { return new ChatCompletionChunkFunction(arguments, name); }
     }
 }
-

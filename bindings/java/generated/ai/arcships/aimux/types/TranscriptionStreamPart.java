@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,7 +12,8 @@ import java.util.*;
  * 
  * Aligned with V4 `TranscriptionModelV4StreamPart`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = TranscriptionStreamPart.StreamStart.class, name = "stream-start"),
     @JsonSubTypes.Type(value = TranscriptionStreamPart.TranscriptDelta.class, name = "transcript-delta"),
@@ -22,10 +22,14 @@ import java.util.*;
     @JsonSubTypes.Type(value = TranscriptionStreamPart.ResponseMetadata.class, name = "response-metadata"),
     @JsonSubTypes.Type(value = TranscriptionStreamPart.Finish.class, name = "finish"),
     @JsonSubTypes.Type(value = TranscriptionStreamPart.Raw.class, name = "raw"),
-    @JsonSubTypes.Type(value = TranscriptionStreamPart.Error.class, name = "error"),
+    @JsonSubTypes.Type(value = TranscriptionStreamPart.Error.class, name = "error")
 })
-public abstract class TranscriptionStreamPart extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class TranscriptionStreamPart {
     private TranscriptionStreamPart() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public List<Warning> getWarnings() { return null; }
     public String getDelta() { return null; }
@@ -52,410 +56,492 @@ public abstract class TranscriptionStreamPart extends WireValue {
     public final boolean isTranscriptDelta() { return "transcript-delta".equals(getType()); }
     public final boolean isTranscriptFinal() { return "transcript-final".equals(getType()); }
     public final boolean isTranscriptPartial() { return "transcript-partial".equals(getType()); }
-    public static TranscriptionStreamPart fromJson(JsonNode json) {
-        WireJson.object(json, "TranscriptionStreamPart", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "error":
-                return Error.fromJson(json);
-            case "finish":
-                return Finish.fromJson(json);
-            case "raw":
-                return Raw.fromJson(json);
-            case "response-metadata":
-                return ResponseMetadata.fromJson(json);
-            case "stream-start":
-                return StreamStart.fromJson(json);
-            case "transcript-delta":
-                return TranscriptDelta.fromJson(json);
-            case "transcript-final":
-                return TranscriptFinal.fromJson(json);
-            case "transcript-partial":
-                return TranscriptPartial.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown TranscriptionStreamPart tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class StreamStart extends TranscriptionStreamPart {
+        @JsonProperty("warnings")
         private final List<Warning> warnings;
-        private StreamStart(JsonNode json) {
-            WireJson.object(json, "StreamStart", false, "warnings", "type");
-            if (!"stream-start".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid StreamStart tag");
-            WireJson.required(json, "warnings");
-            this.warnings = WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0));
+
+        @JsonCreator
+        public StreamStart(
+            @JsonProperty(value = "warnings", required = true) List<Warning> warnings) {
+            this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static StreamStart fromJson(JsonNode json) { return new StreamStart(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "stream-start"; }
-        public List<Warning> getWarnings() { return warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "stream-start");
-            json.set("warnings", WireJson.tree(warnings));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "stream-start"; }
+        public List<Warning> getWarnings() { return warnings; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "stream-start");
+            private List<Warning> warnings;
+
+            public Builder warnings(List<Warning> value) {
+                this.warnings = value;
+                return this;
             }
-            public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-            public StreamStart build() { return new StreamStart(json); }
+
+            public StreamStart build() { return new StreamStart(warnings); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class TranscriptDelta extends TranscriptionStreamPart {
+        @JsonProperty("delta")
         private final String delta;
+        @JsonProperty("id")
         private final String id;
-        private final boolean hasId;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private TranscriptDelta(JsonNode json) {
-            WireJson.object(json, "TranscriptDelta", false, "delta", "id", "providerMetadata", "type");
-            if (!"transcript-delta".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid TranscriptDelta tag");
-            WireJson.required(json, "delta");
-            this.delta = WireJson.string(json.get("delta"));
-            this.hasId = json.has("id");
-            this.id = WireJson.isNull(json.get("id")) ? null : (WireJson.isNull(json.get("id")) ? null : WireJson.string(json.get("id")));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public TranscriptDelta(
+            @JsonProperty(value = "delta", required = true) String delta,
+            @JsonProperty(value = "id") String id,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata) {
+            this.delta = delta;
+            this.id = id;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static TranscriptDelta fromJson(JsonNode json) { return new TranscriptDelta(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "transcript-delta"; }
-        public String getDelta() { return delta == null ? null : delta; }
-        public String getId() { return id == null ? null : (id == null ? null : id); }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "transcript-delta");
-            json.set("delta", WireJson.tree(delta));
-            if (hasId) json.set("id", WireJson.tree(id));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "transcript-delta"; }
+        public String getDelta() { return delta; }
+        public String getId() { return id; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "transcript-delta");
+            private String delta;
+            private String id;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+
+            public Builder delta(String value) {
+                this.delta = value;
+                return this;
             }
-            public Builder delta(String value) { json.set("delta", WireJson.tree(value)); return this; }
-            public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public TranscriptDelta build() { return new TranscriptDelta(json); }
+
+            public Builder id(String value) {
+                this.id = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public TranscriptDelta build() { return new TranscriptDelta(delta, id, providerMetadata); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class TranscriptPartial extends TranscriptionStreamPart {
+        @JsonProperty("channelIndex")
         private final Long channelIndex;
-        private final boolean hasChannelIndex;
+        @JsonProperty("durationInSeconds")
         private final BigDecimal durationInSeconds;
-        private final boolean hasDurationInSeconds;
+        @JsonProperty("id")
         private final String id;
-        private final boolean hasId;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("startSecond")
         private final BigDecimal startSecond;
-        private final boolean hasStartSecond;
+        @JsonProperty("text")
         private final String text;
-        private TranscriptPartial(JsonNode json) {
-            WireJson.object(json, "TranscriptPartial", false, "channelIndex", "durationInSeconds", "id", "providerMetadata", "startSecond", "text", "type");
-            if (!"transcript-partial".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid TranscriptPartial tag");
-            this.hasChannelIndex = json.has("channelIndex");
-            this.channelIndex = WireJson.isNull(json.get("channelIndex")) ? null : (WireJson.isNull(json.get("channelIndex")) ? null : WireJson.integer(json.get("channelIndex"), true, 32).longValue());
-            this.hasDurationInSeconds = json.has("durationInSeconds");
-            this.durationInSeconds = WireJson.isNull(json.get("durationInSeconds")) ? null : (WireJson.isNull(json.get("durationInSeconds")) ? null : WireJson.number(json.get("durationInSeconds")));
-            this.hasId = json.has("id");
-            this.id = WireJson.isNull(json.get("id")) ? null : (WireJson.isNull(json.get("id")) ? null : WireJson.string(json.get("id")));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            this.hasStartSecond = json.has("startSecond");
-            this.startSecond = WireJson.isNull(json.get("startSecond")) ? null : (WireJson.isNull(json.get("startSecond")) ? null : WireJson.number(json.get("startSecond")));
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
+
+        @JsonCreator
+        public TranscriptPartial(
+            @JsonProperty(value = "channelIndex") Long channelIndex,
+            @JsonProperty(value = "durationInSeconds") BigDecimal durationInSeconds,
+            @JsonProperty(value = "id") String id,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "startSecond") BigDecimal startSecond,
+            @JsonProperty(value = "text", required = true) String text) {
+            this.channelIndex = channelIndex;
+            this.durationInSeconds = durationInSeconds;
+            this.id = id;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.startSecond = startSecond;
+            this.text = text;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static TranscriptPartial fromJson(JsonNode json) { return new TranscriptPartial(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "transcript-partial"; }
-        public Long getChannelIndex() { return channelIndex == null ? null : (channelIndex == null ? null : channelIndex); }
-        public BigDecimal getDurationInSeconds() { return durationInSeconds == null ? null : (durationInSeconds == null ? null : durationInSeconds); }
-        public String getId() { return id == null ? null : (id == null ? null : id); }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public BigDecimal getStartSecond() { return startSecond == null ? null : (startSecond == null ? null : startSecond); }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "transcript-partial");
-            if (hasChannelIndex) json.set("channelIndex", WireJson.tree(channelIndex));
-            if (hasDurationInSeconds) json.set("durationInSeconds", WireJson.tree(durationInSeconds));
-            if (hasId) json.set("id", WireJson.tree(id));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            if (hasStartSecond) json.set("startSecond", WireJson.tree(startSecond));
-            json.set("text", WireJson.tree(text));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "transcript-partial"; }
+        public Long getChannelIndex() { return channelIndex; }
+        public BigDecimal getDurationInSeconds() { return durationInSeconds; }
+        public String getId() { return id; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public BigDecimal getStartSecond() { return startSecond; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "transcript-partial");
+            private Long channelIndex;
+            private BigDecimal durationInSeconds;
+            private String id;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private BigDecimal startSecond;
+            private String text;
+
+            public Builder channelIndex(Long value) {
+                this.channelIndex = value;
+                return this;
             }
-            public Builder channelIndex(Long value) { json.set("channelIndex", WireJson.tree(value)); return this; }
-            public Builder durationInSeconds(BigDecimal value) { json.set("durationInSeconds", WireJson.tree(value)); return this; }
-            public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder startSecond(BigDecimal value) { json.set("startSecond", WireJson.tree(value)); return this; }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public TranscriptPartial build() { return new TranscriptPartial(json); }
+
+            public Builder durationInSeconds(BigDecimal value) {
+                this.durationInSeconds = value;
+                return this;
+            }
+
+            public Builder id(String value) {
+                this.id = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder startSecond(BigDecimal value) {
+                this.startSecond = value;
+                return this;
+            }
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
+            }
+
+            public TranscriptPartial build() { return new TranscriptPartial(channelIndex, durationInSeconds, id, providerMetadata, startSecond, text); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class TranscriptFinal extends TranscriptionStreamPart {
+        @JsonProperty("channelIndex")
         private final Long channelIndex;
-        private final boolean hasChannelIndex;
+        @JsonProperty("endSecond")
         private final BigDecimal endSecond;
-        private final boolean hasEndSecond;
+        @JsonProperty("id")
         private final String id;
-        private final boolean hasId;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("startSecond")
         private final BigDecimal startSecond;
-        private final boolean hasStartSecond;
+        @JsonProperty("text")
         private final String text;
-        private TranscriptFinal(JsonNode json) {
-            WireJson.object(json, "TranscriptFinal", false, "channelIndex", "endSecond", "id", "providerMetadata", "startSecond", "text", "type");
-            if (!"transcript-final".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid TranscriptFinal tag");
-            this.hasChannelIndex = json.has("channelIndex");
-            this.channelIndex = WireJson.isNull(json.get("channelIndex")) ? null : (WireJson.isNull(json.get("channelIndex")) ? null : WireJson.integer(json.get("channelIndex"), true, 32).longValue());
-            this.hasEndSecond = json.has("endSecond");
-            this.endSecond = WireJson.isNull(json.get("endSecond")) ? null : (WireJson.isNull(json.get("endSecond")) ? null : WireJson.number(json.get("endSecond")));
-            this.hasId = json.has("id");
-            this.id = WireJson.isNull(json.get("id")) ? null : (WireJson.isNull(json.get("id")) ? null : WireJson.string(json.get("id")));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            this.hasStartSecond = json.has("startSecond");
-            this.startSecond = WireJson.isNull(json.get("startSecond")) ? null : (WireJson.isNull(json.get("startSecond")) ? null : WireJson.number(json.get("startSecond")));
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
+
+        @JsonCreator
+        public TranscriptFinal(
+            @JsonProperty(value = "channelIndex") Long channelIndex,
+            @JsonProperty(value = "endSecond") BigDecimal endSecond,
+            @JsonProperty(value = "id") String id,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "startSecond") BigDecimal startSecond,
+            @JsonProperty(value = "text", required = true) String text) {
+            this.channelIndex = channelIndex;
+            this.endSecond = endSecond;
+            this.id = id;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.startSecond = startSecond;
+            this.text = text;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static TranscriptFinal fromJson(JsonNode json) { return new TranscriptFinal(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "transcript-final"; }
-        public Long getChannelIndex() { return channelIndex == null ? null : (channelIndex == null ? null : channelIndex); }
-        public BigDecimal getEndSecond() { return endSecond == null ? null : (endSecond == null ? null : endSecond); }
-        public String getId() { return id == null ? null : (id == null ? null : id); }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public BigDecimal getStartSecond() { return startSecond == null ? null : (startSecond == null ? null : startSecond); }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "transcript-final");
-            if (hasChannelIndex) json.set("channelIndex", WireJson.tree(channelIndex));
-            if (hasEndSecond) json.set("endSecond", WireJson.tree(endSecond));
-            if (hasId) json.set("id", WireJson.tree(id));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            if (hasStartSecond) json.set("startSecond", WireJson.tree(startSecond));
-            json.set("text", WireJson.tree(text));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "transcript-final"; }
+        public Long getChannelIndex() { return channelIndex; }
+        public BigDecimal getEndSecond() { return endSecond; }
+        public String getId() { return id; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public BigDecimal getStartSecond() { return startSecond; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "transcript-final");
+            private Long channelIndex;
+            private BigDecimal endSecond;
+            private String id;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private BigDecimal startSecond;
+            private String text;
+
+            public Builder channelIndex(Long value) {
+                this.channelIndex = value;
+                return this;
             }
-            public Builder channelIndex(Long value) { json.set("channelIndex", WireJson.tree(value)); return this; }
-            public Builder endSecond(BigDecimal value) { json.set("endSecond", WireJson.tree(value)); return this; }
-            public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder startSecond(BigDecimal value) { json.set("startSecond", WireJson.tree(value)); return this; }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public TranscriptFinal build() { return new TranscriptFinal(json); }
+
+            public Builder endSecond(BigDecimal value) {
+                this.endSecond = value;
+                return this;
+            }
+
+            public Builder id(String value) {
+                this.id = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder startSecond(BigDecimal value) {
+                this.startSecond = value;
+                return this;
+            }
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
+            }
+
+            public TranscriptFinal build() { return new TranscriptFinal(channelIndex, endSecond, id, providerMetadata, startSecond, text); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ResponseMetadata extends TranscriptionStreamPart {
-        private final JsonNode body;
-        private final boolean hasBody;
+        @JsonProperty("body")
+        @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+        private final FieldPresence<JsonNode> body;
+        @JsonProperty("headers")
         private final Map<String, String> headers;
-        private final boolean hasHeaders;
+        @JsonProperty("modelId")
         private final String modelId;
-        private final boolean hasModelId;
+        @JsonProperty("timestamp")
         private final Timestamp timestamp;
-        private final boolean hasTimestamp;
-        private ResponseMetadata(JsonNode json) {
-            WireJson.object(json, "ResponseMetadata", false, "body", "headers", "modelId", "timestamp", "type");
-            if (!"response-metadata".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ResponseMetadata tag");
-            this.hasBody = json.has("body");
-            this.body = WireJson.isNull(json.get("body")) ? null : WireJson.json(json.get("body"));
-            this.hasHeaders = json.has("headers");
-            this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-            this.hasModelId = json.has("modelId");
-            this.modelId = WireJson.isNull(json.get("modelId")) ? null : (WireJson.isNull(json.get("modelId")) ? null : WireJson.string(json.get("modelId")));
-            this.hasTimestamp = json.has("timestamp");
-            this.timestamp = WireJson.isNull(json.get("timestamp")) ? null : (WireJson.isNull(json.get("timestamp")) ? null : Timestamp.fromJson(json.get("timestamp")));
+
+        @JsonCreator
+        public ResponseMetadata(
+            @JsonProperty(value = "body") FieldPresence<JsonNode> body,
+            @JsonProperty(value = "headers") Map<String, String> headers,
+            @JsonProperty(value = "modelId") String modelId,
+            @JsonProperty(value = "timestamp") Timestamp timestamp) {
+            this.body = body == null ? FieldPresence.absent() : body;
+            this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+            this.modelId = modelId;
+            this.timestamp = timestamp;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ResponseMetadata fromJson(JsonNode json) { return new ResponseMetadata(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "response-metadata"; }
-        public JsonNode getBody() { return body == null ? null : WireJson.json(WireJson.tree(body)); }
-        public boolean hasBody() { return hasBody; }
-        public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
-        public String getModelId() { return modelId == null ? null : (modelId == null ? null : modelId); }
-        public Timestamp getTimestamp() { return timestamp == null ? null : (timestamp == null ? null : timestamp); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "response-metadata");
-            if (hasBody) json.set("body", WireJson.tree(body));
-            if (hasHeaders) json.set("headers", WireJson.tree(headers));
-            if (hasModelId) json.set("modelId", WireJson.tree(modelId));
-            if (hasTimestamp) json.set("timestamp", WireJson.tree(timestamp));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "response-metadata"; }
+        public JsonNode getBody() { return body.getValue() == null ? null : body.getValue().deepCopy(); }
+        public boolean hasBody() { return body.isPresent(); }
+        public Map<String, String> getHeaders() { return headers; }
+        public String getModelId() { return modelId; }
+        public Timestamp getTimestamp() { return timestamp; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "response-metadata");
+            private FieldPresence<JsonNode> body = FieldPresence.absent();
+            private Map<String, String> headers;
+            private String modelId;
+            private Timestamp timestamp;
+
+            public Builder body(JsonNode value) {
+                this.body = FieldPresence.of(value == null ? null : value.deepCopy());
+                return this;
             }
-            public Builder body(JsonNode value) { json.set("body", WireJson.tree(value)); return this; }
-            public Builder omitBody() { json.remove("body"); return this; }
-            public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-            public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-            public Builder timestamp(Timestamp value) { json.set("timestamp", WireJson.tree(value)); return this; }
-            public ResponseMetadata build() { return new ResponseMetadata(json); }
+
+            public Builder omitBody() {
+                this.body = FieldPresence.absent();
+                return this;
+            }
+
+            public Builder headers(Map<String, String> value) {
+                this.headers = value;
+                return this;
+            }
+
+            public Builder modelId(String value) {
+                this.modelId = value;
+                return this;
+            }
+
+            public Builder timestamp(Timestamp value) {
+                this.timestamp = value;
+                return this;
+            }
+
+            public ResponseMetadata build() { return new ResponseMetadata(body, headers, modelId, timestamp); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Finish extends TranscriptionStreamPart {
+        @JsonProperty("durationInSeconds")
         private final BigDecimal durationInSeconds;
-        private final boolean hasDurationInSeconds;
+        @JsonProperty("language")
         private final String language;
-        private final boolean hasLanguage;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("segments")
         private final List<TranscriptionSegment> segments;
+        @JsonProperty("text")
         private final String text;
-        private Finish(JsonNode json) {
-            WireJson.object(json, "Finish", false, "durationInSeconds", "language", "providerMetadata", "segments", "text", "type");
-            if (!"finish".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Finish tag");
-            this.hasDurationInSeconds = json.has("durationInSeconds");
-            this.durationInSeconds = WireJson.isNull(json.get("durationInSeconds")) ? null : (WireJson.isNull(json.get("durationInSeconds")) ? null : WireJson.number(json.get("durationInSeconds")));
-            this.hasLanguage = json.has("language");
-            this.language = WireJson.isNull(json.get("language")) ? null : (WireJson.isNull(json.get("language")) ? null : WireJson.string(json.get("language")));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "segments");
-            this.segments = WireJson.array(json.get("segments"), item0 -> TranscriptionSegment.fromJson(item0));
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
+
+        @JsonCreator
+        public Finish(
+            @JsonProperty(value = "durationInSeconds") BigDecimal durationInSeconds,
+            @JsonProperty(value = "language") String language,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "segments", required = true) List<TranscriptionSegment> segments,
+            @JsonProperty(value = "text", required = true) String text) {
+            this.durationInSeconds = durationInSeconds;
+            this.language = language;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.segments = segments == null ? null : Collections.unmodifiableList(new ArrayList<>(segments));
+            this.text = text;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Finish fromJson(JsonNode json) { return new Finish(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "finish"; }
-        public BigDecimal getDurationInSeconds() { return durationInSeconds == null ? null : (durationInSeconds == null ? null : durationInSeconds); }
-        public String getLanguage() { return language == null ? null : (language == null ? null : language); }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public List<TranscriptionSegment> getSegments() { return segments == null ? null : WireJson.array(WireJson.tree(segments), item0 -> TranscriptionSegment.fromJson(item0)); }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "finish");
-            if (hasDurationInSeconds) json.set("durationInSeconds", WireJson.tree(durationInSeconds));
-            if (hasLanguage) json.set("language", WireJson.tree(language));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("segments", WireJson.tree(segments));
-            json.set("text", WireJson.tree(text));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "finish"; }
+        public BigDecimal getDurationInSeconds() { return durationInSeconds; }
+        public String getLanguage() { return language; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public List<TranscriptionSegment> getSegments() { return segments; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "finish");
+            private BigDecimal durationInSeconds;
+            private String language;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private List<TranscriptionSegment> segments;
+            private String text;
+
+            public Builder durationInSeconds(BigDecimal value) {
+                this.durationInSeconds = value;
+                return this;
             }
-            public Builder durationInSeconds(BigDecimal value) { json.set("durationInSeconds", WireJson.tree(value)); return this; }
-            public Builder language(String value) { json.set("language", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder segments(List<TranscriptionSegment> value) { json.set("segments", WireJson.tree(value)); return this; }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public Finish build() { return new Finish(json); }
+
+            public Builder language(String value) {
+                this.language = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder segments(List<TranscriptionSegment> value) {
+                this.segments = value;
+                return this;
+            }
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
+            }
+
+            public Finish build() { return new Finish(durationInSeconds, language, providerMetadata, segments, text); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Raw extends TranscriptionStreamPart {
+        @JsonProperty("rawValue")
         private final JsonNode rawValue;
-        private Raw(JsonNode json) {
-            WireJson.object(json, "Raw", false, "rawValue", "type");
-            if (!"raw".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Raw tag");
-            WireJson.required(json, "rawValue");
-            this.rawValue = WireJson.json(json.get("rawValue"));
+
+        @JsonCreator
+        public Raw(
+            @JsonProperty(value = "rawValue", required = true) JsonNode rawValue) {
+            this.rawValue = rawValue == null ? null : rawValue.deepCopy();
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Raw fromJson(JsonNode json) { return new Raw(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "raw"; }
-        public JsonNode getRawValue() { return rawValue == null ? null : WireJson.json(WireJson.tree(rawValue)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "raw");
-            json.set("rawValue", WireJson.tree(rawValue));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "raw"; }
+        public JsonNode getRawValue() { return rawValue == null ? null : rawValue.deepCopy(); }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "raw");
+            private JsonNode rawValue;
+
+            public Builder rawValue(JsonNode value) {
+                this.rawValue = value;
+                return this;
             }
-            public Builder rawValue(JsonNode value) { json.set("rawValue", WireJson.tree(value)); return this; }
-            public Raw build() { return new Raw(json); }
+
+            public Raw build() { return new Raw(rawValue); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Error extends TranscriptionStreamPart {
+        @JsonProperty("error")
         private final JsonNode error;
-        private Error(JsonNode json) {
-            WireJson.object(json, "Error", false, "error", "type");
-            if (!"error".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Error tag");
-            WireJson.required(json, "error");
-            this.error = WireJson.json(json.get("error"));
+
+        @JsonCreator
+        public Error(
+            @JsonProperty(value = "error", required = true) JsonNode error) {
+            this.error = error == null ? null : error.deepCopy();
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Error fromJson(JsonNode json) { return new Error(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "error"; }
-        public JsonNode getError() { return error == null ? null : WireJson.json(WireJson.tree(error)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "error");
-            json.set("error", WireJson.tree(error));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "error"; }
+        public JsonNode getError() { return error == null ? null : error.deepCopy(); }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "error");
+            private JsonNode error;
+
+            public Builder error(JsonNode value) {
+                this.error = value;
+                return this;
             }
-            public Builder error(JsonNode value) { json.set("error", WireJson.tree(value)); return this; }
-            public Error build() { return new Error(json); }
+
+            public Error build() { return new Error(error); }
         }
     }
-
 }

@@ -4,28 +4,21 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class EmptyParams2 extends WireValue {
-    private EmptyParams2(JsonNode json) {
-        WireJson.object(json, "EmptyParams2", true);
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static EmptyParams2 fromJson(JsonNode json) { return new EmptyParams2(json); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class EmptyParams2 {
+
+    @JsonCreator
+    public EmptyParams2() {}
+
     public static Builder builder() { return new Builder(); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        return json;
-    }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
-        }
-        public EmptyParams2 build() { return new EmptyParams2(json); }
+
+        public EmptyParams2 build() { return new EmptyParams2(); }
     }
 }
-

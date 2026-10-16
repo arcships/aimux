@@ -10,7 +10,7 @@ public final class ToolCallRepairs {
     private ToolCallRepairs() {}
     public static ToolRepairContextResult context(Aimux aimux, ToolRepairContextRequest request) {
         // A null result denotes a call that does not need repair.
-        return ToolRepairContextResult.fromJson(aimux.call(AimuxOps.OP_TOOL_REPAIR_CONTEXT, request.toString()));
+        return DtoJson.decode(aimux.call(AimuxOps.OP_TOOL_REPAIR_CONTEXT, DtoJson.stringify(request)), ToolRepairContextResult.class);
     }
     public static ToolCall apply(Aimux aimux, ToolRepairApplyRequest request) {
         return aimux.call(AimuxOps.OP_TOOL_REPAIR_APPLY, request, ToolCall.class);

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,43 +13,46 @@ import java.util.*;
  * belong to the operation, as upstream: a video model has none of its own.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class VideoPollOptions extends WireValue {
-    private final BigInteger intervalMs;
-    private final boolean hasIntervalMs;
-    private final BigInteger timeoutMs;
-    private final boolean hasTimeoutMs;
-    private VideoPollOptions(JsonNode json) {
-        WireJson.object(json, "VideoPollOptions", false, "intervalMs", "timeoutMs");
-        this.hasIntervalMs = json.has("intervalMs");
-        this.intervalMs = WireJson.isNull(json.get("intervalMs")) ? null : (WireJson.isNull(json.get("intervalMs")) ? null : WireJson.integer(json.get("intervalMs"), true, 64));
-        this.hasTimeoutMs = json.has("timeoutMs");
-        this.timeoutMs = WireJson.isNull(json.get("timeoutMs")) ? null : (WireJson.isNull(json.get("timeoutMs")) ? null : WireJson.integer(json.get("timeoutMs"), true, 64));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static VideoPollOptions fromJson(JsonNode json) { return new VideoPollOptions(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class VideoPollOptions {
     /**
      * Delay between consecutive status checks, in milliseconds.
      */
-    public BigInteger getIntervalMs() { return intervalMs == null ? null : (intervalMs == null ? null : intervalMs); }
+    @JsonProperty("intervalMs")
+    private final Long intervalMs;
     /**
      * Maximum total time to wait for completion, in milliseconds.
      */
-    public BigInteger getTimeoutMs() { return timeoutMs == null ? null : (timeoutMs == null ? null : timeoutMs); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasIntervalMs) json.set("intervalMs", WireJson.tree(intervalMs));
-        if (hasTimeoutMs) json.set("timeoutMs", WireJson.tree(timeoutMs));
-        return json;
+    @JsonProperty("timeoutMs")
+    private final Long timeoutMs;
+
+    @JsonCreator
+    public VideoPollOptions(
+        @JsonProperty(value = "intervalMs") Long intervalMs,
+        @JsonProperty(value = "timeoutMs") Long timeoutMs) {
+        this.intervalMs = intervalMs;
+        this.timeoutMs = timeoutMs;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getIntervalMs() { return intervalMs; }
+    public Long getTimeoutMs() { return timeoutMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long intervalMs;
+        private Long timeoutMs;
+
+        public Builder intervalMs(Long value) {
+            this.intervalMs = value;
+            return this;
         }
-        public Builder intervalMs(BigInteger value) { json.set("intervalMs", WireJson.tree(value)); return this; }
-        public Builder timeoutMs(BigInteger value) { json.set("timeoutMs", WireJson.tree(value)); return this; }
-        public VideoPollOptions build() { return new VideoPollOptions(json); }
+
+        public Builder timeoutMs(Long value) {
+            this.timeoutMs = value;
+            return this;
+        }
+
+        public VideoPollOptions build() { return new VideoPollOptions(intervalMs, timeoutMs); }
     }
 }
-

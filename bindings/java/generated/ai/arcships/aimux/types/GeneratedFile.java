@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -18,45 +17,54 @@ import java.util.*;
  * provider's URL file before it builds one (`resolve-generated-file-data.ts`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class GeneratedFile extends WireValue {
-    private final FileBytes base64;
-    private final String mediaType;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private GeneratedFile(JsonNode json) {
-        WireJson.object(json, "GeneratedFile", false, "base64", "mediaType", "providerMetadata");
-        WireJson.required(json, "base64");
-        this.base64 = FileBytes.fromJson(json.get("base64"));
-        WireJson.required(json, "mediaType");
-        this.mediaType = WireJson.string(json.get("mediaType"));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static GeneratedFile fromJson(JsonNode json) { return new GeneratedFile(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class GeneratedFile {
     /**
      * The file's bytes, `base64` in the JSON.
      */
-    public FileBytes getBase64() { return base64 == null ? null : base64; }
-    public String getMediaType() { return mediaType == null ? null : mediaType; }
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("base64", WireJson.tree(base64));
-        json.set("mediaType", WireJson.tree(mediaType));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        return json;
+    @JsonProperty("base64")
+    private final FileBytes base64;
+    @JsonProperty("mediaType")
+    private final String mediaType;
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
+
+    @JsonCreator
+    public GeneratedFile(
+        @JsonProperty(value = "base64", required = true) FileBytes base64,
+        @JsonProperty(value = "mediaType", required = true) String mediaType,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata) {
+        this.base64 = base64;
+        this.mediaType = mediaType;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public FileBytes getBase64() { return base64; }
+    public String getMediaType() { return mediaType; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FileBytes base64;
+        private String mediaType;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+
+        public Builder base64(FileBytes value) {
+            this.base64 = value;
+            return this;
         }
-        public Builder base64(FileBytes value) { json.set("base64", WireJson.tree(value)); return this; }
-        public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public GeneratedFile build() { return new GeneratedFile(json); }
+
+        public Builder mediaType(String value) {
+            this.mediaType = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public GeneratedFile build() { return new GeneratedFile(base64, mediaType, providerMetadata); }
     }
 }
-

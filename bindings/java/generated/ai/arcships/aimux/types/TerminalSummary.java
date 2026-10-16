@@ -4,41 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TerminalSummary extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TerminalSummary {
+    @JsonProperty("error")
     private final ErrorEnvelope error;
-    private final boolean hasError;
+    @JsonProperty("outcome")
     private final OperationOutcome outcome;
-    private TerminalSummary(JsonNode json) {
-        WireJson.object(json, "TerminalSummary", false, "error", "outcome");
-        this.hasError = json.has("error");
-        this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : ErrorEnvelope.fromJson(json.get("error")));
-        WireJson.required(json, "outcome");
-        this.outcome = OperationOutcome.fromJson(json.get("outcome"));
+
+    @JsonCreator
+    public TerminalSummary(
+        @JsonProperty(value = "error") ErrorEnvelope error,
+        @JsonProperty(value = "outcome", required = true) OperationOutcome outcome) {
+        this.error = error;
+        this.outcome = outcome;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TerminalSummary fromJson(JsonNode json) { return new TerminalSummary(json); }
+
     public static Builder builder() { return new Builder(); }
-    public ErrorEnvelope getError() { return error == null ? null : (error == null ? null : error); }
-    public OperationOutcome getOutcome() { return outcome == null ? null : outcome; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasError) json.set("error", WireJson.tree(error));
-        json.set("outcome", WireJson.tree(outcome));
-        return json;
-    }
+    public ErrorEnvelope getError() { return error; }
+    public OperationOutcome getOutcome() { return outcome; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private ErrorEnvelope error;
+        private OperationOutcome outcome;
+
+        public Builder error(ErrorEnvelope value) {
+            this.error = value;
+            return this;
         }
-        public Builder error(ErrorEnvelope value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder outcome(OperationOutcome value) { json.set("outcome", WireJson.tree(value)); return this; }
-        public TerminalSummary build() { return new TerminalSummary(json); }
+
+        public Builder outcome(OperationOutcome value) {
+            this.outcome = value;
+            return this;
+        }
+
+        public TerminalSummary build() { return new TerminalSummary(error, outcome); }
     }
 }
-

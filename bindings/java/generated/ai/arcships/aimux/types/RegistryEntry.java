@@ -4,40 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RegistryEntry extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RegistryEntry {
+    @JsonProperty("key")
     private final String key;
+    @JsonProperty("provider")
     private final String provider;
-    private RegistryEntry(JsonNode json) {
-        WireJson.object(json, "RegistryEntry", true, "key", "provider");
-        WireJson.required(json, "key");
-        this.key = WireJson.string(json.get("key"));
-        WireJson.required(json, "provider");
-        this.provider = WireJson.string(json.get("provider"));
+
+    @JsonCreator
+    public RegistryEntry(
+        @JsonProperty(value = "key", required = true) String key,
+        @JsonProperty(value = "provider", required = true) String provider) {
+        this.key = key;
+        this.provider = provider;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RegistryEntry fromJson(JsonNode json) { return new RegistryEntry(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getKey() { return key == null ? null : key; }
-    public String getProvider() { return provider == null ? null : provider; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("key", WireJson.tree(key));
-        json.set("provider", WireJson.tree(provider));
-        return json;
-    }
+    public String getKey() { return key; }
+    public String getProvider() { return provider; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String key;
+        private String provider;
+
+        public Builder key(String value) {
+            this.key = value;
+            return this;
         }
-        public Builder key(String value) { json.set("key", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public RegistryEntry build() { return new RegistryEntry(json); }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public RegistryEntry build() { return new RegistryEntry(key, provider); }
     }
 }
-

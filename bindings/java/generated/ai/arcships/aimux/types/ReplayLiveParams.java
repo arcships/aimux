@@ -4,47 +4,55 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReplayLiveParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReplayLiveParams {
+    @JsonProperty("abort")
     private final HandleIdInput abort;
-    private final boolean hasAbort;
+    @JsonProperty("callId")
     private final String callId;
+    @JsonProperty("target")
     private final LiveTarget target;
-    private ReplayLiveParams(JsonNode json) {
-        WireJson.object(json, "ReplayLiveParams", true, "abort", "callId", "target");
-        this.hasAbort = json.has("abort");
-        this.abort = WireJson.isNull(json.get("abort")) ? null : (WireJson.isNull(json.get("abort")) ? null : HandleIdInput.fromJson(json.get("abort")));
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        WireJson.required(json, "target");
-        this.target = LiveTarget.fromJson(json.get("target"));
+
+    @JsonCreator
+    public ReplayLiveParams(
+        @JsonProperty(value = "abort") HandleIdInput abort,
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "target", required = true) LiveTarget target) {
+        this.abort = abort;
+        this.callId = callId;
+        this.target = target;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReplayLiveParams fromJson(JsonNode json) { return new ReplayLiveParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public HandleIdInput getAbort() { return abort == null ? null : (abort == null ? null : abort); }
-    public String getCallId() { return callId == null ? null : callId; }
-    public LiveTarget getTarget() { return target == null ? null : target; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAbort) json.set("abort", WireJson.tree(abort));
-        json.set("callId", WireJson.tree(callId));
-        json.set("target", WireJson.tree(target));
-        return json;
-    }
+    public HandleIdInput getAbort() { return abort; }
+    public String getCallId() { return callId; }
+    public LiveTarget getTarget() { return target; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private HandleIdInput abort;
+        private String callId;
+        private LiveTarget target;
+
+        public Builder abort(HandleIdInput value) {
+            this.abort = value;
+            return this;
         }
-        public Builder abort(HandleIdInput value) { json.set("abort", WireJson.tree(value)); return this; }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder target(LiveTarget value) { json.set("target", WireJson.tree(value)); return this; }
-        public ReplayLiveParams build() { return new ReplayLiveParams(json); }
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
+        }
+
+        public Builder target(LiveTarget value) {
+            this.target = value;
+            return this;
+        }
+
+        public ReplayLiveParams build() { return new ReplayLiveParams(abort, callId, target); }
     }
 }
-

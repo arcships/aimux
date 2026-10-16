@@ -4,80 +4,96 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * One step of a session's cache-hit trajectory (RFC-0024 §4.3).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SessionStepStat extends WireValue {
-    private final String callId;
-    private final String error;
-    private final boolean hasError;
-    private final BigDecimal hitRate;
-    private final boolean hasHitRate;
-    private final Long step;
-    private final Verdict verdict;
-    private final boolean hasVerdict;
-    private SessionStepStat(JsonNode json) {
-        WireJson.object(json, "SessionStepStat", false, "callId", "error", "hitRate", "step", "verdict");
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        this.hasError = json.has("error");
-        this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : WireJson.string(json.get("error")));
-        this.hasHitRate = json.has("hitRate");
-        this.hitRate = WireJson.isNull(json.get("hitRate")) ? null : (WireJson.isNull(json.get("hitRate")) ? null : WireJson.number(json.get("hitRate")));
-        WireJson.required(json, "step");
-        this.step = WireJson.integer(json.get("step"), true, 32).longValue();
-        this.hasVerdict = json.has("verdict");
-        this.verdict = WireJson.isNull(json.get("verdict")) ? null : (WireJson.isNull(json.get("verdict")) ? null : Verdict.fromJson(json.get("verdict")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SessionStepStat fromJson(JsonNode json) { return new SessionStepStat(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SessionStepStat {
     /**
      * The call's id (association key into Recording / replay, RFC-0023).
      */
-    public String getCallId() { return callId == null ? null : callId; }
+    @JsonProperty("callId")
+    private final String callId;
     /**
      * Error string for failed calls (failures are part of the session).
      */
-    public String getError() { return error == null ? null : (error == null ? null : error); }
+    @JsonProperty("error")
+    private final String error;
     /**
      * Reported hit rate for this step (`cache_read / input_total`); `None`
      * when the call carried no input/cache-read usage.
      */
-    public BigDecimal getHitRate() { return hitRate == null ? null : (hitRate == null ? null : hitRate); }
+    @JsonProperty("hitRate")
+    private final BigDecimal hitRate;
     /**
      * Step within the session (0-based, session order).
      */
-    public Long getStep() { return step == null ? null : step; }
+    @JsonProperty("step")
+    private final Long step;
     /**
      * Audit verdict (present only when an auditor is attached).
      */
-    public Verdict getVerdict() { return verdict == null ? null : (verdict == null ? null : verdict); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("callId", WireJson.tree(callId));
-        if (hasError) json.set("error", WireJson.tree(error));
-        if (hasHitRate) json.set("hitRate", WireJson.tree(hitRate));
-        json.set("step", WireJson.tree(step));
-        if (hasVerdict) json.set("verdict", WireJson.tree(verdict));
-        return json;
+    @JsonProperty("verdict")
+    private final Verdict verdict;
+
+    @JsonCreator
+    public SessionStepStat(
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "error") String error,
+        @JsonProperty(value = "hitRate") BigDecimal hitRate,
+        @JsonProperty(value = "step", required = true) Long step,
+        @JsonProperty(value = "verdict") Verdict verdict) {
+        this.callId = callId;
+        this.error = error;
+        this.hitRate = hitRate;
+        this.step = step;
+        this.verdict = verdict;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getCallId() { return callId; }
+    public String getError() { return error; }
+    public BigDecimal getHitRate() { return hitRate; }
+    public Long getStep() { return step; }
+    public Verdict getVerdict() { return verdict; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String callId;
+        private String error;
+        private BigDecimal hitRate;
+        private Long step;
+        private Verdict verdict;
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
         }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder error(String value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder hitRate(BigDecimal value) { json.set("hitRate", WireJson.tree(value)); return this; }
-        public Builder step(Long value) { json.set("step", WireJson.tree(value)); return this; }
-        public Builder verdict(Verdict value) { json.set("verdict", WireJson.tree(value)); return this; }
-        public SessionStepStat build() { return new SessionStepStat(json); }
+
+        public Builder error(String value) {
+            this.error = value;
+            return this;
+        }
+
+        public Builder hitRate(BigDecimal value) {
+            this.hitRate = value;
+            return this;
+        }
+
+        public Builder step(Long value) {
+            this.step = value;
+            return this;
+        }
+
+        public Builder verdict(Verdict value) {
+            this.verdict = value;
+            return this;
+        }
+
+        public SessionStepStat build() { return new SessionStepStat(callId, error, hitRate, step, verdict); }
     }
 }
-

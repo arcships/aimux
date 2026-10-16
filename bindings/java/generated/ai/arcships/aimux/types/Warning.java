@@ -4,22 +4,26 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A warning issued by the provider (e.g. unsupported parameter).
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = Warning.Unsupported.class, name = "unsupported"),
     @JsonSubTypes.Type(value = Warning.Compatibility.class, name = "compatibility"),
     @JsonSubTypes.Type(value = Warning.Deprecated.class, name = "deprecated"),
-    @JsonSubTypes.Type(value = Warning.Other.class, name = "other"),
+    @JsonSubTypes.Type(value = Warning.Other.class, name = "other")
 })
-public abstract class Warning extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class Warning {
     private Warning() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public String getDetails() { return null; }
     public String getFeature() { return null; }
@@ -29,163 +33,173 @@ public abstract class Warning extends WireValue {
     public final boolean isDeprecated() { return "deprecated".equals(getType()); }
     public final boolean isOther() { return "other".equals(getType()); }
     public final boolean isUnsupported() { return "unsupported".equals(getType()); }
-    public static Warning fromJson(JsonNode json) {
-        WireJson.object(json, "Warning", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "compatibility":
-                return Compatibility.fromJson(json);
-            case "deprecated":
-                return Deprecated.fromJson(json);
-            case "other":
-                return Other.fromJson(json);
-            case "unsupported":
-                return Unsupported.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown Warning tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Unsupported extends Warning {
+        @JsonProperty("details")
         private final String details;
-        private final boolean hasDetails;
+        @JsonProperty("feature")
         private final String feature;
-        private Unsupported(JsonNode json) {
-            WireJson.object(json, "Unsupported", false, "details", "feature", "type");
-            if (!"unsupported".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Unsupported tag");
-            this.hasDetails = json.has("details");
-            this.details = WireJson.isNull(json.get("details")) ? null : (WireJson.isNull(json.get("details")) ? null : WireJson.string(json.get("details")));
-            WireJson.required(json, "feature");
-            this.feature = WireJson.string(json.get("feature"));
+
+        @JsonCreator
+        public Unsupported(
+            @JsonProperty(value = "details") String details,
+            @JsonProperty(value = "feature", required = true) String feature) {
+            this.details = details;
+            this.feature = feature;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Unsupported fromJson(JsonNode json) { return new Unsupported(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "unsupported"; }
-        public String getDetails() { return details == null ? null : (details == null ? null : details); }
-        public String getFeature() { return feature == null ? null : feature; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "unsupported");
-            if (hasDetails) json.set("details", WireJson.tree(details));
-            json.set("feature", WireJson.tree(feature));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "unsupported"; }
+        public String getDetails() { return details; }
+        public String getFeature() { return feature; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "unsupported");
+            private String details;
+            private String feature;
+
+            public Builder details(String value) {
+                this.details = value;
+                return this;
             }
-            public Builder details(String value) { json.set("details", WireJson.tree(value)); return this; }
-            public Builder feature(String value) { json.set("feature", WireJson.tree(value)); return this; }
-            public Unsupported build() { return new Unsupported(json); }
+
+            public Builder feature(String value) {
+                this.feature = value;
+                return this;
+            }
+
+            public Unsupported build() { return new Unsupported(details, feature); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Compatibility extends Warning {
+        @JsonProperty("details")
         private final String details;
-        private final boolean hasDetails;
+        @JsonProperty("feature")
         private final String feature;
-        private Compatibility(JsonNode json) {
-            WireJson.object(json, "Compatibility", false, "details", "feature", "type");
-            if (!"compatibility".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Compatibility tag");
-            this.hasDetails = json.has("details");
-            this.details = WireJson.isNull(json.get("details")) ? null : (WireJson.isNull(json.get("details")) ? null : WireJson.string(json.get("details")));
-            WireJson.required(json, "feature");
-            this.feature = WireJson.string(json.get("feature"));
+
+        @JsonCreator
+        public Compatibility(
+            @JsonProperty(value = "details") String details,
+            @JsonProperty(value = "feature", required = true) String feature) {
+            this.details = details;
+            this.feature = feature;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Compatibility fromJson(JsonNode json) { return new Compatibility(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "compatibility"; }
-        public String getDetails() { return details == null ? null : (details == null ? null : details); }
-        public String getFeature() { return feature == null ? null : feature; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "compatibility");
-            if (hasDetails) json.set("details", WireJson.tree(details));
-            json.set("feature", WireJson.tree(feature));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "compatibility"; }
+        public String getDetails() { return details; }
+        public String getFeature() { return feature; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "compatibility");
+            private String details;
+            private String feature;
+
+            public Builder details(String value) {
+                this.details = value;
+                return this;
             }
-            public Builder details(String value) { json.set("details", WireJson.tree(value)); return this; }
-            public Builder feature(String value) { json.set("feature", WireJson.tree(value)); return this; }
-            public Compatibility build() { return new Compatibility(json); }
+
+            public Builder feature(String value) {
+                this.feature = value;
+                return this;
+            }
+
+            public Compatibility build() { return new Compatibility(details, feature); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Deprecated extends Warning {
+        @JsonProperty("message")
         private final String message;
+        @JsonProperty("setting")
         private final String setting;
-        private Deprecated(JsonNode json) {
-            WireJson.object(json, "Deprecated", false, "message", "setting", "type");
-            if (!"deprecated".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Deprecated tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
-            WireJson.required(json, "setting");
-            this.setting = WireJson.string(json.get("setting"));
+
+        @JsonCreator
+        public Deprecated(
+            @JsonProperty(value = "message", required = true) String message,
+            @JsonProperty(value = "setting", required = true) String setting) {
+            this.message = message;
+            this.setting = setting;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Deprecated fromJson(JsonNode json) { return new Deprecated(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "deprecated"; }
-        public String getMessage() { return message == null ? null : message; }
-        public String getSetting() { return setting == null ? null : setting; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "deprecated");
-            json.set("message", WireJson.tree(message));
-            json.set("setting", WireJson.tree(setting));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "deprecated"; }
+        public String getMessage() { return message; }
+        public String getSetting() { return setting; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "deprecated");
+            private String message;
+            private String setting;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public Builder setting(String value) { json.set("setting", WireJson.tree(value)); return this; }
-            public Deprecated build() { return new Deprecated(json); }
+
+            public Builder setting(String value) {
+                this.setting = value;
+                return this;
+            }
+
+            public Deprecated build() { return new Deprecated(message, setting); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Other extends Warning {
+        @JsonProperty("message")
         private final String message;
-        private Other(JsonNode json) {
-            WireJson.object(json, "Other", false, "message", "type");
-            if (!"other".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Other tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public Other(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Other fromJson(JsonNode json) { return new Other(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "other"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "other");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "other"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "other");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public Other build() { return new Other(json); }
+
+            public Other build() { return new Other(message); }
         }
     }
-
 }

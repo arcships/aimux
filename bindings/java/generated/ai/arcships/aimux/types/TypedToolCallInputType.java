@@ -4,18 +4,10 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum TypedToolCallInputType {
-    TOOL_CALL("tool-call");
-    private final String value;
-    TypedToolCallInputType(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static TypedToolCallInputType fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (TypedToolCallInputType item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid TypedToolCallInputType: " + value);
-    }
+    @JsonProperty("tool-call")
+    TOOL_CALL
 }

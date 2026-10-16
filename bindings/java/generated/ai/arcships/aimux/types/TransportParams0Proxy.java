@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,51 +14,62 @@ import java.util.*;
  * reqwest does, and the WebSocket connector connects directly.
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TransportParams0Proxy extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TransportParams0Proxy {
+    @JsonProperty("all_url")
     private final String allUrl;
-    private final boolean hasAllUrl;
+    @JsonProperty("http_url")
     private final String httpUrl;
-    private final boolean hasHttpUrl;
+    @JsonProperty("https_url")
     private final String httpsUrl;
-    private final boolean hasHttpsUrl;
+    @JsonProperty("no_proxy")
     private final String noProxy;
-    private final boolean hasNoProxy;
-    private TransportParams0Proxy(JsonNode json) {
-        WireJson.object(json, "TransportParams0Proxy", true, "all_url", "http_url", "https_url", "no_proxy");
-        this.hasAllUrl = json.has("all_url");
-        this.allUrl = WireJson.isNull(json.get("all_url")) ? null : (WireJson.isNull(json.get("all_url")) ? null : WireJson.string(json.get("all_url")));
-        this.hasHttpUrl = json.has("http_url");
-        this.httpUrl = WireJson.isNull(json.get("http_url")) ? null : (WireJson.isNull(json.get("http_url")) ? null : WireJson.string(json.get("http_url")));
-        this.hasHttpsUrl = json.has("https_url");
-        this.httpsUrl = WireJson.isNull(json.get("https_url")) ? null : (WireJson.isNull(json.get("https_url")) ? null : WireJson.string(json.get("https_url")));
-        this.hasNoProxy = json.has("no_proxy");
-        this.noProxy = WireJson.isNull(json.get("no_proxy")) ? null : (WireJson.isNull(json.get("no_proxy")) ? null : WireJson.string(json.get("no_proxy")));
+
+    @JsonCreator
+    public TransportParams0Proxy(
+        @JsonProperty(value = "all_url") String allUrl,
+        @JsonProperty(value = "http_url") String httpUrl,
+        @JsonProperty(value = "https_url") String httpsUrl,
+        @JsonProperty(value = "no_proxy") String noProxy) {
+        this.allUrl = allUrl;
+        this.httpUrl = httpUrl;
+        this.httpsUrl = httpsUrl;
+        this.noProxy = noProxy;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TransportParams0Proxy fromJson(JsonNode json) { return new TransportParams0Proxy(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getAllUrl() { return allUrl == null ? null : (allUrl == null ? null : allUrl); }
-    public String getHttpUrl() { return httpUrl == null ? null : (httpUrl == null ? null : httpUrl); }
-    public String getHttpsUrl() { return httpsUrl == null ? null : (httpsUrl == null ? null : httpsUrl); }
-    public String getNoProxy() { return noProxy == null ? null : (noProxy == null ? null : noProxy); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAllUrl) json.set("all_url", WireJson.tree(allUrl));
-        if (hasHttpUrl) json.set("http_url", WireJson.tree(httpUrl));
-        if (hasHttpsUrl) json.set("https_url", WireJson.tree(httpsUrl));
-        if (hasNoProxy) json.set("no_proxy", WireJson.tree(noProxy));
-        return json;
-    }
+    public String getAllUrl() { return allUrl; }
+    public String getHttpUrl() { return httpUrl; }
+    public String getHttpsUrl() { return httpsUrl; }
+    public String getNoProxy() { return noProxy; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String allUrl;
+        private String httpUrl;
+        private String httpsUrl;
+        private String noProxy;
+
+        public Builder allUrl(String value) {
+            this.allUrl = value;
+            return this;
         }
-        public Builder allUrl(String value) { json.set("all_url", WireJson.tree(value)); return this; }
-        public Builder httpUrl(String value) { json.set("http_url", WireJson.tree(value)); return this; }
-        public Builder httpsUrl(String value) { json.set("https_url", WireJson.tree(value)); return this; }
-        public Builder noProxy(String value) { json.set("no_proxy", WireJson.tree(value)); return this; }
-        public TransportParams0Proxy build() { return new TransportParams0Proxy(json); }
+
+        public Builder httpUrl(String value) {
+            this.httpUrl = value;
+            return this;
+        }
+
+        public Builder httpsUrl(String value) {
+            this.httpsUrl = value;
+            return this;
+        }
+
+        public Builder noProxy(String value) {
+            this.noProxy = value;
+            return this;
+        }
+
+        public TransportParams0Proxy build() { return new TransportParams0Proxy(allUrl, httpUrl, httpsUrl, noProxy); }
     }
 }
-

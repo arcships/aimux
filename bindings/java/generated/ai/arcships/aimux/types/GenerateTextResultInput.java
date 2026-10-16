@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -20,44 +19,58 @@ import java.util.*;
  * `steps`, `total_usage` and `output` are read back.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class GenerateTextResultInput extends WireValue {
-    private final JsonNode output;
-    private final boolean hasOutput;
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class GenerateTextResultInput {
+    @JsonProperty("output")
+    @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+    private final FieldPresence<JsonNode> output;
+    @JsonProperty("steps")
     private final List<StepResultInput> steps;
+    @JsonProperty("totalUsage")
     private final LanguageModelUsageInput totalUsage;
-    private GenerateTextResultInput(JsonNode json) {
-        WireJson.object(json, "GenerateTextResultInput", false, "output", "steps", "totalUsage");
-        this.hasOutput = json.has("output");
-        this.output = WireJson.isNull(json.get("output")) ? null : WireJson.json(json.get("output"));
-        WireJson.required(json, "steps");
-        this.steps = WireJson.array(json.get("steps"), item0 -> StepResultInput.fromJson(item0));
-        WireJson.required(json, "totalUsage");
-        this.totalUsage = LanguageModelUsageInput.fromJson(json.get("totalUsage"));
+
+    @JsonCreator
+    public GenerateTextResultInput(
+        @JsonProperty(value = "output") FieldPresence<JsonNode> output,
+        @JsonProperty(value = "steps", required = true) List<StepResultInput> steps,
+        @JsonProperty(value = "totalUsage", required = true) LanguageModelUsageInput totalUsage) {
+        this.output = output == null ? FieldPresence.absent() : output;
+        this.steps = steps == null ? null : Collections.unmodifiableList(new ArrayList<>(steps));
+        this.totalUsage = totalUsage;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static GenerateTextResultInput fromJson(JsonNode json) { return new GenerateTextResultInput(json); }
+
     public static Builder builder() { return new Builder(); }
-    public JsonNode getOutput() { return output == null ? null : WireJson.json(WireJson.tree(output)); }
-    public boolean hasOutput() { return hasOutput; }
-    public List<StepResultInput> getSteps() { return steps == null ? null : WireJson.array(WireJson.tree(steps), item0 -> StepResultInput.fromJson(item0)); }
-    public LanguageModelUsageInput getTotalUsage() { return totalUsage == null ? null : totalUsage; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasOutput) json.set("output", WireJson.tree(output));
-        json.set("steps", WireJson.tree(steps));
-        json.set("totalUsage", WireJson.tree(totalUsage));
-        return json;
-    }
+    public JsonNode getOutput() { return output.getValue() == null ? null : output.getValue().deepCopy(); }
+    public boolean hasOutput() { return output.isPresent(); }
+    public List<StepResultInput> getSteps() { return steps; }
+    public LanguageModelUsageInput getTotalUsage() { return totalUsage; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FieldPresence<JsonNode> output = FieldPresence.absent();
+        private List<StepResultInput> steps;
+        private LanguageModelUsageInput totalUsage;
+
+        public Builder output(JsonNode value) {
+            this.output = FieldPresence.of(value == null ? null : value.deepCopy());
+            return this;
         }
-        public Builder output(JsonNode value) { json.set("output", WireJson.tree(value)); return this; }
-        public Builder omitOutput() { json.remove("output"); return this; }
-        public Builder steps(List<StepResultInput> value) { json.set("steps", WireJson.tree(value)); return this; }
-        public Builder totalUsage(LanguageModelUsageInput value) { json.set("totalUsage", WireJson.tree(value)); return this; }
-        public GenerateTextResultInput build() { return new GenerateTextResultInput(json); }
+
+        public Builder omitOutput() {
+            this.output = FieldPresence.absent();
+            return this;
+        }
+
+        public Builder steps(List<StepResultInput> value) {
+            this.steps = value;
+            return this;
+        }
+
+        public Builder totalUsage(LanguageModelUsageInput value) {
+            this.totalUsage = value;
+            return this;
+        }
+
+        public GenerateTextResultInput build() { return new GenerateTextResultInput(output, steps, totalUsage); }
     }
 }
-

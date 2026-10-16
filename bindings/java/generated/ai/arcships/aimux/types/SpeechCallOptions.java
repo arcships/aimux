@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,126 +13,162 @@ import java.util.*;
  * Aligned with V4 `SpeechModelV4CallOptions`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class SpeechCallOptions extends WireValue {
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final String instructions;
-    private final boolean hasInstructions;
-    private final String language;
-    private final boolean hasLanguage;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final String outputFormat;
-    private final boolean hasOutputFormat;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final BigDecimal speed;
-    private final boolean hasSpeed;
-    private final String text;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private final String voice;
-    private final boolean hasVoice;
-    private SpeechCallOptions(JsonNode json) {
-        WireJson.object(json, "SpeechCallOptions", false, "headers", "instructions", "language", "maxRetries", "outputFormat", "providerOptions", "speed", "text", "timeout", "voice");
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasInstructions = json.has("instructions");
-        this.instructions = WireJson.isNull(json.get("instructions")) ? null : (WireJson.isNull(json.get("instructions")) ? null : WireJson.string(json.get("instructions")));
-        this.hasLanguage = json.has("language");
-        this.language = WireJson.isNull(json.get("language")) ? null : (WireJson.isNull(json.get("language")) ? null : WireJson.string(json.get("language")));
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        this.hasOutputFormat = json.has("outputFormat");
-        this.outputFormat = WireJson.isNull(json.get("outputFormat")) ? null : (WireJson.isNull(json.get("outputFormat")) ? null : WireJson.string(json.get("outputFormat")));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasSpeed = json.has("speed");
-        this.speed = WireJson.isNull(json.get("speed")) ? null : (WireJson.isNull(json.get("speed")) ? null : WireJson.number(json.get("speed")));
-        WireJson.required(json, "text");
-        this.text = WireJson.string(json.get("text"));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-        this.hasVoice = json.has("voice");
-        this.voice = WireJson.isNull(json.get("voice")) ? null : (WireJson.isNull(json.get("voice")) ? null : WireJson.string(json.get("voice")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static SpeechCallOptions fromJson(JsonNode json) { return new SpeechCallOptions(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class SpeechCallOptions {
     /**
      * Additional HTTP headers to send with the request.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * Instructions for the speech generation, e.g.
      * `"Speak in a slow and steady tone"`.
      */
-    public String getInstructions() { return instructions == null ? null : (instructions == null ? null : instructions); }
+    @JsonProperty("instructions")
+    private final String instructions;
     /**
      * The language for speech generation (ISO 639-1 code, e.g. `"en"`, or
      * `"auto"` for automatic detection). Provider support varies.
      */
-    public String getLanguage() { return language == null ? null : (language == null ? null : language); }
+    @JsonProperty("language")
+    private final String language;
     /**
      * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
      * retrying. `None` uses 2, the AI SDK default.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
     /**
      * The desired output format for the audio, e.g. `"mp3"`, `"wav"`.
      */
-    public String getOutputFormat() { return outputFormat == null ? null : (outputFormat == null ? null : outputFormat); }
+    @JsonProperty("outputFormat")
+    private final String outputFormat;
     /**
      * Additional provider-specific options, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * The speed of the speech generation.
      */
-    public BigDecimal getSpeed() { return speed == null ? null : (speed == null ? null : speed); }
+    @JsonProperty("speed")
+    private final BigDecimal speed;
     /**
      * Text to convert to speech.
      */
-    public String getText() { return text == null ? null : text; }
+    @JsonProperty("text")
+    private final String text;
     /**
      * Per-call operation timeout.
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
     /**
      * The voice to use (provider-specific voice ID, name, or other
      * identifier).
      */
-    public String getVoice() { return voice == null ? null : (voice == null ? null : voice); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasInstructions) json.set("instructions", WireJson.tree(instructions));
-        if (hasLanguage) json.set("language", WireJson.tree(language));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        if (hasOutputFormat) json.set("outputFormat", WireJson.tree(outputFormat));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        if (hasSpeed) json.set("speed", WireJson.tree(speed));
-        json.set("text", WireJson.tree(text));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        if (hasVoice) json.set("voice", WireJson.tree(voice));
-        return json;
+    @JsonProperty("voice")
+    private final String voice;
+
+    @JsonCreator
+    public SpeechCallOptions(
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "instructions") String instructions,
+        @JsonProperty(value = "language") String language,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "outputFormat") String outputFormat,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "speed") BigDecimal speed,
+        @JsonProperty(value = "text", required = true) String text,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout,
+        @JsonProperty(value = "voice") String voice) {
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.instructions = instructions;
+        this.language = language;
+        this.maxRetries = maxRetries;
+        this.outputFormat = outputFormat;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.speed = speed;
+        this.text = text;
+        this.timeout = timeout;
+        this.voice = voice;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, String> getHeaders() { return headers; }
+    public String getInstructions() { return instructions; }
+    public String getLanguage() { return language; }
+    public Long getMaxRetries() { return maxRetries; }
+    public String getOutputFormat() { return outputFormat; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public BigDecimal getSpeed() { return speed; }
+    public String getText() { return text; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+    public String getVoice() { return voice; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, String> headers;
+        private String instructions;
+        private String language;
+        private Long maxRetries;
+        private String outputFormat;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private BigDecimal speed;
+        private String text;
+        private TimeoutConfiguration timeout;
+        private String voice;
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
         }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder instructions(String value) { json.set("instructions", WireJson.tree(value)); return this; }
-        public Builder language(String value) { json.set("language", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder outputFormat(String value) { json.set("outputFormat", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder speed(BigDecimal value) { json.set("speed", WireJson.tree(value)); return this; }
-        public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public Builder voice(String value) { json.set("voice", WireJson.tree(value)); return this; }
-        public SpeechCallOptions build() { return new SpeechCallOptions(json); }
+
+        public Builder instructions(String value) {
+            this.instructions = value;
+            return this;
+        }
+
+        public Builder language(String value) {
+            this.language = value;
+            return this;
+        }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder outputFormat(String value) {
+            this.outputFormat = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder speed(BigDecimal value) {
+            this.speed = value;
+            return this;
+        }
+
+        public Builder text(String value) {
+            this.text = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public Builder voice(String value) {
+            this.voice = value;
+            return this;
+        }
+
+        public SpeechCallOptions build() { return new SpeechCallOptions(headers, instructions, language, maxRetries, outputFormat, providerOptions, speed, text, timeout, voice); }
     }
 }
-

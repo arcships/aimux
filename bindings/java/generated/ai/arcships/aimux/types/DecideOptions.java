@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,69 +12,90 @@ import java.util.*;
  * (`ai@7.0.128 src/decide/decide.ts:53-61`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class DecideOptions extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class DecideOptions {
+    @JsonProperty("headers")
     private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final Map<String, DecisionQuestion> questions;
-    private final DecisionInput state;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private DecideOptions(JsonNode json) {
-        WireJson.object(json, "DecideOptions", false, "headers", "maxRetries", "providerOptions", "questions", "state", "timeout");
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "questions");
-        this.questions = WireJson.map(json.get("questions"), item0 -> DecisionQuestion.fromJson(item0));
-        WireJson.required(json, "state");
-        this.state = DecisionInput.fromJson(json.get("state"));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static DecideOptions fromJson(JsonNode json) { return new DecideOptions(json); }
-    public static Builder builder() { return new Builder(); }
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
     /**
      * Maximum retries for transient provider failures. Defaults to 2.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public Map<String, DecisionQuestion> getQuestions() { return questions == null ? null : WireJson.map(WireJson.tree(questions), item0 -> DecisionQuestion.fromJson(item0)); }
-    public DecisionInput getState() { return state == null ? null : state; }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
+    @JsonProperty("questions")
+    private final Map<String, DecisionQuestion> questions;
+    @JsonProperty("state")
+    private final DecisionInput state;
     /**
      * Operation deadline (aimux extension).
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        json.set("questions", WireJson.tree(questions));
-        json.set("state", WireJson.tree(state));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        return json;
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
+
+    @JsonCreator
+    public DecideOptions(
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "questions", required = true) Map<String, DecisionQuestion> questions,
+        @JsonProperty(value = "state", required = true) DecisionInput state,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout) {
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.maxRetries = maxRetries;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.questions = questions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(questions));
+        this.state = state;
+        this.timeout = timeout;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, String> getHeaders() { return headers; }
+    public Long getMaxRetries() { return maxRetries; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public Map<String, DecisionQuestion> getQuestions() { return questions; }
+    public DecisionInput getState() { return state; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, String> headers;
+        private Long maxRetries;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private Map<String, DecisionQuestion> questions;
+        private DecisionInput state;
+        private TimeoutConfiguration timeout;
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
         }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder questions(Map<String, DecisionQuestion> value) { json.set("questions", WireJson.tree(value)); return this; }
-        public Builder state(DecisionInput value) { json.set("state", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public DecideOptions build() { return new DecideOptions(json); }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder questions(Map<String, DecisionQuestion> value) {
+            this.questions = value;
+            return this;
+        }
+
+        public Builder state(DecisionInput value) {
+            this.state = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public DecideOptions build() { return new DecideOptions(headers, maxRetries, providerOptions, questions, state, timeout); }
     }
 }
-

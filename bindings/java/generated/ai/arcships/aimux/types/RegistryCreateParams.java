@@ -4,41 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RegistryCreateParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RegistryCreateParams {
+    @JsonProperty("entries")
     private final List<RegistryEntry> entries;
+    @JsonProperty("namespace")
     private final String namespace;
-    private final boolean hasNamespace;
-    private RegistryCreateParams(JsonNode json) {
-        WireJson.object(json, "RegistryCreateParams", true, "entries", "namespace");
-        WireJson.required(json, "entries");
-        this.entries = WireJson.array(json.get("entries"), item0 -> RegistryEntry.fromJson(item0));
-        this.hasNamespace = json.has("namespace");
-        this.namespace = WireJson.isNull(json.get("namespace")) ? null : WireJson.string(json.get("namespace"));
+
+    @JsonCreator
+    public RegistryCreateParams(
+        @JsonProperty(value = "entries", required = true) List<RegistryEntry> entries,
+        @JsonProperty(value = "namespace") String namespace) {
+        this.entries = entries == null ? null : Collections.unmodifiableList(new ArrayList<>(entries));
+        this.namespace = namespace;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RegistryCreateParams fromJson(JsonNode json) { return new RegistryCreateParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<RegistryEntry> getEntries() { return entries == null ? null : WireJson.array(WireJson.tree(entries), item0 -> RegistryEntry.fromJson(item0)); }
-    public String getNamespace() { return namespace == null ? null : namespace; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("entries", WireJson.tree(entries));
-        if (hasNamespace) json.set("namespace", WireJson.tree(namespace));
-        return json;
-    }
+    public List<RegistryEntry> getEntries() { return entries; }
+    public String getNamespace() { return namespace; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<RegistryEntry> entries;
+        private String namespace;
+
+        public Builder entries(List<RegistryEntry> value) {
+            this.entries = value;
+            return this;
         }
-        public Builder entries(List<RegistryEntry> value) { json.set("entries", WireJson.tree(value)); return this; }
-        public Builder namespace(String value) { json.set("namespace", WireJson.tree(value)); return this; }
-        public RegistryCreateParams build() { return new RegistryCreateParams(json); }
+
+        public Builder namespace(String value) {
+            this.namespace = value;
+            return this;
+        }
+
+        public RegistryCreateParams build() { return new RegistryCreateParams(entries, namespace); }
     }
 }
-

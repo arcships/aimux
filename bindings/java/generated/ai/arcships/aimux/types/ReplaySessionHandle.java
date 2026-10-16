@@ -4,34 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ReplaySessionHandle extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ReplaySessionHandle {
+    @JsonProperty("handle")
     private final HandleId handle;
-    private ReplaySessionHandle(JsonNode json) {
-        WireJson.object(json, "ReplaySessionHandle", false, "handle");
-        WireJson.required(json, "handle");
-        this.handle = HandleId.fromJson(json.get("handle"));
+
+    @JsonCreator
+    public ReplaySessionHandle(
+        @JsonProperty(value = "handle", required = true) HandleId handle) {
+        this.handle = handle;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ReplaySessionHandle fromJson(JsonNode json) { return new ReplaySessionHandle(json); }
+
     public static Builder builder() { return new Builder(); }
-    public HandleId getHandle() { return handle == null ? null : handle; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("handle", WireJson.tree(handle));
-        return json;
-    }
+    public HandleId getHandle() { return handle; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private HandleId handle;
+
+        public Builder handle(HandleId value) {
+            this.handle = value;
+            return this;
         }
-        public Builder handle(HandleId value) { json.set("handle", WireJson.tree(value)); return this; }
-        public ReplaySessionHandle build() { return new ReplaySessionHandle(json); }
+
+        public ReplaySessionHandle build() { return new ReplaySessionHandle(handle); }
     }
 }
-

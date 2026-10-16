@@ -10,7 +10,6 @@ import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
-import java.math.BigInteger;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,8 +62,8 @@ public final class Aimux {
         return call(0, op, AimuxResult.params(paramsJson), 0);
     }
 
-    public <T> T call(String op, WireValue params, Class<T> resultType) {
-        return WireJson.decode(call(op, params.toString()), resultType);
+    public <T> T call(String op, Object params, Class<T> resultType) {
+        return DtoJson.decode(call(op, DtoJson.stringify(params)), resultType);
     }
 
     JsonNode call(long handle, String op, String params, long abort) {
@@ -89,7 +88,7 @@ public final class Aimux {
 
     /** Takes ownership of a handle returned by an op; never wrap the same handle twice. */
     public Resource own(String decimalHandle) {
-        return new Resource(this, AimuxResult.handle(WireJson.MAPPER.getNodeFactory().textNode(decimalHandle)));
+        return new Resource(this, AimuxResult.handle(DtoJson.MAPPER.getNodeFactory().textNode(decimalHandle)));
     }
 
     public Future<JsonNode> callAsync(String op, String paramsJson, Executor executor) {
@@ -155,7 +154,7 @@ public final class Aimux {
         private final Consumer<StreamFrame> consumer;
         private final Memory memory = new Memory(1);
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
-        private BigInteger previous;
+        private Long previous;
         private StreamFrame.End terminal;
 
         StreamContext(Aimux aimux, long abort, Consumer<StreamFrame> consumer) {
@@ -167,11 +166,11 @@ public final class Aimux {
             IN_CALLBACK.set(true);
             try {
                 if (failure.get() != null) return;
-                StreamFrame frame = StreamFrame.fromJson(AimuxResult.parse(json.getString(0, "UTF-8")));
-                if (terminal != null || (previous != null && WireJson.u64(frame.getSeq()).compareTo(previous) <= 0)) {
+                StreamFrame frame = DtoJson.decode(AimuxResult.parse(json.getString(0, "UTF-8")), StreamFrame.class);
+                if (terminal != null || (previous != null && Long.compareUnsigned(DtoJson.u64(frame.getSeq()), previous) <= 0)) {
                     throw new IllegalStateException("Out-of-order frame or frame after End");
                 }
-                previous = WireJson.u64(frame.getSeq());
+                previous = DtoJson.u64(frame.getSeq());
                 if (frame instanceof StreamFrame.End) terminal = (StreamFrame.End) frame;
                 consumer.accept(frame);
             } catch (Throwable error) {

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,110 +12,145 @@ import java.util.*;
  * Durations are milliseconds.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class StepResultPerformanceInput extends WireValue {
-    private final BigDecimal effectiveOutputTokensPerSecond;
-    private final BigDecimal effectiveTotalTokensPerSecond;
-    private final BigDecimal inputTokensPerSecond;
-    private final boolean hasInputTokensPerSecond;
-    private final BigDecimal outputTokensPerSecond;
-    private final boolean hasOutputTokensPerSecond;
-    private final BigDecimal responseTimeMs;
-    private final BigDecimal stepTimeMs;
-    private final OutputChunkTimingStats timeBetweenOutputChunksMs;
-    private final boolean hasTimeBetweenOutputChunksMs;
-    private final BigDecimal timeToFirstOutputMs;
-    private final boolean hasTimeToFirstOutputMs;
-    private final Map<String, BigDecimal> toolExecutionMs;
-    private final boolean hasToolExecutionMs;
-    private StepResultPerformanceInput(JsonNode json) {
-        WireJson.object(json, "StepResultPerformanceInput", false, "effectiveOutputTokensPerSecond", "effectiveTotalTokensPerSecond", "inputTokensPerSecond", "outputTokensPerSecond", "responseTimeMs", "stepTimeMs", "timeBetweenOutputChunksMs", "timeToFirstOutputMs", "toolExecutionMs");
-        WireJson.required(json, "effectiveOutputTokensPerSecond");
-        this.effectiveOutputTokensPerSecond = WireJson.number(json.get("effectiveOutputTokensPerSecond"));
-        WireJson.required(json, "effectiveTotalTokensPerSecond");
-        this.effectiveTotalTokensPerSecond = WireJson.number(json.get("effectiveTotalTokensPerSecond"));
-        this.hasInputTokensPerSecond = json.has("inputTokensPerSecond");
-        this.inputTokensPerSecond = WireJson.isNull(json.get("inputTokensPerSecond")) ? null : (WireJson.isNull(json.get("inputTokensPerSecond")) ? null : WireJson.number(json.get("inputTokensPerSecond")));
-        this.hasOutputTokensPerSecond = json.has("outputTokensPerSecond");
-        this.outputTokensPerSecond = WireJson.isNull(json.get("outputTokensPerSecond")) ? null : (WireJson.isNull(json.get("outputTokensPerSecond")) ? null : WireJson.number(json.get("outputTokensPerSecond")));
-        WireJson.required(json, "responseTimeMs");
-        this.responseTimeMs = WireJson.number(json.get("responseTimeMs"));
-        WireJson.required(json, "stepTimeMs");
-        this.stepTimeMs = WireJson.number(json.get("stepTimeMs"));
-        this.hasTimeBetweenOutputChunksMs = json.has("timeBetweenOutputChunksMs");
-        this.timeBetweenOutputChunksMs = WireJson.isNull(json.get("timeBetweenOutputChunksMs")) ? null : (WireJson.isNull(json.get("timeBetweenOutputChunksMs")) ? null : OutputChunkTimingStats.fromJson(json.get("timeBetweenOutputChunksMs")));
-        this.hasTimeToFirstOutputMs = json.has("timeToFirstOutputMs");
-        this.timeToFirstOutputMs = WireJson.isNull(json.get("timeToFirstOutputMs")) ? null : (WireJson.isNull(json.get("timeToFirstOutputMs")) ? null : WireJson.number(json.get("timeToFirstOutputMs")));
-        this.hasToolExecutionMs = json.has("toolExecutionMs");
-        this.toolExecutionMs = WireJson.isNull(json.get("toolExecutionMs")) ? null : WireJson.map(json.get("toolExecutionMs"), item0 -> WireJson.number(item0));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static StepResultPerformanceInput fromJson(JsonNode json) { return new StepResultPerformanceInput(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class StepResultPerformanceInput {
     /**
      * Output tokens per second over the whole response time.
      */
-    public BigDecimal getEffectiveOutputTokensPerSecond() { return effectiveOutputTokensPerSecond == null ? null : effectiveOutputTokensPerSecond; }
+    @JsonProperty("effectiveOutputTokensPerSecond")
+    private final BigDecimal effectiveOutputTokensPerSecond;
     /**
      * Input plus output tokens per second over the whole response time.
      */
-    public BigDecimal getEffectiveTotalTokensPerSecond() { return effectiveTotalTokensPerSecond == null ? null : effectiveTotalTokensPerSecond; }
+    @JsonProperty("effectiveTotalTokensPerSecond")
+    private final BigDecimal effectiveTotalTokensPerSecond;
     /**
      * Input tokens per second until the first output chunk (streaming only).
      */
-    public BigDecimal getInputTokensPerSecond() { return inputTokensPerSecond == null ? null : (inputTokensPerSecond == null ? null : inputTokensPerSecond); }
+    @JsonProperty("inputTokensPerSecond")
+    private final BigDecimal inputTokensPerSecond;
     /**
      * Output tokens per second after the first output chunk (streaming only).
      */
-    public BigDecimal getOutputTokensPerSecond() { return outputTokensPerSecond == null ? null : (outputTokensPerSecond == null ? null : outputTokensPerSecond); }
+    @JsonProperty("outputTokensPerSecond")
+    private final BigDecimal outputTokensPerSecond;
     /**
      * From the model call to its finish, including retries.
      */
-    public BigDecimal getResponseTimeMs() { return responseTimeMs == null ? null : responseTimeMs; }
+    @JsonProperty("responseTimeMs")
+    private final BigDecimal responseTimeMs;
     /**
      * The whole step, including retries and tool execution.
      */
-    public BigDecimal getStepTimeMs() { return stepTimeMs == null ? null : stepTimeMs; }
+    @JsonProperty("stepTimeMs")
+    private final BigDecimal stepTimeMs;
     /**
      * Gaps between output chunks (streaming only, two or more chunks).
      */
-    public OutputChunkTimingStats getTimeBetweenOutputChunksMs() { return timeBetweenOutputChunksMs == null ? null : (timeBetweenOutputChunksMs == null ? null : timeBetweenOutputChunksMs); }
+    @JsonProperty("timeBetweenOutputChunksMs")
+    private final OutputChunkTimingStats timeBetweenOutputChunksMs;
     /**
      * From the model call to its first output chunk (streaming only).
      */
-    public BigDecimal getTimeToFirstOutputMs() { return timeToFirstOutputMs == null ? null : (timeToFirstOutputMs == null ? null : timeToFirstOutputMs); }
+    @JsonProperty("timeToFirstOutputMs")
+    private final BigDecimal timeToFirstOutputMs;
     /**
      * Execution time of each host-executed tool, by tool call id. Aimux does
      * not execute tools, so this is empty.
      */
-    public Map<String, BigDecimal> getToolExecutionMs() { return toolExecutionMs == null ? null : WireJson.map(WireJson.tree(toolExecutionMs), item0 -> WireJson.number(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("effectiveOutputTokensPerSecond", WireJson.tree(effectiveOutputTokensPerSecond));
-        json.set("effectiveTotalTokensPerSecond", WireJson.tree(effectiveTotalTokensPerSecond));
-        if (hasInputTokensPerSecond) json.set("inputTokensPerSecond", WireJson.tree(inputTokensPerSecond));
-        if (hasOutputTokensPerSecond) json.set("outputTokensPerSecond", WireJson.tree(outputTokensPerSecond));
-        json.set("responseTimeMs", WireJson.tree(responseTimeMs));
-        json.set("stepTimeMs", WireJson.tree(stepTimeMs));
-        if (hasTimeBetweenOutputChunksMs) json.set("timeBetweenOutputChunksMs", WireJson.tree(timeBetweenOutputChunksMs));
-        if (hasTimeToFirstOutputMs) json.set("timeToFirstOutputMs", WireJson.tree(timeToFirstOutputMs));
-        if (hasToolExecutionMs) json.set("toolExecutionMs", WireJson.tree(toolExecutionMs));
-        return json;
+    @JsonProperty("toolExecutionMs")
+    private final Map<String, BigDecimal> toolExecutionMs;
+
+    @JsonCreator
+    public StepResultPerformanceInput(
+        @JsonProperty(value = "effectiveOutputTokensPerSecond", required = true) BigDecimal effectiveOutputTokensPerSecond,
+        @JsonProperty(value = "effectiveTotalTokensPerSecond", required = true) BigDecimal effectiveTotalTokensPerSecond,
+        @JsonProperty(value = "inputTokensPerSecond") BigDecimal inputTokensPerSecond,
+        @JsonProperty(value = "outputTokensPerSecond") BigDecimal outputTokensPerSecond,
+        @JsonProperty(value = "responseTimeMs", required = true) BigDecimal responseTimeMs,
+        @JsonProperty(value = "stepTimeMs", required = true) BigDecimal stepTimeMs,
+        @JsonProperty(value = "timeBetweenOutputChunksMs") OutputChunkTimingStats timeBetweenOutputChunksMs,
+        @JsonProperty(value = "timeToFirstOutputMs") BigDecimal timeToFirstOutputMs,
+        @JsonProperty(value = "toolExecutionMs") Map<String, BigDecimal> toolExecutionMs) {
+        this.effectiveOutputTokensPerSecond = effectiveOutputTokensPerSecond;
+        this.effectiveTotalTokensPerSecond = effectiveTotalTokensPerSecond;
+        this.inputTokensPerSecond = inputTokensPerSecond;
+        this.outputTokensPerSecond = outputTokensPerSecond;
+        this.responseTimeMs = responseTimeMs;
+        this.stepTimeMs = stepTimeMs;
+        this.timeBetweenOutputChunksMs = timeBetweenOutputChunksMs;
+        this.timeToFirstOutputMs = timeToFirstOutputMs;
+        this.toolExecutionMs = toolExecutionMs == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(toolExecutionMs));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public BigDecimal getEffectiveOutputTokensPerSecond() { return effectiveOutputTokensPerSecond; }
+    public BigDecimal getEffectiveTotalTokensPerSecond() { return effectiveTotalTokensPerSecond; }
+    public BigDecimal getInputTokensPerSecond() { return inputTokensPerSecond; }
+    public BigDecimal getOutputTokensPerSecond() { return outputTokensPerSecond; }
+    public BigDecimal getResponseTimeMs() { return responseTimeMs; }
+    public BigDecimal getStepTimeMs() { return stepTimeMs; }
+    public OutputChunkTimingStats getTimeBetweenOutputChunksMs() { return timeBetweenOutputChunksMs; }
+    public BigDecimal getTimeToFirstOutputMs() { return timeToFirstOutputMs; }
+    public Map<String, BigDecimal> getToolExecutionMs() { return toolExecutionMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private BigDecimal effectiveOutputTokensPerSecond;
+        private BigDecimal effectiveTotalTokensPerSecond;
+        private BigDecimal inputTokensPerSecond;
+        private BigDecimal outputTokensPerSecond;
+        private BigDecimal responseTimeMs;
+        private BigDecimal stepTimeMs;
+        private OutputChunkTimingStats timeBetweenOutputChunksMs;
+        private BigDecimal timeToFirstOutputMs;
+        private Map<String, BigDecimal> toolExecutionMs;
+
+        public Builder effectiveOutputTokensPerSecond(BigDecimal value) {
+            this.effectiveOutputTokensPerSecond = value;
+            return this;
         }
-        public Builder effectiveOutputTokensPerSecond(BigDecimal value) { json.set("effectiveOutputTokensPerSecond", WireJson.tree(value)); return this; }
-        public Builder effectiveTotalTokensPerSecond(BigDecimal value) { json.set("effectiveTotalTokensPerSecond", WireJson.tree(value)); return this; }
-        public Builder inputTokensPerSecond(BigDecimal value) { json.set("inputTokensPerSecond", WireJson.tree(value)); return this; }
-        public Builder outputTokensPerSecond(BigDecimal value) { json.set("outputTokensPerSecond", WireJson.tree(value)); return this; }
-        public Builder responseTimeMs(BigDecimal value) { json.set("responseTimeMs", WireJson.tree(value)); return this; }
-        public Builder stepTimeMs(BigDecimal value) { json.set("stepTimeMs", WireJson.tree(value)); return this; }
-        public Builder timeBetweenOutputChunksMs(OutputChunkTimingStats value) { json.set("timeBetweenOutputChunksMs", WireJson.tree(value)); return this; }
-        public Builder timeToFirstOutputMs(BigDecimal value) { json.set("timeToFirstOutputMs", WireJson.tree(value)); return this; }
-        public Builder toolExecutionMs(Map<String, BigDecimal> value) { json.set("toolExecutionMs", WireJson.tree(value)); return this; }
-        public StepResultPerformanceInput build() { return new StepResultPerformanceInput(json); }
+
+        public Builder effectiveTotalTokensPerSecond(BigDecimal value) {
+            this.effectiveTotalTokensPerSecond = value;
+            return this;
+        }
+
+        public Builder inputTokensPerSecond(BigDecimal value) {
+            this.inputTokensPerSecond = value;
+            return this;
+        }
+
+        public Builder outputTokensPerSecond(BigDecimal value) {
+            this.outputTokensPerSecond = value;
+            return this;
+        }
+
+        public Builder responseTimeMs(BigDecimal value) {
+            this.responseTimeMs = value;
+            return this;
+        }
+
+        public Builder stepTimeMs(BigDecimal value) {
+            this.stepTimeMs = value;
+            return this;
+        }
+
+        public Builder timeBetweenOutputChunksMs(OutputChunkTimingStats value) {
+            this.timeBetweenOutputChunksMs = value;
+            return this;
+        }
+
+        public Builder timeToFirstOutputMs(BigDecimal value) {
+            this.timeToFirstOutputMs = value;
+            return this;
+        }
+
+        public Builder toolExecutionMs(Map<String, BigDecimal> value) {
+            this.toolExecutionMs = value;
+            return this;
+        }
+
+        public StepResultPerformanceInput build() { return new StepResultPerformanceInput(effectiveOutputTokensPerSecond, effectiveTotalTokensPerSecond, inputTokensPerSecond, outputTokensPerSecond, responseTimeMs, stepTimeMs, timeBetweenOutputChunksMs, timeToFirstOutputMs, toolExecutionMs); }
     }
 }
-

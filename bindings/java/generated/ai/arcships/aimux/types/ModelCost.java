@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,51 +12,62 @@ import java.util.*;
  * (anya2a uses USD per 1M tokens).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ModelCost extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ModelCost {
+    @JsonProperty("cacheRead")
     private final BigDecimal cacheRead;
-    private final boolean hasCacheRead;
+    @JsonProperty("cacheWrite")
     private final BigDecimal cacheWrite;
-    private final boolean hasCacheWrite;
+    @JsonProperty("input")
     private final BigDecimal input;
-    private final boolean hasInput;
+    @JsonProperty("output")
     private final BigDecimal output;
-    private final boolean hasOutput;
-    private ModelCost(JsonNode json) {
-        WireJson.object(json, "ModelCost", false, "cacheRead", "cacheWrite", "input", "output");
-        this.hasCacheRead = json.has("cacheRead");
-        this.cacheRead = WireJson.isNull(json.get("cacheRead")) ? null : (WireJson.isNull(json.get("cacheRead")) ? null : WireJson.number(json.get("cacheRead")));
-        this.hasCacheWrite = json.has("cacheWrite");
-        this.cacheWrite = WireJson.isNull(json.get("cacheWrite")) ? null : (WireJson.isNull(json.get("cacheWrite")) ? null : WireJson.number(json.get("cacheWrite")));
-        this.hasInput = json.has("input");
-        this.input = WireJson.isNull(json.get("input")) ? null : (WireJson.isNull(json.get("input")) ? null : WireJson.number(json.get("input")));
-        this.hasOutput = json.has("output");
-        this.output = WireJson.isNull(json.get("output")) ? null : (WireJson.isNull(json.get("output")) ? null : WireJson.number(json.get("output")));
+
+    @JsonCreator
+    public ModelCost(
+        @JsonProperty(value = "cacheRead") BigDecimal cacheRead,
+        @JsonProperty(value = "cacheWrite") BigDecimal cacheWrite,
+        @JsonProperty(value = "input") BigDecimal input,
+        @JsonProperty(value = "output") BigDecimal output) {
+        this.cacheRead = cacheRead;
+        this.cacheWrite = cacheWrite;
+        this.input = input;
+        this.output = output;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ModelCost fromJson(JsonNode json) { return new ModelCost(json); }
+
     public static Builder builder() { return new Builder(); }
-    public BigDecimal getCacheRead() { return cacheRead == null ? null : (cacheRead == null ? null : cacheRead); }
-    public BigDecimal getCacheWrite() { return cacheWrite == null ? null : (cacheWrite == null ? null : cacheWrite); }
-    public BigDecimal getInput() { return input == null ? null : (input == null ? null : input); }
-    public BigDecimal getOutput() { return output == null ? null : (output == null ? null : output); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasCacheRead) json.set("cacheRead", WireJson.tree(cacheRead));
-        if (hasCacheWrite) json.set("cacheWrite", WireJson.tree(cacheWrite));
-        if (hasInput) json.set("input", WireJson.tree(input));
-        if (hasOutput) json.set("output", WireJson.tree(output));
-        return json;
-    }
+    public BigDecimal getCacheRead() { return cacheRead; }
+    public BigDecimal getCacheWrite() { return cacheWrite; }
+    public BigDecimal getInput() { return input; }
+    public BigDecimal getOutput() { return output; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private BigDecimal cacheRead;
+        private BigDecimal cacheWrite;
+        private BigDecimal input;
+        private BigDecimal output;
+
+        public Builder cacheRead(BigDecimal value) {
+            this.cacheRead = value;
+            return this;
         }
-        public Builder cacheRead(BigDecimal value) { json.set("cacheRead", WireJson.tree(value)); return this; }
-        public Builder cacheWrite(BigDecimal value) { json.set("cacheWrite", WireJson.tree(value)); return this; }
-        public Builder input(BigDecimal value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder output(BigDecimal value) { json.set("output", WireJson.tree(value)); return this; }
-        public ModelCost build() { return new ModelCost(json); }
+
+        public Builder cacheWrite(BigDecimal value) {
+            this.cacheWrite = value;
+            return this;
+        }
+
+        public Builder input(BigDecimal value) {
+            this.input = value;
+            return this;
+        }
+
+        public Builder output(BigDecimal value) {
+            this.output = value;
+            return this;
+        }
+
+        public ModelCost build() { return new ModelCost(cacheRead, cacheWrite, input, output); }
     }
 }
-

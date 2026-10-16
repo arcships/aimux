@@ -37,8 +37,8 @@ abstract class NativeHandle implements AutoCloseable {
         }
     }
 
-    public final <T> T call(String op, WireValue params, Class<T> resultType) {
-        return WireJson.decode(call(op, params.toString()), resultType);
+    public final <T> T call(String op, Object params, Class<T> resultType) {
+        return DtoJson.decode(call(op, DtoJson.stringify(params)), resultType);
     }
 
     public final com.fasterxml.jackson.databind.JsonNode call(String op, String paramsJson, Abort abort) {

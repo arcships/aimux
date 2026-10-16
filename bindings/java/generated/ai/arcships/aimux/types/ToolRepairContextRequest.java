@@ -4,47 +4,55 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolRepairContextRequest extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolRepairContextRequest {
+    @JsonProperty("options")
     private final GenerateTextOptions options;
-    private final boolean hasOptions;
+    @JsonProperty("prompt")
     private final ModelPrompt prompt;
+    @JsonProperty("toolCall")
     private final ToolCallInput toolCall;
-    private ToolRepairContextRequest(JsonNode json) {
-        WireJson.object(json, "ToolRepairContextRequest", true, "options", "prompt", "toolCall");
-        this.hasOptions = json.has("options");
-        this.options = WireJson.isNull(json.get("options")) ? null : GenerateTextOptions.fromJson(json.get("options"));
-        WireJson.required(json, "prompt");
-        this.prompt = ModelPrompt.fromJson(json.get("prompt"));
-        WireJson.required(json, "toolCall");
-        this.toolCall = ToolCallInput.fromJson(json.get("toolCall"));
+
+    @JsonCreator
+    public ToolRepairContextRequest(
+        @JsonProperty(value = "options") GenerateTextOptions options,
+        @JsonProperty(value = "prompt", required = true) ModelPrompt prompt,
+        @JsonProperty(value = "toolCall", required = true) ToolCallInput toolCall) {
+        this.options = options;
+        this.prompt = prompt;
+        this.toolCall = toolCall;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolRepairContextRequest fromJson(JsonNode json) { return new ToolRepairContextRequest(json); }
+
     public static Builder builder() { return new Builder(); }
-    public GenerateTextOptions getOptions() { return options == null ? null : options; }
-    public ModelPrompt getPrompt() { return prompt == null ? null : prompt; }
-    public ToolCallInput getToolCall() { return toolCall == null ? null : toolCall; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasOptions) json.set("options", WireJson.tree(options));
-        json.set("prompt", WireJson.tree(prompt));
-        json.set("toolCall", WireJson.tree(toolCall));
-        return json;
-    }
+    public GenerateTextOptions getOptions() { return options; }
+    public ModelPrompt getPrompt() { return prompt; }
+    public ToolCallInput getToolCall() { return toolCall; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private GenerateTextOptions options;
+        private ModelPrompt prompt;
+        private ToolCallInput toolCall;
+
+        public Builder options(GenerateTextOptions value) {
+            this.options = value;
+            return this;
         }
-        public Builder options(GenerateTextOptions value) { json.set("options", WireJson.tree(value)); return this; }
-        public Builder prompt(ModelPrompt value) { json.set("prompt", WireJson.tree(value)); return this; }
-        public Builder toolCall(ToolCallInput value) { json.set("toolCall", WireJson.tree(value)); return this; }
-        public ToolRepairContextRequest build() { return new ToolRepairContextRequest(json); }
+
+        public Builder prompt(ModelPrompt value) {
+            this.prompt = value;
+            return this;
+        }
+
+        public Builder toolCall(ToolCallInput value) {
+            this.toolCall = value;
+            return this;
+        }
+
+        public ToolRepairContextRequest build() { return new ToolRepairContextRequest(options, prompt, toolCall); }
     }
 }
-

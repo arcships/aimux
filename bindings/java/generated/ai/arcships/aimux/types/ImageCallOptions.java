@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,135 +13,176 @@ import java.util.*;
  * Aligned with V4 `ImageModelV4CallOptions`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ImageCallOptions extends WireValue {
-    private final AspectRatio aspectRatio;
-    private final boolean hasAspectRatio;
-    private final List<ImageFile> files;
-    private final boolean hasFiles;
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final ImageFile mask;
-    private final boolean hasMask;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final Long n;
-    private final String prompt;
-    private final boolean hasPrompt;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final BigInteger seed;
-    private final boolean hasSeed;
-    private final Size size;
-    private final boolean hasSize;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private ImageCallOptions(JsonNode json) {
-        WireJson.object(json, "ImageCallOptions", false, "aspectRatio", "files", "headers", "mask", "maxRetries", "n", "prompt", "providerOptions", "seed", "size", "timeout");
-        this.hasAspectRatio = json.has("aspectRatio");
-        this.aspectRatio = WireJson.isNull(json.get("aspectRatio")) ? null : (WireJson.isNull(json.get("aspectRatio")) ? null : AspectRatio.fromJson(json.get("aspectRatio")));
-        this.hasFiles = json.has("files");
-        this.files = WireJson.isNull(json.get("files")) ? null : (WireJson.isNull(json.get("files")) ? null : WireJson.array(json.get("files"), item0 -> ImageFile.fromJson(item0)));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasMask = json.has("mask");
-        this.mask = WireJson.isNull(json.get("mask")) ? null : (WireJson.isNull(json.get("mask")) ? null : ImageFile.fromJson(json.get("mask")));
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        WireJson.required(json, "n");
-        this.n = WireJson.integer(json.get("n"), true, 32).longValue();
-        this.hasPrompt = json.has("prompt");
-        this.prompt = WireJson.isNull(json.get("prompt")) ? null : (WireJson.isNull(json.get("prompt")) ? null : WireJson.string(json.get("prompt")));
-        WireJson.required(json, "providerOptions");
-        this.providerOptions = WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)));
-        this.hasSeed = json.has("seed");
-        this.seed = WireJson.isNull(json.get("seed")) ? null : (WireJson.isNull(json.get("seed")) ? null : WireJson.integer(json.get("seed"), true, 64));
-        this.hasSize = json.has("size");
-        this.size = WireJson.isNull(json.get("size")) ? null : (WireJson.isNull(json.get("size")) ? null : Size.fromJson(json.get("size")));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ImageCallOptions fromJson(JsonNode json) { return new ImageCallOptions(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ImageCallOptions {
     /**
      * Aspect ratio of the images, in `{width}:{height}` format.
      * `None` uses the provider's default aspect ratio.
      */
-    public AspectRatio getAspectRatio() { return aspectRatio == null ? null : (aspectRatio == null ? null : aspectRatio); }
+    @JsonProperty("aspectRatio")
+    private final AspectRatio aspectRatio;
     /**
      * Images for image editing or variation generation.
      */
-    public List<ImageFile> getFiles() { return files == null ? null : (files == null ? null : WireJson.array(WireJson.tree(files), item0 -> ImageFile.fromJson(item0))); }
+    @JsonProperty("files")
+    private final List<ImageFile> files;
     /**
      * Additional HTTP headers to send with the request.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * Mask image for inpainting operations.
      */
-    public ImageFile getMask() { return mask == null ? null : (mask == null ? null : mask); }
+    @JsonProperty("mask")
+    private final ImageFile mask;
     /**
      * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
      * retrying. `None` uses 2, the AI SDK default.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
     /**
      * Number of images to generate.
      */
-    public Long getN() { return n == null ? null : n; }
+    @JsonProperty("n")
+    private final Long n;
     /**
      * Prompt for the image generation. `None` for operations (e.g. upscaling)
      * that do not require a prompt.
      */
-    public String getPrompt() { return prompt == null ? null : (prompt == null ? null : prompt); }
+    @JsonProperty("prompt")
+    private final String prompt;
     /**
      * Additional provider-specific options, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))); }
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * Seed for deterministic generation. `None` uses the provider's default.
      */
-    public BigInteger getSeed() { return seed == null ? null : (seed == null ? null : seed); }
+    @JsonProperty("seed")
+    private final Long seed;
     /**
      * Size of the images, in `{width}x{height}` format.
      * `None` uses the provider's default size.
      */
-    public Size getSize() { return size == null ? null : (size == null ? null : size); }
+    @JsonProperty("size")
+    private final Size size;
     /**
      * Per-call operation timeout.
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAspectRatio) json.set("aspectRatio", WireJson.tree(aspectRatio));
-        if (hasFiles) json.set("files", WireJson.tree(files));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasMask) json.set("mask", WireJson.tree(mask));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        json.set("n", WireJson.tree(n));
-        if (hasPrompt) json.set("prompt", WireJson.tree(prompt));
-        json.set("providerOptions", WireJson.tree(providerOptions));
-        if (hasSeed) json.set("seed", WireJson.tree(seed));
-        if (hasSize) json.set("size", WireJson.tree(size));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        return json;
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
+
+    @JsonCreator
+    public ImageCallOptions(
+        @JsonProperty(value = "aspectRatio") AspectRatio aspectRatio,
+        @JsonProperty(value = "files") List<ImageFile> files,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "mask") ImageFile mask,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "n", required = true) Long n,
+        @JsonProperty(value = "prompt") String prompt,
+        @JsonProperty(value = "providerOptions", required = true) Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "seed") Long seed,
+        @JsonProperty(value = "size") Size size,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout) {
+        this.aspectRatio = aspectRatio;
+        this.files = files == null ? null : Collections.unmodifiableList(new ArrayList<>(files));
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.mask = mask;
+        this.maxRetries = maxRetries;
+        this.n = n;
+        this.prompt = prompt;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.seed = seed;
+        this.size = size;
+        this.timeout = timeout;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public AspectRatio getAspectRatio() { return aspectRatio; }
+    public List<ImageFile> getFiles() { return files; }
+    public Map<String, String> getHeaders() { return headers; }
+    public ImageFile getMask() { return mask; }
+    public Long getMaxRetries() { return maxRetries; }
+    public Long getN() { return n; }
+    public String getPrompt() { return prompt; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public Long getSeed() { return seed; }
+    public Size getSize() { return size; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private AspectRatio aspectRatio;
+        private List<ImageFile> files;
+        private Map<String, String> headers;
+        private ImageFile mask;
+        private Long maxRetries;
+        private Long n;
+        private String prompt;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private Long seed;
+        private Size size;
+        private TimeoutConfiguration timeout;
+
+        public Builder aspectRatio(AspectRatio value) {
+            this.aspectRatio = value;
+            return this;
         }
-        public Builder aspectRatio(AspectRatio value) { json.set("aspectRatio", WireJson.tree(value)); return this; }
-        public Builder files(List<ImageFile> value) { json.set("files", WireJson.tree(value)); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder mask(ImageFile value) { json.set("mask", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder n(Long value) { json.set("n", WireJson.tree(value)); return this; }
-        public Builder prompt(String value) { json.set("prompt", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder seed(BigInteger value) { json.set("seed", WireJson.tree(value)); return this; }
-        public Builder size(Size value) { json.set("size", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public ImageCallOptions build() { return new ImageCallOptions(json); }
+
+        public Builder files(List<ImageFile> value) {
+            this.files = value;
+            return this;
+        }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder mask(ImageFile value) {
+            this.mask = value;
+            return this;
+        }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder n(Long value) {
+            this.n = value;
+            return this;
+        }
+
+        public Builder prompt(String value) {
+            this.prompt = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder seed(Long value) {
+            this.seed = value;
+            return this;
+        }
+
+        public Builder size(Size value) {
+            this.size = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public ImageCallOptions build() { return new ImageCallOptions(aspectRatio, files, headers, mask, maxRetries, n, prompt, providerOptions, seed, size, timeout); }
     }
 }
-

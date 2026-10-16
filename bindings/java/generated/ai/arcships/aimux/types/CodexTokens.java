@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,51 +14,63 @@ import java.util.*;
  * output.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class CodexTokens extends WireValue {
-    private final String accessToken;
-    private final BigInteger expiresInSecs;
-    private final String refreshToken;
-    private CodexTokens(JsonNode json) {
-        WireJson.object(json, "CodexTokens", false, "access_token", "expires_in_secs", "refresh_token");
-        WireJson.required(json, "access_token");
-        this.accessToken = WireJson.string(json.get("access_token"));
-        WireJson.required(json, "expires_in_secs");
-        this.expiresInSecs = (WireJson.isNull(json.get("expires_in_secs")) ? null : WireJson.integer(json.get("expires_in_secs"), true, 64));
-        WireJson.required(json, "refresh_token");
-        this.refreshToken = (WireJson.isNull(json.get("refresh_token")) ? null : WireJson.string(json.get("refresh_token")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static CodexTokens fromJson(JsonNode json) { return new CodexTokens(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class CodexTokens {
     /**
      * Access token to pass as the `ChatGptAccount` token of [`CodexProviderSettings`].
      */
-    public String getAccessToken() { return accessToken == null ? null : accessToken; }
+    @JsonProperty("access_token")
+    private final String accessToken;
     /**
      * Access-token lifetime in seconds, if the endpoint reports it.
      */
-    public BigInteger getExpiresInSecs() { return expiresInSecs == null ? null : (expiresInSecs == null ? null : expiresInSecs); }
+    @JsonProperty("expires_in_secs")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    private final Long expiresInSecs;
     /**
      * Rotated refresh token — **single use**; the caller must persist the
      * new value (the library never persists credentials).
      */
-    public String getRefreshToken() { return refreshToken == null ? null : (refreshToken == null ? null : refreshToken); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("access_token", WireJson.tree(accessToken));
-        json.set("expires_in_secs", WireJson.tree(expiresInSecs));
-        json.set("refresh_token", WireJson.tree(refreshToken));
-        return json;
+    @JsonProperty("refresh_token")
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    private final String refreshToken;
+
+    @JsonCreator
+    public CodexTokens(
+        @JsonProperty(value = "access_token", required = true) String accessToken,
+        @JsonProperty(value = "expires_in_secs", required = true) Long expiresInSecs,
+        @JsonProperty(value = "refresh_token", required = true) String refreshToken) {
+        this.accessToken = accessToken;
+        this.expiresInSecs = expiresInSecs;
+        this.refreshToken = refreshToken;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getAccessToken() { return accessToken; }
+    public Long getExpiresInSecs() { return expiresInSecs; }
+    public String getRefreshToken() { return refreshToken; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String accessToken;
+        private Long expiresInSecs;
+        private String refreshToken;
+
+        public Builder accessToken(String value) {
+            this.accessToken = value;
+            return this;
         }
-        public Builder accessToken(String value) { json.set("access_token", WireJson.tree(value)); return this; }
-        public Builder expiresInSecs(BigInteger value) { json.set("expires_in_secs", WireJson.tree(value)); return this; }
-        public Builder refreshToken(String value) { json.set("refresh_token", WireJson.tree(value)); return this; }
-        public CodexTokens build() { return new CodexTokens(json); }
+
+        public Builder expiresInSecs(Long value) {
+            this.expiresInSecs = value;
+            return this;
+        }
+
+        public Builder refreshToken(String value) {
+            this.refreshToken = value;
+            return this;
+        }
+
+        public CodexTokens build() { return new CodexTokens(accessToken, expiresInSecs, refreshToken); }
     }
 }
-

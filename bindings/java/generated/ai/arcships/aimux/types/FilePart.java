@@ -4,57 +4,69 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * File content part (the only file part; `data` is a tagged `FileData`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class FilePart extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class FilePart {
+    @JsonProperty("data")
     private final FileData data;
+    @JsonProperty("filename")
     private final String filename;
-    private final boolean hasFilename;
+    @JsonProperty("mediaType")
     private final String mediaType;
+    @JsonProperty("providerOptions")
     private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private FilePart(JsonNode json) {
-        WireJson.object(json, "FilePart", false, "data", "filename", "mediaType", "providerOptions");
-        WireJson.required(json, "data");
-        this.data = FileData.fromJson(json.get("data"));
-        this.hasFilename = json.has("filename");
-        this.filename = WireJson.isNull(json.get("filename")) ? null : (WireJson.isNull(json.get("filename")) ? null : WireJson.string(json.get("filename")));
-        WireJson.required(json, "mediaType");
-        this.mediaType = WireJson.string(json.get("mediaType"));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+    @JsonCreator
+    public FilePart(
+        @JsonProperty(value = "data", required = true) FileData data,
+        @JsonProperty(value = "filename") String filename,
+        @JsonProperty(value = "mediaType", required = true) String mediaType,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions) {
+        this.data = data;
+        this.filename = filename;
+        this.mediaType = mediaType;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static FilePart fromJson(JsonNode json) { return new FilePart(json); }
+
     public static Builder builder() { return new Builder(); }
-    public FileData getData() { return data == null ? null : data; }
-    public String getFilename() { return filename == null ? null : (filename == null ? null : filename); }
-    public String getMediaType() { return mediaType == null ? null : mediaType; }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("data", WireJson.tree(data));
-        if (hasFilename) json.set("filename", WireJson.tree(filename));
-        json.set("mediaType", WireJson.tree(mediaType));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        return json;
-    }
+    public FileData getData() { return data; }
+    public String getFilename() { return filename; }
+    public String getMediaType() { return mediaType; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FileData data;
+        private String filename;
+        private String mediaType;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+
+        public Builder data(FileData value) {
+            this.data = value;
+            return this;
         }
-        public Builder data(FileData value) { json.set("data", WireJson.tree(value)); return this; }
-        public Builder filename(String value) { json.set("filename", WireJson.tree(value)); return this; }
-        public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public FilePart build() { return new FilePart(json); }
+
+        public Builder filename(String value) {
+            this.filename = value;
+            return this;
+        }
+
+        public Builder mediaType(String value) {
+            this.mediaType = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public FilePart build() { return new FilePart(data, filename, mediaType, providerOptions); }
     }
 }
-

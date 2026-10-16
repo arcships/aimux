@@ -4,61 +4,67 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * `LanguageModelUsage.inputTokenDetails`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class InputTokenDetails extends WireValue {
-    private final Long cacheReadTokens;
-    private final boolean hasCacheReadTokens;
-    private final Long cacheWriteTokens;
-    private final boolean hasCacheWriteTokens;
-    private final Long noCacheTokens;
-    private final boolean hasNoCacheTokens;
-    private InputTokenDetails(JsonNode json) {
-        WireJson.object(json, "InputTokenDetails", false, "cacheReadTokens", "cacheWriteTokens", "noCacheTokens");
-        this.hasCacheReadTokens = json.has("cacheReadTokens");
-        this.cacheReadTokens = WireJson.isNull(json.get("cacheReadTokens")) ? null : (WireJson.isNull(json.get("cacheReadTokens")) ? null : WireJson.integer(json.get("cacheReadTokens"), true, 32).longValue());
-        this.hasCacheWriteTokens = json.has("cacheWriteTokens");
-        this.cacheWriteTokens = WireJson.isNull(json.get("cacheWriteTokens")) ? null : (WireJson.isNull(json.get("cacheWriteTokens")) ? null : WireJson.integer(json.get("cacheWriteTokens"), true, 32).longValue());
-        this.hasNoCacheTokens = json.has("noCacheTokens");
-        this.noCacheTokens = WireJson.isNull(json.get("noCacheTokens")) ? null : (WireJson.isNull(json.get("noCacheTokens")) ? null : WireJson.integer(json.get("noCacheTokens"), true, 32).longValue());
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static InputTokenDetails fromJson(JsonNode json) { return new InputTokenDetails(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class InputTokenDetails {
     /**
      * Input tokens read from a cache.
      */
-    public Long getCacheReadTokens() { return cacheReadTokens == null ? null : (cacheReadTokens == null ? null : cacheReadTokens); }
+    @JsonProperty("cacheReadTokens")
+    private final Long cacheReadTokens;
     /**
      * Input tokens written to a cache.
      */
-    public Long getCacheWriteTokens() { return cacheWriteTokens == null ? null : (cacheWriteTokens == null ? null : cacheWriteTokens); }
+    @JsonProperty("cacheWriteTokens")
+    private final Long cacheWriteTokens;
     /**
      * Input tokens that were not read from or written to a cache.
      */
-    public Long getNoCacheTokens() { return noCacheTokens == null ? null : (noCacheTokens == null ? null : noCacheTokens); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasCacheReadTokens) json.set("cacheReadTokens", WireJson.tree(cacheReadTokens));
-        if (hasCacheWriteTokens) json.set("cacheWriteTokens", WireJson.tree(cacheWriteTokens));
-        if (hasNoCacheTokens) json.set("noCacheTokens", WireJson.tree(noCacheTokens));
-        return json;
+    @JsonProperty("noCacheTokens")
+    private final Long noCacheTokens;
+
+    @JsonCreator
+    public InputTokenDetails(
+        @JsonProperty(value = "cacheReadTokens") Long cacheReadTokens,
+        @JsonProperty(value = "cacheWriteTokens") Long cacheWriteTokens,
+        @JsonProperty(value = "noCacheTokens") Long noCacheTokens) {
+        this.cacheReadTokens = cacheReadTokens;
+        this.cacheWriteTokens = cacheWriteTokens;
+        this.noCacheTokens = noCacheTokens;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getCacheReadTokens() { return cacheReadTokens; }
+    public Long getCacheWriteTokens() { return cacheWriteTokens; }
+    public Long getNoCacheTokens() { return noCacheTokens; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long cacheReadTokens;
+        private Long cacheWriteTokens;
+        private Long noCacheTokens;
+
+        public Builder cacheReadTokens(Long value) {
+            this.cacheReadTokens = value;
+            return this;
         }
-        public Builder cacheReadTokens(Long value) { json.set("cacheReadTokens", WireJson.tree(value)); return this; }
-        public Builder cacheWriteTokens(Long value) { json.set("cacheWriteTokens", WireJson.tree(value)); return this; }
-        public Builder noCacheTokens(Long value) { json.set("noCacheTokens", WireJson.tree(value)); return this; }
-        public InputTokenDetails build() { return new InputTokenDetails(json); }
+
+        public Builder cacheWriteTokens(Long value) {
+            this.cacheWriteTokens = value;
+            return this;
+        }
+
+        public Builder noCacheTokens(Long value) {
+            this.noCacheTokens = value;
+            return this;
+        }
+
+        public InputTokenDetails build() { return new InputTokenDetails(cacheReadTokens, cacheWriteTokens, noCacheTokens); }
     }
 }
-

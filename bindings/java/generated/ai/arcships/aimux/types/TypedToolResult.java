@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -18,80 +17,110 @@ import java.util.*;
  * `toolResults`, by [`crate::wire::typed_vec`] ([`TaggedToolResult`]).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TypedToolResult extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TypedToolResult {
+    @JsonProperty("dynamic")
     private final Boolean dynamic;
-    private final boolean hasDynamic;
-    private final JsonNode input;
-    private final boolean hasInput;
-    private final JsonNode output;
-    private final Boolean preliminary;
-    private final boolean hasPreliminary;
-    private final Boolean providerExecuted;
-    private final boolean hasProviderExecuted;
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final String toolCallId;
-    private final String toolName;
-    private TypedToolResult(JsonNode json) {
-        WireJson.object(json, "TypedToolResult", false, "dynamic", "input", "output", "preliminary", "providerExecuted", "providerMetadata", "toolCallId", "toolName");
-        this.hasDynamic = json.has("dynamic");
-        this.dynamic = WireJson.isNull(json.get("dynamic")) ? null : (WireJson.isNull(json.get("dynamic")) ? null : WireJson.bool(json.get("dynamic")));
-        this.hasInput = json.has("input");
-        this.input = WireJson.isNull(json.get("input")) ? null : WireJson.json(json.get("input"));
-        WireJson.required(json, "output");
-        this.output = WireJson.json(json.get("output"));
-        this.hasPreliminary = json.has("preliminary");
-        this.preliminary = WireJson.isNull(json.get("preliminary")) ? null : (WireJson.isNull(json.get("preliminary")) ? null : WireJson.bool(json.get("preliminary")));
-        this.hasProviderExecuted = json.has("providerExecuted");
-        this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "toolCallId");
-        this.toolCallId = WireJson.string(json.get("toolCallId"));
-        WireJson.required(json, "toolName");
-        this.toolName = WireJson.string(json.get("toolName"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TypedToolResult fromJson(JsonNode json) { return new TypedToolResult(json); }
-    public static Builder builder() { return new Builder(); }
-    public Boolean getDynamic() { return dynamic == null ? null : (dynamic == null ? null : dynamic); }
     /**
      * The input of the tool call the result answers; absent for a deferred
      * provider result, whose call is not in this response.
      */
-    public JsonNode getInput() { return input == null ? null : WireJson.json(WireJson.tree(input)); }
-    public JsonNode getOutput() { return output == null ? null : WireJson.json(WireJson.tree(output)); }
-    public Boolean getPreliminary() { return preliminary == null ? null : (preliminary == null ? null : preliminary); }
-    public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-    public String getToolName() { return toolName == null ? null : toolName; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDynamic) json.set("dynamic", WireJson.tree(dynamic));
-        if (hasInput) json.set("input", WireJson.tree(input));
-        json.set("output", WireJson.tree(output));
-        if (hasPreliminary) json.set("preliminary", WireJson.tree(preliminary));
-        if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("toolCallId", WireJson.tree(toolCallId));
-        json.set("toolName", WireJson.tree(toolName));
-        return json;
+    @JsonProperty("input")
+    private final JsonNode input;
+    @JsonProperty("output")
+    private final JsonNode output;
+    @JsonProperty("preliminary")
+    private final Boolean preliminary;
+    @JsonProperty("providerExecuted")
+    private final Boolean providerExecuted;
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
+    @JsonProperty("toolCallId")
+    private final String toolCallId;
+    @JsonProperty("toolName")
+    private final String toolName;
+
+    @JsonCreator
+    public TypedToolResult(
+        @JsonProperty(value = "dynamic") Boolean dynamic,
+        @JsonProperty(value = "input") JsonNode input,
+        @JsonProperty(value = "output", required = true) JsonNode output,
+        @JsonProperty(value = "preliminary") Boolean preliminary,
+        @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+        @JsonProperty(value = "toolName", required = true) String toolName) {
+        this.dynamic = dynamic;
+        this.input = input == null || input.isNull() ? null : input.deepCopy();
+        this.output = output == null ? null : output.deepCopy();
+        this.preliminary = preliminary;
+        this.providerExecuted = providerExecuted;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.toolCallId = toolCallId;
+        this.toolName = toolName;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Boolean getDynamic() { return dynamic; }
+    public JsonNode getInput() { return input == null ? null : input.deepCopy(); }
+    public JsonNode getOutput() { return output == null ? null : output.deepCopy(); }
+    public Boolean getPreliminary() { return preliminary; }
+    public Boolean getProviderExecuted() { return providerExecuted; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getToolCallId() { return toolCallId; }
+    public String getToolName() { return toolName; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean dynamic;
+        private JsonNode input;
+        private JsonNode output;
+        private Boolean preliminary;
+        private Boolean providerExecuted;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String toolCallId;
+        private String toolName;
+
+        public Builder dynamic(Boolean value) {
+            this.dynamic = value;
+            return this;
         }
-        public Builder dynamic(Boolean value) { json.set("dynamic", WireJson.tree(value)); return this; }
-        public Builder input(JsonNode value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder output(JsonNode value) { json.set("output", WireJson.tree(value)); return this; }
-        public Builder preliminary(Boolean value) { json.set("preliminary", WireJson.tree(value)); return this; }
-        public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-        public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-        public TypedToolResult build() { return new TypedToolResult(json); }
+
+        public Builder input(JsonNode value) {
+            this.input = value;
+            return this;
+        }
+
+        public Builder output(JsonNode value) {
+            this.output = value;
+            return this;
+        }
+
+        public Builder preliminary(Boolean value) {
+            this.preliminary = value;
+            return this;
+        }
+
+        public Builder providerExecuted(Boolean value) {
+            this.providerExecuted = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder toolCallId(String value) {
+            this.toolCallId = value;
+            return this;
+        }
+
+        public Builder toolName(String value) {
+            this.toolName = value;
+            return this;
+        }
+
+        public TypedToolResult build() { return new TypedToolResult(dynamic, input, output, preliminary, providerExecuted, providerMetadata, toolCallId, toolName); }
     }
 }
-

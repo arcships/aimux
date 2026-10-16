@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,70 +12,90 @@ import java.util.*;
  * SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolChoiceViolationError extends WireValue {
-    private final List<GenerateContent> content;
-    private final FinishReasonUnified finishReason;
-    private final String modelId;
-    private final String provider;
-    private final LanguageModelV4ToolChoice toolChoice;
-    private ToolChoiceViolationError(JsonNode json) {
-        WireJson.object(json, "ToolChoiceViolationError", false, "content", "finishReason", "modelId", "provider", "toolChoice");
-        WireJson.required(json, "content");
-        this.content = WireJson.array(json.get("content"), item0 -> GenerateContent.fromJson(item0));
-        WireJson.required(json, "finishReason");
-        this.finishReason = FinishReasonUnified.fromJson(json.get("finishReason"));
-        WireJson.required(json, "modelId");
-        this.modelId = WireJson.string(json.get("modelId"));
-        WireJson.required(json, "provider");
-        this.provider = WireJson.string(json.get("provider"));
-        WireJson.required(json, "toolChoice");
-        this.toolChoice = LanguageModelV4ToolChoice.fromJson(json.get("toolChoice"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolChoiceViolationError fromJson(JsonNode json) { return new ToolChoiceViolationError(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolChoiceViolationError {
     /**
      * The content the model returned, before tool-call parsing, so a tool
      * call returned as text or reasoning can be recovered.
      */
-    public List<GenerateContent> getContent() { return content == null ? null : WireJson.array(WireJson.tree(content), item0 -> GenerateContent.fromJson(item0)); }
+    @JsonProperty("content")
+    private final List<GenerateContent> content;
     /**
      * Why the model finished.
      */
-    public FinishReasonUnified getFinishReason() { return finishReason == null ? null : finishReason; }
+    @JsonProperty("finishReason")
+    private final FinishReasonUnified finishReason;
     /**
      * The model that returned the response.
      */
-    public String getModelId() { return modelId == null ? null : modelId; }
+    @JsonProperty("modelId")
+    private final String modelId;
     /**
      * The provider that returned the response.
      */
-    public String getProvider() { return provider == null ? null : provider; }
+    @JsonProperty("provider")
+    private final String provider;
     /**
      * The enforced tool choice (`required`, or `tool` with a name) that the
      * response did not satisfy.
      */
-    public LanguageModelV4ToolChoice getToolChoice() { return toolChoice == null ? null : toolChoice; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("content", WireJson.tree(content));
-        json.set("finishReason", WireJson.tree(finishReason));
-        json.set("modelId", WireJson.tree(modelId));
-        json.set("provider", WireJson.tree(provider));
-        json.set("toolChoice", WireJson.tree(toolChoice));
-        return json;
+    @JsonProperty("toolChoice")
+    private final LanguageModelV4ToolChoice toolChoice;
+
+    @JsonCreator
+    public ToolChoiceViolationError(
+        @JsonProperty(value = "content", required = true) List<GenerateContent> content,
+        @JsonProperty(value = "finishReason", required = true) FinishReasonUnified finishReason,
+        @JsonProperty(value = "modelId", required = true) String modelId,
+        @JsonProperty(value = "provider", required = true) String provider,
+        @JsonProperty(value = "toolChoice", required = true) LanguageModelV4ToolChoice toolChoice) {
+        this.content = content == null ? null : Collections.unmodifiableList(new ArrayList<>(content));
+        this.finishReason = finishReason;
+        this.modelId = modelId;
+        this.provider = provider;
+        this.toolChoice = toolChoice;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public List<GenerateContent> getContent() { return content; }
+    public FinishReasonUnified getFinishReason() { return finishReason; }
+    public String getModelId() { return modelId; }
+    public String getProvider() { return provider; }
+    public LanguageModelV4ToolChoice getToolChoice() { return toolChoice; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<GenerateContent> content;
+        private FinishReasonUnified finishReason;
+        private String modelId;
+        private String provider;
+        private LanguageModelV4ToolChoice toolChoice;
+
+        public Builder content(List<GenerateContent> value) {
+            this.content = value;
+            return this;
         }
-        public Builder content(List<GenerateContent> value) { json.set("content", WireJson.tree(value)); return this; }
-        public Builder finishReason(FinishReasonUnified value) { json.set("finishReason", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder toolChoice(LanguageModelV4ToolChoice value) { json.set("toolChoice", WireJson.tree(value)); return this; }
-        public ToolChoiceViolationError build() { return new ToolChoiceViolationError(json); }
+
+        public Builder finishReason(FinishReasonUnified value) {
+            this.finishReason = value;
+            return this;
+        }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder toolChoice(LanguageModelV4ToolChoice value) {
+            this.toolChoice = value;
+            return this;
+        }
+
+        public ToolChoiceViolationError build() { return new ToolChoiceViolationError(content, finishReason, modelId, provider, toolChoice); }
     }
 }
-

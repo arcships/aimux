@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,87 +12,87 @@ import java.util.*;
  * 
  * Aligned with V4 `RerankingModelV4CallOptions.documents`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = RerankingDocuments.Text.class, name = "text"),
-    @JsonSubTypes.Type(value = RerankingDocuments.Object.class, name = "object"),
+    @JsonSubTypes.Type(value = RerankingDocuments.Object.class, name = "object")
 })
-public abstract class RerankingDocuments extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class RerankingDocuments {
     private RerankingDocuments() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public final boolean isObject() { return "object".equals(getType()); }
     public final boolean isText() { return "text".equals(getType()); }
-    public static RerankingDocuments fromJson(JsonNode json) {
-        WireJson.object(json, "RerankingDocuments", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "object":
-                return Object.fromJson(json);
-            case "text":
-                return Text.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown RerankingDocuments tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Text extends RerankingDocuments {
+        @JsonProperty("values")
         private final List<String> values;
-        private Text(JsonNode json) {
-            WireJson.object(json, "Text", false, "values", "type");
-            if (!"text".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Text tag");
-            WireJson.required(json, "values");
-            this.values = WireJson.array(json.get("values"), item0 -> WireJson.string(item0));
+
+        @JsonCreator
+        public Text(
+            @JsonProperty(value = "values", required = true) List<String> values) {
+            this.values = values == null ? null : Collections.unmodifiableList(new ArrayList<>(values));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Text fromJson(JsonNode json) { return new Text(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "text"; }
-        public List<String> getValues() { return values == null ? null : WireJson.array(WireJson.tree(values), item0 -> WireJson.string(item0)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "text");
-            json.set("values", WireJson.tree(values));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "text"; }
+        public List<String> getValues() { return values; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "text");
+            private List<String> values;
+
+            public Builder values(List<String> value) {
+                this.values = value;
+                return this;
             }
-            public Builder values(List<String> value) { json.set("values", WireJson.tree(value)); return this; }
-            public Text build() { return new Text(json); }
+
+            public Text build() { return new Text(values); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Object extends RerankingDocuments {
+        @JsonProperty("values")
         private final List<JsonNode> values;
-        private Object(JsonNode json) {
-            WireJson.object(json, "Object", false, "values", "type");
-            if (!"object".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Object tag");
-            WireJson.required(json, "values");
-            this.values = WireJson.array(json.get("values"), item0 -> WireJson.json(item0));
+
+        @JsonCreator
+        public Object(
+            @JsonProperty(value = "values", required = true) List<JsonNode> values) {
+            this.values = values == null ? null : Collections.unmodifiableList(new ArrayList<>(values));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Object fromJson(JsonNode json) { return new Object(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "object"; }
-        public List<JsonNode> getValues() { return values == null ? null : WireJson.array(WireJson.tree(values), item0 -> WireJson.json(item0)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "object");
-            json.set("values", WireJson.tree(values));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "object"; }
+        public List<JsonNode> getValues() { return values; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "object");
+            private List<JsonNode> values;
+
+            public Builder values(List<JsonNode> value) {
+                this.values = value;
+                return this;
             }
-            public Builder values(List<JsonNode> value) { json.set("values", WireJson.tree(value)); return this; }
-            public Object build() { return new Object(json); }
+
+            public Object build() { return new Object(values); }
         }
     }
-
 }

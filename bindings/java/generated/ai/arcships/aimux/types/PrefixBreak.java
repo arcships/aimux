@@ -4,61 +4,80 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A prefix break between two consecutive records of a session.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class PrefixBreak extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class PrefixBreak {
+    @JsonProperty("atRecordId")
     private final String atRecordId;
+    @JsonProperty("expectedBreak")
     private final Boolean expectedBreak;
+    @JsonProperty("kind")
     private final BreakKind kind;
-    private final BigInteger lcpBytes;
+    @JsonProperty("lcpBytes")
+    private final Long lcpBytes;
+    @JsonProperty("prevRecordId")
     private final String prevRecordId;
-    private PrefixBreak(JsonNode json) {
-        WireJson.object(json, "PrefixBreak", false, "atRecordId", "expectedBreak", "kind", "lcpBytes", "prevRecordId");
-        WireJson.required(json, "atRecordId");
-        this.atRecordId = WireJson.string(json.get("atRecordId"));
-        WireJson.required(json, "expectedBreak");
-        this.expectedBreak = WireJson.bool(json.get("expectedBreak"));
-        WireJson.required(json, "kind");
-        this.kind = BreakKind.fromJson(json.get("kind"));
-        WireJson.required(json, "lcpBytes");
-        this.lcpBytes = WireJson.integer(json.get("lcpBytes"), true, 64);
-        WireJson.required(json, "prevRecordId");
-        this.prevRecordId = WireJson.string(json.get("prevRecordId"));
+
+    @JsonCreator
+    public PrefixBreak(
+        @JsonProperty(value = "atRecordId", required = true) String atRecordId,
+        @JsonProperty(value = "expectedBreak", required = true) Boolean expectedBreak,
+        @JsonProperty(value = "kind", required = true) BreakKind kind,
+        @JsonProperty(value = "lcpBytes", required = true) Long lcpBytes,
+        @JsonProperty(value = "prevRecordId", required = true) String prevRecordId) {
+        this.atRecordId = atRecordId;
+        this.expectedBreak = expectedBreak;
+        this.kind = kind;
+        this.lcpBytes = lcpBytes;
+        this.prevRecordId = prevRecordId;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static PrefixBreak fromJson(JsonNode json) { return new PrefixBreak(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getAtRecordId() { return atRecordId == null ? null : atRecordId; }
-    public Boolean getExpectedBreak() { return expectedBreak == null ? null : expectedBreak; }
-    public BreakKind getKind() { return kind == null ? null : kind; }
-    public BigInteger getLcpBytes() { return lcpBytes == null ? null : lcpBytes; }
-    public String getPrevRecordId() { return prevRecordId == null ? null : prevRecordId; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("atRecordId", WireJson.tree(atRecordId));
-        json.set("expectedBreak", WireJson.tree(expectedBreak));
-        json.set("kind", WireJson.tree(kind));
-        json.set("lcpBytes", WireJson.tree(lcpBytes));
-        json.set("prevRecordId", WireJson.tree(prevRecordId));
-        return json;
-    }
+    public String getAtRecordId() { return atRecordId; }
+    public Boolean getExpectedBreak() { return expectedBreak; }
+    public BreakKind getKind() { return kind; }
+    public Long getLcpBytes() { return lcpBytes; }
+    public String getPrevRecordId() { return prevRecordId; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String atRecordId;
+        private Boolean expectedBreak;
+        private BreakKind kind;
+        private Long lcpBytes;
+        private String prevRecordId;
+
+        public Builder atRecordId(String value) {
+            this.atRecordId = value;
+            return this;
         }
-        public Builder atRecordId(String value) { json.set("atRecordId", WireJson.tree(value)); return this; }
-        public Builder expectedBreak(Boolean value) { json.set("expectedBreak", WireJson.tree(value)); return this; }
-        public Builder kind(BreakKind value) { json.set("kind", WireJson.tree(value)); return this; }
-        public Builder lcpBytes(BigInteger value) { json.set("lcpBytes", WireJson.tree(value)); return this; }
-        public Builder prevRecordId(String value) { json.set("prevRecordId", WireJson.tree(value)); return this; }
-        public PrefixBreak build() { return new PrefixBreak(json); }
+
+        public Builder expectedBreak(Boolean value) {
+            this.expectedBreak = value;
+            return this;
+        }
+
+        public Builder kind(BreakKind value) {
+            this.kind = value;
+            return this;
+        }
+
+        public Builder lcpBytes(Long value) {
+            this.lcpBytes = value;
+            return this;
+        }
+
+        public Builder prevRecordId(String value) {
+            this.prevRecordId = value;
+            return this;
+        }
+
+        public PrefixBreak build() { return new PrefixBreak(atRecordId, expectedBreak, kind, lcpBytes, prevRecordId); }
     }
 }
-

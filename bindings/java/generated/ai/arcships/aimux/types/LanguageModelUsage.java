@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -19,81 +18,102 @@ import java.util.*;
  * `undefined` count; the detail objects are always present.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class LanguageModelUsage extends WireValue {
-    private final InputTokenDetails inputTokenDetails;
-    private final Long inputTokens;
-    private final boolean hasInputTokens;
-    private final OutputTokenDetails outputTokenDetails;
-    private final Long outputTokens;
-    private final boolean hasOutputTokens;
-    private final Map<String, JsonNode> raw;
-    private final boolean hasRaw;
-    private final Long totalTokens;
-    private final boolean hasTotalTokens;
-    private LanguageModelUsage(JsonNode json) {
-        WireJson.object(json, "LanguageModelUsage", false, "inputTokenDetails", "inputTokens", "outputTokenDetails", "outputTokens", "raw", "totalTokens");
-        WireJson.required(json, "inputTokenDetails");
-        this.inputTokenDetails = InputTokenDetails.fromJson(json.get("inputTokenDetails"));
-        this.hasInputTokens = json.has("inputTokens");
-        this.inputTokens = WireJson.isNull(json.get("inputTokens")) ? null : (WireJson.isNull(json.get("inputTokens")) ? null : WireJson.integer(json.get("inputTokens"), true, 32).longValue());
-        WireJson.required(json, "outputTokenDetails");
-        this.outputTokenDetails = OutputTokenDetails.fromJson(json.get("outputTokenDetails"));
-        this.hasOutputTokens = json.has("outputTokens");
-        this.outputTokens = WireJson.isNull(json.get("outputTokens")) ? null : (WireJson.isNull(json.get("outputTokens")) ? null : WireJson.integer(json.get("outputTokens"), true, 32).longValue());
-        this.hasRaw = json.has("raw");
-        this.raw = WireJson.isNull(json.get("raw")) ? null : (WireJson.isNull(json.get("raw")) ? null : WireJson.map(json.get("raw"), item0 -> WireJson.json(item0)));
-        this.hasTotalTokens = json.has("totalTokens");
-        this.totalTokens = WireJson.isNull(json.get("totalTokens")) ? null : (WireJson.isNull(json.get("totalTokens")) ? null : WireJson.integer(json.get("totalTokens"), true, 32).longValue());
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static LanguageModelUsage fromJson(JsonNode json) { return new LanguageModelUsage(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class LanguageModelUsage {
     /**
      * Breakdown of the input tokens.
      */
-    public InputTokenDetails getInputTokenDetails() { return inputTokenDetails == null ? null : inputTokenDetails; }
+    @JsonProperty("inputTokenDetails")
+    private final InputTokenDetails inputTokenDetails;
     /**
      * Total input (prompt) tokens.
      */
-    public Long getInputTokens() { return inputTokens == null ? null : (inputTokens == null ? null : inputTokens); }
+    @JsonProperty("inputTokens")
+    private final Long inputTokens;
     /**
      * Breakdown of the output tokens.
      */
-    public OutputTokenDetails getOutputTokenDetails() { return outputTokenDetails == null ? null : outputTokenDetails; }
+    @JsonProperty("outputTokenDetails")
+    private final OutputTokenDetails outputTokenDetails;
     /**
      * Total output (completion) tokens.
      */
-    public Long getOutputTokens() { return outputTokens == null ? null : (outputTokens == null ? null : outputTokens); }
+    @JsonProperty("outputTokens")
+    private final Long outputTokens;
     /**
      * The provider's raw usage object, passed through unchanged.
      */
-    public Map<String, JsonNode> getRaw() { return raw == null ? null : (raw == null ? null : WireJson.map(WireJson.tree(raw), item0 -> WireJson.json(item0))); }
+    @JsonProperty("raw")
+    private final Map<String, JsonNode> raw;
     /**
      * Input plus output tokens, when either is known.
      */
-    public Long getTotalTokens() { return totalTokens == null ? null : (totalTokens == null ? null : totalTokens); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("inputTokenDetails", WireJson.tree(inputTokenDetails));
-        if (hasInputTokens) json.set("inputTokens", WireJson.tree(inputTokens));
-        json.set("outputTokenDetails", WireJson.tree(outputTokenDetails));
-        if (hasOutputTokens) json.set("outputTokens", WireJson.tree(outputTokens));
-        if (hasRaw) json.set("raw", WireJson.tree(raw));
-        if (hasTotalTokens) json.set("totalTokens", WireJson.tree(totalTokens));
-        return json;
+    @JsonProperty("totalTokens")
+    private final Long totalTokens;
+
+    @JsonCreator
+    public LanguageModelUsage(
+        @JsonProperty(value = "inputTokenDetails", required = true) InputTokenDetails inputTokenDetails,
+        @JsonProperty(value = "inputTokens") Long inputTokens,
+        @JsonProperty(value = "outputTokenDetails", required = true) OutputTokenDetails outputTokenDetails,
+        @JsonProperty(value = "outputTokens") Long outputTokens,
+        @JsonProperty(value = "raw") Map<String, JsonNode> raw,
+        @JsonProperty(value = "totalTokens") Long totalTokens) {
+        this.inputTokenDetails = inputTokenDetails;
+        this.inputTokens = inputTokens;
+        this.outputTokenDetails = outputTokenDetails;
+        this.outputTokens = outputTokens;
+        this.raw = raw == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(raw));
+        this.totalTokens = totalTokens;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public InputTokenDetails getInputTokenDetails() { return inputTokenDetails; }
+    public Long getInputTokens() { return inputTokens; }
+    public OutputTokenDetails getOutputTokenDetails() { return outputTokenDetails; }
+    public Long getOutputTokens() { return outputTokens; }
+    public Map<String, JsonNode> getRaw() { return raw; }
+    public Long getTotalTokens() { return totalTokens; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private InputTokenDetails inputTokenDetails;
+        private Long inputTokens;
+        private OutputTokenDetails outputTokenDetails;
+        private Long outputTokens;
+        private Map<String, JsonNode> raw;
+        private Long totalTokens;
+
+        public Builder inputTokenDetails(InputTokenDetails value) {
+            this.inputTokenDetails = value;
+            return this;
         }
-        public Builder inputTokenDetails(InputTokenDetails value) { json.set("inputTokenDetails", WireJson.tree(value)); return this; }
-        public Builder inputTokens(Long value) { json.set("inputTokens", WireJson.tree(value)); return this; }
-        public Builder outputTokenDetails(OutputTokenDetails value) { json.set("outputTokenDetails", WireJson.tree(value)); return this; }
-        public Builder outputTokens(Long value) { json.set("outputTokens", WireJson.tree(value)); return this; }
-        public Builder raw(Map<String, JsonNode> value) { json.set("raw", WireJson.tree(value)); return this; }
-        public Builder totalTokens(Long value) { json.set("totalTokens", WireJson.tree(value)); return this; }
-        public LanguageModelUsage build() { return new LanguageModelUsage(json); }
+
+        public Builder inputTokens(Long value) {
+            this.inputTokens = value;
+            return this;
+        }
+
+        public Builder outputTokenDetails(OutputTokenDetails value) {
+            this.outputTokenDetails = value;
+            return this;
+        }
+
+        public Builder outputTokens(Long value) {
+            this.outputTokens = value;
+            return this;
+        }
+
+        public Builder raw(Map<String, JsonNode> value) {
+            this.raw = value;
+            return this;
+        }
+
+        public Builder totalTokens(Long value) {
+            this.totalTokens = value;
+            return this;
+        }
+
+        public LanguageModelUsage build() { return new LanguageModelUsage(inputTokenDetails, inputTokens, outputTokenDetails, outputTokens, raw, totalTokens); }
     }
 }
-

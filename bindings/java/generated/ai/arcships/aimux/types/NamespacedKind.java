@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -19,12 +18,12 @@ import java.util.*;
  * does not construct or deserialize.
  */
 @JsonDeserialize(using = JsonDeserializer.None.class)
-public final class NamespacedKind extends WireValue {
+public final class NamespacedKind {
+    @JsonValue
     private final String value;
-    public NamespacedKind(String value) { this.value = WireJson.string(WireJson.tree(value)); }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static NamespacedKind fromJson(JsonNode json) { return new NamespacedKind(WireJson.string(json)); }
-    public String getValue() { return value; }
-    @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-}
 
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public NamespacedKind(String value) { this.value = value; }
+
+    public String getValue() { return value; }
+}

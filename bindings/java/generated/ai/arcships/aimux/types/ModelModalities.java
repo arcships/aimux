@@ -4,45 +4,47 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Input/output modality sets.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ModelModalities extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ModelModalities {
+    @JsonProperty("input")
     private final List<Modality> input;
-    private final boolean hasInput;
+    @JsonProperty("output")
     private final List<Modality> output;
-    private final boolean hasOutput;
-    private ModelModalities(JsonNode json) {
-        WireJson.object(json, "ModelModalities", false, "input", "output");
-        this.hasInput = json.has("input");
-        this.input = WireJson.isNull(json.get("input")) ? null : WireJson.array(json.get("input"), item0 -> Modality.fromJson(item0));
-        this.hasOutput = json.has("output");
-        this.output = WireJson.isNull(json.get("output")) ? null : WireJson.array(json.get("output"), item0 -> Modality.fromJson(item0));
+
+    @JsonCreator
+    public ModelModalities(
+        @JsonProperty(value = "input") List<Modality> input,
+        @JsonProperty(value = "output") List<Modality> output) {
+        this.input = input == null ? null : Collections.unmodifiableList(new ArrayList<>(input));
+        this.output = output == null ? null : Collections.unmodifiableList(new ArrayList<>(output));
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ModelModalities fromJson(JsonNode json) { return new ModelModalities(json); }
+
     public static Builder builder() { return new Builder(); }
-    public List<Modality> getInput() { return input == null ? null : WireJson.array(WireJson.tree(input), item0 -> Modality.fromJson(item0)); }
-    public List<Modality> getOutput() { return output == null ? null : WireJson.array(WireJson.tree(output), item0 -> Modality.fromJson(item0)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasInput) json.set("input", WireJson.tree(input));
-        if (hasOutput) json.set("output", WireJson.tree(output));
-        return json;
-    }
+    public List<Modality> getInput() { return input; }
+    public List<Modality> getOutput() { return output; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<Modality> input;
+        private List<Modality> output;
+
+        public Builder input(List<Modality> value) {
+            this.input = value;
+            return this;
         }
-        public Builder input(List<Modality> value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder output(List<Modality> value) { json.set("output", WireJson.tree(value)); return this; }
-        public ModelModalities build() { return new ModelModalities(json); }
+
+        public Builder output(List<Modality> value) {
+            this.output = value;
+            return this;
+        }
+
+        public ModelModalities build() { return new ModelModalities(input, output); }
     }
 }
-

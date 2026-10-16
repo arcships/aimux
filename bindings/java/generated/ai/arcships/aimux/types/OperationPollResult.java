@@ -4,115 +4,103 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = OperationPollResult.Part.class, name = "part"),
     @JsonSubTypes.Type(value = OperationPollResult.Ended.class, name = "ended"),
-    @JsonSubTypes.Type(value = OperationPollResult.Timeout.class, name = "timeout"),
+    @JsonSubTypes.Type(value = OperationPollResult.Timeout.class, name = "timeout")
 })
-public abstract class OperationPollResult extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class OperationPollResult {
     private OperationPollResult() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public TranscriptionStreamPart getPart() { return null; }
     public final boolean isEnded() { return "ended".equals(getType()); }
     public final boolean isPart() { return "part".equals(getType()); }
     public final boolean isTimeout() { return "timeout".equals(getType()); }
-    public static OperationPollResult fromJson(JsonNode json) {
-        WireJson.object(json, "OperationPollResult", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "ended":
-                return Ended.fromJson(json);
-            case "part":
-                return Part.fromJson(json);
-            case "timeout":
-                return Timeout.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown OperationPollResult tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Part extends OperationPollResult {
+        @JsonProperty("part")
         private final TranscriptionStreamPart part;
-        private Part(JsonNode json) {
-            WireJson.object(json, "Part", false, "part", "type");
-            if (!"part".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Part tag");
-            WireJson.required(json, "part");
-            this.part = TranscriptionStreamPart.fromJson(json.get("part"));
+
+        @JsonCreator
+        public Part(
+            @JsonProperty(value = "part", required = true) TranscriptionStreamPart part) {
+            this.part = part;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Part fromJson(JsonNode json) { return new Part(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "part"; }
-        public TranscriptionStreamPart getPart() { return part == null ? null : part; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "part");
-            json.set("part", WireJson.tree(part));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "part"; }
+        public TranscriptionStreamPart getPart() { return part; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "part");
+            private TranscriptionStreamPart part;
+
+            public Builder part(TranscriptionStreamPart value) {
+                this.part = value;
+                return this;
             }
-            public Builder part(TranscriptionStreamPart value) { json.set("part", WireJson.tree(value)); return this; }
-            public Part build() { return new Part(json); }
+
+            public Part build() { return new Part(part); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Ended extends OperationPollResult {
-        private Ended(JsonNode json) {
-            WireJson.object(json, "Ended", false, "type");
-            if (!"ended".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Ended tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Ended fromJson(JsonNode json) { return new Ended(json); }
+
+        @JsonCreator
+        public Ended() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "ended"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "ended");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "ended"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "ended");
-            }
-            public Ended build() { return new Ended(json); }
+
+            public Ended build() { return new Ended(); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Timeout extends OperationPollResult {
-        private Timeout(JsonNode json) {
-            WireJson.object(json, "Timeout", false, "type");
-            if (!"timeout".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Timeout tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Timeout fromJson(JsonNode json) { return new Timeout(json); }
+
+        @JsonCreator
+        public Timeout() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "timeout"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "timeout");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "timeout"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "timeout");
-            }
-            public Timeout build() { return new Timeout(json); }
+
+            public Timeout build() { return new Timeout(); }
         }
     }
-
 }

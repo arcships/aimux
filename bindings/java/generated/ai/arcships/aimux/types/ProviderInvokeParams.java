@@ -4,41 +4,44 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ProviderInvokeParams extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ProviderInvokeParams {
+    @JsonProperty("abort")
     private final HandleIdInput abort;
-    private final boolean hasAbort;
+    @JsonProperty("method")
     private final String method;
-    private ProviderInvokeParams(JsonNode json) {
-        WireJson.object(json, "ProviderInvokeParams", true, "abort", "method");
-        this.hasAbort = json.has("abort");
-        this.abort = WireJson.isNull(json.get("abort")) ? null : (WireJson.isNull(json.get("abort")) ? null : HandleIdInput.fromJson(json.get("abort")));
-        WireJson.required(json, "method");
-        this.method = WireJson.string(json.get("method"));
+
+    @JsonCreator
+    public ProviderInvokeParams(
+        @JsonProperty(value = "abort") HandleIdInput abort,
+        @JsonProperty(value = "method", required = true) String method) {
+        this.abort = abort;
+        this.method = method;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ProviderInvokeParams fromJson(JsonNode json) { return new ProviderInvokeParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public HandleIdInput getAbort() { return abort == null ? null : (abort == null ? null : abort); }
-    public String getMethod() { return method == null ? null : method; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasAbort) json.set("abort", WireJson.tree(abort));
-        json.set("method", WireJson.tree(method));
-        return json;
-    }
+    public HandleIdInput getAbort() { return abort; }
+    public String getMethod() { return method; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private HandleIdInput abort;
+        private String method;
+
+        public Builder abort(HandleIdInput value) {
+            this.abort = value;
+            return this;
         }
-        public Builder abort(HandleIdInput value) { json.set("abort", WireJson.tree(value)); return this; }
-        public Builder method(String value) { json.set("method", WireJson.tree(value)); return this; }
-        public ProviderInvokeParams build() { return new ProviderInvokeParams(json); }
+
+        public Builder method(String value) {
+            this.method = value;
+            return this;
+        }
+
+        public ProviderInvokeParams build() { return new ProviderInvokeParams(abort, method); }
     }
 }
-

@@ -4,18 +4,10 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 public enum ToolCallRepairReply0ToolCallType {
-    TOOL_CALL("tool-call");
-    private final String value;
-    ToolCallRepairReply0ToolCallType(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static ToolCallRepairReply0ToolCallType fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (ToolCallRepairReply0ToolCallType item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid ToolCallRepairReply0ToolCallType: " + value);
-    }
+    @JsonProperty("tool-call")
+    TOOL_CALL
 }

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,19 +14,18 @@ import java.util.*;
  * OpenAI `reasoning_effort` and Anthropic `thinking` config.
  */
 public enum ReasoningEffort {
-    PROVIDER_DEFAULT("provider-default"),
-    NONE("none"),
-    MINIMAL("minimal"),
-    LOW("low"),
-    MEDIUM("medium"),
-    HIGH("high"),
-    XHIGH("xhigh");
-    private final String value;
-    ReasoningEffort(String value) { this.value = value; }
-    @JsonValue public String toJson() { return value; }
-    @JsonCreator public static ReasoningEffort fromJson(JsonNode json) {
-        String value = WireJson.string(json);
-        for (ReasoningEffort item : values()) if (item.value.equals(value)) return item;
-        throw new IllegalArgumentException("Invalid ReasoningEffort: " + value);
-    }
+    @JsonProperty("provider-default")
+    PROVIDER_DEFAULT,
+    @JsonProperty("none")
+    NONE,
+    @JsonProperty("minimal")
+    MINIMAL,
+    @JsonProperty("low")
+    LOW,
+    @JsonProperty("medium")
+    MEDIUM,
+    @JsonProperty("high")
+    HIGH,
+    @JsonProperty("xhigh")
+    XHIGH
 }

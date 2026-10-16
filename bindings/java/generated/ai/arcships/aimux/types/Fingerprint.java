@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -13,63 +12,83 @@ import java.util.*;
  * `u128` is not JSON-serializable).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class Fingerprint extends WireValue {
-    private final List<String> blockHashes;
-    private final BigInteger blockSize;
-    private final String bodyHash;
-    private final BigInteger lenBytes;
-    private final BigInteger tokenEstimate;
-    private Fingerprint(JsonNode json) {
-        WireJson.object(json, "Fingerprint", false, "blockHashes", "blockSize", "bodyHash", "lenBytes", "tokenEstimate");
-        WireJson.required(json, "blockHashes");
-        this.blockHashes = WireJson.array(json.get("blockHashes"), item0 -> WireJson.string(item0));
-        WireJson.required(json, "blockSize");
-        this.blockSize = WireJson.integer(json.get("blockSize"), true, 64);
-        WireJson.required(json, "bodyHash");
-        this.bodyHash = WireJson.string(json.get("bodyHash"));
-        WireJson.required(json, "lenBytes");
-        this.lenBytes = WireJson.integer(json.get("lenBytes"), true, 64);
-        WireJson.required(json, "tokenEstimate");
-        this.tokenEstimate = WireJson.integer(json.get("tokenEstimate"), true, 64);
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static Fingerprint fromJson(JsonNode json) { return new Fingerprint(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class Fingerprint {
     /**
      * Block-hash chain (hex), one entry per block.
      */
-    public List<String> getBlockHashes() { return blockHashes == null ? null : WireJson.array(WireJson.tree(blockHashes), item0 -> WireJson.string(item0)); }
-    public BigInteger getBlockSize() { return blockSize == null ? null : blockSize; }
+    @JsonProperty("blockHashes")
+    private final List<String> blockHashes;
+    @JsonProperty("blockSize")
+    private final Long blockSize;
     /**
      * 128-bit hash of the whole denoised body (hex).
      */
-    public String getBodyHash() { return bodyHash == null ? null : bodyHash; }
-    public BigInteger getLenBytes() { return lenBytes == null ? null : lenBytes; }
+    @JsonProperty("bodyHash")
+    private final String bodyHash;
+    @JsonProperty("lenBytes")
+    private final Long lenBytes;
     /**
      * Token estimate — byte proxy `len_bytes / 4` when no tokenizer is
      * attached (RFC-0015 §4.1: W capped at one block in this mode).
      */
-    public BigInteger getTokenEstimate() { return tokenEstimate == null ? null : tokenEstimate; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("blockHashes", WireJson.tree(blockHashes));
-        json.set("blockSize", WireJson.tree(blockSize));
-        json.set("bodyHash", WireJson.tree(bodyHash));
-        json.set("lenBytes", WireJson.tree(lenBytes));
-        json.set("tokenEstimate", WireJson.tree(tokenEstimate));
-        return json;
+    @JsonProperty("tokenEstimate")
+    private final Long tokenEstimate;
+
+    @JsonCreator
+    public Fingerprint(
+        @JsonProperty(value = "blockHashes", required = true) List<String> blockHashes,
+        @JsonProperty(value = "blockSize", required = true) Long blockSize,
+        @JsonProperty(value = "bodyHash", required = true) String bodyHash,
+        @JsonProperty(value = "lenBytes", required = true) Long lenBytes,
+        @JsonProperty(value = "tokenEstimate", required = true) Long tokenEstimate) {
+        this.blockHashes = blockHashes == null ? null : Collections.unmodifiableList(new ArrayList<>(blockHashes));
+        this.blockSize = blockSize;
+        this.bodyHash = bodyHash;
+        this.lenBytes = lenBytes;
+        this.tokenEstimate = tokenEstimate;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public List<String> getBlockHashes() { return blockHashes; }
+    public Long getBlockSize() { return blockSize; }
+    public String getBodyHash() { return bodyHash; }
+    public Long getLenBytes() { return lenBytes; }
+    public Long getTokenEstimate() { return tokenEstimate; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private List<String> blockHashes;
+        private Long blockSize;
+        private String bodyHash;
+        private Long lenBytes;
+        private Long tokenEstimate;
+
+        public Builder blockHashes(List<String> value) {
+            this.blockHashes = value;
+            return this;
         }
-        public Builder blockHashes(List<String> value) { json.set("blockHashes", WireJson.tree(value)); return this; }
-        public Builder blockSize(BigInteger value) { json.set("blockSize", WireJson.tree(value)); return this; }
-        public Builder bodyHash(String value) { json.set("bodyHash", WireJson.tree(value)); return this; }
-        public Builder lenBytes(BigInteger value) { json.set("lenBytes", WireJson.tree(value)); return this; }
-        public Builder tokenEstimate(BigInteger value) { json.set("tokenEstimate", WireJson.tree(value)); return this; }
-        public Fingerprint build() { return new Fingerprint(json); }
+
+        public Builder blockSize(Long value) {
+            this.blockSize = value;
+            return this;
+        }
+
+        public Builder bodyHash(String value) {
+            this.bodyHash = value;
+            return this;
+        }
+
+        public Builder lenBytes(Long value) {
+            this.lenBytes = value;
+            return this;
+        }
+
+        public Builder tokenEstimate(Long value) {
+            this.tokenEstimate = value;
+            return this;
+        }
+
+        public Fingerprint build() { return new Fingerprint(blockHashes, blockSize, bodyHash, lenBytes, tokenEstimate); }
     }
 }
-

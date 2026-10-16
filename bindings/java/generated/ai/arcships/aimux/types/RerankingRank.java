@@ -4,49 +4,53 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * A single reranked entry: the original index and its relevance score.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RerankingRank extends WireValue {
-    private final Long index;
-    private final BigDecimal relevanceScore;
-    private RerankingRank(JsonNode json) {
-        WireJson.object(json, "RerankingRank", false, "index", "relevanceScore");
-        WireJson.required(json, "index");
-        this.index = WireJson.integer(json.get("index"), true, 32).longValue();
-        WireJson.required(json, "relevanceScore");
-        this.relevanceScore = WireJson.number(json.get("relevanceScore"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RerankingRank fromJson(JsonNode json) { return new RerankingRank(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RerankingRank {
     /**
      * The index of the document in the original list (before reranking).
      */
-    public Long getIndex() { return index == null ? null : index; }
+    @JsonProperty("index")
+    private final Long index;
     /**
      * The relevance score of the document after reranking.
      */
-    public BigDecimal getRelevanceScore() { return relevanceScore == null ? null : relevanceScore; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("index", WireJson.tree(index));
-        json.set("relevanceScore", WireJson.tree(relevanceScore));
-        return json;
+    @JsonProperty("relevanceScore")
+    private final BigDecimal relevanceScore;
+
+    @JsonCreator
+    public RerankingRank(
+        @JsonProperty(value = "index", required = true) Long index,
+        @JsonProperty(value = "relevanceScore", required = true) BigDecimal relevanceScore) {
+        this.index = index;
+        this.relevanceScore = relevanceScore;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getIndex() { return index; }
+    public BigDecimal getRelevanceScore() { return relevanceScore; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long index;
+        private BigDecimal relevanceScore;
+
+        public Builder index(Long value) {
+            this.index = value;
+            return this;
         }
-        public Builder index(Long value) { json.set("index", WireJson.tree(value)); return this; }
-        public Builder relevanceScore(BigDecimal value) { json.set("relevanceScore", WireJson.tree(value)); return this; }
-        public RerankingRank build() { return new RerankingRank(json); }
+
+        public Builder relevanceScore(BigDecimal value) {
+            this.relevanceScore = value;
+            return this;
+        }
+
+        public RerankingRank build() { return new RerankingRank(index, relevanceScore); }
     }
 }
-

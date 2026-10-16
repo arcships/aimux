@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -19,7 +18,8 @@ import java.util.*;
  * `convertLanguageModelContent` builds them
  * (`generate-text/convert-language-model-content.ts`).
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ContentPartInput.Text.class, name = "text"),
     @JsonSubTypes.Type(value = ContentPartInput.Custom.class, name = "custom"),
@@ -31,10 +31,14 @@ import java.util.*;
     @JsonSubTypes.Type(value = ContentPartInput.ToolResultVariant.class, name = "tool-result"),
     @JsonSubTypes.Type(value = ContentPartInput.ToolError.class, name = "tool-error"),
     @JsonSubTypes.Type(value = ContentPartInput.ToolApprovalRequest.class, name = "tool-approval-request"),
-    @JsonSubTypes.Type(value = ContentPartInput.ToolApprovalResponse.class, name = "tool-approval-response"),
+    @JsonSubTypes.Type(value = ContentPartInput.ToolApprovalResponse.class, name = "tool-approval-response")
 })
-public abstract class ContentPartInput extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class ContentPartInput {
     private ContentPartInput() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public Map<String, Map<String, JsonNode>> getProviderMetadata() { return null; }
     public String getText() { return null; }
@@ -69,737 +73,940 @@ public abstract class ContentPartInput extends WireValue {
     public final boolean isToolCall() { return "tool-call".equals(getType()); }
     public final boolean isToolError() { return "tool-error".equals(getType()); }
     public final boolean isToolResult() { return "tool-result".equals(getType()); }
-    public static ContentPartInput fromJson(JsonNode json) {
-        WireJson.object(json, "ContentPartInput", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "custom":
-                return Custom.fromJson(json);
-            case "file":
-                return File.fromJson(json);
-            case "reasoning":
-                return Reasoning.fromJson(json);
-            case "reasoning-file":
-                return ReasoningFile.fromJson(json);
-            case "source":
-                try { return Source5.fromJson(json); } catch (IllegalArgumentException ignored) { /* Ordered shape. */ }
-                try { return Source6.fromJson(json); } catch (IllegalArgumentException ignored) { /* Ordered shape. */ }
-                throw new IllegalArgumentException("Invalid ContentPartInput tag: " + tag);
-            case "text":
-                return Text.fromJson(json);
-            case "tool-approval-request":
-                return ToolApprovalRequest.fromJson(json);
-            case "tool-approval-response":
-                return ToolApprovalResponse.fromJson(json);
-            case "tool-call":
-                return ToolCallVariant.fromJson(json);
-            case "tool-error":
-                return ToolError.fromJson(json);
-            case "tool-result":
-                return ToolResultVariant.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown ContentPartInput tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Text extends ContentPartInput {
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("text")
         private final String text;
-        private Text(JsonNode json) {
-            WireJson.object(json, "Text", false, "providerMetadata", "text", "type");
-            if (!"text".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Text tag");
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
+
+        @JsonCreator
+        public Text(
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "text", required = true) String text) {
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.text = text;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Text fromJson(JsonNode json) { return new Text(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "text"; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "text");
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("text", WireJson.tree(text));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "text"; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "text");
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String text;
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
             }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public Text build() { return new Text(json); }
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
+            }
+
+            public Text build() { return new Text(providerMetadata, text); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Custom extends ContentPartInput {
+        @JsonProperty("kind")
         private final NamespacedKind kind;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private Custom(JsonNode json) {
-            WireJson.object(json, "Custom", false, "kind", "providerMetadata", "type");
-            if (!"custom".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Custom tag");
-            WireJson.required(json, "kind");
-            this.kind = NamespacedKind.fromJson(json.get("kind"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public Custom(
+            @JsonProperty(value = "kind", required = true) NamespacedKind kind,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata) {
+            this.kind = kind;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Custom fromJson(JsonNode json) { return new Custom(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "custom"; }
-        public NamespacedKind getKind() { return kind == null ? null : kind; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "custom");
-            json.set("kind", WireJson.tree(kind));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "custom"; }
+        public NamespacedKind getKind() { return kind; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "custom");
+            private NamespacedKind kind;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+
+            public Builder kind(NamespacedKind value) {
+                this.kind = value;
+                return this;
             }
-            public Builder kind(NamespacedKind value) { json.set("kind", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Custom build() { return new Custom(json); }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Custom build() { return new Custom(kind, providerMetadata); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Reasoning extends ContentPartInput {
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("text")
         private final String text;
-        private Reasoning(JsonNode json) {
-            WireJson.object(json, "Reasoning", false, "providerMetadata", "text", "type");
-            if (!"reasoning".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Reasoning tag");
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "text");
-            this.text = WireJson.string(json.get("text"));
+
+        @JsonCreator
+        public Reasoning(
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "text", required = true) String text) {
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.text = text;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Reasoning fromJson(JsonNode json) { return new Reasoning(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "reasoning"; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getText() { return text == null ? null : text; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "reasoning");
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("text", WireJson.tree(text));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "reasoning"; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getText() { return text; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "reasoning");
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String text;
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
             }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder text(String value) { json.set("text", WireJson.tree(value)); return this; }
-            public Reasoning build() { return new Reasoning(json); }
+
+            public Builder text(String value) {
+                this.text = value;
+                return this;
+            }
+
+            public Reasoning build() { return new Reasoning(providerMetadata, text); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ReasoningFile extends ContentPartInput {
+        @JsonProperty("file")
         private final GeneratedFile file;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private ReasoningFile(JsonNode json) {
-            WireJson.object(json, "ReasoningFile", false, "file", "providerMetadata", "type");
-            if (!"reasoning-file".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ReasoningFile tag");
-            WireJson.required(json, "file");
-            this.file = GeneratedFile.fromJson(json.get("file"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public ReasoningFile(
+            @JsonProperty(value = "file", required = true) GeneratedFile file,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata) {
+            this.file = file;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ReasoningFile fromJson(JsonNode json) { return new ReasoningFile(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "reasoning-file"; }
-        public GeneratedFile getFile() { return file == null ? null : file; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "reasoning-file");
-            json.set("file", WireJson.tree(file));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "reasoning-file"; }
+        public GeneratedFile getFile() { return file; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "reasoning-file");
+            private GeneratedFile file;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+
+            public Builder file(GeneratedFile value) {
+                this.file = value;
+                return this;
             }
-            public Builder file(GeneratedFile value) { json.set("file", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public ReasoningFile build() { return new ReasoningFile(json); }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public ReasoningFile build() { return new ReasoningFile(file, providerMetadata); }
         }
     }
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
-    @JsonDeserialize(using = Source5Deserializer.class)
-    public abstract static class Source5Group extends ContentPartInput {}
-    public static final class Source5Deserializer extends JsonDeserializer<Source5Group> {
-        @Override public Source5Group deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context) throws java.io.IOException {
-            try { return (Source5Group) ContentPartInput.fromJson(parser.getCodec().readTree(parser)); }
-            catch (IllegalArgumentException error) { throw JsonMappingException.from(parser, error.getMessage(), error); }
+    @JsonDeserialize(using = Source5Group.Deserializer.class)
+    public abstract static class Source5Group extends ContentPartInput {
+
+        public static final class Deserializer extends JsonDeserializer<Source5Group> {
+            @Override
+            public Source5Group deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+                throws java.io.IOException {
+                JsonNode value = context.readTree(parser);
+                JsonMappingException failure = null;
+                try {
+                    return parser.getCodec().treeToValue(value, Source5.class);
+                } catch (JsonMappingException error) {
+                    failure = error;
+                }
+                try {
+                    return parser.getCodec().treeToValue(value, Source6.class);
+                } catch (JsonMappingException error) {
+                    failure = error;
+                }
+                throw failure;
+            }
         }
     }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Source5 extends Source5Group {
+        @JsonProperty("id")
         private final String id;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("sourceType")
         private final ContentPartInput4SourceType sourceType;
+        @JsonProperty("title")
         private final String title;
-        private final boolean hasTitle;
+        @JsonProperty("url")
         private final String url;
-        private Source5(JsonNode json) {
-            WireJson.object(json, "Source5", false, "id", "providerMetadata", "sourceType", "title", "url", "type");
-            if (!"source".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Source5 tag");
-            WireJson.required(json, "id");
-            this.id = WireJson.string(json.get("id"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "sourceType");
-            this.sourceType = ContentPartInput4SourceType.fromJson(json.get("sourceType"));
-            this.hasTitle = json.has("title");
-            this.title = WireJson.isNull(json.get("title")) ? null : (WireJson.isNull(json.get("title")) ? null : WireJson.string(json.get("title")));
-            WireJson.required(json, "url");
-            this.url = WireJson.string(json.get("url"));
+
+        @JsonCreator
+        public Source5(
+            @JsonProperty(value = "id", required = true) String id,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "sourceType", required = true) ContentPartInput4SourceType sourceType,
+            @JsonProperty(value = "title") String title,
+            @JsonProperty(value = "url", required = true) String url) {
+            this.id = id;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.sourceType = sourceType;
+            this.title = title;
+            this.url = url;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Source5 fromJson(JsonNode json) { return new Source5(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "source"; }
-        public String getId() { return id == null ? null : id; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public ContentPartInput4SourceType getSourceType() { return sourceType == null ? null : sourceType; }
-        public String getTitle() { return title == null ? null : (title == null ? null : title); }
-        public String getUrl() { return url == null ? null : url; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "source");
-            json.set("id", WireJson.tree(id));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("sourceType", WireJson.tree(sourceType));
-            if (hasTitle) json.set("title", WireJson.tree(title));
-            json.set("url", WireJson.tree(url));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "source"; }
+        public String getId() { return id; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public ContentPartInput4SourceType getSourceType() { return sourceType; }
+        public String getTitle() { return title; }
+        public String getUrl() { return url; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "source");
+            private String id;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private ContentPartInput4SourceType sourceType;
+            private String title;
+            private String url;
+
+            public Builder id(String value) {
+                this.id = value;
+                return this;
             }
-            public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder sourceType(ContentPartInput4SourceType value) { json.set("sourceType", WireJson.tree(value)); return this; }
-            public Builder title(String value) { json.set("title", WireJson.tree(value)); return this; }
-            public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-            public Source5 build() { return new Source5(json); }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder sourceType(ContentPartInput4SourceType value) {
+                this.sourceType = value;
+                return this;
+            }
+
+            public Builder title(String value) {
+                this.title = value;
+                return this;
+            }
+
+            public Builder url(String value) {
+                this.url = value;
+                return this;
+            }
+
+            public Source5 build() { return new Source5(id, providerMetadata, sourceType, title, url); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Source6 extends Source5Group {
+        @JsonProperty("filename")
         private final String filename;
-        private final boolean hasFilename;
+        @JsonProperty("id")
         private final String id;
+        @JsonProperty("mediaType")
         private final String mediaType;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
+        @JsonProperty("sourceType")
         private final ContentPartInput5SourceType sourceType;
+        @JsonProperty("title")
         private final String title;
-        private Source6(JsonNode json) {
-            WireJson.object(json, "Source6", false, "filename", "id", "mediaType", "providerMetadata", "sourceType", "title", "type");
-            if (!"source".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Source6 tag");
-            this.hasFilename = json.has("filename");
-            this.filename = WireJson.isNull(json.get("filename")) ? null : (WireJson.isNull(json.get("filename")) ? null : WireJson.string(json.get("filename")));
-            WireJson.required(json, "id");
-            this.id = WireJson.string(json.get("id"));
-            WireJson.required(json, "mediaType");
-            this.mediaType = WireJson.string(json.get("mediaType"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "sourceType");
-            this.sourceType = ContentPartInput5SourceType.fromJson(json.get("sourceType"));
-            WireJson.required(json, "title");
-            this.title = WireJson.string(json.get("title"));
+
+        @JsonCreator
+        public Source6(
+            @JsonProperty(value = "filename") String filename,
+            @JsonProperty(value = "id", required = true) String id,
+            @JsonProperty(value = "mediaType", required = true) String mediaType,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "sourceType", required = true) ContentPartInput5SourceType sourceType,
+            @JsonProperty(value = "title", required = true) String title) {
+            this.filename = filename;
+            this.id = id;
+            this.mediaType = mediaType;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.sourceType = sourceType;
+            this.title = title;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Source6 fromJson(JsonNode json) { return new Source6(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "source"; }
-        public String getFilename() { return filename == null ? null : (filename == null ? null : filename); }
-        public String getId() { return id == null ? null : id; }
-        public String getMediaType() { return mediaType == null ? null : mediaType; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public ContentPartInput5SourceType getSourceType() { return sourceType == null ? null : sourceType; }
-        public String getTitle() { return title == null ? null : title; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "source");
-            if (hasFilename) json.set("filename", WireJson.tree(filename));
-            json.set("id", WireJson.tree(id));
-            json.set("mediaType", WireJson.tree(mediaType));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("sourceType", WireJson.tree(sourceType));
-            json.set("title", WireJson.tree(title));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "source"; }
+        public String getFilename() { return filename; }
+        public String getId() { return id; }
+        public String getMediaType() { return mediaType; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public ContentPartInput5SourceType getSourceType() { return sourceType; }
+        public String getTitle() { return title; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "source");
+            private String filename;
+            private String id;
+            private String mediaType;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private ContentPartInput5SourceType sourceType;
+            private String title;
+
+            public Builder filename(String value) {
+                this.filename = value;
+                return this;
             }
-            public Builder filename(String value) { json.set("filename", WireJson.tree(value)); return this; }
-            public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-            public Builder mediaType(String value) { json.set("mediaType", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder sourceType(ContentPartInput5SourceType value) { json.set("sourceType", WireJson.tree(value)); return this; }
-            public Builder title(String value) { json.set("title", WireJson.tree(value)); return this; }
-            public Source6 build() { return new Source6(json); }
+
+            public Builder id(String value) {
+                this.id = value;
+                return this;
+            }
+
+            public Builder mediaType(String value) {
+                this.mediaType = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder sourceType(ContentPartInput5SourceType value) {
+                this.sourceType = value;
+                return this;
+            }
+
+            public Builder title(String value) {
+                this.title = value;
+                return this;
+            }
+
+            public Source6 build() { return new Source6(filename, id, mediaType, providerMetadata, sourceType, title); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class File extends ContentPartInput {
+        @JsonProperty("file")
         private final GeneratedFile file;
+        @JsonProperty("providerMetadata")
         private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private File(JsonNode json) {
-            WireJson.object(json, "File", false, "file", "providerMetadata", "type");
-            if (!"file".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid File tag");
-            WireJson.required(json, "file");
-            this.file = GeneratedFile.fromJson(json.get("file"));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
+
+        @JsonCreator
+        public File(
+            @JsonProperty(value = "file", required = true) GeneratedFile file,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata) {
+            this.file = file;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static File fromJson(JsonNode json) { return new File(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "file"; }
-        public GeneratedFile getFile() { return file == null ? null : file; }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "file");
-            json.set("file", WireJson.tree(file));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "file"; }
+        public GeneratedFile getFile() { return file; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "file");
+            private GeneratedFile file;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+
+            public Builder file(GeneratedFile value) {
+                this.file = value;
+                return this;
             }
-            public Builder file(GeneratedFile value) { json.set("file", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public File build() { return new File(json); }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public File build() { return new File(file, providerMetadata); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolCallVariant extends ContentPartInput {
-        private final Boolean dynamic;
-        private final boolean hasDynamic;
-        private final AiMuxErrorInput error;
-        private final boolean hasError;
-        private final JsonNode input;
-        private final Boolean invalid;
-        private final boolean hasInvalid;
-        private final Boolean providerExecuted;
-        private final boolean hasProviderExecuted;
-        private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private final String toolCallId;
-        private final String toolName;
-        private ToolCallVariant(JsonNode json) {
-            WireJson.object(json, "ToolCallVariant", false, "dynamic", "error", "input", "invalid", "providerExecuted", "providerMetadata", "toolCallId", "toolName", "type");
-            if (!"tool-call".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolCallVariant tag");
-            this.hasDynamic = json.has("dynamic");
-            this.dynamic = WireJson.isNull(json.get("dynamic")) ? null : (WireJson.isNull(json.get("dynamic")) ? null : WireJson.bool(json.get("dynamic")));
-            this.hasError = json.has("error");
-            this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : AiMuxErrorInput.fromJson(json.get("error")));
-            WireJson.required(json, "input");
-            this.input = WireJson.json(json.get("input"));
-            this.hasInvalid = json.has("invalid");
-            this.invalid = WireJson.isNull(json.get("invalid")) ? null : (WireJson.isNull(json.get("invalid")) ? null : WireJson.bool(json.get("invalid")));
-            this.hasProviderExecuted = json.has("providerExecuted");
-            this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "toolCallId");
-            this.toolCallId = WireJson.string(json.get("toolCallId"));
-            WireJson.required(json, "toolName");
-            this.toolName = WireJson.string(json.get("toolName"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolCallVariant fromJson(JsonNode json) { return new ToolCallVariant(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool-call"; }
         /**
          * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
          */
-        public Boolean getDynamic() { return dynamic == null ? null : (dynamic == null ? null : dynamic); }
+        @JsonProperty("dynamic")
+        private final Boolean dynamic;
         /**
          * Typed failure associated with an invalid tool call.
          */
-        public AiMuxErrorInput getError() { return error == null ? null : (error == null ? null : error); }
+        @JsonProperty("error")
+        private final AiMuxErrorInput error;
         /**
          * Parsed arguments, or the original string when `invalid` is true and the
          * provider input was not valid JSON.
          */
-        public JsonNode getInput() { return input == null ? null : WireJson.json(WireJson.tree(input)); }
+        @JsonProperty("input")
+        private final JsonNode input;
         /**
          * Set when lookup, JSON parsing, or schema validation still failed after
          * the optional repair attempt.
          */
-        public Boolean getInvalid() { return invalid == null ? null : (invalid == null ? null : invalid); }
+        @JsonProperty("invalid")
+        private final Boolean invalid;
         /**
          * Whether the tool call will be executed by the provider.
          */
-        public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
+        @JsonProperty("providerExecuted")
+        private final Boolean providerExecuted;
         /**
          * Additional provider-specific metadata associated with this call.
          */
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+        @JsonProperty("providerMetadata")
+        private final Map<String, Map<String, JsonNode>> providerMetadata;
         /**
          * Provider-assigned call id.
          */
-        public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
+        @JsonProperty("toolCallId")
+        private final String toolCallId;
         /**
          * Tool name.
          */
-        public String getToolName() { return toolName == null ? null : toolName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool-call");
-            if (hasDynamic) json.set("dynamic", WireJson.tree(dynamic));
-            if (hasError) json.set("error", WireJson.tree(error));
-            json.set("input", WireJson.tree(input));
-            if (hasInvalid) json.set("invalid", WireJson.tree(invalid));
-            if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("toolCallId", WireJson.tree(toolCallId));
-            json.set("toolName", WireJson.tree(toolName));
-            return json;
+        @JsonProperty("toolName")
+        private final String toolName;
+
+        @JsonCreator
+        public ToolCallVariant(
+            @JsonProperty(value = "dynamic") Boolean dynamic,
+            @JsonProperty(value = "error") AiMuxErrorInput error,
+            @JsonProperty(value = "input", required = true) JsonNode input,
+            @JsonProperty(value = "invalid") Boolean invalid,
+            @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+            @JsonProperty(value = "toolName", required = true) String toolName) {
+            this.dynamic = dynamic;
+            this.error = error;
+            this.input = input == null ? null : input.deepCopy();
+            this.invalid = invalid;
+            this.providerExecuted = providerExecuted;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.toolCallId = toolCallId;
+            this.toolName = toolName;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool-call"; }
+        public Boolean getDynamic() { return dynamic; }
+        public AiMuxErrorInput getError() { return error; }
+        public JsonNode getInput() { return input == null ? null : input.deepCopy(); }
+        public Boolean getInvalid() { return invalid; }
+        public Boolean getProviderExecuted() { return providerExecuted; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getToolCallId() { return toolCallId; }
+        public String getToolName() { return toolName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool-call");
+            private Boolean dynamic;
+            private AiMuxErrorInput error;
+            private JsonNode input;
+            private Boolean invalid;
+            private Boolean providerExecuted;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String toolCallId;
+            private String toolName;
+
+            public Builder dynamic(Boolean value) {
+                this.dynamic = value;
+                return this;
             }
-            public Builder dynamic(Boolean value) { json.set("dynamic", WireJson.tree(value)); return this; }
-            public Builder error(AiMuxErrorInput value) { json.set("error", WireJson.tree(value)); return this; }
-            public Builder input(JsonNode value) { json.set("input", WireJson.tree(value)); return this; }
-            public Builder invalid(Boolean value) { json.set("invalid", WireJson.tree(value)); return this; }
-            public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-            public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-            public ToolCallVariant build() { return new ToolCallVariant(json); }
+
+            public Builder error(AiMuxErrorInput value) {
+                this.error = value;
+                return this;
+            }
+
+            public Builder input(JsonNode value) {
+                this.input = value;
+                return this;
+            }
+
+            public Builder invalid(Boolean value) {
+                this.invalid = value;
+                return this;
+            }
+
+            public Builder providerExecuted(Boolean value) {
+                this.providerExecuted = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder toolCallId(String value) {
+                this.toolCallId = value;
+                return this;
+            }
+
+            public Builder toolName(String value) {
+                this.toolName = value;
+                return this;
+            }
+
+            public ToolCallVariant build() { return new ToolCallVariant(dynamic, error, input, invalid, providerExecuted, providerMetadata, toolCallId, toolName); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolResultVariant extends ContentPartInput {
+        @JsonProperty("dynamic")
         private final Boolean dynamic;
-        private final boolean hasDynamic;
-        private final JsonNode input;
-        private final boolean hasInput;
-        private final JsonNode output;
-        private final Boolean preliminary;
-        private final boolean hasPreliminary;
-        private final Boolean providerExecuted;
-        private final boolean hasProviderExecuted;
-        private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private final String toolCallId;
-        private final String toolName;
-        private ToolResultVariant(JsonNode json) {
-            WireJson.object(json, "ToolResultVariant", false, "dynamic", "input", "output", "preliminary", "providerExecuted", "providerMetadata", "toolCallId", "toolName", "type");
-            if (!"tool-result".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolResultVariant tag");
-            this.hasDynamic = json.has("dynamic");
-            this.dynamic = WireJson.isNull(json.get("dynamic")) ? null : (WireJson.isNull(json.get("dynamic")) ? null : WireJson.bool(json.get("dynamic")));
-            this.hasInput = json.has("input");
-            this.input = WireJson.isNull(json.get("input")) ? null : WireJson.json(json.get("input"));
-            WireJson.required(json, "output");
-            this.output = WireJson.json(json.get("output"));
-            this.hasPreliminary = json.has("preliminary");
-            this.preliminary = WireJson.isNull(json.get("preliminary")) ? null : (WireJson.isNull(json.get("preliminary")) ? null : WireJson.bool(json.get("preliminary")));
-            this.hasProviderExecuted = json.has("providerExecuted");
-            this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "toolCallId");
-            this.toolCallId = WireJson.string(json.get("toolCallId"));
-            WireJson.required(json, "toolName");
-            this.toolName = WireJson.string(json.get("toolName"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolResultVariant fromJson(JsonNode json) { return new ToolResultVariant(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool-result"; }
-        public Boolean getDynamic() { return dynamic == null ? null : (dynamic == null ? null : dynamic); }
         /**
          * The input of the tool call the result answers; absent for a deferred
          * provider result, whose call is not in this response.
          */
-        public JsonNode getInput() { return input == null ? null : WireJson.json(WireJson.tree(input)); }
-        public JsonNode getOutput() { return output == null ? null : WireJson.json(WireJson.tree(output)); }
-        public Boolean getPreliminary() { return preliminary == null ? null : (preliminary == null ? null : preliminary); }
-        public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-        public String getToolName() { return toolName == null ? null : toolName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool-result");
-            if (hasDynamic) json.set("dynamic", WireJson.tree(dynamic));
-            if (hasInput) json.set("input", WireJson.tree(input));
-            json.set("output", WireJson.tree(output));
-            if (hasPreliminary) json.set("preliminary", WireJson.tree(preliminary));
-            if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("toolCallId", WireJson.tree(toolCallId));
-            json.set("toolName", WireJson.tree(toolName));
-            return json;
+        @JsonProperty("input")
+        private final JsonNode input;
+        @JsonProperty("output")
+        private final JsonNode output;
+        @JsonProperty("preliminary")
+        private final Boolean preliminary;
+        @JsonProperty("providerExecuted")
+        private final Boolean providerExecuted;
+        @JsonProperty("providerMetadata")
+        private final Map<String, Map<String, JsonNode>> providerMetadata;
+        @JsonProperty("toolCallId")
+        private final String toolCallId;
+        @JsonProperty("toolName")
+        private final String toolName;
+
+        @JsonCreator
+        public ToolResultVariant(
+            @JsonProperty(value = "dynamic") Boolean dynamic,
+            @JsonProperty(value = "input") JsonNode input,
+            @JsonProperty(value = "output", required = true) JsonNode output,
+            @JsonProperty(value = "preliminary") Boolean preliminary,
+            @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+            @JsonProperty(value = "toolName", required = true) String toolName) {
+            this.dynamic = dynamic;
+            this.input = input == null || input.isNull() ? null : input.deepCopy();
+            this.output = output == null ? null : output.deepCopy();
+            this.preliminary = preliminary;
+            this.providerExecuted = providerExecuted;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.toolCallId = toolCallId;
+            this.toolName = toolName;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool-result"; }
+        public Boolean getDynamic() { return dynamic; }
+        public JsonNode getInput() { return input == null ? null : input.deepCopy(); }
+        public JsonNode getOutput() { return output == null ? null : output.deepCopy(); }
+        public Boolean getPreliminary() { return preliminary; }
+        public Boolean getProviderExecuted() { return providerExecuted; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getToolCallId() { return toolCallId; }
+        public String getToolName() { return toolName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool-result");
+            private Boolean dynamic;
+            private JsonNode input;
+            private JsonNode output;
+            private Boolean preliminary;
+            private Boolean providerExecuted;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String toolCallId;
+            private String toolName;
+
+            public Builder dynamic(Boolean value) {
+                this.dynamic = value;
+                return this;
             }
-            public Builder dynamic(Boolean value) { json.set("dynamic", WireJson.tree(value)); return this; }
-            public Builder input(JsonNode value) { json.set("input", WireJson.tree(value)); return this; }
-            public Builder output(JsonNode value) { json.set("output", WireJson.tree(value)); return this; }
-            public Builder preliminary(Boolean value) { json.set("preliminary", WireJson.tree(value)); return this; }
-            public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-            public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-            public ToolResultVariant build() { return new ToolResultVariant(json); }
+
+            public Builder input(JsonNode value) {
+                this.input = value;
+                return this;
+            }
+
+            public Builder output(JsonNode value) {
+                this.output = value;
+                return this;
+            }
+
+            public Builder preliminary(Boolean value) {
+                this.preliminary = value;
+                return this;
+            }
+
+            public Builder providerExecuted(Boolean value) {
+                this.providerExecuted = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder toolCallId(String value) {
+                this.toolCallId = value;
+                return this;
+            }
+
+            public Builder toolName(String value) {
+                this.toolName = value;
+                return this;
+            }
+
+            public ToolResultVariant build() { return new ToolResultVariant(dynamic, input, output, preliminary, providerExecuted, providerMetadata, toolCallId, toolName); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolError extends ContentPartInput {
+        @JsonProperty("dynamic")
         private final Boolean dynamic;
-        private final boolean hasDynamic;
+        @JsonProperty("error")
         private final JsonNode error;
-        private final JsonNode input;
-        private final boolean hasInput;
-        private final Boolean providerExecuted;
-        private final boolean hasProviderExecuted;
-        private final Map<String, Map<String, JsonNode>> providerMetadata;
-        private final boolean hasProviderMetadata;
-        private final String toolCallId;
-        private final String toolName;
-        private ToolError(JsonNode json) {
-            WireJson.object(json, "ToolError", false, "dynamic", "error", "input", "providerExecuted", "providerMetadata", "toolCallId", "toolName", "type");
-            if (!"tool-error".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolError tag");
-            this.hasDynamic = json.has("dynamic");
-            this.dynamic = WireJson.isNull(json.get("dynamic")) ? null : (WireJson.isNull(json.get("dynamic")) ? null : WireJson.bool(json.get("dynamic")));
-            WireJson.required(json, "error");
-            this.error = WireJson.json(json.get("error"));
-            this.hasInput = json.has("input");
-            this.input = WireJson.isNull(json.get("input")) ? null : WireJson.json(json.get("input"));
-            this.hasProviderExecuted = json.has("providerExecuted");
-            this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-            this.hasProviderMetadata = json.has("providerMetadata");
-            this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-            WireJson.required(json, "toolCallId");
-            this.toolCallId = WireJson.string(json.get("toolCallId"));
-            WireJson.required(json, "toolName");
-            this.toolName = WireJson.string(json.get("toolName"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolError fromJson(JsonNode json) { return new ToolError(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool-error"; }
-        public Boolean getDynamic() { return dynamic == null ? null : (dynamic == null ? null : dynamic); }
-        public JsonNode getError() { return error == null ? null : WireJson.json(WireJson.tree(error)); }
         /**
          * The input of the tool call; absent for a deferred provider result.
          */
-        public JsonNode getInput() { return input == null ? null : WireJson.json(WireJson.tree(input)); }
-        public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-        public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-        public String getToolName() { return toolName == null ? null : toolName; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool-error");
-            if (hasDynamic) json.set("dynamic", WireJson.tree(dynamic));
-            json.set("error", WireJson.tree(error));
-            if (hasInput) json.set("input", WireJson.tree(input));
-            if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-            if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-            json.set("toolCallId", WireJson.tree(toolCallId));
-            json.set("toolName", WireJson.tree(toolName));
-            return json;
+        @JsonProperty("input")
+        private final JsonNode input;
+        @JsonProperty("providerExecuted")
+        private final Boolean providerExecuted;
+        @JsonProperty("providerMetadata")
+        private final Map<String, Map<String, JsonNode>> providerMetadata;
+        @JsonProperty("toolCallId")
+        private final String toolCallId;
+        @JsonProperty("toolName")
+        private final String toolName;
+
+        @JsonCreator
+        public ToolError(
+            @JsonProperty(value = "dynamic") Boolean dynamic,
+            @JsonProperty(value = "error", required = true) JsonNode error,
+            @JsonProperty(value = "input") JsonNode input,
+            @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+            @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+            @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+            @JsonProperty(value = "toolName", required = true) String toolName) {
+            this.dynamic = dynamic;
+            this.error = error == null ? null : error.deepCopy();
+            this.input = input == null || input.isNull() ? null : input.deepCopy();
+            this.providerExecuted = providerExecuted;
+            this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+            this.toolCallId = toolCallId;
+            this.toolName = toolName;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool-error"; }
+        public Boolean getDynamic() { return dynamic; }
+        public JsonNode getError() { return error == null ? null : error.deepCopy(); }
+        public JsonNode getInput() { return input == null ? null : input.deepCopy(); }
+        public Boolean getProviderExecuted() { return providerExecuted; }
+        public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+        public String getToolCallId() { return toolCallId; }
+        public String getToolName() { return toolName; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool-error");
+            private Boolean dynamic;
+            private JsonNode error;
+            private JsonNode input;
+            private Boolean providerExecuted;
+            private Map<String, Map<String, JsonNode>> providerMetadata;
+            private String toolCallId;
+            private String toolName;
+
+            public Builder dynamic(Boolean value) {
+                this.dynamic = value;
+                return this;
             }
-            public Builder dynamic(Boolean value) { json.set("dynamic", WireJson.tree(value)); return this; }
-            public Builder error(JsonNode value) { json.set("error", WireJson.tree(value)); return this; }
-            public Builder input(JsonNode value) { json.set("input", WireJson.tree(value)); return this; }
-            public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-            public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-            public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-            public ToolError build() { return new ToolError(json); }
+
+            public Builder error(JsonNode value) {
+                this.error = value;
+                return this;
+            }
+
+            public Builder input(JsonNode value) {
+                this.input = value;
+                return this;
+            }
+
+            public Builder providerExecuted(Boolean value) {
+                this.providerExecuted = value;
+                return this;
+            }
+
+            public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+                this.providerMetadata = value;
+                return this;
+            }
+
+            public Builder toolCallId(String value) {
+                this.toolCallId = value;
+                return this;
+            }
+
+            public Builder toolName(String value) {
+                this.toolName = value;
+                return this;
+            }
+
+            public ToolError build() { return new ToolError(dynamic, error, input, providerExecuted, providerMetadata, toolCallId, toolName); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolApprovalRequest extends ContentPartInput {
+        @JsonProperty("approvalId")
         private final String approvalId;
+        @JsonProperty("isAutomatic")
         private final Boolean isAutomatic;
-        private final boolean hasIsAutomatic;
+        @JsonProperty("reason")
         private final String reason;
-        private final boolean hasReason;
+        @JsonProperty("signature")
         private final String signature;
-        private final boolean hasSignature;
-        private final TypedToolCallInput toolCall;
-        private ToolApprovalRequest(JsonNode json) {
-            WireJson.object(json, "ToolApprovalRequest", false, "approvalId", "isAutomatic", "reason", "signature", "toolCall", "type");
-            if (!"tool-approval-request".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolApprovalRequest tag");
-            WireJson.required(json, "approvalId");
-            this.approvalId = WireJson.string(json.get("approvalId"));
-            this.hasIsAutomatic = json.has("isAutomatic");
-            this.isAutomatic = WireJson.isNull(json.get("isAutomatic")) ? null : (WireJson.isNull(json.get("isAutomatic")) ? null : WireJson.bool(json.get("isAutomatic")));
-            this.hasReason = json.has("reason");
-            this.reason = WireJson.isNull(json.get("reason")) ? null : (WireJson.isNull(json.get("reason")) ? null : WireJson.string(json.get("reason")));
-            this.hasSignature = json.has("signature");
-            this.signature = WireJson.isNull(json.get("signature")) ? null : (WireJson.isNull(json.get("signature")) ? null : WireJson.string(json.get("signature")));
-            WireJson.required(json, "toolCall");
-            this.toolCall = TypedToolCallInput.fromJson(json.get("toolCall"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolApprovalRequest fromJson(JsonNode json) { return new ToolApprovalRequest(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool-approval-request"; }
-        public String getApprovalId() { return approvalId == null ? null : approvalId; }
-        public Boolean getIsAutomatic() { return isAutomatic == null ? null : (isAutomatic == null ? null : isAutomatic); }
-        public String getReason() { return reason == null ? null : (reason == null ? null : reason); }
-        public String getSignature() { return signature == null ? null : (signature == null ? null : signature); }
         /**
          * The call to approve, with its `type` tag (`ai`
          * `generate-text/tool-approval-request-output.ts:20`).
          */
-        public TypedToolCallInput getToolCall() { return toolCall == null ? null : toolCall; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool-approval-request");
-            json.set("approvalId", WireJson.tree(approvalId));
-            if (hasIsAutomatic) json.set("isAutomatic", WireJson.tree(isAutomatic));
-            if (hasReason) json.set("reason", WireJson.tree(reason));
-            if (hasSignature) json.set("signature", WireJson.tree(signature));
-            json.set("toolCall", WireJson.tree(toolCall));
-            return json;
+        @JsonProperty("toolCall")
+        private final TypedToolCallInput toolCall;
+
+        @JsonCreator
+        public ToolApprovalRequest(
+            @JsonProperty(value = "approvalId", required = true) String approvalId,
+            @JsonProperty(value = "isAutomatic") Boolean isAutomatic,
+            @JsonProperty(value = "reason") String reason,
+            @JsonProperty(value = "signature") String signature,
+            @JsonProperty(value = "toolCall", required = true) TypedToolCallInput toolCall) {
+            this.approvalId = approvalId;
+            this.isAutomatic = isAutomatic;
+            this.reason = reason;
+            this.signature = signature;
+            this.toolCall = toolCall;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool-approval-request"; }
+        public String getApprovalId() { return approvalId; }
+        public Boolean getIsAutomatic() { return isAutomatic; }
+        public String getReason() { return reason; }
+        public String getSignature() { return signature; }
+        public TypedToolCallInput getToolCall() { return toolCall; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool-approval-request");
+            private String approvalId;
+            private Boolean isAutomatic;
+            private String reason;
+            private String signature;
+            private TypedToolCallInput toolCall;
+
+            public Builder approvalId(String value) {
+                this.approvalId = value;
+                return this;
             }
-            public Builder approvalId(String value) { json.set("approvalId", WireJson.tree(value)); return this; }
-            public Builder isAutomatic(Boolean value) { json.set("isAutomatic", WireJson.tree(value)); return this; }
-            public Builder reason(String value) { json.set("reason", WireJson.tree(value)); return this; }
-            public Builder signature(String value) { json.set("signature", WireJson.tree(value)); return this; }
-            public Builder toolCall(TypedToolCallInput value) { json.set("toolCall", WireJson.tree(value)); return this; }
-            public ToolApprovalRequest build() { return new ToolApprovalRequest(json); }
+
+            public Builder isAutomatic(Boolean value) {
+                this.isAutomatic = value;
+                return this;
+            }
+
+            public Builder reason(String value) {
+                this.reason = value;
+                return this;
+            }
+
+            public Builder signature(String value) {
+                this.signature = value;
+                return this;
+            }
+
+            public Builder toolCall(TypedToolCallInput value) {
+                this.toolCall = value;
+                return this;
+            }
+
+            public ToolApprovalRequest build() { return new ToolApprovalRequest(approvalId, isAutomatic, reason, signature, toolCall); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class ToolApprovalResponse extends ContentPartInput {
+        @JsonProperty("approvalId")
         private final String approvalId;
+        @JsonProperty("approved")
         private final Boolean approved;
+        @JsonProperty("providerExecuted")
         private final Boolean providerExecuted;
-        private final boolean hasProviderExecuted;
+        @JsonProperty("reason")
         private final String reason;
-        private final boolean hasReason;
-        private final TypedToolCallInput toolCall;
-        private ToolApprovalResponse(JsonNode json) {
-            WireJson.object(json, "ToolApprovalResponse", false, "approvalId", "approved", "providerExecuted", "reason", "toolCall", "type");
-            if (!"tool-approval-response".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid ToolApprovalResponse tag");
-            WireJson.required(json, "approvalId");
-            this.approvalId = WireJson.string(json.get("approvalId"));
-            WireJson.required(json, "approved");
-            this.approved = WireJson.bool(json.get("approved"));
-            this.hasProviderExecuted = json.has("providerExecuted");
-            this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-            this.hasReason = json.has("reason");
-            this.reason = WireJson.isNull(json.get("reason")) ? null : (WireJson.isNull(json.get("reason")) ? null : WireJson.string(json.get("reason")));
-            WireJson.required(json, "toolCall");
-            this.toolCall = TypedToolCallInput.fromJson(json.get("toolCall"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static ToolApprovalResponse fromJson(JsonNode json) { return new ToolApprovalResponse(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "tool-approval-response"; }
-        public String getApprovalId() { return approvalId == null ? null : approvalId; }
-        public Boolean getApproved() { return approved == null ? null : approved; }
-        public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-        public String getReason() { return reason == null ? null : (reason == null ? null : reason); }
         /**
          * The answered call, with its `type` tag (`TypedToolCall`,
          * `tool-approval-response-output.ts:18`).
          */
-        public TypedToolCallInput getToolCall() { return toolCall == null ? null : toolCall; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "tool-approval-response");
-            json.set("approvalId", WireJson.tree(approvalId));
-            json.set("approved", WireJson.tree(approved));
-            if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-            if (hasReason) json.set("reason", WireJson.tree(reason));
-            json.set("toolCall", WireJson.tree(toolCall));
-            return json;
+        @JsonProperty("toolCall")
+        private final TypedToolCallInput toolCall;
+
+        @JsonCreator
+        public ToolApprovalResponse(
+            @JsonProperty(value = "approvalId", required = true) String approvalId,
+            @JsonProperty(value = "approved", required = true) Boolean approved,
+            @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+            @JsonProperty(value = "reason") String reason,
+            @JsonProperty(value = "toolCall", required = true) TypedToolCallInput toolCall) {
+            this.approvalId = approvalId;
+            this.approved = approved;
+            this.providerExecuted = providerExecuted;
+            this.reason = reason;
+            this.toolCall = toolCall;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "tool-approval-response"; }
+        public String getApprovalId() { return approvalId; }
+        public Boolean getApproved() { return approved; }
+        public Boolean getProviderExecuted() { return providerExecuted; }
+        public String getReason() { return reason; }
+        public TypedToolCallInput getToolCall() { return toolCall; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "tool-approval-response");
+            private String approvalId;
+            private Boolean approved;
+            private Boolean providerExecuted;
+            private String reason;
+            private TypedToolCallInput toolCall;
+
+            public Builder approvalId(String value) {
+                this.approvalId = value;
+                return this;
             }
-            public Builder approvalId(String value) { json.set("approvalId", WireJson.tree(value)); return this; }
-            public Builder approved(Boolean value) { json.set("approved", WireJson.tree(value)); return this; }
-            public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-            public Builder reason(String value) { json.set("reason", WireJson.tree(value)); return this; }
-            public Builder toolCall(TypedToolCallInput value) { json.set("toolCall", WireJson.tree(value)); return this; }
-            public ToolApprovalResponse build() { return new ToolApprovalResponse(json); }
+
+            public Builder approved(Boolean value) {
+                this.approved = value;
+                return this;
+            }
+
+            public Builder providerExecuted(Boolean value) {
+                this.providerExecuted = value;
+                return this;
+            }
+
+            public Builder reason(String value) {
+                this.reason = value;
+                return this;
+            }
+
+            public Builder toolCall(TypedToolCallInput value) {
+                this.toolCall = value;
+                return this;
+            }
+
+            public ToolApprovalResponse build() { return new ToolApprovalResponse(approvalId, approved, providerExecuted, reason, toolCall); }
         }
     }
-
 }

@@ -4,104 +4,107 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Data or a URL returned for a generated file.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = GeneratedFileData.Data.class, name = "data"),
-    @JsonSubTypes.Type(value = GeneratedFileData.Url.class, name = "url"),
+    @JsonSubTypes.Type(value = GeneratedFileData.Url.class, name = "url")
 })
-public abstract class GeneratedFileData extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class GeneratedFileData {
     private GeneratedFileData() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public FileBytes getData() { return null; }
     public String getOriginalUrl() { return null; }
     public String getUrl() { return null; }
     public final boolean isData() { return "data".equals(getType()); }
     public final boolean isUrl() { return "url".equals(getType()); }
-    public static GeneratedFileData fromJson(JsonNode json) {
-        WireJson.object(json, "GeneratedFileData", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "data":
-                return Data.fromJson(json);
-            case "url":
-                return Url.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown GeneratedFileData tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Data extends GeneratedFileData {
+        @JsonProperty("data")
         private final FileBytes data;
-        private Data(JsonNode json) {
-            WireJson.object(json, "Data", false, "data", "type");
-            if (!"data".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Data tag");
-            WireJson.required(json, "data");
-            this.data = FileBytes.fromJson(json.get("data"));
+
+        @JsonCreator
+        public Data(
+            @JsonProperty(value = "data", required = true) FileBytes data) {
+            this.data = data;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Data fromJson(JsonNode json) { return new Data(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "data"; }
-        public FileBytes getData() { return data == null ? null : data; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "data");
-            json.set("data", WireJson.tree(data));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "data"; }
+        public FileBytes getData() { return data; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "data");
+            private FileBytes data;
+
+            public Builder data(FileBytes value) {
+                this.data = value;
+                return this;
             }
-            public Builder data(FileBytes value) { json.set("data", WireJson.tree(value)); return this; }
-            public Data build() { return new Data(json); }
+
+            public Data build() { return new Data(data); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Url extends GeneratedFileData {
+        @JsonProperty("originalUrl")
         private final String originalUrl;
-        private final boolean hasOriginalUrl;
+        @JsonProperty("url")
         private final String url;
-        private Url(JsonNode json) {
-            WireJson.object(json, "Url", false, "originalUrl", "url", "type");
-            if (!"url".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Url tag");
-            this.hasOriginalUrl = json.has("originalUrl");
-            this.originalUrl = WireJson.isNull(json.get("originalUrl")) ? null : (WireJson.isNull(json.get("originalUrl")) ? null : WireJson.string(json.get("originalUrl")));
-            WireJson.required(json, "url");
-            this.url = WireJson.string(json.get("url"));
+
+        @JsonCreator
+        public Url(
+            @JsonProperty(value = "originalUrl") String originalUrl,
+            @JsonProperty(value = "url", required = true) String url) {
+            this.originalUrl = originalUrl;
+            this.url = url;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Url fromJson(JsonNode json) { return new Url(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "url"; }
-        public String getOriginalUrl() { return originalUrl == null ? null : (originalUrl == null ? null : originalUrl); }
-        public String getUrl() { return url == null ? null : url; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "url");
-            if (hasOriginalUrl) json.set("originalUrl", WireJson.tree(originalUrl));
-            json.set("url", WireJson.tree(url));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "url"; }
+        public String getOriginalUrl() { return originalUrl; }
+        public String getUrl() { return url; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "url");
+            private String originalUrl;
+            private String url;
+
+            public Builder originalUrl(String value) {
+                this.originalUrl = value;
+                return this;
             }
-            public Builder originalUrl(String value) { json.set("originalUrl", WireJson.tree(value)); return this; }
-            public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-            public Url build() { return new Url(json); }
+
+            public Builder url(String value) {
+                this.url = value;
+                return this;
+            }
+
+            public Url build() { return new Url(originalUrl, url); }
         }
     }
-
 }

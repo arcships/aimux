@@ -4,152 +4,208 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * One probed call. Plaintext never persists — fingerprints only.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TraceRecord extends WireValue {
-    private final String callId;
-    private final String error;
-    private final boolean hasError;
-    private final Fingerprint fingerprint;
-    private final BigInteger lcpTokenUpper;
-    private final boolean hasLcpTokenUpper;
-    private final String model;
-    private final String provider;
-    private final RequestCacheHints requestCacheHints;
-    private final boolean hasRequestCacheHints;
-    private final String requestId;
-    private final boolean hasRequestId;
-    private final Map<String, String> responseCacheHeaders;
-    private final boolean hasResponseCacheHeaders;
-    private final Long sentAtUnixMs;
-    private final String sessionId;
-    private final boolean hasSessionId;
-    private final BigInteger ttftMs;
-    private final boolean hasTtftMs;
-    private final UsageSnapshot usage;
-    private final Verdict verdict;
-    private final boolean hasVerdict;
-    private TraceRecord(JsonNode json) {
-        WireJson.object(json, "TraceRecord", false, "callId", "error", "fingerprint", "lcpTokenUpper", "model", "provider", "requestCacheHints", "requestId", "responseCacheHeaders", "sentAtUnixMs", "sessionId", "ttftMs", "usage", "verdict");
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        this.hasError = json.has("error");
-        this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : WireJson.string(json.get("error")));
-        WireJson.required(json, "fingerprint");
-        this.fingerprint = Fingerprint.fromJson(json.get("fingerprint"));
-        this.hasLcpTokenUpper = json.has("lcpTokenUpper");
-        this.lcpTokenUpper = WireJson.isNull(json.get("lcpTokenUpper")) ? null : (WireJson.isNull(json.get("lcpTokenUpper")) ? null : WireJson.integer(json.get("lcpTokenUpper"), true, 64));
-        WireJson.required(json, "model");
-        this.model = WireJson.string(json.get("model"));
-        WireJson.required(json, "provider");
-        this.provider = WireJson.string(json.get("provider"));
-        this.hasRequestCacheHints = json.has("requestCacheHints");
-        this.requestCacheHints = WireJson.isNull(json.get("requestCacheHints")) ? null : (WireJson.isNull(json.get("requestCacheHints")) ? null : RequestCacheHints.fromJson(json.get("requestCacheHints")));
-        this.hasRequestId = json.has("requestId");
-        this.requestId = WireJson.isNull(json.get("requestId")) ? null : (WireJson.isNull(json.get("requestId")) ? null : WireJson.string(json.get("requestId")));
-        this.hasResponseCacheHeaders = json.has("responseCacheHeaders");
-        this.responseCacheHeaders = WireJson.isNull(json.get("responseCacheHeaders")) ? null : (WireJson.isNull(json.get("responseCacheHeaders")) ? null : WireJson.map(json.get("responseCacheHeaders"), item0 -> WireJson.string(item0)));
-        WireJson.required(json, "sentAtUnixMs");
-        this.sentAtUnixMs = WireJson.integer(json.get("sentAtUnixMs"), false, 64).longValue();
-        this.hasSessionId = json.has("sessionId");
-        this.sessionId = WireJson.isNull(json.get("sessionId")) ? null : (WireJson.isNull(json.get("sessionId")) ? null : WireJson.string(json.get("sessionId")));
-        this.hasTtftMs = json.has("ttftMs");
-        this.ttftMs = WireJson.isNull(json.get("ttftMs")) ? null : (WireJson.isNull(json.get("ttftMs")) ? null : WireJson.integer(json.get("ttftMs"), true, 64));
-        WireJson.required(json, "usage");
-        this.usage = UsageSnapshot.fromJson(json.get("usage"));
-        this.hasVerdict = json.has("verdict");
-        this.verdict = WireJson.isNull(json.get("verdict")) ? null : (WireJson.isNull(json.get("verdict")) ? null : Verdict.fromJson(json.get("verdict")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TraceRecord fromJson(JsonNode json) { return new TraceRecord(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TraceRecord {
     /**
      * Call-level unique id (association key for Recording / replay,
      * RFC-0023).
      */
-    public String getCallId() { return callId == null ? null : callId; }
+    @JsonProperty("callId")
+    private final String callId;
     /**
      * Error string when the call failed (still recorded: failures are part
      * of the session).
      */
-    public String getError() { return error == null ? null : (error == null ? null : error); }
-    public Fingerprint getFingerprint() { return fingerprint == null ? null : fingerprint; }
+    @JsonProperty("error")
+    private final String error;
+    @JsonProperty("fingerprint")
+    private final Fingerprint fingerprint;
     /**
      * Client-side LCP token upper bound (block upper bound, byte-proxy
      * len/4). `None` when no history matched. Consumed by `TraceStats`
      * aggregation.
      */
-    public BigInteger getLcpTokenUpper() { return lcpTokenUpper == null ? null : (lcpTokenUpper == null ? null : lcpTokenUpper); }
-    public String getModel() { return model == null ? null : model; }
-    public String getProvider() { return provider == null ? null : provider; }
-    public RequestCacheHints getRequestCacheHints() { return requestCacheHints == null ? null : (requestCacheHints == null ? null : requestCacheHints); }
-    public String getRequestId() { return requestId == null ? null : (requestId == null ? null : requestId); }
+    @JsonProperty("lcpTokenUpper")
+    private final Long lcpTokenUpper;
+    @JsonProperty("model")
+    private final String model;
+    @JsonProperty("provider")
+    private final String provider;
+    @JsonProperty("requestCacheHints")
+    private final RequestCacheHints requestCacheHints;
+    @JsonProperty("requestId")
+    private final String requestId;
     /**
      * Response-side cache headers (e.g. `x-openrouter-cache-status`).
      */
-    public Map<String, String> getResponseCacheHeaders() { return responseCacheHeaders == null ? null : (responseCacheHeaders == null ? null : WireJson.map(WireJson.tree(responseCacheHeaders), item0 -> WireJson.string(item0))); }
+    @JsonProperty("responseCacheHeaders")
+    private final Map<String, String> responseCacheHeaders;
     /**
      * When the call was sent (epoch ms).
      */
-    public Long getSentAtUnixMs() { return sentAtUnixMs == null ? null : sentAtUnixMs; }
+    @JsonProperty("sentAtUnixMs")
+    private final Long sentAtUnixMs;
     /**
      * The explicit session id of the operation (RFC-0024), else the
      * layer's default session.
      */
-    public String getSessionId() { return sessionId == null ? null : (sessionId == null ? null : sessionId); }
+    @JsonProperty("sessionId")
+    private final String sessionId;
     /**
      * Time to first streamed token (ms). Non-streaming: `None`.
      */
-    public BigInteger getTtftMs() { return ttftMs == null ? null : (ttftMs == null ? null : ttftMs); }
-    public UsageSnapshot getUsage() { return usage == null ? null : usage; }
+    @JsonProperty("ttftMs")
+    private final Long ttftMs;
+    @JsonProperty("usage")
+    private final UsageSnapshot usage;
     /**
      * Audit verdict (`None` when no auditor is attached — the default).
      */
-    public Verdict getVerdict() { return verdict == null ? null : (verdict == null ? null : verdict); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("callId", WireJson.tree(callId));
-        if (hasError) json.set("error", WireJson.tree(error));
-        json.set("fingerprint", WireJson.tree(fingerprint));
-        if (hasLcpTokenUpper) json.set("lcpTokenUpper", WireJson.tree(lcpTokenUpper));
-        json.set("model", WireJson.tree(model));
-        json.set("provider", WireJson.tree(provider));
-        if (hasRequestCacheHints) json.set("requestCacheHints", WireJson.tree(requestCacheHints));
-        if (hasRequestId) json.set("requestId", WireJson.tree(requestId));
-        if (hasResponseCacheHeaders) json.set("responseCacheHeaders", WireJson.tree(responseCacheHeaders));
-        json.set("sentAtUnixMs", WireJson.tree(sentAtUnixMs));
-        if (hasSessionId) json.set("sessionId", WireJson.tree(sessionId));
-        if (hasTtftMs) json.set("ttftMs", WireJson.tree(ttftMs));
-        json.set("usage", WireJson.tree(usage));
-        if (hasVerdict) json.set("verdict", WireJson.tree(verdict));
-        return json;
+    @JsonProperty("verdict")
+    private final Verdict verdict;
+
+    @JsonCreator
+    public TraceRecord(
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "error") String error,
+        @JsonProperty(value = "fingerprint", required = true) Fingerprint fingerprint,
+        @JsonProperty(value = "lcpTokenUpper") Long lcpTokenUpper,
+        @JsonProperty(value = "model", required = true) String model,
+        @JsonProperty(value = "provider", required = true) String provider,
+        @JsonProperty(value = "requestCacheHints") RequestCacheHints requestCacheHints,
+        @JsonProperty(value = "requestId") String requestId,
+        @JsonProperty(value = "responseCacheHeaders") Map<String, String> responseCacheHeaders,
+        @JsonProperty(value = "sentAtUnixMs", required = true) Long sentAtUnixMs,
+        @JsonProperty(value = "sessionId") String sessionId,
+        @JsonProperty(value = "ttftMs") Long ttftMs,
+        @JsonProperty(value = "usage", required = true) UsageSnapshot usage,
+        @JsonProperty(value = "verdict") Verdict verdict) {
+        this.callId = callId;
+        this.error = error;
+        this.fingerprint = fingerprint;
+        this.lcpTokenUpper = lcpTokenUpper;
+        this.model = model;
+        this.provider = provider;
+        this.requestCacheHints = requestCacheHints;
+        this.requestId = requestId;
+        this.responseCacheHeaders = responseCacheHeaders == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(responseCacheHeaders));
+        this.sentAtUnixMs = sentAtUnixMs;
+        this.sessionId = sessionId;
+        this.ttftMs = ttftMs;
+        this.usage = usage;
+        this.verdict = verdict;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getCallId() { return callId; }
+    public String getError() { return error; }
+    public Fingerprint getFingerprint() { return fingerprint; }
+    public Long getLcpTokenUpper() { return lcpTokenUpper; }
+    public String getModel() { return model; }
+    public String getProvider() { return provider; }
+    public RequestCacheHints getRequestCacheHints() { return requestCacheHints; }
+    public String getRequestId() { return requestId; }
+    public Map<String, String> getResponseCacheHeaders() { return responseCacheHeaders; }
+    public Long getSentAtUnixMs() { return sentAtUnixMs; }
+    public String getSessionId() { return sessionId; }
+    public Long getTtftMs() { return ttftMs; }
+    public UsageSnapshot getUsage() { return usage; }
+    public Verdict getVerdict() { return verdict; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String callId;
+        private String error;
+        private Fingerprint fingerprint;
+        private Long lcpTokenUpper;
+        private String model;
+        private String provider;
+        private RequestCacheHints requestCacheHints;
+        private String requestId;
+        private Map<String, String> responseCacheHeaders;
+        private Long sentAtUnixMs;
+        private String sessionId;
+        private Long ttftMs;
+        private UsageSnapshot usage;
+        private Verdict verdict;
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
         }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder error(String value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder fingerprint(Fingerprint value) { json.set("fingerprint", WireJson.tree(value)); return this; }
-        public Builder lcpTokenUpper(BigInteger value) { json.set("lcpTokenUpper", WireJson.tree(value)); return this; }
-        public Builder model(String value) { json.set("model", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder requestCacheHints(RequestCacheHints value) { json.set("requestCacheHints", WireJson.tree(value)); return this; }
-        public Builder requestId(String value) { json.set("requestId", WireJson.tree(value)); return this; }
-        public Builder responseCacheHeaders(Map<String, String> value) { json.set("responseCacheHeaders", WireJson.tree(value)); return this; }
-        public Builder sentAtUnixMs(Long value) { json.set("sentAtUnixMs", WireJson.tree(value)); return this; }
-        public Builder sessionId(String value) { json.set("sessionId", WireJson.tree(value)); return this; }
-        public Builder ttftMs(BigInteger value) { json.set("ttftMs", WireJson.tree(value)); return this; }
-        public Builder usage(UsageSnapshot value) { json.set("usage", WireJson.tree(value)); return this; }
-        public Builder verdict(Verdict value) { json.set("verdict", WireJson.tree(value)); return this; }
-        public TraceRecord build() { return new TraceRecord(json); }
+
+        public Builder error(String value) {
+            this.error = value;
+            return this;
+        }
+
+        public Builder fingerprint(Fingerprint value) {
+            this.fingerprint = value;
+            return this;
+        }
+
+        public Builder lcpTokenUpper(Long value) {
+            this.lcpTokenUpper = value;
+            return this;
+        }
+
+        public Builder model(String value) {
+            this.model = value;
+            return this;
+        }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder requestCacheHints(RequestCacheHints value) {
+            this.requestCacheHints = value;
+            return this;
+        }
+
+        public Builder requestId(String value) {
+            this.requestId = value;
+            return this;
+        }
+
+        public Builder responseCacheHeaders(Map<String, String> value) {
+            this.responseCacheHeaders = value;
+            return this;
+        }
+
+        public Builder sentAtUnixMs(Long value) {
+            this.sentAtUnixMs = value;
+            return this;
+        }
+
+        public Builder sessionId(String value) {
+            this.sessionId = value;
+            return this;
+        }
+
+        public Builder ttftMs(Long value) {
+            this.ttftMs = value;
+            return this;
+        }
+
+        public Builder usage(UsageSnapshot value) {
+            this.usage = value;
+            return this;
+        }
+
+        public Builder verdict(Verdict value) {
+            this.verdict = value;
+            return this;
+        }
+
+        public TraceRecord build() { return new TraceRecord(callId, error, fingerprint, lcpTokenUpper, model, provider, requestCacheHints, requestId, responseCacheHeaders, sentAtUnixMs, sessionId, ttftMs, usage, verdict); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,58 +13,72 @@ import java.util.*;
  * `finish-step` stream part.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class StepResponseMetadata extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class StepResponseMetadata {
+    @JsonProperty("headers")
     private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final String id;
-    private final String modelId;
-    private final Timestamp timestamp;
-    private StepResponseMetadata(JsonNode json) {
-        WireJson.object(json, "StepResponseMetadata", false, "headers", "id", "modelId", "timestamp");
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        WireJson.required(json, "id");
-        this.id = WireJson.string(json.get("id"));
-        WireJson.required(json, "modelId");
-        this.modelId = WireJson.string(json.get("modelId"));
-        WireJson.required(json, "timestamp");
-        this.timestamp = Timestamp.fromJson(json.get("timestamp"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static StepResponseMetadata fromJson(JsonNode json) { return new StepResponseMetadata(json); }
-    public static Builder builder() { return new Builder(); }
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
     /**
      * Response id; the call layer generates one when the provider sent none.
      */
-    public String getId() { return id == null ? null : id; }
+    @JsonProperty("id")
+    private final String id;
     /**
      * The model that produced the response.
      */
-    public String getModelId() { return modelId == null ? null : modelId; }
+    @JsonProperty("modelId")
+    private final String modelId;
     /**
      * Start of the response; the call layer uses the current time when the
      * provider sent none.
      */
-    public Timestamp getTimestamp() { return timestamp == null ? null : timestamp; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        json.set("id", WireJson.tree(id));
-        json.set("modelId", WireJson.tree(modelId));
-        json.set("timestamp", WireJson.tree(timestamp));
-        return json;
+    @JsonProperty("timestamp")
+    private final Timestamp timestamp;
+
+    @JsonCreator
+    public StepResponseMetadata(
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "id", required = true) String id,
+        @JsonProperty(value = "modelId", required = true) String modelId,
+        @JsonProperty(value = "timestamp", required = true) Timestamp timestamp) {
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.id = id;
+        this.modelId = modelId;
+        this.timestamp = timestamp;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, String> getHeaders() { return headers; }
+    public String getId() { return id; }
+    public String getModelId() { return modelId; }
+    public Timestamp getTimestamp() { return timestamp; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, String> headers;
+        private String id;
+        private String modelId;
+        private Timestamp timestamp;
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
         }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder id(String value) { json.set("id", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder timestamp(Timestamp value) { json.set("timestamp", WireJson.tree(value)); return this; }
-        public StepResponseMetadata build() { return new StepResponseMetadata(json); }
+
+        public Builder id(String value) {
+            this.id = value;
+            return this;
+        }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder timestamp(Timestamp value) {
+            this.timestamp = value;
+            return this;
+        }
+
+        public StepResponseMetadata build() { return new StepResponseMetadata(headers, id, modelId, timestamp); }
     }
 }
-

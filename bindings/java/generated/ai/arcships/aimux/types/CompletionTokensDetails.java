@@ -4,35 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class CompletionTokensDetails extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class CompletionTokensDetails {
+    @JsonProperty("reasoning_tokens")
     private final Long reasoningTokens;
-    private final boolean hasReasoningTokens;
-    private CompletionTokensDetails(JsonNode json) {
-        WireJson.object(json, "CompletionTokensDetails", false, "reasoning_tokens");
-        this.hasReasoningTokens = json.has("reasoning_tokens");
-        this.reasoningTokens = WireJson.isNull(json.get("reasoning_tokens")) ? null : (WireJson.isNull(json.get("reasoning_tokens")) ? null : WireJson.integer(json.get("reasoning_tokens"), true, 32).longValue());
+
+    @JsonCreator
+    public CompletionTokensDetails(
+        @JsonProperty(value = "reasoning_tokens") Long reasoningTokens) {
+        this.reasoningTokens = reasoningTokens;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static CompletionTokensDetails fromJson(JsonNode json) { return new CompletionTokensDetails(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Long getReasoningTokens() { return reasoningTokens == null ? null : (reasoningTokens == null ? null : reasoningTokens); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasReasoningTokens) json.set("reasoning_tokens", WireJson.tree(reasoningTokens));
-        return json;
-    }
+    public Long getReasoningTokens() { return reasoningTokens; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long reasoningTokens;
+
+        public Builder reasoningTokens(Long value) {
+            this.reasoningTokens = value;
+            return this;
         }
-        public Builder reasoningTokens(Long value) { json.set("reasoning_tokens", WireJson.tree(value)); return this; }
-        public CompletionTokensDetails build() { return new CompletionTokensDetails(json); }
+
+        public CompletionTokensDetails build() { return new CompletionTokensDetails(reasoningTokens); }
     }
 }
-

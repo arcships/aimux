@@ -4,50 +4,58 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Provider approval request for a provider-executed call.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RawToolApprovalRequest extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RawToolApprovalRequest {
+    @JsonProperty("approvalId")
     private final String approvalId;
+    @JsonProperty("providerMetadata")
     private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
+    @JsonProperty("toolCallId")
     private final String toolCallId;
-    private RawToolApprovalRequest(JsonNode json) {
-        WireJson.object(json, "RawToolApprovalRequest", false, "approvalId", "providerMetadata", "toolCallId");
-        WireJson.required(json, "approvalId");
-        this.approvalId = WireJson.string(json.get("approvalId"));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "toolCallId");
-        this.toolCallId = WireJson.string(json.get("toolCallId"));
+
+    @JsonCreator
+    public RawToolApprovalRequest(
+        @JsonProperty(value = "approvalId", required = true) String approvalId,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "toolCallId", required = true) String toolCallId) {
+        this.approvalId = approvalId;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.toolCallId = toolCallId;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RawToolApprovalRequest fromJson(JsonNode json) { return new RawToolApprovalRequest(json); }
+
     public static Builder builder() { return new Builder(); }
-    public String getApprovalId() { return approvalId == null ? null : approvalId; }
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("approvalId", WireJson.tree(approvalId));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("toolCallId", WireJson.tree(toolCallId));
-        return json;
-    }
+    public String getApprovalId() { return approvalId; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getToolCallId() { return toolCallId; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String approvalId;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String toolCallId;
+
+        public Builder approvalId(String value) {
+            this.approvalId = value;
+            return this;
         }
-        public Builder approvalId(String value) { json.set("approvalId", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-        public RawToolApprovalRequest build() { return new RawToolApprovalRequest(json); }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder toolCallId(String value) {
+            this.toolCallId = value;
+            return this;
+        }
+
+        public RawToolApprovalRequest build() { return new RawToolApprovalRequest(approvalId, providerMetadata, toolCallId); }
     }
 }
-

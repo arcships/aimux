@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,106 +14,31 @@ import java.util.*;
  * (passed separately) and defaults are more ergonomic.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class GenerateTextOptions extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class GenerateTextOptions {
+    @JsonProperty("frequencyPenalty")
     private final BigDecimal frequencyPenalty;
-    private final boolean hasFrequencyPenalty;
+    @JsonProperty("headers")
     private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final Boolean includeRawChunks;
-    private final boolean hasIncludeRawChunks;
-    private final String instructions;
-    private final boolean hasInstructions;
-    private final Long maxOutputTokens;
-    private final boolean hasMaxOutputTokens;
-    private final Long maxRetries;
-    private final boolean hasMaxRetries;
-    private final Output output;
-    private final boolean hasOutput;
-    private final BigDecimal presencePenalty;
-    private final boolean hasPresencePenalty;
-    private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
-    private final ReasoningEffort reasoning;
-    private final boolean hasReasoning;
-    private final BigInteger seed;
-    private final boolean hasSeed;
-    private final String sessionId;
-    private final boolean hasSessionId;
-    private final List<String> stopSequences;
-    private final boolean hasStopSequences;
-    private final BigDecimal temperature;
-    private final boolean hasTemperature;
-    private final TimeoutConfiguration timeout;
-    private final boolean hasTimeout;
-    private final ToolChoice toolChoice;
-    private final boolean hasToolChoice;
-    private final List<Tool> tools;
-    private final boolean hasTools;
-    private final BigDecimal topK;
-    private final boolean hasTopK;
-    private final BigDecimal topP;
-    private final boolean hasTopP;
-    private GenerateTextOptions(JsonNode json) {
-        WireJson.object(json, "GenerateTextOptions", false, "frequencyPenalty", "headers", "includeRawChunks", "instructions", "maxOutputTokens", "maxRetries", "output", "presencePenalty", "providerOptions", "reasoning", "seed", "sessionId", "stopSequences", "temperature", "timeout", "toolChoice", "tools", "topK", "topP");
-        this.hasFrequencyPenalty = json.has("frequencyPenalty");
-        this.frequencyPenalty = WireJson.isNull(json.get("frequencyPenalty")) ? null : (WireJson.isNull(json.get("frequencyPenalty")) ? null : WireJson.number(json.get("frequencyPenalty")));
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasIncludeRawChunks = json.has("includeRawChunks");
-        this.includeRawChunks = WireJson.isNull(json.get("includeRawChunks")) ? null : (WireJson.isNull(json.get("includeRawChunks")) ? null : WireJson.bool(json.get("includeRawChunks")));
-        this.hasInstructions = json.has("instructions");
-        this.instructions = WireJson.isNull(json.get("instructions")) ? null : (WireJson.isNull(json.get("instructions")) ? null : WireJson.string(json.get("instructions")));
-        this.hasMaxOutputTokens = json.has("maxOutputTokens");
-        this.maxOutputTokens = WireJson.isNull(json.get("maxOutputTokens")) ? null : (WireJson.isNull(json.get("maxOutputTokens")) ? null : WireJson.integer(json.get("maxOutputTokens"), true, 32).longValue());
-        this.hasMaxRetries = json.has("maxRetries");
-        this.maxRetries = WireJson.isNull(json.get("maxRetries")) ? null : (WireJson.isNull(json.get("maxRetries")) ? null : WireJson.integer(json.get("maxRetries"), true, 32).longValue());
-        this.hasOutput = json.has("output");
-        this.output = WireJson.isNull(json.get("output")) ? null : (WireJson.isNull(json.get("output")) ? null : Output.fromJson(json.get("output")));
-        this.hasPresencePenalty = json.has("presencePenalty");
-        this.presencePenalty = WireJson.isNull(json.get("presencePenalty")) ? null : (WireJson.isNull(json.get("presencePenalty")) ? null : WireJson.number(json.get("presencePenalty")));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        this.hasReasoning = json.has("reasoning");
-        this.reasoning = WireJson.isNull(json.get("reasoning")) ? null : (WireJson.isNull(json.get("reasoning")) ? null : ReasoningEffort.fromJson(json.get("reasoning")));
-        this.hasSeed = json.has("seed");
-        this.seed = WireJson.isNull(json.get("seed")) ? null : (WireJson.isNull(json.get("seed")) ? null : WireJson.integer(json.get("seed"), true, 64));
-        this.hasSessionId = json.has("sessionId");
-        this.sessionId = WireJson.isNull(json.get("sessionId")) ? null : (WireJson.isNull(json.get("sessionId")) ? null : WireJson.string(json.get("sessionId")));
-        this.hasStopSequences = json.has("stopSequences");
-        this.stopSequences = WireJson.isNull(json.get("stopSequences")) ? null : (WireJson.isNull(json.get("stopSequences")) ? null : WireJson.array(json.get("stopSequences"), item0 -> WireJson.string(item0)));
-        this.hasTemperature = json.has("temperature");
-        this.temperature = WireJson.isNull(json.get("temperature")) ? null : (WireJson.isNull(json.get("temperature")) ? null : WireJson.number(json.get("temperature")));
-        this.hasTimeout = json.has("timeout");
-        this.timeout = WireJson.isNull(json.get("timeout")) ? null : (WireJson.isNull(json.get("timeout")) ? null : TimeoutConfiguration.fromJson(json.get("timeout")));
-        this.hasToolChoice = json.has("toolChoice");
-        this.toolChoice = WireJson.isNull(json.get("toolChoice")) ? null : (WireJson.isNull(json.get("toolChoice")) ? null : ToolChoice.fromJson(json.get("toolChoice")));
-        this.hasTools = json.has("tools");
-        this.tools = WireJson.isNull(json.get("tools")) ? null : (WireJson.isNull(json.get("tools")) ? null : WireJson.array(json.get("tools"), item0 -> Tool.fromJson(item0)));
-        this.hasTopK = json.has("topK");
-        this.topK = WireJson.isNull(json.get("topK")) ? null : (WireJson.isNull(json.get("topK")) ? null : WireJson.number(json.get("topK")));
-        this.hasTopP = json.has("topP");
-        this.topP = WireJson.isNull(json.get("topP")) ? null : (WireJson.isNull(json.get("topP")) ? null : WireJson.number(json.get("topP")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static GenerateTextOptions fromJson(JsonNode json) { return new GenerateTextOptions(json); }
-    public static Builder builder() { return new Builder(); }
-    public BigDecimal getFrequencyPenalty() { return frequencyPenalty == null ? null : (frequencyPenalty == null ? null : frequencyPenalty); }
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
     /**
      * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
      */
-    public Boolean getIncludeRawChunks() { return includeRawChunks == null ? null : (includeRawChunks == null ? null : includeRawChunks); }
+    @JsonProperty("includeRawChunks")
+    private final Boolean includeRawChunks;
     /**
      * System instructions prepended to the prompt.
      */
-    public String getInstructions() { return instructions == null ? null : (instructions == null ? null : instructions); }
-    public Long getMaxOutputTokens() { return maxOutputTokens == null ? null : (maxOutputTokens == null ? null : maxOutputTokens); }
+    @JsonProperty("instructions")
+    private final String instructions;
+    @JsonProperty("maxOutputTokens")
+    private final Long maxOutputTokens;
     /**
      * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
      * retrying. `None` uses 2, the AI SDK default.
      */
-    public Long getMaxRetries() { return maxRetries == null ? null : (maxRetries == null ? null : maxRetries); }
+    @JsonProperty("maxRetries")
+    private final Long maxRetries;
     /**
      * The structured output to generate, the AI SDK's `output`
      * (`generate-text/output.ts`). It sets the model call's
@@ -122,78 +46,224 @@ public final class GenerateTextOptions extends WireValue {
      * [`GenerateTextResult::output`]. `None` sends no response format and
      * takes the text as the output.
      */
-    public Output getOutput() { return output == null ? null : (output == null ? null : output); }
-    public BigDecimal getPresencePenalty() { return presencePenalty == null ? null : (presencePenalty == null ? null : presencePenalty); }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("output")
+    private final Output output;
+    @JsonProperty("presencePenalty")
+    private final BigDecimal presencePenalty;
+    @JsonProperty("providerOptions")
+    private final Map<String, Map<String, JsonNode>> providerOptions;
     /**
      * Top-level reasoning effort.
      */
-    public ReasoningEffort getReasoning() { return reasoning == null ? null : (reasoning == null ? null : reasoning); }
-    public BigInteger getSeed() { return seed == null ? null : (seed == null ? null : seed); }
+    @JsonProperty("reasoning")
+    private final ReasoningEffort reasoning;
+    @JsonProperty("seed")
+    private final Long seed;
     /**
      * Session identifier, for grouping consecutive calls into a session
      * (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
      * headers. When `None` and the optional session inferer is enabled, one
      * may be inferred from prompt-prefix continuation.
      */
-    public String getSessionId() { return sessionId == null ? null : (sessionId == null ? null : sessionId); }
-    public List<String> getStopSequences() { return stopSequences == null ? null : (stopSequences == null ? null : WireJson.array(WireJson.tree(stopSequences), item0 -> WireJson.string(item0))); }
-    public BigDecimal getTemperature() { return temperature == null ? null : (temperature == null ? null : temperature); }
+    @JsonProperty("sessionId")
+    private final String sessionId;
+    @JsonProperty("stopSequences")
+    private final List<String> stopSequences;
+    @JsonProperty("temperature")
+    private final BigDecimal temperature;
     /**
      * Per-call timeout configuration (total / first-chunk / chunk idle).
      */
-    public TimeoutConfiguration getTimeout() { return timeout == null ? null : (timeout == null ? null : timeout); }
-    public ToolChoice getToolChoice() { return toolChoice == null ? null : (toolChoice == null ? null : toolChoice); }
-    public List<Tool> getTools() { return tools == null ? null : (tools == null ? null : WireJson.array(WireJson.tree(tools), item0 -> Tool.fromJson(item0))); }
-    public BigDecimal getTopK() { return topK == null ? null : (topK == null ? null : topK); }
-    public BigDecimal getTopP() { return topP == null ? null : (topP == null ? null : topP); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasFrequencyPenalty) json.set("frequencyPenalty", WireJson.tree(frequencyPenalty));
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasIncludeRawChunks) json.set("includeRawChunks", WireJson.tree(includeRawChunks));
-        if (hasInstructions) json.set("instructions", WireJson.tree(instructions));
-        if (hasMaxOutputTokens) json.set("maxOutputTokens", WireJson.tree(maxOutputTokens));
-        if (hasMaxRetries) json.set("maxRetries", WireJson.tree(maxRetries));
-        if (hasOutput) json.set("output", WireJson.tree(output));
-        if (hasPresencePenalty) json.set("presencePenalty", WireJson.tree(presencePenalty));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        if (hasReasoning) json.set("reasoning", WireJson.tree(reasoning));
-        if (hasSeed) json.set("seed", WireJson.tree(seed));
-        if (hasSessionId) json.set("sessionId", WireJson.tree(sessionId));
-        if (hasStopSequences) json.set("stopSequences", WireJson.tree(stopSequences));
-        if (hasTemperature) json.set("temperature", WireJson.tree(temperature));
-        if (hasTimeout) json.set("timeout", WireJson.tree(timeout));
-        if (hasToolChoice) json.set("toolChoice", WireJson.tree(toolChoice));
-        if (hasTools) json.set("tools", WireJson.tree(tools));
-        if (hasTopK) json.set("topK", WireJson.tree(topK));
-        if (hasTopP) json.set("topP", WireJson.tree(topP));
-        return json;
+    @JsonProperty("timeout")
+    private final TimeoutConfiguration timeout;
+    @JsonProperty("toolChoice")
+    private final ToolChoice toolChoice;
+    @JsonProperty("tools")
+    private final List<Tool> tools;
+    @JsonProperty("topK")
+    private final BigDecimal topK;
+    @JsonProperty("topP")
+    private final BigDecimal topP;
+
+    @JsonCreator
+    public GenerateTextOptions(
+        @JsonProperty(value = "frequencyPenalty") BigDecimal frequencyPenalty,
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "includeRawChunks") Boolean includeRawChunks,
+        @JsonProperty(value = "instructions") String instructions,
+        @JsonProperty(value = "maxOutputTokens") Long maxOutputTokens,
+        @JsonProperty(value = "maxRetries") Long maxRetries,
+        @JsonProperty(value = "output") Output output,
+        @JsonProperty(value = "presencePenalty") BigDecimal presencePenalty,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "reasoning") ReasoningEffort reasoning,
+        @JsonProperty(value = "seed") Long seed,
+        @JsonProperty(value = "sessionId") String sessionId,
+        @JsonProperty(value = "stopSequences") List<String> stopSequences,
+        @JsonProperty(value = "temperature") BigDecimal temperature,
+        @JsonProperty(value = "timeout") TimeoutConfiguration timeout,
+        @JsonProperty(value = "toolChoice") ToolChoice toolChoice,
+        @JsonProperty(value = "tools") List<Tool> tools,
+        @JsonProperty(value = "topK") BigDecimal topK,
+        @JsonProperty(value = "topP") BigDecimal topP) {
+        this.frequencyPenalty = frequencyPenalty;
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.includeRawChunks = includeRawChunks;
+        this.instructions = instructions;
+        this.maxOutputTokens = maxOutputTokens;
+        this.maxRetries = maxRetries;
+        this.output = output;
+        this.presencePenalty = presencePenalty;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.reasoning = reasoning;
+        this.seed = seed;
+        this.sessionId = sessionId;
+        this.stopSequences = stopSequences == null ? null : Collections.unmodifiableList(new ArrayList<>(stopSequences));
+        this.temperature = temperature;
+        this.timeout = timeout;
+        this.toolChoice = toolChoice;
+        this.tools = tools == null ? null : Collections.unmodifiableList(new ArrayList<>(tools));
+        this.topK = topK;
+        this.topP = topP;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public BigDecimal getFrequencyPenalty() { return frequencyPenalty; }
+    public Map<String, String> getHeaders() { return headers; }
+    public Boolean getIncludeRawChunks() { return includeRawChunks; }
+    public String getInstructions() { return instructions; }
+    public Long getMaxOutputTokens() { return maxOutputTokens; }
+    public Long getMaxRetries() { return maxRetries; }
+    public Output getOutput() { return output; }
+    public BigDecimal getPresencePenalty() { return presencePenalty; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public ReasoningEffort getReasoning() { return reasoning; }
+    public Long getSeed() { return seed; }
+    public String getSessionId() { return sessionId; }
+    public List<String> getStopSequences() { return stopSequences; }
+    public BigDecimal getTemperature() { return temperature; }
+    public TimeoutConfiguration getTimeout() { return timeout; }
+    public ToolChoice getToolChoice() { return toolChoice; }
+    public List<Tool> getTools() { return tools; }
+    public BigDecimal getTopK() { return topK; }
+    public BigDecimal getTopP() { return topP; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private BigDecimal frequencyPenalty;
+        private Map<String, String> headers;
+        private Boolean includeRawChunks;
+        private String instructions;
+        private Long maxOutputTokens;
+        private Long maxRetries;
+        private Output output;
+        private BigDecimal presencePenalty;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private ReasoningEffort reasoning;
+        private Long seed;
+        private String sessionId;
+        private List<String> stopSequences;
+        private BigDecimal temperature;
+        private TimeoutConfiguration timeout;
+        private ToolChoice toolChoice;
+        private List<Tool> tools;
+        private BigDecimal topK;
+        private BigDecimal topP;
+
+        public Builder frequencyPenalty(BigDecimal value) {
+            this.frequencyPenalty = value;
+            return this;
         }
-        public Builder frequencyPenalty(BigDecimal value) { json.set("frequencyPenalty", WireJson.tree(value)); return this; }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder includeRawChunks(Boolean value) { json.set("includeRawChunks", WireJson.tree(value)); return this; }
-        public Builder instructions(String value) { json.set("instructions", WireJson.tree(value)); return this; }
-        public Builder maxOutputTokens(Long value) { json.set("maxOutputTokens", WireJson.tree(value)); return this; }
-        public Builder maxRetries(Long value) { json.set("maxRetries", WireJson.tree(value)); return this; }
-        public Builder output(Output value) { json.set("output", WireJson.tree(value)); return this; }
-        public Builder presencePenalty(BigDecimal value) { json.set("presencePenalty", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder reasoning(ReasoningEffort value) { json.set("reasoning", WireJson.tree(value)); return this; }
-        public Builder seed(BigInteger value) { json.set("seed", WireJson.tree(value)); return this; }
-        public Builder sessionId(String value) { json.set("sessionId", WireJson.tree(value)); return this; }
-        public Builder stopSequences(List<String> value) { json.set("stopSequences", WireJson.tree(value)); return this; }
-        public Builder temperature(BigDecimal value) { json.set("temperature", WireJson.tree(value)); return this; }
-        public Builder timeout(TimeoutConfiguration value) { json.set("timeout", WireJson.tree(value)); return this; }
-        public Builder toolChoice(ToolChoice value) { json.set("toolChoice", WireJson.tree(value)); return this; }
-        public Builder tools(List<Tool> value) { json.set("tools", WireJson.tree(value)); return this; }
-        public Builder topK(BigDecimal value) { json.set("topK", WireJson.tree(value)); return this; }
-        public Builder topP(BigDecimal value) { json.set("topP", WireJson.tree(value)); return this; }
-        public GenerateTextOptions build() { return new GenerateTextOptions(json); }
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder includeRawChunks(Boolean value) {
+            this.includeRawChunks = value;
+            return this;
+        }
+
+        public Builder instructions(String value) {
+            this.instructions = value;
+            return this;
+        }
+
+        public Builder maxOutputTokens(Long value) {
+            this.maxOutputTokens = value;
+            return this;
+        }
+
+        public Builder maxRetries(Long value) {
+            this.maxRetries = value;
+            return this;
+        }
+
+        public Builder output(Output value) {
+            this.output = value;
+            return this;
+        }
+
+        public Builder presencePenalty(BigDecimal value) {
+            this.presencePenalty = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder reasoning(ReasoningEffort value) {
+            this.reasoning = value;
+            return this;
+        }
+
+        public Builder seed(Long value) {
+            this.seed = value;
+            return this;
+        }
+
+        public Builder sessionId(String value) {
+            this.sessionId = value;
+            return this;
+        }
+
+        public Builder stopSequences(List<String> value) {
+            this.stopSequences = value;
+            return this;
+        }
+
+        public Builder temperature(BigDecimal value) {
+            this.temperature = value;
+            return this;
+        }
+
+        public Builder timeout(TimeoutConfiguration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public Builder toolChoice(ToolChoice value) {
+            this.toolChoice = value;
+            return this;
+        }
+
+        public Builder tools(List<Tool> value) {
+            this.tools = value;
+            return this;
+        }
+
+        public Builder topK(BigDecimal value) {
+            this.topK = value;
+            return this;
+        }
+
+        public Builder topP(BigDecimal value) {
+            this.topP = value;
+            return this;
+        }
+
+        public GenerateTextOptions build() { return new GenerateTextOptions(frequencyPenalty, headers, includeRawChunks, instructions, maxOutputTokens, maxRetries, output, presencePenalty, providerOptions, reasoning, seed, sessionId, stopSequences, temperature, timeout, toolChoice, tools, topK, topP); }
     }
 }
-

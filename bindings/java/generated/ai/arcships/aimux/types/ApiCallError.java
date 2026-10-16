@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -31,84 +30,54 @@ import java.util.*;
  * AI SDK's `APICallError` contract.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ApiCallError extends WireValue {
-    private final JsonNode data;
-    private final boolean hasData;
-    private final Boolean isRetryable;
-    private final String message;
-    private final String providerCode;
-    private final boolean hasProviderCode;
-    private final JsonNode requestBodyValues;
-    private final String responseBody;
-    private final boolean hasResponseBody;
-    private final Map<String, String> responseHeaders;
-    private final boolean hasResponseHeaders;
-    private final Integer statusCode;
-    private final boolean hasStatusCode;
-    private final String url;
-    private ApiCallError(JsonNode json) {
-        WireJson.object(json, "ApiCallError", false, "data", "isRetryable", "message", "providerCode", "requestBodyValues", "responseBody", "responseHeaders", "statusCode", "url");
-        this.hasData = json.has("data");
-        this.data = WireJson.isNull(json.get("data")) ? null : WireJson.json(json.get("data"));
-        WireJson.required(json, "isRetryable");
-        this.isRetryable = WireJson.bool(json.get("isRetryable"));
-        WireJson.required(json, "message");
-        this.message = WireJson.string(json.get("message"));
-        this.hasProviderCode = json.has("providerCode");
-        this.providerCode = WireJson.isNull(json.get("providerCode")) ? null : (WireJson.isNull(json.get("providerCode")) ? null : WireJson.string(json.get("providerCode")));
-        WireJson.required(json, "requestBodyValues");
-        this.requestBodyValues = WireJson.json(json.get("requestBodyValues"));
-        this.hasResponseBody = json.has("responseBody");
-        this.responseBody = WireJson.isNull(json.get("responseBody")) ? null : (WireJson.isNull(json.get("responseBody")) ? null : WireJson.string(json.get("responseBody")));
-        this.hasResponseHeaders = json.has("responseHeaders");
-        this.responseHeaders = WireJson.isNull(json.get("responseHeaders")) ? null : (WireJson.isNull(json.get("responseHeaders")) ? null : WireJson.map(json.get("responseHeaders"), item0 -> WireJson.string(item0)));
-        this.hasStatusCode = json.has("statusCode");
-        this.statusCode = WireJson.isNull(json.get("statusCode")) ? null : (WireJson.isNull(json.get("statusCode")) ? null : WireJson.integer(json.get("statusCode"), true, 16).intValue());
-        WireJson.required(json, "url");
-        this.url = WireJson.string(json.get("url"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ApiCallError fromJson(JsonNode json) { return new ApiCallError(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ApiCallError {
     /**
      * Parsed provider error data.
      */
-    public JsonNode getData() { return data == null ? null : WireJson.json(WireJson.tree(data)); }
-    public boolean hasData() { return hasData; }
+    @JsonProperty("data")
+    @JsonInclude(value = JsonInclude.Include.CUSTOM, valueFilter = FieldPresence.Absent.class)
+    private final FieldPresence<JsonNode> data;
     /**
      * Whether retrying can help (`APICallError.isRetryable`) — stored at
      * construction, exactly like the AI SDK: the response path computes it
      * from the status (408/409/429 or 5xx), and the transport path (no response, so
      * no status to compute from) sets it to `true` explicitly.
      */
-    public Boolean getIsRetryable() { return isRetryable == null ? null : isRetryable; }
+    @JsonProperty("isRetryable")
+    private final Boolean isRetryable;
     /**
      * Human-readable failure text. Provider text is verbatim when available;
      * locally detected transport/parse failures include their source detail.
      * Never includes an HTTP status prefix.
      */
-    public String getMessage() { return message == null ? null : message; }
+    @JsonProperty("message")
+    private final String message;
     /**
      * Provider's machine-readable code (OpenAI's `code`/`type`,
      * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
      * status. Our normalized take on `APICallError.data`.
      */
-    public String getProviderCode() { return providerCode == null ? null : (providerCode == null ? null : providerCode); }
+    @JsonProperty("providerCode")
+    private final String providerCode;
     /**
      * Sanitized request values used to create the API request.
      */
-    public JsonNode getRequestBodyValues() { return requestBodyValues == null ? null : WireJson.json(WireJson.tree(requestBodyValues)); }
+    @JsonProperty("requestBodyValues")
+    private final JsonNode requestBodyValues;
     /**
      * The raw response body, verbatim (`APICallError.responseBody`) — the
      * lossless evidence when `message`/`provider_code` are extractions.
      * `None` when the error did not come from a response body.
      */
-    public String getResponseBody() { return responseBody == null ? null : (responseBody == null ? null : responseBody); }
+    @JsonProperty("responseBody")
+    private final String responseBody;
     /**
      * Sanitized response headers.
      */
-    public Map<String, String> getResponseHeaders() { return responseHeaders == null ? null : (responseHeaders == null ? null : WireJson.map(WireJson.tree(responseHeaders), item0 -> WireJson.string(item0))); }
+    @JsonProperty("responseHeaders")
+    private final Map<String, String> responseHeaders;
     /**
      * HTTP status of the response, when it came from one
      * (`APICallError.statusCode`). The HTTP layer fills the observed status
@@ -118,39 +87,109 @@ public final class ApiCallError extends WireValue {
      * Anthropic from its error type); errors built without an HTTP exchange
      * leave it `None`.
      */
-    public Integer getStatusCode() { return statusCode == null ? null : (statusCode == null ? null : statusCode); }
+    @JsonProperty("statusCode")
+    private final Integer statusCode;
     /**
      * Sanitized request URL. Required for every API-derived failure.
      */
-    public String getUrl() { return url == null ? null : url; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasData) json.set("data", WireJson.tree(data));
-        json.set("isRetryable", WireJson.tree(isRetryable));
-        json.set("message", WireJson.tree(message));
-        if (hasProviderCode) json.set("providerCode", WireJson.tree(providerCode));
-        json.set("requestBodyValues", WireJson.tree(requestBodyValues));
-        if (hasResponseBody) json.set("responseBody", WireJson.tree(responseBody));
-        if (hasResponseHeaders) json.set("responseHeaders", WireJson.tree(responseHeaders));
-        if (hasStatusCode) json.set("statusCode", WireJson.tree(statusCode));
-        json.set("url", WireJson.tree(url));
-        return json;
+    @JsonProperty("url")
+    private final String url;
+
+    @JsonCreator
+    public ApiCallError(
+        @JsonProperty(value = "data") FieldPresence<JsonNode> data,
+        @JsonProperty(value = "isRetryable", required = true) Boolean isRetryable,
+        @JsonProperty(value = "message", required = true) String message,
+        @JsonProperty(value = "providerCode") String providerCode,
+        @JsonProperty(value = "requestBodyValues", required = true) JsonNode requestBodyValues,
+        @JsonProperty(value = "responseBody") String responseBody,
+        @JsonProperty(value = "responseHeaders") Map<String, String> responseHeaders,
+        @JsonProperty(value = "statusCode") Integer statusCode,
+        @JsonProperty(value = "url", required = true) String url) {
+        this.data = data == null ? FieldPresence.absent() : data;
+        this.isRetryable = isRetryable;
+        this.message = message;
+        this.providerCode = providerCode;
+        this.requestBodyValues = requestBodyValues == null ? null : requestBodyValues.deepCopy();
+        this.responseBody = responseBody;
+        this.responseHeaders = responseHeaders == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(responseHeaders));
+        this.statusCode = statusCode;
+        this.url = url;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public JsonNode getData() { return data.getValue() == null ? null : data.getValue().deepCopy(); }
+    public boolean hasData() { return data.isPresent(); }
+    public Boolean getIsRetryable() { return isRetryable; }
+    public String getMessage() { return message; }
+    public String getProviderCode() { return providerCode; }
+    public JsonNode getRequestBodyValues() { return requestBodyValues == null ? null : requestBodyValues.deepCopy(); }
+    public String getResponseBody() { return responseBody; }
+    public Map<String, String> getResponseHeaders() { return responseHeaders; }
+    public Integer getStatusCode() { return statusCode; }
+    public String getUrl() { return url; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private FieldPresence<JsonNode> data = FieldPresence.absent();
+        private Boolean isRetryable;
+        private String message;
+        private String providerCode;
+        private JsonNode requestBodyValues;
+        private String responseBody;
+        private Map<String, String> responseHeaders;
+        private Integer statusCode;
+        private String url;
+
+        public Builder data(JsonNode value) {
+            this.data = FieldPresence.of(value == null ? null : value.deepCopy());
+            return this;
         }
-        public Builder data(JsonNode value) { json.set("data", WireJson.tree(value)); return this; }
-        public Builder omitData() { json.remove("data"); return this; }
-        public Builder isRetryable(Boolean value) { json.set("isRetryable", WireJson.tree(value)); return this; }
-        public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-        public Builder providerCode(String value) { json.set("providerCode", WireJson.tree(value)); return this; }
-        public Builder requestBodyValues(JsonNode value) { json.set("requestBodyValues", WireJson.tree(value)); return this; }
-        public Builder responseBody(String value) { json.set("responseBody", WireJson.tree(value)); return this; }
-        public Builder responseHeaders(Map<String, String> value) { json.set("responseHeaders", WireJson.tree(value)); return this; }
-        public Builder statusCode(Integer value) { json.set("statusCode", WireJson.tree(value)); return this; }
-        public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-        public ApiCallError build() { return new ApiCallError(json); }
+
+        public Builder omitData() {
+            this.data = FieldPresence.absent();
+            return this;
+        }
+
+        public Builder isRetryable(Boolean value) {
+            this.isRetryable = value;
+            return this;
+        }
+
+        public Builder message(String value) {
+            this.message = value;
+            return this;
+        }
+
+        public Builder providerCode(String value) {
+            this.providerCode = value;
+            return this;
+        }
+
+        public Builder requestBodyValues(JsonNode value) {
+            this.requestBodyValues = value;
+            return this;
+        }
+
+        public Builder responseBody(String value) {
+            this.responseBody = value;
+            return this;
+        }
+
+        public Builder responseHeaders(Map<String, String> value) {
+            this.responseHeaders = value;
+            return this;
+        }
+
+        public Builder statusCode(Integer value) {
+            this.statusCode = value;
+            return this;
+        }
+
+        public Builder url(String value) {
+            this.url = value;
+            return this;
+        }
+
+        public ApiCallError build() { return new ApiCallError(data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
     }
 }
-

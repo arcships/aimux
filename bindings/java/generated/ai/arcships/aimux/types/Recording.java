@@ -4,87 +4,53 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * 一次完整调用的录制记录(三层 + call_id 关联)。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class Recording extends WireValue {
-    private final String callId;
-    private final Boolean complete;
-    private final List<HttpExchange> exchanges;
-    private final InputRecord input;
-    private final OutcomeRecord outcome;
-    private final ProviderRecord provider;
-    private final String recordedAt;
-    private final Long schema;
-    private final String sessionId;
-    private final boolean hasSessionId;
-    private final Long step;
-    private final boolean hasStep;
-    private final Boolean transportClosed;
-    private Recording(JsonNode json) {
-        WireJson.object(json, "Recording", false, "callId", "complete", "exchanges", "input", "outcome", "provider", "recordedAt", "schema", "sessionId", "step", "transportClosed");
-        WireJson.required(json, "callId");
-        this.callId = WireJson.string(json.get("callId"));
-        WireJson.required(json, "complete");
-        this.complete = WireJson.bool(json.get("complete"));
-        WireJson.required(json, "exchanges");
-        this.exchanges = WireJson.array(json.get("exchanges"), item0 -> HttpExchange.fromJson(item0));
-        WireJson.required(json, "input");
-        this.input = InputRecord.fromJson(json.get("input"));
-        WireJson.required(json, "outcome");
-        this.outcome = OutcomeRecord.fromJson(json.get("outcome"));
-        WireJson.required(json, "provider");
-        this.provider = ProviderRecord.fromJson(json.get("provider"));
-        WireJson.required(json, "recordedAt");
-        this.recordedAt = WireJson.string(json.get("recordedAt"));
-        WireJson.required(json, "schema");
-        this.schema = WireJson.integer(json.get("schema"), true, 32).longValue();
-        this.hasSessionId = json.has("sessionId");
-        this.sessionId = WireJson.isNull(json.get("sessionId")) ? null : (WireJson.isNull(json.get("sessionId")) ? null : WireJson.string(json.get("sessionId")));
-        this.hasStep = json.has("step");
-        this.step = WireJson.isNull(json.get("step")) ? null : (WireJson.isNull(json.get("step")) ? null : WireJson.integer(json.get("step"), true, 32).longValue());
-        WireJson.required(json, "transportClosed");
-        this.transportClosed = WireJson.bool(json.get("transportClosed"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static Recording fromJson(JsonNode json) { return new Recording(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class Recording {
     /**
      * 暴露逻辑调用 ID,关联三层。
      */
-    public String getCallId() { return callId == null ? null : callId; }
+    @JsonProperty("callId")
+    private final String callId;
     /**
      * wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。A call
      * that lost an event (full queue, writer gone) or was marked
      * inconsistent (duplicate attempt, unmatched update) is never complete.
      */
-    public Boolean getComplete() { return complete == null ? null : complete; }
+    @JsonProperty("complete")
+    private final Boolean complete;
     /**
      * ③ HTTP 侧:实际 wire 交换(per-attempt 一条)。
      */
-    public List<HttpExchange> getExchanges() { return exchanges == null ? null : WireJson.array(WireJson.tree(exchanges), item0 -> HttpExchange.fromJson(item0)); }
+    @JsonProperty("exchanges")
+    private final List<HttpExchange> exchanges;
     /**
      * ① 输入侧:调用参数(prompt + options)。
      */
-    public InputRecord getInput() { return input == null ? null : input; }
+    @JsonProperty("input")
+    private final InputRecord input;
     /**
      * 最终结果摘要(状态 + finish_reason + usage)。
      */
-    public OutcomeRecord getOutcome() { return outcome == null ? null : outcome; }
+    @JsonProperty("outcome")
+    private final OutcomeRecord outcome;
     /**
      * ② 配置侧:provider 身份与配置。
      */
-    public ProviderRecord getProvider() { return provider == null ? null : provider; }
+    @JsonProperty("provider")
+    private final ProviderRecord provider;
     /**
      * ISO 8601 时间戳。
      */
-    public String getRecordedAt() { return recordedAt == null ? null : recordedAt; }
+    @JsonProperty("recordedAt")
+    private final String recordedAt;
     /**
      * 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
      * Recordings written by aimux 0.5 and earlier also carry a configuration
@@ -93,53 +59,134 @@ public final class Recording extends WireValue {
      * (`call_id`, `recorded_at`, ...), which are read as aliases of the
      * camelCase keys this version writes.
      */
-    public Long getSchema() { return schema == null ? null : schema; }
+    @JsonProperty("schema")
+    private final Long schema;
     /**
      * 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
      * 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
      * 或之后均可(writer 端按 call_id 合并)。
      */
-    public String getSessionId() { return sessionId == null ? null : (sessionId == null ? null : sessionId); }
+    @JsonProperty("sessionId")
+    private final String sessionId;
     /**
      * 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
      */
-    public Long getStep() { return step == null ? null : (step == null ? null : step); }
+    @JsonProperty("step")
+    private final Long step;
     /**
      * 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
      * P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
      */
-    public Boolean getTransportClosed() { return transportClosed == null ? null : transportClosed; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("callId", WireJson.tree(callId));
-        json.set("complete", WireJson.tree(complete));
-        json.set("exchanges", WireJson.tree(exchanges));
-        json.set("input", WireJson.tree(input));
-        json.set("outcome", WireJson.tree(outcome));
-        json.set("provider", WireJson.tree(provider));
-        json.set("recordedAt", WireJson.tree(recordedAt));
-        json.set("schema", WireJson.tree(schema));
-        if (hasSessionId) json.set("sessionId", WireJson.tree(sessionId));
-        if (hasStep) json.set("step", WireJson.tree(step));
-        json.set("transportClosed", WireJson.tree(transportClosed));
-        return json;
+    @JsonProperty("transportClosed")
+    private final Boolean transportClosed;
+
+    @JsonCreator
+    public Recording(
+        @JsonProperty(value = "callId", required = true) String callId,
+        @JsonProperty(value = "complete", required = true) Boolean complete,
+        @JsonProperty(value = "exchanges", required = true) List<HttpExchange> exchanges,
+        @JsonProperty(value = "input", required = true) InputRecord input,
+        @JsonProperty(value = "outcome", required = true) OutcomeRecord outcome,
+        @JsonProperty(value = "provider", required = true) ProviderRecord provider,
+        @JsonProperty(value = "recordedAt", required = true) String recordedAt,
+        @JsonProperty(value = "schema", required = true) Long schema,
+        @JsonProperty(value = "sessionId") String sessionId,
+        @JsonProperty(value = "step") Long step,
+        @JsonProperty(value = "transportClosed", required = true) Boolean transportClosed) {
+        this.callId = callId;
+        this.complete = complete;
+        this.exchanges = exchanges == null ? null : Collections.unmodifiableList(new ArrayList<>(exchanges));
+        this.input = input;
+        this.outcome = outcome;
+        this.provider = provider;
+        this.recordedAt = recordedAt;
+        this.schema = schema;
+        this.sessionId = sessionId;
+        this.step = step;
+        this.transportClosed = transportClosed;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getCallId() { return callId; }
+    public Boolean getComplete() { return complete; }
+    public List<HttpExchange> getExchanges() { return exchanges; }
+    public InputRecord getInput() { return input; }
+    public OutcomeRecord getOutcome() { return outcome; }
+    public ProviderRecord getProvider() { return provider; }
+    public String getRecordedAt() { return recordedAt; }
+    public Long getSchema() { return schema; }
+    public String getSessionId() { return sessionId; }
+    public Long getStep() { return step; }
+    public Boolean getTransportClosed() { return transportClosed; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String callId;
+        private Boolean complete;
+        private List<HttpExchange> exchanges;
+        private InputRecord input;
+        private OutcomeRecord outcome;
+        private ProviderRecord provider;
+        private String recordedAt;
+        private Long schema;
+        private String sessionId;
+        private Long step;
+        private Boolean transportClosed;
+
+        public Builder callId(String value) {
+            this.callId = value;
+            return this;
         }
-        public Builder callId(String value) { json.set("callId", WireJson.tree(value)); return this; }
-        public Builder complete(Boolean value) { json.set("complete", WireJson.tree(value)); return this; }
-        public Builder exchanges(List<HttpExchange> value) { json.set("exchanges", WireJson.tree(value)); return this; }
-        public Builder input(InputRecord value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder outcome(OutcomeRecord value) { json.set("outcome", WireJson.tree(value)); return this; }
-        public Builder provider(ProviderRecord value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder recordedAt(String value) { json.set("recordedAt", WireJson.tree(value)); return this; }
-        public Builder schema(Long value) { json.set("schema", WireJson.tree(value)); return this; }
-        public Builder sessionId(String value) { json.set("sessionId", WireJson.tree(value)); return this; }
-        public Builder step(Long value) { json.set("step", WireJson.tree(value)); return this; }
-        public Builder transportClosed(Boolean value) { json.set("transportClosed", WireJson.tree(value)); return this; }
-        public Recording build() { return new Recording(json); }
+
+        public Builder complete(Boolean value) {
+            this.complete = value;
+            return this;
+        }
+
+        public Builder exchanges(List<HttpExchange> value) {
+            this.exchanges = value;
+            return this;
+        }
+
+        public Builder input(InputRecord value) {
+            this.input = value;
+            return this;
+        }
+
+        public Builder outcome(OutcomeRecord value) {
+            this.outcome = value;
+            return this;
+        }
+
+        public Builder provider(ProviderRecord value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder recordedAt(String value) {
+            this.recordedAt = value;
+            return this;
+        }
+
+        public Builder schema(Long value) {
+            this.schema = value;
+            return this;
+        }
+
+        public Builder sessionId(String value) {
+            this.sessionId = value;
+            return this;
+        }
+
+        public Builder step(Long value) {
+            this.step = value;
+            return this;
+        }
+
+        public Builder transportClosed(Boolean value) {
+            this.transportClosed = value;
+            return this;
+        }
+
+        public Recording build() { return new Recording(callId, complete, exchanges, input, outcome, provider, recordedAt, schema, sessionId, step, transportClosed); }
     }
 }
-

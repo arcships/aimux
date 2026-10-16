@@ -4,35 +4,33 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class OperationNextParams extends WireValue {
-    private final BigInteger timeoutMs;
-    private final boolean hasTimeoutMs;
-    private OperationNextParams(JsonNode json) {
-        WireJson.object(json, "OperationNextParams", true, "timeoutMs");
-        this.hasTimeoutMs = json.has("timeoutMs");
-        this.timeoutMs = WireJson.isNull(json.get("timeoutMs")) ? null : WireJson.integer(json.get("timeoutMs"), true, 64);
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class OperationNextParams {
+    @JsonProperty("timeoutMs")
+    private final Long timeoutMs;
+
+    @JsonCreator
+    public OperationNextParams(
+        @JsonProperty(value = "timeoutMs") Long timeoutMs) {
+        this.timeoutMs = timeoutMs;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static OperationNextParams fromJson(JsonNode json) { return new OperationNextParams(json); }
+
     public static Builder builder() { return new Builder(); }
-    public BigInteger getTimeoutMs() { return timeoutMs == null ? null : timeoutMs; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasTimeoutMs) json.set("timeoutMs", WireJson.tree(timeoutMs));
-        return json;
-    }
+    public Long getTimeoutMs() { return timeoutMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long timeoutMs;
+
+        public Builder timeoutMs(Long value) {
+            this.timeoutMs = value;
+            return this;
         }
-        public Builder timeoutMs(BigInteger value) { json.set("timeoutMs", WireJson.tree(value)); return this; }
-        public OperationNextParams build() { return new OperationNextParams(json); }
+
+        public OperationNextParams build() { return new OperationNextParams(timeoutMs); }
     }
 }
-

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -14,64 +13,76 @@ import java.util.*;
  * Aligned with V4 `RerankingModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class RerankingResult extends WireValue {
-    private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
-    private final List<RerankingRank> ranking;
-    private final RerankingResponse response;
-    private final boolean hasResponse;
-    private final List<Warning> warnings;
-    private final boolean hasWarnings;
-    private RerankingResult(JsonNode json) {
-        WireJson.object(json, "RerankingResult", false, "providerMetadata", "ranking", "response", "warnings");
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "ranking");
-        this.ranking = WireJson.array(json.get("ranking"), item0 -> RerankingRank.fromJson(item0));
-        this.hasResponse = json.has("response");
-        this.response = WireJson.isNull(json.get("response")) ? null : (WireJson.isNull(json.get("response")) ? null : RerankingResponse.fromJson(json.get("response")));
-        this.hasWarnings = json.has("warnings");
-        this.warnings = WireJson.isNull(json.get("warnings")) ? null : (WireJson.isNull(json.get("warnings")) ? null : WireJson.array(json.get("warnings"), item0 -> Warning.fromJson(item0)));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static RerankingResult fromJson(JsonNode json) { return new RerankingResult(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class RerankingResult {
     /**
      * Additional provider-specific metadata, keyed by provider name.
      */
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
+    @JsonProperty("providerMetadata")
+    private final Map<String, Map<String, JsonNode>> providerMetadata;
     /**
      * Ordered list of reranked documents, sorted by descending relevance
      * score. Each entry's `index` refers to the position in the original
      * `documents` list.
      */
-    public List<RerankingRank> getRanking() { return ranking == null ? null : WireJson.array(WireJson.tree(ranking), item0 -> RerankingRank.fromJson(item0)); }
+    @JsonProperty("ranking")
+    private final List<RerankingRank> ranking;
     /**
      * Optional response information for debugging.
      */
-    public RerankingResponse getResponse() { return response == null ? null : (response == null ? null : response); }
+    @JsonProperty("response")
+    private final RerankingResponse response;
     /**
      * Warnings for the call, e.g. unsupported settings.
      */
-    public List<Warning> getWarnings() { return warnings == null ? null : (warnings == null ? null : WireJson.array(WireJson.tree(warnings), item0 -> Warning.fromJson(item0))); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("ranking", WireJson.tree(ranking));
-        if (hasResponse) json.set("response", WireJson.tree(response));
-        if (hasWarnings) json.set("warnings", WireJson.tree(warnings));
-        return json;
+    @JsonProperty("warnings")
+    private final List<Warning> warnings;
+
+    @JsonCreator
+    public RerankingResult(
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "ranking", required = true) List<RerankingRank> ranking,
+        @JsonProperty(value = "response") RerankingResponse response,
+        @JsonProperty(value = "warnings") List<Warning> warnings) {
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.ranking = ranking == null ? null : Collections.unmodifiableList(new ArrayList<>(ranking));
+        this.response = response;
+        this.warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public List<RerankingRank> getRanking() { return ranking; }
+    public RerankingResponse getResponse() { return response; }
+    public List<Warning> getWarnings() { return warnings; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private List<RerankingRank> ranking;
+        private RerankingResponse response;
+        private List<Warning> warnings;
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
         }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder ranking(List<RerankingRank> value) { json.set("ranking", WireJson.tree(value)); return this; }
-        public Builder response(RerankingResponse value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder warnings(List<Warning> value) { json.set("warnings", WireJson.tree(value)); return this; }
-        public RerankingResult build() { return new RerankingResult(json); }
+
+        public Builder ranking(List<RerankingRank> value) {
+            this.ranking = value;
+            return this;
+        }
+
+        public Builder response(RerankingResponse value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder warnings(List<Warning> value) {
+            this.warnings = value;
+            return this;
+        }
+
+        public RerankingResult build() { return new RerankingResult(providerMetadata, ranking, response, warnings); }
     }
 }
-

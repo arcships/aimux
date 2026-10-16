@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -17,12 +16,12 @@ import java.util.*;
  * data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
  */
 @JsonDeserialize(using = JsonDeserializer.None.class)
-public final class AudioInput extends WireValue {
+public final class AudioInput {
+    @JsonValue
     private final String value;
-    public AudioInput(String value) { this.value = WireJson.string(WireJson.tree(value)); }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static AudioInput fromJson(JsonNode json) { return new AudioInput(WireJson.string(json)); }
-    public String getValue() { return value; }
-    @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-}
 
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public AudioInput(String value) { this.value = value; }
+
+    public String getValue() { return value; }
+}

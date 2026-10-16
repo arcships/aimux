@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -22,34 +21,14 @@ import java.util.*;
  * `total` timeout also covers retry backoff and the whole streamed response.
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class TimeoutConfiguration extends WireValue {
-    private final BigInteger chunkMs;
-    private final boolean hasChunkMs;
-    private final BigInteger firstChunkMs;
-    private final boolean hasFirstChunkMs;
-    private final BigInteger stepMs;
-    private final boolean hasStepMs;
-    private final BigInteger totalMs;
-    private final boolean hasTotalMs;
-    private TimeoutConfiguration(JsonNode json) {
-        WireJson.object(json, "TimeoutConfiguration", true, "chunkMs", "firstChunkMs", "stepMs", "totalMs");
-        this.hasChunkMs = json.has("chunkMs");
-        this.chunkMs = WireJson.isNull(json.get("chunkMs")) ? null : (WireJson.isNull(json.get("chunkMs")) ? null : WireJson.integer(json.get("chunkMs"), true, 64));
-        this.hasFirstChunkMs = json.has("firstChunkMs");
-        this.firstChunkMs = WireJson.isNull(json.get("firstChunkMs")) ? null : (WireJson.isNull(json.get("firstChunkMs")) ? null : WireJson.integer(json.get("firstChunkMs"), true, 64));
-        this.hasStepMs = json.has("stepMs");
-        this.stepMs = WireJson.isNull(json.get("stepMs")) ? null : (WireJson.isNull(json.get("stepMs")) ? null : WireJson.integer(json.get("stepMs"), true, 64));
-        this.hasTotalMs = json.has("totalMs");
-        this.totalMs = WireJson.isNull(json.get("totalMs")) ? null : (WireJson.isNull(json.get("totalMs")) ? null : WireJson.integer(json.get("totalMs"), true, 64));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static TimeoutConfiguration fromJson(JsonNode json) { return new TimeoutConfiguration(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class TimeoutConfiguration {
     /**
      * Maximum idle time between consecutive stream chunks (streaming only).
      */
-    public BigInteger getChunkMs() { return chunkMs == null ? null : (chunkMs == null ? null : chunkMs); }
+    @JsonProperty("chunkMs")
+    private final Long chunkMs;
     /**
      * Timeout waiting for the first stream chunk (streaming only).
      * 
@@ -57,34 +36,65 @@ public final class TimeoutConfiguration extends WireValue {
      * and any retries before the first semantic output: it is the
      * user-perceived time-to-first-output budget, not a per-attempt timer.
      */
-    public BigInteger getFirstChunkMs() { return firstChunkMs == null ? null : (firstChunkMs == null ? null : firstChunkMs); }
+    @JsonProperty("firstChunkMs")
+    private final Long firstChunkMs;
     /**
      * Timeout for one generation step, including that step's attempts and
      * retry backoff, in milliseconds. Aimux currently has one step.
      */
-    public BigInteger getStepMs() { return stepMs == null ? null : (stepMs == null ? null : stepMs); }
+    @JsonProperty("stepMs")
+    private final Long stepMs;
     /**
      * Overall timeout for the entire call (including retries and, for
      * streaming, the whole stream), in milliseconds.
      */
-    public BigInteger getTotalMs() { return totalMs == null ? null : (totalMs == null ? null : totalMs); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasChunkMs) json.set("chunkMs", WireJson.tree(chunkMs));
-        if (hasFirstChunkMs) json.set("firstChunkMs", WireJson.tree(firstChunkMs));
-        if (hasStepMs) json.set("stepMs", WireJson.tree(stepMs));
-        if (hasTotalMs) json.set("totalMs", WireJson.tree(totalMs));
-        return json;
+    @JsonProperty("totalMs")
+    private final Long totalMs;
+
+    @JsonCreator
+    public TimeoutConfiguration(
+        @JsonProperty(value = "chunkMs") Long chunkMs,
+        @JsonProperty(value = "firstChunkMs") Long firstChunkMs,
+        @JsonProperty(value = "stepMs") Long stepMs,
+        @JsonProperty(value = "totalMs") Long totalMs) {
+        this.chunkMs = chunkMs;
+        this.firstChunkMs = firstChunkMs;
+        this.stepMs = stepMs;
+        this.totalMs = totalMs;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getChunkMs() { return chunkMs; }
+    public Long getFirstChunkMs() { return firstChunkMs; }
+    public Long getStepMs() { return stepMs; }
+    public Long getTotalMs() { return totalMs; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long chunkMs;
+        private Long firstChunkMs;
+        private Long stepMs;
+        private Long totalMs;
+
+        public Builder chunkMs(Long value) {
+            this.chunkMs = value;
+            return this;
         }
-        public Builder chunkMs(BigInteger value) { json.set("chunkMs", WireJson.tree(value)); return this; }
-        public Builder firstChunkMs(BigInteger value) { json.set("firstChunkMs", WireJson.tree(value)); return this; }
-        public Builder stepMs(BigInteger value) { json.set("stepMs", WireJson.tree(value)); return this; }
-        public Builder totalMs(BigInteger value) { json.set("totalMs", WireJson.tree(value)); return this; }
-        public TimeoutConfiguration build() { return new TimeoutConfiguration(json); }
+
+        public Builder firstChunkMs(Long value) {
+            this.firstChunkMs = value;
+            return this;
+        }
+
+        public Builder stepMs(Long value) {
+            this.stepMs = value;
+            return this;
+        }
+
+        public Builder totalMs(Long value) {
+            this.totalMs = value;
+            return this;
+        }
+
+        public TimeoutConfiguration build() { return new TimeoutConfiguration(chunkMs, firstChunkMs, stepMs, totalMs); }
     }
 }
-

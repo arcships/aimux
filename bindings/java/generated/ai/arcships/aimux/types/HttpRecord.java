@@ -4,59 +4,72 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class HttpRecord extends WireValue {
-    private final String body;
-    private final boolean hasBody;
-    private final List<List<String>> headers;
-    private final String method;
-    private final String url;
-    private HttpRecord(JsonNode json) {
-        WireJson.object(json, "HttpRecord", false, "body", "headers", "method", "url");
-        this.hasBody = json.has("body");
-        this.body = WireJson.isNull(json.get("body")) ? null : (WireJson.isNull(json.get("body")) ? null : WireJson.string(json.get("body")));
-        WireJson.required(json, "headers");
-        this.headers = WireJson.array(json.get("headers"), item0 -> WireJson.array(item0, item1 -> WireJson.string(item1)));
-        WireJson.required(json, "method");
-        this.method = WireJson.string(json.get("method"));
-        WireJson.required(json, "url");
-        this.url = WireJson.string(json.get("url"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static HttpRecord fromJson(JsonNode json) { return new HttpRecord(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class HttpRecord {
     /**
      * 明文(脱敏后);None = 无 body。
      */
-    public String getBody() { return body == null ? null : (body == null ? null : body); }
+    @JsonProperty("body")
+    private final String body;
     /**
      * 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
      */
-    public List<List<String>> getHeaders() { return headers == null ? null : WireJson.array(WireJson.tree(headers), item0 -> WireJson.array(item0, item1 -> WireJson.string(item1))); }
-    public String getMethod() { return method == null ? null : method; }
-    public String getUrl() { return url == null ? null : url; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasBody) json.set("body", WireJson.tree(body));
-        json.set("headers", WireJson.tree(headers));
-        json.set("method", WireJson.tree(method));
-        json.set("url", WireJson.tree(url));
-        return json;
+    @JsonProperty("headers")
+    private final List<List<String>> headers;
+    @JsonProperty("method")
+    private final String method;
+    @JsonProperty("url")
+    private final String url;
+
+    @JsonCreator
+    public HttpRecord(
+        @JsonProperty(value = "body") String body,
+        @JsonProperty(value = "headers", required = true) List<List<String>> headers,
+        @JsonProperty(value = "method", required = true) String method,
+        @JsonProperty(value = "url", required = true) String url) {
+        this.body = body;
+        this.headers = headers == null ? null : Collections.unmodifiableList(new ArrayList<>(headers));
+        this.method = method;
+        this.url = url;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public String getBody() { return body; }
+    public List<List<String>> getHeaders() { return headers; }
+    public String getMethod() { return method; }
+    public String getUrl() { return url; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private String body;
+        private List<List<String>> headers;
+        private String method;
+        private String url;
+
+        public Builder body(String value) {
+            this.body = value;
+            return this;
         }
-        public Builder body(String value) { json.set("body", WireJson.tree(value)); return this; }
-        public Builder headers(List<List<String>> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder method(String value) { json.set("method", WireJson.tree(value)); return this; }
-        public Builder url(String value) { json.set("url", WireJson.tree(value)); return this; }
-        public HttpRecord build() { return new HttpRecord(json); }
+
+        public Builder headers(List<List<String>> value) {
+            this.headers = value;
+            return this;
+        }
+
+        public Builder method(String value) {
+            this.method = value;
+            return this;
+        }
+
+        public Builder url(String value) {
+            this.url = value;
+            return this;
+        }
+
+        public HttpRecord build() { return new HttpRecord(body, headers, method, url); }
     }
 }
-

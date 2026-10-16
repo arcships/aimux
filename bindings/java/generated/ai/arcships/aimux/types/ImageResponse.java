@@ -4,61 +4,67 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Response information for an image generation call.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ImageResponse extends WireValue {
-    private final Map<String, String> headers;
-    private final boolean hasHeaders;
-    private final String modelId;
-    private final boolean hasModelId;
-    private final Timestamp timestamp;
-    private final boolean hasTimestamp;
-    private ImageResponse(JsonNode json) {
-        WireJson.object(json, "ImageResponse", false, "headers", "modelId", "timestamp");
-        this.hasHeaders = json.has("headers");
-        this.headers = WireJson.isNull(json.get("headers")) ? null : (WireJson.isNull(json.get("headers")) ? null : WireJson.map(json.get("headers"), item0 -> WireJson.string(item0)));
-        this.hasModelId = json.has("modelId");
-        this.modelId = WireJson.isNull(json.get("modelId")) ? null : (WireJson.isNull(json.get("modelId")) ? null : WireJson.string(json.get("modelId")));
-        this.hasTimestamp = json.has("timestamp");
-        this.timestamp = WireJson.isNull(json.get("timestamp")) ? null : (WireJson.isNull(json.get("timestamp")) ? null : Timestamp.fromJson(json.get("timestamp")));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ImageResponse fromJson(JsonNode json) { return new ImageResponse(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ImageResponse {
     /**
      * Response headers.
      */
-    public Map<String, String> getHeaders() { return headers == null ? null : (headers == null ? null : WireJson.map(WireJson.tree(headers), item0 -> WireJson.string(item0))); }
+    @JsonProperty("headers")
+    private final Map<String, String> headers;
     /**
      * The ID of the model that was used to generate the response.
      */
-    public String getModelId() { return modelId == null ? null : (modelId == null ? null : modelId); }
+    @JsonProperty("modelId")
+    private final String modelId;
     /**
      * Timestamp for the start of the generated response (`toISOString()` in the JSON).
      */
-    public Timestamp getTimestamp() { return timestamp == null ? null : (timestamp == null ? null : timestamp); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasHeaders) json.set("headers", WireJson.tree(headers));
-        if (hasModelId) json.set("modelId", WireJson.tree(modelId));
-        if (hasTimestamp) json.set("timestamp", WireJson.tree(timestamp));
-        return json;
+    @JsonProperty("timestamp")
+    private final Timestamp timestamp;
+
+    @JsonCreator
+    public ImageResponse(
+        @JsonProperty(value = "headers") Map<String, String> headers,
+        @JsonProperty(value = "modelId") String modelId,
+        @JsonProperty(value = "timestamp") Timestamp timestamp) {
+        this.headers = headers == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(headers));
+        this.modelId = modelId;
+        this.timestamp = timestamp;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Map<String, String> getHeaders() { return headers; }
+    public String getModelId() { return modelId; }
+    public Timestamp getTimestamp() { return timestamp; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Map<String, String> headers;
+        private String modelId;
+        private Timestamp timestamp;
+
+        public Builder headers(Map<String, String> value) {
+            this.headers = value;
+            return this;
         }
-        public Builder headers(Map<String, String> value) { json.set("headers", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder timestamp(Timestamp value) { json.set("timestamp", WireJson.tree(value)); return this; }
-        public ImageResponse build() { return new ImageResponse(json); }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder timestamp(Timestamp value) {
+            this.timestamp = value;
+            return this;
+        }
+
+        public ImageResponse build() { return new ImageResponse(headers, modelId, timestamp); }
     }
 }
-

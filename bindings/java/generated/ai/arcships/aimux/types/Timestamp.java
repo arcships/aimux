@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -19,12 +18,12 @@ import java.util.*;
  * therefore gives `new Date(text).toISOString()`.
  */
 @JsonDeserialize(using = JsonDeserializer.None.class)
-public final class Timestamp extends WireValue {
+public final class Timestamp {
+    @JsonValue
     private final String value;
-    public Timestamp(String value) { this.value = WireJson.timestamp(WireJson.tree(value)); }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static Timestamp fromJson(JsonNode json) { return new Timestamp(WireJson.timestamp(json)); }
-    public String getValue() { return value; }
-    @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-}
 
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public Timestamp(String value) { this.value = value; }
+
+    public String getValue() { return value; }
+}

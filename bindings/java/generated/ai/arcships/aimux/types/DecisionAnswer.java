@@ -4,21 +4,25 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * The answer to one question (`DecisionModelV4Answer`).
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = DecisionAnswer.Choice.class, name = "choice"),
     @JsonSubTypes.Type(value = DecisionAnswer.Score.class, name = "score"),
-    @JsonSubTypes.Type(value = DecisionAnswer.BooleanVariant.class, name = "boolean"),
+    @JsonSubTypes.Type(value = DecisionAnswer.BooleanVariant.class, name = "boolean")
 })
-public abstract class DecisionAnswer extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class DecisionAnswer {
     private DecisionAnswer() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public String getChoice() { return null; }
     public Map<String, BigDecimal> getProbabilities() { return null; }
@@ -27,142 +31,146 @@ public abstract class DecisionAnswer extends WireValue {
     public final boolean isBoolean_() { return "boolean".equals(getType()); }
     public final boolean isChoice() { return "choice".equals(getType()); }
     public final boolean isScore() { return "score".equals(getType()); }
-    public static DecisionAnswer fromJson(JsonNode json) {
-        WireJson.object(json, "DecisionAnswer", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "boolean":
-                return BooleanVariant.fromJson(json);
-            case "choice":
-                return Choice.fromJson(json);
-            case "score":
-                return Score.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown DecisionAnswer tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Choice extends DecisionAnswer {
-        private final String choice;
-        private final Map<String, BigDecimal> probabilities;
-        private final boolean hasProbabilities;
-        private Choice(JsonNode json) {
-            WireJson.object(json, "Choice", false, "choice", "probabilities", "type");
-            if (!"choice".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Choice tag");
-            WireJson.required(json, "choice");
-            this.choice = WireJson.string(json.get("choice"));
-            this.hasProbabilities = json.has("probabilities");
-            this.probabilities = WireJson.isNull(json.get("probabilities")) ? null : (WireJson.isNull(json.get("probabilities")) ? null : WireJson.map(json.get("probabilities"), item0 -> WireJson.number(item0)));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Choice fromJson(JsonNode json) { return new Choice(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "choice"; }
         /**
          * The selected option, with maximal probability when a distribution
          * exists.
          */
-        public String getChoice() { return choice == null ? null : choice; }
+        @JsonProperty("choice")
+        private final String choice;
         /**
          * Complete distribution over the question's options, when available.
          */
-        public Map<String, BigDecimal> getProbabilities() { return probabilities == null ? null : (probabilities == null ? null : WireJson.map(WireJson.tree(probabilities), item0 -> WireJson.number(item0))); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "choice");
-            json.set("choice", WireJson.tree(choice));
-            if (hasProbabilities) json.set("probabilities", WireJson.tree(probabilities));
-            return json;
+        @JsonProperty("probabilities")
+        private final Map<String, BigDecimal> probabilities;
+
+        @JsonCreator
+        public Choice(
+            @JsonProperty(value = "choice", required = true) String choice,
+            @JsonProperty(value = "probabilities") Map<String, BigDecimal> probabilities) {
+            this.choice = choice;
+            this.probabilities = probabilities == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(probabilities));
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "choice"; }
+        public String getChoice() { return choice; }
+        public Map<String, BigDecimal> getProbabilities() { return probabilities; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "choice");
+            private String choice;
+            private Map<String, BigDecimal> probabilities;
+
+            public Builder choice(String value) {
+                this.choice = value;
+                return this;
             }
-            public Builder choice(String value) { json.set("choice", WireJson.tree(value)); return this; }
-            public Builder probabilities(Map<String, BigDecimal> value) { json.set("probabilities", WireJson.tree(value)); return this; }
-            public Choice build() { return new Choice(json); }
+
+            public Builder probabilities(Map<String, BigDecimal> value) {
+                this.probabilities = value;
+                return this;
+            }
+
+            public Choice build() { return new Choice(choice, probabilities); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Score extends DecisionAnswer {
-        private final Map<String, BigDecimal> probabilities;
-        private final boolean hasProbabilities;
-        private final BigDecimal score;
-        private Score(JsonNode json) {
-            WireJson.object(json, "Score", false, "probabilities", "score", "type");
-            if (!"score".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Score tag");
-            this.hasProbabilities = json.has("probabilities");
-            this.probabilities = WireJson.isNull(json.get("probabilities")) ? null : (WireJson.isNull(json.get("probabilities")) ? null : WireJson.map(json.get("probabilities"), item0 -> WireJson.number(item0)));
-            WireJson.required(json, "score");
-            this.score = WireJson.number(json.get("score"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Score fromJson(JsonNode json) { return new Score(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "score"; }
         /**
          * Complete distribution keyed by zero-based level indices as
          * strings; when supplied, `score` is its probability-weighted mean.
          */
-        public Map<String, BigDecimal> getProbabilities() { return probabilities == null ? null : (probabilities == null ? null : WireJson.map(WireJson.tree(probabilities), item0 -> WireJson.number(item0))); }
+        @JsonProperty("probabilities")
+        private final Map<String, BigDecimal> probabilities;
         /**
          * Fractional position in `[0, levels - 1]`.
          */
-        public BigDecimal getScore() { return score == null ? null : score; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "score");
-            if (hasProbabilities) json.set("probabilities", WireJson.tree(probabilities));
-            json.set("score", WireJson.tree(score));
-            return json;
+        @JsonProperty("score")
+        private final BigDecimal score;
+
+        @JsonCreator
+        public Score(
+            @JsonProperty(value = "probabilities") Map<String, BigDecimal> probabilities,
+            @JsonProperty(value = "score", required = true) BigDecimal score) {
+            this.probabilities = probabilities == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(probabilities));
+            this.score = score;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "score"; }
+        public Map<String, BigDecimal> getProbabilities() { return probabilities; }
+        public BigDecimal getScore() { return score; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "score");
+            private Map<String, BigDecimal> probabilities;
+            private BigDecimal score;
+
+            public Builder probabilities(Map<String, BigDecimal> value) {
+                this.probabilities = value;
+                return this;
             }
-            public Builder probabilities(Map<String, BigDecimal> value) { json.set("probabilities", WireJson.tree(value)); return this; }
-            public Builder score(BigDecimal value) { json.set("score", WireJson.tree(value)); return this; }
-            public Score build() { return new Score(json); }
+
+            public Builder score(BigDecimal value) {
+                this.score = value;
+                return this;
+            }
+
+            public Score build() { return new Score(probabilities, score); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class BooleanVariant extends DecisionAnswer {
-        private final BigDecimal probability;
-        private BooleanVariant(JsonNode json) {
-            WireJson.object(json, "BooleanVariant", false, "probability", "type");
-            if (!"boolean".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid BooleanVariant tag");
-            WireJson.required(json, "probability");
-            this.probability = WireJson.number(json.get("probability"));
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static BooleanVariant fromJson(JsonNode json) { return new BooleanVariant(json); }
-        public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "boolean"; }
         /**
          * Model-estimated P(true), in `[0, 1]`. Not confidence in either
          * outcome.
          */
-        public BigDecimal getProbability() { return probability == null ? null : probability; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "boolean");
-            json.set("probability", WireJson.tree(probability));
-            return json;
+        @JsonProperty("probability")
+        private final BigDecimal probability;
+
+        @JsonCreator
+        public BooleanVariant(
+            @JsonProperty(value = "probability", required = true) BigDecimal probability) {
+            this.probability = probability;
         }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "boolean"; }
+        public BigDecimal getProbability() { return probability; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "boolean");
+            private BigDecimal probability;
+
+            public Builder probability(BigDecimal value) {
+                this.probability = value;
+                return this;
             }
-            public Builder probability(BigDecimal value) { json.set("probability", WireJson.tree(value)); return this; }
-            public BooleanVariant build() { return new BooleanVariant(json); }
+
+            public BooleanVariant build() { return new BooleanVariant(probability); }
         }
     }
-
 }

@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -15,94 +14,134 @@ import java.util.*;
  * The caller reads them to decide how to configure `GenerateTextOptions`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ModelSpec extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ModelSpec {
+    @JsonProperty("capabilities")
     private final ModelCapabilities capabilities;
+    @JsonProperty("cost")
     private final ModelCost cost;
-    private final boolean hasCost;
+    @JsonProperty("displayName")
     private final String displayName;
-    private final boolean hasDisplayName;
+    @JsonProperty("limits")
     private final ModelLimits limits;
+    @JsonProperty("modalities")
     private final ModelModalities modalities;
-    private final String provider;
-    private final boolean hasProvider;
-    private final JsonNode raw;
-    private final boolean hasRaw;
-    private final ReasoningSpec reasoning;
-    private final boolean hasReasoning;
-    private final CatalogueSource source;
-    private final ModelType type;
-    private ModelSpec(JsonNode json) {
-        WireJson.object(json, "ModelSpec", false, "capabilities", "cost", "displayName", "limits", "modalities", "provider", "raw", "reasoning", "source", "type");
-        WireJson.required(json, "capabilities");
-        this.capabilities = ModelCapabilities.fromJson(json.get("capabilities"));
-        this.hasCost = json.has("cost");
-        this.cost = WireJson.isNull(json.get("cost")) ? null : (WireJson.isNull(json.get("cost")) ? null : ModelCost.fromJson(json.get("cost")));
-        this.hasDisplayName = json.has("displayName");
-        this.displayName = WireJson.isNull(json.get("displayName")) ? null : (WireJson.isNull(json.get("displayName")) ? null : WireJson.string(json.get("displayName")));
-        WireJson.required(json, "limits");
-        this.limits = ModelLimits.fromJson(json.get("limits"));
-        WireJson.required(json, "modalities");
-        this.modalities = ModelModalities.fromJson(json.get("modalities"));
-        this.hasProvider = json.has("provider");
-        this.provider = WireJson.isNull(json.get("provider")) ? null : (WireJson.isNull(json.get("provider")) ? null : WireJson.string(json.get("provider")));
-        this.hasRaw = json.has("raw");
-        this.raw = WireJson.isNull(json.get("raw")) ? null : WireJson.json(json.get("raw"));
-        this.hasReasoning = json.has("reasoning");
-        this.reasoning = WireJson.isNull(json.get("reasoning")) ? null : (WireJson.isNull(json.get("reasoning")) ? null : ReasoningSpec.fromJson(json.get("reasoning")));
-        WireJson.required(json, "source");
-        this.source = CatalogueSource.fromJson(json.get("source"));
-        WireJson.required(json, "type");
-        this.type = ModelType.fromJson(json.get("type"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ModelSpec fromJson(JsonNode json) { return new ModelSpec(json); }
-    public static Builder builder() { return new Builder(); }
-    public ModelCapabilities getCapabilities() { return capabilities == null ? null : capabilities; }
-    public ModelCost getCost() { return cost == null ? null : (cost == null ? null : cost); }
-    public String getDisplayName() { return displayName == null ? null : (displayName == null ? null : displayName); }
-    public ModelLimits getLimits() { return limits == null ? null : limits; }
-    public ModelModalities getModalities() { return modalities == null ? null : modalities; }
     /**
      * Provider name (normalized to aimux registry spelling).
      */
-    public String getProvider() { return provider == null ? null : (provider == null ? null : provider); }
+    @JsonProperty("provider")
+    private final String provider;
     /**
      * Verbatim source entry, preserved for forward compatibility / debugging.
      */
-    public JsonNode getRaw() { return raw == null ? null : WireJson.json(WireJson.tree(raw)); }
-    public ReasoningSpec getReasoning() { return reasoning == null ? null : (reasoning == null ? null : reasoning); }
-    public CatalogueSource getSource() { return source == null ? null : source; }
-    public ModelType getType() { return type == null ? null : type; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("capabilities", WireJson.tree(capabilities));
-        if (hasCost) json.set("cost", WireJson.tree(cost));
-        if (hasDisplayName) json.set("displayName", WireJson.tree(displayName));
-        json.set("limits", WireJson.tree(limits));
-        json.set("modalities", WireJson.tree(modalities));
-        if (hasProvider) json.set("provider", WireJson.tree(provider));
-        if (hasRaw) json.set("raw", WireJson.tree(raw));
-        if (hasReasoning) json.set("reasoning", WireJson.tree(reasoning));
-        json.set("source", WireJson.tree(source));
-        json.set("type", WireJson.tree(type));
-        return json;
+    @JsonProperty("raw")
+    private final JsonNode raw;
+    @JsonProperty("reasoning")
+    private final ReasoningSpec reasoning;
+    @JsonProperty("source")
+    private final CatalogueSource source;
+    @JsonProperty("type")
+    private final ModelType type;
+
+    @JsonCreator
+    public ModelSpec(
+        @JsonProperty(value = "capabilities", required = true) ModelCapabilities capabilities,
+        @JsonProperty(value = "cost") ModelCost cost,
+        @JsonProperty(value = "displayName") String displayName,
+        @JsonProperty(value = "limits", required = true) ModelLimits limits,
+        @JsonProperty(value = "modalities", required = true) ModelModalities modalities,
+        @JsonProperty(value = "provider") String provider,
+        @JsonProperty(value = "raw") JsonNode raw,
+        @JsonProperty(value = "reasoning") ReasoningSpec reasoning,
+        @JsonProperty(value = "source", required = true) CatalogueSource source,
+        @JsonProperty(value = "type", required = true) ModelType type) {
+        this.capabilities = capabilities;
+        this.cost = cost;
+        this.displayName = displayName;
+        this.limits = limits;
+        this.modalities = modalities;
+        this.provider = provider;
+        this.raw = raw == null || raw.isNull() ? null : raw.deepCopy();
+        this.reasoning = reasoning;
+        this.source = source;
+        this.type = type;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public ModelCapabilities getCapabilities() { return capabilities; }
+    public ModelCost getCost() { return cost; }
+    public String getDisplayName() { return displayName; }
+    public ModelLimits getLimits() { return limits; }
+    public ModelModalities getModalities() { return modalities; }
+    public String getProvider() { return provider; }
+    public JsonNode getRaw() { return raw == null ? null : raw.deepCopy(); }
+    public ReasoningSpec getReasoning() { return reasoning; }
+    public CatalogueSource getSource() { return source; }
+    public ModelType getType() { return type; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private ModelCapabilities capabilities;
+        private ModelCost cost;
+        private String displayName;
+        private ModelLimits limits;
+        private ModelModalities modalities;
+        private String provider;
+        private JsonNode raw;
+        private ReasoningSpec reasoning;
+        private CatalogueSource source;
+        private ModelType type;
+
+        public Builder capabilities(ModelCapabilities value) {
+            this.capabilities = value;
+            return this;
         }
-        public Builder capabilities(ModelCapabilities value) { json.set("capabilities", WireJson.tree(value)); return this; }
-        public Builder cost(ModelCost value) { json.set("cost", WireJson.tree(value)); return this; }
-        public Builder displayName(String value) { json.set("displayName", WireJson.tree(value)); return this; }
-        public Builder limits(ModelLimits value) { json.set("limits", WireJson.tree(value)); return this; }
-        public Builder modalities(ModelModalities value) { json.set("modalities", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder raw(JsonNode value) { json.set("raw", WireJson.tree(value)); return this; }
-        public Builder reasoning(ReasoningSpec value) { json.set("reasoning", WireJson.tree(value)); return this; }
-        public Builder source(CatalogueSource value) { json.set("source", WireJson.tree(value)); return this; }
-        public Builder type(ModelType value) { json.set("type", WireJson.tree(value)); return this; }
-        public ModelSpec build() { return new ModelSpec(json); }
+
+        public Builder cost(ModelCost value) {
+            this.cost = value;
+            return this;
+        }
+
+        public Builder displayName(String value) {
+            this.displayName = value;
+            return this;
+        }
+
+        public Builder limits(ModelLimits value) {
+            this.limits = value;
+            return this;
+        }
+
+        public Builder modalities(ModelModalities value) {
+            this.modalities = value;
+            return this;
+        }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder raw(JsonNode value) {
+            this.raw = value;
+            return this;
+        }
+
+        public Builder reasoning(ReasoningSpec value) {
+            this.reasoning = value;
+            return this;
+        }
+
+        public Builder source(CatalogueSource value) {
+            this.source = value;
+            return this;
+        }
+
+        public Builder type(ModelType value) {
+            this.type = value;
+            return this;
+        }
+
+        public ModelSpec build() { return new ModelSpec(capabilities, cost, displayName, limits, modalities, provider, raw, reasoning, source, type); }
     }
 }
-

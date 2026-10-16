@@ -4,100 +4,131 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * ③ HTTP 侧:单次 attempt 的 wire 交换。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class HttpExchange extends WireValue {
-    private final Long attempt;
-    private final String error;
-    private final boolean hasError;
-    private final Long exchangeIndex;
-    private final Boolean finalized;
-    private final HttpRecord request;
-    private final ResponseRecord response;
-    private final boolean hasResponse;
-    private final String step;
-    private final boolean hasStep;
-    private final TimingRecord timing;
-    private HttpExchange(JsonNode json) {
-        WireJson.object(json, "HttpExchange", false, "attempt", "error", "exchangeIndex", "finalized", "request", "response", "step", "timing");
-        WireJson.required(json, "attempt");
-        this.attempt = WireJson.integer(json.get("attempt"), true, 32).longValue();
-        this.hasError = json.has("error");
-        this.error = WireJson.isNull(json.get("error")) ? null : (WireJson.isNull(json.get("error")) ? null : WireJson.string(json.get("error")));
-        WireJson.required(json, "exchangeIndex");
-        this.exchangeIndex = WireJson.integer(json.get("exchangeIndex"), true, 32).longValue();
-        WireJson.required(json, "finalized");
-        this.finalized = WireJson.bool(json.get("finalized"));
-        WireJson.required(json, "request");
-        this.request = HttpRecord.fromJson(json.get("request"));
-        this.hasResponse = json.has("response");
-        this.response = WireJson.isNull(json.get("response")) ? null : (WireJson.isNull(json.get("response")) ? null : ResponseRecord.fromJson(json.get("response")));
-        this.hasStep = json.has("step");
-        this.step = WireJson.isNull(json.get("step")) ? null : (WireJson.isNull(json.get("step")) ? null : WireJson.string(json.get("step")));
-        WireJson.required(json, "timing");
-        this.timing = TimingRecord.fromJson(json.get("timing"));
-    }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static HttpExchange fromJson(JsonNode json) { return new HttpExchange(json); }
-    public static Builder builder() { return new Builder(); }
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class HttpExchange {
     /**
      * Core operation attempt, starting at 1. Attempt numbers are unique
      * across the whole call, including composite child steps, so
      * `(attempt, exchange_index)` alone still identifies an exchange.
      */
-    public Long getAttempt() { return attempt == null ? null : attempt; }
-    public String getError() { return error == null ? null : (error == null ? null : error); }
+    @JsonProperty("attempt")
+    private final Long attempt;
+    @JsonProperty("error")
+    private final String error;
     /**
      * HTTP exchange within the operation attempt, starting at 1.
      */
-    public Long getExchangeIndex() { return exchangeIndex == null ? null : exchangeIndex; }
+    @JsonProperty("exchangeIndex")
+    private final Long exchangeIndex;
     /**
      * 流式:该 exchange 是否已终结(收到 response 补全)。非流式恒 true。
      */
-    public Boolean getFinalized() { return finalized == null ? null : finalized; }
-    public HttpRecord getRequest() { return request == null ? null : request; }
+    @JsonProperty("finalized")
+    private final Boolean finalized;
+    @JsonProperty("request")
+    private final HttpRecord request;
     /**
      * None = 请求失败未获响应。
      */
-    public ResponseRecord getResponse() { return response == null ? null : (response == null ? null : response); }
+    @JsonProperty("response")
+    private final ResponseRecord response;
     /**
      * Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
      * or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
      */
-    public String getStep() { return step == null ? null : (step == null ? null : step); }
-    public TimingRecord getTiming() { return timing == null ? null : timing; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("attempt", WireJson.tree(attempt));
-        if (hasError) json.set("error", WireJson.tree(error));
-        json.set("exchangeIndex", WireJson.tree(exchangeIndex));
-        json.set("finalized", WireJson.tree(finalized));
-        json.set("request", WireJson.tree(request));
-        if (hasResponse) json.set("response", WireJson.tree(response));
-        if (hasStep) json.set("step", WireJson.tree(step));
-        json.set("timing", WireJson.tree(timing));
-        return json;
+    @JsonProperty("step")
+    private final String step;
+    @JsonProperty("timing")
+    private final TimingRecord timing;
+
+    @JsonCreator
+    public HttpExchange(
+        @JsonProperty(value = "attempt", required = true) Long attempt,
+        @JsonProperty(value = "error") String error,
+        @JsonProperty(value = "exchangeIndex", required = true) Long exchangeIndex,
+        @JsonProperty(value = "finalized", required = true) Boolean finalized,
+        @JsonProperty(value = "request", required = true) HttpRecord request,
+        @JsonProperty(value = "response") ResponseRecord response,
+        @JsonProperty(value = "step") String step,
+        @JsonProperty(value = "timing", required = true) TimingRecord timing) {
+        this.attempt = attempt;
+        this.error = error;
+        this.exchangeIndex = exchangeIndex;
+        this.finalized = finalized;
+        this.request = request;
+        this.response = response;
+        this.step = step;
+        this.timing = timing;
     }
+
+    public static Builder builder() { return new Builder(); }
+    public Long getAttempt() { return attempt; }
+    public String getError() { return error; }
+    public Long getExchangeIndex() { return exchangeIndex; }
+    public Boolean getFinalized() { return finalized; }
+    public HttpRecord getRequest() { return request; }
+    public ResponseRecord getResponse() { return response; }
+    public String getStep() { return step; }
+    public TimingRecord getTiming() { return timing; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Long attempt;
+        private String error;
+        private Long exchangeIndex;
+        private Boolean finalized;
+        private HttpRecord request;
+        private ResponseRecord response;
+        private String step;
+        private TimingRecord timing;
+
+        public Builder attempt(Long value) {
+            this.attempt = value;
+            return this;
         }
-        public Builder attempt(Long value) { json.set("attempt", WireJson.tree(value)); return this; }
-        public Builder error(String value) { json.set("error", WireJson.tree(value)); return this; }
-        public Builder exchangeIndex(Long value) { json.set("exchangeIndex", WireJson.tree(value)); return this; }
-        public Builder finalized(Boolean value) { json.set("finalized", WireJson.tree(value)); return this; }
-        public Builder request(HttpRecord value) { json.set("request", WireJson.tree(value)); return this; }
-        public Builder response(ResponseRecord value) { json.set("response", WireJson.tree(value)); return this; }
-        public Builder step(String value) { json.set("step", WireJson.tree(value)); return this; }
-        public Builder timing(TimingRecord value) { json.set("timing", WireJson.tree(value)); return this; }
-        public HttpExchange build() { return new HttpExchange(json); }
+
+        public Builder error(String value) {
+            this.error = value;
+            return this;
+        }
+
+        public Builder exchangeIndex(Long value) {
+            this.exchangeIndex = value;
+            return this;
+        }
+
+        public Builder finalized(Boolean value) {
+            this.finalized = value;
+            return this;
+        }
+
+        public Builder request(HttpRecord value) {
+            this.request = value;
+            return this;
+        }
+
+        public Builder response(ResponseRecord value) {
+            this.response = value;
+            return this;
+        }
+
+        public Builder step(String value) {
+            this.step = value;
+            return this;
+        }
+
+        public Builder timing(TimingRecord value) {
+            this.timing = value;
+            return this;
+        }
+
+        public HttpExchange build() { return new HttpExchange(attempt, error, exchangeIndex, finalized, request, response, step, timing); }
     }
 }
-

@@ -4,58 +4,77 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ModelInfo extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ModelInfo {
+    @JsonProperty("capabilities")
     private final JsonNode capabilities;
+    @JsonProperty("modality")
     private final String modality;
+    @JsonProperty("modelId")
     private final String modelId;
+    @JsonProperty("provider")
     private final String provider;
+    @JsonProperty("source")
     private final JsonNode source;
-    private ModelInfo(JsonNode json) {
-        WireJson.object(json, "ModelInfo", false, "capabilities", "modality", "modelId", "provider", "source");
-        WireJson.required(json, "capabilities");
-        this.capabilities = WireJson.json(json.get("capabilities"));
-        WireJson.required(json, "modality");
-        this.modality = WireJson.string(json.get("modality"));
-        WireJson.required(json, "modelId");
-        this.modelId = WireJson.string(json.get("modelId"));
-        WireJson.required(json, "provider");
-        this.provider = WireJson.string(json.get("provider"));
-        WireJson.required(json, "source");
-        this.source = WireJson.json(json.get("source"));
+
+    @JsonCreator
+    public ModelInfo(
+        @JsonProperty(value = "capabilities", required = true) JsonNode capabilities,
+        @JsonProperty(value = "modality", required = true) String modality,
+        @JsonProperty(value = "modelId", required = true) String modelId,
+        @JsonProperty(value = "provider", required = true) String provider,
+        @JsonProperty(value = "source", required = true) JsonNode source) {
+        this.capabilities = capabilities == null ? null : capabilities.deepCopy();
+        this.modality = modality;
+        this.modelId = modelId;
+        this.provider = provider;
+        this.source = source == null ? null : source.deepCopy();
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ModelInfo fromJson(JsonNode json) { return new ModelInfo(json); }
+
     public static Builder builder() { return new Builder(); }
-    public JsonNode getCapabilities() { return capabilities == null ? null : WireJson.json(WireJson.tree(capabilities)); }
-    public String getModality() { return modality == null ? null : modality; }
-    public String getModelId() { return modelId == null ? null : modelId; }
-    public String getProvider() { return provider == null ? null : provider; }
-    public JsonNode getSource() { return source == null ? null : WireJson.json(WireJson.tree(source)); }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("capabilities", WireJson.tree(capabilities));
-        json.set("modality", WireJson.tree(modality));
-        json.set("modelId", WireJson.tree(modelId));
-        json.set("provider", WireJson.tree(provider));
-        json.set("source", WireJson.tree(source));
-        return json;
-    }
+    public JsonNode getCapabilities() { return capabilities == null ? null : capabilities.deepCopy(); }
+    public String getModality() { return modality; }
+    public String getModelId() { return modelId; }
+    public String getProvider() { return provider; }
+    public JsonNode getSource() { return source == null ? null : source.deepCopy(); }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private JsonNode capabilities;
+        private String modality;
+        private String modelId;
+        private String provider;
+        private JsonNode source;
+
+        public Builder capabilities(JsonNode value) {
+            this.capabilities = value;
+            return this;
         }
-        public Builder capabilities(JsonNode value) { json.set("capabilities", WireJson.tree(value)); return this; }
-        public Builder modality(String value) { json.set("modality", WireJson.tree(value)); return this; }
-        public Builder modelId(String value) { json.set("modelId", WireJson.tree(value)); return this; }
-        public Builder provider(String value) { json.set("provider", WireJson.tree(value)); return this; }
-        public Builder source(JsonNode value) { json.set("source", WireJson.tree(value)); return this; }
-        public ModelInfo build() { return new ModelInfo(json); }
+
+        public Builder modality(String value) {
+            this.modality = value;
+            return this;
+        }
+
+        public Builder modelId(String value) {
+            this.modelId = value;
+            return this;
+        }
+
+        public Builder provider(String value) {
+            this.provider = value;
+            return this;
+        }
+
+        public Builder source(JsonNode value) {
+            this.source = value;
+            return this;
+        }
+
+        public ModelInfo build() { return new ModelInfo(capabilities, modality, modelId, provider, source); }
     }
 }
-

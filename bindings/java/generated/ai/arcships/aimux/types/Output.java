@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -18,16 +17,21 @@ import java.util.*;
  * `Output.object()` / `array()` / `choice()` / `json()` camelCase
  * (`{"type":"array","element":{...},"minItems":1}`).
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = Output.Text.class, name = "text"),
     @JsonSubTypes.Type(value = Output.Object.class, name = "object"),
     @JsonSubTypes.Type(value = Output.Array.class, name = "array"),
     @JsonSubTypes.Type(value = Output.Choice.class, name = "choice"),
-    @JsonSubTypes.Type(value = Output.Json.class, name = "json"),
+    @JsonSubTypes.Type(value = Output.Json.class, name = "json")
 })
-public abstract class Output extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class Output {
     private Output() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public String getDescription() { return null; }
     public String getName() { return null; }
@@ -41,234 +45,261 @@ public abstract class Output extends WireValue {
     public final boolean isJson() { return "json".equals(getType()); }
     public final boolean isObject() { return "object".equals(getType()); }
     public final boolean isText() { return "text".equals(getType()); }
-    public static Output fromJson(JsonNode json) {
-        WireJson.object(json, "Output", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "array":
-                return Array.fromJson(json);
-            case "choice":
-                return Choice.fromJson(json);
-            case "json":
-                return Json.fromJson(json);
-            case "object":
-                return Object.fromJson(json);
-            case "text":
-                return Text.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown Output tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Text extends Output {
-        private Text(JsonNode json) {
-            WireJson.object(json, "Text", false, "type");
-            if (!"text".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Text tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Text fromJson(JsonNode json) { return new Text(json); }
+
+        @JsonCreator
+        public Text() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "text"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "text");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "text"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "text");
-            }
-            public Text build() { return new Text(json); }
+
+            public Text build() { return new Text(); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Object extends Output {
+        @JsonProperty("description")
         private final String description;
-        private final boolean hasDescription;
+        @JsonProperty("name")
         private final String name;
-        private final boolean hasName;
+        @JsonProperty("schema")
         private final JsonNode schema;
-        private Object(JsonNode json) {
-            WireJson.object(json, "Object", false, "description", "name", "schema", "type");
-            if (!"object".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Object tag");
-            this.hasDescription = json.has("description");
-            this.description = WireJson.isNull(json.get("description")) ? null : (WireJson.isNull(json.get("description")) ? null : WireJson.string(json.get("description")));
-            this.hasName = json.has("name");
-            this.name = WireJson.isNull(json.get("name")) ? null : (WireJson.isNull(json.get("name")) ? null : WireJson.string(json.get("name")));
-            WireJson.required(json, "schema");
-            this.schema = WireJson.json(json.get("schema"));
+
+        @JsonCreator
+        public Object(
+            @JsonProperty(value = "description") String description,
+            @JsonProperty(value = "name") String name,
+            @JsonProperty(value = "schema", required = true) JsonNode schema) {
+            this.description = description;
+            this.name = name;
+            this.schema = schema == null ? null : schema.deepCopy();
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Object fromJson(JsonNode json) { return new Object(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "object"; }
-        public String getDescription() { return description == null ? null : (description == null ? null : description); }
-        public String getName() { return name == null ? null : (name == null ? null : name); }
-        public JsonNode getSchema() { return schema == null ? null : WireJson.json(WireJson.tree(schema)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "object");
-            if (hasDescription) json.set("description", WireJson.tree(description));
-            if (hasName) json.set("name", WireJson.tree(name));
-            json.set("schema", WireJson.tree(schema));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "object"; }
+        public String getDescription() { return description; }
+        public String getName() { return name; }
+        public JsonNode getSchema() { return schema == null ? null : schema.deepCopy(); }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "object");
+            private String description;
+            private String name;
+            private JsonNode schema;
+
+            public Builder description(String value) {
+                this.description = value;
+                return this;
             }
-            public Builder description(String value) { json.set("description", WireJson.tree(value)); return this; }
-            public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-            public Builder schema(JsonNode value) { json.set("schema", WireJson.tree(value)); return this; }
-            public Object build() { return new Object(json); }
+
+            public Builder name(String value) {
+                this.name = value;
+                return this;
+            }
+
+            public Builder schema(JsonNode value) {
+                this.schema = value;
+                return this;
+            }
+
+            public Object build() { return new Object(description, name, schema); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Array extends Output {
+        @JsonProperty("description")
         private final String description;
-        private final boolean hasDescription;
+        @JsonProperty("element")
         private final JsonNode element;
+        @JsonProperty("maxItems")
         private final Long maxItems;
-        private final boolean hasMaxItems;
+        @JsonProperty("minItems")
         private final Long minItems;
-        private final boolean hasMinItems;
+        @JsonProperty("name")
         private final String name;
-        private final boolean hasName;
-        private Array(JsonNode json) {
-            WireJson.object(json, "Array", false, "description", "element", "maxItems", "minItems", "name", "type");
-            if (!"array".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Array tag");
-            this.hasDescription = json.has("description");
-            this.description = WireJson.isNull(json.get("description")) ? null : (WireJson.isNull(json.get("description")) ? null : WireJson.string(json.get("description")));
-            WireJson.required(json, "element");
-            this.element = WireJson.json(json.get("element"));
-            this.hasMaxItems = json.has("maxItems");
-            this.maxItems = WireJson.isNull(json.get("maxItems")) ? null : (WireJson.isNull(json.get("maxItems")) ? null : WireJson.integer(json.get("maxItems"), true, 32).longValue());
-            this.hasMinItems = json.has("minItems");
-            this.minItems = WireJson.isNull(json.get("minItems")) ? null : (WireJson.isNull(json.get("minItems")) ? null : WireJson.integer(json.get("minItems"), true, 32).longValue());
-            this.hasName = json.has("name");
-            this.name = WireJson.isNull(json.get("name")) ? null : (WireJson.isNull(json.get("name")) ? null : WireJson.string(json.get("name")));
+
+        @JsonCreator
+        public Array(
+            @JsonProperty(value = "description") String description,
+            @JsonProperty(value = "element", required = true) JsonNode element,
+            @JsonProperty(value = "maxItems") Long maxItems,
+            @JsonProperty(value = "minItems") Long minItems,
+            @JsonProperty(value = "name") String name) {
+            this.description = description;
+            this.element = element == null ? null : element.deepCopy();
+            this.maxItems = maxItems;
+            this.minItems = minItems;
+            this.name = name;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Array fromJson(JsonNode json) { return new Array(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "array"; }
-        public String getDescription() { return description == null ? null : (description == null ? null : description); }
-        public JsonNode getElement() { return element == null ? null : WireJson.json(WireJson.tree(element)); }
-        public Long getMaxItems() { return maxItems == null ? null : (maxItems == null ? null : maxItems); }
-        public Long getMinItems() { return minItems == null ? null : (minItems == null ? null : minItems); }
-        public String getName() { return name == null ? null : (name == null ? null : name); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "array");
-            if (hasDescription) json.set("description", WireJson.tree(description));
-            json.set("element", WireJson.tree(element));
-            if (hasMaxItems) json.set("maxItems", WireJson.tree(maxItems));
-            if (hasMinItems) json.set("minItems", WireJson.tree(minItems));
-            if (hasName) json.set("name", WireJson.tree(name));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "array"; }
+        public String getDescription() { return description; }
+        public JsonNode getElement() { return element == null ? null : element.deepCopy(); }
+        public Long getMaxItems() { return maxItems; }
+        public Long getMinItems() { return minItems; }
+        public String getName() { return name; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "array");
+            private String description;
+            private JsonNode element;
+            private Long maxItems;
+            private Long minItems;
+            private String name;
+
+            public Builder description(String value) {
+                this.description = value;
+                return this;
             }
-            public Builder description(String value) { json.set("description", WireJson.tree(value)); return this; }
-            public Builder element(JsonNode value) { json.set("element", WireJson.tree(value)); return this; }
-            public Builder maxItems(Long value) { json.set("maxItems", WireJson.tree(value)); return this; }
-            public Builder minItems(Long value) { json.set("minItems", WireJson.tree(value)); return this; }
-            public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-            public Array build() { return new Array(json); }
+
+            public Builder element(JsonNode value) {
+                this.element = value;
+                return this;
+            }
+
+            public Builder maxItems(Long value) {
+                this.maxItems = value;
+                return this;
+            }
+
+            public Builder minItems(Long value) {
+                this.minItems = value;
+                return this;
+            }
+
+            public Builder name(String value) {
+                this.name = value;
+                return this;
+            }
+
+            public Array build() { return new Array(description, element, maxItems, minItems, name); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Choice extends Output {
+        @JsonProperty("description")
         private final String description;
-        private final boolean hasDescription;
+        @JsonProperty("name")
         private final String name;
-        private final boolean hasName;
+        @JsonProperty("options")
         private final List<String> options;
-        private Choice(JsonNode json) {
-            WireJson.object(json, "Choice", false, "description", "name", "options", "type");
-            if (!"choice".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Choice tag");
-            this.hasDescription = json.has("description");
-            this.description = WireJson.isNull(json.get("description")) ? null : (WireJson.isNull(json.get("description")) ? null : WireJson.string(json.get("description")));
-            this.hasName = json.has("name");
-            this.name = WireJson.isNull(json.get("name")) ? null : (WireJson.isNull(json.get("name")) ? null : WireJson.string(json.get("name")));
-            WireJson.required(json, "options");
-            this.options = WireJson.array(json.get("options"), item0 -> WireJson.string(item0));
+
+        @JsonCreator
+        public Choice(
+            @JsonProperty(value = "description") String description,
+            @JsonProperty(value = "name") String name,
+            @JsonProperty(value = "options", required = true) List<String> options) {
+            this.description = description;
+            this.name = name;
+            this.options = options == null ? null : Collections.unmodifiableList(new ArrayList<>(options));
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Choice fromJson(JsonNode json) { return new Choice(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "choice"; }
-        public String getDescription() { return description == null ? null : (description == null ? null : description); }
-        public String getName() { return name == null ? null : (name == null ? null : name); }
-        public List<String> getOptions() { return options == null ? null : WireJson.array(WireJson.tree(options), item0 -> WireJson.string(item0)); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "choice");
-            if (hasDescription) json.set("description", WireJson.tree(description));
-            if (hasName) json.set("name", WireJson.tree(name));
-            json.set("options", WireJson.tree(options));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "choice"; }
+        public String getDescription() { return description; }
+        public String getName() { return name; }
+        public List<String> getOptions() { return options; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "choice");
+            private String description;
+            private String name;
+            private List<String> options;
+
+            public Builder description(String value) {
+                this.description = value;
+                return this;
             }
-            public Builder description(String value) { json.set("description", WireJson.tree(value)); return this; }
-            public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-            public Builder options(List<String> value) { json.set("options", WireJson.tree(value)); return this; }
-            public Choice build() { return new Choice(json); }
+
+            public Builder name(String value) {
+                this.name = value;
+                return this;
+            }
+
+            public Builder options(List<String> value) {
+                this.options = value;
+                return this;
+            }
+
+            public Choice build() { return new Choice(description, name, options); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Json extends Output {
+        @JsonProperty("description")
         private final String description;
-        private final boolean hasDescription;
+        @JsonProperty("name")
         private final String name;
-        private final boolean hasName;
-        private Json(JsonNode json) {
-            WireJson.object(json, "Json", false, "description", "name", "type");
-            if (!"json".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Json tag");
-            this.hasDescription = json.has("description");
-            this.description = WireJson.isNull(json.get("description")) ? null : (WireJson.isNull(json.get("description")) ? null : WireJson.string(json.get("description")));
-            this.hasName = json.has("name");
-            this.name = WireJson.isNull(json.get("name")) ? null : (WireJson.isNull(json.get("name")) ? null : WireJson.string(json.get("name")));
+
+        @JsonCreator
+        public Json(
+            @JsonProperty(value = "description") String description,
+            @JsonProperty(value = "name") String name) {
+            this.description = description;
+            this.name = name;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Json fromJson(JsonNode json) { return new Json(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "json"; }
-        public String getDescription() { return description == null ? null : (description == null ? null : description); }
-        public String getName() { return name == null ? null : (name == null ? null : name); }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "json");
-            if (hasDescription) json.set("description", WireJson.tree(description));
-            if (hasName) json.set("name", WireJson.tree(name));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "json"; }
+        public String getDescription() { return description; }
+        public String getName() { return name; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "json");
+            private String description;
+            private String name;
+
+            public Builder description(String value) {
+                this.description = value;
+                return this;
             }
-            public Builder description(String value) { json.set("description", WireJson.tree(value)); return this; }
-            public Builder name(String value) { json.set("name", WireJson.tree(value)); return this; }
-            public Json build() { return new Json(json); }
+
+            public Builder name(String value) {
+                this.name = value;
+                return this;
+            }
+
+            public Json build() { return new Json(description, name); }
         }
     }
-
 }

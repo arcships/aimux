@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -17,118 +16,113 @@ import java.util.*;
  * `{"type":"repaired","toolCall":{…}}`, `{"type":"unchanged"}`, or
  * `{"type":"failed","message":"…"}`.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")
+// clang-format off
 @JsonSubTypes({
     @JsonSubTypes.Type(value = ToolCallRepairReply.Repaired.class, name = "repaired"),
     @JsonSubTypes.Type(value = ToolCallRepairReply.Unchanged.class, name = "unchanged"),
-    @JsonSubTypes.Type(value = ToolCallRepairReply.Failed.class, name = "failed"),
+    @JsonSubTypes.Type(value = ToolCallRepairReply.Failed.class, name = "failed")
 })
-public abstract class ToolCallRepairReply extends WireValue {
+// clang-format on
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public abstract class ToolCallRepairReply {
     private ToolCallRepairReply() {}
+
+    @JsonProperty("type")
     public abstract String getType();
     public ToolCallRepairReply0ToolCall getToolCall() { return null; }
     public String getMessage() { return null; }
     public final boolean isFailed() { return "failed".equals(getType()); }
     public final boolean isRepaired() { return "repaired".equals(getType()); }
     public final boolean isUnchanged() { return "unchanged".equals(getType()); }
-    public static ToolCallRepairReply fromJson(JsonNode json) {
-        WireJson.object(json, "ToolCallRepairReply", false);
-        String tag = WireJson.string(json.get("type"));
-        switch (tag) {
-            case "failed":
-                return Failed.fromJson(json);
-            case "repaired":
-                return Repaired.fromJson(json);
-            case "unchanged":
-                return Unchanged.fromJson(json);
-            default: throw new IllegalArgumentException("Unknown ToolCallRepairReply tag: " + tag);
-        }
-    }
+
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Repaired extends ToolCallRepairReply {
+        @JsonProperty("toolCall")
         private final ToolCallRepairReply0ToolCall toolCall;
-        private Repaired(JsonNode json) {
-            WireJson.object(json, "Repaired", true, "toolCall", "type");
-            if (!"repaired".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Repaired tag");
-            WireJson.required(json, "toolCall");
-            this.toolCall = ToolCallRepairReply0ToolCall.fromJson(json.get("toolCall"));
+
+        @JsonCreator
+        public Repaired(
+            @JsonProperty(value = "toolCall", required = true) ToolCallRepairReply0ToolCall toolCall) {
+            this.toolCall = toolCall;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Repaired fromJson(JsonNode json) { return new Repaired(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "repaired"; }
-        public ToolCallRepairReply0ToolCall getToolCall() { return toolCall == null ? null : toolCall; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "repaired");
-            json.set("toolCall", WireJson.tree(toolCall));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "repaired"; }
+        public ToolCallRepairReply0ToolCall getToolCall() { return toolCall; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "repaired");
+            private ToolCallRepairReply0ToolCall toolCall;
+
+            public Builder toolCall(ToolCallRepairReply0ToolCall value) {
+                this.toolCall = value;
+                return this;
             }
-            public Builder toolCall(ToolCallRepairReply0ToolCall value) { json.set("toolCall", WireJson.tree(value)); return this; }
-            public Repaired build() { return new Repaired(json); }
+
+            public Repaired build() { return new Repaired(toolCall); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Unchanged extends ToolCallRepairReply {
-        private Unchanged(JsonNode json) {
-            WireJson.object(json, "Unchanged", true, "type");
-            if (!"unchanged".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Unchanged tag");
-        }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Unchanged fromJson(JsonNode json) { return new Unchanged(json); }
+
+        @JsonCreator
+        public Unchanged() {}
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "unchanged"; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "unchanged");
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "unchanged"; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "unchanged");
-            }
-            public Unchanged build() { return new Unchanged(json); }
+
+            public Unchanged build() { return new Unchanged(); }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Failed extends ToolCallRepairReply {
+        @JsonProperty("message")
         private final String message;
-        private Failed(JsonNode json) {
-            WireJson.object(json, "Failed", true, "message", "type");
-            if (!"failed".equals(WireJson.string(json.get("type")))) throw new IllegalArgumentException("Invalid Failed tag");
-            WireJson.required(json, "message");
-            this.message = WireJson.string(json.get("message"));
+
+        @JsonCreator
+        public Failed(
+            @JsonProperty(value = "message", required = true) String message) {
+            this.message = message;
         }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Failed fromJson(JsonNode json) { return new Failed(json); }
+
         public static Builder builder() { return new Builder(); }
-        @Override public String getType() { return "failed"; }
-        public String getMessage() { return message == null ? null : message; }
-        @Override @JsonValue public ObjectNode toJson() {
-            ObjectNode json = WireJson.MAPPER.createObjectNode();
-            json.put("type", "failed");
-            json.set("message", WireJson.tree(message));
-            return json;
-        }
+
+        @Override
+        @JsonProperty("type")
+        public String getType() { return "failed"; }
+        public String getMessage() { return message; }
+
         public static final class Builder {
-            private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-            private Builder() {
-                json.put("type", "failed");
+            private String message;
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
             }
-            public Builder message(String value) { json.set("message", WireJson.tree(value)); return this; }
-            public Failed build() { return new Failed(json); }
+
+            public Failed build() { return new Failed(message); }
         }
     }
-
 }

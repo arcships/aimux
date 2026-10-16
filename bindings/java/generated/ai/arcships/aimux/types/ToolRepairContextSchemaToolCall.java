@@ -4,73 +4,99 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolRepairContextSchemaToolCall extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolRepairContextSchemaToolCall {
+    @JsonProperty("dynamic")
     private final Boolean dynamic;
-    private final boolean hasDynamic;
+    @JsonProperty("input")
     private final String input;
+    @JsonProperty("providerExecuted")
     private final Boolean providerExecuted;
-    private final boolean hasProviderExecuted;
+    @JsonProperty("providerMetadata")
     private final Map<String, Map<String, JsonNode>> providerMetadata;
-    private final boolean hasProviderMetadata;
+    @JsonProperty("toolCallId")
     private final String toolCallId;
+    @JsonProperty("toolName")
     private final String toolName;
+    @JsonProperty("type")
     private final ToolRepairContextSchemaToolCallType type;
-    private ToolRepairContextSchemaToolCall(JsonNode json) {
-        WireJson.object(json, "ToolRepairContextSchemaToolCall", false, "dynamic", "input", "providerExecuted", "providerMetadata", "toolCallId", "toolName", "type");
-        this.hasDynamic = json.has("dynamic");
-        this.dynamic = WireJson.isNull(json.get("dynamic")) ? null : (WireJson.isNull(json.get("dynamic")) ? null : WireJson.bool(json.get("dynamic")));
-        WireJson.required(json, "input");
-        this.input = WireJson.string(json.get("input"));
-        this.hasProviderExecuted = json.has("providerExecuted");
-        this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-        this.hasProviderMetadata = json.has("providerMetadata");
-        this.providerMetadata = WireJson.isNull(json.get("providerMetadata")) ? null : (WireJson.isNull(json.get("providerMetadata")) ? null : WireJson.map(json.get("providerMetadata"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "toolCallId");
-        this.toolCallId = WireJson.string(json.get("toolCallId"));
-        WireJson.required(json, "toolName");
-        this.toolName = WireJson.string(json.get("toolName"));
-        WireJson.required(json, "type");
-        this.type = ToolRepairContextSchemaToolCallType.fromJson(json.get("type"));
+
+    @JsonCreator
+    public ToolRepairContextSchemaToolCall(
+        @JsonProperty(value = "dynamic") Boolean dynamic,
+        @JsonProperty(value = "input", required = true) String input,
+        @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+        @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
+        @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+        @JsonProperty(value = "toolName", required = true) String toolName,
+        @JsonProperty(value = "type", required = true) ToolRepairContextSchemaToolCallType type) {
+        this.dynamic = dynamic;
+        this.input = input;
+        this.providerExecuted = providerExecuted;
+        this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
+        this.toolCallId = toolCallId;
+        this.toolName = toolName;
+        this.type = type;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolRepairContextSchemaToolCall fromJson(JsonNode json) { return new ToolRepairContextSchemaToolCall(json); }
+
     public static Builder builder() { return new Builder(); }
-    public Boolean getDynamic() { return dynamic == null ? null : (dynamic == null ? null : dynamic); }
-    public String getInput() { return input == null ? null : input; }
-    public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata == null ? null : (providerMetadata == null ? null : WireJson.map(WireJson.tree(providerMetadata), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-    public String getToolName() { return toolName == null ? null : toolName; }
-    public ToolRepairContextSchemaToolCallType getType() { return type == null ? null : type; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        if (hasDynamic) json.set("dynamic", WireJson.tree(dynamic));
-        json.set("input", WireJson.tree(input));
-        if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-        if (hasProviderMetadata) json.set("providerMetadata", WireJson.tree(providerMetadata));
-        json.set("toolCallId", WireJson.tree(toolCallId));
-        json.set("toolName", WireJson.tree(toolName));
-        json.set("type", WireJson.tree(type));
-        return json;
-    }
+    public Boolean getDynamic() { return dynamic; }
+    public String getInput() { return input; }
+    public Boolean getProviderExecuted() { return providerExecuted; }
+    public Map<String, Map<String, JsonNode>> getProviderMetadata() { return providerMetadata; }
+    public String getToolCallId() { return toolCallId; }
+    public String getToolName() { return toolName; }
+    public ToolRepairContextSchemaToolCallType getType() { return type; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private Boolean dynamic;
+        private String input;
+        private Boolean providerExecuted;
+        private Map<String, Map<String, JsonNode>> providerMetadata;
+        private String toolCallId;
+        private String toolName;
+        private ToolRepairContextSchemaToolCallType type;
+
+        public Builder dynamic(Boolean value) {
+            this.dynamic = value;
+            return this;
         }
-        public Builder dynamic(Boolean value) { json.set("dynamic", WireJson.tree(value)); return this; }
-        public Builder input(String value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) { json.set("providerMetadata", WireJson.tree(value)); return this; }
-        public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-        public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-        public Builder type(ToolRepairContextSchemaToolCallType value) { json.set("type", WireJson.tree(value)); return this; }
-        public ToolRepairContextSchemaToolCall build() { return new ToolRepairContextSchemaToolCall(json); }
+
+        public Builder input(String value) {
+            this.input = value;
+            return this;
+        }
+
+        public Builder providerExecuted(Boolean value) {
+            this.providerExecuted = value;
+            return this;
+        }
+
+        public Builder providerMetadata(Map<String, Map<String, JsonNode>> value) {
+            this.providerMetadata = value;
+            return this;
+        }
+
+        public Builder toolCallId(String value) {
+            this.toolCallId = value;
+            return this;
+        }
+
+        public Builder toolName(String value) {
+            this.toolName = value;
+            return this;
+        }
+
+        public Builder type(ToolRepairContextSchemaToolCallType value) {
+            this.type = value;
+            return this;
+        }
+
+        public ToolRepairContextSchemaToolCall build() { return new ToolRepairContextSchemaToolCall(dynamic, input, providerExecuted, providerMetadata, toolCallId, toolName, type); }
     }
 }
-

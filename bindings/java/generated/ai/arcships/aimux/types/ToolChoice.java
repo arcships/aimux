@@ -4,8 +4,7 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -21,37 +20,48 @@ import java.util.*;
  * a model call carries.
  */
 @JsonDeserialize(using = ToolChoice.Deserializer.class)
-public abstract class ToolChoice extends WireValue {
+public abstract class ToolChoice {
     private ToolChoice() {}
-    public static ToolChoice fromJson(JsonNode json) {
-        try { return new Branch1(ToolChoice0.fromJson(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        try { return new Branch2(ToolChoice1.fromJson(json)); } catch (IllegalArgumentException ignored) { /* Ordered fallback. */ }
-        throw new IllegalArgumentException("No ToolChoice branch accepts: " + json);
-    }
+
     public static final class Deserializer extends JsonDeserializer<ToolChoice> {
-        @Override public ToolChoice deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context) throws java.io.IOException {
-            try { return fromJson(parser.getCodec().readTree(parser)); }
-            catch (IllegalArgumentException error) { throw JsonMappingException.from(parser, error.getMessage(), error); }
+        @Override
+        public ToolChoice deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+            throws java.io.IOException {
+            JsonNode value = context.readTree(parser);
+            JsonMappingException failure = null;
+            try {
+                return parser.getCodec().treeToValue(value, Branch1.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            try {
+                return parser.getCodec().treeToValue(value, Branch2.class);
+            } catch (JsonMappingException error) {
+                failure = error;
+            }
+            throw failure;
         }
     }
+
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch1 extends ToolChoice {
+        @JsonValue
         private final ToolChoice0 value;
-        public Branch1(ToolChoice0 value) { this.value = ToolChoice0.fromJson(WireJson.tree(value)); }
+
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch1 fromJson(JsonNode json) { return new Branch1(ToolChoice0.fromJson(json)); }
+        public Branch1(ToolChoice0 value) { this.value = value; }
+
         public ToolChoice0 getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class Branch2 extends ToolChoice {
+        @JsonValue
         private final ToolChoice1 value;
-        public Branch2(ToolChoice1 value) { this.value = ToolChoice1.fromJson(WireJson.tree(value)); }
-        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public static Branch2 fromJson(JsonNode json) { return new Branch2(ToolChoice1.fromJson(json)); }
-        public ToolChoice1 getValue() { return value; }
-        @Override @JsonValue public JsonNode toJson() { return WireJson.tree(value); }
-    }
 
+        @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+        public Branch2(ToolChoice1 value) { this.value = value; }
+
+        public ToolChoice1 getValue() { return value; }
+    }
 }

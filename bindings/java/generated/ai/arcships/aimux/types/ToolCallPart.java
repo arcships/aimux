@@ -4,63 +4,80 @@ package ai.arcships.aimux.types;
 import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.math.*;
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
  * Tool call content part.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-@JsonDeserialize(using = JsonDeserializer.None.class)
-public final class ToolCallPart extends WireValue {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+public final class ToolCallPart {
+    @JsonProperty("input")
     private final JsonNode input;
+    @JsonProperty("providerExecuted")
     private final Boolean providerExecuted;
-    private final boolean hasProviderExecuted;
+    @JsonProperty("providerOptions")
     private final Map<String, Map<String, JsonNode>> providerOptions;
-    private final boolean hasProviderOptions;
+    @JsonProperty("toolCallId")
     private final String toolCallId;
+    @JsonProperty("toolName")
     private final String toolName;
-    private ToolCallPart(JsonNode json) {
-        WireJson.object(json, "ToolCallPart", false, "input", "providerExecuted", "providerOptions", "toolCallId", "toolName");
-        WireJson.required(json, "input");
-        this.input = WireJson.json(json.get("input"));
-        this.hasProviderExecuted = json.has("providerExecuted");
-        this.providerExecuted = WireJson.isNull(json.get("providerExecuted")) ? null : (WireJson.isNull(json.get("providerExecuted")) ? null : WireJson.bool(json.get("providerExecuted")));
-        this.hasProviderOptions = json.has("providerOptions");
-        this.providerOptions = WireJson.isNull(json.get("providerOptions")) ? null : (WireJson.isNull(json.get("providerOptions")) ? null : WireJson.map(json.get("providerOptions"), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1))));
-        WireJson.required(json, "toolCallId");
-        this.toolCallId = WireJson.string(json.get("toolCallId"));
-        WireJson.required(json, "toolName");
-        this.toolName = WireJson.string(json.get("toolName"));
+
+    @JsonCreator
+    public ToolCallPart(
+        @JsonProperty(value = "input", required = true) JsonNode input,
+        @JsonProperty(value = "providerExecuted") Boolean providerExecuted,
+        @JsonProperty(value = "providerOptions") Map<String, Map<String, JsonNode>> providerOptions,
+        @JsonProperty(value = "toolCallId", required = true) String toolCallId,
+        @JsonProperty(value = "toolName", required = true) String toolName) {
+        this.input = input == null ? null : input.deepCopy();
+        this.providerExecuted = providerExecuted;
+        this.providerOptions = providerOptions == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerOptions));
+        this.toolCallId = toolCallId;
+        this.toolName = toolName;
     }
-    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-    public static ToolCallPart fromJson(JsonNode json) { return new ToolCallPart(json); }
+
     public static Builder builder() { return new Builder(); }
-    public JsonNode getInput() { return input == null ? null : WireJson.json(WireJson.tree(input)); }
-    public Boolean getProviderExecuted() { return providerExecuted == null ? null : (providerExecuted == null ? null : providerExecuted); }
-    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions == null ? null : (providerOptions == null ? null : WireJson.map(WireJson.tree(providerOptions), item0 -> WireJson.map(item0, item1 -> WireJson.json(item1)))); }
-    public String getToolCallId() { return toolCallId == null ? null : toolCallId; }
-    public String getToolName() { return toolName == null ? null : toolName; }
-    @Override @JsonValue public ObjectNode toJson() {
-        ObjectNode json = WireJson.MAPPER.createObjectNode();
-        json.set("input", WireJson.tree(input));
-        if (hasProviderExecuted) json.set("providerExecuted", WireJson.tree(providerExecuted));
-        if (hasProviderOptions) json.set("providerOptions", WireJson.tree(providerOptions));
-        json.set("toolCallId", WireJson.tree(toolCallId));
-        json.set("toolName", WireJson.tree(toolName));
-        return json;
-    }
+    public JsonNode getInput() { return input == null ? null : input.deepCopy(); }
+    public Boolean getProviderExecuted() { return providerExecuted; }
+    public Map<String, Map<String, JsonNode>> getProviderOptions() { return providerOptions; }
+    public String getToolCallId() { return toolCallId; }
+    public String getToolName() { return toolName; }
+
     public static final class Builder {
-        private final ObjectNode json = WireJson.MAPPER.createObjectNode();
-        private Builder() {
+        private JsonNode input;
+        private Boolean providerExecuted;
+        private Map<String, Map<String, JsonNode>> providerOptions;
+        private String toolCallId;
+        private String toolName;
+
+        public Builder input(JsonNode value) {
+            this.input = value;
+            return this;
         }
-        public Builder input(JsonNode value) { json.set("input", WireJson.tree(value)); return this; }
-        public Builder providerExecuted(Boolean value) { json.set("providerExecuted", WireJson.tree(value)); return this; }
-        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) { json.set("providerOptions", WireJson.tree(value)); return this; }
-        public Builder toolCallId(String value) { json.set("toolCallId", WireJson.tree(value)); return this; }
-        public Builder toolName(String value) { json.set("toolName", WireJson.tree(value)); return this; }
-        public ToolCallPart build() { return new ToolCallPart(json); }
+
+        public Builder providerExecuted(Boolean value) {
+            this.providerExecuted = value;
+            return this;
+        }
+
+        public Builder providerOptions(Map<String, Map<String, JsonNode>> value) {
+            this.providerOptions = value;
+            return this;
+        }
+
+        public Builder toolCallId(String value) {
+            this.toolCallId = value;
+            return this;
+        }
+
+        public Builder toolName(String value) {
+            this.toolName = value;
+            return this;
+        }
+
+        public ToolCallPart build() { return new ToolCallPart(input, providerExecuted, providerOptions, toolCallId, toolName); }
     }
 }
-
