@@ -250,6 +250,8 @@ data class ProviderTool(
     val id: String,
     val name: String,
     val args: JsonObject = JsonObject(emptyMap()),
+    /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
+    @SerialName("supportsDeferredResults") val supportsDeferredResults: Boolean? = null,
 )
 
 /**
@@ -289,9 +291,13 @@ sealed interface Tool {
         val id: String,
         val name: String,
         val args: JsonObject = JsonObject(emptyMap()),
+        /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
+        @SerialName("supportsDeferredResults") val supportsDeferredResults: Boolean? = null,
     ) : Tool {
         companion object {
-            fun from(tool: ProviderTool): Provider = Provider(tool.id, tool.name, tool.args)
+            fun from(tool: ProviderTool): Provider = Provider(
+                tool.id, tool.name, tool.args, tool.supportsDeferredResults,
+            )
         }
     }
 }
