@@ -578,12 +578,26 @@ impl Operation {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
         if let Some(task) = task {
+            // A completed driver needs no cleanup runtime or timer. Runtime
+            // shutdown also completes it by cancellation.
+            if task.is_finished() {
+                if let Err(error) = task.await
+                    && !error.is_cancelled()
+                {
+                    self.shared
+                        .record_cleanup_failure(format!("operation driver join failed: {error}"));
+                }
+                return;
+            }
             let shared = self.shared.clone();
             // The cleanup task keeps running even if this caller stops awaiting terminate.
             let cleanup = self
                 .runtime
                 .spawn(async move { join_driver(&shared, task).await });
-            if let Err(error) = cleanup.await {
+            // Shutdown can race with spawn; it already disposes the driver.
+            if let Err(error) = cleanup.await
+                && !error.is_cancelled()
+            {
                 self.shared
                     .record_cleanup_failure(format!("operation cleanup task failed: {error}"));
             }
@@ -599,7 +613,9 @@ impl Drop for Operation {
             .get_mut()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
-        if let Some(task) = task {
+        if let Some(task) = task
+            && !task.is_finished()
+        {
             let shared = self.shared.clone();
             self.runtime
                 .spawn(async move { join_driver(&shared, task).await });
