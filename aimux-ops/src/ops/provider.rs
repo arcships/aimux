@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Middleware, Owner};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
 const CREATE_HANDLES: &[(&str, &[HandleKind])] = &[
     ("settings.fetch", &[HandleKind::Fetch]),
@@ -52,8 +52,8 @@ const CUSTOM_HANDLES: &[(&str, &[HandleKind])] = &[
 const fn descriptor(
     name: &'static str,
     kinds: &'static [HandleKind],
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     side_effects: bool,
     cancellable: bool,
     source_symbols: &'static [&'static str],
@@ -88,8 +88,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.create",
         &[],
-        "aimux_ops::ops::provider::ProviderCreateParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderCreateParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &[
@@ -101,8 +101,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.default",
         &[],
-        "aimux_ops::ops::provider::ProviderDefaultParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderDefaultParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &[
@@ -114,8 +114,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.model",
         &[HandleKind::Provider],
-        "aimux_ops::ops::provider::ProviderModelParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderModelParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &["aimux_core::provider::Provider"],
@@ -124,8 +124,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.invoke",
         &[HandleKind::Provider],
-        "aimux_ops::ops::provider::ProviderInvokeParams",
-        "aimux_ops::ops::provider::ProviderInvokeResult",
+        TypeRef::of::<ProviderInvokeParams>(),
+        TypeRef::of::<ProviderInvokeResult>(),
         false,
         true,
         &["aimux_core::provider::ProviderDiscovery::list_models"],
@@ -134,8 +134,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.wrap",
         &[HandleKind::Provider],
-        "aimux_ops::ops::provider::ProviderWrapParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderWrapParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &["aimux_core::wrap_provider::wrap_provider"],
@@ -144,8 +144,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.custom",
         &[],
-        "aimux_ops::ops::provider::ProviderCustomParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderCustomParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &["aimux_core::custom_provider::custom_provider"],
@@ -165,7 +165,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProviderCreateParams {
+struct ProviderCreateParams {
     package: String,
     #[serde(default)]
     settings: ProviderSettings,
@@ -173,7 +173,7 @@ pub struct ProviderCreateParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProviderDefaultParams {
+struct ProviderDefaultParams {
     package: String,
 }
 
@@ -197,24 +197,24 @@ struct ProviderSettings {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProviderModelParams {
+struct ProviderModelParams {
     method: Option<String>,
     model_id: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProviderInvokeParams {
+struct ProviderInvokeParams {
     method: String,
     #[serde(rename = "abort")]
     _abort: Option<HandleId>,
 }
 
-pub type ProviderInvokeResult = Vec<aimux_core::model_catalogue::RuntimeModel>;
+type ProviderInvokeResult = Vec<aimux_core::model_catalogue::RuntimeModel>;
 
 #[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProviderWrapParams {
+struct ProviderWrapParams {
     #[serde(default)]
     language_model_middleware: Vec<HandleId>,
     #[serde(default)]
@@ -223,7 +223,7 @@ pub struct ProviderWrapParams {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProviderCustomParams {
+struct ProviderCustomParams {
     #[serde(default)]
     language_models: HashMap<String, HandleId>,
     #[serde(default)]
@@ -253,7 +253,7 @@ pub struct ProviderCustomParams {
 
 #[derive(serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct HandleResult {
+struct HandleResult {
     handle: HandleId,
     kind: HandleKind,
 }

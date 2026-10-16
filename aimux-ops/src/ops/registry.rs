@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Middleware, Owner};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
 const MODELS: &[HandleKind] = &[
     HandleKind::Language,
@@ -30,8 +30,8 @@ const MODELS: &[HandleKind] = &[
 const fn descriptor(
     name: &'static str,
     kinds: &'static [HandleKind],
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     symbols: &'static [&'static str],
 ) -> OpDescriptor {
     OpDescriptor {
@@ -63,36 +63,36 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "registry.create",
         &[],
-        "aimux_ops::ops::registry::RegistryCreateParams",
-        "aimux_ops::ops::registry::HandleResult",
+        TypeRef::of::<RegistryCreateParams>(),
+        TypeRef::of::<HandleResult>(),
         &["aimux_core::provider_registry::create_provider_registry"],
     ),
     descriptor(
         "registry.provider",
         &[HandleKind::Registry],
-        "aimux_ops::ops::registry::RegistryProviderParams",
-        "aimux_ops::ops::registry::HandleResult",
+        TypeRef::of::<RegistryProviderParams>(),
+        TypeRef::of::<HandleResult>(),
         &["aimux_core::provider_registry::ProviderRegistry::provider"],
     ),
     descriptor(
         "model.resolve",
         &[HandleKind::Registry],
-        "aimux_ops::ops::registry::ModelResolveParams",
-        "aimux_ops::ops::registry::HandleResult",
+        TypeRef::of::<ModelResolveParams>(),
+        TypeRef::of::<HandleResult>(),
         &["aimux_core::provider_registry::ProviderRegistry"],
     ),
     descriptor(
         "model.info",
         MODELS,
-        "aimux_ops::ops::registry::ModelInfoParams",
-        "aimux_ops::ops::registry::ModelInfo",
+        TypeRef::of::<ModelInfoParams>(),
+        TypeRef::of::<ModelInfo>(),
         &["aimux_core::language_model::LanguageModel::provider"],
     ),
     descriptor(
         "model.wrap",
         MODELS,
-        "aimux_ops::ops::registry::ModelWrapParams",
-        "aimux_ops::ops::registry::HandleResult",
+        TypeRef::of::<ModelWrapParams>(),
+        TypeRef::of::<HandleResult>(),
         &[
             "aimux_core::language_model_middleware::wrap_language_model",
             "aimux_core::image_model_middleware::wrap_image_model",
@@ -114,7 +114,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct RegistryCreateParams {
+struct RegistryCreateParams {
     #[serde(default)]
     namespace: String,
     entries: Vec<RegistryEntry>,
@@ -129,7 +129,7 @@ struct RegistryEntry {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct RegistryProviderParams {
+struct RegistryProviderParams {
     key: String,
 }
 
@@ -159,17 +159,17 @@ enum ModelMethod {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ModelResolveParams {
+struct ModelResolveParams {
     model_ref: ModelRef,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ModelInfoParams {}
+struct ModelInfoParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ModelWrapParams {
+struct ModelWrapParams {
     middleware: Vec<String>,
 }
 
@@ -198,14 +198,14 @@ fn wrong(entry: &Entry, expected: &[HandleKind]) -> OpsError {
 }
 
 #[derive(Serialize, schemars::JsonSchema)]
-pub struct HandleResult {
+struct HandleResult {
     handle: HandleId,
     kind: HandleKind,
 }
 
 #[derive(Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelInfo<'a> {
+struct ModelInfo<'a> {
     provider: &'a str,
     model_id: &'a str,
     modality: &'static str,

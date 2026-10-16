@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, resolve_secondary};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
 #[derive(Clone, Copy, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -27,14 +27,14 @@ pub enum AuditMode {
 use crate::ops::operation::EmptyParams;
 
 #[derive(Serialize, schemars::JsonSchema)]
-pub struct HandleResult {
+struct HandleResult {
     handle: HandleId,
     kind: HandleKind,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", deny_unknown_fields)]
-pub enum TransportParams {
+enum TransportParams {
     #[serde(rename = "fetch")]
     Fetch {
         #[serde(default, deserialize_with = "deserialize_proxy")]
@@ -83,13 +83,13 @@ where
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct CredentialParams {
+struct CredentialParams {
     kind: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct MiddlewareParams {
+struct MiddlewareParams {
     kind: String,
     trace_store: Option<HandleId>,
     scope_name: Option<String>,
@@ -245,8 +245,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "EmptyParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -264,8 +264,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Abort],
-        request_type: "EmptyParams",
-        result_type: "()",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<()>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -283,8 +283,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::handles::TransportParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<TransportParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -307,8 +307,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::handles::CredentialParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<CredentialParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Future,
         terminal_type: None,
@@ -326,8 +326,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::handles::MiddlewareParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<MiddlewareParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -369,8 +369,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
             HandleKind::ReplaySession,
             HandleKind::Decision,
         ],
-        request_type: "EmptyParams",
-        result_type: "()",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<()>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,

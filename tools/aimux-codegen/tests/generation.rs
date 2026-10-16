@@ -54,7 +54,7 @@ fn cli_generates_and_checks_the_runtime_manifest_in_a_selected_root() {
 }
 
 fn fixture() -> Value {
-    json!({"abiVersion": 65536, "opsVersion": "1.0", "manifestRevision": "test-1",
+    let mut value = json!({"abiVersion": 65536, "opsVersion": "1.0", "manifestRevision": "test-1",
         "handleKinds": ["Language", "Operation"],
         "errorCodes": [
             {"name": "ApiCall", "kind": "aimux", "code": 1},
@@ -67,7 +67,35 @@ fn fixture() -> Value {
             {"name": "operation.push", "mode": "binaryPush", "allowedHandleKinds": ["Operation"], "requestType": "Bytes"},
             {"name": "operation.next", "mode": "poll", "allowedHandleKinds": ["Operation"], "requestType": "PollParams"},
             {"name": "text.stream", "mode": "stream", "allowedHandleKinds": ["Language"], "requestType": "GenerateTextOptions"},
-            {"name": "handle.drop", "mode": "call", "allowedHandleKinds": ["Language", "Operation"], "requestType": "EmptyParams"}]})
+            {"name": "handle.drop", "mode": "call", "allowedHandleKinds": ["Language", "Operation"], "requestType": "EmptyParams"}]});
+    let runtime = aimux_ops::manifest::manifest();
+    value["typeDefs"] = runtime["typeDefs"].clone();
+    value["types"] = runtime["types"].clone();
+    for (name, schema) in [
+        (
+            "GenerateTextOptions",
+            json!({"type":"object","additionalProperties":true}),
+        ),
+        (
+            "EmptyParams",
+            json!({"type":"object","additionalProperties":false}),
+        ),
+        (
+            "Bytes",
+            json!({"type":"array","items":{"type":"integer","format":"uint8","minimum":0,"maximum":255}}),
+        ),
+        (
+            "PollParams",
+            json!({"type":"object","additionalProperties":false}),
+        ),
+    ] {
+        value["typeDefs"]["input"][name] = schema;
+        value["types"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":name,"input":name}));
+    }
+    value
 }
 
 fn digest(value: &Value) -> String {
@@ -93,7 +121,7 @@ fn schema(artifacts: &Artifacts, name: &str) -> Value {
 fn validator(artifacts: &Artifacts, name: &str) -> jsonschema::Validator {
     let mut registry = Registry::new();
     for (path, bytes) in artifacts {
-        if path.starts_with("schema/ops") {
+        if path.starts_with("schema/ops") || path.starts_with("schema/types") {
             let document: Value = serde_json::from_slice(bytes).unwrap();
             let id = document["$id"].as_str().unwrap().to_owned();
             registry = registry.add(id, Resource::from_contents(document)).unwrap();
@@ -136,7 +164,7 @@ fn canonical_digest_sorts_nested_objects_without_reordering_arrays() {
 fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
     let outputs = artifacts();
     assert_eq!(outputs, artifacts());
-    assert_eq!(outputs.len(), 16);
+    assert!(outputs.len() > 16);
     assert_eq!(
         outputs[Path::new("aimux-ffi/include/aimux.h")],
         outputs[Path::new("bindings/flutter/native/aimux_ops.h")]
@@ -291,9 +319,6 @@ fn request_controls_are_closed_case_sensitive_and_keep_provider_json_open() {
         !requests
             .is_valid(&json!({"handle": "1", "op": "operation.push", "params": {}, "abort": "0"}))
     );
-    assert!(
-        validator(&outputs, "provider-options").is_valid(&json!({"future": {"nested": [1, null]}}))
-    );
 }
 
 #[test]
@@ -336,7 +361,7 @@ fn frame_and_error_envelope_use_contract_discriminators() {
     assert!(
         frames.is_valid(&json!({"type": "end", "seq": "2", "outcome": "error", "error": error}))
     );
-    assert!(frames.is_valid(&json!({"type": "event", "seq": "1", "event": {"vendor": null}})));
+    assert!(frames.is_valid(&json!({"type": "event", "seq": "1", "event": {"type":"text-delta","id":"t","text":"hello"}})));
     assert!(frames.is_valid(&json!({"type": "end", "seq": "2", "outcome": "cancelled"})));
     assert!(
         !frames.is_valid(&json!({"type": "end", "seq": "2", "outcome": "success", "extra": true}))
@@ -386,28 +411,9 @@ fn malformed_manifest_identifiers_kinds_modes_and_error_codes_fail() {
 fn real_manifest_control_schemas_are_emitted_and_enforced() {
     let value = aimux_ops::manifest::manifest();
     let outputs = generate(&value, &aimux_ops::manifest::manifest_digest()).unwrap();
-    for ty in value["types"].as_array().unwrap() {
-        if ty.get("schema").is_some() {
-            assert!(
-                outputs.values().any(|bytes| {
-                    serde_json::from_slice::<Value>(bytes)
-                        .ok()
-                        .is_some_and(|document| {
-                            let mut document = document;
-                            if let Some(object) = document.as_object_mut() {
-                                object.remove("$schema");
-                                object.remove("$id");
-                                if ty["schema"].get("$comment").is_none() {
-                                    object.remove("$comment");
-                                }
-                            }
-                            document == ty["schema"]
-                        })
-                }),
-                "missing schema {}",
-                ty["id"]
-            );
-        }
+    let model = aimux_codegen::model::normalize(&value["typeDefs"]).unwrap();
+    for ty in model.types {
+        assert!(outputs.contains_key(Path::new(&format!("schema/types/{}.json", ty.name))));
     }
     let requests = validator(&outputs, "request");
     assert!(

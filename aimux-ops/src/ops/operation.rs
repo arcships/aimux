@@ -2,40 +2,39 @@
 use crate::dispatch::{CallFuture, Ctx, Handler, PollResult, Target, decode, next_operation};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::operation::{Operation, OperationOptions};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::Duration;
 
-pub type BinaryInput = [u8];
-
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct EmptyParams {}
+pub(crate) struct EmptyParams {}
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OperationNextParams {
+struct OperationNextParams {
     #[serde(default)]
     pub timeout_ms: u64,
 }
 
 #[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TranscriptionStartParams {
+struct TranscriptionStartParams {
     pub input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
     pub provider_options: Option<aimux_core::shared::SharedProviderOptions>,
     pub headers: Option<aimux_core::shared::SharedHeaders>,
     #[serde(default)]
     pub include_raw_chunks: bool,
     pub timeout: Option<aimux_core::options::TimeoutConfiguration>,
-    pub abort: Option<crate::HandleId>,
+    #[serde(rename = "abort")]
+    _abort: Option<crate::HandleId>,
 }
 
 #[derive(Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
-pub enum OperationPollResult {
+enum OperationPollResult {
     Part {
         #[schemars(with = "aimux_core::transcription_model::TranscriptionStreamPart")]
         part: Value,
@@ -48,8 +47,8 @@ const fn descriptor(
     name: &'static str,
     mode: OpMode,
     kinds: &'static [HandleKind],
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     cancellation: Cancellation,
     side_effects: bool,
 ) -> OpDescriptor {
@@ -90,8 +89,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         "transcription.start",
         OpMode::Call,
         &[HandleKind::Transcription],
-        "TranscriptionStartParams",
-        "HandleId",
+        TypeRef::of::<TranscriptionStartParams>(),
+        TypeRef::of::<crate::handle::HandleId>(),
         Cancellation::Abort,
         true,
     ),
@@ -99,8 +98,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         "operation.push",
         OpMode::BinaryPush,
         &[HandleKind::Operation],
-        "BinaryInput",
-        "()",
+        TypeRef::of::<Vec<u8>>(),
+        TypeRef::of::<()>(),
         Cancellation::Operation,
         true,
     ),
@@ -108,8 +107,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         "operation.inputDone",
         OpMode::Call,
         &[HandleKind::Operation],
-        "EmptyParams",
-        "()",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<()>(),
         Cancellation::Operation,
         true,
     ),
@@ -117,8 +116,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         "operation.next",
         OpMode::Call,
         &[HandleKind::Operation],
-        "OperationNextParams",
-        "OperationPollResult",
+        TypeRef::of::<OperationNextParams>(),
+        TypeRef::of::<OperationPollResult>(),
         Cancellation::Operation,
         true,
     ),
@@ -126,8 +125,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         "operation.status",
         OpMode::Call,
         &[HandleKind::Operation],
-        "EmptyParams",
-        "OperationStatus",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<crate::operation::OperationStatus>(),
         Cancellation::None,
         false,
     ),
@@ -135,8 +134,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         "operation.cancel",
         OpMode::Call,
         &[HandleKind::Operation],
-        "EmptyParams",
-        "CancelResult",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<crate::operation::CancelResult>(),
         Cancellation::Operation,
         true,
     ),

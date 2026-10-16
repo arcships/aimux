@@ -22,16 +22,16 @@ use tokio::sync::oneshot;
 use crate::dispatch::{CallFuture, Ctx, EventStream, Handler, Target, decode as params};
 use crate::envelope::{BindingError, OpsError};
 use crate::handle::{Entry, HandleId, HandleKind};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
 const LANGUAGE: &[HandleKind] = &[HandleKind::Language];
 
 const fn descriptor(
     name: &'static str,
     mode: OpMode,
-    request_type: &'static str,
-    result_type: &'static str,
-    event_type: Option<&'static str>,
+    request_type: TypeRef,
+    result_type: TypeRef,
+    event_type: Option<TypeRef>,
     source_symbols: &'static [&'static str],
 ) -> OpDescriptor {
     OpDescriptor {
@@ -44,7 +44,7 @@ const fn descriptor(
         event_type,
         scope: Scope::Current,
         terminal_type: if matches!(mode, OpMode::Stream) {
-            Some("StreamFrame")
+            Some(TypeRef::of::<crate::frame::StreamFrame>())
         } else {
             None
         },
@@ -63,49 +63,49 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "text.generate",
         OpMode::Call,
-        "aimux_ops::ops::text::TextRequest",
-        "aimux_core::generate::GenerateTextResult",
+        TypeRef::of::<TextRequest>(),
+        TypeRef::of::<aimux_core::generate::GenerateTextResult>(),
         None,
         &["aimux_generate_text"],
     ),
     descriptor(
         "text.generateObject",
         OpMode::Call,
-        "aimux_ops::ops::text::TextRequest",
-        "aimux_core::generate::GenerateObjectResult",
+        TypeRef::of::<TextRequest>(),
+        TypeRef::of::<aimux_core::generate::GenerateObjectResult>(),
         None,
         &["aimux_generate_object"],
     ),
     descriptor(
         "text.consume",
         OpMode::Call,
-        "aimux_ops::ops::text::TextRequest",
-        "aimux_core::generate::GenerateTextResult",
+        TypeRef::of::<TextRequest>(),
+        TypeRef::of::<aimux_core::generate::GenerateTextResult>(),
         None,
         &["aimux_consume_stream_text"],
     ),
     descriptor(
         "text.generateOpenAI",
         OpMode::Call,
-        "aimux_ops::ops::text::TextRequest",
-        "aimux_core::openai_output::ChatCompletion",
+        TypeRef::of::<TextRequest>(),
+        TypeRef::of::<aimux_core::openai_output::ChatCompletion>(),
         None,
         &["aimux_generate_text_as_openai"],
     ),
     descriptor(
         "text.stream",
         OpMode::Stream,
-        "aimux_ops::ops::text::TextRequest",
-        "StreamFrame",
-        Some("aimux_core::stream_part::TextStreamPart"),
+        TypeRef::of::<TextRequest>(),
+        TypeRef::of::<crate::frame::StreamFrame>(),
+        Some(TypeRef::of::<aimux_core::stream_part::TextStreamPart>()),
         &["aimux_stream_text", "aimux_stream_text_with_abort"],
     ),
     descriptor(
         "text.streamOpenAI",
         OpMode::Stream,
-        "aimux_ops::ops::text::OpenAiTextRequest",
-        "StreamFrame",
-        Some("aimux_core::openai_output::ChatCompletionChunk"),
+        TypeRef::of::<OpenAiTextRequest>(),
+        TypeRef::of::<crate::frame::StreamFrame>(),
+        Some(TypeRef::of::<aimux_core::openai_output::ChatCompletionChunk>()),
         &[
             "aimux_stream_text_as_openai",
             "aimux_stream_text_as_openai_with_abort",
@@ -133,7 +133,7 @@ struct Options {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct TextRequest {
+struct TextRequest {
     prompt: ModelPrompt,
     #[serde(default)]
     options: Options,
@@ -143,7 +143,7 @@ pub struct TextRequest {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OpenAiTextRequest {
+struct OpenAiTextRequest {
     prompt: ModelPrompt,
     #[serde(default)]
     options: Options,

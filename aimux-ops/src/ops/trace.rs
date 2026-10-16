@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::ops::operation::EmptyParams;
 
 pub type TraceAggregateResult = Vec<aimux_core::trace::TraceStats>;
@@ -177,8 +177,8 @@ fn clear(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
 const fn descriptor(
     name: &'static str,
     allowed_handle_kinds: &'static [HandleKind],
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     side_effects: bool,
     source_symbols: &'static [&'static str],
 ) -> OpDescriptor {
@@ -207,16 +207,16 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.create",
         &[],
-        "aimux_ops::ops::trace::TraceCreateParams",
-        "HandleId",
+        TypeRef::of::<TraceCreateParams>(),
+        TypeRef::of::<crate::handle::HandleId>(),
         true,
         &["aimux_core::trace::RingTraceStore::with_capacity"],
     ),
     descriptor(
         "trace.aggregate",
         &[HandleKind::TraceStore],
-        "aimux_ops::ops::trace::TraceAggregateParams",
-        "aimux_ops::ops::trace::TraceAggregateResult",
+        TypeRef::of::<TraceAggregateParams>(),
+        TypeRef::of::<TraceAggregateResult>(),
         false,
         &[
             "aimux_trace_aggregate",
@@ -226,8 +226,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.sessionChain",
         &[HandleKind::TraceStore],
-        "aimux_ops::ops::trace::TraceSessionParams",
-        "aimux_core::trace::SessionChainView",
+        TypeRef::of::<TraceSessionParams>(),
+        TypeRef::of::<aimux_core::trace::SessionChainView>(),
         false,
         &[
             "aimux_trace_session_chain",
@@ -237,8 +237,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.sessionTrajectory",
         &[HandleKind::TraceStore],
-        "aimux_ops::ops::trace::TraceSessionParams",
-        "aimux_ops::ops::trace::TraceTrajectoryResult",
+        TypeRef::of::<TraceSessionParams>(),
+        TypeRef::of::<TraceTrajectoryResult>(),
         false,
         &[
             "aimux_trace_session_trajectory",
@@ -248,8 +248,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.export",
         &[HandleKind::TraceStore],
-        "EmptyParams",
-        "String",
+        TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        TypeRef::of::<String>(),
         false,
         &[
             "aimux_trace_export_jsonl",
@@ -259,8 +259,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.clear",
         &[HandleKind::TraceStore],
-        "EmptyParams",
-        "()",
+        TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        TypeRef::of::<()>(),
         true,
         &[
             "aimux_trace_clear",

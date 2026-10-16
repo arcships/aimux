@@ -1,0 +1,1030 @@
+[
+  {
+    "type": "AiMuxError",
+    "file": "AiMuxError/001.json"
+  },
+  {
+    "type": "AiMuxError",
+    "file": "AiMuxError/002.json"
+  },
+  {
+    "type": "AiMuxError",
+    "file": "AiMuxError/003.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/001.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/002.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/003.json"
+  },
+  {
+    "type": "AnyValue",
+    "file": "AnyValue/001.json"
+  },
+  {
+    "type": "AssistantContent",
+    "file": "AssistantContent/001.json"
+  },
+  {
+    "type": "AssistantContent",
+    "file": "AssistantContent/002.json"
+  },
+  {
+    "type": "AssistantContent",
+    "file": "AssistantContent/003.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/001.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/002.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/003.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/004.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/005.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/006.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/007.json"
+  },
+  {
+    "type": "AssistantContentPart",
+    "file": "AssistantContentPart/008.json"
+  },
+  {
+    "type": "AudioData",
+    "file": "AudioData/001.json"
+  },
+  {
+    "type": "AudioData",
+    "file": "AudioData/002.json"
+  },
+  {
+    "type": "AudioInput",
+    "file": "AudioInput/001.json"
+  },
+  {
+    "type": "AudioInput",
+    "file": "AudioInput/002.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/001.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/002.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/003.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/004.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/005.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/006.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/007.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/008.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/009.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/010.json"
+  },
+  {
+    "type": "ContentPart",
+    "file": "ContentPart/011.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/001.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/002.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/003.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/004.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/005.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/006.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/007.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/008.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/009.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/010.json"
+  },
+  {
+    "type": "ContentPartInput",
+    "file": "ContentPartInput/011.json"
+  },
+  {
+    "type": "DecideOptions",
+    "file": "DecideOptions/001.json"
+  },
+  {
+    "type": "DecideUsage",
+    "file": "DecideUsage/001.json"
+  },
+  {
+    "type": "DecisionBooleanCriteria",
+    "file": "DecisionBooleanCriteria/001.json"
+  },
+  {
+    "type": "DecisionInput",
+    "file": "DecisionInput/001.json"
+  },
+  {
+    "type": "DecisionInput",
+    "file": "DecisionInput/002.json"
+  },
+  {
+    "type": "DecisionInput",
+    "file": "DecisionInput/003.json"
+  },
+  {
+    "type": "DecisionInput",
+    "file": "DecisionInput/004.json"
+  },
+  {
+    "type": "DecisionInput",
+    "file": "DecisionInput/005.json"
+  },
+  {
+    "type": "DecisionQuestion",
+    "file": "DecisionQuestion/001.json"
+  },
+  {
+    "type": "DecisionQuestion",
+    "file": "DecisionQuestion/002.json"
+  },
+  {
+    "type": "DecisionQuestion",
+    "file": "DecisionQuestion/003.json"
+  },
+  {
+    "type": "DecisionRounding",
+    "file": "DecisionRounding/001.json"
+  },
+  {
+    "type": "EmbeddingCallOptions",
+    "file": "EmbeddingCallOptions/001.json"
+  },
+  {
+    "type": "EmbeddingResponse",
+    "file": "EmbeddingResponse/001.json"
+  },
+  {
+    "type": "EmbeddingResponse",
+    "file": "EmbeddingResponse/002.json"
+  },
+  {
+    "type": "EmbeddingUsage",
+    "file": "EmbeddingUsage/001.json"
+  },
+  {
+    "type": "ErrorEnvelope",
+    "file": "ErrorEnvelope/001.json"
+  },
+  {
+    "type": "FileBytes",
+    "file": "FileBytes/001.json"
+  },
+  {
+    "type": "FileBytes",
+    "file": "FileBytes/002.json"
+  },
+  {
+    "type": "FileData",
+    "file": "FileData/001.json"
+  },
+  {
+    "type": "FileData",
+    "file": "FileData/002.json"
+  },
+  {
+    "type": "FileData",
+    "file": "FileData/003.json"
+  },
+  {
+    "type": "FileData",
+    "file": "FileData/004.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/001.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/002.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/003.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/004.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/005.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/006.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/007.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/008.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/009.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/010.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/011.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/012.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/013.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/014.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/015.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/016.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/017.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/018.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/019.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/020.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/021.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/022.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/023.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/024.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/025.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/026.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/027.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/028.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/029.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/030.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/031.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/032.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/033.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/034.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/035.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/036.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/037.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/038.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/039.json"
+  },
+  {
+    "type": "FilePartData",
+    "file": "FilePartData/040.json"
+  },
+  {
+    "type": "FinishReasonUnified",
+    "file": "FinishReasonUnified/001.json"
+  },
+  {
+    "type": "FinishReasonUnified",
+    "file": "FinishReasonUnified/002.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/001.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/002.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/003.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/004.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/005.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/006.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/007.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/008.json"
+  },
+  {
+    "type": "GenerateContent",
+    "file": "GenerateContent/009.json"
+  },
+  {
+    "type": "GenerateObjectResponse",
+    "file": "GenerateObjectResponse/001.json"
+  },
+  {
+    "type": "GenerateObjectResult",
+    "file": "GenerateObjectResult/001.json"
+  },
+  {
+    "type": "GenerateTextOptions",
+    "file": "GenerateTextOptions/001.json"
+  },
+  {
+    "type": "GeneratedFile",
+    "file": "GeneratedFile/001.json"
+  },
+  {
+    "type": "GeneratedFileData",
+    "file": "GeneratedFileData/001.json"
+  },
+  {
+    "type": "GeneratedFileData",
+    "file": "GeneratedFileData/002.json"
+  },
+  {
+    "type": "HandleId",
+    "file": "HandleId/001.json"
+  },
+  {
+    "type": "HandleId",
+    "file": "HandleId/002.json"
+  },
+  {
+    "type": "HandleIdInput",
+    "file": "HandleIdInput/001.json"
+  },
+  {
+    "type": "HandleIdInput",
+    "file": "HandleIdInput/002.json"
+  },
+  {
+    "type": "ImageFile",
+    "file": "ImageFile/001.json"
+  },
+  {
+    "type": "ImageFile",
+    "file": "ImageFile/002.json"
+  },
+  {
+    "type": "ImageFileData",
+    "file": "ImageFileData/001.json"
+  },
+  {
+    "type": "ImageFileData",
+    "file": "ImageFileData/002.json"
+  },
+  {
+    "type": "ImageOutputs",
+    "file": "ImageOutputs/001.json"
+  },
+  {
+    "type": "ImageOutputs",
+    "file": "ImageOutputs/002.json"
+  },
+  {
+    "type": "ImageResponse",
+    "file": "ImageResponse/001.json"
+  },
+  {
+    "type": "ImageResult",
+    "file": "ImageResult/001.json"
+  },
+  {
+    "type": "ImageUsage",
+    "file": "ImageUsage/001.json"
+  },
+  {
+    "type": "InputTokenDetails",
+    "file": "InputTokenDetails/001.json"
+  },
+  {
+    "type": "LanguageModelFile",
+    "file": "LanguageModelFile/001.json"
+  },
+  {
+    "type": "LanguageModelUsage",
+    "file": "LanguageModelUsage/001.json"
+  },
+  {
+    "type": "LanguageModelUsageInput",
+    "file": "LanguageModelUsageInput/001.json"
+  },
+  {
+    "type": "LanguageModelV4ToolChoice",
+    "file": "LanguageModelV4ToolChoice/001.json"
+  },
+  {
+    "type": "ModelCost",
+    "file": "ModelCost/001.json"
+  },
+  {
+    "type": "ModelLimits",
+    "file": "ModelLimits/001.json"
+  },
+  {
+    "type": "ModelMessage",
+    "file": "ModelMessage/001.json"
+  },
+  {
+    "type": "ModelMessage",
+    "file": "ModelMessage/002.json"
+  },
+  {
+    "type": "ModelMessage",
+    "file": "ModelMessage/003.json"
+  },
+  {
+    "type": "ModelMessage",
+    "file": "ModelMessage/004.json"
+  },
+  {
+    "type": "ModelModalities",
+    "file": "ModelModalities/001.json"
+  },
+  {
+    "type": "ModelPrompt",
+    "file": "ModelPrompt/001.json"
+  },
+  {
+    "type": "ModelPrompt",
+    "file": "ModelPrompt/002.json"
+  },
+  {
+    "type": "ModelPrompt",
+    "file": "ModelPrompt/003.json"
+  },
+  {
+    "type": "NamespacedKind",
+    "file": "NamespacedKind/001.json"
+  },
+  {
+    "type": "NamespacedKind",
+    "file": "NamespacedKind/002.json"
+  },
+  {
+    "type": "Output",
+    "file": "Output/001.json"
+  },
+  {
+    "type": "OutputTokenDetails",
+    "file": "OutputTokenDetails/001.json"
+  },
+  {
+    "type": "RawToolCall",
+    "file": "RawToolCall/001.json"
+  },
+  {
+    "type": "ReasoningFilePartData",
+    "file": "ReasoningFilePartData/001.json"
+  },
+  {
+    "type": "ReasoningFilePartData",
+    "file": "ReasoningFilePartData/002.json"
+  },
+  {
+    "type": "ReasoningFilePartData",
+    "file": "ReasoningFilePartData/003.json"
+  },
+  {
+    "type": "ReasoningOutput",
+    "file": "ReasoningOutput/001.json"
+  },
+  {
+    "type": "ReasoningPart",
+    "file": "ReasoningPart/001.json"
+  },
+  {
+    "type": "ReasoningPart",
+    "file": "ReasoningPart/002.json"
+  },
+  {
+    "type": "RequestInfo",
+    "file": "RequestInfo/001.json"
+  },
+  {
+    "type": "RequestInfo",
+    "file": "RequestInfo/002.json"
+  },
+  {
+    "type": "RerankingRank",
+    "file": "RerankingRank/001.json"
+  },
+  {
+    "type": "RerankingResponse",
+    "file": "RerankingResponse/001.json"
+  },
+  {
+    "type": "RerankingResponse",
+    "file": "RerankingResponse/002.json"
+  },
+  {
+    "type": "RerankingResult",
+    "file": "RerankingResult/001.json"
+  },
+  {
+    "type": "ResponseInfo",
+    "file": "ResponseInfo/001.json"
+  },
+  {
+    "type": "ResponseInfo",
+    "file": "ResponseInfo/002.json"
+  },
+  {
+    "type": "RuntimeModel",
+    "file": "RuntimeModel/001.json"
+  },
+  {
+    "type": "SearchResponse",
+    "file": "SearchResponse/001.json"
+  },
+  {
+    "type": "SearchResponse",
+    "file": "SearchResponse/002.json"
+  },
+  {
+    "type": "SearchResult",
+    "file": "SearchResult/001.json"
+  },
+  {
+    "type": "SearchResultItem",
+    "file": "SearchResultItem/001.json"
+  },
+  {
+    "type": "SpeechCallOptions",
+    "file": "SpeechCallOptions/001.json"
+  },
+  {
+    "type": "SpeechRequest",
+    "file": "SpeechRequest/001.json"
+  },
+  {
+    "type": "SpeechRequest",
+    "file": "SpeechRequest/002.json"
+  },
+  {
+    "type": "SpeechResponse",
+    "file": "SpeechResponse/001.json"
+  },
+  {
+    "type": "SpeechResponse",
+    "file": "SpeechResponse/002.json"
+  },
+  {
+    "type": "StepModel",
+    "file": "StepModel/001.json"
+  },
+  {
+    "type": "StepResponse",
+    "file": "StepResponse/001.json"
+  },
+  {
+    "type": "StepResponseInput",
+    "file": "StepResponseInput/001.json"
+  },
+  {
+    "type": "StepResponseMetadata",
+    "file": "StepResponseMetadata/001.json"
+  },
+  {
+    "type": "StreamFrame",
+    "file": "StreamFrame/001.json"
+  },
+  {
+    "type": "StreamFrame",
+    "file": "StreamFrame/002.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/001.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/002.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/003.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/004.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/005.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/006.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/007.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/008.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/009.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/010.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/011.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/012.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/013.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/014.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/015.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/016.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/017.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/018.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/019.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/020.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/021.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/022.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/023.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/024.json"
+  },
+  {
+    "type": "TextStreamPart",
+    "file": "TextStreamPart/025.json"
+  },
+  {
+    "type": "TimeoutConfiguration",
+    "file": "TimeoutConfiguration/001.json"
+  },
+  {
+    "type": "Timestamp",
+    "file": "Timestamp/001.json"
+  },
+  {
+    "type": "Timestamp",
+    "file": "Timestamp/002.json"
+  },
+  {
+    "type": "Tool",
+    "file": "Tool/001.json"
+  },
+  {
+    "type": "Tool",
+    "file": "Tool/002.json"
+  },
+  {
+    "type": "ToolCall",
+    "file": "ToolCall/001.json"
+  },
+  {
+    "type": "ToolCallInput",
+    "file": "ToolCallInput/001.json"
+  },
+  {
+    "type": "ToolChoice",
+    "file": "ToolChoice/001.json"
+  },
+  {
+    "type": "ToolChoice",
+    "file": "ToolChoice/002.json"
+  },
+  {
+    "type": "ToolContentPart",
+    "file": "ToolContentPart/001.json"
+  },
+  {
+    "type": "ToolResultContentPart",
+    "file": "ToolResultContentPart/001.json"
+  },
+  {
+    "type": "ToolResultContentPart",
+    "file": "ToolResultContentPart/002.json"
+  },
+  {
+    "type": "ToolResultFileId",
+    "file": "ToolResultFileId/001.json"
+  },
+  {
+    "type": "ToolResultFileId",
+    "file": "ToolResultFileId/002.json"
+  },
+  {
+    "type": "ToolResultOutput",
+    "file": "ToolResultOutput/001.json"
+  },
+  {
+    "type": "TranscriptionRequest",
+    "file": "TranscriptionRequest/001.json"
+  },
+  {
+    "type": "TranscriptionResponse",
+    "file": "TranscriptionResponse/001.json"
+  },
+  {
+    "type": "TranscriptionResponse",
+    "file": "TranscriptionResponse/002.json"
+  },
+  {
+    "type": "TranscriptionResult",
+    "file": "TranscriptionResult/001.json"
+  },
+  {
+    "type": "TranscriptionSegment",
+    "file": "TranscriptionSegment/001.json"
+  },
+  {
+    "type": "TranscriptionStreamPart",
+    "file": "TranscriptionStreamPart/001.json"
+  },
+  {
+    "type": "TranscriptionStreamPart",
+    "file": "TranscriptionStreamPart/002.json"
+  },
+  {
+    "type": "UploadFileData",
+    "file": "UploadFileData/001.json"
+  },
+  {
+    "type": "UploadFileData",
+    "file": "UploadFileData/002.json"
+  },
+  {
+    "type": "UploadFileResult",
+    "file": "UploadFileResult/001.json"
+  },
+  {
+    "type": "UserContent",
+    "file": "UserContent/001.json"
+  },
+  {
+    "type": "UserContent",
+    "file": "UserContent/002.json"
+  },
+  {
+    "type": "UserContent",
+    "file": "UserContent/003.json"
+  },
+  {
+    "type": "UserContentPart",
+    "file": "UserContentPart/001.json"
+  },
+  {
+    "type": "UserContentPart",
+    "file": "UserContentPart/002.json"
+  },
+  {
+    "type": "UserContentPart",
+    "file": "UserContentPart/003.json"
+  },
+  {
+    "type": "VideoData",
+    "file": "VideoData/001.json"
+  },
+  {
+    "type": "VideoData",
+    "file": "VideoData/002.json"
+  },
+  {
+    "type": "VideoData",
+    "file": "VideoData/003.json"
+  },
+  {
+    "type": "VideoFile",
+    "file": "VideoFile/001.json"
+  },
+  {
+    "type": "VideoFile",
+    "file": "VideoFile/002.json"
+  },
+  {
+    "type": "VideoFileData",
+    "file": "VideoFileData/001.json"
+  },
+  {
+    "type": "VideoFileData",
+    "file": "VideoFileData/002.json"
+  },
+  {
+    "type": "VideoPollOptions",
+    "file": "VideoPollOptions/001.json"
+  },
+  {
+    "type": "VideoResponse",
+    "file": "VideoResponse/001.json"
+  },
+  {
+    "type": "VideoResult",
+    "file": "VideoResult/001.json"
+  },
+  {
+    "type": "Warning",
+    "file": "Warning/001.json"
+  },
+  {
+    "type": "_uint8_",
+    "file": "_uint8_/001.json"
+  },
+  {
+    "type": "null",
+    "file": "null/001.json"
+  },
+  {
+    "type": "string",
+    "file": "string/001.json"
+  }
+]

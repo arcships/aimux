@@ -27,6 +27,7 @@ use crate::shared::{
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
+#[schemars(deny_unknown_fields)]
 pub enum UploadFileData {
     /// Raw bytes (`Uint8Array`) or a base64-encoded string.
     Data { data: FileBytes },

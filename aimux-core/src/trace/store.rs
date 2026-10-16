@@ -281,6 +281,7 @@ impl TraceStore {
 /// Query filter (RFC-0015 §5.3).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
 pub struct TraceFilter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,

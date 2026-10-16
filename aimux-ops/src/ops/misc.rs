@@ -16,7 +16,7 @@ use crate::{
     dispatch::{CallFuture, Ctx, Handler, Target},
     envelope::{BindingError, OpsError, ProtocolError},
     handle::{Entry, HandleId, HandleKind},
-    op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope},
+    op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef},
 };
 
 pub(crate) static OPS: &[OpDescriptor] = &[
@@ -25,8 +25,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::misc::CatalogueFetchRequest",
-        result_type: "aimux_providers::catalogue::Catalogue",
+        request_type: TypeRef::of::<CatalogueFetchRequest>(),
+        result_type: TypeRef::of::<aimux_providers::catalogue::Catalogue>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -44,8 +44,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::misc::ToolRepairContextRequest",
-        result_type: "aimux_ops::ops::misc::ToolRepairContextResult",
+        request_type: TypeRef::of::<ToolRepairContextRequest>(),
+        result_type: TypeRef::of::<ToolRepairContextResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -63,8 +63,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::misc::ToolRepairApplyRequest",
-        result_type: "aimux_core::tool::ToolCall",
+        request_type: TypeRef::of::<ToolRepairApplyRequest>(),
+        result_type: TypeRef::of::<aimux_core::tool::ToolCall>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -82,8 +82,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::misc::ToolRepairApplyResultRequest",
-        result_type: "aimux_core::generate::GenerateTextResult",
+        request_type: TypeRef::of::<ToolRepairApplyResultRequest>(),
+        result_type: TypeRef::of::<aimux_core::generate::GenerateTextResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -101,8 +101,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::misc::CodexRefreshRequest",
-        result_type: "aimux_providers::codex::CodexTokens",
+        request_type: TypeRef::of::<CodexRefreshRequest>(),
+        result_type: TypeRef::of::<aimux_providers::codex::CodexTokens>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -120,8 +120,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Language],
-        request_type: "aimux_ops::ops::misc::OpenAiOutputRequest",
-        result_type: "aimux_core::openai_output::ChatCompletion",
+        request_type: TypeRef::of::<OpenAiOutputRequest>(),
+        result_type: TypeRef::of::<aimux_core::openai_output::ChatCompletion>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -154,7 +154,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CatalogueFetchRequest {
+struct CatalogueFetchRequest {
     source_url: Option<String>,
     #[serde(default, rename = "abort")]
     _abort: Option<HandleId>,
@@ -162,7 +162,7 @@ pub struct CatalogueFetchRequest {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ToolRepairContextRequest {
+struct ToolRepairContextRequest {
     tool_call: ToolCall,
     prompt: ModelPrompt,
     #[serde(default)]
@@ -171,7 +171,7 @@ pub struct ToolRepairContextRequest {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ToolRepairApplyRequest {
+struct ToolRepairApplyRequest {
     tool_call: ToolCall,
     #[serde(default)]
     options: GenerateTextOptions,
@@ -180,7 +180,7 @@ pub struct ToolRepairApplyRequest {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ToolRepairApplyResultRequest {
+struct ToolRepairApplyResultRequest {
     #[schemars(with = "GenerateTextResult")]
     result: Value,
     #[serde(default)]
@@ -192,14 +192,14 @@ pub struct ToolRepairApplyResultRequest {
 // Deliberately no Debug implementation: token-bearing requests must not be logged.
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CodexRefreshRequest {
+struct CodexRefreshRequest {
     refresh_token: String,
     client_id: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OpenAiOutputRequest {
+struct OpenAiOutputRequest {
     result: GenerateTextResult,
     metadata_namespace: String,
 }
@@ -251,9 +251,7 @@ fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
 
 #[derive(Serialize, schemars::JsonSchema)]
 #[serde(transparent)]
-pub struct ToolRepairContextResult(
-    #[schemars(with = "Option<ToolRepairContextSchema>")] Option<Value>,
-);
+struct ToolRepairContextResult(#[schemars(with = "Option<ToolRepairContextSchema>")] Option<Value>);
 
 #[derive(schemars::JsonSchema)]
 #[schemars(rename_all = "camelCase")]

@@ -1,0 +1,6 @@
+{
+  "type": "tool-call",
+  "sourceType": "url",
+  "id": "s",
+  "url": "u"
+}

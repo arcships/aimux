@@ -64,12 +64,19 @@ pub enum ErrorDomain {
 /// JSON nulls survive decoding and re-encoding by an older adapter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields, extend("allOf" = [
+    serde_json::json!({"if":{"properties":{"kind":{"const":"aimux"}}},"then":{"properties":{"code":{"minimum":1,"maximum":20,"not":{"const":4}}}}}),
+    serde_json::json!({"if":{"properties":{"kind":{"const":"recording"}}},"then":{"properties":{"code":{"minimum":100,"maximum":105}}}}),
+    serde_json::json!({"if":{"properties":{"kind":{"const":"binding"}}},"then":{"properties":{"code":{"minimum":200,"maximum":206}}}}),
+    serde_json::json!({"if":{"properties":{"kind":{"const":"protocol"}}},"then":{"properties":{"code":{"minimum":300,"maximum":399}}}})
+]))]
 pub struct ErrorEnvelope {
     pub kind: ErrorDomain,
     pub code: i32,
     pub message: String,
     pub error: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "u64")]
     pub retry_after_ms: Option<u64>,
 }
 

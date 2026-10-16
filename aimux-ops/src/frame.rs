@@ -12,6 +12,7 @@ use crate::envelope::{ErrorEnvelope, OpsError, ProtocolError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(serde::Deserialize))]
 pub enum Outcome {
     Success,
     Error,
@@ -20,6 +21,8 @@ pub enum Outcome {
 
 #[derive(Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
+#[cfg_attr(test, derive(serde::Deserialize))]
 pub enum StreamFrame {
     Event {
         #[schemars(extend("x-aimux-codec" = "u64-string"))]
@@ -39,7 +42,7 @@ pub enum StreamFrame {
 fn frame_event_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
     let text = generator.subschema_for::<aimux_core::stream_part::TextStreamPart>();
     let openai = generator.subschema_for::<aimux_core::openai_output::ChatCompletionChunk>();
-    schemars::json_schema!({ "anyOf": [text, openai] })
+    schemars::json_schema!({ "anyOf": [text, openai], "x-aimux-codec": "ordered-untagged" })
 }
 
 /// Pull-driven framing: at most one upstream item is read for each output item.

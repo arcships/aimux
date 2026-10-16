@@ -250,7 +250,7 @@ pub enum ToolChoice {
 }
 
 fn tool_choice_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({
+    schemars::json_schema!({ "x-aimux-codec": "ordered-untagged",
         "anyOf": [
             { "type": "string", "enum": ["auto", "none", "required"] },
             { "type": "object", "properties": {

@@ -8,8 +8,25 @@ use crate::envelope::{BindingError, OpsError, ProtocolError};
 
 /// Global scope is 0; live resource identifiers are never reused.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, schemars::JsonSchema)]
-#[schemars(with = "String", extend("x-aimux-codec" = "u64-string"))]
+#[schemars(schema_with = "handle_schema")]
 pub struct HandleId(pub u64);
+
+#[derive(schemars::JsonSchema)]
+#[schemars(with = "String", extend("x-aimux-codec" = "u64-string", "pattern" = decimal_u64_pattern(), "minLength" = 1, "maxLength" = 20, "not" = serde_json::json!({"pattern":"[^0-9]"})))]
+struct DecimalHandle;
+
+fn handle_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = <DecimalHandle as schemars::JsonSchema>::json_schema(generator);
+    if generator.contract().is_deserialize() {
+        // The Rust reader accepts leading zeroes; the writer always emits the canonical form.
+        schema.insert(
+            "pattern".into(),
+            format!("^0*{}", &decimal_u64_pattern()[1..]).into(),
+        );
+        schema.remove("maxLength");
+    }
+    schema
+}
 
 impl Serialize for HandleId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -402,4 +419,24 @@ mod tests {
 pub enum Middleware {
     Language(Arc<dyn aimux_core::language_model_middleware::LanguageModelMiddleware>),
     Image(Arc<dyn aimux_core::image_model_middleware::ImageModelMiddleware>),
+}
+
+/// Decimal strings in the u64 range, without leading zeroes.
+fn decimal_u64_pattern() -> String {
+    let maximum = u64::MAX.to_string();
+    let mut alternatives = vec!["0".into(), "[1-9][0-9]{0,18}".into()];
+    for (i, digit) in maximum.bytes().enumerate() {
+        let minimum = if i == 0 { b'1' } else { b'0' };
+        if digit > minimum {
+            alternatives.push(format!(
+                "{}[{}-{}][0-9]{{{}}}",
+                &maximum[..i],
+                char::from(minimum),
+                char::from(digit - 1),
+                maximum.len() - i - 1
+            ));
+        }
+    }
+    alternatives.push(maximum);
+    format!("^({})$", alternatives.join("|"))
 }

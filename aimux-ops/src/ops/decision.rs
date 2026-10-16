@@ -7,7 +7,7 @@ use crate::{
     dispatch::{CallFuture, Ctx, Handler, Target, decode},
     envelope::{BindingError, OpsError, ProtocolError},
     handle::{Entry, HandleId, HandleKind},
-    op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope},
+    op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef},
     ops::operation::EmptyParams,
 };
 
@@ -27,8 +27,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Decision],
-        request_type: "aimux_ops::ops::decision::DecisionDecideRequest",
-        result_type: "aimux_core::decision_model::DecideResult",
+        request_type: TypeRef::of::<DecisionDecideRequest>(),
+        result_type: TypeRef::of::<aimux_core::decision_model::DecideResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -50,9 +50,9 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Decision],
-        request_type: "EmptyParams",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
         // The canonical property helper already returns this JSON value.
-        result_type: "serde_json::Value",
+        result_type: TypeRef::of::<serde_json::Value>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,

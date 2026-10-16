@@ -476,13 +476,13 @@ fn descriptors_publish_real_types_and_secondary_fields() {
         let descriptor = aimux_ops::dispatch::descriptor(name).unwrap();
         assert_eq!(descriptor.runtime_handle_fields[0].0, field);
         assert!(
-            descriptor
-                .request_type
+            (descriptor.request_type.id)()
+                .into_owned()
                 .starts_with("aimux_ops::ops::registry::")
         );
         assert!(
-            descriptor
-                .result_type
+            (descriptor.result_type.id)()
+                .into_owned()
                 .starts_with("aimux_ops::ops::registry::")
         );
     }
@@ -495,7 +495,10 @@ fn descriptors_publish_real_types_and_secondary_fields() {
         "model.wrap",
     ] {
         let descriptor = aimux_ops::dispatch::descriptor(name).unwrap();
-        for id in [descriptor.request_type, descriptor.result_type] {
+        for id in [
+            (descriptor.request_type.id)().into_owned(),
+            (descriptor.result_type.id)().into_owned(),
+        ] {
             assert!(
                 manifest["types"]
                     .as_array()

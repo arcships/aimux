@@ -9,28 +9,28 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::ops::operation::EmptyParams;
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct SessionStoreCreateParams {
+struct SessionStoreCreateParams {
     infer: bool,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SessionStoreCallsParams {
+struct SessionStoreCallsParams {
     session_id: String,
 }
 
 #[derive(Serialize, schemars::JsonSchema)]
-pub struct SessionStoreHandle {
+struct SessionStoreHandle {
     handle: HandleId,
 }
 
-pub type SessionViews = Vec<aimux_core::session::SessionView>;
-pub type SessionCalls = Vec<aimux_core::session::SessionCall>;
+type SessionViews = Vec<aimux_core::session::SessionView>;
+type SessionCalls = Vec<aimux_core::session::SessionCall>;
 
 pub(crate) static OPS: &[OpDescriptor] = &[
     OpDescriptor {
@@ -38,8 +38,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::session::SessionStoreCreateParams",
-        result_type: "aimux_ops::ops::session::SessionStoreHandle",
+        request_type: TypeRef::of::<SessionStoreCreateParams>(),
+        result_type: TypeRef::of::<SessionStoreHandle>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -57,8 +57,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::SessionStore],
-        request_type: "EmptyParams",
-        result_type: "()",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<()>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -76,8 +76,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::SessionStore],
-        request_type: "EmptyParams",
-        result_type: "aimux_ops::ops::session::SessionViews",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<SessionViews>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -95,8 +95,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::SessionStore],
-        request_type: "aimux_ops::ops::session::SessionStoreCallsParams",
-        result_type: "aimux_ops::ops::session::SessionCalls",
+        request_type: TypeRef::of::<SessionStoreCallsParams>(),
+        result_type: TypeRef::of::<SessionCalls>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,

@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode as parse};
 use crate::op::{
-    ABI_VERSION, Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope,
+    ABI_VERSION, Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef,
 };
 
 pub(crate) static OPS: &[OpDescriptor] = &[
@@ -16,8 +16,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::runtime::RuntimeDescribeParams",
-        result_type: "serde_json::Value",
+        request_type: TypeRef::of::<RuntimeDescribeParams>(),
+        result_type: TypeRef::of::<serde_json::Value>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -38,8 +38,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::runtime::RuntimeConfigureParams",
-        result_type: "serde_json::Value",
+        request_type: TypeRef::of::<RuntimeConfigureParams>(),
+        result_type: TypeRef::of::<serde_json::Value>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -64,11 +64,11 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 
 #[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct RuntimeDescribeParams {}
+struct RuntimeDescribeParams {}
 
 #[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct RuntimeConfigureParams {
+struct RuntimeConfigureParams {
     logging: Option<LoggingConfig>,
     #[serde(default, deserialize_with = "deserialize_proxy")]
     #[schemars(schema_with = "runtime_proxy_schema")]
