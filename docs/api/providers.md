@@ -9,7 +9,7 @@
 
 | category | count |
 |----------|-------|
-| Registry-backed OpenAI-compatible (`provider(name, ...)` / `ProviderName`) | 251 |
+| Registry-backed OpenAI-compatible (`provider(name, ...)`) | 251 |
 | Non-registry: Native protocol providers | 14 |
 | Non-registry: OpenAI-compatible thin wrappers (second batch) | 5 |
 | Non-registry: Speech-only providers (TTS) | 4 |
@@ -28,7 +28,7 @@
 | Non-registry: Search-only providers (web search modality) | 11 |
 | **Total providers** | **328** |
 
-**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)` / `ProviderName`) + **77 non-registry providers** (construct via the typed factories listed below).
+**251 registry-backed OpenAI-compatible providers** (construct via `provider(name, ...)`) + **77 non-registry providers** (construct via the typed factories listed below).
 
 ## Registry-backed (OpenAI-compatible) — 251
 

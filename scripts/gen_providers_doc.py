@@ -7,8 +7,8 @@ Single source of truth:
 
 A `pub mod` in lib.rs counts as a provider module iff its `pub use` re-exports
 a typed surface (`*Provider` / `*Config` / `*Model`). Registry machinery
-(`provider`, `provider_name`), `replay` and `catalogue` export none of these
-and are excluded without a hand-kept list.
+(`provider`), `replay` and `catalogue` export none of these and are excluded
+without a hand-kept list.
 
 The generated page carries the provider totals (registry rows, per-category
 typed providers, grand total); other docs reference it instead of repeating
@@ -64,10 +64,10 @@ def parse_lib_rs():
             while k < len(lines) and lines[k].strip() == "":
                 k += 1
             if k < len(lines) and lines[k].strip().startswith("pub mod "):
-                # registry machinery (provider / provider_name) has its own
-                # doc comment block — never treat it as a section header
+                # registry machinery (provider) has its own doc comment
+                # block — never treat it as a section header
                 first_mod = lines[k].strip().split()[2].rstrip(";")
-                if first_mod in ("provider", "provider_name"):
+                if first_mod == "provider":
                     i = j
                     continue
                 if pending:
@@ -131,9 +131,8 @@ def is_provider_module(module):
     """True when the module re-exports a typed provider surface.
 
     A provider module exposes `*Provider` / `*Config` / `*Model` types.
-    Registry machinery (`provider`, `provider_name`), `replay` and
-    `catalogue` re-export none of these, so they are excluded without a
-    hand-kept deny-list (#177).
+    Registry machinery (`provider`), `replay` and `catalogue` re-export
+    none of these, so they are excluded without a hand-kept deny-list (#177).
     """
     return any(e.endswith(("Provider", "Config", "Model")) for e in module_exports(module))
 
@@ -180,7 +179,7 @@ def build_page():
     w("")
     w("| category | count |")
     w("|----------|-------|")
-    w(f"| Registry-backed OpenAI-compatible (`provider(name, ...)` / `ProviderName`) | {len(registry)} |")
+    w(f"| Registry-backed OpenAI-compatible (`provider(name, ...)`) | {len(registry)} |")
     for title, mods in sections:
         # First sentence only — some lib.rs section comments run on; the full
         # title stays on the section heading below. The lookahead keeps
@@ -191,7 +190,7 @@ def build_page():
     w("")
     w(
         f"**{len(registry)} registry-backed OpenAI-compatible providers** "
-        f"(construct via `provider(name, ...)` / `ProviderName`) + "
+        f"(construct via `provider(name, ...)`) + "
         f"**{non_registry} non-registry providers** "
         "(construct via the typed factories listed below)."
     )

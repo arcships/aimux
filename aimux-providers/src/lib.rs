@@ -35,12 +35,11 @@ macro_rules! delegate_list_models {
 // The 250 per-provider `XxxConfig`/`XxxProvider` shell types were retired in
 // phase 4 — use [`provider`] / [`provider_from_env`] instead.
 pub mod provider;
-pub mod provider_name;
 pub mod replay;
 pub use provider::{
     ExternalProviderEntry, ProviderOptions, ProviderProfile, is_external_provider,
     load_providers_from_json, provider, provider_api_key_env, provider_from_env, provider_handle,
-    provider_registry_entry, register_provider,
+    provider_names, provider_registry_entry, register_provider,
 };
 pub use replay::{rebuild_decision_provider, rebuild_provider};
 

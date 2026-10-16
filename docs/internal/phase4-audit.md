@@ -5,6 +5,7 @@
 > 审计方式:只读代码/测试核查 + `cargo test -p aimux-providers --tests` 实测(EXIT=0,2769 绿)
 > 范围:RFC-0017 阶段 4(registry JSON 唯一数据源 + `provider(name,...)` 统一入口 + ProviderName 派生类型 + C ABI 符号)在 8 语言绑定 + C ABI 的覆盖一致性与测试落库情况
 > 说明:审计 prompt 写"8 个绑定"但枚举了 9 项(Rust/Node/Python/Go/Java/Kotlin/Swift/Flutter/C ABI),本报告按 9 行呈现。
+> **后续变更**: 2026-09-29 删除生成式 `ProviderName` 及 `scripts/gen_provider_names.py`;本报告中关于 ProviderName 派生类型与其防漂移测试的条目(b / d / P2)已不再适用,provider 名字统一为字符串,现行列表见 [docs/api/providers.md](../api/providers.md)。
 
 ---
 
