@@ -1142,11 +1142,9 @@ fn provider_tool_result_part(result: ToolResult, input: Option<Value>) -> TextSt
 /// `generate-text.ts:1437-1455`).
 ///
 /// A provider tool result whose call is not in this response is a deferred
-/// result. Upstream accepts it only for a provider tool whose definition sets
-/// `supportsDeferredResults` and otherwise fails with `Tool call {id} not
-/// found.` (`convert-language-model-content.ts:87-104`). aimux's tool
-/// definitions carry no such flag, so a result for any declared provider tool
-/// of that name is accepted.
+/// result. It is accepted only for a provider tool of that name that sets
+/// `supportsDeferredResults`, and otherwise fails with `Tool call {id} not
+/// found.` (`convert-language-model-content.ts:87-104`).
 async fn convert_generated_content(
     result: &GenerateResult,
     tool_calls: &[ToolCall],
@@ -1213,9 +1211,11 @@ async fn convert_generated_content(
                 let has_call = tool_calls
                     .iter()
                     .any(|call| call.tool_call_id == result.tool_call_id);
-                let deferred_allowed = tools.unwrap_or_default().iter().any(
-                    |tool| matches!(tool, Tool::Provider(tool) if tool.name == result.tool_name),
-                );
+                let deferred_allowed = tools.unwrap_or_default().iter().any(|tool| {
+                    matches!(tool, Tool::Provider(tool)
+                        if tool.name == result.tool_name
+                            && tool.supports_deferred_results == Some(true))
+                });
                 if !has_call && !deferred_allowed {
                     return Err(AiMuxError::Other(format!(
                         "Tool call {} not found.",

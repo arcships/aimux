@@ -200,6 +200,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OperationSettings { .. }.scope(..)`. Recordings keep the three keys in
   `input.options`, and replay restores them.
 
+- A provider tool result without its call is accepted only for a provider
+  tool that sets `supportsDeferredResults: true` (new optional
+  `ProviderTool.supports_deferred_results`), as in the AI SDK
+  (`convert-language-model-content.ts:96-103`); before, any provider tool of
+  that name was enough. The flag is not sent to the provider.
+
 - `CallOptions.recording_context` and `DecisionCallOptions.recording_context`
   are removed (`aimux-core`): the V4 call options carry no recording context.
   `generate_text`, `stream_text` and `decide` run the model call in

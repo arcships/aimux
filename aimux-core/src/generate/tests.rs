@@ -720,8 +720,7 @@ fn provider_result(id: &str, name: &str, result: Value, is_error: Option<bool>) 
 
 /// convert-language-model-content.ts:87-104: a provider tool result whose
 /// call is not in the response fails with `Tool call {id} not found.` unless
-/// the result belongs to a provider tool of the call (aimux: any declared
-/// provider tool of that name; upstream: one with `supportsDeferredResults`).
+/// it belongs to a provider tool of that name with `supportsDeferredResults`.
 #[tokio::test]
 async fn generate_text_rejects_a_tool_result_without_its_call() {
     let deferred = GenerateContent::ToolResult(provider_result(
@@ -730,28 +729,33 @@ async fn generate_text_rejects_a_tool_result_without_its_call() {
         json!({ "stdout": "2" }),
         None,
     ));
-    let model = ScriptedModel::generating(generated(
-        vec![text_content("hi"), deferred.clone()],
-        FinishReasonUnified::Stop,
-    ));
-    let error = generate_text(&model, "hi", GenerateTextOptions::default())
-        .await
-        .unwrap_err();
-    assert_eq!(error.to_string(), "Tool call srv-0 not found.");
-
-    let model = ScriptedModel::generating(generated(
-        vec![text_content("hi"), deferred],
-        FinishReasonUnified::Stop,
-    ));
-    let options = GenerateTextOptions {
-        tools: Some(vec![Tool::Provider(crate::tool::ProviderTool {
+    let run = |tools: Option<Vec<Tool>>| {
+        let model = ScriptedModel::generating(generated(
+            vec![text_content("hi"), deferred.clone()],
+            FinishReasonUnified::Stop,
+        ));
+        async move {
+            let options = GenerateTextOptions {
+                tools,
+                ..GenerateTextOptions::default()
+            };
+            generate_text(&model, "hi", options).await
+        }
+    };
+    let code_execution = |supports_deferred_results| {
+        Tool::Provider(crate::tool::ProviderTool {
             id: crate::types::NamespacedKind::new("anthropic.code_execution_20250825").unwrap(),
             name: "code_execution".into(),
             args: serde_json::Map::new(),
-        })]),
-        ..GenerateTextOptions::default()
+            supports_deferred_results,
+        })
     };
-    let result = generate_text(&model, "hi", options).await.unwrap();
+
+    for tools in [None, Some(vec![code_execution(None)])] {
+        let error = run(tools).await.unwrap_err();
+        assert_eq!(error.to_string(), "Tool call srv-0 not found.");
+    }
+    let result = run(Some(vec![code_execution(Some(true))])).await.unwrap();
     assert!(result.final_step().content.iter().any(|part| matches!(
         part,
         ContentPart::ToolResult(result) if result.tool_call_id == "srv-0"
