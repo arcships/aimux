@@ -61,7 +61,7 @@ func checkCode(t *testing.T, err error, kind string, code int32) *Error {
 	if !errors.As(err, &native) {
 		t.Fatalf("expected structured error, got %T: %v", err, err)
 	}
-	if native.Envelope.Kind != kind || native.Envelope.Code != code {
+	if native.Envelope.Kind != ErrorDomain(kind) || native.Envelope.Code != code {
 		t.Fatalf("unexpected envelope: %+v", native.Envelope)
 	}
 	return native
@@ -95,7 +95,7 @@ func TestNativeErrorEnvelopeDomainsAndOwnership(t *testing.T) {
 	} {
 		_, err := Call(context.Background(), c.op, struct{}{})
 		native := checkCode(t, fmt.Errorf("wrapped: %w", err), c.kind, c.code)
-		if native.Envelope.RetryAfterMs == nil || *native.Envelope.RetryAfterMs != 0 {
+		if !native.Envelope.RetryAfterMs.Present || native.Envelope.RetryAfterMs.Null || native.Envelope.RetryAfterMs.Value != 0 {
 			t.Fatal("lost explicit zero retry hint")
 		}
 		var payload map[string]json.RawMessage

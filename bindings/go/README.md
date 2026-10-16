@@ -33,10 +33,10 @@ to callers; per-type schema revision/hash metadata is not currently generated.
 
 Calls accept typed values or `json.RawMessage` and return canonical raw JSON.
 `CallInto[T]` decodes a typed result. `Params` preserves absent keys versus
-explicit null. `WireDTO[T]` retains the complete immutable JSON document,
-including unknown fields and large integers; `Value()` decodes a separate
-typed view and `Field()` reports presence. For example,
-`CallInto[aimux.WireDTO[aimux.GenerateTextResult]]` provides lossless storage.
+explicit null. Generated `Field[T]` values distinguish absence, explicit null and a typed
+value through `Present`, `Null` and `Value`. Use `Some(value)` to construct
+a present value. Opaque JSON uses `json.RawMessage` and retains large integers.
+Tagged unions expose a sealed `Value` variant and reject unknown tags.
 Nil parameters encode `null`; use `struct{}{}` for `{}`. Handle IDs encode as
 decimal strings, including above 2^53. Never adopt an ID twice.
 

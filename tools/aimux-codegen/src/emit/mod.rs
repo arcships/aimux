@@ -1,4 +1,6 @@
 //! Language emitters consume only the normalized wire model.
+pub mod go;
+
 use crate::model::Model;
 use std::path::PathBuf;
 
@@ -10,7 +12,7 @@ pub trait Emitter: Sync {
 }
 
 /// Every language's DTO emitter; each writes only its own binding's files.
-pub static EMITTERS: &[&dyn Emitter] = &[];
+pub static EMITTERS: &[&dyn Emitter] = &[&go::Go];
 
 pub(crate) fn owned_paths() -> impl Iterator<Item = &'static str> {
     EMITTERS

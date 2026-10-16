@@ -141,7 +141,7 @@ func call(ctx context.Context, h *Handle, op string, params any) (json.RawMessag
 }
 
 // CallInto decodes any canonical result DTO. A nil handle selects global scope.
-// Use Call when unknown fields or absent/null distinctions must be retained.
+// Generated DTOs preserve field presence and opaque JSON; use Call to retain unknown fields.
 func CallInto[T any](ctx context.Context, h *Handle, op string, params any) (*T, error) {
 	raw, err := call(ctx, h, op, params)
 	if err != nil {
@@ -152,12 +152,6 @@ func CallInto[T any](ctx context.Context, h *Handle, op string, params any) (*T,
 		return nil, localError("binding", 205, "ResultSerialization", err.Error())
 	}
 	return &result, nil
-}
-
-// HandleResult is returned by constructors that include kind metadata.
-type HandleResult struct {
-	Handle HandleID `json:"handle"`
-	Kind   string   `json:"kind"`
 }
 
 // Create invokes a handle-producing operation in global scope (parent nil)
@@ -174,7 +168,8 @@ func handleFromResult(raw []byte) (*Handle, error) {
 	// Both shapes are current operation results: for example provider.model
 	// returns an object, while transcription.start returns a decimal string.
 	raw = bytes.TrimSpace(raw)
-	var result HandleResult
+	// Constructor objects share the generated handle-only result shape.
+	var result RecorderHandleResult
 	var err error
 	if len(raw) > 0 && raw[0] == '"' {
 		err = json.Unmarshal(raw, &result.Handle)

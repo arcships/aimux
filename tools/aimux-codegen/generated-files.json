@@ -4,6 +4,7 @@
     "bindings/flutter/generated/ops.dart",
     "bindings/flutter/native/aimux_ops.h",
     "bindings/go/generated/ops.go",
+    "bindings/go/types_gen.go",
     "bindings/java/generated/AimuxOps.java",
     "bindings/kotlin/generated/AimuxOps.kt",
     "bindings/node/generated/ops.ts",
