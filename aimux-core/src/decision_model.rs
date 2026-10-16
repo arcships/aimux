@@ -31,7 +31,7 @@ use crate::{AbortSignal, retry, timeout};
 /// (`DecisionModelV4Input`: a string, a JSON object or a JSON array).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionInput {
     Text(String),
     #[ts(type = "Record<string, unknown>")]
@@ -55,7 +55,7 @@ impl From<String> for DecisionInput {
 /// The kind of a question (`DecisionModelV4Question['type']`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionQuestionType {
     Choice,
     Score,
@@ -83,7 +83,7 @@ impl DecisionQuestionType {
 /// `false` (`ai@7.0.128 src/decide/validate-decision.ts:94-105`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionBooleanCriteria {
     #[serde(
         rename = "true",
@@ -114,7 +114,7 @@ where
 /// A judgment to make about the shared state (`DecisionModelV4Question`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionQuestion {
     Choice {
         instructions: DecisionInput,
@@ -166,7 +166,7 @@ pub type DecisionQuestions = IndexMap<String, DecisionQuestion>;
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-call-options.ts:7-14`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionCallOptions {
     /// One shared state, even when the value is an array.
     pub state: DecisionInput,
@@ -201,7 +201,7 @@ impl DecisionCallOptions {
 /// The answer to one question (`DecisionModelV4Answer`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum DecisionAnswer {
     Choice {
         /// The selected option, with maximal probability when a distribution
@@ -233,7 +233,7 @@ pub enum DecisionAnswer {
 /// value (`decision-model-v4-result.ts:39-42`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionRounding {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -247,7 +247,7 @@ pub struct DecisionRounding {
 /// (`decision-model-v4-result.ts:43-46`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -261,7 +261,7 @@ pub struct DecisionUsage {
 /// `@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4-result.ts:31-56`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecisionResult {
     /// Exactly one answer per question, under the original question ids.
     #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
@@ -343,7 +343,7 @@ pub fn unsupported_question_type_error(
 /// (`ai@7.0.128 src/decide/decide.ts:53-61`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecideOptions {
     pub state: DecisionInput,
     #[ts(as = "std::collections::HashMap<String, DecisionQuestion>")]
@@ -388,7 +388,7 @@ impl DecideOptions {
 /// `undefined` there, so it is omitted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecideUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -405,7 +405,7 @@ pub struct DecideUsage {
 /// `ai@7.0.128 src/decide/decision-result.ts:22-39`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct DecideResult {
     #[ts(as = "std::collections::HashMap<String, DecisionAnswer>")]
     pub answers: IndexMap<String, DecisionAnswer>,

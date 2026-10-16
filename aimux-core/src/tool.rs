@@ -11,7 +11,7 @@ use crate::types::{NamespacedKind, ProviderMetadata};
 /// A tool definition passed to the model in `CallOptions.tools`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FunctionTool {
     /// Unique tool name.
     pub name: String,
@@ -41,7 +41,7 @@ pub struct FunctionTool {
 /// An example input for a function tool.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FunctionToolInputExample {
     pub input: Map<String, Value>,
 }
@@ -86,7 +86,7 @@ impl FunctionTool {
 /// servers (e.g. web search, code execution).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ProviderTool {
     /// The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
     pub id: NamespacedKind,
@@ -113,7 +113,7 @@ pub struct ProviderTool {
 /// `Array<LanguageModelV4FunctionTool | LanguageModelV4ProviderTool>`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Tool {
     /// A user-defined function tool.
     Function(FunctionTool),
@@ -133,7 +133,7 @@ impl From<FunctionTool> for Tool {
 /// is the provider's raw argument *text* rather than a parsed value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RawToolCall {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -152,7 +152,7 @@ pub struct RawToolCall {
 /// A tool call requested by the model.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolCall {
     /// Provider-assigned call id.
     pub tool_call_id: String,
@@ -204,7 +204,7 @@ impl crate::wire::TypeTag for RawToolCall {
 /// Only the TypeScript type is generated from this struct; Rust fields hold a
 /// [`ToolCall`] and serde writes the tag ([`crate::wire::typed`]).
 #[derive(TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 #[allow(dead_code)]
 pub struct TypedToolCall {
     #[ts(rename = "type", type = "\"tool-call\"")]
@@ -217,7 +217,7 @@ pub struct TypedToolCall {
 /// web search), carried next to the [`RawToolCall`] it answers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolResult {
     /// Must match the corresponding call's `tool_call_id`.
     pub tool_call_id: String,
@@ -270,10 +270,8 @@ where
 /// [`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]
 /// a model call carries.
 #[derive(Debug, Clone, Default, PartialEq, TS)]
-#[ts(
-    export,
-    type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }"
-)]
+#[ts(type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolChoice {
     /// Model decides whether to call a tool (default).
     #[default]
@@ -358,7 +356,7 @@ impl<'de> Deserialize<'de> for ToolChoice {
 /// Always an object tagged by `type`, unlike the user-level [`ToolChoice`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum LanguageModelV4ToolChoice {
     /// The model decides whether to call a tool.
     Auto,

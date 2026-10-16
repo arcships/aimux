@@ -20,7 +20,8 @@ use crate::{AbortSignal, retry, timeout};
 ///
 /// The JSON is a base64 string either way, as in the AI SDK's JSON.
 #[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[ts(type = "string")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AudioData {
     /// Audio as a base64-encoded string.
     Base64(String),
@@ -35,7 +36,7 @@ crate::wire::base64_wire_enum!(AudioData);
 /// Aligned with V4 `SpeechModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechCallOptions {
     /// Text to convert to speech.
     pub text: String,
@@ -119,7 +120,7 @@ impl SpeechCallOptions {
 /// Aligned with V4 `SpeechModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechResult {
     /// Generated audio (base64 string or binary data).
     pub audio: AudioData,
@@ -149,7 +150,7 @@ pub struct SpeechResult {
 /// Optional request information for a speech call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechRequest {
     /// Response body (HTTP providers only).
     #[ts(optional)]
@@ -164,7 +165,7 @@ pub struct SpeechRequest {
 /// Response information for a speech call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechResponse {
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]

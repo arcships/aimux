@@ -119,7 +119,7 @@ async fn resolve_file(
 /// naming the key instead of the default it would silently fall back to.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateTextOptions {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -563,7 +563,8 @@ impl GenerateTextResult {
 /// last entry of `steps` and a filter on `dynamic`.
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, rename = "GenerateTextResult")]
+#[ts(rename = "GenerateTextResult")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 struct GenerateTextResultSnapshot<'a> {
     content: Vec<&'a ContentPart>,
     text: String,
@@ -681,7 +682,7 @@ fn stream_output(step: &StepResult, output: Option<&Output>) -> OutputState {
 /// `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResult {
     /// The generated object, as parsed by the output.
     pub object: Value,
@@ -711,7 +712,7 @@ pub struct GenerateObjectResult {
 /// `Omit<LanguageModelResponseMetadata, 'messages'>`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResponse {
     pub id: String,
     pub timestamp: crate::timestamp::Timestamp,

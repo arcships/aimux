@@ -7,7 +7,7 @@ use ts_rs::TS;
 /// Unified finish reason (why the model stopped generating).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FinishReason {
     /// The unified reason.
     pub unified: FinishReasonUnified,
@@ -20,7 +20,7 @@ pub struct FinishReason {
 /// Unified finish reason enum (aligned with V4 `LanguageModelV4FinishReason`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FinishReasonUnified {
     Stop,
     Length,
@@ -33,7 +33,7 @@ pub enum FinishReasonUnified {
 /// Token usage statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Usage {
     pub input_tokens: InputTokenUsage,
     pub output_tokens: OutputTokenUsage,
@@ -46,7 +46,7 @@ pub struct Usage {
 /// Input token usage detail.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputTokenUsage {
     /// Total tokens.
     #[ts(optional)]
@@ -69,7 +69,7 @@ pub struct InputTokenUsage {
 /// Output token usage detail.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutputTokenUsage {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -94,7 +94,7 @@ pub struct OutputTokenUsage {
 /// `undefined` count; the detail objects are always present.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct LanguageModelUsage {
     /// Total input (prompt) tokens.
     #[ts(optional)]
@@ -123,7 +123,7 @@ pub struct LanguageModelUsage {
 /// `LanguageModelUsage.inputTokenDetails`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputTokenDetails {
     /// Input tokens that were not read from or written to a cache.
     #[ts(optional)]
@@ -142,7 +142,7 @@ pub struct InputTokenDetails {
 /// `LanguageModelUsage.outputTokenDetails`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutputTokenDetails {
     /// Output tokens of text.
     #[ts(optional)]
@@ -231,7 +231,7 @@ pub fn add_language_model_usage(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningEffort {
     /// Provider default — no explicit reasoning config sent.
     #[default]
@@ -299,7 +299,7 @@ impl std::str::FromStr for ReasoningEffort {
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Warning {
     /// A feature is not supported by this provider.
     Unsupported {
@@ -324,7 +324,7 @@ pub enum Warning {
 /// Metadata about the API response.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseMetadata {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -350,7 +350,8 @@ pub type ProviderMetadata = crate::shared::SharedProviderMetadata;
 /// does not construct or deserialize.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, TS)]
 #[serde(transparent)]
-#[ts(export, type = "`${string}.${string}`")]
+#[ts(type = "`${string}.${string}`")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct NamespacedKind(String);
 
 impl NamespacedKind {
