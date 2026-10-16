@@ -35,11 +35,14 @@ and optional `abort`. Its manifest-derived branches close the control keys;
 `type-*.json` and are referenced from request branches. Business types without
 schemas retain `x-aimux-type`; business DTO schemas remain separate work.
 Error payloads retain canonical domain fields inside a closed transport envelope.
+`handle-id.json`, `error-envelope.json` and `stream-frame.json` copy the manifest's
+control definitions; codegen does not compose a second set of control schemas.
 
 Schema IDs use `https://aimux.dev/schema/ops/<name>.json`; references resolve
 against that base. The files can be registered locally without network I/O.
 Provider options are explicitly open. Handles and sequence numbers are decimal
-u64 strings, including the exact upper bound. The inventory lives at
+u64 strings; handle decoding also accepts leading zeroes up to the exact numeric
+upper bound. The inventory lives at
 `tools/aimux-codegen/generated-files.json` and records the runtime digest.
 
 `scripts/gen_ts_types.py` still owns core and Web DTO outputs.

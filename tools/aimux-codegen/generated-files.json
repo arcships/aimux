@@ -9,7 +9,6 @@
     "bindings/node/generated/ops.ts",
     "bindings/python/generated/ops.py",
     "bindings/swift/generated/AimuxOps.swift",
-    "schema/ops/end-frame.json",
     "schema/ops/error-envelope.json",
     "schema/ops/handle-id.json",
     "schema/ops/provider-options.json",
@@ -82,5 +81,5 @@
     "schema/ops/type-TRANSCRIPTION_START_PARAMS.json",
     "tools/aimux-codegen/generated-files.json"
   ],
-  "manifestDigest": "49c26137862c834b51f240b85e3bf1c7db007dc86e3c06e4cde33ebe0c1b5635"
+  "manifestDigest": "809812c03c740a78429b6b2ad466189d91d145c864ce7ebbb1f791c9fae4cb09"
 }

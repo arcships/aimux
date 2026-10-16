@@ -54,7 +54,7 @@ fn cli_generates_and_checks_the_runtime_manifest_in_a_selected_root() {
 }
 
 fn fixture() -> Value {
-    json!({"abiVersion": 65536, "opsVersion": "1.0", "manifestRevision": "test-1",
+    let mut value = json!({"abiVersion": 65536, "opsVersion": "1.0", "manifestRevision": "test-1",
         "handleKinds": ["Language", "Operation"],
         "errorCodes": [
             {"name": "ApiCall", "kind": "aimux", "code": 1},
@@ -67,7 +67,18 @@ fn fixture() -> Value {
             {"name": "operation.push", "mode": "binaryPush", "allowedHandleKinds": ["Operation"], "requestType": "Bytes"},
             {"name": "operation.next", "mode": "poll", "allowedHandleKinds": ["Operation"], "requestType": "PollParams"},
             {"name": "text.stream", "mode": "stream", "allowedHandleKinds": ["Language"], "requestType": "GenerateTextOptions"},
-            {"name": "handle.drop", "mode": "call", "allowedHandleKinds": ["Language", "Operation"], "requestType": "EmptyParams"}]})
+            {"name": "handle.drop", "mode": "call", "allowedHandleKinds": ["Language", "Operation"], "requestType": "EmptyParams"}]});
+    value["types"] = json!(
+        aimux_ops::manifest::manifest()["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|ty| ["HandleId", "ErrorEnvelope", "StreamFrame"]
+                .contains(&ty["id"].as_str().unwrap()))
+            .cloned()
+            .collect::<Vec<_>>()
+    );
+    value
 }
 
 fn digest(value: &Value) -> String {
@@ -136,7 +147,7 @@ fn canonical_digest_sorts_nested_objects_without_reordering_arrays() {
 fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
     let outputs = artifacts();
     assert_eq!(outputs, artifacts());
-    assert_eq!(outputs.len(), 16);
+    assert_eq!(outputs.len(), 18);
     assert_eq!(
         outputs[Path::new("aimux-ffi/include/aimux.h")],
         outputs[Path::new("bindings/flutter/native/aimux_ops.h")]
@@ -302,6 +313,8 @@ fn handles_cover_u64_strings_and_reject_precision_loss_and_overflow() {
     for handle in [
         "0",
         "1",
+        "01",
+        "00018446744073709551615",
         "9999999999999999999",
         "10000000000000000000",
         "18446744073709551614",
@@ -314,7 +327,6 @@ fn handles_cover_u64_strings_and_reject_precision_loss_and_overflow() {
         "1\n",
         "1\r",
         "١",
-        "01",
         "-1",
         "+1",
         "1.0",
@@ -350,9 +362,6 @@ fn frame_and_error_envelope_use_contract_discriminators() {
     wrong = error.clone();
     wrong["retryAfterMs"] = Value::Null;
     assert!(!errors.is_valid(&wrong));
-    wrong = error;
-    wrong["kind"] = json!("binding");
-    assert!(!errors.is_valid(&wrong));
 }
 
 #[test]
@@ -386,6 +395,41 @@ fn malformed_manifest_identifiers_kinds_modes_and_error_codes_fail() {
 fn real_manifest_control_schemas_are_emitted_and_enforced() {
     let value = aimux_ops::manifest::manifest();
     let outputs = generate(&value, &aimux_ops::manifest::manifest_digest()).unwrap();
+    for (id, name) in [
+        ("HandleId", "handle-id"),
+        ("ErrorEnvelope", "error-envelope"),
+        ("StreamFrame", "stream-frame"),
+    ] {
+        let expected = &value["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|ty| ty["id"] == id)
+            .unwrap()["schema"];
+        let mut emitted = schema(&outputs, name);
+        let object = emitted.as_object_mut().unwrap();
+        object.remove("$id");
+        object.remove("$schema");
+        object.remove("$comment");
+        assert_eq!(&emitted, expected, "{id}");
+    }
+    let handles = validator(&outputs, "handle-id");
+    for wire in ["01", "00018446744073709551615"] {
+        let value = json!(wire);
+        let _: aimux_ops::handle::HandleId = serde_json::from_value(value.clone()).unwrap();
+        assert!(handles.is_valid(&value));
+    }
+    let unknown = json!({"kind":"aimux", "code":21, "message":"future error",
+        "error":{"name":"AI_FutureError", "data":{"secret":null}}});
+    let envelope: aimux_ops::envelope::ErrorEnvelope =
+        serde_json::from_value(unknown.clone()).unwrap();
+    assert!(validator(&outputs, "error-envelope").is_valid(&unknown));
+    let frame = aimux_ops::frame::StreamFrame::End {
+        seq: "01".into(),
+        outcome: aimux_ops::frame::Outcome::Error,
+        error: Some(envelope),
+    };
+    assert!(validator(&outputs, "stream-frame").is_valid(&serde_json::to_value(frame).unwrap()));
     for ty in value["types"].as_array().unwrap() {
         if ty.get("schema").is_some() {
             assert!(

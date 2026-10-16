@@ -112,7 +112,7 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     ),
     descriptor(
         "operation.next",
-        OpMode::Call,
+        OpMode::Poll,
         &[HandleKind::Operation],
         "OperationNextParams",
         "OperationPollResult",

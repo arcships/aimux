@@ -20,7 +20,7 @@ pub fn manifest() -> Value {
             );
         }
     }
-    json!({
+    let mut value = json!({
         "abiVersion": ABI_VERSION,
         "opsVersion": OPS_VERSION,
         "manifestRevision": "1",
@@ -35,7 +35,9 @@ pub fn manifest() -> Value {
             "G-d: business JSON schemas and language DTO generation belong to RFC-0042",
             "G-e: per-asset platform install verification is not claimed"
         ],
-    })
+    });
+    value["digest"] = json!(digest(value.clone()));
+    value
 }
 
 /// SHA-256 of recursively key-sorted compact JSON, independent of map insertion order.

@@ -85,7 +85,8 @@ operations beyond RFC-0039's original 70, 23 handle kinds, error codes and a
 `types` catalogue. Ops controls and result wrappers carry schemas; canonical
 business fields retain explicit type references. Codegen publishes the C header,
 language constants and schemas. Its `--check` detects missing, stale and changed
-outputs. The digest sorts object keys and operation names and excludes itself.
+outputs. The manifest's `digest` field equals `manifest_digest()`; hashing sorts
+object keys and operation names and excludes the `digest` field itself.
 
 Registered differences from RFC-0039 include the Decision kind and operations,
 BinaryPush-only JSON rejection for operation.push, and the native finalizer

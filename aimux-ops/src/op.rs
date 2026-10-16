@@ -36,6 +36,7 @@ pub struct OpDescriptor {
     pub request_byte_policy: RequestBytePolicy,
     pub side_effects: bool,
     pub retry_owner: &'static str,
+    #[serde(rename = "sourceSymbolInventory")]
     pub source_symbols: &'static [&'static str],
 }
 

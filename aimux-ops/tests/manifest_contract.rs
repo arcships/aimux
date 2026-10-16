@@ -75,7 +75,7 @@ const RFC_OPS: &[(&str, &str, &[&str])] = &[
     ("transcription.start", "call", &["Transcription"]),
     ("operation.push", "binaryPush", &["Operation"]),
     ("operation.inputDone", "call", &["Operation"]),
-    ("operation.next", "call", &["Operation"]),
+    ("operation.next", "poll", &["Operation"]),
     ("operation.status", "call", &["Operation"]),
     ("operation.cancel", "call", &["Operation"]),
     ("abort.create", "call", &[]),
@@ -275,7 +275,10 @@ fn digest_is_stable_and_hashes_the_complete_canonical_manifest() {
     let first = manifest();
     let digest = manifest_digest();
     let mut bytes = String::new();
-    canonical(&first, &mut bytes);
+    assert_eq!(first["digest"], digest);
+    let mut unsigned = first.clone();
+    unsigned.as_object_mut().unwrap().remove("digest");
+    canonical(&unsigned, &mut bytes);
     assert_eq!(digest, format!("{:x}", Sha256::digest(bytes.as_bytes())));
     for _ in 0..8 {
         assert_eq!(manifest(), first);
@@ -369,6 +372,7 @@ fn metadata_and_owned_control_schemas_are_complete() {
     for op in operations {
         for field in [
             "scope",
+            "sourceSymbolInventory",
             "terminalType",
             "runtimeHandleFields",
             "requiredCapabilities",
@@ -379,6 +383,7 @@ fn metadata_and_owned_control_schemas_are_complete() {
             assert!(op.get(field).is_some(), "{} missing {field}", op["name"]);
         }
         assert!(op.get("cancellable").is_none());
+        assert!(op.get("sourceSymbols").is_none());
         for field in ["requestType", "resultType", "eventType", "terminalType"] {
             if let Some(id) = op[field].as_str() {
                 assert!(types.contains_key(id), "{} missing type {id}", op["name"]);

@@ -339,84 +339,21 @@ fn closed_object(properties: Value, required: &[&str]) -> Value {
     json!({"type": "object", "properties": properties, "required": required, "additionalProperties": false})
 }
 
-// Decimal strings cover the entire u64 range without a lossy JSON number.
-fn handle_schema() -> Value {
-    let maximum = u64::MAX.to_string();
-    let mut alternatives = vec!["0".into(), "[1-9][0-9]{0,18}".into()];
-    for (i, digit) in maximum.bytes().enumerate() {
-        let minimum = if i == 0 { b'1' } else { b'0' };
-        if digit > minimum {
-            alternatives.push(format!(
-                "{}[{}-{}][0-9]{{{}}}",
-                &maximum[..i],
-                char::from(minimum),
-                char::from(digit - 1),
-                maximum.len() - i - 1
-            ));
-        }
-    }
-    alternatives.push(maximum);
-    json!({"type": "string", "minLength": 1, "maxLength": 20,
-        "pattern": format!("^({})$", alternatives.join("|")),
-        "not": {"pattern": "[^0-9]"}})
-}
-
 fn schemas(manifest: &Manifest) -> Result<BTreeMap<String, Value>> {
     let mut documents = BTreeMap::new();
-    documents.insert(
-        "handle-id".into(),
-        schema_document("handle-id", handle_schema()),
-    );
-    let mut errors = Vec::new();
-    for domain in ["aimux", "recording", "binding", "protocol"] {
-        let (minimum, maximum) = match domain {
-            "aimux" => (1, 20),
-            "recording" => (100, 105),
-            "binding" => (200, 206),
-            _ => (300, 399),
-        };
-        let mut code = json!({"type": "integer", "minimum": minimum, "maximum": maximum});
-        let codes: Vec<_> = manifest
-            .error_codes
+    for (id, name) in [
+        ("HandleId", "handle-id"),
+        ("ErrorEnvelope", "error-envelope"),
+        ("StreamFrame", "stream-frame"),
+    ] {
+        let schema = manifest
+            .types
             .iter()
-            .filter(|error| error_domain(error.code).ok() == Some(domain))
-            .map(|error| error.code)
-            .collect();
-        if !codes.is_empty() {
-            code["enum"] = json!(codes);
-        }
-        errors.push(closed_object(json!({
-            "kind": {"const": domain}, "code": code, "message": {"type": "string"},
-            "error": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": true,
-                "$comment": "Canonical AI SDK error payload or domain payload; fields are owned by the error DTO, not the transport."},
-            "retryAfterMs": {"type": "integer", "minimum": 0, "maximum": u64::MAX}
-        }), &["kind", "code", "message", "error"]));
+            .find(|ty| ty.id == id)
+            .and_then(|ty| ty.schema.as_ref())
+            .ok_or_else(|| format!("missing manifest control schema: {id}"))?;
+        documents.insert(name.into(), schema_document(name, schema.clone()));
     }
-    documents.insert(
-        "error-envelope".into(),
-        schema_document("error-envelope", json!({"oneOf": errors})),
-    );
-    let mut end = closed_object(
-        json!({"type": {"const": "end"}, "seq": {"$ref": "handle-id.json"},
-        "outcome": {"enum": ["success", "error", "cancelled"]}, "error": {"$ref": "error-envelope.json"}}),
-        &["type", "seq", "outcome"],
-    );
-    end["allOf"] = json!([
-        {"if":{"properties":{"outcome":{"const":"error"}}},"then":{"required":["error"]}},
-        {"if":{"properties":{"outcome":{"const":"success"}}},"then":{"not":{"required":["error"]}}}
-    ]);
-    documents.insert("end-frame".into(), schema_document("end-frame", end));
-    let event = closed_object(
-        json!({"type": {"const": "event"}, "seq": {"$ref": "handle-id.json"}, "event": {}}),
-        &["type", "seq", "event"],
-    );
-    documents.insert(
-        "stream-frame".into(),
-        schema_document(
-            "stream-frame",
-            json!({"oneOf": [event, {"$ref": "end-frame.json"}]}),
-        ),
-    );
     let mut requests = Vec::new();
     for op in &manifest.ops {
         let mut handle = json!({"$ref": "handle-id.json"});
