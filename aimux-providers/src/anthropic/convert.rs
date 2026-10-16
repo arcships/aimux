@@ -617,19 +617,16 @@ fn convert_tool_result(
     } = part;
 
     let (content, is_error) = resolve_tool_result_output(output, betas, warnings, options_name)?;
+    // Key order as upstream: `toolset_name` sits between `tool_use_id` and
+    // `content` (convert-to-anthropic-prompt.ts:669-679).
     let mut block = json!({
         "type": "tool_result",
         "tool_use_id": tool_call_id,
-        "content": content,
     });
-    if let Some(name) = toolset_name(
-        tool_names,
-        tool_name,
-        provider_options.as_ref(),
-        options_name,
-    ) {
+    if let Some(name) = toolset_name(tool_names, tool_name, provider_options.as_ref()) {
         block["toolset_name"] = json!(name);
     }
+    block["content"] = content;
     if is_error {
         block["is_error"] = json!(true);
     }
@@ -827,28 +824,31 @@ fn convert_assistant_part(
                 json!({ "rawInvalidInput": input })
             };
             let caller = tool_caller(provider_options.as_ref(), options_name);
-            if let Some(toolset_name) = toolset_name(
-                tool_names,
-                tool_name,
-                provider_options.as_ref(),
-                options_name,
-            ) {
-                let Some(action) = input_val.get("action").and_then(Value::as_str) else {
-                    warnings.push(Warning::Other {
-                        message: format!(
-                            "toolset tool call for tool {tool_name} is missing the action"
-                        ),
-                    });
-                    return Ok(None);
+            if let Some(toolset_name) =
+                toolset_name(tool_names, tool_name, provider_options.as_ref())
+            {
+                // A toolset member call: the `action` is the member tool
+                // name. The input goes back as it is, `action` included, and
+                // a call without one is still sent, named after the toolset
+                // (convert-to-anthropic-prompt.ts:984-1004).
+                let name = match input_val.get("action").and_then(Value::as_str) {
+                    Some(action) => action.to_string(),
+                    None => {
+                        warnings.push(Warning::Other {
+                            message: format!(
+                                "toolset tool call for tool {tool_name} is missing the action"
+                            ),
+                        });
+                        toolset_name.clone()
+                    }
                 };
                 let mut block = json!({
                     "type": "tool_use",
                     "id": tool_call_id,
-                    "name": action,
+                    "name": name,
                     "toolset_name": toolset_name,
                     "input": input_val,
                 });
-                block["input"].as_object_mut().unwrap().remove("action");
                 if let Some(caller) = caller {
                     block["caller"] = caller;
                 }
@@ -907,22 +907,24 @@ fn collect_mcp_tool_use_ids<'a>(
     ids
 }
 
+/// The Anthropic `toolset_name` of a tool call or tool result: from the tools
+/// of this call, else from the `toolsetName` a previous response wrote. Only
+/// the canonical `anthropic` key is read, where the response side writes it
+/// (`getAnthropicToolsetName`, convert-to-anthropic-prompt.ts:1624-1641).
 fn toolset_name(
     tool_names: &ToolNameMapping,
     tool_name: &str,
     provider_options: Option<&SharedProviderOptions>,
-    options_name: &str,
 ) -> Option<String> {
     tool_names
         .toolset_name(tool_name)
         .map(str::to_string)
         .or_else(|| {
-            anthropic_options(provider_options, options_name).and_then(|options| {
-                options
-                    .get("toolsetName")
-                    .and_then(Value::as_str)
-                    .map(str::to_string)
-            })
+            provider_options?
+                .get(CANONICAL)?
+                .get("toolsetName")?
+                .as_str()
+                .map(str::to_string)
         })
 }
 
@@ -2541,7 +2543,7 @@ fn apply_anthropic_tools(
     betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
     cache_validator: &mut CacheControlValidator,
-) {
+) -> Result<(), AiMuxError> {
     let disable_parallel_tool_use = json_schema.is_some()
         || anthropic_option(&options.provider_options, profile, "disableParallelToolUse")
             .and_then(|v| v.as_bool())
@@ -2610,7 +2612,7 @@ fn apply_anthropic_tools(
         default_eager_input_streaming,
         &profile.options_name,
         cache_validator,
-    );
+    )?;
 
     warnings.extend(prepared.tool_warnings);
     betas.extend(prepared.betas);
@@ -2642,6 +2644,7 @@ fn apply_anthropic_tools(
         }
         body["tool_choice"] = tool_choice;
     }
+    Ok(())
 }
 
 /// `providerOptions.anthropic.mcpServers` → `mcp_servers` + the
@@ -3024,7 +3027,7 @@ pub(crate) fn build_request_body_for(
         &mut betas,
         &mut warnings,
         &mut cache_validator,
-    );
+    )?;
     warnings.extend(cache_validator.take_warnings());
 
     // providerOptions.anthropic.mcpServers → mcp_servers + beta header.

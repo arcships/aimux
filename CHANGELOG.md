@@ -71,6 +71,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
   `AWS_SESSION_TOKEN`. All of them are read when a request is made.
 
+- Anthropic gains the computer toolset of `@ai-sdk/anthropic` 4.0.71
+  (`anthropic.computer_toolset_20260801`). A member call in a response (for
+  example `left_click`) comes back as one call of the caller's toolset tool,
+  with the member name as `action` in its input and
+  `providerMetadata.anthropic.toolsetName`. Sent back as history, the call
+  keeps its input as it is, `action` included; a call without a string
+  `action` is still sent, named after the toolset, with a warning; the
+  toolset name is read from the call's tools or from
+  `providerOptions.anthropic.toolsetName` only.
+
+- Anthropic checks the args of the provider-defined tools that
+  `@ai-sdk/anthropic` 4.0.71 `prepareTools` validates (computer toolset,
+  advisor, `text_editor_20250728`, the three `web_fetch` and three
+  `web_search` versions): args that do not match fail the call with
+  `InvalidArgument` before any request, on Anthropic, Vertex and Bedrock
+  alike. `anthropic::prepare_tools::{prepare_tools,
+  prepare_tools_with_provider}` return a `Result`.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
@@ -957,6 +975,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model no longer match each other's prefix history. The trace
   scope isolates by provider name and model id; `TraceLayer::with_scope_name`
   names a scope for a host that calls one provider at several endpoints.
+
+### Removed
+
+- The cross-language contract fixtures are retired (#249):
+  `contract-tests/fixtures/wire-format.json` (a record of Rust's own serde
+  output, not of the AI SDK), `tool-call-repair.json`, the Node runner
+  `contract-tests/run-node.ts`, `aimux-core/tests/contract_test.rs` and the
+  bindings' contract and repair tests are deleted. Wire behaviour is pinned
+  instead by fixtures recorded from the pinned AI SDK packages under
+  `fixtures/aisdk/` (versions and sha512 integrity in
+  `fixtures/aisdk/VERSIONS.json`, fetched by `scripts/fetch-aisdk.sh`) and by
+  tests ported from upstream. The two decision fixtures stay in
+  `contract-tests/fixtures/`.
 
 ### RFCs
 

@@ -5,8 +5,9 @@
 //! the Node / Python bindings still expose an older shape (a provider name
 //! plus a JSON options object, and providers registered at runtime from a
 //! JSON document); this module is that shape, implemented on
-//! `create_provider`. It is not re-exported from the crate root and goes away
-//! when the bindings mirror the Rust surface.
+//! `create_provider`. It is not re-exported from the crate root and is to be
+//! removed in #265 (the ops layer), where the C ABI and the bindings stop
+//! calling it.
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};

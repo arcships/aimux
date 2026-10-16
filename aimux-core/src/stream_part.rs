@@ -3,6 +3,8 @@
 //! Aligned with V4 `LanguageModelV4StreamPart`. v0.1 implements the P0/P1 variants;
 //! P2 variants (reasoning, file, source) are defined but not yet emitted by providers.
 
+use std::convert::Infallible;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
@@ -372,6 +374,67 @@ impl<C, A, R> StreamPart<C, A, R> {
     }
 }
 
+/// A [`StreamPart`] split by whether it carries one of its generic payloads.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "matched where it is made, never stored"
+)]
+pub(crate) enum StreamPartPayload<C, A, R> {
+    ToolCall(C),
+    ToolApprovalRequest(A),
+    ReasoningFile(R),
+    /// Any other part; its payload types are uninhabited.
+    Other(StreamPart<Infallible, Infallible, Infallible>),
+}
+
+impl<C, A, R> StreamPart<C, A, R> {
+    /// Split off the variants that carry `C`, `A` or `R`, so a caller can
+    /// handle those and pass the rest on without a payload to convert.
+    pub(crate) fn split_payload(self) -> StreamPartPayload<C, A, R> {
+        macro_rules! carry {
+            ($($variant:ident { $($field:ident),* })*) => {
+                match self {
+                    StreamPart::ToolCall(value) => StreamPartPayload::ToolCall(value),
+                    StreamPart::ToolApprovalRequest(value) => StreamPartPayload::ToolApprovalRequest(value),
+                    StreamPart::ReasoningFile(value) => StreamPartPayload::ReasoningFile(value),
+                    StreamPart::ToolResult(result) => StreamPartPayload::Other(StreamPart::ToolResult(result)),
+                    StreamPart::File(file) => StreamPartPayload::Other(StreamPart::File(file)),
+                    StreamPart::ResponseMetadata(meta) => StreamPartPayload::Other(StreamPart::ResponseMetadata(meta)),
+                    StreamPart::Source(source) => StreamPartPayload::Other(StreamPart::Source(source)),
+                    $(StreamPart::$variant { $($field),* } => StreamPartPayload::Other(StreamPart::$variant { $($field),* }),)*
+                }
+            };
+        }
+        carry! {
+            TextStart { id, provider_metadata }
+            TextDelta { id, delta, provider_metadata }
+            TextEnd { id, provider_metadata }
+            StreamStart { warnings }
+            Finish { finish_reason, usage, provider_metadata }
+            Error { error }
+            ToolInputStart { id, tool_name, provider_executed, dynamic, title, provider_metadata }
+            ToolInputDelta { id, delta, provider_metadata }
+            ToolInputEnd { id, provider_metadata }
+            ReasoningStart { id, provider_metadata }
+            ReasoningDelta { id, delta, provider_metadata }
+            ReasoningEnd { id, provider_metadata }
+            Custom { kind, provider_metadata }
+            Raw { raw_value }
+        }
+    }
+}
+
+impl StreamPart<Infallible, Infallible, Infallible> {
+    /// The same part under any payload types: it carries none.
+    pub(crate) fn widen<C, A, R>(self) -> StreamPart<C, A, R> {
+        self.map_all(
+            |never| match never {},
+            |never| match never {},
+            |never| match never {},
+        )
+    }
+}
+
 impl StreamPart<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput> {
     /// Convert content chunks. `None` for the parts the call layer absorbs
     /// (`StreamStart`, `ResponseMetadata`, `Finish`) and for `ToolResult`,
@@ -412,5 +475,38 @@ impl StreamPart<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput> {
             Custom { kind, provider_metadata }
             Raw { raw_value }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_payload_separates_the_payload_variants() {
+        let call = RawToolCall {
+            tool_call_id: "call-1".into(),
+            tool_name: "search".into(),
+            input: "{}".into(),
+            provider_executed: None,
+            dynamic: None,
+            provider_metadata: None,
+        };
+        assert!(matches!(
+            StreamPart::<_>::ToolCall(call).split_payload(),
+            StreamPartPayload::ToolCall(call) if call.tool_call_id == "call-1"
+        ));
+        let delta: StreamPart = StreamPart::TextDelta {
+            id: "t".into(),
+            delta: "hi".into(),
+            provider_metadata: None,
+        };
+        let StreamPartPayload::Other(other) = delta.split_payload() else {
+            panic!("a text delta carries no payload");
+        };
+        assert!(matches!(
+            other.widen::<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput>(),
+            StreamPart::TextDelta { id, delta, provider_metadata: None } if id == "t" && delta == "hi"
+        ));
     }
 }
