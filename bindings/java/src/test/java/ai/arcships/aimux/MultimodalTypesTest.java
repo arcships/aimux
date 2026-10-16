@@ -105,7 +105,7 @@ class MultimodalTypesTest {
         UserContentPart image = UserContentPart.Image.builder().image("iVBORw==").mediaType("image/png").build();
         assertSameJson(roundTrip("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}", UserContentPart.class), image);
         assertThatThrownBy(() -> M.readValue("{\"type\":\"image\",\"image\":[1,2],\"mediaType\":\"image/png\"}", UserContentPart.class)).isInstanceOf(IOException.class);
-        FilePartData data = new FilePartData.Branch1(FileData.Data.builder().data(new FileBytes("AAEC+v8=")).build());
+        FilePartData data = new FilePartData.FileData(FileData.Data.builder().data(new FileBytes("AAEC+v8=")).build());
         UserContentPart file = UserContentPart.File.builder().data(data).mediaType("application/pdf").build();
         roundTrip(DtoJson.stringify(file), UserContentPart.class);
         assertThat(roundTrip("\"aGk=\"", FileBytes.class).getValue()).isEqualTo("aGk=");
@@ -120,7 +120,7 @@ class MultimodalTypesTest {
             "{\"type\":\"text\",\"text\":\"hello\"}", "\"aGk=\"", "\"https://example.com/a.pdf\"", "{\"openai\":\"file-abc\"}"
         };
         for (String value : data) roundTrip("{\"type\":\"file\",\"data\":" + value + ",\"mediaType\":\"text/plain\"}", UserContentPart.class);
-        assertThat(M.readValue(data[6], FilePartData.class)).isInstanceOf(FilePartData.Branch3.class);
+        assertThat(M.readValue(data[6], FilePartData.class)).isInstanceOf(FilePartData.Map.class);
         for (String removed : new String[] {"file-base64", "file-url", "file-reference"}) {
             assertThatThrownBy(() -> M.readValue("{\"type\":\"" + removed + "\"}", UserContentPart.class)).isInstanceOf(IOException.class).hasMessageContaining(removed);
         }
@@ -153,6 +153,7 @@ class MultimodalTypesTest {
         String url = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
         roundTrip(url, TextStreamPart.class);
         roundTrip(url, ContentPart.class);
+        assertThatThrownBy(() -> M.readValue(call.replace("tool-call", "source"), TypedToolCall.class)).isInstanceOf(IOException.class);
         assertThatThrownBy(() -> M.readValue("{\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":{}}", TypedToolCall.class)).isInstanceOf(IOException.class);
     }
 
@@ -213,7 +214,7 @@ class MultimodalTypesTest {
         assertThatThrownBy(() -> M.readValue("{\"unexpected\":true}", TimeoutConfiguration.class))
             .isInstanceOf(IOException.class).hasMessageContaining("TimeoutConfiguration");
         assertThat(M.<JsonNode>valueToTree(M.readValue("{\"unexpected\":true}", RequestInfo.class))).isEqualTo(M.readTree("{}"));
-        assertThat(M.readValue("\"hello\"", FilePartData.class)).isInstanceOf(FilePartData.Branch2.class);
+        assertThat(M.readValue("\"hello\"", FilePartData.class)).isInstanceOf(FilePartData.Text.class);
         assertThatThrownBy(() -> M.readValue("{\"type\":\"other\",\"seq\":\"0\"}", StreamFrame.class))
             .isInstanceOf(IOException.class).hasMessageContaining("StreamFrame").hasMessageContaining("other");
         assertThatThrownBy(() -> DtoJson.u64("18446744073709551616")).isInstanceOf(IllegalArgumentException.class);

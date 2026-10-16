@@ -128,7 +128,7 @@ fn write_declaration(out: &mut String, named: &NamedType) {
             writeln!(
                 out,
                 "export type {name} = {}\n",
-                union(branches.iter().map(typescript))
+                union(branches.iter().map(|branch| typescript(&branch.ty)))
             )
             .unwrap();
         }
@@ -155,7 +155,7 @@ fn type_refs(kind: &Kind) -> Vec<&str> {
         }
         Kind::Untagged(branches) => {
             for ty in branches {
-                collect_refs(ty, &mut names);
+                collect_refs(&ty.ty, &mut names);
             }
         }
         Kind::Alias(ty) => collect_refs(ty, &mut names),

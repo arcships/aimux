@@ -22,12 +22,12 @@ public abstract class AssistantContent {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, Text.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, List.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -36,24 +36,24 @@ public abstract class AssistantContent {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends AssistantContent {
+    public static final class Text extends AssistantContent {
         @JsonValue
         private final String value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(String value) { this.value = value; }
+        public Text(String value) { this.value = value; }
 
         public String getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends AssistantContent {
+    public static final class List extends AssistantContent {
         @JsonValue
-        private final List<AssistantContentPart> value;
+        private final java.util.List<ai.arcships.aimux.types.AssistantContentPart> value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(List<AssistantContentPart> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+        public List(java.util.List<ai.arcships.aimux.types.AssistantContentPart> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
 
-        public List<AssistantContentPart> getValue() { return value; }
+        public java.util.List<ai.arcships.aimux.types.AssistantContentPart> getValue() { return value; }
     }
 }

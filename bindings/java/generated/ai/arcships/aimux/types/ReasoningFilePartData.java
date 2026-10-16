@@ -23,12 +23,12 @@ public abstract class ReasoningFilePartData {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, GeneratedFileData.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, Text.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -37,23 +37,23 @@ public abstract class ReasoningFilePartData {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends ReasoningFilePartData {
+    public static final class GeneratedFileData extends ReasoningFilePartData {
         @JsonValue
-        private final GeneratedFileData value;
+        private final ai.arcships.aimux.types.GeneratedFileData value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(GeneratedFileData value) { this.value = value; }
+        public GeneratedFileData(ai.arcships.aimux.types.GeneratedFileData value) { this.value = value; }
 
-        public GeneratedFileData getValue() { return value; }
+        public ai.arcships.aimux.types.GeneratedFileData getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends ReasoningFilePartData {
+    public static final class Text extends ReasoningFilePartData {
         @JsonValue
         private final String value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(String value) { this.value = value; }
+        public Text(String value) { this.value = value; }
 
         public String getValue() { return value; }
     }

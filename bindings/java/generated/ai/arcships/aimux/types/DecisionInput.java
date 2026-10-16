@@ -22,17 +22,17 @@ public abstract class DecisionInput {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, Text.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, Map.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch3.class);
+                return parser.getCodec().treeToValue(value, List.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -41,35 +41,35 @@ public abstract class DecisionInput {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends DecisionInput {
+    public static final class Text extends DecisionInput {
         @JsonValue
         private final String value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(String value) { this.value = value; }
+        public Text(String value) { this.value = value; }
 
         public String getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends DecisionInput {
+    public static final class Map extends DecisionInput {
         @JsonValue
-        private final Map<String, JsonNode> value;
+        private final java.util.Map<String, JsonNode> value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(Map<String, JsonNode> value) { this.value = value == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(value)); }
+        public Map(java.util.Map<String, JsonNode> value) { this.value = value == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(value)); }
 
-        public Map<String, JsonNode> getValue() { return value; }
+        public java.util.Map<String, JsonNode> getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch3 extends DecisionInput {
+    public static final class List extends DecisionInput {
         @JsonValue
-        private final List<JsonNode> value;
+        private final java.util.List<JsonNode> value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch3(List<JsonNode> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+        public List(java.util.List<JsonNode> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
 
-        public List<JsonNode> getValue() { return value; }
+        public java.util.List<JsonNode> getValue() { return value; }
     }
 }

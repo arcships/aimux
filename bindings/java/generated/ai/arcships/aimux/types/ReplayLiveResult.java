@@ -18,12 +18,12 @@ public abstract class ReplayLiveResult {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, GenerateTextResult.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, DecideResult.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -32,24 +32,24 @@ public abstract class ReplayLiveResult {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends ReplayLiveResult {
+    public static final class GenerateTextResult extends ReplayLiveResult {
         @JsonValue
-        private final GenerateTextResult value;
+        private final ai.arcships.aimux.types.GenerateTextResult value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(GenerateTextResult value) { this.value = value; }
+        public GenerateTextResult(ai.arcships.aimux.types.GenerateTextResult value) { this.value = value; }
 
-        public GenerateTextResult getValue() { return value; }
+        public ai.arcships.aimux.types.GenerateTextResult getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends ReplayLiveResult {
+    public static final class DecideResult extends ReplayLiveResult {
         @JsonValue
-        private final DecideResult value;
+        private final ai.arcships.aimux.types.DecideResult value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(DecideResult value) { this.value = value; }
+        public DecideResult(ai.arcships.aimux.types.DecideResult value) { this.value = value; }
 
-        public DecideResult getValue() { return value; }
+        public ai.arcships.aimux.types.DecideResult getValue() { return value; }
     }
 }

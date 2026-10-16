@@ -27,8 +27,13 @@ pub enum Kind {
         tag: String,
         variants: Vec<Variant>,
     },
-    Untagged(Vec<Ty>),
+    Untagged(Vec<Branch>),
     Alias(Ty),
+}
+#[derive(Debug, PartialEq)]
+pub struct Branch {
+    pub name: String,
+    pub ty: Ty,
 }
 #[derive(Debug, PartialEq)]
 pub struct Variant {
@@ -344,7 +349,7 @@ impl Kind {
         match self {
             Kind::Struct { fields: items, .. } => fields(items, out),
             Kind::Tagged { variants, .. } => variants.iter().for_each(|v| fields(&v.fields, out)),
-            Kind::Untagged(branches) => branches.iter().for_each(|ty| ty.refs(out)),
+            Kind::Untagged(branches) => branches.iter().for_each(|branch| branch.ty.refs(out)),
             Kind::Alias(ty) => ty.refs(out),
             Kind::StringEnum(_) => {}
         }
@@ -638,16 +643,8 @@ impl Normalizer {
                     let value = branch["properties"][&tag]["const"].as_str().unwrap();
                     variants.push(Variant {
                         tag_value: value.to_owned(),
-                        name: if branches
-                            .iter()
-                            .filter(|b| b["properties"][&tag]["const"] == value)
-                            .count()
-                            > 1
-                        {
-                            format!("{}{}", pascal(value), index + 1)
-                        } else {
-                            pascal(value)
-                        },
+                        name: variant_name(&branches, branch, &tag)
+                            .map_err(|reason| Self::fail(name, &path, &reason))?,
                         fields: self.fields(branch, name, &path, Some(&tag))?,
                         closed: branch["additionalProperties"] == false,
                     });
@@ -667,13 +664,27 @@ impl Normalizer {
             if branches.is_empty() {
                 return Err(Self::fail(name, pointer, "empty union"));
             }
-            return Ok(Kind::Untagged(
-                branches
-                    .iter()
-                    .enumerate()
-                    .map(|(i, branch)| self.ty(branch, name, &format!("{pointer}/anyOf/{i}")))
-                    .collect::<Result<_>>()?,
-            ));
+            let mut names = BTreeSet::new();
+            let branches = branches
+                .iter()
+                .enumerate()
+                .map(|(i, branch)| {
+                    let ty = self.ty(branch, name, &format!("{pointer}/anyOf/{i}"))?;
+                    let branch_name = branch_name(name, &ty);
+                    if !names.insert(branch_name.clone()) {
+                        return Err(Self::fail(
+                            name,
+                            pointer,
+                            &format!("duplicate untagged branch name {branch_name}"),
+                        ));
+                    }
+                    Ok(Branch {
+                        name: branch_name,
+                        ty,
+                    })
+                })
+                .collect::<Result<_>>()?;
+            return Ok(Kind::Untagged(branches));
         }
         if schema["type"] == "object"
             && schema
@@ -949,6 +960,53 @@ impl Normalizer {
     }
 }
 
+fn branch_name(union: &str, ty: &Ty) -> String {
+    match ty {
+        Ty::Ref(name) => name.strip_prefix(union).unwrap_or(name).to_owned(),
+        Ty::String | Ty::Literal(_) => "Text".into(),
+        Ty::Array(_) => "List".into(),
+        Ty::Map(_) => "Map".into(),
+        Ty::Bool => "Bool".into(),
+        Ty::Int { .. } => "Integer".into(),
+        Ty::Float => "Number".into(),
+        Ty::Json => "Value".into(),
+        Ty::Nullable(inner) | Ty::Codec(_, inner) => branch_name(union, inner),
+    }
+}
+
+fn variant_name(branches: &[Value], branch: &Value, tag: &str) -> Result<String> {
+    let value = &branch["properties"][tag]["const"];
+    let siblings: Vec<_> = branches
+        .iter()
+        .filter(|b| b["properties"][tag]["const"] == *value)
+        .collect();
+    let outer = pascal(value.as_str().unwrap());
+    if siblings.len() == 1 {
+        return Ok(outer);
+    }
+    let inner = branch["properties"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find(|(key, schema)| {
+            key.as_str() != tag
+                && schema["const"].is_string()
+                && siblings
+                    .iter()
+                    .all(|b| b["properties"][key.as_str()]["const"].is_string())
+                && siblings
+                    .iter()
+                    .map(|b| b["properties"][key.as_str()]["const"].as_str().unwrap())
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    == siblings.len()
+        })
+        .map(|(_, schema)| schema["const"].as_str().unwrap());
+    inner
+        .map(|inner| format!("{outer}{}", pascal(inner)))
+        .ok_or_else(|| format!("shared tag {value} requires a literal inner discriminator"))
+}
+
 fn pascal(value: &str) -> String {
     value
         .split(|c: char| !c.is_ascii_alphanumeric())
@@ -966,6 +1024,71 @@ mod tests {
     fn model(schema: Value) -> Model {
         normalize(&json!({"input": {}, "output": {"Example": schema}})).unwrap()
     }
+    #[test]
+    fn untagged_branches_are_named_once_from_their_types() {
+        let defs = json!({"input":{}, "output": {
+            "ToolChoiceMode": {"enum":["auto","none"]},
+            "ToolChoice": {"x-aimux-codec":"ordered-untagged", "anyOf":[
+                {"$ref":"#/typeDefs/output/ToolChoiceMode"}, {"type":"string"},
+                {"type":"array", "items":true}, {"type":"object", "additionalProperties":true},
+                {"type":"boolean"}, {"type":"integer"}, {"type":"number"}, true
+            ]}
+        }});
+        let model = normalize(&defs).unwrap();
+        let Kind::Untagged(branches) = &model
+            .types
+            .iter()
+            .find(|t| t.name == "ToolChoice")
+            .unwrap()
+            .kind
+        else {
+            panic!()
+        };
+        assert_eq!(
+            branches.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(),
+            [
+                "Mode", "Text", "List", "Map", "Bool", "Integer", "Number", "Value"
+            ]
+        );
+        assert_eq!(
+            branch_name("Choice", &Ty::Nullable(Box::new(Ty::Literal("x".into())))),
+            "Text"
+        );
+        assert_eq!(branch_name("Choice", &Ty::Ref("Other".into())), "Other");
+        let error = normalize(&json!({"input":{}, "output": {"Choice": {
+            "x-aimux-codec":"ordered-untagged", "anyOf":[{"type":"string"}, {"const":"x"}]
+        }}}))
+        .unwrap_err();
+        assert!(
+            error.contains("Choice") && error.contains("duplicate untagged branch name Text"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn shared_outer_tags_use_a_literal_inner_discriminator() {
+        let schema = json!({"oneOf":[
+            {"type":"object", "properties":{"type":{"const":"source"}, "sourceType":{"const":"url"}}, "required":["type","sourceType"]},
+            {"type":"object", "properties":{"type":{"const":"source"}, "sourceType":{"const":"document"}}, "required":["type","sourceType"]},
+            {"type":"object", "properties":{"type":{"const":"text"}}, "required":["type"]}
+        ]});
+        let normalized = model(schema.clone());
+        let Kind::Tagged { variants, .. } = &normalized.types[0].kind else {
+            panic!()
+        };
+        assert_eq!(
+            variants.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(),
+            ["SourceUrl", "SourceDocument", "Text"]
+        );
+        let mut invalid = schema;
+        invalid["oneOf"][0]["properties"]["sourceType"] = json!({"type":"string"});
+        let error = normalize(&json!({"input":{}, "output":{"Example":invalid}})).unwrap_err();
+        assert!(
+            error.contains("Example") && error.contains("literal inner discriminator"),
+            "{error}"
+        );
+    }
+
     #[test]
     fn literal_fields_stay_inline() {
         let (model, schemas) = normalize_with_schemas(&json!({"input":{}, "output": {

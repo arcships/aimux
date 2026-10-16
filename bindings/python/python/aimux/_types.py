@@ -866,7 +866,7 @@ class ContentPartReasoningFile(_Wire):
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
-class ContentPartSource5(_Wire):
+class ContentPartSourceUrl(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
@@ -876,7 +876,7 @@ class ContentPartSource5(_Wire):
     url: str = Field(alias="url")
 
 
-class ContentPartSource6(_Wire):
+class ContentPartSourceDocument(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
@@ -972,7 +972,7 @@ class ContentPartToolApprovalResponse(_Wire):
 #: generated file is wrapped as `{ file, providerMetadata }`, as upstream's
 #: `convertLanguageModelContent` builds them
 #: (`generate-text/convert-language-model-content.ts`).
-ContentPart = TypeAliasType("ContentPart", Annotated[Union[Annotated["ContentPartCustom", Tag("custom")], Annotated["ContentPartFile", Tag("file")], Annotated["ContentPartReasoning", Tag("reasoning")], Annotated["ContentPartReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["ContentPartSource5", "ContentPartSource6"], Field(union_mode="left_to_right")], Tag("source")], Annotated["ContentPartText", Tag("text")], Annotated["ContentPartToolApprovalRequest", Tag("tool-approval-request")], Annotated["ContentPartToolApprovalResponse", Tag("tool-approval-response")], Annotated["ContentPartToolCall", Tag("tool-call")], Annotated["ContentPartToolError", Tag("tool-error")], Annotated["ContentPartToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
+ContentPart = TypeAliasType("ContentPart", Annotated[Union[Annotated["ContentPartCustom", Tag("custom")], Annotated["ContentPartFile", Tag("file")], Annotated["ContentPartReasoning", Tag("reasoning")], Annotated["ContentPartReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["ContentPartSourceUrl", "ContentPartSourceDocument"], Field(union_mode="left_to_right")], Tag("source")], Annotated["ContentPartText", Tag("text")], Annotated["ContentPartToolApprovalRequest", Tag("tool-approval-request")], Annotated["ContentPartToolApprovalResponse", Tag("tool-approval-response")], Annotated["ContentPartToolCall", Tag("tool-call")], Annotated["ContentPartToolError", Tag("tool-error")], Annotated["ContentPartToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
 
 class ContentPartInputText(_Wire):
     type: Literal["text"] = Field(default="text", alias="type")
@@ -998,7 +998,7 @@ class ContentPartInputReasoningFile(_Wire):
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
-class ContentPartInputSource5(_Wire):
+class ContentPartInputSourceUrl(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
@@ -1008,7 +1008,7 @@ class ContentPartInputSource5(_Wire):
     url: str = Field(alias="url")
 
 
-class ContentPartInputSource6(_Wire):
+class ContentPartInputSourceDocument(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
@@ -1104,7 +1104,7 @@ class ContentPartInputToolApprovalResponse(_Wire):
 #: generated file is wrapped as `{ file, providerMetadata }`, as upstream's
 #: `convertLanguageModelContent` builds them
 #: (`generate-text/convert-language-model-content.ts`).
-ContentPartInput = TypeAliasType("ContentPartInput", Annotated[Union[Annotated["ContentPartInputCustom", Tag("custom")], Annotated["ContentPartInputFile", Tag("file")], Annotated["ContentPartInputReasoning", Tag("reasoning")], Annotated["ContentPartInputReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["ContentPartInputSource5", "ContentPartInputSource6"], Field(union_mode="left_to_right")], Tag("source")], Annotated["ContentPartInputText", Tag("text")], Annotated["ContentPartInputToolApprovalRequest", Tag("tool-approval-request")], Annotated["ContentPartInputToolApprovalResponse", Tag("tool-approval-response")], Annotated["ContentPartInputToolCall", Tag("tool-call")], Annotated["ContentPartInputToolError", Tag("tool-error")], Annotated["ContentPartInputToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
+ContentPartInput = TypeAliasType("ContentPartInput", Annotated[Union[Annotated["ContentPartInputCustom", Tag("custom")], Annotated["ContentPartInputFile", Tag("file")], Annotated["ContentPartInputReasoning", Tag("reasoning")], Annotated["ContentPartInputReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["ContentPartInputSourceUrl", "ContentPartInputSourceDocument"], Field(union_mode="left_to_right")], Tag("source")], Annotated["ContentPartInputText", Tag("text")], Annotated["ContentPartInputToolApprovalRequest", Tag("tool-approval-request")], Annotated["ContentPartInputToolApprovalResponse", Tag("tool-approval-response")], Annotated["ContentPartInputToolCall", Tag("tool-call")], Annotated["ContentPartInputToolError", Tag("tool-error")], Annotated["ContentPartInputToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
 
 class CreateRecorderParams(_Wire):
     model_config = ConfigDict(extra="forbid")
@@ -1419,7 +1419,7 @@ class GenerateContentToolCall(_Wire):
     tool_name: str = Field(alias="toolName")
 
 
-class GenerateContentSource3(_Wire):
+class GenerateContentSourceUrl(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
@@ -1429,7 +1429,7 @@ class GenerateContentSource3(_Wire):
     url: str = Field(alias="url")
 
 
-class GenerateContentSource4(_Wire):
+class GenerateContentSourceDocument(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
@@ -1495,7 +1495,7 @@ class GenerateContentToolResult(_Wire):
 
 #: A content item a provider returns (V4 `LanguageModelV4Content`). Text
 #: generation turns it into the core [`ContentPart`].
-GenerateContent = TypeAliasType("GenerateContent", Annotated[Union[Annotated["GenerateContentCustom", Tag("custom")], Annotated["GenerateContentFile", Tag("file")], Annotated["GenerateContentReasoning", Tag("reasoning")], Annotated["GenerateContentReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["GenerateContentSource3", "GenerateContentSource4"], Field(union_mode="left_to_right")], Tag("source")], Annotated["GenerateContentText", Tag("text")], Annotated["GenerateContentToolApprovalRequest", Tag("tool-approval-request")], Annotated["GenerateContentToolCall", Tag("tool-call")], Annotated["GenerateContentToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
+GenerateContent = TypeAliasType("GenerateContent", Annotated[Union[Annotated["GenerateContentCustom", Tag("custom")], Annotated["GenerateContentFile", Tag("file")], Annotated["GenerateContentReasoning", Tag("reasoning")], Annotated["GenerateContentReasoningFile", Tag("reasoning-file")], Annotated[Annotated[Union["GenerateContentSourceUrl", "GenerateContentSourceDocument"], Field(union_mode="left_to_right")], Tag("source")], Annotated["GenerateContentText", Tag("text")], Annotated["GenerateContentToolApprovalRequest", Tag("tool-approval-request")], Annotated["GenerateContentToolCall", Tag("tool-call")], Annotated["GenerateContentToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
 
 #: `GenerateObjectResult.response`: the AI SDK's
 #: `Omit<LanguageModelResponseMetadata, 'messages'>`.
@@ -3432,7 +3432,7 @@ class TextStreamPartToolInputDelta(_Wire):
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
 
 
-class TextStreamPartSource11(_Wire):
+class TextStreamPartSourceUrl(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     id: str = Field(alias="id")
     provider_metadata: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerMetadata")
@@ -3442,7 +3442,7 @@ class TextStreamPartSource11(_Wire):
     url: str = Field(alias="url")
 
 
-class TextStreamPartSource12(_Wire):
+class TextStreamPartSourceDocument(_Wire):
     type: Literal["source"] = Field(default="source", alias="type")
     filename: Optional[str] = Field(default=None, alias="filename")
     id: str = Field(alias="id")
@@ -3605,7 +3605,7 @@ class TextStreamPartRaw(_Wire):
 #: prompt's last tool message, provider-executed ones included, before the
 #: first model call (`stream-text.ts:2030-2090`), which needs the prompt's
 #: approval collection (`collect-tool-approvals.ts`), not ported.
-TextStreamPart = TypeAliasType("TextStreamPart", Annotated[Union[Annotated["TextStreamPartAbort", Tag("abort")], Annotated["TextStreamPartCustom", Tag("custom")], Annotated["TextStreamPartError", Tag("error")], Annotated["TextStreamPartFile", Tag("file")], Annotated["TextStreamPartFinish", Tag("finish")], Annotated["TextStreamPartFinishStep", Tag("finish-step")], Annotated["TextStreamPartRaw", Tag("raw")], Annotated["TextStreamPartReasoningDelta", Tag("reasoning-delta")], Annotated["TextStreamPartReasoningEnd", Tag("reasoning-end")], Annotated["TextStreamPartReasoningFile", Tag("reasoning-file")], Annotated["TextStreamPartReasoningStart", Tag("reasoning-start")], Annotated[Annotated[Union["TextStreamPartSource11", "TextStreamPartSource12"], Field(union_mode="left_to_right")], Tag("source")], Annotated["TextStreamPartStart", Tag("start")], Annotated["TextStreamPartStartStep", Tag("start-step")], Annotated["TextStreamPartTextDelta", Tag("text-delta")], Annotated["TextStreamPartTextEnd", Tag("text-end")], Annotated["TextStreamPartTextStart", Tag("text-start")], Annotated["TextStreamPartToolApprovalRequest", Tag("tool-approval-request")], Annotated["TextStreamPartToolApprovalResponse", Tag("tool-approval-response")], Annotated["TextStreamPartToolCall", Tag("tool-call")], Annotated["TextStreamPartToolError", Tag("tool-error")], Annotated["TextStreamPartToolInputDelta", Tag("tool-input-delta")], Annotated["TextStreamPartToolInputEnd", Tag("tool-input-end")], Annotated["TextStreamPartToolInputStart", Tag("tool-input-start")], Annotated["TextStreamPartToolOutputDenied", Tag("tool-output-denied")], Annotated["TextStreamPartToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
+TextStreamPart = TypeAliasType("TextStreamPart", Annotated[Union[Annotated["TextStreamPartAbort", Tag("abort")], Annotated["TextStreamPartCustom", Tag("custom")], Annotated["TextStreamPartError", Tag("error")], Annotated["TextStreamPartFile", Tag("file")], Annotated["TextStreamPartFinish", Tag("finish")], Annotated["TextStreamPartFinishStep", Tag("finish-step")], Annotated["TextStreamPartRaw", Tag("raw")], Annotated["TextStreamPartReasoningDelta", Tag("reasoning-delta")], Annotated["TextStreamPartReasoningEnd", Tag("reasoning-end")], Annotated["TextStreamPartReasoningFile", Tag("reasoning-file")], Annotated["TextStreamPartReasoningStart", Tag("reasoning-start")], Annotated[Annotated[Union["TextStreamPartSourceUrl", "TextStreamPartSourceDocument"], Field(union_mode="left_to_right")], Tag("source")], Annotated["TextStreamPartStart", Tag("start")], Annotated["TextStreamPartStartStep", Tag("start-step")], Annotated["TextStreamPartTextDelta", Tag("text-delta")], Annotated["TextStreamPartTextEnd", Tag("text-end")], Annotated["TextStreamPartTextStart", Tag("text-start")], Annotated["TextStreamPartToolApprovalRequest", Tag("tool-approval-request")], Annotated["TextStreamPartToolApprovalResponse", Tag("tool-approval-response")], Annotated["TextStreamPartToolCall", Tag("tool-call")], Annotated["TextStreamPartToolError", Tag("tool-error")], Annotated["TextStreamPartToolInputDelta", Tag("tool-input-delta")], Annotated["TextStreamPartToolInputEnd", Tag("tool-input-end")], Annotated["TextStreamPartToolInputStart", Tag("tool-input-start")], Annotated["TextStreamPartToolOutputDenied", Tag("tool-output-denied")], Annotated["TextStreamPartToolResult", Tag("tool-result")]], Field(discriminator=Discriminator(lambda value: _tag(value, "type", "type")))])
 
 #: Per-call timeout configuration.
 #:
@@ -4875,8 +4875,8 @@ ContentPartText.model_rebuild(_types_namespace=globals())
 ContentPartCustom.model_rebuild(_types_namespace=globals())
 ContentPartReasoning.model_rebuild(_types_namespace=globals())
 ContentPartReasoningFile.model_rebuild(_types_namespace=globals())
-ContentPartSource5.model_rebuild(_types_namespace=globals())
-ContentPartSource6.model_rebuild(_types_namespace=globals())
+ContentPartSourceUrl.model_rebuild(_types_namespace=globals())
+ContentPartSourceDocument.model_rebuild(_types_namespace=globals())
 ContentPartFile.model_rebuild(_types_namespace=globals())
 ContentPartToolCall.model_rebuild(_types_namespace=globals())
 ContentPartToolResult.model_rebuild(_types_namespace=globals())
@@ -4887,8 +4887,8 @@ ContentPartInputText.model_rebuild(_types_namespace=globals())
 ContentPartInputCustom.model_rebuild(_types_namespace=globals())
 ContentPartInputReasoning.model_rebuild(_types_namespace=globals())
 ContentPartInputReasoningFile.model_rebuild(_types_namespace=globals())
-ContentPartInputSource5.model_rebuild(_types_namespace=globals())
-ContentPartInputSource6.model_rebuild(_types_namespace=globals())
+ContentPartInputSourceUrl.model_rebuild(_types_namespace=globals())
+ContentPartInputSourceDocument.model_rebuild(_types_namespace=globals())
 ContentPartInputFile.model_rebuild(_types_namespace=globals())
 ContentPartInputToolCall.model_rebuild(_types_namespace=globals())
 ContentPartInputToolResult.model_rebuild(_types_namespace=globals())
@@ -4926,8 +4926,8 @@ FunctionTool.model_rebuild(_types_namespace=globals())
 FunctionToolInputExample.model_rebuild(_types_namespace=globals())
 GenerateContentText.model_rebuild(_types_namespace=globals())
 GenerateContentToolCall.model_rebuild(_types_namespace=globals())
-GenerateContentSource3.model_rebuild(_types_namespace=globals())
-GenerateContentSource4.model_rebuild(_types_namespace=globals())
+GenerateContentSourceUrl.model_rebuild(_types_namespace=globals())
+GenerateContentSourceDocument.model_rebuild(_types_namespace=globals())
 GenerateContentReasoning.model_rebuild(_types_namespace=globals())
 GenerateContentFile.model_rebuild(_types_namespace=globals())
 GenerateContentReasoningFile.model_rebuild(_types_namespace=globals())
@@ -5105,8 +5105,8 @@ TextStreamPartCustom.model_rebuild(_types_namespace=globals())
 TextStreamPartToolInputStart.model_rebuild(_types_namespace=globals())
 TextStreamPartToolInputEnd.model_rebuild(_types_namespace=globals())
 TextStreamPartToolInputDelta.model_rebuild(_types_namespace=globals())
-TextStreamPartSource11.model_rebuild(_types_namespace=globals())
-TextStreamPartSource12.model_rebuild(_types_namespace=globals())
+TextStreamPartSourceUrl.model_rebuild(_types_namespace=globals())
+TextStreamPartSourceDocument.model_rebuild(_types_namespace=globals())
 TextStreamPartFile.model_rebuild(_types_namespace=globals())
 TextStreamPartReasoningFile.model_rebuild(_types_namespace=globals())
 TextStreamPartToolCall.model_rebuild(_types_namespace=globals())
@@ -5625,8 +5625,8 @@ __all__ = [
     "ContentPartCustom",
     "ContentPartReasoning",
     "ContentPartReasoningFile",
-    "ContentPartSource5",
-    "ContentPartSource6",
+    "ContentPartSourceUrl",
+    "ContentPartSourceDocument",
     "ContentPartFile",
     "ContentPartToolCall",
     "ContentPartToolResult",
@@ -5638,8 +5638,8 @@ __all__ = [
     "ContentPartInputCustom",
     "ContentPartInputReasoning",
     "ContentPartInputReasoningFile",
-    "ContentPartInputSource5",
-    "ContentPartInputSource6",
+    "ContentPartInputSourceUrl",
+    "ContentPartInputSourceDocument",
     "ContentPartInputFile",
     "ContentPartInputToolCall",
     "ContentPartInputToolResult",
@@ -5687,8 +5687,8 @@ __all__ = [
     "GenerateContent",
     "GenerateContentText",
     "GenerateContentToolCall",
-    "GenerateContentSource3",
-    "GenerateContentSource4",
+    "GenerateContentSourceUrl",
+    "GenerateContentSourceDocument",
     "GenerateContentReasoning",
     "GenerateContentFile",
     "GenerateContentReasoningFile",
@@ -5909,8 +5909,8 @@ __all__ = [
     "TextStreamPartToolInputStart",
     "TextStreamPartToolInputEnd",
     "TextStreamPartToolInputDelta",
-    "TextStreamPartSource11",
-    "TextStreamPartSource12",
+    "TextStreamPartSourceUrl",
+    "TextStreamPartSourceDocument",
     "TextStreamPartFile",
     "TextStreamPartReasoningFile",
     "TextStreamPartToolCall",

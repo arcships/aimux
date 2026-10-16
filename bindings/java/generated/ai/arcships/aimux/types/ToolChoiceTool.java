@@ -27,7 +27,7 @@ public final class ToolChoiceTool {
         @JsonProperty(value = "toolName", required = true) String toolName,
         @JsonProperty(value = "type", required = true) String type) {
         this.toolName = toolName;
-        this.type = type;
+        this.type = DtoJson.literal(type, "tool");
     }
 
     public static Builder builder() { return new Builder(); }

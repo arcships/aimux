@@ -47,7 +47,7 @@ public final class RepairedToolCall {
         this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
         this.toolCallId = toolCallId;
         this.toolName = toolName;
-        this.type = type;
+        this.type = DtoJson.literal(type, "tool-call");
     }
 
     public static Builder builder() { return new Builder(); }

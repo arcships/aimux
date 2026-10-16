@@ -21,12 +21,12 @@ public abstract class StreamEvent {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, TextStreamPart.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, ChatCompletionChunk.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -35,24 +35,24 @@ public abstract class StreamEvent {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends StreamEvent {
+    public static final class TextStreamPart extends StreamEvent {
         @JsonValue
-        private final TextStreamPart value;
+        private final ai.arcships.aimux.types.TextStreamPart value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(TextStreamPart value) { this.value = value; }
+        public TextStreamPart(ai.arcships.aimux.types.TextStreamPart value) { this.value = value; }
 
-        public TextStreamPart getValue() { return value; }
+        public ai.arcships.aimux.types.TextStreamPart getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends StreamEvent {
+    public static final class ChatCompletionChunk extends StreamEvent {
         @JsonValue
-        private final ChatCompletionChunk value;
+        private final ai.arcships.aimux.types.ChatCompletionChunk value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(ChatCompletionChunk value) { this.value = value; }
+        public ChatCompletionChunk(ai.arcships.aimux.types.ChatCompletionChunk value) { this.value = value; }
 
-        public ChatCompletionChunk getValue() { return value; }
+        public ai.arcships.aimux.types.ChatCompletionChunk getValue() { return value; }
     }
 }

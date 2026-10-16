@@ -65,7 +65,7 @@ public abstract class TypedSource {
             this.id = id;
             this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
             this.title = title;
-            this.type = type;
+            this.type = DtoJson.literal(type, "source");
             this.url = url;
         }
 
@@ -151,7 +151,7 @@ public abstract class TypedSource {
             this.mediaType = mediaType;
             this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
             this.title = title;
-            this.type = type;
+            this.type = DtoJson.literal(type, "source");
         }
 
         public static Builder builder() { return new Builder(); }

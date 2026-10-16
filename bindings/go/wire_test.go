@@ -190,7 +190,7 @@ func TestUntaggedObjectBranchSelection(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := result.Value.(ReplayLiveResultBranch1); !ok {
+	if _, ok := result.Value.(ReplayLiveResultBranchDecideResult); !ok {
 		t.Fatalf("selected %T for a decision result", result.Value)
 	}
 	for _, raw := range []string{`{}`, `null`, `[]`} {

@@ -23,12 +23,12 @@ public abstract class ToolResultFileId {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, Text.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, Map.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -37,24 +37,24 @@ public abstract class ToolResultFileId {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends ToolResultFileId {
+    public static final class Text extends ToolResultFileId {
         @JsonValue
         private final String value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(String value) { this.value = value; }
+        public Text(String value) { this.value = value; }
 
         public String getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends ToolResultFileId {
+    public static final class Map extends ToolResultFileId {
         @JsonValue
-        private final Map<String, String> value;
+        private final java.util.Map<String, String> value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(Map<String, String> value) { this.value = value == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(value)); }
+        public Map(java.util.Map<String, String> value) { this.value = value == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(value)); }
 
-        public Map<String, String> getValue() { return value; }
+        public java.util.Map<String, String> getValue() { return value; }
     }
 }

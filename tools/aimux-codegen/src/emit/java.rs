@@ -151,13 +151,14 @@ impl Emitter for Java {
                     deserializer(
                         &mut out,
                         &n,
-                        &(1..=branches.len())
-                            .map(|i| format!("Branch{i}"))
+                        &branches
+                            .iter()
+                            .map(|branch| name(&branch.name))
                             .collect::<Vec<_>>(),
                         "    ",
                     );
-                    for (i, ty) in branches.iter().enumerate() {
-                        wrapper(&mut out, &format!("Branch{}", i + 1), ty, Some(&n));
+                    for branch in branches {
+                        wrapper(&mut out, &name(&branch.name), &branch.ty, Some(&n));
                     }
                     out.push_str("}\n");
                 }
@@ -255,18 +256,31 @@ fn docs(out: &mut String, doc: Option<&str>, indent: &str) {
     }
 }
 fn jtype(ty: &Ty) -> String {
+    java_type(ty, false)
+}
+
+fn java_type(ty: &Ty, qualified: bool) -> String {
     match ty {
+        Ty::Ref(n) if qualified => format!("ai.arcships.aimux.types.{}", name(n)),
         Ty::Ref(n) => name(n),
         Ty::String | Ty::Literal(_) => "String".into(),
         Ty::Bool => "Boolean".into(),
         Ty::Int { bits, unsigned } if *bits < 32 || (*bits == 32 && !unsigned) => "Integer".into(),
         Ty::Int { .. } => "Long".into(),
         Ty::Float => "BigDecimal".into(),
-        Ty::Array(inner) => format!("List<{}>", jtype(inner)),
-        Ty::Map(inner) => format!("Map<String, {}>", jtype(inner)),
+        Ty::Array(inner) => format!(
+            "{}List<{}>",
+            if qualified { "java.util." } else { "" },
+            java_type(inner, qualified)
+        ),
+        Ty::Map(inner) => format!(
+            "{}Map<String, {}>",
+            if qualified { "java.util." } else { "" },
+            java_type(inner, qualified)
+        ),
         Ty::Json => "JsonNode".into(),
         Ty::Codec(Codec::U64String | Codec::Timestamp, _) => "String".into(),
-        Ty::Nullable(inner) | Ty::Codec(_, inner) => jtype(inner),
+        Ty::Nullable(inner) | Ty::Codec(_, inner) => java_type(inner, qualified),
     }
 }
 fn presence(ty: &Ty) -> bool {
@@ -280,6 +294,7 @@ fn nullable(ty: &Ty) -> bool {
 
 fn copy(ty: &Ty, value: &str) -> String {
     match ty {
+        Ty::Literal(expected) => format!("DtoJson.literal({value}, {})", quote(expected)),
         Ty::Json => format!("{value} == null ? null : {value}.deepCopy()"),
         Ty::Array(_) => format!(
             "{value} == null ? null : Collections.unmodifiableList(new ArrayList<>({value}))"
@@ -461,7 +476,8 @@ fn wrapper(out: &mut String, n: &str, ty: &Ty, parent: Option<&str>) {
         || format!("public final class {n}"),
         |parent| format!("public static final class {n} extends {parent}"),
     );
-    let t = jtype(ty);
+    // Nested branch names can shadow their payload types and java.util collections.
+    let t = java_type(ty, parent.is_some());
     if parent.is_some() {
         out.push('\n');
     }
@@ -492,6 +508,13 @@ public final class DtoJson {
     }
 
     private DtoJson() {}
+
+    public static String literal(String value, String expected) {
+        if (value != null && !expected.equals(value)) {
+            throw new IllegalArgumentException("Expected literal: " + expected);
+        }
+        return value;
+    }
 
     public static <T> T decode(JsonNode value, Class<T> type) {
         try {

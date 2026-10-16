@@ -100,7 +100,7 @@ impl Emitter for Python {
                     alias(
                         &mut out,
                         name,
-                        &ordered_union(branches.iter().map(ty).collect()),
+                        &ordered_union(branches.iter().map(|branch| ty(&branch.ty)).collect()),
                     );
                 }
                 Kind::Alias(inner) => {

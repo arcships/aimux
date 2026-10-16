@@ -23,6 +23,13 @@ public final class DtoJson {
 
     private DtoJson() {}
 
+    public static String literal(String value, String expected) {
+        if (value != null && !expected.equals(value)) {
+            throw new IllegalArgumentException("Expected literal: " + expected);
+        }
+        return value;
+    }
+
     public static <T> T decode(JsonNode value, Class<T> type) {
         try {
             return MAPPER.treeToValue(value, type);

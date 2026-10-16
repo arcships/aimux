@@ -21,12 +21,12 @@ public abstract class UserContent {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, Text.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, List.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -35,24 +35,24 @@ public abstract class UserContent {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends UserContent {
+    public static final class Text extends UserContent {
         @JsonValue
         private final String value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(String value) { this.value = value; }
+        public Text(String value) { this.value = value; }
 
         public String getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends UserContent {
+    public static final class List extends UserContent {
         @JsonValue
-        private final List<UserContentPart> value;
+        private final java.util.List<ai.arcships.aimux.types.UserContentPart> value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(List<UserContentPart> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+        public List(java.util.List<ai.arcships.aimux.types.UserContentPart> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
 
-        public List<UserContentPart> getValue() { return value; }
+        public java.util.List<ai.arcships.aimux.types.UserContentPart> getValue() { return value; }
     }
 }

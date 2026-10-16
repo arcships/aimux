@@ -119,7 +119,7 @@ func TestStreamPartSource(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}`), &part); err != nil {
 		t.Fatal(err)
 	}
-	source, ok := part.Value.(TextStreamPartVariantSource11)
+	source, ok := part.Value.(TextStreamPartVariantSourceURL)
 	if !ok || source.URL != "https://example.com" {
 		t.Fatalf("source: %+v", part.Value)
 	}

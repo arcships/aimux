@@ -1307,33 +1307,33 @@ func (v *AssistantContent) UnmarshalJSON(data []byte) error {
 	{
 		var next string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = AssistantContentBranch0{Value: next}
+			v.Value = AssistantContentBranchText{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []AssistantContentPart
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = AssistantContentBranch1{Value: next}
+			v.Value = AssistantContentBranchList{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type AssistantContentBranch0 struct{ Value string }
+type AssistantContentBranchText struct{ Value string }
 
-func (AssistantContentBranch0) isAssistantContent() {}
+func (AssistantContentBranchText) isAssistantContent() {}
 
-func (v AssistantContentBranch0) MarshalJSON() ([]byte, error) {
+func (v AssistantContentBranchText) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type AssistantContentBranch1 struct{ Value []AssistantContentPart }
+type AssistantContentBranchList struct{ Value []AssistantContentPart }
 
-func (AssistantContentBranch1) isAssistantContent() {}
+func (AssistantContentBranchList) isAssistantContent() {}
 
-func (v AssistantContentBranch1) MarshalJSON() ([]byte, error) {
+func (v AssistantContentBranchList) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -2042,7 +2042,7 @@ func (v *ContentPart) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		if subtag.SourceType == "url" {
-			var next ContentPartVariantSource5
+			var next ContentPartVariantSourceURL
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -2050,7 +2050,7 @@ func (v *ContentPart) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 		if subtag.SourceType == "document" {
-			var next ContentPartVariantSource6
+			var next ContentPartVariantSourceDocument
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -2164,7 +2164,7 @@ func (v ContentPartVariantReasoningFile) MarshalJSON() ([]byte, error) {
 	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-type ContentPartVariantSource5 struct {
+type ContentPartVariantSourceURL struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Required value: "url".
@@ -2173,17 +2173,17 @@ type ContentPartVariantSource5 struct {
 	URL        string  `json:"url"`
 }
 
-func (ContentPartVariantSource5) isContentPart() {}
+func (ContentPartVariantSourceURL) isContentPart() {}
 
-func (v ContentPartVariantSource5) MarshalJSON() ([]byte, error) {
-	type plain ContentPartVariantSource5
+func (v ContentPartVariantSourceURL) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantSourceURL
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
 	}{Type: "source", plain: plain(v)})
 }
 
-type ContentPartVariantSource6 struct {
+type ContentPartVariantSourceDocument struct {
 	Filename         *string                               `json:"filename,omitzero"`
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
@@ -2193,10 +2193,10 @@ type ContentPartVariantSource6 struct {
 	Title      string `json:"title"`
 }
 
-func (ContentPartVariantSource6) isContentPart() {}
+func (ContentPartVariantSourceDocument) isContentPart() {}
 
-func (v ContentPartVariantSource6) MarshalJSON() ([]byte, error) {
-	type plain ContentPartVariantSource6
+func (v ContentPartVariantSourceDocument) MarshalJSON() ([]byte, error) {
+	type plain ContentPartVariantSourceDocument
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
@@ -2395,7 +2395,7 @@ func (v *ContentPartInput) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		if subtag.SourceType == "url" {
-			var next ContentPartInputVariantSource5
+			var next ContentPartInputVariantSourceURL
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -2403,7 +2403,7 @@ func (v *ContentPartInput) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 		if subtag.SourceType == "document" {
-			var next ContentPartInputVariantSource6
+			var next ContentPartInputVariantSourceDocument
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -2517,7 +2517,7 @@ func (v ContentPartInputVariantReasoningFile) MarshalJSON() ([]byte, error) {
 	}{Type: "reasoning-file", plain: plain(v)})
 }
 
-type ContentPartInputVariantSource5 struct {
+type ContentPartInputVariantSourceURL struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Required value: "url".
@@ -2526,17 +2526,17 @@ type ContentPartInputVariantSource5 struct {
 	URL        string  `json:"url"`
 }
 
-func (ContentPartInputVariantSource5) isContentPartInput() {}
+func (ContentPartInputVariantSourceURL) isContentPartInput() {}
 
-func (v ContentPartInputVariantSource5) MarshalJSON() ([]byte, error) {
-	type plain ContentPartInputVariantSource5
+func (v ContentPartInputVariantSourceURL) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantSourceURL
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
 	}{Type: "source", plain: plain(v)})
 }
 
-type ContentPartInputVariantSource6 struct {
+type ContentPartInputVariantSourceDocument struct {
 	Filename         *string                               `json:"filename,omitzero"`
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
@@ -2546,10 +2546,10 @@ type ContentPartInputVariantSource6 struct {
 	Title      string `json:"title"`
 }
 
-func (ContentPartInputVariantSource6) isContentPartInput() {}
+func (ContentPartInputVariantSourceDocument) isContentPartInput() {}
 
-func (v ContentPartInputVariantSource6) MarshalJSON() ([]byte, error) {
-	type plain ContentPartInputVariantSource6
+func (v ContentPartInputVariantSourceDocument) MarshalJSON() ([]byte, error) {
+	type plain ContentPartInputVariantSourceDocument
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
@@ -2864,48 +2864,48 @@ func (v *DecisionInput) UnmarshalJSON(data []byte) error {
 	{
 		var next string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = DecisionInputBranch0{Value: next}
+			v.Value = DecisionInputBranchText{Value: next}
 			return nil
 		}
 	}
 	{
 		var next map[string]json.RawMessage
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = DecisionInputBranch1{Value: next}
+			v.Value = DecisionInputBranchMap{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []json.RawMessage
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = DecisionInputBranch2{Value: next}
+			v.Value = DecisionInputBranchList{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type DecisionInputBranch0 struct{ Value string }
+type DecisionInputBranchText struct{ Value string }
 
-func (DecisionInputBranch0) isDecisionInput() {}
+func (DecisionInputBranchText) isDecisionInput() {}
 
-func (v DecisionInputBranch0) MarshalJSON() ([]byte, error) {
+func (v DecisionInputBranchText) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type DecisionInputBranch1 struct{ Value map[string]json.RawMessage }
+type DecisionInputBranchMap struct{ Value map[string]json.RawMessage }
 
-func (DecisionInputBranch1) isDecisionInput() {}
+func (DecisionInputBranchMap) isDecisionInput() {}
 
-func (v DecisionInputBranch1) MarshalJSON() ([]byte, error) {
+func (v DecisionInputBranchMap) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type DecisionInputBranch2 struct{ Value []json.RawMessage }
+type DecisionInputBranchList struct{ Value []json.RawMessage }
 
-func (DecisionInputBranch2) isDecisionInput() {}
+func (DecisionInputBranchList) isDecisionInput() {}
 
-func (v DecisionInputBranch2) MarshalJSON() ([]byte, error) {
+func (v DecisionInputBranchList) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -3233,48 +3233,48 @@ func (v *FilePartData) UnmarshalJSON(data []byte) error {
 	{
 		var next FileData
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = FilePartDataBranch0{Value: next}
+			v.Value = FilePartDataBranchFileData{Value: next}
 			return nil
 		}
 	}
 	{
 		var next string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = FilePartDataBranch1{Value: next}
+			v.Value = FilePartDataBranchText{Value: next}
 			return nil
 		}
 	}
 	{
 		var next map[string]string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = FilePartDataBranch2{Value: next}
+			v.Value = FilePartDataBranchMap{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type FilePartDataBranch0 struct{ Value FileData }
+type FilePartDataBranchFileData struct{ Value FileData }
 
-func (FilePartDataBranch0) isFilePartData() {}
+func (FilePartDataBranchFileData) isFilePartData() {}
 
-func (v FilePartDataBranch0) MarshalJSON() ([]byte, error) {
+func (v FilePartDataBranchFileData) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type FilePartDataBranch1 struct{ Value string }
+type FilePartDataBranchText struct{ Value string }
 
-func (FilePartDataBranch1) isFilePartData() {}
+func (FilePartDataBranchText) isFilePartData() {}
 
-func (v FilePartDataBranch1) MarshalJSON() ([]byte, error) {
+func (v FilePartDataBranchText) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type FilePartDataBranch2 struct{ Value map[string]string }
+type FilePartDataBranchMap struct{ Value map[string]string }
 
-func (FilePartDataBranch2) isFilePartData() {}
+func (FilePartDataBranchMap) isFilePartData() {}
 
-func (v FilePartDataBranch2) MarshalJSON() ([]byte, error) {
+func (v FilePartDataBranchMap) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -3383,7 +3383,7 @@ func (v *GenerateContent) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		if subtag.SourceType == "url" {
-			var next GenerateContentVariantSource3
+			var next GenerateContentVariantSourceURL
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -3391,7 +3391,7 @@ func (v *GenerateContent) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 		if subtag.SourceType == "document" {
-			var next GenerateContentVariantSource4
+			var next GenerateContentVariantSourceDocument
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -3465,7 +3465,7 @@ func (v GenerateContentVariantToolCall) MarshalJSON() ([]byte, error) {
 	}{Type: "tool-call", plain: plain(v)})
 }
 
-type GenerateContentVariantSource3 struct {
+type GenerateContentVariantSourceURL struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Required value: "url".
@@ -3474,17 +3474,17 @@ type GenerateContentVariantSource3 struct {
 	URL        string  `json:"url"`
 }
 
-func (GenerateContentVariantSource3) isGenerateContent() {}
+func (GenerateContentVariantSourceURL) isGenerateContent() {}
 
-func (v GenerateContentVariantSource3) MarshalJSON() ([]byte, error) {
-	type plain GenerateContentVariantSource3
+func (v GenerateContentVariantSourceURL) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantSourceURL
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
 	}{Type: "source", plain: plain(v)})
 }
 
-type GenerateContentVariantSource4 struct {
+type GenerateContentVariantSourceDocument struct {
 	Filename         *string                               `json:"filename,omitzero"`
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
@@ -3494,10 +3494,10 @@ type GenerateContentVariantSource4 struct {
 	Title      string `json:"title"`
 }
 
-func (GenerateContentVariantSource4) isGenerateContent() {}
+func (GenerateContentVariantSourceDocument) isGenerateContent() {}
 
-func (v GenerateContentVariantSource4) MarshalJSON() ([]byte, error) {
-	type plain GenerateContentVariantSource4
+func (v GenerateContentVariantSourceDocument) MarshalJSON() ([]byte, error) {
+	type plain GenerateContentVariantSourceDocument
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
@@ -4845,33 +4845,33 @@ func (v *ModelPrompt) UnmarshalJSON(data []byte) error {
 	{
 		var next string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = ModelPromptBranch0{Value: next}
+			v.Value = ModelPromptBranchText{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []ModelMessage
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = ModelPromptBranch1{Value: next}
+			v.Value = ModelPromptBranchList{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type ModelPromptBranch0 struct{ Value string }
+type ModelPromptBranchText struct{ Value string }
 
-func (ModelPromptBranch0) isModelPrompt() {}
+func (ModelPromptBranchText) isModelPrompt() {}
 
-func (v ModelPromptBranch0) MarshalJSON() ([]byte, error) {
+func (v ModelPromptBranchText) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type ModelPromptBranch1 struct{ Value []ModelMessage }
+type ModelPromptBranchList struct{ Value []ModelMessage }
 
-func (ModelPromptBranch1) isModelPrompt() {}
+func (ModelPromptBranchList) isModelPrompt() {}
 
-func (v ModelPromptBranch1) MarshalJSON() ([]byte, error) {
+func (v ModelPromptBranchList) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -5465,33 +5465,33 @@ func (v *ReasoningFilePartData) UnmarshalJSON(data []byte) error {
 	{
 		var next GeneratedFileData
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = ReasoningFilePartDataBranch0{Value: next}
+			v.Value = ReasoningFilePartDataBranchGeneratedFileData{Value: next}
 			return nil
 		}
 	}
 	{
 		var next string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = ReasoningFilePartDataBranch1{Value: next}
+			v.Value = ReasoningFilePartDataBranchText{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type ReasoningFilePartDataBranch0 struct{ Value GeneratedFileData }
+type ReasoningFilePartDataBranchGeneratedFileData struct{ Value GeneratedFileData }
 
-func (ReasoningFilePartDataBranch0) isReasoningFilePartData() {}
+func (ReasoningFilePartDataBranchGeneratedFileData) isReasoningFilePartData() {}
 
-func (v ReasoningFilePartDataBranch0) MarshalJSON() ([]byte, error) {
+func (v ReasoningFilePartDataBranchGeneratedFileData) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type ReasoningFilePartDataBranch1 struct{ Value string }
+type ReasoningFilePartDataBranchText struct{ Value string }
 
-func (ReasoningFilePartDataBranch1) isReasoningFilePartData() {}
+func (ReasoningFilePartDataBranchText) isReasoningFilePartData() {}
 
-func (v ReasoningFilePartDataBranch1) MarshalJSON() ([]byte, error) {
+func (v ReasoningFilePartDataBranchText) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -5792,33 +5792,33 @@ func (v *ReplayLiveResult) UnmarshalJSON(data []byte) error {
 	{
 		var next GenerateTextResult
 		if err = decodeUnionBranch(data, &next, false, "content", "files", "finishReason", "reasoning", "request", "response", "responseMessages", "sources", "steps", "text", "toolCalls", "toolResults", "totalUsage", "usage", "warnings"); err == nil {
-			v.Value = ReplayLiveResultBranch0{Value: next}
+			v.Value = ReplayLiveResultBranchGenerateTextResult{Value: next}
 			return nil
 		}
 	}
 	{
 		var next DecideResult
 		if err = decodeUnionBranch(data, &next, false, "answers", "response", "usage", "warnings"); err == nil {
-			v.Value = ReplayLiveResultBranch1{Value: next}
+			v.Value = ReplayLiveResultBranchDecideResult{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type ReplayLiveResultBranch0 struct{ Value GenerateTextResult }
+type ReplayLiveResultBranchGenerateTextResult struct{ Value GenerateTextResult }
 
-func (ReplayLiveResultBranch0) isReplayLiveResult() {}
+func (ReplayLiveResultBranchGenerateTextResult) isReplayLiveResult() {}
 
-func (v ReplayLiveResultBranch0) MarshalJSON() ([]byte, error) {
+func (v ReplayLiveResultBranchGenerateTextResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type ReplayLiveResultBranch1 struct{ Value DecideResult }
+type ReplayLiveResultBranchDecideResult struct{ Value DecideResult }
 
-func (ReplayLiveResultBranch1) isReplayLiveResult() {}
+func (ReplayLiveResultBranchDecideResult) isReplayLiveResult() {}
 
-func (v ReplayLiveResultBranch1) MarshalJSON() ([]byte, error) {
+func (v ReplayLiveResultBranchDecideResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -6588,33 +6588,33 @@ func (v *StreamEvent) UnmarshalJSON(data []byte) error {
 	{
 		var next TextStreamPart
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = StreamEventBranch0{Value: next}
+			v.Value = StreamEventBranchTextStreamPart{Value: next}
 			return nil
 		}
 	}
 	{
 		var next ChatCompletionChunk
 		if err = decodeUnionBranch(data, &next, false, "choices", "created", "id", "model", "object"); err == nil {
-			v.Value = StreamEventBranch1{Value: next}
+			v.Value = StreamEventBranchChatCompletionChunk{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type StreamEventBranch0 struct{ Value TextStreamPart }
+type StreamEventBranchTextStreamPart struct{ Value TextStreamPart }
 
-func (StreamEventBranch0) isStreamEvent() {}
+func (StreamEventBranchTextStreamPart) isStreamEvent() {}
 
-func (v StreamEventBranch0) MarshalJSON() ([]byte, error) {
+func (v StreamEventBranchTextStreamPart) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type StreamEventBranch1 struct{ Value ChatCompletionChunk }
+type StreamEventBranchChatCompletionChunk struct{ Value ChatCompletionChunk }
 
-func (StreamEventBranch1) isStreamEvent() {}
+func (StreamEventBranchChatCompletionChunk) isStreamEvent() {}
 
-func (v StreamEventBranch1) MarshalJSON() ([]byte, error) {
+func (v StreamEventBranchChatCompletionChunk) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -6858,7 +6858,7 @@ func (v *TextStreamPart) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		if subtag.SourceType == "url" {
-			var next TextStreamPartVariantSource11
+			var next TextStreamPartVariantSourceURL
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -6866,7 +6866,7 @@ func (v *TextStreamPart) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 		if subtag.SourceType == "document" {
-			var next TextStreamPartVariantSource12
+			var next TextStreamPartVariantSourceDocument
 			if err := json.Unmarshal(data, &next); err != nil {
 				return err
 			}
@@ -7136,7 +7136,7 @@ func (v TextStreamPartVariantToolInputDelta) MarshalJSON() ([]byte, error) {
 	}{Type: "tool-input-delta", plain: plain(v)})
 }
 
-type TextStreamPartVariantSource11 struct {
+type TextStreamPartVariantSourceURL struct {
 	ID               string                                `json:"id"`
 	ProviderMetadata map[string]map[string]json.RawMessage `json:"providerMetadata,omitzero"`
 	// Required value: "url".
@@ -7145,17 +7145,17 @@ type TextStreamPartVariantSource11 struct {
 	URL        string  `json:"url"`
 }
 
-func (TextStreamPartVariantSource11) isTextStreamPart() {}
+func (TextStreamPartVariantSourceURL) isTextStreamPart() {}
 
-func (v TextStreamPartVariantSource11) MarshalJSON() ([]byte, error) {
-	type plain TextStreamPartVariantSource11
+func (v TextStreamPartVariantSourceURL) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantSourceURL
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
 	}{Type: "source", plain: plain(v)})
 }
 
-type TextStreamPartVariantSource12 struct {
+type TextStreamPartVariantSourceDocument struct {
 	Filename         *string                               `json:"filename,omitzero"`
 	ID               string                                `json:"id"`
 	MediaType        string                                `json:"mediaType"`
@@ -7165,10 +7165,10 @@ type TextStreamPartVariantSource12 struct {
 	Title      string `json:"title"`
 }
 
-func (TextStreamPartVariantSource12) isTextStreamPart() {}
+func (TextStreamPartVariantSourceDocument) isTextStreamPart() {}
 
-func (v TextStreamPartVariantSource12) MarshalJSON() ([]byte, error) {
-	type plain TextStreamPartVariantSource12
+func (v TextStreamPartVariantSourceDocument) MarshalJSON() ([]byte, error) {
+	type plain TextStreamPartVariantSourceDocument
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		plain
@@ -7795,33 +7795,33 @@ func (v *ToolChoice) UnmarshalJSON(data []byte) error {
 	{
 		var next ToolChoiceMode
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = ToolChoiceBranch0{Value: next}
+			v.Value = ToolChoiceBranchMode{Value: next}
 			return nil
 		}
 	}
 	{
 		var next ToolChoiceTool
 		if err = decodeUnionBranch(data, &next, false, "toolName", "type"); err == nil {
-			v.Value = ToolChoiceBranch1{Value: next}
+			v.Value = ToolChoiceBranchTool{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type ToolChoiceBranch0 struct{ Value ToolChoiceMode }
+type ToolChoiceBranchMode struct{ Value ToolChoiceMode }
 
-func (ToolChoiceBranch0) isToolChoice() {}
+func (ToolChoiceBranchMode) isToolChoice() {}
 
-func (v ToolChoiceBranch0) MarshalJSON() ([]byte, error) {
+func (v ToolChoiceBranchMode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type ToolChoiceBranch1 struct{ Value ToolChoiceTool }
+type ToolChoiceBranchTool struct{ Value ToolChoiceTool }
 
-func (ToolChoiceBranch1) isToolChoice() {}
+func (ToolChoiceBranchTool) isToolChoice() {}
 
-func (v ToolChoiceBranch1) MarshalJSON() ([]byte, error) {
+func (v ToolChoiceBranchTool) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -8442,33 +8442,33 @@ func (v *ToolResultFileID) UnmarshalJSON(data []byte) error {
 	{
 		var next string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = ToolResultFileIDBranch0{Value: next}
+			v.Value = ToolResultFileIDBranchText{Value: next}
 			return nil
 		}
 	}
 	{
 		var next map[string]string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = ToolResultFileIDBranch1{Value: next}
+			v.Value = ToolResultFileIDBranchMap{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type ToolResultFileIDBranch0 struct{ Value string }
+type ToolResultFileIDBranchText struct{ Value string }
 
-func (ToolResultFileIDBranch0) isToolResultFileID() {}
+func (ToolResultFileIDBranchText) isToolResultFileID() {}
 
-func (v ToolResultFileIDBranch0) MarshalJSON() ([]byte, error) {
+func (v ToolResultFileIDBranchText) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type ToolResultFileIDBranch1 struct{ Value map[string]string }
+type ToolResultFileIDBranchMap struct{ Value map[string]string }
 
-func (ToolResultFileIDBranch1) isToolResultFileID() {}
+func (ToolResultFileIDBranchMap) isToolResultFileID() {}
 
-func (v ToolResultFileIDBranch1) MarshalJSON() ([]byte, error) {
+func (v ToolResultFileIDBranchMap) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
@@ -9416,33 +9416,33 @@ func (v *UserContent) UnmarshalJSON(data []byte) error {
 	{
 		var next string
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = UserContentBranch0{Value: next}
+			v.Value = UserContentBranchText{Value: next}
 			return nil
 		}
 	}
 	{
 		var next []UserContentPart
 		if err = decodeUnionBranch(data, &next, false); err == nil {
-			v.Value = UserContentBranch1{Value: next}
+			v.Value = UserContentBranchList{Value: next}
 			return nil
 		}
 	}
 	return err
 }
 
-type UserContentBranch0 struct{ Value string }
+type UserContentBranchText struct{ Value string }
 
-func (UserContentBranch0) isUserContent() {}
+func (UserContentBranchText) isUserContent() {}
 
-func (v UserContentBranch0) MarshalJSON() ([]byte, error) {
+func (v UserContentBranchText) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 
-type UserContentBranch1 struct{ Value []UserContentPart }
+type UserContentBranchList struct{ Value []UserContentPart }
 
-func (UserContentBranch1) isUserContent() {}
+func (UserContentBranchList) isUserContent() {}
 
-func (v UserContentBranch1) MarshalJSON() ([]byte, error) {
+func (v UserContentBranchList) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.Value)
 }
 

@@ -78,7 +78,7 @@ void main() {
       expect(Source.fromJson(source).toJson(), Map.of(source)..remove('type'));
       expect(RawToolCall(toolCallId: 'c', toolName: 't', input: '{}').toJson(),
           {'toolCallId': 'c', 'toolName': 't', 'input': '{}'});
-      // The tag is a plain string: Dart emits single-value literals as String.
+      // JSON written before the tag still reads; another tag is rejected.
       expect(
           TypedToolCall.fromJson({
             'type': 'tool-call',
@@ -87,6 +87,14 @@ void main() {
             'input': {}
           }).toJson()['type'],
           'tool-call');
+      expect(
+          () => TypedToolCall.fromJson({
+                'type': 'source',
+                'toolCallId': 'c',
+                'toolName': 't',
+                'input': {}
+              }),
+          throwsStateError);
     });
 
     test('RawToolCall keeps every provider field when replacing input', () {

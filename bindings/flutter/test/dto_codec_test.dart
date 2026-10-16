@@ -44,9 +44,9 @@ void main() {
   });
 
   test('ordered unions select the first matching shape', () {
-    expect(DecisionInput.fromJson('text'), isA<DecisionInputBranch1>());
-    expect(DecisionInput.fromJson({'key': null}), isA<DecisionInputBranch2>());
-    expect(DecisionInput.fromJson([1, null]), isA<DecisionInputBranch3>());
+    expect(DecisionInput.fromJson('text'), isA<DecisionInputBranchText>());
+    expect(DecisionInput.fromJson({'key': null}), isA<DecisionInputBranchMap>());
+    expect(DecisionInput.fromJson([1, null]), isA<DecisionInputBranchList>());
     expect(() => DecisionInput.fromJson(true), throwsA(isA<TypeError>()));
   });
 

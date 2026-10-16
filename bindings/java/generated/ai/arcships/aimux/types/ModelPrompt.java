@@ -23,12 +23,12 @@ public abstract class ModelPrompt {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, Text.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, List.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -37,24 +37,24 @@ public abstract class ModelPrompt {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends ModelPrompt {
+    public static final class Text extends ModelPrompt {
         @JsonValue
         private final String value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(String value) { this.value = value; }
+        public Text(String value) { this.value = value; }
 
         public String getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends ModelPrompt {
+    public static final class List extends ModelPrompt {
         @JsonValue
-        private final List<ModelMessage> value;
+        private final java.util.List<ai.arcships.aimux.types.ModelMessage> value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(List<ModelMessage> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
+        public List(java.util.List<ai.arcships.aimux.types.ModelMessage> value) { this.value = value == null ? null : Collections.unmodifiableList(new ArrayList<>(value)); }
 
-        public List<ModelMessage> getValue() { return value; }
+        public java.util.List<ai.arcships.aimux.types.ModelMessage> getValue() { return value; }
     }
 }

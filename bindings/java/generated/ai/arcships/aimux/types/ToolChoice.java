@@ -30,12 +30,12 @@ public abstract class ToolChoice {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, Mode.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, Tool.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -44,24 +44,24 @@ public abstract class ToolChoice {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends ToolChoice {
+    public static final class Mode extends ToolChoice {
         @JsonValue
-        private final ToolChoiceMode value;
+        private final ai.arcships.aimux.types.ToolChoiceMode value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(ToolChoiceMode value) { this.value = value; }
+        public Mode(ai.arcships.aimux.types.ToolChoiceMode value) { this.value = value; }
 
-        public ToolChoiceMode getValue() { return value; }
+        public ai.arcships.aimux.types.ToolChoiceMode getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends ToolChoice {
+    public static final class Tool extends ToolChoice {
         @JsonValue
-        private final ToolChoiceTool value;
+        private final ai.arcships.aimux.types.ToolChoiceTool value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(ToolChoiceTool value) { this.value = value; }
+        public Tool(ai.arcships.aimux.types.ToolChoiceTool value) { this.value = value; }
 
-        public ToolChoiceTool getValue() { return value; }
+        public ai.arcships.aimux.types.ToolChoiceTool getValue() { return value; }
     }
 }

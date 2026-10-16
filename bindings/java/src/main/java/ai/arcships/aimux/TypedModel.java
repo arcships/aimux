@@ -43,10 +43,10 @@ public final class TypedModel implements AutoCloseable {
         model.stream(paramsJson, frame -> {
             if (frame instanceof StreamFrame.Event) {
                 StreamEvent event = ((StreamFrame.Event) frame).getEvent();
-                if (!(event instanceof StreamEvent.Branch1)) {
+                if (!(event instanceof StreamEvent.TextStreamPart)) {
                     throw new IllegalStateException("Expected text stream event");
                 }
-                consumer.accept(((StreamEvent.Branch1) event).getValue());
+                consumer.accept(((StreamEvent.TextStreamPart) event).getValue());
             }
         });
     }

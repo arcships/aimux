@@ -120,7 +120,8 @@ DTOs use `ai.arcships.aimux.types.DtoJson.MAPPER`, configured to retain arbitrar
 opaque JSON integers and decimals. Sized integer fields use `Integer` or `Long`;
 unsigned 64-bit values above `Long.MAX_VALUE` cannot be decoded into those fields.
 Tagged unions expose nested variants, and untagged
-unions expose ordered `Branch1`, `Branch2`, and subsequent branches. Byte codecs
+unions expose branches named after their types, such as `ToolChoice.Mode` and
+`ToolChoice.Tool`, tried in declaration order. Byte codecs
 remain strings on the wire; use `DtoJson.bytes` for a byte array. `HandleId`
 retains an unsigned decimal string; `DtoJson.u64` returns its checked unsigned bits as a `long`.
 Presence fields have `hasX()` and builder `omitX()` methods to distinguish an

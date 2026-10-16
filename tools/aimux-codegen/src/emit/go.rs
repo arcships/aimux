@@ -235,7 +235,9 @@ impl Emitter for Go {
                         "func (v *{name}) UnmarshalJSON(data []byte) error {{\n\tvar err error"
                     )
                     .unwrap();
-                    for (i, branch) in branches.iter().enumerate() {
+                    for branch in branches {
+                        let branch_name = ident(&branch.name);
+                        let branch = &branch.ty;
                         let mut required = String::new();
                         if let Ty::Ref(reference) = branch
                             && let Kind::Struct { fields, .. } = kind(reference, model)
@@ -245,11 +247,13 @@ impl Emitter for Go {
                             }
                         }
                         let nullable = matches!(shape(branch, model), Ty::Nullable(_) | Ty::Json);
-                        writeln!(out, "\t{{\n\t\tvar next {}\n\t\tif err = decodeUnionBranch(data, &next, {nullable}{required}); err == nil {{\n\t\t\tv.Value = {name}Branch{i}{{Value: next}}\n\t\t\treturn nil\n\t\t}}\n\t}}", ty(branch)).unwrap();
+                        writeln!(out, "\t{{\n\t\tvar next {}\n\t\tif err = decodeUnionBranch(data, &next, {nullable}{required}); err == nil {{\n\t\t\tv.Value = {name}Branch{branch_name}{{Value: next}}\n\t\t\treturn nil\n\t\t}}\n\t}}", ty(branch)).unwrap();
                     }
                     out.push_str("\treturn err\n}\n\n");
-                    for (i, branch) in branches.iter().enumerate() {
-                        writeln!(out, "type {name}Branch{i} struct{{ Value {} }}\n\nfunc ({name}Branch{i}) is{name}() {{}}\n\nfunc (v {name}Branch{i}) MarshalJSON() ([]byte, error) {{\n\treturn json.Marshal(v.Value)\n}}\n", ty(branch)).unwrap();
+                    for branch in branches {
+                        let branch_name = ident(&branch.name);
+                        let branch = &branch.ty;
+                        writeln!(out, "type {name}Branch{branch_name} struct{{ Value {} }}\n\nfunc ({name}Branch{branch_name}) is{name}() {{}}\n\nfunc (v {name}Branch{branch_name}) MarshalJSON() ([]byte, error) {{\n\treturn json.Marshal(v.Value)\n}}\n", ty(branch)).unwrap();
                     }
                 }
             }

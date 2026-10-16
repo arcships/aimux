@@ -27,17 +27,17 @@ public abstract class FilePartData {
             JsonNode value = context.readTree(parser);
             JsonMappingException failure = null;
             try {
-                return parser.getCodec().treeToValue(value, Branch1.class);
+                return parser.getCodec().treeToValue(value, FileData.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch2.class);
+                return parser.getCodec().treeToValue(value, Text.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
             try {
-                return parser.getCodec().treeToValue(value, Branch3.class);
+                return parser.getCodec().treeToValue(value, Map.class);
             } catch (JsonMappingException error) {
                 failure = error;
             }
@@ -46,35 +46,35 @@ public abstract class FilePartData {
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch1 extends FilePartData {
+    public static final class FileData extends FilePartData {
         @JsonValue
-        private final FileData value;
+        private final ai.arcships.aimux.types.FileData value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch1(FileData value) { this.value = value; }
+        public FileData(ai.arcships.aimux.types.FileData value) { this.value = value; }
 
-        public FileData getValue() { return value; }
+        public ai.arcships.aimux.types.FileData getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch2 extends FilePartData {
+    public static final class Text extends FilePartData {
         @JsonValue
         private final String value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch2(String value) { this.value = value; }
+        public Text(String value) { this.value = value; }
 
         public String getValue() { return value; }
     }
 
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Branch3 extends FilePartData {
+    public static final class Map extends FilePartData {
         @JsonValue
-        private final Map<String, String> value;
+        private final java.util.Map<String, String> value;
 
         @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
-        public Branch3(Map<String, String> value) { this.value = value == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(value)); }
+        public Map(java.util.Map<String, String> value) { this.value = value == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(value)); }
 
-        public Map<String, String> getValue() { return value; }
+        public java.util.Map<String, String> getValue() { return value; }
     }
 }

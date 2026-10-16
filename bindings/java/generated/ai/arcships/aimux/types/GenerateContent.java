@@ -16,7 +16,7 @@ import java.util.*;
 @JsonSubTypes({
     @JsonSubTypes.Type(value = GenerateContent.Text.class, name = "text"),
     @JsonSubTypes.Type(value = GenerateContent.ToolCallVariant.class, name = "tool-call"),
-    @JsonSubTypes.Type(value = GenerateContent.Source3Group.class, name = "source"),
+    @JsonSubTypes.Type(value = GenerateContent.SourceUrlGroup.class, name = "source"),
     @JsonSubTypes.Type(value = GenerateContent.Reasoning.class, name = "reasoning"),
     @JsonSubTypes.Type(value = GenerateContent.File.class, name = "file"),
     @JsonSubTypes.Type(value = GenerateContent.ReasoningFile.class, name = "reasoning-file"),
@@ -193,22 +193,22 @@ public abstract class GenerateContent {
     }
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
-    @JsonDeserialize(using = Source3Group.Deserializer.class)
-    public abstract static class Source3Group extends GenerateContent {
+    @JsonDeserialize(using = SourceUrlGroup.Deserializer.class)
+    public abstract static class SourceUrlGroup extends GenerateContent {
 
-        public static final class Deserializer extends JsonDeserializer<Source3Group> {
+        public static final class Deserializer extends JsonDeserializer<SourceUrlGroup> {
             @Override
-            public Source3Group deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
+            public SourceUrlGroup deserialize(com.fasterxml.jackson.core.JsonParser parser, DeserializationContext context)
                 throws java.io.IOException {
                 JsonNode value = context.readTree(parser);
                 JsonMappingException failure = null;
                 try {
-                    return parser.getCodec().treeToValue(value, Source3.class);
+                    return parser.getCodec().treeToValue(value, SourceUrl.class);
                 } catch (JsonMappingException error) {
                     failure = error;
                 }
                 try {
-                    return parser.getCodec().treeToValue(value, Source4.class);
+                    return parser.getCodec().treeToValue(value, SourceDocument.class);
                 } catch (JsonMappingException error) {
                     failure = error;
                 }
@@ -222,7 +222,7 @@ public abstract class GenerateContent {
     @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Source3 extends Source3Group {
+    public static final class SourceUrl extends SourceUrlGroup {
         @JsonProperty("id")
         private final String id;
         @JsonProperty("providerMetadata")
@@ -238,7 +238,7 @@ public abstract class GenerateContent {
         private final String url;
 
         @JsonCreator
-        public Source3(
+        public SourceUrl(
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "providerMetadata") Map<String, Map<String, JsonNode>> providerMetadata,
             @JsonProperty(value = "sourceType", required = true) String sourceType,
@@ -246,7 +246,7 @@ public abstract class GenerateContent {
             @JsonProperty(value = "url", required = true) String url) {
             this.id = id;
             this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
-            this.sourceType = sourceType;
+            this.sourceType = DtoJson.literal(sourceType, "url");
             this.title = title;
             this.url = url;
         }
@@ -294,7 +294,7 @@ public abstract class GenerateContent {
                 return this;
             }
 
-            public Source3 build() { return new Source3(id, providerMetadata, sourceType, title, url); }
+            public SourceUrl build() { return new SourceUrl(id, providerMetadata, sourceType, title, url); }
         }
     }
 
@@ -303,7 +303,7 @@ public abstract class GenerateContent {
     @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
-    public static final class Source4 extends Source3Group {
+    public static final class SourceDocument extends SourceUrlGroup {
         @JsonProperty("filename")
         private final String filename;
         @JsonProperty("id")
@@ -321,7 +321,7 @@ public abstract class GenerateContent {
         private final String title;
 
         @JsonCreator
-        public Source4(
+        public SourceDocument(
             @JsonProperty(value = "filename") String filename,
             @JsonProperty(value = "id", required = true) String id,
             @JsonProperty(value = "mediaType", required = true) String mediaType,
@@ -332,7 +332,7 @@ public abstract class GenerateContent {
             this.id = id;
             this.mediaType = mediaType;
             this.providerMetadata = providerMetadata == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(providerMetadata));
-            this.sourceType = sourceType;
+            this.sourceType = DtoJson.literal(sourceType, "document");
             this.title = title;
         }
 
@@ -386,7 +386,7 @@ public abstract class GenerateContent {
                 return this;
             }
 
-            public Source4 build() { return new Source4(filename, id, mediaType, providerMetadata, sourceType, title); }
+            public SourceDocument build() { return new SourceDocument(filename, id, mediaType, providerMetadata, sourceType, title); }
         }
     }
 
