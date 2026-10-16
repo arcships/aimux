@@ -14,11 +14,12 @@ use futures::{StreamExt, future::join_all};
 use serde::Deserialize;
 
 use crate::composite::{
-    ChildModel, add_usage, build_aggregator_prompt, child_max_retries, extract_text, step_options,
+    ChildModel, add_usage, build_aggregator_prompt, child_max_retries, extract_text, step_context,
 };
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::options::CallOptions;
+use crate::recording::RecordingContext;
 use crate::result::{GenerateResult, StreamResult};
 use crate::retry;
 use crate::stream_part::StreamPart;
@@ -110,6 +111,15 @@ impl MoaModel {
         o
     }
 
+    /// The recording context of the aggregator step.
+    fn aggregator_context(&self) -> Option<RecordingContext> {
+        step_context(format!(
+            "moa.aggregator:{}/{}",
+            self.aggregator.provider(),
+            self.aggregator.model_id()
+        ))
+    }
+
     /// Fan out references in parallel (non-streaming), accumulate usage, and
     /// collect `(model_id, text)` for the successful ones. Failures are handled
     /// per `fail_mode`. Returns the reference texts, accumulated usage, and any
@@ -124,24 +134,24 @@ impl MoaModel {
         }
         let ref_opts = self.reference_options(options);
         let results = join_all(self.references.iter().enumerate().map(|(i, m)| {
-            let child_opts = step_options(
-                &ref_opts,
-                format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()),
+            let context = step_context(format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()));
+            let ref_opts = &ref_opts;
+            let retries = retry::prepare_retries(
+                child_max_retries(),
+                m.retry_config(),
+                ref_opts.abort_signal.clone(),
             );
             async move {
-                let retries = retry::prepare_retries(
-                    child_max_retries(),
-                    m.retry_config(),
-                    child_opts.abort_signal.clone(),
-                );
-                retries
-                    .retry(|| {
-                        if let Some(context) = &child_opts.recording_context {
+                RecordingContext::scope(
+                    context.clone(),
+                    retries.retry(|| {
+                        if let Some(context) = &context {
                             let _ = context.start_attempt();
                         }
-                        m.do_generate(&child_opts)
-                    })
-                    .await
+                        m.do_generate(ref_opts)
+                    }),
+                )
+                .await
             }
         }))
         .await;
@@ -215,22 +225,17 @@ impl LanguageModel for MoaModel {
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );
-        let agg_opts = step_options(
-            &agg_opts,
-            format!(
-                "moa.aggregator:{}/{}",
-                self.aggregator.provider(),
-                self.aggregator.model_id()
-            ),
-        );
-        let mut agg = retries
-            .retry(|| {
-                if let Some(context) = &agg_opts.recording_context {
+        let context = self.aggregator_context();
+        let mut agg = RecordingContext::scope(
+            context.clone(),
+            retries.retry(|| {
+                if let Some(context) = &context {
                     let _ = context.start_attempt();
                 }
                 self.aggregator.do_generate(&agg_opts)
-            })
-            .await?;
+            }),
+        )
+        .await?;
 
         // 4. Fold reference usage + drop warnings into the aggregator result.
         agg.usage = add_usage(agg.usage, &ref_usage);
@@ -260,23 +265,18 @@ impl LanguageModel for MoaModel {
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );
-        let agg_opts = step_options(
-            &agg_opts,
-            format!(
-                "moa.aggregator:{}/{}",
-                self.aggregator.provider(),
-                self.aggregator.model_id()
-            ),
-        );
-        let agg = retries
-            .retry(|| {
-                if let Some(context) = &agg_opts.recording_context {
+        let context = self.aggregator_context();
+        let agg = RecordingContext::scope(
+            context.clone(),
+            retries.retry(|| {
+                if let Some(context) = &context {
                     let _ = context.start_attempt();
                 }
                 self.aggregator.do_stream(&agg_opts)
-            })
-            .await?;
-        let mut agg_stream = agg.stream;
+            }),
+        )
+        .await?;
+        let mut agg_stream = RecordingContext::scope_stream(context, agg.stream);
 
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings: drop_warnings });

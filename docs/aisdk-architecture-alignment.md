@@ -1474,7 +1474,6 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 
 - 拆 crate：`aimux-provider-utils` 不再依赖 `aimux-core`（§2.1、D17）。
 - OperationRuntime、DiagnosticScope、task-local scope 与 seq 分配器（§3.5、D3、D30）。
-- `CallOptions` 仍带 `recording_context`（`aimux-core/src/options.rs`）：录制入口把它写进调用选项，provider 再复制到 `HttpRequest`，与 §3.1“调用选项不含 session、call ID、recording context”不符。随 OperationRuntime 与 attempt 级 task-local scope 一起移出，由运行时把录制上下文交给 provider-utils 的统一诊断（§3.5、§4.3、D3）。`include_raw_chunks` 是上游 V4 的 `includeRawChunks`，按 §3.1 保留，不属差距。
 - provider 的 deferred tool result 按“传入了同名 provider 工具”放行，比上游的 `supportsDeferredResults` 宽（第二部分“工具结果关联”；`aimux-core/src/generate.rs`）。该标记随工具定义补齐；上游带它的是 Anthropic 的 web_search、web_fetch、code_execution、tool_search、advisor 各版本与 `openai.programmatic_tool_calling`。
 - Telemetry 与 tracing 分开，`ModelCallOutput`，op / attempt 事件（§3.5、D27）。
 - ProviderRegistration 与厂商扩展，注册表里的具名方法可达（§3.4、D13、D29）；随绑定迁移那一层做。

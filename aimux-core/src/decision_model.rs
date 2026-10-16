@@ -153,9 +153,6 @@ impl DecisionQuestion {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DecisionCallOptions {
-    #[serde(skip)]
-    #[ts(skip)]
-    pub recording_context: Option<crate::recording::RecordingContext>,
     pub state: DecisionState,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<DecisionImage>,
@@ -180,7 +177,6 @@ impl DecisionCallOptions {
             state,
             images: Vec::new(),
             questions,
-            recording_context: None,
             abort_signal: None,
             max_retries: None,
             timeout: None,
@@ -534,7 +530,7 @@ pub trait DecisionModel: Send + Sync {
 /// retry exhaustion, timeout or caller abort errors.
 pub async fn decide(
     model: &dyn DecisionModel,
-    mut options: DecisionCallOptions,
+    options: DecisionCallOptions,
 ) -> Result<DecisionResult, AiMuxError> {
     options.validate()?;
     let capabilities = model.capabilities();
@@ -614,7 +610,6 @@ pub async fn decide(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        options.recording_context = Some(ctx.clone());
         ctx.recorder.record_decision_input(
             &ctx.call_id,
             &options,
@@ -626,37 +621,40 @@ pub async fn decide(
         ctx
     });
     let result = timeout::run(
-        retries.retry(|| async {
-            if let Some(ctx) = &options.recording_context {
-                let _ = ctx.start_attempt();
-            }
-            let result = model.do_decide(&options).await?;
-            if result.rounding != capabilities.rounding {
-                return Err(AiMuxError::InvalidResponseData(
-                    "decision rounding does not match provider capabilities".into(),
-                ));
-            }
-            result.validate(&options)?;
-            if capabilities.returns_distributions
-                && result.answers.values().any(|answer| {
-                    matches!(
-                        answer,
-                        DecisionAnswer::Choice {
-                            probabilities: None,
-                            ..
-                        } | DecisionAnswer::Score {
-                            probabilities: None,
-                            ..
-                        }
-                    )
-                })
-            {
-                return Err(AiMuxError::InvalidResponseData(
-                    "decision provider omitted promised distributions".into(),
-                ));
-            }
-            Ok(result)
-        }),
+        crate::recording::RecordingContext::scope(
+            context.clone(),
+            retries.retry(|| async {
+                if let Some(ctx) = &context {
+                    let _ = ctx.start_attempt();
+                }
+                let result = model.do_decide(&options).await?;
+                if result.rounding != capabilities.rounding {
+                    return Err(AiMuxError::InvalidResponseData(
+                        "decision rounding does not match provider capabilities".into(),
+                    ));
+                }
+                result.validate(&options)?;
+                if capabilities.returns_distributions
+                    && result.answers.values().any(|answer| {
+                        matches!(
+                            answer,
+                            DecisionAnswer::Choice {
+                                probabilities: None,
+                                ..
+                            } | DecisionAnswer::Score {
+                                probabilities: None,
+                                ..
+                            }
+                        )
+                    })
+                {
+                    return Err(AiMuxError::InvalidResponseData(
+                        "decision provider omitted promised distributions".into(),
+                    ));
+                }
+                Ok(result)
+            }),
+        ),
         abort_signal.as_ref(),
         timeout,
     )

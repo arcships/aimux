@@ -171,7 +171,6 @@ impl LanguageModel for AnthropicAwsModel {
             build_headers,
             BodyEncoding::Bytes,
             options.abort_signal.clone(),
-            options.recording_context.clone(),
             &ToolNameMapping::new(options.tools.as_deref()),
             &crate::anthropic::stream::generate_id,
         )
@@ -189,7 +188,6 @@ impl LanguageModel for AnthropicAwsModel {
             build_headers,
             BodyEncoding::Bytes,
             options.abort_signal.clone(),
-            options.recording_context.clone(),
             ToolNameMapping::new(options.tools.as_deref()),
             std::sync::Arc::new(crate::anthropic::stream::generate_id),
         )

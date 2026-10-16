@@ -2041,15 +2041,10 @@ mod tests {
     #[test]
     fn input_record_serializes_options_without_internal_fields() {
         let mut opts = sample_options();
-        opts.recording_context = Some(RecordingContext::new(
-            "call-test",
-            Arc::new(RingRecorder::new()),
-        ));
         opts.abort_signal = Some(crate::AbortSignal::new());
         let rec = InputRecord::from_call_options(&opts);
         let v = &rec.options;
         assert!(v.get("call_id").is_none());
-        assert!(v.get("recording_context").is_none());
         assert!(v.get("abort_signal").is_none());
     }
 

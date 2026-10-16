@@ -200,7 +200,6 @@ impl GenerateTextOptions {
             reasoning: self.reasoning,
             body_overrides: self.body_overrides,
             abort_signal: self.abort_signal,
-            recording_context: None,
             include_raw_chunks: self.include_raw_chunks,
         }
     }
@@ -934,7 +933,7 @@ async fn generate_in_operation(
     }
 
     // 2. Build CallOptions.
-    let mut call_options = options.into_call_options(lm_prompt);
+    let call_options = options.into_call_options(lm_prompt);
     let operation_timeout = timeout::OperationTimeout::new(settings.timeout.unwrap_or_default())?;
     let abort_signal = call_options.abort_signal.clone();
     let retries = retry::prepare_retries(
@@ -949,7 +948,6 @@ async fn generate_in_operation(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
             &call_options,
@@ -997,12 +995,15 @@ async fn generate_in_operation(
         model = %model.model_id(),
         modality = "text",
     );
-    let operation = retries.retry(|| {
-        if let Some(context) = &context {
-            let _ = context.start_attempt();
-        }
-        do_generate_with_logging(model, &call_options, span.clone(), started)
-    });
+    let operation = crate::recording::RecordingContext::scope(
+        context.clone(),
+        retries.retry(|| {
+            if let Some(context) = &context {
+                let _ = context.start_attempt();
+            }
+            do_generate_with_logging(model, &call_options, span.clone(), started)
+        }),
+    );
     let result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
         Ok(r) => r,
         Err(e) => {
@@ -1435,7 +1436,7 @@ async fn stream_in_operation(
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
 
     // 2. Build CallOptions.
-    let mut call_options = options.into_call_options(lm_prompt);
+    let call_options = options.into_call_options(lm_prompt);
     let stream_timeout = settings.timeout.unwrap_or_default();
     let operation_timeout = timeout::OperationTimeout::new(stream_timeout)?;
     // Armed at operation start: providers await their first SSE event inside
@@ -1459,7 +1460,6 @@ async fn stream_in_operation(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
             &call_options,
@@ -1515,18 +1515,21 @@ async fn stream_in_operation(
     );
     let step_started = Instant::now();
     let attempt_started = Mutex::new(step_started);
-    let operation = retries.retry(|| {
-        if let Some(context) = &context {
-            let _ = context.start_attempt();
-        }
-        *attempt_started
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
-        // Call-level retry boundary: once do_stream returns a stream, retry
-        // no longer recreates the provider request; the returned stream is
-        // consumed by the stream-step timeout logic below.
-        model.do_stream(&call_options).instrument(span.clone())
-    });
+    let operation = crate::recording::RecordingContext::scope(
+        context.clone(),
+        retries.retry(|| {
+            if let Some(context) = &context {
+                let _ = context.start_attempt();
+            }
+            *attempt_started
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
+            // Call-level retry boundary: once do_stream returns a stream, retry
+            // no longer recreates the provider request; the returned stream is
+            // consumed by the stream-step timeout logic below.
+            model.do_stream(&call_options).instrument(span.clone())
+        }),
+    );
     let setup_deadline = timeout::min_deadline(operation_timeout.deadline(), first_chunk_deadline);
     let result: StreamResult =
         match timeout::run_until(operation, abort_signal.as_ref(), setup_deadline).await {
@@ -1567,7 +1570,10 @@ async fn stream_in_operation(
     // the stream's terminal fuse — `Finish` and non-recoverable errors must
     // end the stream under every configuration, or a provider that keeps the
     // connection open after `Finish` hangs a consumer reading to end-of-stream.
-    let mut provider_stream = stream;
+    // The pump runs in its own task, which does not inherit the recording
+    // scope; the stream carries it into every poll.
+    let mut provider_stream =
+        crate::recording::RecordingContext::scope_stream(context.clone(), stream);
     let chunk_ms = stream_timeout.chunk_ms;
     let pump_abort = abort_signal.clone();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
