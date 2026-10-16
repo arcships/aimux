@@ -22,7 +22,7 @@ use crate::{AbortSignal, retry, timeout};
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ImageFile {
     /// Inline file data (base64 or binary) with an explicit media type.
     File {
@@ -42,7 +42,8 @@ pub enum ImageFile {
 ///
 /// The JSON is a base64 string either way, as in the AI SDK's JSON.
 #[derive(Debug, Clone, TS)]
-#[ts(export, type = "string")]
+#[ts(type = "string")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ImageFileData {
     /// Base64-encoded string.
     Base64(String),
@@ -63,7 +64,8 @@ crate::wire::base64_wire_enum!(ImageFileData);
 /// The JSON is an array of base64 strings either way, as in the AI SDK's
 /// JSON; parsing yields `Base64`.
 #[derive(Debug, Clone, TS)]
-#[ts(export, type = "Array<string>")]
+#[ts(type = "Array<string>")]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ImageOutputs {
     /// Images as base64-encoded strings.
     Base64(Vec<String>),
@@ -93,7 +95,7 @@ impl<'de> Deserialize<'de> for ImageOutputs {
 /// Aligned with V4 `ImageModelV4Usage`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageUsage {
     /// Number of input (prompt) tokens used.
     #[ts(optional)]
@@ -114,7 +116,7 @@ pub struct ImageUsage {
 /// Aligned with V4 `ImageModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageCallOptions {
     /// Prompt for the image generation. `None` for operations (e.g. upscaling)
     /// that do not require a prompt.
@@ -202,7 +204,7 @@ impl ImageCallOptions {
 /// Aligned with V4 `ImageModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageResult {
     /// Generated images (base64 strings or binary data).
     pub images: ImageOutputs,
@@ -227,7 +229,7 @@ pub struct ImageResult {
 /// Response information for an image generation call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ImageResponse {
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
     #[ts(optional)]

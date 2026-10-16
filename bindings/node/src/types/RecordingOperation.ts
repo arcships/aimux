@@ -3,4 +3,4 @@
 /**
  * Operation stored in a unified recording. Older recordings are language calls.
  */
-export type RecordingOperation = "language_model" | "decision";
+export type RecordingOperation = "language-model" | "decision";

@@ -12,7 +12,7 @@ use crate::shared::{
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SkillFile {
     pub path: String,
     pub data: UploadFileData,
@@ -20,7 +20,7 @@ pub struct SkillFile {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct UploadSkillCallOptions {
     pub files: Vec<SkillFile>,
     #[ts(optional)]
@@ -33,7 +33,7 @@ pub struct UploadSkillCallOptions {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct UploadSkillResult {
     pub provider_reference: SharedProviderReference,
     #[ts(optional)]

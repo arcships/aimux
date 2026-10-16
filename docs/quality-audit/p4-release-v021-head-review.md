@@ -13,6 +13,8 @@
 > **验证基线**: 各代理分别执行 `cargo check -p aimux-core/-p aimux-provider-utils/-p aimux-providers/-p aimux-ffi/-p aimux-cli/-p aimux-replay`
 > 全部通过；`cargo test -p aimux-providers --test list_models_test` 22/22 通过；
 > `gen_provider_names.py --check` 通过（8 文件 / 251 名称）；`git diff --check` 无 whitespace error。
+>
+> **后续变更**: 2026-09-29 删除生成式 `ProviderName` 及 `scripts/gen_provider_names.py`;本报告验证基线与门禁表中的 `gen_provider_names.py --check` 已不再适用,provider 名字统一为字符串,运行期列表由 registry 导出(`provider_names()`),现行列表见 [docs/api/providers.md](../api/providers.md)。
 
 ---
 

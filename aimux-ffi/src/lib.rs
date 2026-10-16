@@ -3683,7 +3683,7 @@ pub extern "C" fn aimux_router_new(
 /// is a single existing model handle. `config_json` is a serialized `MoaConfig`
 /// (all fields optional): `{ "providerName": "moa", "modelId": "moa",
 /// "aggregatorInstructions": null, "stripReferenceTools": true,
-/// "failMode": "best_effort" | "fail_fast" }`.
+/// "failMode": "best-effort" | "fail-fast" }`.
 ///
 /// Fails on: bad JSON, an unknown aggregator handle (references may be empty;
 /// aggregator may not).

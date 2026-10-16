@@ -530,6 +530,7 @@ fn provider_tool(kind: &str, args: impl Serialize) -> Result<ProviderTool, AiMux
         args: args.as_object().cloned().ok_or_else(|| {
             AiMuxError::InvalidArgument("provider tool arguments must be an object".into())
         })?,
+        supports_deferred_results: None,
     })
 }
 
@@ -612,6 +613,7 @@ pub fn apply_patch() -> ProviderTool {
         id: openai_id("apply_patch"),
         name: "apply_patch".into(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     }
 }
 
@@ -622,6 +624,7 @@ pub fn computer() -> ProviderTool {
         id: openai_id("computer"),
         name: "computer".into(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     }
 }
 
@@ -632,16 +635,20 @@ pub fn local_shell() -> ProviderTool {
         id: openai_id("local_shell"),
         name: "local_shell".into(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     }
 }
 
-/// Create the `programmatic_tool_calling` provider tool.
+/// Create the `programmatic_tool_calling` provider tool. Its results may
+/// arrive in a later response than its call, so it supports deferred results
+/// (@ai-sdk/openai 4.0.83 src/tool/programmatic-tool-calling.ts:55).
 #[must_use]
 pub fn programmatic_tool_calling() -> ProviderTool {
     ProviderTool {
         id: openai_id("programmatic_tool_calling"),
         name: "programmatic_tool_calling".into(),
         args: serde_json::Map::new(),
+        supports_deferred_results: Some(true),
     }
 }
 

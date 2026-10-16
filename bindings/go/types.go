@@ -537,6 +537,10 @@ type Tool struct {
 	// ID and Args are the provider tool's id ("<provider>.<tool>") and arguments.
 	ID   string                     `json:"id,omitempty"`
 	Args map[string]json.RawMessage `json:"args,omitempty"`
+	// SupportsDeferredResults marks a provider tool whose result may arrive in
+	// a later response than its call (provider-utils@5.0.55
+	// src/types/tool.ts:316-326).
+	SupportsDeferredResults *bool `json:"supportsDeferredResults,omitempty"`
 }
 
 // MarshalOptions serializes GenerateTextOptions to JSON. Returns "" for nil opts.

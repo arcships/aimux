@@ -145,6 +145,7 @@ impl ImageModel for GoogleImageModel {
                     .expect("google.google_search is namespaced"),
                 name: "google_search".into(),
                 args: object.clone(),
+                supports_deferred_results: None,
             })]);
         }
         google.insert("responseModalities".into(), json!(["IMAGE"]));

@@ -4,6 +4,8 @@
 **范围**: `aimux-providers` crate（46.6k 行，78 模块声明，251 registry 条目）  
 **方法**: 只读源码审计（`read`/`grep`/`glob`），未运行 `cargo` 命令
 
+> **后续变更**: 2026-09-29 删除生成式 `ProviderName` 及 `scripts/gen_provider_names.py`;本报告中关于 `gen_provider_names.py` → `provider_name.rs` 生成链路与 `provider_name_matches_registry_json` 防漂移测试的描述已不再适用,provider 名字统一为字符串,运行期列表由 registry 导出(`provider_names()`),现行列表见 [docs/api/providers.md](../api/providers.md)。
+
 ---
 
 ## 一、概述

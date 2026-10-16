@@ -281,7 +281,7 @@ impl TraceStore {
 /// Query filter (RFC-0015 §5.3).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TraceFilter {
     #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -301,7 +301,7 @@ pub struct TraceFilter {
 /// side by side, never merged into a single number).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TraceStats {
     pub provider: String,
     pub model: String,
@@ -328,7 +328,7 @@ pub struct TraceStats {
 /// Session chain view (append-only order + prefix stability, RFC-0015 §5.3).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SessionChainView {
     pub session_id: String,
     pub record_ids: Vec<String>,
@@ -339,7 +339,7 @@ pub struct SessionChainView {
 /// One step of a session's cache-hit trajectory (RFC-0024 §4.3).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SessionStepStat {
     /// Step within the session (0-based, session order).
     pub step: u32,
@@ -363,7 +363,7 @@ pub struct SessionStepStat {
 /// A prefix break between two consecutive records of a session.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct PrefixBreak {
     pub at_record_id: String,
     pub prev_record_id: String,
@@ -373,7 +373,7 @@ pub struct PrefixBreak {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum BreakKind {
     SystemChanged,
     ToolsChanged,

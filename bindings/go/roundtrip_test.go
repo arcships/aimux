@@ -476,6 +476,37 @@ func TestNamespaceMapsKeepInsertionOrder(t *testing.T) {
 	}
 }
 
+// supportsDeferredResults is kept when set and omitted when absent
+// (provider-utils@5.0.55 src/types/tool.ts:316-326).
+func TestProviderToolSupportsDeferredResults(t *testing.T) {
+	supported := true
+	for _, flag := range []*bool{nil, &supported} {
+		provider, err := json.Marshal(Tool{
+			Type:                    "provider",
+			ID:                      "anthropic.code_execution_20250825",
+			Name:                    "code_execution",
+			SupportsDeferredResults: flag,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{"type":"provider","name":"code_execution","id":"anthropic.code_execution_20250825"}`
+		if flag != nil {
+			want = `{"type":"provider","name":"code_execution","id":"anthropic.code_execution_20250825","supportsDeferredResults":true}`
+		}
+		if string(provider) != want {
+			t.Errorf("provider tool: got %s, want %s", provider, want)
+		}
+		var decoded Tool
+		if err := json.Unmarshal(provider, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if (decoded.SupportsDeferredResults == nil) != (flag == nil) {
+			t.Errorf("supportsDeferredResults did not round-trip: %s", provider)
+		}
+	}
+}
+
 // ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
 
 // A result's toolCalls and sources are the AI SDK's TypedToolCall and Source,

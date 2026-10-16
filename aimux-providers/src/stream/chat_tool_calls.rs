@@ -18,7 +18,8 @@ use aimux_core::types::ProviderMetadata;
 use super::tool_call_arguments::{StreamingToolCallArgumentState, starts_with_structured_value};
 use super::{Controller, Emit, GenerateId};
 
-/// Id used when the id generator returns a blank string.
+/// Id used only when the generator returns a blank string
+/// (provider-utils@5.0.55 src/streaming-tool-call-tracker.ts:461).
 const FALLBACK_TOOL_CALL_ID: &str = "tool-call";
 
 /// One `tool_calls[i]` entry of a chunk, borrowed from the vendor's wire
