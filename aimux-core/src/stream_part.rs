@@ -13,7 +13,7 @@ use crate::types::{FinishReason, ProviderMetadata, Usage, Warning};
 
 /// A single chunk in the stream returned by `do_stream`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum StreamPart {
     // ── P0: text ──
     /// Start of a text segment.

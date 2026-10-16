@@ -22,7 +22,7 @@ use crate::types::ProviderMetadata;
 /// The wire shape matches [`ToolCall`] field for field, except that `input`
 /// is the provider's raw argument *text* rather than a parsed value.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RawToolCall {
     pub tool_call_id: String,
     pub tool_name: String,
@@ -357,7 +357,7 @@ fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
 /// `{"type":"failed","message":"…"}`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolCallRepairReply {
     /// Re-validate this replacement call, exactly as the closure path does
     /// for a returned `Some(call)`.

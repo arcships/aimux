@@ -126,7 +126,7 @@ fn denoise_at(value: &Value, depth: usize) -> Value {
 /// Serialized-wire fingerprint stored in a `TraceRecord` (hex strings —
 /// `u128` is not JSON-serializable).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Fingerprint {
     /// 128-bit hash of the whole denoised body (hex).
     pub body_hash: String,

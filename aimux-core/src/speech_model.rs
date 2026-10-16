@@ -16,7 +16,7 @@ use crate::{AbortSignal, retry, timeout};
 /// The TS result type is `string | Uint8Array`. Providers should return data
 /// without unnecessary conversion.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AudioData {
     /// Audio as a base64-encoded string.
     Base64(String),
@@ -28,7 +28,7 @@ pub enum AudioData {
 ///
 /// Aligned with V4 `SpeechModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechCallOptions {
     /// Text to convert to speech.
     pub text: String,
@@ -92,7 +92,7 @@ impl SpeechCallOptions {
 ///
 /// Aligned with V4 `SpeechModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechResult {
     /// Generated audio (base64 string or binary data).
     pub audio: AudioData,
@@ -112,7 +112,7 @@ pub struct SpeechResult {
 
 /// Optional request information for a speech call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechRequest {
     /// Response body (HTTP providers only).
     pub body: Option<serde_json::Value>,
@@ -120,7 +120,7 @@ pub struct SpeechRequest {
 
 /// Response information for a speech call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct SpeechResponse {
     /// Timestamp for the start of the generated response (ISO 8601 string).
     pub timestamp: Option<String>,
