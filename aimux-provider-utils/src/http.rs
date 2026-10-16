@@ -94,9 +94,9 @@ pub struct HttpRequest {
     pub fetch: Option<FetchFunction>,
 }
 
-/// The per-operation context every model's call options carry into an
-/// exchange: cancellation, and (for language models) the call id and
-/// recording context the RFC-0031 pipeline threads through.
+/// The per-operation context of an exchange: the call options' cancellation,
+/// and for language-model and decision calls the call id and recording context
+/// of the operation the call runs in ([`RecordingContext::current`]).
 pub trait ExchangeContext {
     fn abort_signal(&self) -> Option<aimux_core::AbortSignal>;
     /// Only language-model `CallOptions` participate in recording; the other
@@ -114,12 +114,10 @@ impl ExchangeContext for aimux_core::options::CallOptions {
         self.abort_signal.clone()
     }
     fn call_id(&self) -> Option<String> {
-        self.recording_context
-            .as_ref()
-            .map(|ctx| ctx.call_id.clone())
+        RecordingContext::current().map(|ctx| ctx.call_id)
     }
     fn recording_context(&self) -> Option<RecordingContext> {
-        self.recording_context.clone()
+        RecordingContext::current()
     }
 }
 
@@ -128,12 +126,10 @@ impl ExchangeContext for aimux_core::decision_model::DecisionCallOptions {
         self.abort_signal.clone()
     }
     fn call_id(&self) -> Option<String> {
-        self.recording_context
-            .as_ref()
-            .map(|ctx| ctx.call_id.clone())
+        RecordingContext::current().map(|ctx| ctx.call_id)
     }
     fn recording_context(&self) -> Option<RecordingContext> {
-        self.recording_context.clone()
+        RecordingContext::current()
     }
 }
 

@@ -254,8 +254,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `CallOptions.call_id` and `CallOptions::for_step` are removed
   (`aimux-core`); the V4 call options have no call id. The recording
-  correlation id is `recording_context.call_id`, and `HttpRequest::new` takes
-  it from there. Provider code that built `HttpRequest { call_id:
+  correlation id is the recording context's `call_id`, and `HttpRequest::new`
+  takes it from there. Provider code that built `HttpRequest { call_id:
   options.call_id.clone(), .. }` uses `HttpRequest::new(url, headers,
   options)`. The JSON is unchanged (both were internal and never serialized).
 
@@ -270,6 +270,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   router, MoA or trace layer directly wraps the call in
   `OperationSettings { .. }.scope(..)`. Recordings keep the three keys in
   `input.options`, and replay restores them.
+
+- A provider tool result without its call is accepted only for a provider
+  tool that sets `supportsDeferredResults: true` (new optional
+  `ProviderTool.supports_deferred_results`), as in the AI SDK
+  (`convert-language-model-content.ts:96-103`); before, any provider tool of
+  that name was enough. The flag is not sent to the provider.
+
+- `CallOptions.recording_context` and `DecisionCallOptions.recording_context`
+  are removed (`aimux-core`): the V4 call options carry no recording context.
+  `generate_text`, `stream_text` and `decide` run the model call in
+  `recording::RecordingContext::scope`, and the stream in
+  `RecordingContext::scope_stream`; the router and MoA scope each child step
+  in a child context. `HttpRequest::new` and the trace layer read
+  `RecordingContext::current()`. Code that set the field on call options
+  wraps the call in `RecordingContext::scope(Some(context), ..)`. The JSON is
+  unchanged (the field was never serialized).
 
 - `ProviderTool.id` is a `types::NamespacedKind`, the V4
   `${string}.${string}` identifier: an id without a `.` (for example

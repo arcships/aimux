@@ -638,11 +638,9 @@ fn opts() -> CallOptions {
     CallOptions::new(Vec::new())
 }
 
-/// Call options bound to a recording context with `call_id`.
-fn recorded(call_id: &str, recorder: &Arc<RingRecorder>) -> CallOptions {
-    let mut options = opts();
-    options.recording_context = Some(RecordingContext::new(call_id, recorder.clone()));
-    options
+/// A recording context with `call_id`.
+fn recorded(call_id: &str, recorder: &Arc<RingRecorder>) -> Option<RecordingContext> {
+    Some(RecordingContext::new(call_id, recorder.clone()))
 }
 
 /// One non-streaming call through `layer`, in `session`. Only this function
@@ -1035,11 +1033,17 @@ fn trace_layer_takes_the_call_id_from_the_recording_context() {
     let ok = traced(MockModel::new(token_body(16, 16, 0), 0, 32), &store);
     let failing = traced(Failing, &store);
 
-    generate_in(&ok, None, recorded("call-generate", &recorder)).unwrap();
-    drain(stream_in(&ok, None, recorded("call-stream", &recorder)).unwrap());
-    assert!(generate_in(&failing, None, recorded("call-failed", &recorder)).is_err());
-    generate_in(&ok, None, opts()).unwrap();
-    drain(stream_in(&ok, None, opts()).unwrap());
+    let generate = |layer: &TraceLayer, context| {
+        block_on(RecordingContext::scope(context, layer.do_generate(&opts())))
+    };
+    let stream = |layer: &TraceLayer, context| {
+        block_on(RecordingContext::scope(context, layer.do_stream(&opts())))
+    };
+    generate(&ok, recorded("call-generate", &recorder)).unwrap();
+    drain(stream(&ok, recorded("call-stream", &recorder)).unwrap());
+    assert!(generate(&failing, recorded("call-failed", &recorder)).is_err());
+    generate(&ok, None).unwrap();
+    drain(stream(&ok, None).unwrap());
 
     let ids: Vec<String> = records(&store).into_iter().map(|rec| rec.call_id).collect();
     assert_eq!(ids.len(), 5);
