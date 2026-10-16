@@ -66,8 +66,8 @@ struct ContractTests {
     static func manifestAndHandles() async throws {
         let manifest = try await AimuxRuntime.manifest()
         guard case .object(let fields) = manifest else { throw CheckFailure(description: "Missing manifest") }
-        try require(fields["opsVersion"] == .string("1.0"))
-        let handle = try await AimuxRuntime.open("provider.create")
+        try require(fields["opsVersion"] == .string(AimuxOps.OPS_VERSION))
+        let handle = try await AimuxRuntime.open(AimuxOps.OP_PROVIDER_CREATE)
         try require(try await handle.call("echo", params: .string("你好 🌍")) == .string("你好 🌍"))
         handle.close()
         do { _ = try await handle.call("echo"); throw CheckFailure(description: "Closed handle admitted") }
@@ -79,7 +79,7 @@ struct ContractTests {
 #endif
     static func versionMismatch() async throws {
         aimux_test_version(2 << 16)
-        defer { aimux_test_version(1 << 16) }
+        defer { aimux_test_version(AimuxOps.ABI_VERSION) }
         do { _ = try await AimuxRuntime.manifest(); throw CheckFailure(description: "Accepted wrong ABI") }
         catch let error as AimuxError { try require(error.code == 304) }
     }

@@ -13,7 +13,7 @@
 static atomic_uint next_id = 1;
 static atomic_int cancelled[SLOTS], drops[SLOTS];
 static atomic_int active, strings, errors, aborts, emitted, main_calls;
-static atomic_uint version = 1 << 16;
+static atomic_uint version = AIMUX_ABI_VERSION;
 struct aimux_error { int32_t code; char *json; };
 static unsigned index_of(uint64_t id) { return id > BASE && id - BASE < SLOTS ? (unsigned)(id - BASE) : 0; }
 static void background(void) { if (pthread_main_np()) atomic_fetch_add(&main_calls, 1); }
@@ -34,15 +34,19 @@ int aimux_test_main_calls(void) { return atomic_load(&main_calls); }
 void aimux_test_version(uint32_t v) { atomic_store(&version, v); }
 uint32_t aimux_abi_version(void) { return atomic_load(&version); }
 aimux_error_t *aimux_manifest_json(char **out) {
-    background(); *out = owned("{\"abiVersion\":65536,\"opsVersion\":\"1.0\",\"digest\":\"" AIMUX_MANIFEST_DIGEST "\",\"ops\":[]}"); return NULL;
+    char json[256];
+    background();
+    snprintf(json, sizeof(json), "{\"abiVersion\":%u,\"opsVersion\":\"" AIMUX_OPS_VERSION "\",\"digest\":\""
+             AIMUX_MANIFEST_DIGEST "\",\"ops\":[]}", (unsigned)AIMUX_ABI_VERSION);
+    *out = owned(json); return NULL;
 }
 aimux_error_t *aimux_call(uint64_t id, const char *op, const char *params, uint64_t abort, char **out) {
     background(); *out = NULL;
-    if (!strcmp(op, "abort.create") || !strcmp(op, "provider.create")) {
+    if (!strcmp(op, AIMUX_OP_ABORT_CREATE) || !strcmp(op, AIMUX_OP_PROVIDER_CREATE)) {
         char value[128]; snprintf(value, sizeof(value), "{\"handle\":\"%llu\"}", (unsigned long long)aimux_test_new_handle());
         *out = owned(value); return NULL;
     }
-    if (!strcmp(op, "operation.cancel")) {
+    if (!strcmp(op, AIMUX_OP_OPERATION_CANCEL)) {
         atomic_store(&cancelled[index_of(id)], 1); *out = owned("{}"); return NULL;
     }
     if (!strcmp(op, "error")) return failure(1, unknown);
