@@ -20,7 +20,7 @@ static _Atomic int drop_in_callback;
 static _Atomic uint64_t last_handle;
 static _Atomic uint64_t last_length;
 static _Atomic int64_t last_timeout;
-static _Atomic uint32_t abi_version = 65536;
+static _Atomic uint32_t abi_version = AIMUX_ABI_VERSION;
 static _Atomic int ops_mismatch;
 static _Atomic int digest_mismatch;
 static _Atomic int finalizers[4096];
@@ -46,8 +46,8 @@ static void pause_millis(long ms) {
 uint32_t aimux_abi_version(void) { return atomic_load(&abi_version); }
 aimux_error_t *aimux_manifest_json(char **out) {
     char json[256];
-    snprintf(json, sizeof json, "{\"abiVersion\":65536,\"opsVersion\":\"%s\",\"digest\":\"%s\",\"ops\":[]}",
-        atomic_load(&ops_mismatch) ? "1.1" : AIMUX_OPS_VERSION,
+    snprintf(json, sizeof json, "{\"abiVersion\":%u,\"opsVersion\":\"%s\",\"digest\":\"%s\",\"ops\":[]}",
+        AIMUX_ABI_VERSION, atomic_load(&ops_mismatch) ? "1.1" : AIMUX_OPS_VERSION,
         atomic_load(&digest_mismatch) ? "wrong-digest" : AIMUX_MANIFEST_DIGEST);
     *out = owned(json);
     return NULL;
@@ -56,16 +56,16 @@ aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
                            uint64_t abort, char **out) {
     *out = NULL;
     atomic_store(&last_handle, handle);
-    if (!strcmp(op, "abort.create")) {
+    if (!strcmp(op, AIMUX_OP_ABORT_CREATE)) {
         char result[80];
         uint64_t id = atomic_fetch_add(&next_id, 1);
         snprintf(result, sizeof result, "{\"handle\":\"%llu\"}", (unsigned long long) id);
         *out = owned(result);
-    } else if (!strcmp(op, "provider.create")) {
+    } else if (!strcmp(op, AIMUX_OP_PROVIDER_CREATE)) {
         atomic_fetch_add(&provider_calls, 1);
         *out = owned("{\"handle\":\"100\"}");
-    } else if (!strcmp(op, "provider.model") || !strcmp(op, "provider.files")
-               || !strcmp(op, "transcription.start")) {
+    } else if (!strcmp(op, AIMUX_OP_PROVIDER_MODEL) || !strcmp(op, AIMUX_OP_PROVIDER_FILES)
+               || !strcmp(op, AIMUX_OP_TRANSCRIPTION_START)) {
         char result[80];
         uint64_t id = atomic_fetch_add(&next_id, 1);
         snprintf(result, sizeof result, "{\"handle\":\"%llu\"}", (unsigned long long) id);
@@ -80,7 +80,7 @@ aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
         return failure(203, "{\"kind\":\"binding\",\"code\":203,\"message\":\"wrong handle\",\"error\":{\"name\":\"InvalidHandle\",\"expected\":[\"Language\"],\"actual\":\"Image\"}}");
     } else if (!strcmp(op, "test.protocol")) {
         return failure(300, "{\"kind\":\"protocol\",\"code\":300,\"message\":\"unknown op\",\"error\":{\"name\":\"InvalidOp\"}}");
-    } else if (!strcmp(op, "text.generate") || !strcmp(op, "text.consume")) {
+    } else if (!strcmp(op, AIMUX_OP_TEXT_GENERATE) || !strcmp(op, AIMUX_OP_TEXT_CONSUME)) {
         *out = owned("{\"text\":\"你好 🌏\"}");
     } else {
         *out = owned(params);
@@ -183,6 +183,6 @@ void fixture_reset(void) {
     for (int i = 0; i < 4096; i++) { atomic_store(&signals[i], 0); atomic_store(&drops[i], 0); atomic_store(&finalizers[i], 0); }
     atomic_store(&entered, 0); atomic_store(&callback_count, 0);
     atomic_store(&drop_in_callback, 0); atomic_store(&provider_calls, 0);
-    atomic_store(&abi_version, 65536); atomic_store(&ops_mismatch, 0); atomic_store(&digest_mismatch, 0);
+    atomic_store(&abi_version, AIMUX_ABI_VERSION); atomic_store(&ops_mismatch, 0); atomic_store(&digest_mismatch, 0);
     atomic_store(&poll_state, 1); atomic_store(&stream_mode, 0);
 }

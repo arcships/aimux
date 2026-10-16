@@ -4,6 +4,7 @@ import ai.arcships.aimux.Aimux
 import ai.arcships.aimux.AimuxException as JavaAimuxException
 import ai.arcships.aimux.KotlinInteropFixtures
 import ai.arcships.aimux.StreamFrame
+import ai.arcships.aimux.generated.AimuxOps
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.take
@@ -25,8 +26,8 @@ class NativeIntegrationTest {
     @Test
     fun `real manifest loads and Java provider model objects retain identity`() = runBlocking {
         val aimux = client()
-        assertEquals(65536, aimux.manifest.path("abiVersion").asInt())
-        assertEquals("1.0", aimux.manifest.path("opsVersion").asText())
+        assertEquals(AimuxOps.ABI_VERSION, aimux.manifest.path("abiVersion").asLong())
+        assertEquals(AimuxOps.OPS_VERSION, aimux.manifest.path("opsVersion").asText())
         val provider = aimux.createProvider(providerParams)
         try {
             val model = provider.languageModel("test-model")
@@ -45,12 +46,12 @@ class NativeIntegrationTest {
     @Test
     fun `Decision remains reachable through Java generic resources`() = runBlocking {
         client().createProvider("""{"package":"jev","settings":{"apiKey":"test-key"}}""").use { provider ->
-            provider.create("provider.model", """{"method":"decision","modelId":"test-model"}""").use { decision ->
+            provider.create(AimuxOps.OP_PROVIDER_MODEL, """{"method":"decision","modelId":"test-model"}""").use { decision ->
                 val capabilities = aimuxCall { executor ->
-                    decision.callAsync("decision.capabilities", "{}", executor)
+                    decision.callAsync(AimuxOps.OP_DECISION_CAPABILITIES, "{}", executor)
                 }
                 assertTrue(capabilities.isObject)
-                assertEquals("test-model", decision.call("model.info", "{}").path("modelId").asText())
+                assertEquals("test-model", decision.call(AimuxOps.OP_MODEL_INFO, "{}").path("modelId").asText())
             }
         }
     }
@@ -69,7 +70,7 @@ class NativeIntegrationTest {
                                 val operation = CompletableFuture<Unit>()
                                 executor.execute {
                                     try {
-                                        model.stream("text.stream", """{"prompt":"hello"}""", abort, consumer)
+                                        model.stream(AimuxOps.OP_TEXT_STREAM, """{"prompt":"hello"}""", abort, consumer)
                                         operation.complete(Unit)
                                     } catch (error: Throwable) { operation.completeExceptionally(error) }
                                 }
@@ -109,7 +110,7 @@ class NativeIntegrationTest {
         val resource = client().own("18446744073709551615")
         try {
             try {
-                aimuxCall { executor -> resource.callAsync("model.info", "{}", executor) }
+                aimuxCall { executor -> resource.callAsync(AimuxOps.OP_MODEL_INFO, "{}", executor) }
                 fail("expected invalid handle")
             } catch (error: BindingError) {
                 assertEquals(203, error.code)

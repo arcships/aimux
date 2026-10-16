@@ -1,5 +1,6 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.generated.AimuxOps;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.jna.Library;
 import com.sun.jna.Native;
@@ -13,7 +14,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -97,8 +97,7 @@ class AbiContractTest {
         fixture.fixture_ops(0);
         fixture.fixture_digest(1);
         assertThatThrownBy(() -> Aimux.load(System.getProperty("aimux.testLibrary")))
-            .isInstanceOf(IllegalStateException.class).hasMessageContaining("wrong-digest")
-            .hasMessageContaining(ai.arcships.aimux.generated.AimuxOps.MANIFEST_DIGEST);
+            .isInstanceOf(IllegalStateException.class).hasMessageContainingAll("wrong-digest", AimuxOps.MANIFEST_DIGEST);
         assertThat(fixture.fixture_provider_calls()).isZero();
     }
 
@@ -123,17 +122,17 @@ class AbiContractTest {
     @Test void callbackCopyRejectsOversizedAndNullFramesBeforeDecoding() {
         try (Resource resource = aimux.own("4003")) {
             fixture.fixture_stream(6);
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", f -> fail("Unexpected frame")))
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", f -> fail("Unexpected frame")))
                 .isInstanceOf(ProtocolException.ResourceLimit.class).hasMessageContaining("budget");
             fixture.fixture_stream(7);
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", f -> fail("Unexpected frame")))
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", f -> fail("Unexpected frame")))
                 .isInstanceOf(BindingException.CallbackFailure.class).hasRootCauseMessage("NULL stream frame");
         }
     }
 
     @Test void consumerResourceLimitStillReportsCallbackFailure() {
         try (Resource resource = aimux.own("4004")) {
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", f -> {
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", f -> {
                 throw envelope("protocol", 305, "ResourceLimit");
             })).isInstanceOf(BindingException.CallbackFailure.class)
                 .hasCauseInstanceOf(ProtocolException.ResourceLimit.class);
@@ -233,7 +232,7 @@ class AbiContractTest {
     @Test void closeFromConsumerDoesNotWaitAndDropsAfterNativeReturn() {
         Resource resource = aimux.own("120");
         AtomicInteger delivered = new AtomicInteger();
-        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> resource.stream("text.stream", "{}", frame -> {
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", frame -> {
             delivered.incrementAndGet();
             resource.close();
             resource.close();
@@ -242,13 +241,13 @@ class AbiContractTest {
         assertThat(delivered.get()).isEqualTo(3);
         assertThat(fixture.fixture_drops(120)).isEqualTo(1);
         assertThat(fixture.fixture_drop_in_callback()).isZero();
-        assertThatThrownBy(() -> resource.call("model.info", "{}")).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> resource.call(AimuxOps.OP_MODEL_INFO, "{}")).isInstanceOf(IllegalStateException.class);
     }
 
     @Test void copiesFramesAndRetainsConsumerThroughSlowCallbacksAndGc() {
         List<StreamFrame> frames = new ArrayList<>();
         try (Resource resource = aimux.own("121")) {
-            resource.stream("text.stream", "{}", frame -> {
+            resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", frame -> {
                 frames.add(frame);
                 System.gc();
                 try { Thread.sleep(20); } catch (InterruptedException e) { throw new AssertionError(e); }
@@ -264,7 +263,7 @@ class AbiContractTest {
         AssertionError cause = new AssertionError("consumer broke");
         AtomicInteger deliveries = new AtomicInteger();
         try (Resource resource = aimux.own("122"); Abort abort = aimux.createAbort()) {
-            Throwable thrown = catchThrowable(() -> resource.stream("text.stream", "{}", abort, frame -> {
+            Throwable thrown = catchThrowable(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", abort, frame -> {
                 deliveries.incrementAndGet();
                 throw cause;
             }));
@@ -277,7 +276,7 @@ class AbiContractTest {
 
     @Test void callbackCanSignalAbortWithoutClosingTheModel() {
         try (Resource resource = aimux.own("123"); Abort abort = aimux.createAbort()) {
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", abort, frame -> abort.signal()))
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", abort, frame -> abort.signal()))
                 .isInstanceOf(CancellationException.class);
             assertThat(resource.call("test.echo", "{\"stillOpen\":true}").path("stillOpen").asBoolean()).isTrue();
         }
@@ -286,18 +285,18 @@ class AbiContractTest {
     @Test void reportsPreacceptanceAndTerminalErrorsAndInvalidNativeTermination() {
         try (Resource resource = aimux.own("124")) {
             fixture.fixture_stream(1);
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", frame -> fail("no frame expected")))
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", frame -> fail("no frame expected")))
                 .isInstanceOf(ProtocolException.InvalidOp.class);
             fixture.fixture_stream(3);
             List<StreamFrame> frames = new ArrayList<>();
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", frames::add))
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", frames::add))
                 .isInstanceOf(AimuxException.TimeoutError.class);
             assertThat(frames).hasSize(2);
             fixture.fixture_stream(4);
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", frame -> {}))
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", frame -> {}))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("without End");
             fixture.fixture_stream(5);
-            assertThatThrownBy(() -> resource.stream("text.stream", "{}", frame -> {}))
+            assertThatThrownBy(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", frame -> {}))
                 .isInstanceOf(BindingException.CallbackFailure.class);
         }
     }
@@ -319,7 +318,7 @@ class AbiContractTest {
         fixture.fixture_stream(2);
         Resource resource = aimux.own("126");
         CountDownLatch callback = new CountDownLatch(1);
-        Future<JsonNode> future = resource.streamAsync("text.stream", "{}", f -> callback.countDown(), executor);
+        Future<JsonNode> future = resource.streamAsync(AimuxOps.OP_TEXT_STREAM, "{}", f -> callback.countDown(), executor);
         assertThat(callback.await(2, TimeUnit.SECONDS)).isTrue();
         resource.close();
         assertThat(fixture.fixture_drops(126)).isZero();
@@ -361,7 +360,7 @@ class AbiContractTest {
         Abort abort = aimux.createAbort();
         CountDownLatch hold = new CountDownLatch(1);
         CountDownLatch entered = new CountDownLatch(1);
-        Future<?> stream = executor.submit(() -> resource.stream("text.stream", "{}", abort, frame -> {
+        Future<?> stream = executor.submit(() -> resource.stream(AimuxOps.OP_TEXT_STREAM, "{}", abort, frame -> {
             if (frame.isEnd()) return;
             entered.countDown();
             try { if (!hold.await(2, TimeUnit.SECONDS)) throw new AssertionError("deadline"); }
