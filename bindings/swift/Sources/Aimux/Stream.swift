@@ -24,7 +24,7 @@ func resourceLimit(_ message: String) -> AimuxError {
                             kind: .protocol, message: message))
 }
 
-public struct StreamEvent: Equatable, Sendable {
+public struct AimuxStreamEvent: Equatable, Sendable {
     public let seq: String
     public let event: JSONValue
 }
@@ -35,7 +35,7 @@ private enum Completion {
 }
 
 struct BufferedEvent: Sendable {
-    let value: StreamEvent
+    let value: AimuxStreamEvent
     let bytes: Int
 }
 
@@ -50,7 +50,7 @@ final class StreamChannel: @unchecked Sendable {
                                maxElementBytes: limits.eventBytes, sizeOf: { $0.bytes },
                                abort: { cancellation.cancel() })
     }
-    func send(_ event: StreamEvent, size: Int) {
+    func send(_ event: AimuxStreamEvent, size: Int) {
         stream.producer.yield(BufferedEvent(value: event, bytes: size))
     }
     fileprivate func finish(_ completion: Completion) {
@@ -74,7 +74,7 @@ final class StreamChannel: @unchecked Sendable {
 /// for-await loop releases it and aborts even when the sequence is retained.
 /// If retaining an iterator yourself, close it explicitly when abandoning it.
 public final class AimuxStream: Sendable, AsyncSequence {
-    public typealias Element = StreamEvent
+    public typealias Element = AimuxStreamEvent
     let channel: StreamChannel
     init(_ channel: StreamChannel) { self.channel = channel }
     deinit { channel.close() }
@@ -90,7 +90,7 @@ public final class AimuxStream: Sendable, AsyncSequence {
             iterator = sequence.channel.stream.makeAsyncIterator()
         }
         public func close() { iterator.cancel() }
-        public func next() async throws -> StreamEvent? {
+        public func next() async throws -> AimuxStreamEvent? {
             do {
                 try Task.checkCancellation()
                 var reader = iterator
@@ -171,7 +171,7 @@ private final class StreamBridge {
             case .event(let event, _):
                 let value = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(event))
                 ready.accept()
-                channel.send(StreamEvent(seq: seq.rawValue, event: value), size: length)
+                channel.send(AimuxStreamEvent(seq: seq.rawValue, event: value), size: length)
             case .end(let error, let outcome, _):
                 switch outcome {
                 case .success:
