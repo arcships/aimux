@@ -53,7 +53,7 @@ pub trait ReplayMatcher: Send + Sync {
 /// 精确匹配:provider/model_id 相同,且 prompt + 影响响应的可重放选项
 /// (temperature/max_output_tokens/seed/response_format/tools/tool_choice)
 /// 以及 headers/provider_options/body_overrides 规范相同才命中。运行时字段
-/// (call_id/abort_signal/recording_context)不参与比较。
+/// (call_id/abort_signal)不参与比较。
 ///
 /// headers/provider_options/body_overrides 用**脱敏感知比较**:录制侧这些
 /// 字段经 `recording::redact_json` 脱敏
@@ -98,7 +98,7 @@ impl ReplayMatcher for ExactMatcher {
 ///
 /// 含 prompt + temperature/max_output_tokens/seed/response_format/tools/
 /// tool_choice + headers/provider_options/body_overrides;排除运行时字段
-/// (call_id/abort_signal/recording_context)。序列化为 `Value` 后比较,
+/// (call_id/abort_signal)。序列化为 `Value` 后比较,
 /// 等价于"稳定规范哈希"但无碰撞风险。headers/provider_options/body_overrides
 /// 在比较时走脱敏感知语义(见 [`canonical_keys_match`])。
 fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {

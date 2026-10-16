@@ -142,7 +142,7 @@ pub struct InputRecord {
     pub operation: RecordingOperation,
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
-    /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+    /// 序列化的 CallOptions(abort_signal 已 serde skip),
     /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
     /// (`OperationSettings`);headers/provider_options/body_overrides 已递归脱敏。
     pub options: serde_json::Value,
