@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * What the final text of a generation is parsed into.
- * 
+ *
  * Upstream's `Output` is a JavaScript object with functions and has no JSON
  * form; aimux's JSON follows the public JSON rules: tagged by `type` with the
  * output kind (upstream's mode `name`, `output.ts:68`, `:114`, `:241`, `:520`, `:657`;

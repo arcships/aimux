@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
- * 
+ *
  * Newtype that enforces the `WxH` format used by V4 image `size` and video
  * `resolution` options. Aligned with the TS template-literal type
  * `` `${number}x${number}` ``.

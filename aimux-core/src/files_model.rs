@@ -39,7 +39,7 @@ pub enum UploadFileData {
 ///
 /// Aligned with V4 `FilesV4UploadFileCallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UploadFileCallOptions {
     /// The file data (raw bytes/base64 or inline text).
     pub data: UploadFileData,

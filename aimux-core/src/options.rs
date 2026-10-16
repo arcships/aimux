@@ -49,8 +49,12 @@ pub enum ResponseFormat {
 ///
 /// All values are milliseconds; `None` disables the corresponding limit. A
 /// `total` timeout also covers retry backoff and the whole streamed response.
+///
+/// Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+/// (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+/// without a timeout.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(deny_unknown_fields)]
 pub struct TimeoutConfiguration {
     /// Overall timeout for the entire call (including retries and, for
@@ -156,11 +160,6 @@ pub struct CallOptions {
     #[serde(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// RFC-0023 recording context (R7 快照绑定;internal;never serialized)。
-    /// 层 A 入口构造一次,provider 复制到 `HttpRequest`。None = 不录制。
-    #[serde(skip)]
-    pub recording_context: Option<crate::recording::RecordingContext>,
-
     /// Emit raw provider stream chunks as `StreamPart::Raw` (the AI SDK's
     /// `includeRawChunks`). When `Some(true)`, a streaming model yields one
     /// `Raw` part per SSE event, carrying the event's parsed JSON, before the
@@ -202,7 +201,6 @@ impl CallOptions {
             provider_options: None,
             reasoning: None,
             abort_signal: None,
-            recording_context: None,
             include_raw_chunks: None,
         }
     }

@@ -12,7 +12,7 @@ import java.util.*;
  * (`@ai-sdk/provider@4.0.21
  * src/language-model/v4/language-model-v4-tool-choice.ts:1-5`), carried by
  * [`CallOptions::tool_choice`](crate::options::CallOptions::tool_choice).
- * 
+ *
  * Always an object tagged by `type`, unlike the user-level [`ToolChoice`].
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")

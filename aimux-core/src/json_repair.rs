@@ -5,11 +5,14 @@
 //! scanner states keep their upstream names in the variant docs so upstream
 //! changes can be located.
 //!
-//! Positions are counted in Unicode scalar values, where upstream counts
-//! UTF-16 code units. The two only disagree when a character outside the
-//! Basic Multilingual Plane (an emoji, say) directly ends a number or a
-//! literal inside an array: upstream keeps the character (`"[1😀"` becomes
-//! `"[1😀]"`), this port drops it (`"[1]"`).
+//! Core's own paths do not call it: a final tool-call input is parsed as
+//! given, never repaired (RFC-0042 §3.2). It stays public because `ai`
+//! exports `parsePartialJson`, for callers that show streamed partial JSON
+//! (tool-input deltas, partial objects) before it is complete.
+//!
+//! The scanner steps through UTF-16 code units as upstream does, so a
+//! character outside the Basic Multilingual Plane (an emoji, say) is two
+//! steps: `"[1😀"` becomes `"[1😀]"` here too.
 
 use std::ops::ControlFlow;
 
@@ -29,6 +32,7 @@ use serde_json::Value;
 /// assert_eq!(fix_json(r#"{"items": [1, 2, {"done": tr"#), r#"{"items": [1, 2, {"done": true}]}"#);
 /// assert_eq!(fix_json(r#"{"key": "val"#), r#"{"key": "val"}"#);
 /// assert_eq!(fix_json("[1, "), "[1]");
+/// assert_eq!(fix_json("[1😀"), "[1😀]"); // as upstream, which counts UTF-16 code units
 /// ```
 #[doc(alias = "fixJson")]
 #[must_use]
@@ -43,9 +47,15 @@ pub fn fix_json(input: &str) -> String {
     {
         repair.open_value(i, c, frame);
     }
-    for (i, c) in chars {
-        if repair.step(i, c).is_break() {
-            break;
+    'scan: for (i, c) in chars {
+        // Upstream reads one UTF-16 code unit at a time, so a character
+        // outside the BMP takes two steps. Neither half is a JSON token, and
+        // neither is `c`, so stepping `c` twice is stepping its two halves;
+        // a mark on either keeps the whole character.
+        for _ in 0..c.len_utf16() {
+            if repair.step(i, c).is_break() {
+                break 'scan;
+            }
         }
     }
     repair.finish(input)

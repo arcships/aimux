@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Unified error type for all aimux operations.
- * 
+ *
  * Variants are cut by *what the caller does about it*, not by where the
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.

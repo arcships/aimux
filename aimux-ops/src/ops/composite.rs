@@ -36,7 +36,7 @@ enum Strategy {
 }
 
 #[derive(Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 enum Fallback {
     #[default]
     OnError,

@@ -334,23 +334,23 @@ async fn redirect_chain_is_recorded_as_one_logical_exchange() {
 /// `LanguageModelV4CallOptions` has no call id (`@ai-sdk/provider@4.0.21`
 /// `src/language-model/v4/language-model-v4-call-options.ts:8-138`), so the
 /// recording correlation id lives only in the recording context, and an
-/// exchange built from the call options takes it from there.
-#[test]
-fn an_exchange_takes_the_call_id_from_the_recording_context() {
+/// exchange takes it from the recording scope the call runs in.
+#[tokio::test]
+async fn an_exchange_takes_the_call_id_from_the_recording_context() {
     use aimux_core::language_model_message::LanguageModelMessage;
     use aimux_core::options::CallOptions;
     use aimux_core::recording::{RecordingContext, RingRecorder};
 
-    let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("hi")]);
+    let options = CallOptions::new(vec![LanguageModelMessage::user_text("hi")]);
     let unrecorded = HttpRequest::new("https://example.test", Vec::new(), &options);
     assert_eq!(unrecorded.call_id, None);
     assert!(unrecorded.recording_context.is_none());
 
-    options.recording_context = Some(RecordingContext::new(
-        "call-from-context",
-        Arc::new(RingRecorder::new()),
-    ));
-    let recorded = HttpRequest::new("https://example.test", Vec::new(), &options);
+    let context = RecordingContext::new("call-from-context", Arc::new(RingRecorder::new()));
+    let recorded = RecordingContext::scope(Some(context), async {
+        HttpRequest::new("https://example.test", Vec::new(), &options)
+    })
+    .await;
     assert_eq!(recorded.call_id.as_deref(), Some("call-from-context"));
     assert_eq!(
         recorded.recording_context.map(|context| context.call_id),

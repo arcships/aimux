@@ -104,7 +104,7 @@ pub struct TranscriptionSegment {
 ///
 /// Aligned with V4 `TranscriptionModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TranscriptionCallOptions {
     /// Audio to transcribe: raw bytes, a base64-encoded string, or a URL
     /// that [`transcribe`] downloads.

@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * Token usage of a generation step or a whole call: the AI SDK's
  * `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
- * 
+ *
  * The user-facing counterpart of the provider-level [`Usage`]: flat totals
  * plus detail objects, converted with [`as_language_model_usage`] and summed
  * across steps with [`add_language_model_usage`]. Unknown counts stay `None`,

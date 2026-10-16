@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * File data accepted by [`Files::upload_file`].
- * 
+ *
  * The V4 spec restricts upload input to the `data` and `text` variants of
  * `SharedV4FileData` (URLs and provider references are not valid uploads), so
  * this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].

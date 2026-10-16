@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * A video or image file used for video editing or image-to-video generation.
- * 
+ *
  * Aligned with V4 `VideoModelV4File`.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")

@@ -9,10 +9,10 @@ import java.util.*;
 
 /**
  * Generated audio: a base64-encoded string or raw binary bytes.
- * 
+ *
  * The TS result type is `string | Uint8Array`. Providers should return data
  * without unnecessary conversion.
- * 
+ *
  * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
 @JsonDeserialize(using = JsonDeserializer.None.class)

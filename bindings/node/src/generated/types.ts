@@ -2,7 +2,7 @@
 
 /**
  * Unified error type for all aimux operations.
- * 
+ *
  * Variants are cut by *what the caller does about it*, not by where the
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
@@ -186,7 +186,7 @@ export type AiMuxError =
 
 /**
  * Unified error type for all aimux operations.
- * 
+ *
  * Variants are cut by *what the caller does about it*, not by where the
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
@@ -372,7 +372,7 @@ export type AiMuxErrorInput =
  * What a failed API call observed — the field set of the AI SDK's
  * `APICallError` (`statusCode` / `responseBody`), which this project's error
  * taxonomy mirrors (docs/internal/vercel-research/07-kernel-infrastructure.md).
- * 
+ *
  * Carried by [`AiMuxError::ApiCall`] alone. There are no per-status
  * variants: a 401, 404 or 429 is an `ApiCall` error whose classification is
  * read from `status_code`, exactly as the AI SDK reads
@@ -385,7 +385,7 @@ export type AiMuxErrorInput =
  * with the source detail appended. The HTTP status is always a field, never
  * baked into the string; `Display` composes the human-readable form from the
  * fields at print time, so nothing downstream has to parse it back out.
- * 
+ *
  * Every producer must provide the sanitized request URL and request values.
  * This keeps transport and response failures self-contained and matches the
  * AI SDK's `APICallError` contract.
@@ -448,7 +448,7 @@ export interface ApiCallError {
  * What a failed API call observed — the field set of the AI SDK's
  * `APICallError` (`statusCode` / `responseBody`), which this project's error
  * taxonomy mirrors (docs/internal/vercel-research/07-kernel-infrastructure.md).
- * 
+ *
  * Carried by [`AiMuxError::ApiCall`] alone. There are no per-status
  * variants: a 401, 404 or 429 is an `ApiCall` error whose classification is
  * read from `status_code`, exactly as the AI SDK reads
@@ -461,7 +461,7 @@ export interface ApiCallError {
  * with the source detail appended. The HTTP status is always a field, never
  * baked into the string; `Display` composes the human-readable form from the
  * fields at print time, so nothing downstream has to parse it back out.
- * 
+ *
  * Every producer must provide the sanitized request URL and request values.
  * This keeps transport and response failures self-contained and matches the
  * AI SDK's `APICallError` contract.
@@ -522,7 +522,7 @@ export interface ApiCallErrorInput {
 
 /**
  * Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).
- * 
+ *
  * Newtype that enforces the `W:H` format used by V4 image and video
  * `aspectRatio` options. Aligned with the TS template-literal type
  * `` `${number}:${number}` ``.
@@ -671,17 +671,17 @@ export type AssistantPart =
 
 /**
  * Generated audio: a base64-encoded string or raw binary bytes.
- * 
+ *
  * The TS result type is `string | Uint8Array`. Providers should return data
  * without unnecessary conversion.
- * 
+ *
  * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
 export type AudioData = string
 
 /**
  * Audio input: raw bytes, a base64-encoded string, or a URL.
- * 
+ *
  * The JSON is a string, as in the AI SDK's JSON: base64 for bytes, the URL
  * text for a URL. Reading takes a string that parses as a URL as a URL and
  * any other string as base64 (base64 has no `:`), as a file part's string
@@ -726,7 +726,7 @@ export type CatalogueSource = "Anya2a" | "ModelsDev" | "Manual"
 
 /**
  * A complete Chat Completion response (non-streaming).
- * 
+ *
  * Mirrors the OpenAI `chat.completion` object.
  */
 export interface ChatCompletion {
@@ -753,7 +753,7 @@ export interface ChatCompletionChoice {
 
 /**
  * A single Chat Completion chunk (streaming).
- * 
+ *
  * Mirrors the OpenAI `chat.completion.chunk` object.
  */
 export interface ChatCompletionChunk {
@@ -825,7 +825,7 @@ export interface CodexRefreshRequest {
 
 /**
  * Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
- * 
+ *
  * `Debug` is hand-written so both tokens are redacted from logs and error
  * output.
  */
@@ -853,7 +853,7 @@ export interface CompletionTokensDetails {
  * A part of the content text generation returns: the AI SDK's core
  * `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
  * separate from the provider's [`GenerateContent`].
- * 
+ *
  * Tool calls are parsed, a provider tool result is a [`TypedToolResult`]
  * or, when the provider marks it as an error, a [`TypedToolError`], and a
  * generated file is wrapped as `{ file, providerMetadata }`, as upstream's
@@ -1003,7 +1003,7 @@ export type ContentPart =
  * A part of the content text generation returns: the AI SDK's core
  * `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
  * separate from the provider's [`GenerateContent`].
- * 
+ *
  * Tool calls are parsed, a provider tool result is a [`TypedToolResult`]
  * or, when the provider marks it as an error, a [`TypedToolError`], and a
  * generated file is wrapped as `{ file, providerMetadata }`, as upstream's
@@ -1316,7 +1316,7 @@ export interface DecisionRounding {
 
 /**
  * Options passed to [`EmbeddingModel::do_embed`].
- * 
+ *
  * Aligned with V4 `EmbeddingModelV4CallOptions`.
  */
 export interface EmbeddingCallOptions {
@@ -1359,7 +1359,7 @@ export interface EmbeddingResponse {
 
 /**
  * The result of [`EmbeddingModel::do_embed`].
- * 
+ *
  * Aligned with V4 `EmbeddingModelV4Result`.
  */
 export interface EmbeddingResult {
@@ -1412,16 +1412,16 @@ export interface ErrorEnvelope {
   retryAfterMs?: number
 }
 
-export type Fallback = "on_error" | "none"
+export type Fallback = "on-error" | "none"
 
 /**
  * Either raw bytes or a base64-encoded string (the AI SDK's
  * `Uint8Array | string`).
- * 
+ *
  * Providers should pass file data through without unnecessary conversion: if
  * the upstream API returns base64, return [`FileBytes::Base64`]; if it
  * returns binary, return [`FileBytes::Binary`].
- * 
+ *
  * The JSON is a base64 string either way, as in the AI SDK's JSON: `Binary`
  * is written as base64 and parsing yields `Base64`. Two values are equal when
  * they hold the same bytes, whatever their form.
@@ -1430,7 +1430,7 @@ export type FileBytes = string
 
 /**
  * File data as a tagged discriminated union.
- * 
+ *
  * Aligned with V4 `SharedV4FileData`.
  */
 export type FileData =
@@ -1466,7 +1466,7 @@ export interface FilePart {
  * `FilePart.data` (`provider-utils` `types/content-part.ts:75`):
  * `FileData | DataContent | URL | ProviderReference`, in JSON a tagged
  * `FileData`, a string (base64 or a URL) or a bare `{ [provider]: id }`.
- * 
+ *
  * A string is read as the AI SDK reads it when it converts the prompt
  * (`ai` `prompt/file-part-data.ts:125-131`): a URL when it parses as one
  * (a `data:` URL becomes inline data), base64 otherwise.
@@ -1695,9 +1695,13 @@ export interface GenerateObjectResult {
 
 /**
  * User-facing options for `generate_text` and `stream_text`.
- * 
+ *
  * Unlike `CallOptions` (provider-facing), this does not include `prompt`
  * (passed separately) and defaults are more ergonomic.
+ *
+ * Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+ * 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+ * naming the key instead of the default it would silently fall back to.
  */
 export interface GenerateTextOptions {
   frequencyPenalty?: number | null
@@ -1753,7 +1757,7 @@ export interface GenerateTextOptions {
 /**
  * Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
  * `GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).
- * 
+ *
  * It stores the steps, the usage summed over them and the parsed output, as
  * `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
  * other value is derived from the steps by an accessor. The serialized form
@@ -1816,7 +1820,7 @@ export interface GenerateTextResult {
 /**
  * Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
  * `GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).
- * 
+ *
  * It stores the steps, the usage summed over them and the parsed output, as
  * `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
  * other value is derived from the steps by an accessor. The serialized form
@@ -1833,7 +1837,7 @@ export interface GenerateTextResultInput {
 /**
  * A generated file (`ai` `generate-text/generated-file.ts:10-32`), the
  * element of the text results' `files`.
- * 
+ *
  * Its JSON is `{ base64, mediaType, providerMetadata? }`: the AI SDK's
  * `GeneratedFile` exposes the bytes as `base64` and as `uint8Array`, and the
  * JSON carries them once, as the base64 string. Text generation downloads a
@@ -1938,7 +1942,7 @@ export interface HttpRecord {
 
 /**
  * Options passed to [`ImageModel::do_generate`].
- * 
+ *
  * Aligned with V4 `ImageModelV4CallOptions`.
  */
 export interface ImageCallOptions {
@@ -1994,7 +1998,7 @@ export interface ImageCallOptions {
 
 /**
  * An image file used for image editing or variation generation.
- * 
+ *
  * Aligned with V4 `ImageModelV4File`.
  */
 export type ImageFile =
@@ -2019,20 +2023,20 @@ export type ImageFile =
 
 /**
  * File payload for an [`ImageFile::File`]: base64 string or raw bytes.
- * 
+ *
  * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
 export type ImageFileData = string
 
 /**
  * The generated images, returned as a homogeneous collection.
- * 
+ *
  * The TS result type is `Array<string> | Array<Uint8Array>` — i.e. either all
  * base64 strings or all binary blobs, never mixed. This enum models that
  * union. Providers should return data without unnecessary conversion: if the
  * upstream API returns base64, return [`ImageOutputs::Base64`]; if binary,
  * return [`ImageOutputs::Binary`].
- * 
+ *
  * The JSON is an array of base64 strings either way, as in the AI SDK's
  * JSON; parsing yields `Base64`.
  */
@@ -2058,7 +2062,7 @@ export interface ImageResponse {
 
 /**
  * The result of [`ImageModel::do_generate`].
- * 
+ *
  * Aligned with V4 `ImageModelV4Result`.
  */
 export interface ImageResult {
@@ -2086,7 +2090,7 @@ export interface ImageResult {
 
 /**
  * Token usage for an image generation call (if the provider reports it).
- * 
+ *
  * Aligned with V4 `ImageModelV4Usage`.
  */
 export interface ImageUsage {
@@ -2124,7 +2128,7 @@ export interface InputAudioFormat {
 export interface InputRecord {
   operation?: RecordingOperation
   /**
-   * 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+   * 序列化的 CallOptions(abort_signal 已 serde skip),
    * 加上所在操作的 `max_retries` / `timeout` / `session_id`
    * (`OperationSettings`);headers/provider_options 已递归脱敏。
    */
@@ -2169,7 +2173,7 @@ export interface LanguageModelFile {
 
 /**
  * A single provider-facing message, a union by role.
- * 
+ *
  * `provider_options` is message-level (e.g. `anthropic.cacheControl`),
  * mirroring `LanguageModelV4Message.providerOptions`.
  */
@@ -2250,7 +2254,7 @@ export interface LanguageModelToolResultPart {
 /**
  * Token usage of a generation step or a whole call: the AI SDK's
  * `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
- * 
+ *
  * The user-facing counterpart of the provider-level [`Usage`]: flat totals
  * plus detail objects, converted with [`as_language_model_usage`] and summed
  * across steps with [`add_language_model_usage`]. Unknown counts stay `None`,
@@ -2287,7 +2291,7 @@ export interface LanguageModelUsage {
 /**
  * Token usage of a generation step or a whole call: the AI SDK's
  * `LanguageModelUsage` (ai@7.0.127 `types/usage.ts:10-68`).
- * 
+ *
  * The user-facing counterpart of the provider-level [`Usage`]: flat totals
  * plus detail objects, converted with [`as_language_model_usage`] and summed
  * across steps with [`add_language_model_usage`]. Unknown counts stay `None`,
@@ -2326,7 +2330,7 @@ export interface LanguageModelUsageInput {
  * (`@ai-sdk/provider@4.0.21
  * src/language-model/v4/language-model-v4-tool-choice.ts:1-5`), carried by
  * [`CallOptions::tool_choice`](crate::options::CallOptions::tool_choice).
- * 
+ *
  * Always an object tagged by `type`, unlike the user-level [`ToolChoice`].
  */
 export type LanguageModelV4ToolChoice =
@@ -2372,8 +2376,13 @@ export interface MiddlewareParams {
 /**
  * Reference-failure policy.
  */
-export type MoaFailMode = "best_effort" | "fail_fast"
+export type MoaFailMode = "best-effort" | "fail-fast"
 
+/**
+ * MoA configuration, camelCase JSON with every field optional. Unknown keys
+ * are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+ * the default policy.
+ */
 export interface MoaParams {
   aggregator: string
   /**
@@ -2505,7 +2514,7 @@ export interface ModelModalities {
 
 /**
  * What the user passes as `prompt` to `generate_text` / `stream_text`.
- * 
+ *
  * Can be a simple string (converted to a single user message) or a list of messages.
  */
 export type ModelPrompt = string | Array<ModelMessage>
@@ -2523,7 +2532,7 @@ export interface ModelResolveParams {
 
 /**
  * The full static portrait for a model, supplemented from community knowledge.
- * 
+ *
  * All fields are advisory — aimux never auto-applies them in the request path.
  * The caller reads them to decide how to configure `GenerateTextOptions`.
  */
@@ -2561,7 +2570,7 @@ export interface ModelWrapParams {
  * src/language-model/v4/language-model-v4-provider-tool.ts:17`) and custom
  * content `kind` (`language-model-v4-custom-content.ts:13`,
  * `language-model-v4-prompt.ts:138`).
- * 
+ *
  * The TypeScript type admits any string with a `.`; a value without one
  * does not construct or deserialize.
  */
@@ -2625,9 +2634,13 @@ export interface OperationStatus {
 
 /**
  * User-facing options for `generate_text` and `stream_text`.
- * 
+ *
  * Unlike `CallOptions` (provider-facing), this does not include `prompt`
  * (passed separately) and defaults are more ergonomic.
+ *
+ * Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+ * 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+ * naming the key instead of the default it would silently fall back to.
  */
 export interface Options {
   frequencyPenalty?: number | null
@@ -2712,7 +2725,7 @@ export type OutcomeStatus = "success" | "pending" | "error" | "incomplete" | "ca
 
 /**
  * What the final text of a generation is parsed into.
- * 
+ *
  * Upstream's `Output` is a JavaScript object with functions and has no JSON
  * form; aimux's JSON follows the public JSON rules: tagged by `type` with the
  * output kind (upstream's mode `name`, `output.ts:68`, `:114`, `:241`, `:520`, `:657`;
@@ -2831,7 +2844,7 @@ export interface ProviderModelParams {
 
 /**
  * ② 配置侧:provider 身份(请求回放重建用)。
- * 
+ *
  * 只记身份,不记配置:回放时按 `provider_id` + `model_id` 重新构建 model,
  * 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
  */
@@ -2871,7 +2884,7 @@ export interface ProviderSettings {
  * `google.googleSearch`). Mirrors the V4 `LanguageModelV4ProviderTool`
  * (`@ai-sdk/provider@4.0.21
  * src/language-model/v4/language-model-v4-provider-tool.ts:8-28`).
- * 
+ *
  * Provider tools are specific to a certain provider. The input and output
  * schemas are defined by the provider, and some are executed on the provider's
  * servers (e.g. web search, code execution).
@@ -2890,6 +2903,14 @@ export interface ProviderTool {
    * The name of the tool, unique within this model call.
    */
   name: string
+  /**
+   * Whether a result of this tool may arrive in a later response than its
+   * call (a deferred result, as in programmatic tool calling). The AI SDK
+   * tool's `supportsDeferredResults` (provider-utils@5.0.55
+   * `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+   * absent means `false`. It is not sent to the provider.
+   */
+  supportsDeferredResults?: boolean | null
 }
 
 export interface ProviderWrapParams {
@@ -2908,7 +2929,7 @@ export interface RawToolApprovalRequest {
 
 /**
  * Provider-facing tool call before Core parses and validates its input.
- * 
+ *
  * The wire shape matches [`ToolCall`] field for field, except that `input`
  * is the provider's raw argument *text* rather than a parsed value.
  */
@@ -2923,7 +2944,7 @@ export interface RawToolCall {
 
 /**
  * Reasoning effort level (aligned with V4 `reasoning` option).
- * 
+ *
  * Controls how much reasoning/thinking the model performs. Maps to
  * OpenAI `reasoning_effort` and Anthropic `thinking` config.
  */
@@ -3108,7 +3129,7 @@ export interface Recording {
 /**
  * Operation stored in a unified recording. Older recordings are language calls.
  */
-export type RecordingOperation = "language_model" | "decision"
+export type RecordingOperation = "language-model" | "decision"
 
 export interface RegistryCreateParams {
   entries: Array<RegistryEntry>
@@ -3193,7 +3214,7 @@ export interface RequestCacheHints {
 
 /**
  * Optional request information for telemetry and debugging.
- * 
+ *
  * Aligned with the `request?` object that appears on some V4 model results.
  */
 export interface RequestInfo {
@@ -3205,7 +3226,7 @@ export interface RequestInfo {
 
 /**
  * Options passed to [`RerankingModel::do_rerank`].
- * 
+ *
  * Aligned with V4 `RerankingModelV4CallOptions`.
  */
 export interface RerankingCallOptions {
@@ -3242,7 +3263,7 @@ export interface RerankingCallOptions {
 
 /**
  * Documents to rerank: either a list of texts or a list of JSON objects.
- * 
+ *
  * Aligned with V4 `RerankingModelV4CallOptions.documents`.
  */
 export type RerankingDocuments =
@@ -3297,7 +3318,7 @@ export interface RerankingResponse {
 
 /**
  * The result of [`RerankingModel::do_rerank`].
- * 
+ *
  * Aligned with V4 `RerankingModelV4Result`.
  */
 export interface RerankingResult {
@@ -3323,7 +3344,7 @@ export interface RerankingResult {
 
 /**
  * Response information for telemetry and debugging.
- * 
+ *
  * Aligned with the `response` object that appears on most V4 model results.
  * All fields are optional because different providers populate different
  * subsets; traits whose TS spec marks `response` as required use
@@ -3407,7 +3428,7 @@ export interface RuntimeDescribeParams {
 /**
  * A model entry returned by a provider's `/models` endpoint (the sparse,
  * account-level truth of "what this key can call").
- * 
+ *
  * Carries only what the provider returns — typically just `id`. Configuration
  * comes from [`ModelSpec`] (community knowledge); the host merges the two as
  * needed (RFC-0027). aimux itself does not combine them.
@@ -3445,7 +3466,7 @@ export interface SearchCallOptions {
   includeDomains?: Array<string> | null
   /**
    * Whether to include raw page content in results.
-   * 
+   *
    * Provider support varies; providers that cannot honor this should
    * issue a warning rather than erroring.
    */
@@ -3642,7 +3663,7 @@ export interface SessionView {
 
 /**
  * Image/video size in `{width}x{height}` format (e.g. `"1024x1024"`).
- * 
+ *
  * Newtype that enforces the `WxH` format used by V4 image `size` and video
  * `resolution` options. Aligned with the TS template-literal type
  * `` `${number}x${number}` ``.
@@ -3673,7 +3694,7 @@ export type Source =
 
 /**
  * Options passed to [`SpeechModel::do_generate`].
- * 
+ *
  * Aligned with V4 `SpeechModelV4CallOptions`.
  */
 export interface SpeechCallOptions {
@@ -3757,7 +3778,7 @@ export interface SpeechResponse {
 
 /**
  * The result of [`SpeechModel::do_generate`].
- * 
+ *
  * Aligned with V4 `SpeechModelV4Result`.
  */
 export interface SpeechResult {
@@ -3865,7 +3886,7 @@ export interface StepResponseMetadata {
 
 /**
  * One model call of a text generation (`StepResult`, `step-result.ts:138-278`).
- * 
+ *
  * The JSON holds what `JSON.stringify` writes for upstream's
  * `DefaultStepResult`: its own fields, camelCase, without the derived
  * getters (`text`, `toolCalls`, ...) and without `undefined` fields.
@@ -3923,7 +3944,7 @@ export interface StepResult {
 
 /**
  * One model call of a text generation (`StepResult`, `step-result.ts:138-278`).
- * 
+ *
  * The JSON holds what `JSON.stringify` writes for upstream's
  * `DefaultStepResult`: its own fields, camelCase, without the derived
  * getters (`text`, `toolCalls`, ...) and without `undefined` fields.
@@ -4119,7 +4140,7 @@ export interface TaggedRawToolCall {
  * A tool result in a text result's `toolResults`: a [`TypedToolResult`]
  * with its `type` tag, as the AI SDK writes it (`ai`
  * `generate-text/tool-result.ts:12`, `generate-text-result.ts:93`).
- * 
+ *
  * Schema view of the tag written by [`crate::wire::typed_vec`].
  */
 export interface TaggedToolResult {
@@ -4163,7 +4184,7 @@ export interface TextRequest {
 /**
  * A public call-layer stream chunk: the AI SDK's `TextStreamPart`
  * (ai@7.0.127 `generate-text/stream-text-result.ts:581-607`).
- * 
+ *
  * `stream_text` turns the provider's [`StreamPart`]s into these: tool calls
  * are parsed, text and reasoning deltas carry `text` (the provider part's
  * `delta`), the provider's `stream-start` and `response-metadata` become
@@ -4420,16 +4441,20 @@ export type TextStreamPart =
 
 /**
  * Per-call timeout configuration.
- * 
+ *
  * The object form of the AI SDK's `TimeoutConfiguration`
  * (`ai/src/prompt/request-options.ts:13-22`), a request option of
  * `generateText` / `streamText` (`RequestOptions.timeout`, `:126`).
  * `LanguageModelV4CallOptions` has no timeout. Aimux runs no tools, so
  * upstream's `toolMs` / `tools` keys and the bare-number form of `totalMs`
  * are absent.
- * 
+ *
  * All values are milliseconds; `None` disables the corresponding limit. A
  * `total` timeout also covers retry backoff and the whole streamed response.
+ *
+ * Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+ * (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+ * without a timeout.
  */
 export interface TimeoutConfiguration {
   /**
@@ -4438,7 +4463,7 @@ export interface TimeoutConfiguration {
   chunkMs?: number | null
   /**
    * Timeout waiting for the first stream chunk (streaming only).
-   * 
+   *
    * Counted from operation start, so it also bounds stream establishment
    * and any retries before the first semantic output: it is the
    * user-perceived time-to-first-output budget, not a per-attempt timer.
@@ -4459,7 +4484,7 @@ export interface TimeoutConfiguration {
 /**
  * A point in time: a `Date` in the AI SDK, whose JSON is
  * `Date.prototype.toISOString()` (`2024-03-01T12:00:00.000Z`).
- * 
+ *
  * It holds a UTC time at millisecond precision, as a JavaScript `Date` does,
  * in the years 0000 to 9999 that `toISOString` writes in four digits.
  * Serializing writes that form; parsing reads any RFC 3339 date-time (any
@@ -4527,6 +4552,14 @@ export type Tool =
      * The name of the tool, unique within this model call.
      */
     name: string
+    /**
+     * Whether a result of this tool may arrive in a later response than its
+     * call (a deferred result, as in programmatic tool calling). The AI SDK
+     * tool's `supportsDeferredResults` (provider-utils@5.0.55
+     * `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+     * absent means `false`. It is not sent to the provider.
+     */
+    supportsDeferredResults?: boolean | null
   }
 
 /**
@@ -4696,7 +4729,7 @@ export interface ToolCallPart {
 
 /**
  * A host's answer to one tool-call repair request.
- * 
+ *
  * The bindings cannot carry a [`ToolCallRepair`] closure, so a host instead
  * reads the invalid call off the result, repairs it in its own language, and
  * hands the answer back as this value. Wire shape:
@@ -4719,7 +4752,7 @@ export type ToolCallRepairReply =
 /**
  * How the model should choose tools, as the caller gives it
  * (`GenerateTextOptions.tool_choice`).
- * 
+ *
  * The AI SDK's user-level `ToolChoice`
  * (`ai@7.0.127 src/types/language-model.ts:102-106`):
  * `"auto" | "none" | "required" | { "type": "tool", "toolName": "..." }`.
@@ -4920,7 +4953,7 @@ export type ToolResultContent =
 /**
  * One item of a `content` [`ToolResultOutput`] (upstream
  * `content-part.ts:303-546`).
- * 
+ *
  * The `file-*` and `image-*` items are deprecated upstream in favour of
  * `file` (`content-part.ts:361-532`); they are accepted on input and the
  * conversion turns each into a `file` part with a deprecation warning, as
@@ -5143,7 +5176,7 @@ export interface TraceStats {
 
 /**
  * Options passed to [`TranscriptionModel::do_generate`].
- * 
+ *
  * Aligned with V4 `TranscriptionModelV4CallOptions`.
  */
 export interface TranscriptionCallOptions {
@@ -5211,7 +5244,7 @@ export interface TranscriptionResponse {
 
 /**
  * The result of [`TranscriptionModel::do_generate`].
- * 
+ *
  * Aligned with V4 `TranscriptionModelV4Result`.
  */
 export interface TranscriptionResult {
@@ -5278,7 +5311,7 @@ export interface TranscriptionStartParams {
 
 /**
  * A single chunk in the stream returned by `do_stream`.
- * 
+ *
  * Aligned with V4 `TranscriptionModelV4StreamPart`.
  */
 export type TranscriptionStreamPart =
@@ -5364,7 +5397,7 @@ export interface TransportProxy {
 /**
  * A source in a text result's `sources`: a [`Source`] with its `type` tag,
  * the AI SDK's `Source` (`ai` `generate-text/generate-text-result.ts:73`).
- * 
+ *
  * Schema view of the tag written by [`crate::wire::typed_vec`].
  */
 export type TypedSource =
@@ -5396,7 +5429,7 @@ export type TypedSource =
  * A tool call outside `content` (a text result's `toolCalls`, an approval
  * request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
  * `TypedToolCall` (`ai` `generate-text/tool-call.ts:8-14`).
- * 
+ *
  * Schema view of the tag written by [`crate::wire::typed`].
  */
 export interface TypedToolCall {
@@ -5444,7 +5477,7 @@ export interface TypedToolCall {
  * A tool call outside `content` (a text result's `toolCalls`, an approval
  * request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
  * `TypedToolCall` (`ai` `generate-text/tool-call.ts:8-14`).
- * 
+ *
  * Schema view of the tag written by [`crate::wire::typed`].
  */
 export interface TypedToolCallInput {
@@ -5509,7 +5542,7 @@ export interface TypedToolError {
 /**
  * A tool result (the AI SDK's `TypedToolResult`, `ai`
  * `generate-text/tool-result.ts:10-42`).
- * 
+ *
  * aimux has no user-level tool definitions, so upstream's `toolMetadata`
  * and `title`, which come from them, are absent. Its `type` tag is written
  * by the union that holds it (`content`, the text stream) or, in a result's
@@ -5532,7 +5565,7 @@ export interface TypedToolResult {
 
 /**
  * File data accepted by [`Files::upload_file`].
- * 
+ *
  * The V4 spec restricts upload input to the `data` and `text` variants of
  * `SharedV4FileData` (URLs and provider references are not valid uploads), so
  * this is a dedicated two-variant enum rather than the full [`crate::shared::FileData`].
@@ -5572,7 +5605,7 @@ export interface UploadFileParams {
 
 /**
  * Result of [`Files::upload_file`].
- * 
+ *
  * Aligned with V4 `FilesV4UploadFileResult`.
  */
 export interface UploadFileResult {
@@ -5700,7 +5733,7 @@ export type VerdictKind = "Trusted" | "SuspectOverclaim" | "SuspectUnderclaim" |
 
 /**
  * Options passed to [`VideoModel::do_start`] and [`VideoModel::do_status`].
- * 
+ *
  * Aligned with V4 `VideoModelV4CallOptions`.
  */
 export interface VideoCallOptions {
@@ -5776,7 +5809,7 @@ export interface VideoCallOptions {
 
 /**
  * Generated video data: a URL, base64-encoded string, or binary data.
- * 
+ *
  * Aligned with V4 `VideoModelV4VideoData`. Most providers return URLs due to
  * large file sizes.
  */
@@ -5799,7 +5832,7 @@ export type VideoData =
 
 /**
  * A video or image file used for video editing or image-to-video generation.
- * 
+ *
  * Aligned with V4 `VideoModelV4File`.
  */
 export type VideoFile =
@@ -5828,14 +5861,14 @@ export type VideoFile =
 
 /**
  * File payload for a [`VideoFile::File`]: base64 string or raw bytes.
- * 
+ *
  * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
 export type VideoFileData = string
 
 /**
  * A role-tagged image input for image-to-video and first-last-frame generation.
- * 
+ *
  * Aligned with V4 `VideoModelV4FrameImage`.
  */
 export interface VideoFrameImage {
@@ -5851,8 +5884,11 @@ export interface VideoFrameImage {
 
 /**
  * The role a frame image plays in video generation.
- * 
- * Aligned with V4 `VideoModelV4FrameType`.
+ *
+ * `VideoModelV4FrameType` (`@ai-sdk/provider@4.0.22`
+ * `src/video-model/v4/video-model-v4-frame-image.ts:9`): the values are
+ * upstream's literals `'first_frame' | 'last_frame'`, snake_case as there,
+ * which `ai@7.0.127` compares against (`generate-video.ts:814`).
  */
 export type VideoFrameType = "first_frame" | "last_frame"
 
@@ -5892,7 +5928,7 @@ export interface VideoResponse {
 
 /**
  * The final result of a video generation operation.
- * 
+ *
  * Aligned with V4 `VideoModelV4Result`.
  */
 export interface VideoResult {

@@ -346,28 +346,8 @@
   },
   {
     "file": "FilePartData/003.json",
-    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
-    "pointer": "/request/body/tool_choice"
-  },
-  {
-    "file": "FilePartData/004.json",
-    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
-    "pointer": "line 590"
-  },
-  {
-    "file": "FilePartData/005.json",
-    "source": "bindings/go/wire_test.go",
-    "pointer": "line 81/output"
-  },
-  {
-    "file": "FilePartData/006.json",
-    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
-    "pointer": "/result/parts/0"
-  },
-  {
-    "file": "FilePartData/007.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 286"
+    "source": "aimux-core/tests/ai_sdk_json_test.rs",
+    "pointer": "line 905"
   },
   {
     "file": "FilePartData/008.json",
@@ -375,79 +355,9 @@
     "pointer": "line 316/content/0"
   },
   {
-    "file": "FilePartData/009.json",
-    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
-    "pointer": "/result/parts/5"
-  },
-  {
-    "file": "FilePartData/010.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 114/7"
-  },
-  {
     "file": "FilePartData/011.json",
     "source": "bindings/flutter/test/typed_round_trip_test.dart",
     "pointer": "line 14/data"
-  },
-  {
-    "file": "FilePartData/012.json",
-    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
-    "pointer": "/result/parts/2"
-  },
-  {
-    "file": "FilePartData/013.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/4/warnings/0"
-  },
-  {
-    "file": "FilePartData/014.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 290/toolChoice"
-  },
-  {
-    "file": "FilePartData/015.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/7"
-  },
-  {
-    "file": "FilePartData/016.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 114/4"
-  },
-  {
-    "file": "FilePartData/017.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/24"
-  },
-  {
-    "file": "FilePartData/018.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/11"
-  },
-  {
-    "file": "FilePartData/019.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/22"
-  },
-  {
-    "file": "FilePartData/020.json",
-    "source": "fixtures/aisdk/openai/responses-basic.json",
-    "pointer": "/request/body/input/0/content/0"
-  },
-  {
-    "file": "FilePartData/021.json",
-    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
-    "pointer": "/request/body/tools/0/input_schema/properties/city"
-  },
-  {
-    "file": "FilePartData/022.json",
-    "source": "bindings/swift/Tests/AimuxTests/ContractTests.swift",
-    "pointer": "line 346"
-  },
-  {
-    "file": "FilePartData/023.json",
-    "source": "contract-tests/ops/scenarios/accepted.json",
-    "pointer": "/expected/frames/0"
   },
   {
     "file": "FilePartData/024.json",
@@ -455,84 +365,9 @@
     "pointer": "line 402/data"
   },
   {
-    "file": "FilePartData/025.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/23"
-  },
-  {
-    "file": "FilePartData/026.json",
-    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
-    "pointer": "line 501"
-  },
-  {
-    "file": "FilePartData/027.json",
-    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
-    "pointer": "line 99"
-  },
-  {
     "file": "FilePartData/028.json",
     "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
     "pointer": "line 403/data"
-  },
-  {
-    "file": "FilePartData/029.json",
-    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
-    "pointer": "line 405"
-  },
-  {
-    "file": "FilePartData/030.json",
-    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
-    "pointer": "line 569"
-  },
-  {
-    "file": "FilePartData/031.json",
-    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
-    "pointer": "line 583"
-  },
-  {
-    "file": "FilePartData/032.json",
-    "source": "fixtures/aisdk/provider-utils/t3-unattributable-deltas.json",
-    "pointer": "/cases/11/aisdk/steps/1/parts/0"
-  },
-  {
-    "file": "FilePartData/033.json",
-    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
-    "pointer": "line 373"
-  },
-  {
-    "file": "FilePartData/034.json",
-    "source": "bindings/go/roundtrip_test.go",
-    "pointer": "line 421"
-  },
-  {
-    "file": "FilePartData/035.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/16"
-  },
-  {
-    "file": "FilePartData/036.json",
-    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
-    "pointer": "line 408"
-  },
-  {
-    "file": "FilePartData/037.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 114/8"
-  },
-  {
-    "file": "FilePartData/038.json",
-    "source": "fixtures/aisdk/anthropic/messages-provider-options.json",
-    "pointer": "/response/body/content/0"
-  },
-  {
-    "file": "FilePartData/039.json",
-    "source": "bindings/flutter/test/typed_round_trip_test.dart",
-    "pointer": "line 173/14"
-  },
-  {
-    "file": "FilePartData/040.json",
-    "source": "contract-tests/fixtures/decision-openai-full.json",
-    "pointer": "/request/input/0/content/0"
   },
   {
     "file": "FinishReasonUnified/001.json",

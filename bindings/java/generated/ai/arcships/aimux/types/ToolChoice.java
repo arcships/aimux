@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * How the model should choose tools, as the caller gives it
  * (`GenerateTextOptions.tool_choice`).
- * 
+ *
  * The AI SDK's user-level `ToolChoice`
  * (`ai@7.0.127 src/types/language-model.ts:102-106`):
  * `"auto" | "none" | "required" | { "type": "tool", "toolName": "..." }`.

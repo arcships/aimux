@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * One model call of a text generation (`StepResult`, `step-result.ts:138-278`).
- * 
+ *
  * The JSON holds what `JSON.stringify` writes for upstream's
  * `DefaultStepResult`: its own fields, camelCase, without the derived
  * getters (`text`, `toolCalls`, ...) and without `undefined` fields.

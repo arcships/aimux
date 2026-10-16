@@ -11,7 +11,7 @@ import java.util.*;
  * A tool call outside `content` (a text result's `toolCalls`, an approval
  * request's `toolCall`): a [`ToolCall`] with its `type` tag, the AI SDK's
  * `TypedToolCall` (`ai` `generate-text/tool-call.ts:8-14`).
- * 
+ *
  * Schema view of the tag written by [`crate::wire::typed`].
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

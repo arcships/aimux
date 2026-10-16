@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Reasoning effort level (aligned with V4 `reasoning` option).
- * 
+ *
  * Controls how much reasoning/thinking the model performs. Maps to
  * OpenAI `reasoning_effort` and Anthropic `thinking` config.
  */

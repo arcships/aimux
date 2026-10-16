@@ -170,11 +170,6 @@ pub struct DecisionCallOptions {
     pub headers: Option<SharedHeaders>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
-    /// The operation's recording scope, set by [`decide`] for the transport
-    /// (as `CallOptions::recording_context` is for language models). Never
-    /// serialized, and not part of `DecisionModelV4CallOptions`.
-    #[serde(skip)]
-    pub recording_context: Option<crate::recording::RecordingContext>,
 }
 
 impl DecisionCallOptions {
@@ -187,7 +182,6 @@ impl DecisionCallOptions {
             abort_signal: None,
             headers: None,
             provider_options: None,
-            recording_context: None,
         }
     }
 }
@@ -321,7 +315,7 @@ pub fn unsupported_question_type_error(
 /// Options of [`decide`]: the call options plus the operation settings
 /// (`ai@7.0.128 src/decide/decide.ts:53-61`).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DecideOptions {
     pub state: DecisionInput,
     pub questions: DecisionQuestions,
@@ -644,17 +638,19 @@ pub async fn decide(
         abort_signal: abort_signal.clone(),
         headers: options.headers,
         provider_options: options.provider_options,
-        recording_context: context.clone(),
     };
     let result = settings
         .scope(timeout::run(
-            retries.retry(|| async {
-                check_abort(abort_signal.as_ref())?;
-                if let Some(ctx) = &call.recording_context {
-                    let _ = ctx.start_attempt();
-                }
-                model.do_decide(&call).await
-            }),
+            crate::recording::RecordingContext::scope(
+                context.clone(),
+                retries.retry(|| async {
+                    check_abort(abort_signal.as_ref())?;
+                    if let Some(ctx) = &context {
+                        let _ = ctx.start_attempt();
+                    }
+                    model.do_decide(&call).await
+                }),
+            ),
             abort_signal.as_ref(),
             timeout,
         ))

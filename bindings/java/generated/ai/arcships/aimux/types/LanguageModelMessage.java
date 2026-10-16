@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * A single provider-facing message, a union by role.
- * 
+ *
  * `provider_options` is message-level (e.g. `anthropic.cacheControl`),
  * mirroring `LanguageModelV4Message.providerOptions`.
  */

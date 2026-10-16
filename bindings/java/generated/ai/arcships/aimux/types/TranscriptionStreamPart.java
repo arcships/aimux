@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * A single chunk in the stream returned by `do_stream`.
- * 
+ *
  * Aligned with V4 `TranscriptionModelV4StreamPart`.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")

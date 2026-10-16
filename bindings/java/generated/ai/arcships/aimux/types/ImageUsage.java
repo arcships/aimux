@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Token usage for an image generation call (if the provider reports it).
- * 
+ *
  * Aligned with V4 `ImageModelV4Usage`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

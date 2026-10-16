@@ -9,10 +9,10 @@ import java.util.*;
 
 /**
  * Options passed to [`VideoModel::do_start`] and [`VideoModel::do_status`].
- * 
+ *
  * Aligned with V4 `VideoModelV4CallOptions`.
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class VideoCallOptions {

@@ -12,7 +12,7 @@ import java.util.*;
  * ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
  * belong to the operation, as upstream: a video model has none of its own.
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class VideoPollOptions {

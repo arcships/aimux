@@ -31,7 +31,9 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, Tool};
-use aimux_core::types::FinishReasonUnified;
+use aimux_core::types::{
+    FinishReasonUnified, LanguageModelUsage, add_language_model_usage, as_language_model_usage,
+};
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 
@@ -352,6 +354,20 @@ fn assert_generate_result(fixture: &Fixture, result: &GenerateResult) {
         result.usage.output_tokens.total,
         recorded["usage"]["outputTokens"].as_u64().map(|v| v as _),
         "{}: output tokens",
+        fixture.name
+    );
+    // The recorded `result.usage` is ai@7.0.127's totalUsage, the sum over
+    // the steps (generate-text.ts:1797-1799, types/usage.ts:122-155): both
+    // detail objects present, `{}` when empty, and no raw. aimux's sum over
+    // the one step writes the same JSON.
+    let total = add_language_model_usage(
+        &LanguageModelUsage::default(),
+        &as_language_model_usage(&result.usage),
+    );
+    assert_eq!(
+        serde_json::to_value(&total).unwrap(),
+        recorded["usage"],
+        "{}: usage JSON",
         fixture.name
     );
     let unified = match recorded["finishReason"].as_str().unwrap() {

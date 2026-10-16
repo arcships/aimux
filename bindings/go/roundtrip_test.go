@@ -143,3 +143,9 @@ func TestParseFinishPayload(t *testing.T) {
 func TestGenerateTextResultWithWarningsRoundTrip(t *testing.T) {
 	roundTripDTO[GenerateTextResult](t, `{"content":[],"text":"ok","reasoning":[],"files":[],"sources":[],"toolCalls":[],"toolResults":[],"finishReason":"stop","usage":{"inputTokenDetails":{},"outputTokenDetails":{}},"totalUsage":{"inputTokenDetails":{},"outputTokenDetails":{}},"warnings":[{"type":"other","message":"some warning"}],"request":{},"response":{"id":"r1","timestamp":"2026-10-16T00:00:00Z","modelId":"model","messages":[]},"responseMessages":[],"steps":[]}`)
 }
+
+// Provider-tool deferred-result support follows the Rust wire contract.
+func TestProviderToolSupportsDeferredResults(t *testing.T) {
+	roundTripDTO[Tool](t, `{"type":"provider","args":{},"id":"anthropic.code_execution_20250825","name":"code_execution"}`)
+	roundTripDTO[Tool](t, `{"type":"provider","args":{},"id":"anthropic.code_execution_20250825","name":"code_execution","supportsDeferredResults":true}`)
+}

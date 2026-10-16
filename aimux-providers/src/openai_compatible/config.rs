@@ -3,11 +3,12 @@
 //! Like the native OpenAI config this is the Rust shape of the object
 //! `createOpenAICompatible` hands each model class (`{ provider, url, headers,
 //! fetch, ... }`). It has no getters for the credential or the settings that
-//! produced it. Where the AI SDK passes functions (`url`, `headers`,
-//! `errorStructure`, a vendor's `convertUsage`), this config holds data; the
-//! functions a caller passes through the public settings (`supportedUrls`,
-//! `convertUsage`, `metadataExtractor`, `transformRequestBody`) are kept as
-//! given. The shared model never compares a provider name.
+//! produced it. Where the AI SDK passes `url` and `headers` functions, this
+//! config holds data, or a package's own data behind [`ResolveBaseUrl`] /
+//! [`ResolveFetchHeaders`]; the functions a caller or a vendor package passes
+//! (`supportedUrls`, `convertUsage`, `errorStructure`, `metadataExtractor`,
+//! `transformRequestBody`) are kept as given. The shared model never compares
+//! a provider name.
 
 use futures::future::BoxFuture;
 use std::collections::HashMap;
@@ -57,6 +58,21 @@ pub trait StreamMetadataExtractor: Send {
     fn build_metadata(&self) -> Option<ProviderMetadata>;
 }
 
+/// A base URL a package builds from settings read when a request is made
+/// (a Vertex AI partner sub-provider's project and location).
+pub(crate) trait ResolveBaseUrl: std::fmt::Debug + Send + Sync {
+    /// The base URL of one request.
+    fn resolve(&self) -> Result<String, AiMuxError>;
+}
+
+/// The headers a package adds in its own fetch wrapper
+/// ([`CompatModelConfig::fetch_headers`]).
+#[async_trait::async_trait]
+pub(crate) trait ResolveFetchHeaders: Send + Sync {
+    /// The headers of one request.
+    async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError>;
+}
+
 /// Where the base URL comes from.
 ///
 /// A plain provider has a [`Fixed`](Self::Fixed) URL. A preset whose URL is
@@ -72,10 +88,8 @@ pub(crate) enum BaseUrl {
         /// The explicit template parameters of the settings.
         params: Arc<HashMap<String, String>>,
     },
-    /// The OpenAI-compatible endpoint of a Vertex AI partner sub-provider
-    /// (MaaS, xAI), built from the project and location read when a request
-    /// is made.
-    VertexPartner(crate::vertex::PartnerBaseUrl),
+    /// A package's own base URL, resolved when a request is made.
+    Dynamic(Arc<dyn ResolveBaseUrl>),
 }
 
 impl BaseUrl {
@@ -85,59 +99,14 @@ impl BaseUrl {
             Self::Preset { descriptor, params } => {
                 crate::preset::resolve_base_url(descriptor, params)
             }
-            Self::VertexPartner(partner) => partner.resolve(),
+            Self::Dynamic(resolver) => resolver.resolve(),
         }
     }
 }
 
-/// How a vendor's raw `usage` object of a chat response becomes core
-/// [`Usage`]: the `convertUsage` a vendor package of the AI SDK passes,
-/// as data (the registry's `profile.convert_usage`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum UsageDialect {
-    /// The generic OpenAI-shaped usage (`convertOpenAICompatibleChatUsage`).
-    #[default]
-    OpenAICompatible,
-    /// Alibaba: cache writes from `prompt_tokens_details.cache_creation_input_tokens`
-    /// (or `cache_write_tokens`), taken out of the uncached input.
-    Alibaba,
-    /// Moonshot AI: cache reads from the top-level `cached_tokens`.
-    MoonshotAI,
-}
-
-impl UsageDialect {
-    pub(crate) fn convert(self, raw: Option<&Value>) -> Usage {
-        let mut usage = super::chat::usage_from_raw(raw);
-        let Some(raw) = raw.filter(|raw| !raw.is_null()) else {
-            return usage;
-        };
-        let tokens = |value: &Value| value.as_u64().and_then(|value| u32::try_from(value).ok());
-        match self {
-            Self::OpenAICompatible => {}
-            Self::Alibaba => {
-                let details = &raw["prompt_tokens_details"];
-                let cache_write = tokens(&details["cache_creation_input_tokens"])
-                    .or_else(|| tokens(&details["cache_write_tokens"]))
-                    .unwrap_or(0);
-                usage.input_tokens.cache_write = Some(cache_write);
-                usage.input_tokens.no_cache = usage
-                    .input_tokens
-                    .no_cache
-                    .map(|tokens| tokens.saturating_sub(cache_write));
-            }
-            Self::MoonshotAI => {
-                if let Some(cached) = tokens(&raw["cached_tokens"]) {
-                    usage.input_tokens.cache_read = Some(cached);
-                    usage.input_tokens.no_cache = usage
-                        .input_tokens
-                        .total
-                        .map(|tokens| tokens.saturating_sub(cached));
-                }
-            }
-        }
-        usage
-    }
-}
+/// Maps a provider error payload to the message and code of the API error
+/// (the AI SDK's `errorStructure`).
+pub(crate) type ErrorStructure = Arc<dyn Fn(&Value) -> ProviderErrorParts + Send + Sync>;
 
 /// `{ error: { message, type?, param?, code? } }`, the structure nearly every
 /// compatible server answers errors with (the AI SDK's default
@@ -175,9 +144,8 @@ pub(crate) struct ChatSettings {
     /// URL patterns supported by chat models, evaluated when requested.
     /// `None`: none.
     pub supported_urls: Option<SupportedUrlsFn>,
-    /// The vendor's usage accounting.
-    pub usage_dialect: UsageDialect,
-    /// The caller's usage accounting; replaces `usage_dialect` when set.
+    /// The vendor's or the caller's usage accounting. `None`: the generic
+    /// OpenAI-shaped usage (`convertOpenAICompatibleChatUsage`).
     pub convert_usage: Option<ConvertUsage>,
     pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
     /// Send `top_k`. The AI SDK baseline never does (it warns and drops it).
@@ -191,9 +159,7 @@ pub(crate) struct ChatSettings {
     pub max_tokens_key: Option<&'static str>,
     /// Streaming usage rides in `chunk[key].usage` instead of `chunk.usage`.
     pub stream_usage_key: Option<String>,
-    /// Maps a provider error payload to the message and code of the API
-    /// error (the AI SDK's `errorStructure`).
-    pub error_structure: fn(&Value) -> ProviderErrorParts,
+    pub error_structure: ErrorStructure,
 }
 
 impl Default for ChatSettings {
@@ -204,7 +170,6 @@ impl Default for ChatSettings {
             supports_structured_outputs: false,
             supports_multi_part_tool_content: false,
             supported_urls: None,
-            usage_dialect: UsageDialect::default(),
             convert_usage: None,
             metadata_extractor: None,
             supports_top_k: false,
@@ -212,7 +177,7 @@ impl Default for ChatSettings {
             supports_response_format: true,
             max_tokens_key: None,
             stream_usage_key: None,
-            error_structure: default_error_structure,
+            error_structure: Arc::new(default_error_structure),
         }
     }
 }
@@ -230,7 +195,7 @@ impl ChatSettings {
     pub(crate) fn convert_usage(&self, raw: Option<&Value>) -> Usage {
         match &self.convert_usage {
             Some(convert) => convert(raw),
-            None => self.usage_dialect.convert(raw),
+            None => super::chat::usage_from_raw(raw),
         }
     }
 }
@@ -250,7 +215,7 @@ pub(crate) struct CompatModelConfig {
     /// `createOpenAICompatible` adds in its own fetch wrapper (google-vertex's
     /// Node MaaS and xAI providers). Their `user-agent` replaces the whole
     /// header, the helper layer's part included ([`FetchUserAgent`]).
-    pub fetch_headers: Option<crate::vertex::PartnerHeaders>,
+    pub fetch_headers: Option<Arc<dyn ResolveFetchHeaders>>,
     /// Transport; `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
     pub transform_request_body: Option<TransformRequestBody>,
@@ -359,7 +324,8 @@ impl CompatModelConfig {
     pub(crate) fn failed_response_handler(
         &self,
     ) -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-        aimux_provider_utils::create_json_error_response_handler(self.chat.error_structure)
+        let structure = self.chat.error_structure.clone();
+        aimux_provider_utils::create_json_error_response_handler(move |data| structure(data))
     }
 }
 

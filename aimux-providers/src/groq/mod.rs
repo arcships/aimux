@@ -22,6 +22,8 @@ mod convert;
 mod error;
 mod finish_reason;
 mod model;
+#[cfg(test)]
+pub(crate) use model::chat_test_stream;
 mod options;
 mod prepare_tools;
 mod transcription;

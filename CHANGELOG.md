@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recordings stay schema 2 and still read the snake_case envelope keys
   aimux 0.5 writes (`call_id`, `recorded_at`, `model_id`, ...).
 
+- MoA `failMode` values (`"best-effort"`, `"fail-fast"`) and the recording
+  operation value `"language-model"` use kebab-case.
+
 - Bytes are base64 strings in the public JSON, as the AI SDK writes a
   `Uint8Array`: image part `image`, file part `data`, `FileBytes`, speech
   `audio`, image outputs, video `binary` data and audio/image/video inputs. An
@@ -153,6 +156,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and result this way, and replay refuses recorded options with snake_case
   keys instead of ignoring them.
 
+- Request options reject keys they do not have (RFC-0042 §7.2):
+  `GenerateTextOptions` and its `timeout`, the options of the other
+  operations (embedding, speech, image, transcription, reranking, video and
+  its `poll`, search, file upload, `decide`), the MoA config, and the router
+  and transcription-session configs of the C ABI, Node and Python. aimux
+  0.5's snake_case keys (`max_retries`, `timeout.total_ms`, `fail_mode`,
+  `provider_name`) and typos fail naming the key instead of falling back to
+  the default. The Node and Python router and transcription-session configs
+  are camelCase, as the C ABI's are.
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.
@@ -214,6 +227,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no `auth`, a request uses `ANTHROPIC_AWS_API_KEY` when it is set and
   otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
   `AWS_SESSION_TOKEN`. All of them are read when a request is made.
+
+- Anthropic gains the computer toolset of `@ai-sdk/anthropic` 4.0.71
+  (`anthropic.computer_toolset_20260801`). A member call in a response (for
+  example `left_click`) comes back as one call of the caller's toolset tool,
+  with the member name as `action` in its input and
+  `providerMetadata.anthropic.toolsetName`. Sent back as history, the call
+  keeps its input as it is, `action` included; a call without a string
+  `action` is still sent, named after the toolset, with a warning; the
+  toolset name is read from the call's tools or from
+  `providerOptions.anthropic.toolsetName` only.
+
+- Anthropic checks the args of the provider-defined tools that
+  `@ai-sdk/anthropic` 4.0.71 `prepareTools` validates (computer toolset,
+  advisor, `text_editor_20250728`, the three `web_fetch` and three
+  `web_search` versions): args that do not match fail the call with
+  `InvalidArgument` before any request, on Anthropic, Vertex and Bedrock
+  alike. `anthropic::prepare_tools::{prepare_tools,
+  prepare_tools_with_provider}` return a `Result`.
 
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
@@ -326,10 +357,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool_approval_response { approval_id, approved, reason, provider_executed }`,
   which reaches the provider only for a provider-executed tool, as upstream;
   a tool message left empty is dropped. Wire format: the role and part tags
-  are unchanged; a tool result still reads the earlier `result` (or untyped
-  `output`) value with `is_error` and writes `text` / `json` / error outputs
-  that way, while `output` holding an AI SDK output object is read as typed;
-  a part its role does not allow (an `image` in an assistant message, a
+  are unchanged; a tool result carries only `output`, an AI SDK output
+  object, and the earlier `result` / `is_error` fields are no longer read or
+  written; a part its role does not allow (an `image` in an assistant message, a
   non-text system message, a string or text part in a tool message) is now
   rejected when the prompt is parsed instead of when it is converted.
 
@@ -459,8 +489,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `CallOptions.call_id` and `CallOptions::for_step` are removed
   (`aimux-core`); the V4 call options have no call id. The recording
-  correlation id is `recording_context.call_id`, and `HttpRequest::new` takes
-  it from there. Provider code that built `HttpRequest { call_id:
+  correlation id is the recording context's `call_id`, and `HttpRequest::new`
+  takes it from there. Provider code that built `HttpRequest { call_id:
   options.call_id.clone(), .. }` uses `HttpRequest::new(url, headers,
   options)`. The JSON is unchanged (both were internal and never serialized).
 
@@ -475,6 +505,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   router, MoA or trace layer directly wraps the call in
   `OperationSettings { .. }.scope(..)`. Recordings keep the three keys in
   `input.options`, and replay restores them.
+
+- `generate_text` accepts a provider tool result without its call only for a
+  provider tool that sets `supportsDeferredResults: true` (new optional
+  `ProviderTool.supports_deferred_results`), as in the AI SDK
+  (`convert-language-model-content.ts:96-103`); before, any provider tool of
+  that name was enough. `stream_text` passes such a result on without its
+  input, as `streamText` does (`stream-language-model-call.ts:760-798`). The
+  flag is not sent to the provider.
+
+- `CallOptions.recording_context` and `DecisionCallOptions.recording_context`
+  are removed (`aimux-core`): the V4 call options carry no recording context.
+  `generate_text`, `stream_text` and `decide` run the model call in
+  `recording::RecordingContext::scope`, and the stream in
+  `RecordingContext::scope_stream`; the router and MoA scope each child step
+  in a child context. `HttpRequest::new` and the trace layer read
+  `RecordingContext::current()`. Code that set the field on call options
+  wraps the call in `RecordingContext::scope(Some(context), ..)`. The JSON is
+  unchanged (the field was never serialized).
 
 - `ProviderTool.id` is a `types::NamespacedKind`, the V4
   `${string}.${string}` identifier: an id without a `.` (for example
@@ -641,7 +689,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exports only the tracker from its index. The previous `aimux-stream` version was
   a port of an older, index-only tracker. Deltas are correlated by wire
   `id`, `index` and function name (ambiguous deltas are dropped), ids are
-  de-duplicated with `-N` suffixes, blank function names are ignored, and
+  de-duplicated with `-N` suffixes, generated ids come from the new
+  `generate_id` (upstream's default `generateId`; `tool-call` only when a
+  generator returns a blank id), blank function names are ignored, and
   `finish` orders calls by index only when every call has one. It emits
   `aimux_core::StreamPart` tool-input parts directly (`ToolInputStart` /
   `ToolInputDelta` / `ToolInputEnd` / `ToolCall`); there is no separate
@@ -665,7 +715,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gains `Transformer`, `TransformStreamController` and `pipe_through`, the
   Rust form of the WHATWG `TransformStream` the AI SDK models build `doStream`
   with (`start` / `transform` / `flush`; `enqueue`, `enqueue_error`, `error`,
-  `terminate`).
+  `terminate`). `pipe_through` returns `PipeThrough`, a `Stream` that calls
+  `start` immediately and the transformer's other methods as it is polled;
+  `TransformStreamController::new`, `drain` and `is_closed` let a test drive
+  a transformer without a stream.
+- `StreamingToolCallTracker`, `StreamingToolCallDelta`, `TypeValidation` and
+  `TrackerError` are removed. The tool-call matching they ported from
+  `@ai-sdk/provider-utils` 5.0.55 is now part of the OpenAI-style chat
+  streams in `aimux-providers` (OpenAI, OpenAI-compatible, DeepSeek, Groq,
+  Mistral), which emit the same parts as before.
 
 **Rust (aimux-providers)**
 
@@ -674,16 +732,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of by `index` alone: deltas are matched by wire id, index and
   function name; a continuation without an id follows its call; indices
   reused across parallel calls stay distinct; ambiguous deltas are dropped;
-  a call whose delta carries no id gets a generated `tool-call` /
-  `tool-call-N` id instead of an empty string; a new call without a function
-  name ends the stream with `InvalidResponseData` (previously it started a
-  call with an empty name). `DeltaToolCall.index` is now `Option<usize>`.
+  a call whose delta carries no id gets a generated id, as upstream, instead
+  of an empty string; a new call without a function name ends the stream with
+  `InvalidResponseData` (previously it started a call with an empty name).
+  `DeltaToolCall.index` is now `Option<usize>`.
 - Once compatible servers moved to `openai_compatible`, the OpenAI (and
   Azure) chat stream drives the tracker with `@ai-sdk/openai`'s options:
-  `type` is validated when present, ids missing from the wire come from
-  `generate_id` instead of `tool-call` / `tool-call-N`, and
-  `DeltaToolCall.index` is required again, so a chunk without it fails to
-  parse.
+  `type` is validated when present, ids missing from the wire come from the
+  provider's `generate_id`, and `DeltaToolCall.index` is required again, so a
+  chunk without it fails to parse.
 - The private per-model configs hold data where they held closures: base
   URLs (`OpenAIUrl`, `MessagesUrl`, `BaseUrl`), provider headers
   (`ProviderHeaders`, `EndpointHeaders`), endpoint sources (Vertex, Bedrock,
@@ -693,6 +750,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged; the closures callers pass in settings (`transform_request_body`,
   `generate_id`, the compatible `supported_urls`, `convert_usage` and
   `metadata_extractor`) are kept as given.
+- `PresetDescriptor` gains a crate-private field (the row's usage converter),
+  so code outside the crate can no longer build one with a struct literal;
+  descriptors come from the registry JSON.
 - Every language-model `doStream` (OpenAI chat and Responses, OpenAI-compatible
   chat and completion, Groq, DeepSeek, Mistral, Anthropic, Bedrock, Cohere,
   Google, Vertex, xAI, Hugging Face, Open Responses) is a named stream struct
@@ -1023,6 +1083,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **All bindings**
 
+- Typed provider tools in Java, Kotlin, Swift, Python, Flutter and Go carry
+  optional `supportsDeferredResults`, omitted from JSON when absent
+  (provider-utils@5.0.55 src/types/tool.ts:316-326).
+
 - The typed results and stream parts follow the core's AI SDK shapes
   (Go, Java, Kotlin, Swift, Flutter, Node, Python). `GenerateTextResult`
   gains `steps`, `tool_results` and `output` and loses `raw`; its `content`
@@ -1134,6 +1198,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model no longer match each other's prefix history. The trace
   scope isolates by provider name and model id; `TraceLayer::with_scope_name`
   names a scope for a host that calls one provider at several endpoints.
+- Gated aimux-core's ts-rs exports behind `ts-export`, so plain `cargo test`
+  no longer rewrites tracked TypeScript types. `scripts/gen_ts_types.py`
+  enables exports and rejects ungated export attributes with `--check`.
+
+### Removed
+
+- The cross-language contract fixtures are retired (#249):
+  `contract-tests/fixtures/wire-format.json` (a record of Rust's own serde
+  output, not of the AI SDK), `tool-call-repair.json`, the Node runner
+  `contract-tests/run-node.ts`, `aimux-core/tests/contract_test.rs` and the
+  bindings' contract and repair tests are deleted. Wire behaviour is pinned
+  instead by fixtures recorded from the pinned AI SDK packages under
+  `fixtures/aisdk/` (versions and sha512 integrity in
+  `fixtures/aisdk/VERSIONS.json`, fetched by `scripts/fetch-aisdk.sh`) and by
+  tests ported from upstream. The two decision fixtures stay in
+  `contract-tests/fixtures/`.
 
 ### RFCs
 

@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Optional request information for telemetry and debugging.
- * 
+ *
  * Aligned with the `request?` object that appears on some V4 model results.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

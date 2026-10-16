@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Result of [`Files::upload_file`].
- * 
+ *
  * Aligned with V4 `FilesV4UploadFileResult`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

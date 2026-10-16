@@ -11,7 +11,7 @@ import java.util.*;
  * A part of the content text generation returns: the AI SDK's core
  * `ContentPart` (`ai` `generate-text/content-part.ts:12-33`), eleven kinds,
  * separate from the provider's [`GenerateContent`].
- * 
+ *
  * Tool calls are parsed, a provider tool result is a [`TypedToolResult`]
  * or, when the provider marks it as an error, a [`TypedToolError`], and a
  * generated file is wrapped as `{ file, providerMetadata }`, as upstream's

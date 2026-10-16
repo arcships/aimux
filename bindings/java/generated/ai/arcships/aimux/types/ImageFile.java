@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * An image file used for image editing or variation generation.
- * 
+ *
  * Aligned with V4 `ImageModelV4File`.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")

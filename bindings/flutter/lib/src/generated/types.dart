@@ -4503,7 +4503,7 @@ final class ErrorEnvelope {
 }
 
 enum Fallback {
-  onError('on_error'),
+  onError('on-error'),
   none('none');
 
   const Fallback(this.wireValue);
@@ -5351,6 +5351,10 @@ final class GenerateObjectResult {
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
+///
+/// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+/// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+/// naming the key instead of the default it would silently fall back to.
 final class GenerateTextOptions {
   final double? frequencyPenalty;
   final Map<String, String>? headers;
@@ -6294,7 +6298,7 @@ final class InputAudioFormat {
 final class InputRecord {
   final RecordingOperation? operation;
 
-  /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+  /// 序列化的 CallOptions(abort_signal 已 serde skip),
   /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
   /// (`OperationSettings`);headers/provider_options 已递归脱敏。
   final Object? options;
@@ -7119,8 +7123,8 @@ final class MiddlewareParams {
 
 /// Reference-failure policy.
 enum MoaFailMode {
-  bestEffort('best_effort'),
-  failFast('fail_fast');
+  bestEffort('best-effort'),
+  failFast('fail-fast');
 
   const MoaFailMode(this.wireValue);
   final String wireValue;
@@ -7129,6 +7133,9 @@ enum MoaFailMode {
   String toJson() => wireValue;
 }
 
+/// MoA configuration, camelCase JSON with every field optional. Unknown keys
+/// are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+/// the default policy.
 final class MoaParams {
   final String aggregator;
 
@@ -7973,6 +7980,10 @@ final class OperationStatus {
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
+///
+/// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+/// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+/// naming the key instead of the default it would silently fall back to.
 final class Options {
   final double? frequencyPenalty;
   final Map<String, String>? headers;
@@ -8779,16 +8790,25 @@ final class ProviderTool {
 
   /// The name of the tool, unique within this model call.
   final String name;
+
+  /// Whether a result of this tool may arrive in a later response than its
+  /// call (a deferred result, as in programmatic tool calling). The AI SDK
+  /// tool's `supportsDeferredResults` (provider-utils@5.0.55
+  /// `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+  /// absent means `false`. It is not sent to the provider.
+  final bool? supportsDeferredResults;
   const ProviderTool({
     required this.args,
     required this.id,
     required this.name,
+    this.supportsDeferredResults,
   });
   factory ProviderTool.fromJson(Map<String, dynamic> json) {
     return ProviderTool(
       args: Map<String, Object?>.from(json['args'] as Map),
       id: NamespacedKind.fromJson(json['id']),
       name: json['name'] as String,
+      supportsDeferredResults: json['supportsDeferredResults'] as bool?,
     );
   }
 
@@ -8796,6 +8816,8 @@ final class ProviderTool {
         'args': args,
         'id': id.toJson(),
         'name': name,
+        if (supportsDeferredResults != null)
+          'supportsDeferredResults': supportsDeferredResults,
       };
 }
 
@@ -9390,7 +9412,7 @@ final class Recording {
 
 /// Operation stored in a unified recording. Older recordings are language calls.
 enum RecordingOperation {
-  languageModel('language_model'),
+  languageModel('language-model'),
   decision('decision');
 
   const RecordingOperation(this.wireValue);
@@ -12850,6 +12872,10 @@ final class TextStreamPartRaw extends TextStreamPart {
 ///
 /// All values are milliseconds; `None` disables the corresponding limit. A
 /// `total` timeout also covers retry backoff and the whole streamed response.
+///
+/// Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+/// (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+/// without a timeout.
 final class TimeoutConfiguration {
   /// Maximum idle time between consecutive stream chunks (streaming only).
   final int? chunkMs;
@@ -13021,10 +13047,18 @@ final class ToolProvider extends Tool {
 
   /// The name of the tool, unique within this model call.
   final String name;
+
+  /// Whether a result of this tool may arrive in a later response than its
+  /// call (a deferred result, as in programmatic tool calling). The AI SDK
+  /// tool's `supportsDeferredResults` (provider-utils@5.0.55
+  /// `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+  /// absent means `false`. It is not sent to the provider.
+  final bool? supportsDeferredResults;
   const ToolProvider({
     required this.args,
     required this.id,
     required this.name,
+    this.supportsDeferredResults,
   });
   @override
   String get type => 'provider';
@@ -13033,6 +13067,7 @@ final class ToolProvider extends Tool {
       args: Map<String, Object?>.from(json['args'] as Map),
       id: NamespacedKind.fromJson(json['id']),
       name: json['name'] as String,
+      supportsDeferredResults: json['supportsDeferredResults'] as bool?,
     );
   }
 
@@ -13041,6 +13076,8 @@ final class ToolProvider extends Tool {
         'args': args,
         'id': id.toJson(),
         'name': name,
+        if (supportsDeferredResults != null)
+          'supportsDeferredResults': supportsDeferredResults,
       };
 }
 
@@ -16893,7 +16930,10 @@ final class VideoFrameImage {
 
 /// The role a frame image plays in video generation.
 ///
-/// Aligned with V4 `VideoModelV4FrameType`.
+/// `VideoModelV4FrameType` (`@ai-sdk/provider@4.0.22`
+/// `src/video-model/v4/video-model-v4-frame-image.ts:9`): the values are
+/// upstream's literals `'first_frame' | 'last_frame'`, snake_case as there,
+/// which `ai@7.0.127` compares against (`generate-video.ts:814`).
 enum VideoFrameType {
   firstFrame('first_frame'),
   lastFrame('last_frame');

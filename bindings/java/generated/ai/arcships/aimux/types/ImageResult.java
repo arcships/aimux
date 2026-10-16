@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * The result of [`ImageModel::do_generate`].
- * 
+ *
  * Aligned with V4 `ImageModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

@@ -16,6 +16,13 @@
     "name": {
       "description": "The name of the tool, unique within this model call.",
       "type": "string"
+    },
+    "supportsDeferredResults": {
+      "description": "Whether a result of this tool may arrive in a later response than its\ncall (a deferred result, as in programmatic tool calling). The AI SDK\ntool's `supportsDeferredResults` (provider-utils@5.0.55\n`src/types/tool.ts:316-326`), which the provider's tool factory sets;\nabsent means `false`. It is not sent to the provider.",
+      "type": [
+        "boolean",
+        "null"
+      ]
     }
   },
   "required": [

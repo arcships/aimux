@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * Options passed to [`SearchModel::do_search`].
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class SearchCallOptions {
@@ -31,7 +31,7 @@ public final class SearchCallOptions {
     private final List<String> includeDomains;
     /**
      * Whether to include raw page content in results.
-     * 
+     *
      * Provider support varies; providers that cannot honor this should
      * issue a warning rather than erroring.
      */

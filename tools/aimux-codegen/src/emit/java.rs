@@ -250,7 +250,8 @@ fn docs(out: &mut String, doc: Option<&str>, indent: &str) {
     if let Some(doc) = doc {
         writeln!(out, "{indent}/**").unwrap();
         for line in doc.lines() {
-            writeln!(out, "{indent} * {}", line.replace("*/", "*&#47;")).unwrap();
+            let line = format!("{indent} * {}", line.replace("*/", "*&#47;"));
+            writeln!(out, "{}", line.trim_end()).unwrap();
         }
         writeln!(out, "{indent} */").unwrap();
     }

@@ -10,11 +10,11 @@ import java.util.*;
 /**
  * Either raw bytes or a base64-encoded string (the AI SDK's
  * `Uint8Array | string`).
- * 
+ *
  * Providers should pass file data through without unnecessary conversion: if
  * the upstream API returns base64, return [`FileBytes::Base64`]; if it
  * returns binary, return [`FileBytes::Binary`].
- * 
+ *
  * The JSON is a base64 string either way, as in the AI SDK's JSON: `Binary`
  * is written as base64 and parsing yields `Base64`. Two values are equal when
  * they hold the same bytes, whatever their form.

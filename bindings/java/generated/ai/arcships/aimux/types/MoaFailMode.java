@@ -11,8 +11,8 @@ import java.util.*;
  * Reference-failure policy.
  */
 public enum MoaFailMode {
-    @JsonProperty("best_effort")
+    @JsonProperty("best-effort")
     BEST_EFFORT,
-    @JsonProperty("fail_fast")
+    @JsonProperty("fail-fast")
     FAIL_FAST
 }

@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * One item of a `content` [`ToolResultOutput`] (upstream
  * `content-part.ts:303-546`).
- * 
+ *
  * The `file-*` and `image-*` items are deprecated upstream in favour of
  * `file` (`content-part.ts:361-532`); they are accepted on input and the
  * conversion turns each into a `file` part with a deprecation warning, as

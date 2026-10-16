@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Generated video data: a URL, base64-encoded string, or binary data.
- * 
+ *
  * Aligned with V4 `VideoModelV4VideoData`. Most providers return URLs due to
  * large file sizes.
  */

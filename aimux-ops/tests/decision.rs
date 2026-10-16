@@ -181,8 +181,6 @@ async fn decide_matches_core_for_all_state_shapes_and_question_types() {
         let fixture = Fixture::new(Reply::Valid);
         let mut options = options();
         options["state"] = state;
-        // Canonical business DTOs retain their existing open-field semantics.
-        options["businessExtension"] = json!(true);
         let expected = decide(
             fixture.model.as_ref(),
             serde_json::from_value(options.clone()).unwrap(),

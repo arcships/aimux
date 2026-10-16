@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * A complete Chat Completion response (non-streaming).
- * 
+ *
  * Mirrors the OpenAI `chat.completion` object.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

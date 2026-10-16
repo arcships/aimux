@@ -11,7 +11,7 @@ import java.util.*;
  * Options of [`decide`]: the call options plus the operation settings
  * (`ai@7.0.128 src/decide/decide.ts:53-61`).
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class DecideOptions {

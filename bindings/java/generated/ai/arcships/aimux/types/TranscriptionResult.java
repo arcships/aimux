@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * The result of [`TranscriptionModel::do_generate`].
- * 
+ *
  * Aligned with V4 `TranscriptionModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

@@ -1126,6 +1126,7 @@ class CustomPart(_Wire):
 #: Options of [`decide`]: the call options plus the operation settings
 #: (`ai@7.0.128 src/decide/decide.ts:53-61`).
 class DecideOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Maximum retries for transient provider failures. Defaults to 2.
     max_retries: Optional[U32] = Field(default=None, alias="maxRetries")
@@ -1245,6 +1246,7 @@ class DecisionRounding(_Wire):
 #:
 #: Aligned with V4 `EmbeddingModelV4CallOptions`.
 class EmbeddingCallOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Additional HTTP headers to send with the request.
     headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
@@ -1305,7 +1307,7 @@ class ErrorEnvelope(_Wire):
     retry_after_ms: Optional[U64] = Field(default=None, alias="retryAfterMs")
 
 
-Fallback = TypeAliasType("Fallback", Literal["on_error", "none"])
+Fallback = TypeAliasType("Fallback", Literal["on-error", "none"])
 
 #: Either raw bytes or a base64-encoded string (the AI SDK's
 #: `Uint8Array | string`).
@@ -1532,7 +1534,12 @@ class GenerateObjectResult(_Wire):
 #:
 #: Unlike `CallOptions` (provider-facing), this does not include `prompt`
 #: (passed separately) and defaults are more ergonomic.
+#:
+#: Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+#: 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+#: naming the key instead of the default it would silently fall back to.
 class GenerateTextOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     frequency_penalty: Optional[float] = Field(default=None, alias="frequencyPenalty")
     headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
@@ -1709,6 +1716,7 @@ class HttpRecord(_Wire):
 #:
 #: Aligned with V4 `ImageModelV4CallOptions`.
 class ImageCallOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Aspect ratio of the images, in `{width}:{height}` format.
     #: `None` uses the provider's default aspect ratio.
     aspect_ratio: Optional["_dto.AspectRatio"] = Field(default=None, alias="aspectRatio")
@@ -1823,7 +1831,7 @@ class InputAudioFormat(_Wire):
 #: ① 输入侧:完整调用参数,足以重建 generate_text 调用。
 class InputRecord(_Wire):
     operation: Optional["_dto.RecordingOperation"] = Field(default=None, alias="operation")
-    #: 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+    #: 序列化的 CallOptions(abort_signal 已 serde skip),
     #: 加上所在操作的 `max_retries` / `timeout` / `session_id`
     #: (`OperationSettings`);headers/provider_options 已递归脱敏。
     options: Any = Field(alias="options")
@@ -2038,8 +2046,11 @@ class MiddlewareParams(_Wire):
 
 
 #: Reference-failure policy.
-MoaFailMode = TypeAliasType("MoaFailMode", Literal["best_effort", "fail_fast"])
+MoaFailMode = TypeAliasType("MoaFailMode", Literal["best-effort", "fail-fast"])
 
+#: MoA configuration, camelCase JSON with every field optional. Unknown keys
+#: are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+#: the default policy.
 class MoaParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     aggregator: str = Field(alias="aggregator")
@@ -2258,6 +2269,10 @@ class OperationStatus(_Wire):
 #:
 #: Unlike `CallOptions` (provider-facing), this does not include `prompt`
 #: (passed separately) and defaults are more ergonomic.
+#:
+#: Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+#: 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+#: naming the key instead of the default it would silently fall back to.
 class Options(_Wire):
     model_config = ConfigDict(extra="forbid")
     frequency_penalty: Optional[float] = Field(default=None, alias="frequencyPenalty")
@@ -2479,6 +2494,12 @@ class ProviderTool(_Wire):
     id: "_dto.NamespacedKind" = Field(alias="id")
     #: The name of the tool, unique within this model call.
     name: str = Field(alias="name")
+    #: Whether a result of this tool may arrive in a later response than its
+    #: call (a deferred result, as in programmatic tool calling). The AI SDK
+    #: tool's `supportsDeferredResults` (provider-utils@5.0.55
+    #: `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+    #: absent means `false`. It is not sent to the provider.
+    supports_deferred_results: Optional[bool] = Field(default=None, alias="supportsDeferredResults")
 
 
 class ProviderWrapParams(_Wire):
@@ -2640,7 +2661,7 @@ class Recording(_Wire):
 
 
 #: Operation stored in a unified recording. Older recordings are language calls.
-RecordingOperation = TypeAliasType("RecordingOperation", Literal["language_model", "decision"])
+RecordingOperation = TypeAliasType("RecordingOperation", Literal["language-model", "decision"])
 
 class RegistryCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
@@ -2732,6 +2753,7 @@ class RequestInfo(_Wire):
 #:
 #: Aligned with V4 `RerankingModelV4CallOptions`.
 class RerankingCallOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Documents to rerank.
     documents: "_dto.RerankingDocuments" = Field(alias="documents")
     #: Additional HTTP headers to send with the request.
@@ -2883,6 +2905,7 @@ class RuntimeModel(_Wire):
 
 #: Options passed to [`SearchModel::do_search`].
 class SearchCallOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Optional list of domains to exclude from results.
     exclude_domains: Optional[List[str]] = Field(default=None, alias="excludeDomains")
     #: Additional HTTP headers to send with the request.
@@ -3045,6 +3068,7 @@ Source = TypeAliasType("Source", Annotated[Union["SourceUrl", "SourceDocument"],
 #:
 #: Aligned with V4 `SpeechModelV4CallOptions`.
 class SpeechCallOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Additional HTTP headers to send with the request.
     headers: Optional[Dict[str, str]] = Field(default=None, alias="headers")
     #: Instructions for the speech generation, e.g.
@@ -3618,6 +3642,10 @@ TextStreamPart = TypeAliasType("TextStreamPart", Annotated[Union[Annotated["Text
 #:
 #: All values are milliseconds; `None` disables the corresponding limit. A
 #: `total` timeout also covers retry backoff and the whole streamed response.
+#:
+#: Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+#: (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+#: without a timeout.
 class TimeoutConfiguration(_Wire):
     model_config = ConfigDict(extra="forbid")
     #: Maximum idle time between consecutive stream chunks (streaming only).
@@ -3680,6 +3708,12 @@ class ToolProvider(_Wire):
     id: "_dto.NamespacedKind" = Field(alias="id")
     #: The name of the tool, unique within this model call.
     name: str = Field(alias="name")
+    #: Whether a result of this tool may arrive in a later response than its
+    #: call (a deferred result, as in programmatic tool calling). The AI SDK
+    #: tool's `supportsDeferredResults` (provider-utils@5.0.55
+    #: `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+    #: absent means `false`. It is not sent to the provider.
+    supports_deferred_results: Optional[bool] = Field(default=None, alias="supportsDeferredResults")
 
 
 #: A tool that can be either a user-defined function tool or a
@@ -4202,6 +4236,7 @@ class TraceStats(_Wire):
 #:
 #: Aligned with V4 `TranscriptionModelV4CallOptions`.
 class TranscriptionCallOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Audio to transcribe: raw bytes, a base64-encoded string, or a URL
     #: that [`transcribe`] downloads.
     audio: "_dto.AudioInput" = Field(alias="audio")
@@ -4627,6 +4662,7 @@ VerdictKind = TypeAliasType("VerdictKind", Literal["Trusted", "SuspectOverclaim"
 #:
 #: Aligned with V4 `VideoModelV4CallOptions`.
 class VideoCallOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Aspect ratio, in `{width}:{height}` format (e.g. `"16:9"`).
     aspect_ratio: Optional["_dto.AspectRatio"] = Field(default=None, alias="aspectRatio")
     #: Duration of the video in seconds. Typically 3–10 seconds.
@@ -4727,13 +4763,17 @@ class VideoFrameImage(_Wire):
 
 #: The role a frame image plays in video generation.
 #:
-#: Aligned with V4 `VideoModelV4FrameType`.
+#: `VideoModelV4FrameType` (`@ai-sdk/provider@4.0.22`
+#: `src/video-model/v4/video-model-v4-frame-image.ts:9`): the values are
+#: upstream's literals `'first_frame' | 'last_frame'`, snake_case as there,
+#: which `ai@7.0.127` compares against (`generate-video.ts:814`).
 VideoFrameType = TypeAliasType("VideoFrameType", Literal["first_frame", "last_frame"])
 
 #: Per-call poll pacing for video generation (AI SDK `generateVideo` `poll`,
 #: ai@7.0.127 `generate-video/generate-video.ts:55-80`). The poll settings
 #: belong to the operation, as upstream: a video model has none of its own.
 class VideoPollOptions(_Wire):
+    model_config = ConfigDict(extra="forbid")
     #: Delay between consecutive status checks, in milliseconds.
     interval_ms: Optional[U64] = Field(default=None, alias="intervalMs")
     #: Maximum total time to wait for completion, in milliseconds.

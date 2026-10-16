@@ -20,7 +20,9 @@ use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use aimux_provider_utils::{TransformStreamController, Transformer, pipe_through};
+use aimux_provider_utils::{Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -534,36 +536,12 @@ impl LanguageModel for XaiResponsesModel {
                 response_headers.clone(),
             ));
         }
-        let stream_error_url = endpoint;
-        let stream_request_body = body.clone();
-        let stream_response_headers = response_headers.clone();
-        let include_raw_chunks = options.include_raw_chunks == Some(true);
-
         let stream = pipe_through(
             futures::stream::iter(first_event).chain(sse_stream),
             XaiResponsesStream {
-                warnings,
-                include_raw_chunks,
+                ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
                 provider_tool_names,
-                stream_error_url,
-                stream_request_body,
-                stream_response_headers,
-                final_usage: None,
-                final_finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                },
-                cost_in_usd_ticks: None,
-                service_tier: None,
-                prompt_cache_key: None,
-                safety_identifier: None,
-                has_function_call: false,
-                is_first_chunk: true,
-                content_blocks: Vec::new(),
-                seen_tool_calls: std::collections::HashSet::new(),
-                active_reasoning: HashMap::new(),
-                ongoing_tool_calls: HashMap::new(),
-                finished: false,
+                ..XaiResponsesStream::default()
             },
         );
 
@@ -578,21 +556,19 @@ impl LanguageModel for XaiResponsesModel {
 }
 
 /// The `TransformStream` of the xAI Responses `doStream`.
+#[derive(Default)]
 struct XaiResponsesStream {
-    warnings: Vec<aimux_core::types::Warning>,
-    include_raw_chunks: bool,
+    ctx: StreamContext,
     provider_tool_names: HashMap<String, String>,
-    stream_error_url: String,
-    stream_request_body: Value,
-    stream_response_headers: HashMap<String, String>,
     final_usage: Option<Usage>,
-    final_finish_reason: FinishReason,
+    /// `other` until the response says otherwise.
+    final_finish_reason: Option<FinishReason>,
     cost_in_usd_ticks: Option<u64>,
     service_tier: Option<String>,
     prompt_cache_key: Option<String>,
     safety_identifier: Option<String>,
     has_function_call: bool,
-    is_first_chunk: bool,
+    metadata_emitted: bool,
     /// Open text blocks.
     content_blocks: Vec<String>,
     seen_tool_calls: std::collections::HashSet<String>,
@@ -608,17 +584,11 @@ impl Transformer for XaiResponsesStream {
     type Input = Result<Value, AiMuxError>;
     type Output = StreamPart;
 
-    fn start(&mut self, controller: &mut TransformStreamController<StreamPart>) {
-        controller.enqueue(StreamPart::StreamStart {
-            warnings: std::mem::take(&mut self.warnings),
-        });
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
     }
 
-    fn transform(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         self.transform_event(event, controller);
         if self.finished {
             // An error event ends the response: the rest of the body is not
@@ -628,24 +598,24 @@ impl Transformer for XaiResponsesStream {
         }
     }
 
-    fn flush(mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn flush(mut self, controller: &mut Controller) {
         self.finish(controller);
     }
 }
 
 impl XaiResponsesStream {
     /// Handle one parsed SSE event.
-    fn transform_event(
-        &mut self,
-        event: Result<Value, AiMuxError>,
-        controller: &mut TransformStreamController<StreamPart>,
-    ) {
+    fn transform_event(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let Self {
-            include_raw_chunks,
+            ctx:
+                StreamContext {
+                    include_raw_chunks,
+                    url: ref stream_error_url,
+                    request_body: ref stream_request_body,
+                    response_headers: ref stream_response_headers,
+                    ..
+                },
             ref provider_tool_names,
-            ref stream_error_url,
-            ref stream_request_body,
-            ref stream_response_headers,
             ref mut final_usage,
             ref mut final_finish_reason,
             ref mut cost_in_usd_ticks,
@@ -653,7 +623,7 @@ impl XaiResponsesStream {
             ref mut prompt_cache_key,
             ref mut safety_identifier,
             ref mut has_function_call,
-            ref mut is_first_chunk,
+            ref mut metadata_emitted,
             ref mut content_blocks,
             ref mut seen_tool_calls,
             ref mut active_reasoning,
@@ -672,8 +642,8 @@ impl XaiResponsesStream {
 
                 // ── response.created / response.in_progress ──
                 if event_type == "response.created" || event_type == "response.in_progress" {
-                    if *is_first_chunk {
-                        *is_first_chunk = false;
+                    if !*metadata_emitted {
+                        *metadata_emitted = true;
                         let response = parsed.get("response").cloned().unwrap_or(Value::Null);
                         let id = response
                             .get("id")
@@ -769,16 +739,9 @@ impl XaiResponsesStream {
                     let block_id = format!("text-{item_id}");
                     if !content_blocks.contains(&block_id) {
                         content_blocks.push(block_id.clone());
-                        controller.enqueue(StreamPart::TextStart {
-                            id: block_id.clone(),
-                            provider_metadata: None,
-                        });
+                        controller.text_start(block_id.clone());
                     }
-                    controller.enqueue(StreamPart::TextDelta {
-                        id: block_id,
-                        delta: delta.to_string(),
-                        provider_metadata: None,
-                    });
+                    controller.text_delta(block_id, delta.to_string());
                     return;
                 }
 
@@ -860,23 +823,23 @@ impl XaiResponsesStream {
                             .get("incomplete_details")
                             .and_then(|d| d.get("reason"))
                             .and_then(|v| v.as_str());
-                        *final_finish_reason = FinishReason {
+                        *final_finish_reason = Some(FinishReason {
                             unified: reason
                                 .map(map_xai_responses_finish_reason)
                                 .unwrap_or(FinishReasonUnified::Other),
                             raw: reason
                                 .map(std::string::ToString::to_string)
                                 .or(Some("incomplete".to_string())),
-                        };
+                        });
                     } else if let Some(status) = response.get("status").and_then(|v| v.as_str()) {
-                        *final_finish_reason = FinishReason {
+                        *final_finish_reason = Some(FinishReason {
                             unified: if *has_function_call {
                                 FinishReasonUnified::ToolCalls
                             } else {
                                 map_xai_responses_finish_reason(status)
                             },
                             raw: Some(status.to_string()),
-                        };
+                        });
                     }
                     return;
                 }
@@ -888,14 +851,14 @@ impl XaiResponsesStream {
                         .get("incomplete_details")
                         .and_then(|d| d.get("reason"))
                         .and_then(|v| v.as_str());
-                    *final_finish_reason = FinishReason {
+                    *final_finish_reason = Some(FinishReason {
                         unified: reason
                             .map(map_xai_responses_finish_reason)
                             .unwrap_or(FinishReasonUnified::Error),
                         raw: reason
                             .map(std::string::ToString::to_string)
                             .or(Some("error".to_string())),
-                    };
+                    });
                     if let Some(usage) = response.get("usage")
                         && let Ok(u) =
                             serde_json::from_value::<types::XaiResponsesUsage>(usage.clone())
@@ -927,10 +890,10 @@ impl XaiResponsesStream {
                             stream_response_headers.clone(),
                         ),
                     });
-                    *final_finish_reason = FinishReason {
+                    *final_finish_reason = Some(FinishReason {
                         unified: FinishReasonUnified::Error,
                         raw: Some("error".to_string()),
-                    };
+                    });
                     *finished = true;
                     return;
                 }
@@ -950,11 +913,7 @@ impl XaiResponsesStream {
                         .unwrap_or(0);
                     let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
                     if let Some((tool_call_id, _)) = ongoing_tool_calls.get(&output_index) {
-                        controller.enqueue(StreamPart::ToolInputDelta {
-                            id: tool_call_id.clone(),
-                            delta: delta.to_string(),
-                            provider_metadata: None,
-                        });
+                        controller.tool_input_delta(tool_call_id.clone(), delta.to_string());
                     }
                     return;
                 }
@@ -1039,23 +998,9 @@ impl XaiResponsesStream {
 
                         if !seen_tool_calls.contains(part_id) {
                             seen_tool_calls.insert(part_id.to_string());
-                            controller.enqueue(StreamPart::ToolInputStart {
-                                id: part_id.to_string(),
-                                tool_name: tool_name.clone(),
-                                provider_executed: None,
-                                dynamic: None,
-                                title: None,
-                                provider_metadata: None,
-                            });
-                            controller.enqueue(StreamPart::ToolInputDelta {
-                                id: part_id.to_string(),
-                                delta: input.to_string(),
-                                provider_metadata: None,
-                            });
-                            controller.enqueue(StreamPart::ToolInputEnd {
-                                id: part_id.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.tool_input_start(part_id.to_string(), tool_name.clone());
+                            controller.tool_input_delta(part_id.to_string(), input.to_string());
+                            controller.tool_input_end(part_id.to_string());
                             controller.enqueue(StreamPart::ToolCall(RawToolCall {
                                 tool_call_id: part_id.to_string(),
                                 tool_name: tool_name.clone(),
@@ -1125,23 +1070,9 @@ impl XaiResponsesStream {
 
                         if should_emit && !seen_tool_calls.contains(part_id) {
                             seen_tool_calls.insert(part_id.to_string());
-                            controller.enqueue(StreamPart::ToolInputStart {
-                                id: part_id.to_string(),
-                                tool_name: tool_name.clone(),
-                                provider_executed: None,
-                                dynamic: None,
-                                title: None,
-                                provider_metadata: None,
-                            });
-                            controller.enqueue(StreamPart::ToolInputDelta {
-                                id: part_id.to_string(),
-                                delta: tool_input.clone(),
-                                provider_metadata: None,
-                            });
-                            controller.enqueue(StreamPart::ToolInputEnd {
-                                id: part_id.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.tool_input_start(part_id.to_string(), tool_name.clone());
+                            controller.tool_input_delta(part_id.to_string(), tool_input.clone());
+                            controller.tool_input_end(part_id.to_string());
                             controller.enqueue(StreamPart::ToolCall(RawToolCall {
                                 tool_call_id: part_id.to_string(),
                                 tool_name: tool_name.clone(),
@@ -1187,15 +1118,8 @@ impl XaiResponsesStream {
                                 let block_id = format!("text-{part_id}");
                                 if !content_blocks.contains(&block_id) {
                                     content_blocks.push(block_id.clone());
-                                    controller.enqueue(StreamPart::TextStart {
-                                        id: block_id.clone(),
-                                        provider_metadata: None,
-                                    });
-                                    controller.enqueue(StreamPart::TextDelta {
-                                        id: block_id,
-                                        delta: text.to_string(),
-                                        provider_metadata: None,
-                                    });
+                                    controller.text_start(block_id.clone());
+                                    controller.text_delta(block_id, text.to_string());
                                 }
                             }
                             if let Some(annotations) =
@@ -1233,24 +1157,14 @@ impl XaiResponsesStream {
                         if event_type == "response.output_item.added" {
                             ongoing_tool_calls
                                 .insert(output_index, (call_id.to_string(), name.to_string()));
-                            controller.enqueue(StreamPart::ToolInputStart {
-                                id: call_id.to_string(),
-                                tool_name: name.to_string(),
-                                provider_executed: None,
-                                dynamic: None,
-                                title: None,
-                                provider_metadata: None,
-                            });
+                            controller.tool_input_start(call_id.to_string(), name.to_string());
                         } else {
                             // output_item.done
                             *has_function_call = true;
                             ongoing_tool_calls.remove(&output_index);
                             let arguments =
                                 item.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
-                            controller.enqueue(StreamPart::ToolInputEnd {
-                                id: call_id.to_string(),
-                                provider_metadata: None,
-                            });
+                            controller.tool_input_end(call_id.to_string());
                             let input = arguments.to_string();
                             controller.enqueue(StreamPart::ToolCall(RawToolCall {
                                 tool_call_id: call_id.to_string(),
@@ -1283,13 +1197,10 @@ impl XaiResponsesStream {
 
     /// Close the open text blocks and emit `Finish`: at the end of the
     /// body, or right after an error event.
-    fn finish(&mut self, controller: &mut TransformStreamController<StreamPart>) {
+    fn finish(&mut self, controller: &mut Controller) {
         // Close any remaining open text blocks.
         for block_id in std::mem::take(&mut self.content_blocks) {
-            controller.enqueue(StreamPart::TextEnd {
-                id: block_id,
-                provider_metadata: None,
-            });
+            controller.text_end(block_id);
         }
 
         // Final part: Finish.
@@ -1301,7 +1212,7 @@ impl XaiResponsesStream {
         );
 
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.final_finish_reason.clone(),
+            finish_reason: self.final_finish_reason.clone().unwrap_or(FINISH_OTHER),
             usage: self.final_usage.take().unwrap_or_else(zero_usage),
             provider_metadata: provider_meta,
         });

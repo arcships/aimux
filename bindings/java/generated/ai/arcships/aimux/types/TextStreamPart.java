@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * A public call-layer stream chunk: the AI SDK's `TextStreamPart`
  * (ai@7.0.127 `generate-text/stream-text-result.ts:581-607`).
- * 
+ *
  * `stream_text` turns the provider's [`StreamPart`]s into these: tool calls
  * are parsed, text and reasoning deltas carry `text` (the provider part's
  * `delta`), the provider's `stream-start` and `response-metadata` become

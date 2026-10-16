@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 import java.util.*;
 
 public enum Fallback {
-    @JsonProperty("on_error")
+    @JsonProperty("on-error")
     ON_ERROR,
     @JsonProperty("none")
     NONE

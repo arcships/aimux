@@ -13,7 +13,7 @@ import java.util.*;
  * src/language-model/v4/language-model-v4-provider-tool.ts:17`) and custom
  * content `kind` (`language-model-v4-custom-content.ts:13`,
  * `language-model-v4-prompt.ts:138`).
- * 
+ *
  * The TypeScript type admits any string with a `.`; a value without one
  * does not construct or deserialize.
  */

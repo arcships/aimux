@@ -7,14 +7,14 @@
 
 /// Whether `value` (ignoring leading whitespace) starts with `{` or `[`.
 #[must_use]
-pub fn starts_with_structured_value(value: Option<&str>) -> bool {
+pub(super) fn starts_with_structured_value(value: Option<&str>) -> bool {
     value.is_some_and(|v| matches!(v.trim_start().as_bytes().first(), Some(b'{' | b'[')))
 }
 
 /// Incrementally tracks whether streamed tool-call arguments contain a
 /// complete structured JSON value.
 #[derive(Debug, Clone)]
-pub struct StreamingToolCallArgumentState {
+pub(super) struct StreamingToolCallArgumentState {
     structure: Structure,
 }
 
@@ -37,7 +37,7 @@ enum Structure {
 impl StreamingToolCallArgumentState {
     /// Create a state seeded with `initial_value`.
     #[must_use]
-    pub fn new(initial_value: &str) -> Self {
+    pub(super) fn new(initial_value: &str) -> Self {
         let mut state = Self {
             structure: Structure::Undetermined,
         };
@@ -47,12 +47,12 @@ impl StreamingToolCallArgumentState {
 
     /// `true` once a top-level `{…}` / `[…]` value has been closed.
     #[must_use]
-    pub fn has_complete_structured_value(&self) -> bool {
+    pub(super) fn has_complete_structured_value(&self) -> bool {
         matches!(self.structure, Structure::Complete)
     }
 
     /// Feed the next argument fragment.
-    pub fn append(&mut self, delta: &str) {
+    pub(super) fn append(&mut self, delta: &str) {
         let mut rest = delta;
         if matches!(self.structure, Structure::Undetermined) {
             rest = rest.trim_start();
@@ -115,8 +115,7 @@ impl StreamingToolCallArgumentState {
 }
 
 /// Port of `streaming-tool-call-argument-state.test.ts` from
-/// `@ai-sdk/provider-utils`. Upstream does not export the argument state
-/// either, so it is tested here rather than through the crate root.
+/// `@ai-sdk/provider-utils`.
 #[cfg(test)]
 mod tests {
     use super::*;

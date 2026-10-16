@@ -9,8 +9,11 @@ import java.util.*;
 
 /**
  * The role a frame image plays in video generation.
- * 
- * Aligned with V4 `VideoModelV4FrameType`.
+ *
+ * `VideoModelV4FrameType` (`@ai-sdk/provider@4.0.22`
+ * `src/video-model/v4/video-model-v4-frame-image.ts:9`): the values are
+ * upstream's literals `'first_frame' | 'last_frame'`, snake_case as there,
+ * which `ai@7.0.127` compares against (`generate-video.ts:814`).
  */
 public enum VideoFrameType {
     @JsonProperty("first_frame")

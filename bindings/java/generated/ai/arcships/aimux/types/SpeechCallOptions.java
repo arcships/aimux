@@ -9,10 +9,10 @@ import java.util.*;
 
 /**
  * Options passed to [`SpeechModel::do_generate`].
- * 
+ *
  * Aligned with V4 `SpeechModelV4CallOptions`.
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class SpeechCallOptions {

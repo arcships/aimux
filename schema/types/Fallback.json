@@ -3,7 +3,7 @@
   "$id": "https://aimux.dev/schema/types/Fallback.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "enum": [
-    "on_error",
+    "on-error",
     "none"
   ],
   "type": "string"

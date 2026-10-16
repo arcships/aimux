@@ -3,7 +3,7 @@
   "$id": "https://aimux.dev/schema/types/Options.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "User-facing options for `generate_text` and `stream_text`.\n\nUnlike `CallOptions` (provider-facing), this does not include `prompt`\n(passed separately) and defaults are more ergonomic.",
+  "description": "User-facing options for `generate_text` and `stream_text`.\n\nUnlike `CallOptions` (provider-facing), this does not include `prompt`\n(passed separately) and defaults are more ergonomic.\n\nUnknown keys are rejected (RFC-0042 §7.2): a host still writing aimux\n0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error\nnaming the key instead of the default it would silently fall back to.",
   "properties": {
     "frequencyPenalty": {
       "format": "double",

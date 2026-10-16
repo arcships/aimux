@@ -11,7 +11,7 @@ import java.util.*;
  * What a failed API call observed — the field set of the AI SDK's
  * `APICallError` (`statusCode` / `responseBody`), which this project's error
  * taxonomy mirrors (docs/internal/vercel-research/07-kernel-infrastructure.md).
- * 
+ *
  * Carried by [`AiMuxError::ApiCall`] alone. There are no per-status
  * variants: a 401, 404 or 429 is an `ApiCall` error whose classification is
  * read from `status_code`, exactly as the AI SDK reads
@@ -24,7 +24,7 @@ import java.util.*;
  * with the source detail appended. The HTTP status is always a field, never
  * baked into the string; `Display` composes the human-readable form from the
  * fields at print time, so nothing downstream has to parse it back out.
- * 
+ *
  * Every producer must provide the sanitized request URL and request values.
  * This keeps transport and response failures self-contained and matches the
  * AI SDK's `APICallError` contract.

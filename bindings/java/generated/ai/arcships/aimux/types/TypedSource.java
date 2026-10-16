@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * A source in a text result's `sources`: a [`Source`] with its `type` tag,
  * the AI SDK's `Source` (`ai` `generate-text/generate-text-result.ts:73`).
- * 
+ *
  * Schema view of the tag written by [`crate::wire::typed_vec`].
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "sourceType")

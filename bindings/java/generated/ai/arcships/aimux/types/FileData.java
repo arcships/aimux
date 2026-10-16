@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * File data as a tagged discriminated union.
- * 
+ *
  * Aligned with V4 `SharedV4FileData`.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")

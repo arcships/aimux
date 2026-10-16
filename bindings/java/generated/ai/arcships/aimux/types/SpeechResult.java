@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * The result of [`SpeechModel::do_generate`].
- * 
+ *
  * Aligned with V4 `SpeechModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

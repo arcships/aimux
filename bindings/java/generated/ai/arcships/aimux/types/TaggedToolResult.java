@@ -11,7 +11,7 @@ import java.util.*;
  * A tool result in a text result's `toolResults`: a [`TypedToolResult`]
  * with its `type` tag, as the AI SDK writes it (`ai`
  * `generate-text/tool-result.ts:12`, `generate-text-result.ts:93`).
- * 
+ *
  * Schema view of the tag written by [`crate::wire::typed_vec`].
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

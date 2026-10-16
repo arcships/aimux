@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Response information for telemetry and debugging.
- * 
+ *
  * Aligned with the `response` object that appears on most V4 model results.
  * All fields are optional because different providers populate different
  * subsets; traits whose TS spec marks `response` as required use

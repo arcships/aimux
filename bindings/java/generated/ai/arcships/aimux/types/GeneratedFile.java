@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * A generated file (`ai` `generate-text/generated-file.ts:10-32`), the
  * element of the text results' `files`.
- * 
+ *
  * Its JSON is `{ base64, mediaType, providerMetadata? }`: the AI SDK's
  * `GeneratedFile` exposes the bytes as `base64` and as `uint8Array`, and the
  * JSON carries them once, as the base64 string. Text generation downloads a

@@ -4,7 +4,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Operation stored in a unified recording. Older recordings are language calls.",
   "enum": [
-    "language_model",
+    "language-model",
     "decision"
   ],
   "type": "string"

@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * ② 配置侧:provider 身份(请求回放重建用)。
- * 
+ *
  * 只记身份,不记配置:回放时按 `provider_id` + `model_id` 重新构建 model,
  * 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
  */

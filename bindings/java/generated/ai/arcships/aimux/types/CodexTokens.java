@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Tokens returned by the Codex OAuth token endpoint (RFC-0018 §2 V3).
- * 
+ *
  * `Debug` is hand-written so both tokens are redacted from logs and error
  * output.
  */

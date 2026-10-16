@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * A host's answer to one tool-call repair request.
- * 
+ *
  * The bindings cannot carry a [`ToolCallRepair`] closure, so a host instead
  * reads the invalid call off the result, repairs it in its own language, and
  * hands the answer back as this value. Wire shape:

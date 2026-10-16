@@ -3,6 +3,7 @@
   "$id": "https://aimux.dev/schema/types/MoaParams.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "MoA configuration, camelCase JSON with every field optional. Unknown keys\nare rejected, so aimux 0.5's `fail_mode` is an error naming it rather than\nthe default policy.",
   "properties": {
     "aggregator": {
       "type": "string"

@@ -3079,7 +3079,7 @@ type ErrorEnvelope struct {
 type Fallback string
 
 const (
-	FallbackOnError Fallback = "on_error"
+	FallbackOnError Fallback = "on-error"
 	FallbackNone    Fallback = "none"
 )
 
@@ -3646,6 +3646,10 @@ type GenerateObjectResult struct {
 //
 // Unlike `CallOptions` (provider-facing), this does not include `prompt`
 // (passed separately) and defaults are more ergonomic.
+//
+// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+// naming the key instead of the default it would silently fall back to.
 type GenerateTextOptions struct {
 	FrequencyPenalty *float64          `json:"frequencyPenalty,omitzero"`
 	Headers          map[string]string `json:"headers,omitzero"`
@@ -4064,7 +4068,7 @@ type InputAudioFormat struct {
 // ① 输入侧:完整调用参数,足以重建 generate_text 调用。
 type InputRecord struct {
 	Operation *RecordingOperation `json:"operation,omitzero"`
-	// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+	// 序列化的 CallOptions(abort_signal 已 serde skip),
 	// 加上所在操作的 `max_retries` / `timeout` / `session_id`
 	// (`OperationSettings`);headers/provider_options 已递归脱敏。
 	Options json.RawMessage `json:"options"`
@@ -4622,10 +4626,13 @@ type MiddlewareParams struct {
 type MoaFailMode string
 
 const (
-	MoaFailModeBestEffort MoaFailMode = "best_effort"
-	MoaFailModeFailFast   MoaFailMode = "fail_fast"
+	MoaFailModeBestEffort MoaFailMode = "best-effort"
+	MoaFailModeFailFast   MoaFailMode = "fail-fast"
 )
 
+// MoA configuration, camelCase JSON with every field optional. Unknown keys
+// are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+// the default policy.
 type MoaParams struct {
 	Aggregator string `json:"aggregator"`
 	// Optional aggregator system instruction prepended to the reference user
@@ -5072,6 +5079,10 @@ type OperationStatus struct {
 //
 // Unlike `CallOptions` (provider-facing), this does not include `prompt`
 // (passed separately) and defaults are more ergonomic.
+//
+// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+// naming the key instead of the default it would silently fall back to.
 type Options struct {
 	FrequencyPenalty *float64          `json:"frequencyPenalty,omitzero"`
 	Headers          map[string]string `json:"headers,omitzero"`
@@ -5398,6 +5409,12 @@ type ProviderTool struct {
 	ID NamespacedKind `json:"id"`
 	// The name of the tool, unique within this model call.
 	Name string `json:"name"`
+	// Whether a result of this tool may arrive in a later response than its
+	// call (a deferred result, as in programmatic tool calling). The AI SDK
+	// tool's `supportsDeferredResults` (provider-utils@5.0.55
+	// `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+	// absent means `false`. It is not sent to the provider.
+	SupportsDeferredResults *bool `json:"supportsDeferredResults,omitzero"`
 }
 
 type ProviderWrapParams struct {
@@ -5734,7 +5751,7 @@ type Recording struct {
 type RecordingOperation string
 
 const (
-	RecordingOperationLanguageModel RecordingOperation = "language_model"
+	RecordingOperationLanguageModel RecordingOperation = "language-model"
 	RecordingOperationDecision      RecordingOperation = "decision"
 )
 
@@ -7454,6 +7471,10 @@ func (v TextStreamPartVariantRaw) MarshalJSON() ([]byte, error) {
 //
 // All values are milliseconds; `None` disables the corresponding limit. A
 // `total` timeout also covers retry backoff and the whole streamed response.
+//
+// Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+// (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+// without a timeout.
 type TimeoutConfiguration struct {
 	// Maximum idle time between consecutive stream chunks (streaming only).
 	ChunkMs *uint64 `json:"chunkMs,omitzero"`
@@ -7561,6 +7582,12 @@ type ToolVariantProvider struct {
 	ID NamespacedKind `json:"id"`
 	// The name of the tool, unique within this model call.
 	Name string `json:"name"`
+	// Whether a result of this tool may arrive in a later response than its
+	// call (a deferred result, as in programmatic tool calling). The AI SDK
+	// tool's `supportsDeferredResults` (provider-utils@5.0.55
+	// `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+	// absent means `false`. It is not sent to the provider.
+	SupportsDeferredResults *bool `json:"supportsDeferredResults,omitzero"`
 }
 
 func (ToolVariantProvider) isTool() {}
@@ -9861,7 +9888,10 @@ type VideoFrameImage struct {
 
 // The role a frame image plays in video generation.
 //
-// Aligned with V4 `VideoModelV4FrameType`.
+// `VideoModelV4FrameType` (`@ai-sdk/provider@4.0.22`
+// `src/video-model/v4/video-model-v4-frame-image.ts:9`): the values are
+// upstream's literals `'first_frame' | 'last_frame'`, snake_case as there,
+// which `ai@7.0.127` compares against (`generate-video.ts:814`).
 type VideoFrameType string
 
 const (

@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Provider-facing tool call before Core parses and validates its input.
- * 
+ *
  * The wire shape matches [`ToolCall`] field for field, except that `input`
  * is the provider's raw argument *text* rather than a parsed value.
  */

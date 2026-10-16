@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).
- * 
+ *
  * Newtype that enforces the `W:H` format used by V4 image and video
  * `aspectRatio` options. Aligned with the TS template-literal type
  * `` `${number}:${number}` ``.

@@ -2310,7 +2310,7 @@ public struct ErrorEnvelope: Codable, Equatable, Sendable {
 }
 
 public enum Fallback: String, Codable, Equatable, Sendable {
-    case onError = "on_error"
+    case onError = "on-error"
     case none = "none"
 }
 
@@ -2698,6 +2698,10 @@ public struct GenerateObjectResult: Codable, Equatable, Sendable {
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
+///
+/// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+/// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+/// naming the key instead of the default it would silently fall back to.
 public struct GenerateTextOptions: Codable, Equatable, Sendable {
     public var frequencyPenalty: Double?
     public var headers: [String: String]?
@@ -3263,7 +3267,7 @@ public struct InputAudioFormat: Codable, Equatable, Sendable {
 /// ① 输入侧:完整调用参数,足以重建 generate_text 调用。
 public struct InputRecord: Codable, Equatable, Sendable {
     public var operation: RecordingOperation?
-    /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip),
+    /// 序列化的 CallOptions(abort_signal 已 serde skip),
     /// 加上所在操作的 `max_retries` / `timeout` / `session_id`
     /// (`OperationSettings`);headers/provider_options 已递归脱敏。
     public var options: JSONValue
@@ -3648,10 +3652,13 @@ public struct MiddlewareParams: Codable, Equatable, Sendable {
 
 /// Reference-failure policy.
 public enum MoaFailMode: String, Codable, Equatable, Sendable {
-    case bestEffort = "best_effort"
-    case failFast = "fail_fast"
+    case bestEffort = "best-effort"
+    case failFast = "fail-fast"
 }
 
+/// MoA configuration, camelCase JSON with every field optional. Unknown keys
+/// are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+/// the default policy.
 public struct MoaParams: Codable, Equatable, Sendable {
     public var aggregator: String
     /// Optional aggregator system instruction prepended to the reference user
@@ -4080,6 +4087,10 @@ public struct OperationStatus: Codable, Equatable, Sendable {
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
+///
+/// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+/// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+/// naming the key instead of the default it would silently fall back to.
 public struct Options: Codable, Equatable, Sendable {
     public var frequencyPenalty: Double?
     public var headers: [String: String]?
@@ -4455,11 +4466,18 @@ public struct ProviderTool: Codable, Equatable, Sendable {
     public var id: NamespacedKind
     /// The name of the tool, unique within this model call.
     public var name: String
+    /// Whether a result of this tool may arrive in a later response than its
+    /// call (a deferred result, as in programmatic tool calling). The AI SDK
+    /// tool's `supportsDeferredResults` (provider-utils@5.0.55
+    /// `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+    /// absent means `false`. It is not sent to the provider.
+    public var supportsDeferredResults: Bool?
 
-    public init(args: [String: JSONValue], id: NamespacedKind, name: String) {
+    public init(args: [String: JSONValue], id: NamespacedKind, name: String, supportsDeferredResults: Bool? = nil) {
         self.args = args
         self.id = id
         self.name = name
+        self.supportsDeferredResults = supportsDeferredResults
     }
 }
 
@@ -4774,7 +4792,7 @@ public struct Recording: Codable, Equatable, Sendable {
 
 /// Operation stored in a unified recording. Older recordings are language calls.
 public enum RecordingOperation: String, Codable, Equatable, Sendable {
-    case languageModel = "language_model"
+    case languageModel = "language-model"
     case decision = "decision"
 }
 
@@ -6636,6 +6654,10 @@ public indirect enum TextStreamPart: Codable, Equatable, Sendable {
 ///
 /// All values are milliseconds; `None` disables the corresponding limit. A
 /// `total` timeout also covers retry backoff and the whole streamed response.
+///
+/// Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+/// (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+/// without a timeout.
 public struct TimeoutConfiguration: Codable, Equatable, Sendable {
     /// Maximum idle time between consecutive stream chunks (streaming only).
     public var chunkMs: UInt64?
@@ -6699,7 +6721,12 @@ public indirect enum Tool: Codable, Equatable, Sendable {
     /// arguments defined by the provider for this tool.
     /// id: The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
     /// name: The name of the tool, unique within this model call.
-    case provider(args: [String: JSONValue], id: NamespacedKind, name: String)
+    /// supportsDeferredResults: Whether a result of this tool may arrive in a later response than its
+    /// call (a deferred result, as in programmatic tool calling). The AI SDK
+    /// tool's `supportsDeferredResults` (provider-utils@5.0.55
+    /// `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+    /// absent means `false`. It is not sent to the provider.
+    case provider(args: [String: JSONValue], id: NamespacedKind, name: String, supportsDeferredResults: Bool?)
     private enum CodingKeys: String, CodingKey {
         case args = "args"
         case description = "description"
@@ -6709,6 +6736,7 @@ public indirect enum Tool: Codable, Equatable, Sendable {
         case name = "name"
         case providerOptions = "providerOptions"
         case strict = "strict"
+        case supportsDeferredResults = "supportsDeferredResults"
         case type = "type"
     }
     public init(from decoder: any Decoder) throws {
@@ -6719,7 +6747,7 @@ public indirect enum Tool: Codable, Equatable, Sendable {
             self = .function(description: try c.decodeIfPresent(String.self, forKey: .description), inputExamples: try c.decodeIfPresent([FunctionToolInputExample].self, forKey: .inputExamples), inputSchema: try c.decode(JSONValue.self, forKey: .inputSchema), name: try c.decode(String.self, forKey: .name), providerOptions: try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .providerOptions), strict: try c.decodeIfPresent(Bool.self, forKey: .strict))
             return
         case "provider":
-            self = .provider(args: try c.decode([String: JSONValue].self, forKey: .args), id: try c.decode(NamespacedKind.self, forKey: .id), name: try c.decode(String.self, forKey: .name))
+            self = .provider(args: try c.decode([String: JSONValue].self, forKey: .args), id: try c.decode(NamespacedKind.self, forKey: .id), name: try c.decode(String.self, forKey: .name), supportsDeferredResults: try c.decodeIfPresent(Bool.self, forKey: .supportsDeferredResults))
             return
         default: throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown Tool tag \(tag)"))
         }
@@ -6735,11 +6763,12 @@ public indirect enum Tool: Codable, Equatable, Sendable {
             try c.encode(v3, forKey: .name)
             try c.encodeIfPresent(v4, forKey: .providerOptions)
             try c.encodeIfPresent(v5, forKey: .strict)
-        case .provider(let v0, let v1, let v2):
+        case .provider(let v0, let v1, let v2, let v3):
             try c.encode("provider", forKey: .type)
             try c.encode(v0, forKey: .args)
             try c.encode(v1, forKey: .id)
             try c.encode(v2, forKey: .name)
+            try c.encodeIfPresent(v3, forKey: .supportsDeferredResults)
         }
     }
 }
@@ -8716,7 +8745,10 @@ public struct VideoFrameImage: Codable, Equatable, Sendable {
 
 /// The role a frame image plays in video generation.
 ///
-/// Aligned with V4 `VideoModelV4FrameType`.
+/// `VideoModelV4FrameType` (`@ai-sdk/provider@4.0.22`
+/// `src/video-model/v4/video-model-v4-frame-image.ts:9`): the values are
+/// upstream's literals `'first_frame' | 'last_frame'`, snake_case as there,
+/// which `ai@7.0.127` compares against (`generate-video.ts:814`).
 public enum VideoFrameType: String, Codable, Equatable, Sendable {
     case firstFrame = "first_frame"
     case lastFrame = "last_frame"

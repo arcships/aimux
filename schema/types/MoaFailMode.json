@@ -5,12 +5,12 @@
   "description": "Reference-failure policy.",
   "oneOf": [
     {
-      "const": "best_effort",
+      "const": "best-effort",
       "description": "Drop a failed reference + emit a `Warning::Other`; keep going (default).",
       "type": "string"
     },
     {
-      "const": "fail_fast",
+      "const": "fail-fast",
       "description": "Fail the whole call as soon as any reference errors.",
       "type": "string"
     }

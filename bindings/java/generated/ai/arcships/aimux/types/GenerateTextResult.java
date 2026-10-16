@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
  * `GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).
- * 
+ *
  * It stores the steps, the usage summed over them and the parsed output, as
  * `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
  * other value is derived from the steps by an accessor. The serialized form

@@ -11,7 +11,7 @@ import java.util.*;
  * Operation stored in a unified recording. Older recordings are language calls.
  */
 public enum RecordingOperation {
-    @JsonProperty("language_model")
+    @JsonProperty("language-model")
     LANGUAGE_MODEL,
     @JsonProperty("decision")
     DECISION

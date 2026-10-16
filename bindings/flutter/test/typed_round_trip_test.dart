@@ -350,6 +350,17 @@ void main() {
         'args': {'maxUses': 1},
       };
       expect(Tool.fromJson(json).toJson(), json);
+      expect((Tool.fromJson(json) as ToolProvider).supportsDeferredResults, isNull);
+      // supportsDeferredResults is kept when set
+      // (provider-utils@5.0.55 src/types/tool.ts:316-326).
+      for (final supported in [true, false]) {
+        final deferred = {...json, 'supportsDeferredResults': supported};
+        expect(
+          (Tool.fromJson(deferred) as ToolProvider).supportsDeferredResults,
+          supported,
+        );
+        expect(Tool.fromJson(deferred).toJson(), deferred);
+      }
     });
 
     test('GenerateTextResult round-trips', () {

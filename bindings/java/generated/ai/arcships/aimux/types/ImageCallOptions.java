@@ -9,10 +9,10 @@ import java.util.*;
 
 /**
  * Options passed to [`ImageModel::do_generate`].
- * 
+ *
  * Aligned with V4 `ImageModelV4CallOptions`.
  */
-@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class ImageCallOptions {

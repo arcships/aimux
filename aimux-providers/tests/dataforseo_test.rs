@@ -198,6 +198,49 @@ async fn do_search_sends_correct_basic_auth_header() {
     );
 }
 
+#[serial_test::serial]
+#[tokio::test]
+async fn login_comes_from_dataforseo_login_per_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v3/serp/google/organic/live/advanced"))
+        .and(header("authorization", expected_basic_auth()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(search_response_body()))
+        .mount(&server)
+        .await;
+    let saved = std::env::var("DATAFORSEO_LOGIN").ok();
+    let provider = create_dataforseo(DataforseoProviderSettings {
+        login: None,
+        password: Some(Resolvable::Value(PASSWORD.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.search_model();
+
+    unsafe {
+        std::env::set_var("DATAFORSEO_LOGIN", LOGIN);
+    }
+    let found = model.do_search(&opts("rust", Some(10))).await;
+
+    unsafe {
+        std::env::remove_var("DATAFORSEO_LOGIN");
+    }
+    let missing = model.do_search(&opts("rust", Some(10))).await;
+
+    unsafe {
+        if let Some(value) = saved {
+            std::env::set_var("DATAFORSEO_LOGIN", value);
+        }
+    }
+    assert_eq!(found.unwrap().results.len(), 2);
+    assert!(
+        matches!(missing, Err(AiMuxError::LoadApiKey { .. })),
+        "{missing:?}"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+}
+
 // -- error mapping -----------------------------------------------------------
 
 #[tokio::test]

@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * The result of [`RerankingModel::do_rerank`].
- * 
+ *
  * Aligned with V4 `RerankingModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

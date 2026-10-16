@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * The final result of a video generation operation.
- * 
+ *
  * Aligned with V4 `VideoModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * File payload for a [`VideoFile::File`]: base64 string or raw bytes.
- * 
+ *
  * The JSON is a base64 string either way, as in the AI SDK's JSON.
  */
 @JsonDeserialize(using = JsonDeserializer.None.class)

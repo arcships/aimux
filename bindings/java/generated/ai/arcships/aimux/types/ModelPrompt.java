@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * What the user passes as `prompt` to `generate_text` / `stream_text`.
- * 
+ *
  * Can be a simple string (converted to a single user message) or a list of messages.
  */
 @JsonDeserialize(using = ModelPrompt.Deserializer.class)

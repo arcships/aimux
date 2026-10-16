@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * A role-tagged image input for image-to-video and first-last-frame generation.
- * 
+ *
  * Aligned with V4 `VideoModelV4FrameImage`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

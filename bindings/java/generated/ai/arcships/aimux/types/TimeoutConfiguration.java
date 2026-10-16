@@ -9,16 +9,20 @@ import java.util.*;
 
 /**
  * Per-call timeout configuration.
- * 
+ *
  * The object form of the AI SDK's `TimeoutConfiguration`
  * (`ai/src/prompt/request-options.ts:13-22`), a request option of
  * `generateText` / `streamText` (`RequestOptions.timeout`, `:126`).
  * `LanguageModelV4CallOptions` has no timeout. Aimux runs no tools, so
  * upstream's `toolMs` / `tools` keys and the bare-number form of `totalMs`
  * are absent.
- * 
+ *
  * All values are milliseconds; `None` disables the corresponding limit. A
  * `total` timeout also covers retry backoff and the whole streamed response.
+ *
+ * Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+ * (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+ * without a timeout.
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -31,7 +35,7 @@ public final class TimeoutConfiguration {
     private final Long chunkMs;
     /**
      * Timeout waiting for the first stream chunk (streaming only).
-     * 
+     *
      * Counted from operation start, so it also bounds stream establishment
      * and any retries before the first semantic output: it is the
      * user-perceived time-to-first-output budget, not a per-attempt timer.

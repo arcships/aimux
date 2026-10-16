@@ -15,11 +15,18 @@ aimux/
 ├── bindings/              # Node, Python, Swift, Kotlin, Flutter, Go, C — share one Rust core
 ├── rfc/                   # Design docs (RFCs)
 ├── docs/                  # Public product docs (see docs/README.md)
+├── .agents/               # Skills for coding agents (see below)
 └── scripts/               # Code-generation and maintenance scripts
 ```
 
 `docs/internal/` contains historical research and audit notes; it is not part
 of the public surface and generally does not need changes.
+
+`.agents/` holds skills for coding agents and their maintainers (porting from
+the AI SDK, native-Rust rewrites) and the PROFILE of repository facts they share
+(`.agents/native-rust/PROFILE.md`). The skills and profile are written in
+Chinese, like the recent RFCs. They hold only what stays true, and change in
+the same PR as the code they describe.
 
 ## Prerequisites
 

@@ -12,7 +12,7 @@ import java.util.*;
  * `google.googleSearch`). Mirrors the V4 `LanguageModelV4ProviderTool`
  * (`@ai-sdk/provider@4.0.21
  * src/language-model/v4/language-model-v4-provider-tool.ts:8-28`).
- * 
+ *
  * Provider tools are specific to a certain provider. The input and output
  * schemas are defined by the provider, and some are executed on the provider's
  * servers (e.g. web search, code execution).
@@ -37,26 +37,39 @@ public final class ProviderTool {
      */
     @JsonProperty("name")
     private final String name;
+    /**
+     * Whether a result of this tool may arrive in a later response than its
+     * call (a deferred result, as in programmatic tool calling). The AI SDK
+     * tool's `supportsDeferredResults` (provider-utils@5.0.55
+     * `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+     * absent means `false`. It is not sent to the provider.
+     */
+    @JsonProperty("supportsDeferredResults")
+    private final Boolean supportsDeferredResults;
 
     @JsonCreator
     public ProviderTool(
         @JsonProperty(value = "args", required = true) Map<String, JsonNode> args,
         @JsonProperty(value = "id", required = true) NamespacedKind id,
-        @JsonProperty(value = "name", required = true) String name) {
+        @JsonProperty(value = "name", required = true) String name,
+        @JsonProperty(value = "supportsDeferredResults") Boolean supportsDeferredResults) {
         this.args = args == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(args));
         this.id = id;
         this.name = name;
+        this.supportsDeferredResults = supportsDeferredResults;
     }
 
     public static Builder builder() { return new Builder(); }
     public Map<String, JsonNode> getArgs() { return args; }
     public NamespacedKind getId() { return id; }
     public String getName() { return name; }
+    public Boolean getSupportsDeferredResults() { return supportsDeferredResults; }
 
     public static final class Builder {
         private Map<String, JsonNode> args;
         private NamespacedKind id;
         private String name;
+        private Boolean supportsDeferredResults;
 
         public Builder args(Map<String, JsonNode> value) {
             this.args = value;
@@ -73,6 +86,11 @@ public final class ProviderTool {
             return this;
         }
 
-        public ProviderTool build() { return new ProviderTool(args, id, name); }
+        public Builder supportsDeferredResults(Boolean value) {
+            this.supportsDeferredResults = value;
+            return this;
+        }
+
+        public ProviderTool build() { return new ProviderTool(args, id, name, supportsDeferredResults); }
     }
 }

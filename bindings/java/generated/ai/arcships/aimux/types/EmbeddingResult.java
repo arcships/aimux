@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * The result of [`EmbeddingModel::do_embed`].
- * 
+ *
  * Aligned with V4 `EmbeddingModelV4Result`.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)

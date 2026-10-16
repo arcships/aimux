@@ -11,7 +11,7 @@ import java.util.*;
  * `FilePart.data` (`provider-utils` `types/content-part.ts:75`):
  * `FileData | DataContent | URL | ProviderReference`, in JSON a tagged
  * `FileData`, a string (base64 or a URL) or a bare `{ [provider]: id }`.
- * 
+ *
  * A string is read as the AI SDK reads it when it converts the prompt
  * (`ai` `prompt/file-part-data.ts:125-131`): a URL when it parses as one
  * (a `data:` URL becomes inline data), base64 otherwise.

@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Documents to rerank: either a list of texts or a list of JSON objects.
- * 
+ *
  * Aligned with V4 `RerankingModelV4CallOptions.documents`.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "type")

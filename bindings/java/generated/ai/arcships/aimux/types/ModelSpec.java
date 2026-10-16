@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * The full static portrait for a model, supplemented from community knowledge.
- * 
+ *
  * All fields are advisory — aimux never auto-applies them in the request path.
  * The caller reads them to decide how to configure `GenerateTextOptions`.
  */

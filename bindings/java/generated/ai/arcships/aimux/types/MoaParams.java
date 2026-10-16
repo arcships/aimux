@@ -7,6 +7,11 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.util.*;
 
+/**
+ * MoA configuration, camelCase JSON with every field optional. Unknown keys
+ * are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+ * the default policy.
+ */
 @JsonIgnoreProperties(ignoreUnknown = false)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)

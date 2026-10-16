@@ -10,7 +10,7 @@ import java.util.*;
 /**
  * A tool result (the AI SDK's `TypedToolResult`, `ai`
  * `generate-text/tool-result.ts:10-42`).
- * 
+ *
  * aimux has no user-level tool definitions, so upstream's `toolMetadata`
  * and `title`, which come from them, are absent. Its `type` tag is written
  * by the union that holds it (`content`, the text stream) or, in a result's

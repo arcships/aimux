@@ -150,6 +150,7 @@ fn provider_tool(id: &str, name: &str) -> Tool {
         id: id.parse().unwrap(),
         name: name.to_string(),
         args: serde_json::Map::new(),
+        supports_deferred_results: None,
     })
 }
 
@@ -162,6 +163,7 @@ async fn collect(result: StreamResult) -> Vec<StreamPart> {
     parts
 }
 
+/// The base64 payload of a `GenerateContent::File`, or panic.
 fn file_base64(content: &GenerateContent) -> &str {
     match content {
         GenerateContent::File(LanguageModelFile {
@@ -330,7 +332,12 @@ fn sources(content: &[GenerateContent]) -> Vec<SourceView<'_>> {
 //            gemini/test_google_image_and_text_output.json
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// PNG magic bytes, base64-encoded: every image in the two Gemini image
+/// cassettes starts with this. Asserting the prefix (rather than "non-empty")
+/// proves the *actual* bytes survived rather than some placeholder.
 const PNG_BASE64_PREFIX: &str = "iVBORw0KGgoAAAANSUhEUgAA";
+
+/// The exact base64 length recorded in `nano_banana_image_generation_smoke`.
 const NANO_BANANA_BASE64_LEN: usize = 258_820;
 
 fn google_at(uri: &str) -> GoogleProvider {
@@ -471,7 +478,7 @@ async fn finding_1_gemini_image_and_text_output_both_survive() {
     assert_eq!(f.len(), 1);
     match f[0] {
         GenerateContent::File(LanguageModelFile { media_type, .. }) => {
-            assert_eq!(media_type, "image/png")
+            assert_eq!(media_type, "image/png");
         }
         other => panic!("expected File, got {other:?}"),
     }
@@ -1081,10 +1088,15 @@ async fn finding_2_anthropic_advisor_result_keeps_text_and_stop_reason() {
     mount(&server, &c).await;
 
     let result = anthropic_at(&server.uri())
-        .do_generate(&opts_with_tools(vec![provider_tool(
-            "anthropic.advisor_20260301",
-            "advisor",
-        )]))
+        .do_generate(&opts_with_tools(vec![Tool::Provider(ProviderTool {
+            id: "anthropic.advisor_20260301".parse().unwrap(),
+            name: "advisor".to_string(),
+            args: json!({ "model": "claude-opus-4-8", "maxTokens": 1024 })
+                .as_object()
+                .cloned()
+                .unwrap(),
+            supports_deferred_results: None,
+        })]))
         .await
         .expect("do_generate should succeed");
 

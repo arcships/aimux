@@ -9,7 +9,7 @@ import java.util.*;
 
 /**
  * Audio input: raw bytes, a base64-encoded string, or a URL.
- * 
+ *
  * The JSON is a string, as in the AI SDK's JSON: base64 for bytes, the URL
  * text for a URL. Reading takes a string that parses as a URL as a URL and
  * any other string as base64 (base64 has no `:`), as a file part's string
