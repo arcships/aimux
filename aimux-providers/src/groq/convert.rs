@@ -42,11 +42,16 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
                     "text file parts".to_string(),
                 ));
             }
-            _ if !is_image(&file.media_type) => return Err(non_image()),
-            FileData::Url { url, .. } => json!({
-                "type": "image_url", "image_url": { "url": url },
-            }),
+            FileData::Url { url, .. } => {
+                if !is_image(&file.media_type) {
+                    return Err(non_image());
+                }
+                json!({ "type": "image_url", "image_url": { "url": url } })
+            }
             FileData::Data { data } => {
+                if !is_image(&file.media_type) {
+                    return Err(non_image());
+                }
                 let data = match data {
                     FileBytes::Binary(bytes) => {
                         base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -65,10 +70,10 @@ fn convert_assistant_message(content: &[AssistantPart]) -> Value {
     let mut tool_calls = Vec::new();
     for part in content {
         match part {
+            // Groq supports reasoning for tool-calls in multi-turn conversations.
             AssistantPart::Text(TextPart {
                 text: part_text, ..
             }) => text.push_str(part_text),
-            // Groq supports reasoning for tool-calls in multi-turn conversations.
             AssistantPart::Reasoning(ReasoningPart { text, .. }) => reasoning.push_str(text),
             AssistantPart::ToolCall(ToolCallPart {
                 tool_call_id,

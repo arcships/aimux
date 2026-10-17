@@ -80,7 +80,7 @@ pub(crate) fn prepare_tools(
         }
     }
 
-    let tool_choice = tool_choice.map(|tool_choice| match tool_choice {
+    let tool_choice = tool_choice.map(|choice| match choice {
         LanguageModelV4ToolChoice::Auto => json!("auto"),
         LanguageModelV4ToolChoice::None => json!("none"),
         LanguageModelV4ToolChoice::Required => json!("required"),

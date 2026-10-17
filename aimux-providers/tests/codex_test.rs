@@ -240,8 +240,6 @@ async fn api_key_streams_text() {
     }
 }
 
-// Path B: subscription mode
-
 #[tokio::test]
 async fn subscription_generate_forces_stream_and_assembles_result() {
     let server = MockServer::start().await;
@@ -539,4 +537,33 @@ async fn codex_refresh_rejects_bad_grant() {
     // The endpoint-specific failed-response handler keeps this 4xx non-retryable.
     assert!(matches!(err, AiMuxError::ApiCall(_)));
     assert!(!err.is_retryable());
+}
+
+/// Codex speaks the OpenAI Responses API, so it declares the URLs the OpenAI
+/// Responses model declares (`openaiResponsesSupportedUrls`,
+/// openai-responses-language-model.ts:209-212): HTTP(S) images and PDFs go to
+/// the API as they are, on both channels.
+#[tokio::test]
+async fn supports_the_openai_responses_urls() {
+    let modes = [
+        CodexMode::ApiKey(Some(Resolvable::Value("test-key".to_string()))),
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: None,
+        },
+    ];
+    for mode in modes {
+        let urls = codex_provider(mode, "https://example.com", None)
+            .responses("gpt-5.2-codex")
+            .supported_urls()
+            .await;
+        let mut kinds: Vec<_> = urls.0.keys().map(String::as_str).collect();
+        kinds.sort_unstable();
+        assert_eq!(kinds, ["application/pdf", "image/*"]);
+        for patterns in urls.0.values() {
+            assert!(patterns[0].is_match("https://example.com/a"));
+            assert!(patterns[0].is_match("http://example.com/a"));
+            assert!(!patterns[0].is_match("ftp://example.com/a"));
+        }
+    }
 }

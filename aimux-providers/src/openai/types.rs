@@ -9,12 +9,12 @@ use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct ChatCompletionResponse {
-    pub id: String,
-    pub model: String,
+    pub id: Option<String>,
+    pub model: Option<String>,
     #[serde(default)]
     pub created: Option<u64>,
     pub choices: Vec<Choice>,
-    pub usage: UsageResponse,
+    pub usage: Option<UsageResponse>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,8 +29,10 @@ pub struct Choice {
 
 #[derive(Debug, Deserialize)]
 pub struct MessageResponse {
-    pub role: String,
+    pub role: Option<String>,
     pub content: Option<String>,
+    #[serde(default)]
+    pub audio: Option<AudioResponse>,
     /// Reasoning text (`reasoning` field of OpenAI-shaped servers).
     #[serde(default)]
     pub reasoning: Option<String>,
@@ -46,6 +48,11 @@ pub struct MessageResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AudioResponse {
+    pub transcript: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ToolCallResponse {
     pub id: String,
     pub function: FunctionCallResponse,
@@ -58,7 +65,7 @@ pub struct FunctionCallResponse {
     pub arguments: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Default, Deserialize, Clone, Serialize)]
 pub struct UsageResponse {
     #[serde(default)]
     pub prompt_tokens: Option<u32>,
@@ -66,12 +73,6 @@ pub struct UsageResponse {
     pub completion_tokens: Option<u32>,
     #[serde(default)]
     pub total_tokens: Option<u32>,
-    /// Top-level `cached_tokens` — returned by some OpenAI-compatible providers
-    /// (notably Moonshot AI) instead of the nested `prompt_tokens_details.cached_tokens`.
-    /// When present it takes precedence over the nested value, matching the
-    /// Moonshot usage converter.
-    #[serde(default)]
-    pub cached_tokens: Option<u32>,
     #[serde(default)]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
     #[serde(default)]
@@ -146,12 +147,13 @@ pub struct Delta {
 
 #[derive(Debug, Deserialize)]
 pub struct DeltaToolCall {
-    /// Optional: some OpenAI-compatible providers omit it (the AI SDK schema
-    /// is `index: z.number().nullish()`); the tracker falls back to id/name.
-    #[serde(default)]
-    pub index: Option<usize>,
+    /// Required, as in `@ai-sdk/openai` (`index: z.number()`); a chunk without
+    /// it fails to parse. Servers that omit it go through `openai_compatible`.
+    pub index: usize,
     #[serde(default)]
     pub id: Option<String>,
+    #[serde(default, rename = "type")]
+    pub r#type: Option<String>,
     #[serde(default)]
     pub function: Option<DeltaFunction>,
 }

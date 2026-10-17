@@ -36,9 +36,12 @@ pub struct ApiCallError {
     /// Sanitized request values used to create the API request.
     pub request_body_values: serde_json::Value,
     /// HTTP status of the response, when it came from one
-    /// (`APICallError.statusCode`). Always the *observed* status: the HTTP
-    /// layer fills it for every response-derived error; errors built without
-    /// an HTTP exchange leave it `None`.
+    /// (`APICallError.statusCode`). The HTTP layer fills the observed status
+    /// for every response-derived error. An error frame inside a stream
+    /// carries the status its provider maps it to, as upstream's provider
+    /// stream errors do (OpenAI infers one from the frame's `code`/`type`,
+    /// Anthropic from its error type); errors built without an HTTP exchange
+    /// leave it `None`.
     #[serde(default)]
     pub status_code: Option<u16>,
     /// Provider's machine-readable code (OpenAI's `code`/`type`,
@@ -488,10 +491,13 @@ impl AiMuxError {
 
     /// Returns the HTTP status code carried by this error, if any.
     ///
-    /// This is the *observed* status only — the field the selected response
-    /// handler filled when a response actually arrived. An error built without an HTTP exchange (a
-    /// missing API key, a bare constructor, a transport failure) reports
-    /// `None`: no status was seen, so none is invented.
+    /// This is the status the selected response handler filled when a
+    /// response actually arrived, or, for an error frame inside a stream, the
+    /// status the provider maps that frame to as upstream does (OpenAI's
+    /// `createOpenAIProviderStreamError` infers it from `code`/`type`). An
+    /// error built without an HTTP exchange (a missing API key, a bare
+    /// constructor, a transport failure) reports `None`: no status was seen,
+    /// so none is invented.
     ///
     /// `TokenExpired` reports `Some(401)` by definition, not by fabrication:
     /// its only producer is the codex subscription channel's observed-401

@@ -63,16 +63,13 @@ pub(crate) fn prepare_tools(options: &CallOptions, model_id: &str) -> PreparedTo
     }
     prepared.tools = Some(groq_tools);
 
-    prepared.tool_choice = options
-        .tool_choice
-        .as_ref()
-        .map(|tool_choice| match tool_choice {
-            LanguageModelV4ToolChoice::Auto => json!("auto"),
-            LanguageModelV4ToolChoice::None => json!("none"),
-            LanguageModelV4ToolChoice::Required => json!("required"),
-            LanguageModelV4ToolChoice::Tool { tool_name } => {
-                json!({ "type": "function", "function": { "name": tool_name } })
-            }
-        });
+    prepared.tool_choice = options.tool_choice.as_ref().map(|choice| match choice {
+        LanguageModelV4ToolChoice::Auto => json!("auto"),
+        LanguageModelV4ToolChoice::None => json!("none"),
+        LanguageModelV4ToolChoice::Required => json!("required"),
+        LanguageModelV4ToolChoice::Tool { tool_name } => {
+            json!({ "type": "function", "function": { "name": tool_name } })
+        }
+    });
     prepared
 }

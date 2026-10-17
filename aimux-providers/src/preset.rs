@@ -88,6 +88,11 @@ pub struct PresetDescriptor {
     /// `"max_completion_tokens"`); `None` sends `max_tokens`.
     pub max_tokens_key: Option<String>,
     pub params: Vec<ParamSpec>,
+    /// `(package, version)` of the `ai-sdk-{package}/{version}` user-agent
+    /// (`profile.user_agent`). `openai-compatible` by default;
+    /// `amazon-bedrock` (Bedrock Mantle) also appends it a second time in
+    /// the transport, like `@ai-sdk/amazon-bedrock`'s mantle provider.
+    pub user_agent: (&'static str, &'static str),
 }
 
 /// Settings of a preset factory. Every field is optional.
@@ -239,9 +244,19 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
             "invalid base_url_env name",
         );
         check(
-            row.profile.keys().all(|key| key == "max_tokens_key"),
+            row.profile
+                .keys()
+                .all(|key| matches!(key.as_str(), "max_tokens_key" | "user_agent")),
             "unknown profile key",
         );
+        // bedrock-mantle-provider.ts:236-240 (getHeaders) names the
+        // amazon-bedrock package, not openai-compatible.
+        let package = match row.profile.get("user_agent").map(String::as_str) {
+            None => crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
+            Some("amazon-bedrock") => crate::shared::aisdk_pins::AMAZON_BEDROCK,
+            Some(value) => panic!("registry row '{name}': unknown user_agent {value:?}"),
+        };
+        let user_agent = (package.name, package.version);
         let max_tokens_key = row.profile.get("max_tokens_key").cloned();
         check(
             max_tokens_key
@@ -296,6 +311,7 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
             base_url_env: row.base_url_env,
             max_tokens_key,
             params,
+            user_agent,
         });
     }
     descriptors
@@ -398,15 +414,57 @@ fn assemble(
     let mut dialect = ChatDialect::baseline();
     dialect.supports_top_k = true;
     dialect.max_tokens_key = descriptor.max_tokens_key.as_deref();
+    if matches!(descriptor.name.as_str(), "alibaba" | "moonshotai") {
+        dialect.convert_usage = Some(Arc::new(move |raw| {
+            let mut usage = crate::openai_compatible::chat::usage_from_raw(raw);
+            let Some(raw) = raw.filter(|raw| !raw.is_null()) else {
+                return usage;
+            };
+            let tokens = |value: &serde_json::Value| {
+                value.as_u64().and_then(|value| u32::try_from(value).ok())
+            };
+            if descriptor.name == "alibaba" {
+                let details = &raw["prompt_tokens_details"];
+                let cache_write = tokens(&details["cache_creation_input_tokens"])
+                    .or_else(|| tokens(&details["cache_write_tokens"]))
+                    .unwrap_or(0);
+                usage.input_tokens.cache_write = Some(cache_write);
+                usage.input_tokens.no_cache = usage
+                    .input_tokens
+                    .no_cache
+                    .map(|tokens| tokens.saturating_sub(cache_write));
+            } else if let Some(cached) = tokens(&raw["cached_tokens"]) {
+                usage.input_tokens.cache_read = Some(cached);
+                usage.input_tokens.no_cache = usage
+                    .input_tokens
+                    .total
+                    .map(|tokens| tokens.saturating_sub(cached));
+            }
+            usage
+        }));
+    }
     let profile = ChatProfile {
         include_usage: true,
         supports_structured_outputs: true,
-        supports_multi_part_tool_content: false,
         dialect,
-        supported_urls: None,
-        convert_usage: None,
     };
 
+    // The Bedrock Mantle transport appends the package part a second time,
+    // after `ai-sdk-provider-utils/<v>` (amazon-bedrock-sigv4-fetch.ts:126-130,
+    // the API-key fetch of bedrock-mantle-provider.ts). The assembly names
+    // the package's provider-utils in that part.
+    let (package, fetch) = match descriptor.user_agent.0 {
+        "amazon-bedrock" => {
+            let package = crate::shared::aisdk_pins::AMAZON_BEDROCK;
+            let fetch: FetchFunction = Arc::new(crate::shared::UserAgentFetch {
+                inner: settings.fetch,
+                provider_utils: None,
+                suffix: Some(format!("ai-sdk-{}/{}", package.name, package.version)),
+            });
+            (package, Some(fetch))
+        }
+        _ => (crate::shared::aisdk_pins::OPENAI_COMPATIBLE, settings.fetch),
+    };
     OpenAICompatibleProvider::assemble(Assembly {
         name: descriptor.name.clone(),
         base_url,
@@ -414,9 +472,10 @@ fn assemble(
         fixed_headers: Vec::new(),
         headers: settings.headers,
         query_params: None,
-        fetch: settings.fetch,
+        fetch,
         transform_request_body: settings.transform_request_body,
         profile,
+        package,
     })
 }
 

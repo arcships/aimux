@@ -19,7 +19,22 @@ const PACKAGES = [
   { dir: 'anthropic', pkg: '@ai-sdk/anthropic' },
   { dir: 'google', pkg: '@ai-sdk/google' },
 ];
-const VERSIONED = ['ai', '@ai-sdk/provider', '@ai-sdk/provider-utils', ...PACKAGES.map((p) => p.pkg)];
+// Pinned without recorded cases: aimux sends their user-agent versions
+// (aimux-providers/src/shared/aisdk_pins.rs).
+const PINNED_ONLY = [
+  '@ai-sdk/amazon-bedrock',
+  '@ai-sdk/anthropic-aws',
+  '@ai-sdk/azure',
+  '@ai-sdk/cohere',
+  '@ai-sdk/deepseek',
+  '@ai-sdk/google-vertex',
+  '@ai-sdk/groq',
+  '@ai-sdk/huggingface',
+  '@ai-sdk/mistral',
+  '@ai-sdk/open-responses',
+  '@ai-sdk/xai',
+];
+const VERSIONED = ['ai', '@ai-sdk/provider', '@ai-sdk/provider-utils', ...PACKAGES.map((p) => p.pkg), ...PINNED_ONLY];
 
 function installedVersion(pkg) {
   return JSON.parse(readFileSync(join(here, 'node_modules', pkg, 'package.json'), 'utf8')).version;

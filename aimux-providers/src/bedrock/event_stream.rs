@@ -176,7 +176,7 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
         let payload_start = header_end;
         let payload_end = offset + total_length - 4; // last 4 bytes are CRC
 
-        if header_end > data.len() || payload_end > data.len() {
+        if header_end > payload_end || payload_end > data.len() {
             break;
         }
 
@@ -215,7 +215,7 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
                     h_offset += val_len;
                     match name.as_str() {
                         ":message-type" => message_type = val,
-                        ":event-type" => event_type = val,
+                        ":event-type" | ":exception-type" => event_type = val,
                         _ => {}
                     }
                 }
@@ -257,6 +257,40 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
     }
 
     messages
+}
+
+/// Decode frames incrementally, surfacing transport, framing, and checksum errors.
+pub fn decode_stream(
+    mut input: futures::stream::BoxStream<'static, Result<bytes::Bytes, aimux_core::AiMuxError>>,
+) -> futures::stream::BoxStream<'static, Result<EventStreamMessage, aimux_core::AiMuxError>> {
+    use futures::StreamExt;
+    Box::pin(async_stream::stream! {
+        let mut buffer = Vec::new();
+        while let Some(chunk) = input.next().await {
+            match chunk {
+                Ok(chunk) => buffer.extend_from_slice(&chunk),
+                Err(error) => { yield Err(error); return; }
+            }
+            while buffer.len() >= 4 {
+                let length = u32::from_be_bytes(buffer[..4].try_into().expect("four bytes")) as usize;
+                if length < 16 {
+                    yield Err(aimux_core::AiMuxError::InvalidResponseData("Invalid Amazon Bedrock event-stream frame length".into()));
+                    return;
+                }
+                if buffer.len() < length { break; }
+                let decoded = decode_messages(&buffer[..length]);
+                let Some(message) = decoded.into_iter().next() else {
+                    yield Err(aimux_core::AiMuxError::InvalidResponseData("Invalid Amazon Bedrock event-stream frame".into()));
+                    return;
+                };
+                buffer.drain(..length);
+                yield Ok(message);
+            }
+        }
+        if !buffer.is_empty() {
+            yield Err(aimux_core::AiMuxError::InvalidResponseData(format!("Incomplete Amazon Bedrock event-stream frame: {} buffered bytes remain at end of stream.", buffer.len())));
+        }
+    })
 }
 
 #[cfg(test)]

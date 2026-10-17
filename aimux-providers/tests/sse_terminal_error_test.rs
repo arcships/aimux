@@ -48,13 +48,17 @@ async fn corrupted_stream(prefix: Value) -> Vec<Result<StreamPart, AiMuxError>> 
 fn assert_terminal_decode_error(parts: &[Result<StreamPart, AiMuxError>]) {
     let errors: Vec<_> = parts
         .iter()
-        .filter_map(|part| part.as_ref().err())
+        .filter_map(|part| match part {
+            Ok(StreamPart::Error { error }) => Some(error),
+            _ => None,
+        })
         .collect();
     assert_eq!(errors.len(), 1);
     assert!(matches!(errors[0], AiMuxError::ApiCall(_)));
     assert!(!errors[0].is_recoverable_stream_error());
     assert!(!errors[0].is_retryable());
-    assert!(parts.last().is_some_and(Result::is_err));
+    assert!(matches!(parts.last(), Some(Ok(StreamPart::Error { .. }))));
+    assert!(parts.iter().all(Result::is_ok));
     assert!(
         !parts
             .iter()

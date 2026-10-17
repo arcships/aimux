@@ -72,6 +72,11 @@ const DEFAULT_NAME: &str = "anthropic.messages";
 /// The first-party URL without its version segment means the versioned one
 /// (`normalizeBaseURL` in `createAnthropic`); anything else is taken as given.
 fn normalize_base_url(url: &str) -> Result<String, AiMuxError> {
+    if url.trim().is_empty() {
+        return Err(AiMuxError::InvalidArgument(
+            "baseURL must be a non-empty string.".into(),
+        ));
+    }
     let url = validate_base_url(url)?;
     Ok(if url == API_ORIGIN {
         DEFAULT_BASE_URL.to_string()
@@ -112,8 +117,9 @@ pub struct AnthropicProviderSettings {
     /// `AiMuxError::LoadApiKey` if it is unset. An explicit value is used as
     /// given, `""` included: it never falls back to the environment.
     pub api_key: Option<String>,
-    /// A non-empty bearer token is sent as `Authorization: Bearer` instead
-    /// of `x-api-key`. Giving non-empty values for both credentials is an error.
+    /// A bearer token, sent as `Authorization: Bearer`. When set, no
+    /// `x-api-key` header is sent. Giving it together with `api_key` is an
+    /// error.
     pub auth_token: Option<String>,
     /// Extra headers on every request. A `None` value removes the header,
     /// including one of the fixed ones. Per-call headers win over these.
@@ -126,7 +132,7 @@ pub struct AnthropicProviderSettings {
     /// The transport: a mock, a signing decorator, a proxy-aware client.
     /// `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
-    /// Generator for source IDs. Defaults to the provider utility generator.
+    /// Generates identifiers for returned sources.
     pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
@@ -153,10 +159,9 @@ impl std::fmt::Debug for AnthropicProviderSettings {
 /// # Errors
 ///
 /// Returns `AiMuxError::InvalidArgument` when the explicit `base_url` is not
-/// an `http(s)` URL with a host, or when both `api_key` and `auth_token` are
-/// given. Those are the only ways this fails: credentials are loaded per
-/// request, and an invalid `ANTHROPIC_BASE_URL` is reported by each request,
-/// not here.
+/// an `http(s)` URL with a host, or when both credentials are nonempty. Those
+/// are the only ways this fails: credentials are loaded per request, and an
+/// invalid `ANTHROPIC_BASE_URL` is reported by each request, not here.
 pub fn create_anthropic(
     settings: AnthropicProviderSettings,
 ) -> Result<AnthropicProvider, AiMuxError> {
@@ -175,7 +180,8 @@ pub fn create_anthropic(
                 .to_string(),
         ));
     }
-    let (credential, scheme) = match settings.auth_token.filter(is_truthy) {
+    let auth_token = settings.auth_token.filter(is_truthy);
+    let (credential, scheme) = match auth_token {
         Some(token) => (
             Credential::Explicit(Resolvable::Value(token)),
             AuthScheme::Bearer,
@@ -199,12 +205,15 @@ pub fn create_anthropic(
                 vec![("anthropic-version".to_string(), API_VERSION.to_string())],
                 settings.headers,
             ),
-            crate::anthropic::options::CANONICAL,
-            "4.0.68",
+            crate::shared::aisdk_pins::ANTHROPIC.name,
+            crate::shared::aisdk_pins::ANTHROPIC.version,
         ),
-        fetch: settings.fetch,
-        generate_id: settings.generate_id,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::ANTHROPIC,
+        )),
         supported_urls: supported_urls(),
+        generate_id: settings.generate_id,
     })
 }
 
@@ -228,8 +237,8 @@ pub struct AnthropicProvider {
     base_url: Result<String, AiMuxError>,
     headers: HeadersFn,
     fetch: Option<FetchFunction>,
-    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
     supported_urls: SupportedUrls,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl AnthropicProvider {
@@ -275,7 +284,13 @@ impl AnthropicProvider {
         .with_generate_id(self.generate_id.clone())
     }
 
-    /// The files interface; `provider()` is the provider name.
+    /// An alias for the Messages model.
+    #[must_use]
+    pub fn chat(&self, model_id: &str) -> AnthropicMessagesModel {
+        self.messages(model_id)
+    }
+
+    /// The files interface, retaining the configured provider name.
     #[must_use]
     pub fn files(&self) -> AnthropicFiles {
         AnthropicFiles::from_config(self.model_config(self.name.clone()))

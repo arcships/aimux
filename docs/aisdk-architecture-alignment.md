@@ -509,6 +509,7 @@ config 只对该包及明确的 `internal` 复用接口开放。不得提供公�
 | Google | base URL 等工厂设置 | 构造对应模型 | 求值 key |
 | Vertex | 解析 express key 等设置 | 构造所需 project/location/base URL，可能失败 | ADC headers 或 express fetch |
 | Bedrock | 选择 API key/SigV4 组合 | 构造对应模型 | region、凭证、签名及惰性 URL |
+| Anthropic-AWS | 校验显式 base URL；无 base URL 时校验显式 region | 构造 Messages model | region（设置或 `AWS_REGION`，无默认值）与惰性 URL；必填 workspace id（设置或 `ANTHROPIC_AWS_WORKSPACE_ID`）；未给 auth 时 `ANTHROPIC_AWS_API_KEY` 非空走 `x-api-key`，否则用 `AWS_*` 凭证 SigV4（aws4fetch 规则）。上游在工厂阶段读 key、取模型阶段算 base URL，aimux 统一推迟到请求阶段，默认实例不读环境 |
 | Groq/DeepSeek 等 | 包内 base URL 规则 | 独立模型实现 | headers 懒加载 key |
 | openai-compatible | 固定 apiKey、headers、queryParams | 按 name 构造模型 | 使用固定配置 |
 | aimux preset | 固定声明式适配设置 | 构造 compat 内部模型 | 懒加载 key 与必要模板设置 |
@@ -748,12 +749,12 @@ providerOptions 必须描述**查找、合并、回退、回写**，而非仅列
 | OpenAI chat | `openai` |
 | OpenAI Responses/Azure Responses | 按包内 SDK 规则选择 `openai`/`azure`；保留当前跨包功能性 fallback |
 | Anthropic | canonical `anthropic` 与包内首段规则得到的 custom key 合并；custom 优先；按 SDK 记录 custom key 使用情况 |
-| Google/Vertex | 包内保留 Vertex 分支；使用 `googleVertex`，保留功能性的 `google` fallback |
-| Bedrock | `amazonBedrock`；另外独立读取 `anthropic` 选项，二者不是同一条 fallback 链 |
+| Google/Vertex | 包内保留 Vertex 分支；依次读取 `googleVertex`、旧键 `vertex`，保留功能性的 `google` fallback；metadata 同时写 `googleVertex` 与 `vertex`（视频另写 `google-vertex`） |
+| Bedrock | 读取 `amazonBedrock`，旧键 `bedrock` 兜底；metadata 同时写 `amazonBedrock` 与 `bedrock`；另外独立读取 `anthropic` 选项，二者不是同一条 fallback 链 |
 | compat | `openaiCompatible` 与 name 的规范 camelCase key；优先级及未知字段透传按包定义 |
 | aimux preset | 由 descriptor 明确命名空间，不通过宿主 registry alias 改变 |
 
-按本文的无兼容立场，SDK 中明确标记为历史兼容的 `vertex`、`bedrock`、`openai-compatible` 等旧键及对应双写/告警转发不移植。该偏差进入 §5，不能声称逐字复制 SDK 所有历史行为。
+SDK 为历史兼容保留的旧键照上游读取并回写：新键优先、旧键兜底地读取（Vertex 的 `vertex`、Bedrock 的 `bedrock`；compat 的 `openai-compatible` 读取时附 deprecated 告警），写 metadata 时新旧键都写（Vertex 写 `googleVertex` 与 `vertex`，视频另写 `google-vertex`；Bedrock 写 `amazonBedrock` 与 `bedrock`），与 `@ai-sdk/google`、`@ai-sdk/google-vertex`、`@ai-sdk/amazon-bedrock`、`@ai-sdk/openai-compatible` 一致。
 
 **compat 请求体顺序：**
 
@@ -1112,7 +1113,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | 首块超时的起点 | 上游在 provider 响应流开始时才开始计 chunk 超时（`A/generate-text/stream-text.ts:2228-2243`、`:2671`）；aimux 的 provider 在 `do_stream` 内预读首个 SSE 事件，所以 `first_chunk_ms` 在 operation 开始时计时，覆盖请求建立。保留这一差异：provider 等到首个 SSE 事件才从 `do_stream` 返回，若计时推迟到响应流开始，返回 200 之后一直不发数据的流就没有时间上限（RFC-0031 §8.1、§8.3；§9.1 已知差距） |
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
-| 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧 namespace 双写、旧方法转发、旧录制读取 |
+| 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
 | 本期范围外 | Evaluation/Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
 | ABI 范围外 | C 宿主异步 fetch/model/headers/telemetry | 由独立异步 ABI 设计处理；本期提供 Rust 内建句柄 |
 | 上游对齐 | `specification_version` | `Provider` 与各模型 trait 保留 `specification_version()`，默认返回 `"v4"`，与上游 `ProviderV4` 及各模型 V4 接口的 `specificationVersion: 'v4'` 一致 |
@@ -1121,6 +1122,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 上游对齐 | OpenAI 默认 `language_model` | `language_model` 和 `call` 返回 Responses（`openai.responses`），与上游 `openai(id)` 一致；`chat(id)` 显式选择 Chat Completions。xAI、Hugging Face、Azure 的默认也为 Responses |
 | 产品选择 | Bedrock 上的 Anthropic InvokeModel | aimux 没有 `bedrock.anthropic.messages` 对应的 provider（`anthropic_aws` 是 Claude Platform on AWS，不是 Bedrock InvokeModel）；属新增能力，不在本期 |
 | 产品选择 | Azure 未移植的模型 | deepseek、completion、MAI speech 端点和 Foundry item type 未移植 |
+| 产品选择 | Vertex 外部账号凭证的可执行程序来源（`credential_source.executable`） | 保留，作为登记的例外（RFC-0040 草案 §3.1）。行为同 `@ai-sdk/google-vertex` 在 Node 下所用 google-auth-library 的 pluggable auth：仅在 `GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1` 时运行；命令按空白拆分后直接启动，不经 shell；超时限 5–120 秒。开关未设时请求以 `InvalidArgument` 失败，不启动进程，也不发请求（`vertex/auth_external.rs` `executable`；测试 `vertex_upstream_e2e_test::executable_credential_without_the_opt_in_fails_and_spawns_nothing`） |
 | 上游对齐 | 视频轮询节奏 | provider 和 `VideoModel` 都没有 poll 设置（`VideoModel::poll_config()` 已删除，见 §8.1）；调用级 `VideoCallOptions.poll` 逐字段覆盖 AI SDK 默认值 5000 ms / 600000 ms（ai 7.0.127 `generate-video/generate-video.ts:543-544`） |
 | 上游对齐 | 操作级下载传输 | `generate_text` / `stream_text` 的 `download`（`DownloadFunction`，上游 `experimental_download`）以及 `transcribe`、`generate_video` 的 `download`（`Download`）可注入，缺省为受控下载 `create_download(None)`（D26）。prompt 只下载模型 `supported_urls()` 不覆盖的 URL；`transcribe` 下载 `AudioInput::Url`；`generate_video` 下载 URL 结果并返回 `VideoData::Binary`（ai 7.0.127 `prompt/convert-to-language-model-prompt.ts:36-55`、`transcribe/transcribe.ts:56`、`:192-199`、`generate-video/generate-video.ts:136`、`:383-410`） |
 | 产品选择 | 下载后的媒体类型 | Core 不做字节嗅探，省略上游的 `detectMediaType`：URL 音频取下载报告的媒体类型，否则沿用调用方的 `media_type`；视频依次取自身、下载报告的类型、`video/mp4`；prompt 文件只在原类型不完整时取下载报告的类型。`data:` URL 不进入下载计划，原样发送（上游先把它转成内联数据） |
@@ -1503,6 +1505,8 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - CLI 探测加 `--method`；现在 OpenAI 只能探测 Responses（§4.6、RFC-0025）。
 - 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省），回放不了的部分在回放时报错说明。
 - OpenAI 兼容输出的流带回上游的 id 与 model（RFC-0026）；这是回归，不是新功能。
+- Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
+- AWS SigV4 fetch（Bedrock、Anthropic-AWS）也给 GET 请求签名，即 `list_models`；上游只签带 body 的 POST（`amazon-bedrock-sigv4-fetch.ts:57-62`、`anthropic-aws-fetch.ts:57-62`）。模型列表是 aimux 独有的接口，不签名就调不通，所以保留这一差异，不再修改（§3.3）。
 
 ### 9.2 必须通过的构建检查
 
@@ -1523,7 +1527,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | 工厂 | base URL/name/auth 的求值时间；空 key；缺 key；默认实例与显式工厂 |
 | 身份 | OpenAI chat/Responses、Azure、Vertex、嵌套 Anthropic、Groq、xAI；自定义 registry key |
 | Headers | 大小写、覆盖、None 删除、无重复凭证、逐 attempt token 更新 |
-| 命名空间 | 读取、合并、metadata 回写、下一轮再输入；无旧键转发 |
+| 命名空间 | 读取、合并、metadata 回写、下一轮再输入；旧键照上游读取并双写 |
 | 请求体 | compat 透传顺序；原生包工具映射；Responses 默认方法完整可用 |
 | Prompt | supportedUrls、受控下载、图片/文件和 tool output |
 | 内容往返 | reasoning signature、thought metadata、tool IDs、图片、文件、provider-executed 结果 |

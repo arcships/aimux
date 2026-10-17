@@ -613,8 +613,10 @@ mod anthropic_stream_errors {
     /// TS: "should forward error chunks" + "should forward overloaded error
     /// during streaming".
     ///
-    /// A normal text delta is emitted first, then an error event mid-stream.
-    /// The error must be forwarded as a `StreamPart::Error`.
+    /// A text delta comes first, then an error event mid-stream. The error is
+    /// forwarded as a `StreamPart::Error` (anthropic-language-model.ts:3090-3096).
+    /// The stream then ends without `message_stop`, so no finish part follows:
+    /// upstream emits finish only on `message_stop` (:3031).
     #[tokio::test]
     async fn mid_stream_error_is_forwarded() {
         let server = MockServer::start().await;
@@ -638,42 +640,29 @@ mod anthropic_stream_errors {
         let stream = model(&server).do_stream(&options()).await.unwrap();
         let parts = collect_stream(stream).await;
 
-        let saw_text = parts.iter().any(|p| {
-            matches!(p,
-            StreamPart::TextDelta { delta, .. } if delta == "Hello")
-        });
+        let text = parts
+            .iter()
+            .position(|p| matches!(p, StreamPart::TextDelta { delta, .. } if delta == "Hello"))
+            .unwrap_or_else(|| panic!("expected a 'Hello' text delta, got {parts:?}"));
+        let error = parts
+            .iter()
+            .position(|p| {
+                matches!(p,
+                    StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")
+            })
+            .unwrap_or_else(|| panic!("expected an error part carrying 'Overloaded', got {parts:?}"));
         assert!(
-            saw_text,
-            "expected a 'Hello' text delta before the error, got {parts:?}"
+            text < error,
+            "the text delta comes before the error: {parts:?}"
         );
-
         assert!(
-            parts.iter().any(|p| matches!(p,
-                StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "Overloaded")),
-            "expected a StreamPart::Error carrying 'Overloaded', got {parts:?}"
+            !parts.iter().any(|p| matches!(p, StreamPart::Finish { .. })),
+            "no message_stop, so no finish part: {parts:?}"
         );
-
-        // Finish=final chunk: a mid-stream error must still be followed by a
-        // Finish part (error finish), never leave the stream unterminated.
-        assert!(
-            matches!(parts.last(),
-                Some(StreamPart::Finish { finish_reason, .. })
-                    if matches!(finish_reason.unified,
-                        aimux_core::prelude::FinishReasonUnified::Error)),
-            "expected the last part to be Finish with unified=Error, got {parts:?}"
-        );
-        // Error-finish zeroes usage: the message_start input_tokens (17)
-        // must not leak into the final part (mirrors openai behaviour).
-        if let Some(StreamPart::Finish { usage, .. }) = parts.last() {
-            assert_eq!(
-                usage.input_tokens.total, None,
-                "usage must be zeroed on error finish"
-            );
-        }
     }
 
-    /// TS: "should forward error chunks" — a generic (non-overloaded) error
-    /// event mid-stream must also be forwarded.
+    /// TS: "should forward error chunks": a generic (non-overloaded) error
+    /// event mid-stream is forwarded too.
     #[tokio::test]
     async fn mid_stream_generic_error_is_forwarded() {
         let server = MockServer::start().await;
@@ -698,14 +687,11 @@ mod anthropic_stream_errors {
         assert!(
             parts.iter().any(|p| matches!(p,
                 StreamPart::Error { error: AiMuxError::ApiCall(m) } if m.message == "test error")),
-            "expected a StreamPart::Error carrying 'test error', got {parts:?}"
+            "expected an error part carrying 'test error', got {parts:?}"
         );
         assert!(
-            matches!(parts.last(),
-                Some(StreamPart::Finish { finish_reason, .. })
-                    if matches!(finish_reason.unified,
-                        aimux_core::prelude::FinishReasonUnified::Error)),
-            "expected the last part to be Finish with unified=Error, got {parts:?}"
+            !parts.iter().any(|p| matches!(p, StreamPart::Finish { .. })),
+            "no message_stop, so no finish part: {parts:?}"
         );
     }
 }

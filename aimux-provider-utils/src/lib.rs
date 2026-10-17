@@ -9,7 +9,9 @@
 //! of `@ai-sdk/provider-utils`. Operation retry and timeout live in
 //! `aimux-core`.
 
+mod aisdk_pins;
 pub mod api_key;
+pub mod download_blob;
 pub mod extract_response_headers;
 pub mod fetch;
 pub mod generate_id;
@@ -35,6 +37,7 @@ pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use download_blob::download_blob;
 pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ProxyConfig,
     RequestCredentials, ReqwestFetch, default_fetch, set_default_transport,
@@ -59,7 +62,7 @@ pub use response_handler::{
     create_json_error_response_handler, create_json_response_handler,
     create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
 };
-pub use sigv4_fetch::{AwsCredentials, SigV4Fetch};
+pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 // As `@ai-sdk/provider-utils` (`index.ts:115-119`): the tracker is exported
 // from the crate root, its argument state stays internal.
 pub use streaming_tool_call_tracker::{

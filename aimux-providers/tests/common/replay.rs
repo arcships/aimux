@@ -84,7 +84,7 @@ use std::path::Path;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::Value;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 /// Replay the ordered HTTP exchanges of a unified runtime Recording. Request
@@ -387,7 +387,7 @@ async fn mount_entries(server: &MockServer, cassettes: Vec<Cassette>) -> usize {
 
     for ((m, p), entries) in groups {
         Mock::given(method(m))
-            .and(path(p))
+            .and(move |req: &Request| percent_decode(req.url.path()) == p)
             .respond_with(CassetteRespond { entries })
             .mount(server)
             .await;

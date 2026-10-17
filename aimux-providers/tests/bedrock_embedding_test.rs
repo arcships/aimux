@@ -73,7 +73,7 @@ fn should_expose_max_embeddings_per_call() {
 async fn should_handle_titan_single_input() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/model/amazon.titan-embed-text-v2:0/invoke"))
+        .and(path("/model/amazon.titan-embed-text-v2%3A0/invoke"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("content-type", "application/json")
@@ -108,7 +108,7 @@ async fn should_handle_titan_single_input() {
 async fn should_extract_titan_usage() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/model/amazon.titan-embed-text-v2:0/invoke"))
+        .and(path("/model/amazon.titan-embed-text-v2%3A0/invoke"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "embedding": mock_embeddings()[0],
             "inputTextTokenCount": 8
@@ -169,7 +169,7 @@ async fn should_support_cohere_v3() {
 async fn should_support_cohere_v4() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/model/cohere.embed-v4:0/invoke"))
+        .and(path("/model/cohere.embed-v4%3A0/invoke"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("x-amzn-bedrock-input-token-count", "6")
@@ -198,7 +198,7 @@ async fn should_support_cohere_v4() {
 async fn should_send_multiple_values_cohere_v4() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/model/cohere.embed-v4:0/invoke"))
+        .and(path("/model/cohere.embed-v4%3A0/invoke"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("x-amzn-bedrock-input-token-count", "12")
@@ -239,7 +239,7 @@ async fn should_send_multiple_values_cohere_v4() {
 async fn should_support_cross_region_cohere() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/model/us.cohere.embed-v4:0/invoke"))
+        .and(path("/model/us.cohere.embed-v4%3A0/invoke"))
         .respond_with(
             ResponseTemplate::new(200)
                 .insert_header("x-amzn-bedrock-input-token-count", "6")
@@ -267,7 +267,7 @@ async fn should_support_nova_embeddings() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
-            "/model/amazon.nova-2-multimodal-embeddings-v1:0/invoke",
+            "/model/amazon.nova-2-multimodal-embeddings-v1%3A0/invoke",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "embeddings": [

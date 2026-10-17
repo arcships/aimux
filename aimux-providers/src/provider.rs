@@ -85,10 +85,7 @@ impl ProviderProfile {
         Ok(ChatProfile {
             include_usage: true,
             supports_structured_outputs: true,
-            supports_multi_part_tool_content: false,
             dialect,
-            supported_urls: None,
-            convert_usage: None,
         })
     }
 }
@@ -481,6 +478,7 @@ fn build_external(
         fetch: None,
         transform_request_body: None,
         profile: entry.profile.chat_profile()?,
+        package: crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
     })
 }
 

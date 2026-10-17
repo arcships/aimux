@@ -22,11 +22,11 @@ pub mod model;
 pub(crate) mod options;
 pub mod responses;
 pub mod speech;
+pub mod tools;
 pub mod transcription;
 mod types;
 
 pub use completion::OpenAICompletionModel;
-pub use config::TransformRequestBody;
 pub use decision::OpenAIDecisionModel;
 pub use embedding::OpenAIEmbeddingModel;
 pub use files::OpenAIFiles;
@@ -34,6 +34,7 @@ pub use image::OpenAIImageModel;
 pub use model::OpenAIModel;
 pub use responses::OpenAIResponsesModel;
 pub use speech::OpenAISpeechModel;
+pub use tools::{OpenAIComputerAction, OpenAIComputerSafetyCheck};
 pub use transcription::OpenAITranscriptionModel;
 
 use std::sync::{Arc, OnceLock};
@@ -78,39 +79,107 @@ pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::Response
     })
 }
 
+/// The `ApiCallError` of an OpenAI stream error frame, as upstream's
+/// `createOpenAIProviderStreamError` builds it (@ai-sdk/openai 4.0.83
+/// src/openai-stream-error.ts:18-37): an HTTP status in `code` is the status,
+/// otherwise one is inferred from `code`/`type` (`getStatusCode`, :235-267);
+/// `insufficient_quota` is never retryable (:303-315).
 pub(crate) fn openai_stream_error(
     error: &Value,
     url: &str,
     request_body_values: Value,
     response_headers: std::collections::HashMap<String, String>,
 ) -> AiMuxError {
-    let message = error
+    let response_failed = error.get("type").and_then(Value::as_str) == Some("response.failed");
+    let payload = if response_failed {
+        error
+            .get("response")
+            .and_then(|response| response.get("error"))
+            .unwrap_or(error)
+    } else {
+        error.get("error").unwrap_or(error)
+    };
+    let message = payload
         .get("message")
         .and_then(Value::as_str)
         .unwrap_or("OpenAI stream failed before any output was generated")
         .to_owned();
-    let code = error.get("code").or_else(|| error.get("type"));
-    let provider_code = code.and_then(|value| match value {
+    let provider_code = payload.get("code").and_then(|value| match value {
         Value::String(value) => Some(value.clone()),
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    // Only a numeric HTTP status in the payload is a status; a string code
-    // ("invalid_api_key") must not be laundered into a retryable 500.
-    let status_code = code
-        .and_then(Value::as_u64)
-        .filter(|status| (400..=599).contains(status))
-        .map(|status| status as u16);
-
-    aimux_provider_utils::stream_error_api_call(
+    // Upstream types a `response.failed` frame as `response.failed`, not by
+    // its inner error (`parseStreamError`, openai-stream-error.ts:207-217).
+    let error_type = if response_failed {
+        "response.failed"
+    } else {
+        payload
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+    };
+    let discriminator = format!(
+        "{} {error_type}",
+        provider_code.as_deref().unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    let explicit_status = payload
+        .get("code")
+        .and_then(|value| {
+            value
+                .as_u64()
+                .and_then(|value| u16::try_from(value).ok())
+                .or_else(|| {
+                    value
+                        .as_str()
+                        .filter(|value| {
+                            value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit())
+                        })
+                        .and_then(|value| value.parse::<u16>().ok())
+                })
+        })
+        .filter(|value| (400..=599).contains(value));
+    let status = explicit_status.unwrap_or_else(|| {
+        if ["insufficient_quota", "rate_limit"]
+            .iter()
+            .any(|term| discriminator.contains(term))
+        {
+            429
+        } else if discriminator.contains("authentication") {
+            401
+        } else if discriminator.contains("permission") {
+            403
+        } else if discriminator.contains("not_found") {
+            404
+        } else if ["invalid", "bad_request", "context_length"]
+            .iter()
+            .any(|term| discriminator.contains(term))
+        {
+            400
+        } else if discriminator.contains("overload") {
+            503
+        } else if discriminator.contains("timeout") {
+            504
+        } else {
+            500
+        }
+    });
+    let quota = provider_code.as_deref() == Some("insufficient_quota")
+        || error_type == "insufficient_quota";
+    let mut result = aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
-        status_code,
+        Some(status),
         error,
         url,
         request_body_values,
         response_headers,
-    )
+    );
+    if quota && let AiMuxError::ApiCall(details) = &mut result {
+        details.is_retryable = false;
+    }
+    result
 }
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -118,8 +187,8 @@ pub(crate) const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
 
 /// Settings of [`create_openai`] (the AI SDK's `OpenAIProviderSettings`).
 ///
-/// Every field is optional. Nothing here is evaluated when the provider is
-/// created except `base_url` and `name`; `api_key` and `headers` are evaluated
+/// Every field is optional. The base URL (including `OPENAI_BASE_URL`) and
+/// name are resolved when the provider is created; `api_key` and `headers` are evaluated
 /// on every request.
 #[derive(Clone, Default)]
 pub struct OpenAIProviderSettings {
@@ -204,12 +273,16 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
                 .collect(),
                 settings.headers,
             ),
-            "openai",
-            "4.0.80",
+            crate::shared::aisdk_pins::OPENAI.name,
+            crate::shared::aisdk_pins::OPENAI.version,
         ),
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(
+            settings.fetch,
+            crate::shared::aisdk_pins::OPENAI,
+        )),
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
+        tools: tools::OpenAITools,
     })
 }
 
@@ -235,6 +308,8 @@ pub struct OpenAIProvider {
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
+    /// The provider tools (`openai.tools` in the AI SDK).
+    pub tools: tools::OpenAITools,
 }
 
 impl OpenAIProvider {
@@ -246,6 +321,10 @@ impl OpenAIProvider {
             self.fetch.clone(),
             None,
         );
+        config.supported_urls = config::supported_urls(method);
+        if method == "responses" {
+            config.responses.file_id_prefixes = vec!["file-"];
+        }
         if let Err(error) = &self.base_url {
             let error = error.clone();
             config.url = Arc::new(move |_| Err(error.clone()));

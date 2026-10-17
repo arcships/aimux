@@ -273,10 +273,12 @@ where
 
 /// Build the `ApiCallError` for an error event delivered *inside* a stream.
 ///
-/// The event rides on an already-successful response, so no HTTP status is
-/// fabricated: `status_code` is set only when the payload itself
-/// carried a numeric HTTP status, and retryability derives from that status
-/// alone. A `retry_after_ms` / `retry_after` field in the payload is
+/// The event rides on an already-successful response, so its 2xx status is
+/// not the error's: `status_code` is the status the caller maps the frame
+/// to — a numeric HTTP status the payload carried, or the status the
+/// provider's upstream package infers for such a frame (OpenAI's
+/// `createOpenAIProviderStreamError` from `code`/`type`, Anthropic's from the
+/// error type) — and retryability derives from that status alone. A `retry_after_ms` / `retry_after` field in the payload is
 /// surfaced through the response-headers channel so
 /// `AiMuxError::retry_after_hint()` observes it.
 ///

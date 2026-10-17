@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use aimux_core::AiMuxError;
 use aimux_provider_utils::{
-    AwsCredentials, HttpRequest, ProviderErrorParts, Resolvable, SigV4Fetch,
+    AwsCredentials, HttpRequest, ProviderErrorParts, Resolvable, SigV4Fetch, SigV4Signing,
     create_json_error_response_handler, create_json_response_handler, default_fetch,
     post_json_to_api,
 };
@@ -141,6 +141,7 @@ async fn a_signing_transport_does_not_sign_a_cross_origin_hop() {
             region: "us-east-1".into(),
         }),
         "bedrock",
+        SigV4Signing::Aws4Fetch,
     );
 
     post(HttpRequest {
@@ -231,6 +232,7 @@ async fn a_same_origin_hop_is_signed_again_for_its_own_url() {
             region: "us-east-1".into(),
         }),
         "bedrock",
+        SigV4Signing::Aws4Fetch,
     )
     .with_clock(|| Utc.with_ymd_and_hms(2026, 10, 15, 0, 0, 0).unwrap());
 

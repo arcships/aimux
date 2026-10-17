@@ -25,7 +25,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart, UserPart,
 };
@@ -147,6 +147,14 @@ impl LanguageModel for HuggingFaceResponsesModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    /// HTTP(S) image URLs go to the API as they are
+    /// (huggingface-responses-language-model.ts:67-69); other URLs are
+    /// downloaded by the operation.
+    async fn supported_urls(&self) -> SupportedUrls {
+        let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+        SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
@@ -755,8 +763,8 @@ pub fn convert_to_huggingface_responses_messages(
                         AssistantPart::ToolCall(_)
                         | AssistantPart::ToolResult(_)
                         | AssistantPart::File(_)
-                        | AssistantPart::Custom(_)
-                        | AssistantPart::ReasoningFile(_) => {}
+                        | AssistantPart::ReasoningFile(_)
+                        | AssistantPart::Custom(_) => {}
                     }
                 }
             }

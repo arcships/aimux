@@ -41,7 +41,7 @@ use serde_json::{Value, json};
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::options::CallOptions;
 use aimux_core::provider::{Provider, ProviderDiscovery};
@@ -240,13 +240,17 @@ pub struct CodexProvider {
 
 impl CodexProvider {
     fn model_config(&self, method: &str) -> OpenAIModelConfig {
-        OpenAIModelConfig::fixed(
+        let mut config = OpenAIModelConfig::fixed(
             format!("{}.{method}", self.name),
             self.base_url.clone(),
             self.headers.clone(),
             self.fetch.clone(),
             self.transform_request_body.clone(),
-        )
+        );
+        // Codex speaks the Responses API, so its models take the URLs the
+        // OpenAI Responses model takes.
+        config.supported_urls = crate::openai::config::supported_urls(method);
+        config
     }
 
     /// A Codex model over the Responses API (e.g. `"gpt-5.2-codex"`);
@@ -493,6 +497,12 @@ impl LanguageModel for CodexModel {
 
     fn model_id(&self) -> &str {
         &self.model_id
+    }
+
+    /// HTTP(S) image and PDF URLs, as the OpenAI Responses model declares;
+    /// both channels send them as they are.
+    async fn supported_urls(&self) -> SupportedUrls {
+        self.config.supported_urls.clone()
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {

@@ -92,6 +92,12 @@ pub struct HttpRequest {
     /// provider-supplied URLs always use the SSRF guard's pinned transport,
     /// never a provider-injected one.
     pub fetch: Option<FetchFunction>,
+    /// Send the `user-agent` as given (or none), without the
+    /// `ai-sdk-provider-utils/<v>` part that the AI SDK's `postToApi` and
+    /// `getFromApi` append (post-to-api.ts:100-104, get-from-api.ts:77-81).
+    /// For an exchange the AI SDK makes with a plain `fetch` call or with
+    /// `downloadBlob` (google-files.ts:84-126, download-blob.ts:111-114).
+    pub omit_provider_utils_user_agent: bool,
 }
 
 /// The per-operation context of an exchange: the call options' cancellation,
@@ -199,6 +205,9 @@ pub(crate) struct PreparedRequest {
     /// [`RequestCredentials::Omit`] once the target is off the credentialed
     /// origin; never switched back.
     credentials: RequestCredentials,
+    /// Whether `ai-sdk-provider-utils/<v>` is appended to the `user-agent`
+    /// (not [`HttpRequest::omit_provider_utils_user_agent`]).
+    provider_utils_user_agent: bool,
 }
 
 impl HttpRequest {
@@ -230,6 +239,7 @@ impl HttpRequest {
             }),
             fetch: self.fetch,
             credentials,
+            provider_utils_user_agent: !self.omit_provider_utils_user_agent,
         }
     }
 }
@@ -535,23 +545,28 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header value for {name}")))?;
         headers.insert(header_name, header_value);
     }
-    let suffix = "ai-sdk-provider-utils/5.0.51";
-    let current = request
-        .headers
-        .iter()
-        .rev()
-        .find_map(|(name, value)| {
-            name.eq_ignore_ascii_case("user-agent")
-                .then_some(value.as_str())
-        })
-        .unwrap_or_default();
-    let user_agent = crate::headers::user_agent_value(current, suffix);
-    headers.insert(
-        http::header::USER_AGENT,
-        http::HeaderValue::try_from(user_agent).map_err(|_| {
-            AiMuxError::InvalidArgument("invalid header value for user-agent".to_string())
-        })?,
-    );
+    if request.provider_utils_user_agent {
+        let suffix = format!(
+            "ai-sdk-provider-utils/{}",
+            crate::aisdk_pins::PROVIDER_UTILS
+        );
+        let current = request
+            .headers
+            .iter()
+            .rev()
+            .find_map(|(name, value)| {
+                name.eq_ignore_ascii_case("user-agent")
+                    .then_some(value.as_str())
+            })
+            .unwrap_or_default();
+        let user_agent = crate::headers::user_agent_value(current, &suffix);
+        headers.insert(
+            http::header::USER_AGENT,
+            http::HeaderValue::try_from(user_agent).map_err(|_| {
+                AiMuxError::InvalidArgument("invalid header value for user-agent".to_string())
+            })?,
+        );
+    }
     let body = match &request.body {
         HttpBody::Json(value) => {
             if !headers.contains_key(http::header::CONTENT_TYPE) {

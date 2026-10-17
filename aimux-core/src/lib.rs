@@ -142,9 +142,9 @@ pub mod prelude {
         init_session_store, list_sessions, session_calls,
     };
     pub use crate::shared::{
-        AspectRatio, FileBytes, FileData, GeneratedFileData, JsonObject, SharedHeaders,
-        SharedProviderMetadata, SharedProviderOptions, SharedProviderReference, Size,
-        provider_namespace,
+        AspectRatio, FileBytes, FileData, GeneratedFileData, JsonObject, ResponseInfo,
+        SharedHeaders, SharedProviderMetadata, SharedProviderOptions, SharedProviderReference,
+        Size, StreamResponseInfo, provider_namespace,
     };
     pub use crate::skills_model::{SkillFile, Skills, UploadSkillCallOptions, UploadSkillResult};
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};

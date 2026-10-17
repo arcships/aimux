@@ -53,7 +53,13 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
         &self,
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
-        let openai_options = parse_openai_provider_options(options.provider_options.as_ref());
+        if options.values.len() > 2048 {
+            return Err(AiMuxError::InvalidArgument(format!(
+                "too many embedding values: {} exceeds 2048",
+                options.values.len()
+            )));
+        }
+        let openai_options = parse_openai_provider_options(options.provider_options.as_ref())?;
 
         let mut body = Map::new();
         body.insert("model".to_string(), json!(self.model_id));
@@ -87,42 +93,12 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
 
         let raw_value: Value = resp.value;
 
-        // Extract embeddings: response.data[].embedding
-        // The embedding field can be a JSON array of floats (default) or a
-        // base64-encoded string (when encoding_format="base64").
-        let embeddings: Vec<Vec<f32>> = raw_value
-            .get("data")
-            .and_then(|d| d.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| {
-                        let emb = item.get("embedding")?;
-                        if let Some(arr) = emb.as_array() {
-                            // Standard format: array of numbers
-                            Some(
-                                arr.iter()
-                                    .filter_map(|v| v.as_f64().map(|f| f as f32))
-                                    .collect(),
-                            )
-                        } else if let Some(s) = emb.as_str() {
-                            // Base64 format: decode to little-endian f32 array
-                            decode_base64_embedding(s)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Extract usage: response.usage.prompt_tokens
-        let usage = raw_value
-            .get("usage")
-            .and_then(|u| u.get("prompt_tokens"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|tokens| EmbeddingUsage {
-                tokens: tokens as u32,
-            });
+        let parsed: OpenAIEmbeddingResponse = serde_json::from_value(raw_value.clone())
+            .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?;
+        let embeddings = parsed.data.into_iter().map(|item| item.embedding).collect();
+        let usage = parsed.usage.map(|usage| EmbeddingUsage {
+            tokens: usage.prompt_tokens as u32,
+        });
 
         Ok(EmbeddingResult {
             embeddings,
@@ -139,49 +115,46 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
 
 // ── Provider options parsing ─────────────────────────────────────────────────
 
-/// Parsed `openai` embedding provider options.
+#[derive(serde::Deserialize)]
+struct OpenAIEmbeddingResponse {
+    data: Vec<OpenAIEmbeddingData>,
+    usage: Option<OpenAIEmbeddingUsage>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenAIEmbeddingData {
+    embedding: Vec<f32>,
+}
+
+#[derive(serde::Deserialize)]
+struct OpenAIEmbeddingUsage {
+    prompt_tokens: f64,
+}
+
+#[derive(Default, serde::Deserialize)]
 struct OpenAIEmbeddingProviderOptions {
-    dimensions: Option<u32>,
+    dimensions: Option<f64>,
     user: Option<String>,
 }
 
-/// Extract OpenAI-specific embedding options from the shared provider options.
-///
-/// Mirrors the TS `parseProviderOptions({ provider: 'openai', ... })`.
 fn parse_openai_provider_options(
     options: Option<&SharedProviderOptions>,
-) -> OpenAIEmbeddingProviderOptions {
-    let provider_opts = options.and_then(|opts| opts.get("openai"));
-    OpenAIEmbeddingProviderOptions {
-        dimensions: provider_opts
-            .and_then(|o| o.get("dimensions"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|d| d as u32),
-        user: provider_opts
-            .and_then(|o| o.get("user"))
-            .and_then(|u| u.as_str())
-            .map(std::string::ToString::to_string),
+) -> Result<OpenAIEmbeddingProviderOptions, AiMuxError> {
+    match options.and_then(|options| options.get("openai")) {
+        Some(value) => {
+            if value
+                .get("dimensions")
+                .is_some_and(|value| !value.is_number())
+                || value.get("user").is_some_and(|value| !value.is_string())
+            {
+                return Err(AiMuxError::InvalidArgument(
+                    "invalid openai embedding options".into(),
+                ));
+            }
+            serde_json::from_value(Value::Object(value.clone())).map_err(|error| {
+                AiMuxError::InvalidArgument(format!("invalid openai embedding options: {error}"))
+            })
+        }
+        None => Ok(OpenAIEmbeddingProviderOptions::default()),
     }
-}
-
-/// Decode a base64-encoded embedding string into a `Vec<f32>`.
-///
-/// OpenAI's API returns embeddings as base64-encoded little-endian f32
-/// arrays when `encoding_format: "base64"` is requested. The raw bytes
-/// are decoded from base64, then reinterpreted as little-endian f32.
-// Rust 1.98 clippy suggests `as_chunks::<4>()`, stabilized in 1.88; the
-// workspace MSRV is 1.85. Drop when the MSRV moves past 1.88.
-#[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
-fn decode_base64_embedding(s: &str) -> Option<Vec<f32>> {
-    use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(s).ok()?;
-    if bytes.len() % 4 != 0 {
-        return None;
-    }
-    Some(
-        bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect(),
-    )
 }

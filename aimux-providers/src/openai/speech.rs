@@ -123,7 +123,7 @@ fn build_request_body_and_warnings(
 
     if SUPPORTED_OUTPUT_FORMATS.contains(&output_format) {
         body.insert("response_format".to_string(), json!(output_format));
-    } else {
+    } else if !output_format.is_empty() {
         warnings.push(Warning::Unsupported {
             feature: "outputFormat".to_string(),
             details: Some(format!(
@@ -132,7 +132,37 @@ fn build_request_body_and_warnings(
         });
     }
 
-    if let Some(ref language) = options.language {
+    if let Some(provider_options) = options
+        .provider_options
+        .as_ref()
+        .and_then(|options| options.get("openai"))
+    {
+        if let Some(value) = provider_options
+            .get("speed")
+            .filter(|value| !value.is_null())
+        {
+            let speed = value
+                .as_f64()
+                .filter(|speed| (0.25..=4.0).contains(speed))
+                .ok_or_else(|| {
+                    AiMuxError::InvalidArgument("invalid openai speech option: speed".into())
+                })?;
+            body.insert("speed".into(), json!(speed));
+        }
+        if let Some(value) = provider_options
+            .get("instructions")
+            .filter(|value| !value.is_null())
+        {
+            let instructions = value.as_str().ok_or_else(|| {
+                AiMuxError::InvalidArgument("invalid openai speech option: instructions".into())
+            })?;
+            body.insert("instructions".into(), json!(instructions));
+        }
+    }
+
+    if let Some(ref language) = options.language
+        && !language.is_empty()
+    {
         warnings.push(Warning::Unsupported {
             feature: "language".to_string(),
             details: Some(format!(

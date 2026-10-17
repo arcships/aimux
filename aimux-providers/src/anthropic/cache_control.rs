@@ -37,6 +37,7 @@ pub(crate) fn extract_cache_control_for(
     let anthropic = anthropic_options(provider_options, options_name)?;
     anthropic
         .get("cacheControl")
+        .filter(|value| !value.is_null())
         .or_else(|| anthropic.get("cache_control"))
         .cloned()
 }
@@ -97,6 +98,9 @@ impl CacheControlValidator {
         let cache_control_value = extract_cache_control_for(provider_options, &self.options_name);
 
         let cc = cache_control_value?;
+        if cc.is_null() || cc == false || cc == 0 || cc == "" {
+            return None;
+        }
 
         if !can_cache {
             self.warnings.push(Warning::Unsupported {

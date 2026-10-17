@@ -16,6 +16,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `available_providers`. Node and Python OpenAI constructors use Responses
   by default.
 
+- Vendor packages follow their upstream counterparts more closely. Visible
+  changes: Bedrock percent-encodes the model id in request URLs and writes
+  provider metadata under both `amazonBedrock` and `bedrock`; OpenAI embeddings
+  request `encoding_format: "float"` and no longer decode base64 vectors; the
+  Google provider result no longer carries a model id unless the API returns
+  one; an Anthropic mid-stream `error` event is forwarded as an error part
+  without a synthetic finish; each package sends its own `user-agent` suffix;
+  Mistral has no `transform_request_body` setting; the deprecated
+  `text_embedding` and `text_embedding_model` provider methods are removed.
+
+- `SigV4Fetch::new` takes a required `SigV4Signing`. `Aws4Fetch` signs like
+  aws4fetch 1.0.20, the signer of the AI SDK's AWS packages: `user-agent`,
+  `content-type` and its other `UNSIGNABLE_HEADERS` are sent but not signed,
+  and no `x-amz-content-sha256` is sent. `AllHeaders` is the previous rule.
+  Bedrock and Anthropic-AWS sign with `Aws4Fetch`, Polly with `AllHeaders`.
+  Bedrock, Bedrock Mantle and Anthropic-AWS send the user-agents of
+  `@ai-sdk/amazon-bedrock` 5.0.100 and `@ai-sdk/anthropic-aws` 2.0.63 (the
+  package part is appended again by the transport).
+
+- The `ai-sdk-provider-utils/<v>` part of a pinned package's user-agent names
+  the provider-utils that the package's upstream `package.json` depends on, as
+  the AI SDK sends it. That is 5.0.51 for Azure, Bedrock, Cohere, DeepSeek,
+  Groq, Mistral, xAI and Google Vertex, and 5.0.53 for OpenAI,
+  OpenAI-compatible, Open Responses, Anthropic, Anthropic-AWS and Google. A
+  per-call `user-agent` keeps the package's part. The Vertex MaaS and xAI
+  sub-providers send `ai-sdk-openai-compatible/3.0.59`, the version
+  google-vertex depends on. Hugging Face sends `ai-sdk-provider-utils/5.0.53`
+  and no package part, as `@ai-sdk/huggingface` 2.0.62 does (now pinned in
+  `VERSIONS.json`). Other packages send `ai-sdk-provider-utils/5.0.53`.
+
+- `to_chat_completion` reads `choices[].logprobs` from the calling
+  provider's metadata namespace (Azure's `azure`, DeepSeek's `deepseek`)
+  and returns it in the Chat Completions wire shape, `{ "content": [...],
+  "refusal": null }`. It used to return the provider's raw token list. A
+  Responses result's per-part lists become one list, and a token without
+  `bytes` gets `"bytes": null`.
+
+- Security: OpenAI image edits download URL files (`files` and `mask`) with
+  `download_blob`, as `@ai-sdk/openai` does with `downloadBlob`. The download
+  goes through the download guard, so a private-network, loopback or
+  link-local URL is refused before any request, and it sends no headers. A
+  failed download is a status-code error rather than a parsed OpenAI error.
+
+- OpenAI chat `providerMetadata.openai.logprobs` holds the entries as the AI
+  SDK's chat schema parses them, `{token, logprob, top_logprobs: [{token,
+  logprob}]}`: `bytes` is dropped, so `to_chat_completion` returns it as
+  `null`. A `null` `content` sets no `logprobs`.
+
+- Anthropic-AWS follows `@ai-sdk/anthropic-aws` 2.0.63 settings: the region
+  comes from the setting or `AWS_REGION` with no `us-east-1` default; the
+  workspace id is required, from the setting or `ANTHROPIC_AWS_WORKSPACE_ID`;
+  with no `auth`, a request uses `ANTHROPIC_AWS_API_KEY` when it is set and
+  otherwise SigV4 with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+  `AWS_SESSION_TOKEN`. All of them are read when a request is made.
+
+- Anthropic gains the computer toolset of `@ai-sdk/anthropic` 4.0.71
+  (`anthropic.computer_toolset_20260801`). A member call in a response (for
+  example `left_click`) comes back as one call of the caller's toolset tool,
+  with the member name as `action` in its input and
+  `providerMetadata.anthropic.toolsetName`. Sent back as history, the call
+  keeps its input as it is, `action` included; a call without a string
+  `action` is still sent, named after the toolset, with a warning; the
+  toolset name is read from the call's tools or from
+  `providerOptions.anthropic.toolsetName` only.
+
+- Anthropic checks the args of the provider-defined tools that
+  `@ai-sdk/anthropic` 4.0.71 `prepareTools` validates (computer toolset,
+  advisor, `text_editor_20250728`, the three `web_fetch` and three
+  `web_search` versions): args that do not match fail the call with
+  `InvalidArgument` before any request, on Anthropic, Vertex and Bedrock
+  alike. `anthropic::prepare_tools::{prepare_tools,
+  prepare_tools_with_provider}` return a `Result`.
+
 - Public surface (`aimux-core`, `aimux-provider-utils`): removed
   `recording::init_recording_from_env`; made private the retry preparation
   helpers and default constants, `composite::{add_usage,
@@ -68,8 +141,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before the call and download each prompt file URL it does not cover (user
   `FileUrl` parts and `file` items of tool outputs; not `data:` URLs), which
   then reaches the provider as inline data; they used to pass every URL
-  through. `GenerateTextOptions::download` takes a `DownloadFunction` (the AI
-  SDK's `experimental_download`) instead. `AudioInput::Url` is new:
+  through. The Cohere chat, Open Responses and xAI Responses models declare
+  the URLs their packages declare (HTTP(S) images; for xAI also PDF and
+  text), so those still reach the API as URLs. Codex models declare the
+  OpenAI Responses model's URLs (HTTP(S) images and PDFs) on both channels,
+  and the Hugging Face Responses model declares HTTP(S) images, as
+  `@ai-sdk/huggingface` does.
+  `GenerateTextOptions::download` takes a `DownloadFunction` (the AI SDK's
+  `experimental_download`) instead. `AudioInput::Url` is new:
   `transcribe` downloads it with `TranscriptionCallOptions::download`, and a
   transcription model given one returns `AudioInput::url_error()`.
   `generate_video` downloads every video returned as a URL with
@@ -476,6 +555,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of an empty string; a new call without a function name ends the stream with
   `InvalidResponseData` (previously it started a call with an empty name).
   `DeltaToolCall.index` is now `Option<usize>`.
+- Once compatible servers moved to `openai_compatible`, the OpenAI (and
+  Azure) chat stream drives the tracker with `@ai-sdk/openai`'s options:
+  `type` is validated when present, ids missing from the wire come from the
+  provider's `generate_id`, and `DeltaToolCall.index` is required again, so a
+  chunk without it fails to parse.
 
 **Rust (provider factory, RFC-0036)**
 
@@ -760,6 +844,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
+  `/maas` and `/xai` paths: `create_google_vertex_maas` / `google_vertex_maas`
+  (an OpenAI-compatible provider named `vertex.maas`) and
+  `create_google_vertex_xai` / `google_vertex_xai` (Grok chat models named
+  `googleVertex.xai`), over the project/location `endpoints/openapi` URL with
+  a Google OAuth token. As in the Node wrappers, the provider headers and the
+  token go over the per-call headers, and a provider `user-agent` header is
+  sent as the whole user-agent.
+- Open Responses requests carry `ai-sdk-open-responses/2.0.58`, the package
+  part of `@ai-sdk/open-responses` (now pinned in `VERSIONS.json`).
+  `OpenResponsesProviderSettings::user_agent_suffix` replaces it, as the AI
+  SDK's `userAgentSuffix` does.
+- `aimux_provider_utils::download_blob`, the AI SDK's `downloadBlob`: a GET
+  of an untrusted URL through the download guard with no headers, so no
+  `user-agent`. OpenAI-compatible image edits download URL files with it, as
+  upstream does, and no longer send `ai-sdk-provider-utils/5.0.53` there.
+- `HttpRequest::omit_provider_utils_user_agent` (`aimux-provider-utils`):
+  sends the `user-agent` as given, without the `ai-sdk-provider-utils/<v>`
+  part, for an exchange the AI SDK makes with a plain `fetch`. A struct
+  literal of `HttpRequest` must now set it or use `..Default::default()`.
+  The Google Files upload uses it: the init request sends the provider
+  headers (`ai-sdk-google/4.0.87`) and the byte upload sends no
+  `user-agent`, as `@ai-sdk/google`'s `fetch` calls do.
+- `OpenAIProvider::tools` and `AzureOpenAIProvider::tools`: the provider tools
+  on the provider instance, as the AI SDK's `openai.tools` and `azure.tools`
+  (`openai().tools.web_search(…)`). Azure's holds its upstream subset.
 - `aimux_core::wrap_provider`, the AI SDK's `wrapProvider`: wraps every
   language model of a provider with language-model middleware and, when
   given, every image model with image-model middleware; all other members

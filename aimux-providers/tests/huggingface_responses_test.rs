@@ -16,8 +16,8 @@
 //! overridden with the mock server's root URI (no `/v1` suffix), so the
 //! resulting request path is `/responses`.
 
-use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
+use aimux_core::tool::{FunctionTool, RawToolCall};
 
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -35,7 +35,6 @@ use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat
 use aimux_core::result::{GenerateContent, ReasoningOutput, Source};
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 use aimux_providers::huggingface::responses::convert_to_huggingface_responses_messages;
@@ -1482,7 +1481,7 @@ async fn should_handle_reasoning_content_in_responses() {
                         "huggingface",
                         json!({ "itemId": "reasoning_1" })
                     )
-                    .expect("provider metadata object")
+                    .unwrap()
                 )
             );
         }
@@ -1573,7 +1572,7 @@ async fn should_stream_reasoning_content() {
                         "huggingface",
                         json!({ "itemId": "reasoning_stream" })
                     )
-                    .expect("provider metadata object")
+                    .unwrap()
                 )
             );
         }
@@ -1905,8 +1904,8 @@ fn passes_through_url_source_for_top_level_only_image() {
     let prompt = vec![LanguageModelMessage::User {
         content: vec![UserPart::File(FilePart {
             data: FileData::Url {
-                url: "https://example.com/x.png".into(),
                 original_url: None,
+                url: "https://example.com/x.png".into(),
             },
             media_type: "image".into(),
             filename: None,
@@ -1956,4 +1955,19 @@ fn normalizes_image_wildcard_via_detection() {
             "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
         })
     );
+}
+
+/// TS: `supportedUrls` (huggingface-responses-language-model.ts:67-69): image
+/// URLs go to the API as they are; other URLs are downloaded by the operation.
+#[tokio::test]
+async fn supports_http_image_urls() {
+    let server = MockServer::start().await;
+    let urls = make_provider(&server)
+        .responses("deepseek-ai/DeepSeek-V3-0324")
+        .supported_urls()
+        .await;
+    assert_eq!(urls.0.len(), 1);
+    assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
+    assert!(urls.0["image/*"][0].is_match("http://example.com/a.png"));
+    assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
 }

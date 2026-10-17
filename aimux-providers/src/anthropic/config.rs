@@ -150,8 +150,7 @@ impl AnthropicModelConfig {
     }
 
     /// Resolve the provider headers, add the `anthropic-beta` header for
-    /// `betas`, layer the per-call headers over both (case-insensitive, later
-    /// wins, `None` removes) and return the list that goes on the wire.
+    /// `betas`, merge beta values with per-call headers (case-insensitive) and return the list that goes on the wire.
     ///
     /// # Errors
     ///
@@ -164,13 +163,6 @@ impl AnthropicModelConfig {
         betas: &BTreeSet<String>,
     ) -> Result<Vec<(String, String)>, AiMuxError> {
         let provider = self.headers.resolve().await?;
-        let mut beta_layer = HeaderMapOpt::new();
-        if !betas.is_empty() {
-            beta_layer.insert(
-                "anthropic-beta".to_string(),
-                Some(betas.iter().cloned().collect::<Vec<_>>().join(",")),
-            );
-        }
         let call: HeaderMapOpt = call_headers
             .map(|headers| {
                 headers
@@ -179,10 +171,30 @@ impl AnthropicModelConfig {
                     .collect()
             })
             .unwrap_or_default();
+        let mut merged_betas = betas.clone();
+        for headers in [&provider, &call] {
+            for (name, value) in headers {
+                if name.eq_ignore_ascii_case("anthropic-beta") {
+                    for beta in value.as_deref().unwrap_or_default().split(',') {
+                        let beta = beta.trim().to_ascii_lowercase();
+                        if !beta.is_empty() {
+                            merged_betas.insert(beta);
+                        }
+                    }
+                }
+            }
+        }
+        let mut beta_layer = HeaderMapOpt::new();
+        if !merged_betas.is_empty() {
+            beta_layer.insert(
+                "anthropic-beta".to_string(),
+                Some(merged_betas.into_iter().collect::<Vec<_>>().join(",")),
+            );
+        }
         Ok(normalize_headers(combine_headers(&[
             &provider,
-            &beta_layer,
             &call,
+            &beta_layer,
         ])))
     }
 

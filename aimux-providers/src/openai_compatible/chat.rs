@@ -15,7 +15,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::provider_namespace;
+use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
@@ -72,27 +72,20 @@ impl OpenAICompatibleChatModel {
 /// Core usage from a parsed OpenAI-shaped `usage` object.
 ///
 /// `raw` is the provider's original object, kept verbatim in `Usage.raw`.
-/// `cached_tokens` at the top level (Moonshot) wins over the nested value.
+/// Cache reads come from `prompt_tokens_details`, as in the upstream converter.
 pub(crate) fn convert_usage(usage: &UsageResponse, raw: Option<&Value>) -> Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
     let completion_tokens = usage.completion_tokens.unwrap_or(0);
 
-    let nested_cached = usage
+    let cached = usage
         .prompt_tokens_details
         .as_ref()
         .and_then(|d| d.cached_tokens)
         .unwrap_or(0);
-    let cached = usage.cached_tokens.unwrap_or(nested_cached);
-    let cache_write = usage
-        .prompt_tokens_details
-        .as_ref()
-        .and_then(|d| d.cache_write_tokens);
 
     // Saturating: some servers report more cached or reasoning tokens than
     // prompt or completion tokens.
-    let no_cache = prompt_tokens
-        .saturating_sub(cached)
-        .saturating_sub(cache_write.unwrap_or(0));
+    let no_cache = prompt_tokens.saturating_sub(cached);
     let reasoning_tokens = usage
         .completion_tokens_details
         .as_ref()
@@ -104,14 +97,14 @@ pub(crate) fn convert_usage(usage: &UsageResponse, raw: Option<&Value>) -> Usage
             total: Some(prompt_tokens),
             no_cache: Some(no_cache),
             cache_read: Some(cached),
-            cache_write,
+            cache_write: None,
         },
         output_tokens: OutputTokenUsage {
             total: Some(completion_tokens),
             text: Some(completion_tokens.saturating_sub(reasoning_tokens)),
             reasoning: Some(reasoning_tokens),
         },
-        raw: raw.and_then(|value| value.as_object().cloned()),
+        raw: raw.and_then(Value::as_object).cloned(),
     }
 }
 
@@ -148,7 +141,12 @@ fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn stream_error(
+/// The error of an `{"error": ...}` chunk. Upstream passes the chunk's
+/// `error` value on as the error part as it is
+/// (openai-compatible-chat-language-model.ts:588-595,
+/// openai-compatible-completion-language-model.ts:320-325): no status is
+/// read from its `code`, numeric or not, so nothing makes it retryable.
+pub(super) fn stream_error(
     name: &str,
     error: &Value,
     url: &str,
@@ -166,16 +164,10 @@ fn stream_error(
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    // Only a numeric HTTP status in the payload is a status; a string code
-    // must not be laundered into a retryable 500.
-    let status_code = code
-        .and_then(Value::as_u64)
-        .filter(|status| (400..=599).contains(status))
-        .map(|status| status as u16);
     aimux_provider_utils::stream_error_api_call(
         message,
         provider_code,
-        status_code,
+        None,
         error,
         url,
         request_body_values,
@@ -197,9 +189,9 @@ impl LanguageModel for OpenAICompatibleChatModel {
     }
 
     async fn supported_urls(&self) -> SupportedUrls {
-        match &self.config.chat.supported_urls {
+        match &self.config.chat.dialect.supported_urls {
             Some(urls) => urls().await,
-            None => SupportedUrls::default(),
+            None => self.config.chat.supported_urls.clone(),
         }
     }
 
@@ -232,12 +224,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
         })?;
 
         let mut content = Vec::new();
-        for text in content_texts(choice.message.content.as_ref()) {
-            content.push(GenerateContent::Text {
-                text,
-                provider_metadata: None,
-            });
-        }
+        content.extend(content_parts(choice.message.content.as_ref()));
         let reasoning = choice
             .message
             .reasoning_content
@@ -296,18 +283,13 @@ impl LanguageModel for OpenAICompatibleChatModel {
             });
 
         let dialect = &self.config.chat.dialect;
-        let usage = self
-            .config
-            .chat
-            .convert_usage
-            .as_ref()
-            .map(|convert| convert(raw.get("usage").unwrap_or(&Value::Null)))
-            .unwrap_or_else(|| usage_from_raw(raw.get("usage")));
+        let usage = dialect.convert_usage.as_ref().map_or_else(
+            || usage_from_raw(raw.get("usage")),
+            |convert| convert(raw.get("usage")),
+        );
 
-        let mut namespace = Map::new();
-        prediction_tokens(data.usage.as_ref(), &mut namespace);
         let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
-        metadata.insert(metadata_key, namespace);
+        metadata.insert(metadata_key.clone(), Map::new());
         if let Some(extractor) = &dialect.metadata_extractor
             && let Some(extra) = extractor.extract_metadata(&raw)
         {
@@ -316,23 +298,29 @@ impl LanguageModel for OpenAICompatibleChatModel {
             }
         }
 
+        prediction_tokens(
+            data.usage.as_ref(),
+            metadata.entry(metadata_key).or_default(),
+        );
+
         Ok(GenerateResult {
             content,
             finish_reason,
             usage,
             warnings: built.warnings,
             provider_metadata: Some(metadata),
-            response: Some(aimux_core::shared::ResponseInfo {
+            response: Some(ResponseInfo {
                 id: data.id,
                 timestamp: data
                     .created
+                    .filter(|created| *created != 0)
                     .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                     .map(|dt| dt.to_rfc3339()),
                 model_id: data.model,
                 headers: Some(response_headers),
                 body: Some(raw),
             }),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            request: Some(RequestInfo { body: Some(body) }),
         })
     }
 
@@ -360,31 +348,11 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let response_headers = resp.response_headers;
         let mut sse_stream = resp.value;
 
-        // Only the first event is checked before returning the stream: an
-        // error reported immediately stays inside Core's operation-retry
-        // boundary. A normal event is chained back and never consumed.
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first => first,
-        };
-        if let Some(Ok(event)) = &first_event
-            && let Some(error) = event.get("error")
-        {
-            return Err(stream_error(
-                &metadata_key,
-                error,
-                &endpoint,
-                body.clone(),
-                response_headers.clone(),
-            ));
-        }
-
         let dialect = self.config.chat.dialect.clone();
         let mut metadata_extractor = dialect
             .metadata_extractor
             .as_ref()
             .map(|extractor| extractor.create_stream_extractor());
-        let convert_usage = self.config.chat.convert_usage.clone();
         let emit_raw_chunks = options.include_raw_chunks == Some(true);
         let stream_error_url = endpoint;
         let stream_error_body = body.clone();
@@ -393,11 +361,11 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let stream = async_stream::stream! {
             yield Ok(StreamPart::StreamStart { warnings });
 
-            let text_id = 0usize;
+            let text_id = "txt-0";
             let mut text_started = false;
             let reasoning_id = "reasoning-0".to_string();
             let mut reasoning_started = false;
-            let mut final_usage_raw: Option<Value> = None;
+            let mut final_usage_raw = None;
             let mut final_usage_parsed: Option<UsageResponse> = None;
             let mut final_finish_reason: Option<FinishReason> = None;
             let mut response_metadata_emitted = false;
@@ -416,14 +384,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             let mut pending: HashMap<usize, PendingToolCall> = HashMap::new();
             let mut forwarded: HashSet<usize> = HashSet::new();
 
-            let mut event_iter =
-                futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-            let mut stream_errored = false;
-
-            while let Some(event) = event_iter.next().await {
-                if stream_errored {
-                    break;
-                }
+            while let Some(event) = sse_stream.next().await {
                 match event {
                     Ok(parsed) => {
                         if emit_raw_chunks {
@@ -442,8 +403,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
                                     stream_response_headers.clone(),
                                 ),
                             });
-                            stream_errored = true;
-                            break;
+                            final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
+                            continue;
                         }
 
                         let chunk_usage_raw: Option<Value> = match &dialect.stream_usage_key {
@@ -455,19 +416,23 @@ impl LanguageModel for OpenAICompatibleChatModel {
                         let chunk: StreamChunk = match serde_json::from_value(parsed) {
                             Ok(chunk) => chunk,
                             Err(e) => {
-                                yield Err(e.into());
+                                final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
+                                yield Ok(StreamPart::Error { error: e.into() });
                                 continue;
                             }
                         };
 
                         if !response_metadata_emitted
-                            && (chunk.id.is_some() || chunk.model.is_some())
+                            && (chunk.id.as_ref().is_some_and(|id| !id.is_empty())
+                                || chunk.model.as_ref().is_some_and(|model| !model.is_empty())
+                                || chunk.created.is_some_and(|created| created != 0))
                         {
                             response_metadata_emitted = true;
                             yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                 id: chunk.id.clone(),
                                 timestamp: chunk
                                     .created
+                                    .filter(|created| *created != 0)
                                     .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
                                     .map(|dt| dt.to_rfc3339()),
                                 model_id: chunk.model.clone(),
@@ -479,52 +444,49 @@ impl LanguageModel for OpenAICompatibleChatModel {
                             final_usage_parsed = serde_json::from_value(raw_usage.clone()).ok();
                         }
 
-                        for choice in chunk.choices {
+                        for choice in chunk.choices.into_iter().take(1) {
                             let reasoning_delta = choice
                                 .delta
                                 .reasoning_content
                                 .clone()
                                 .or_else(|| choice.delta.reasoning.clone());
-                            if let Some(reasoning) = reasoning_delta
-                                && !reasoning.is_empty()
-                            {
-                                if !reasoning_started {
-                                    reasoning_started = true;
-                                    yield Ok(StreamPart::ReasoningStart {
-                                        id: reasoning_id.clone(),
-                                        provider_metadata: None,
-                                    });
-                                }
-                                yield Ok(StreamPart::ReasoningDelta {
-                                    id: reasoning_id.clone(),
-                                    delta: reasoning,
+                            let mut delta_content = Vec::new();
+                            if let Some(text) = reasoning_delta.filter(|text| !text.is_empty()) {
+                                delta_content.push(GenerateContent::Reasoning(ReasoningOutput {
+                                    text,
                                     provider_metadata: None,
-                                });
+                                }));
+                            }
+                            delta_content.extend(content_parts(choice.delta.content.as_ref()));
+                            for part in delta_content {
+                                match part {
+                                    GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
+                                        if text_started {
+                                            yield Ok(StreamPart::TextEnd { id: text_id.to_string(), provider_metadata: None });
+                                            text_started = false;
+                                        }
+                                        if !reasoning_started {
+                                            reasoning_started = true;
+                                            yield Ok(StreamPart::ReasoningStart { id: reasoning_id.clone(), provider_metadata: None });
+                                        }
+                                        yield Ok(StreamPart::ReasoningDelta { id: reasoning_id.clone(), delta: text, provider_metadata: None });
+                                    }
+                                    GenerateContent::Text { text, .. } => {
+                                        if reasoning_started {
+                                            yield Ok(StreamPart::ReasoningEnd { id: reasoning_id.clone(), provider_metadata: None });
+                                            reasoning_started = false;
+                                        }
+                                        if !text_started {
+                                            text_started = true;
+                                            yield Ok(StreamPart::TextStart { id: text_id.to_string(), provider_metadata: None });
+                                        }
+                                        yield Ok(StreamPart::TextDelta { id: text_id.to_string(), delta: text, provider_metadata: None });
+                                    }
+                                    _ => unreachable!(),
+                                }
                             }
 
-                            if let Some(content) = choice.delta.content {
-                                if reasoning_started {
-                                    yield Ok(StreamPart::ReasoningEnd {
-                                        id: reasoning_id.clone(),
-                                        provider_metadata: None,
-                                    });
-                                    reasoning_started = false;
-                                }
-                                if !text_started {
-                                    text_started = true;
-                                    yield Ok(StreamPart::TextStart {
-                                        id: format!("{text_id}"),
-                                        provider_metadata: None,
-                                    });
-                                }
-                                yield Ok(StreamPart::TextDelta {
-                                    id: format!("{text_id}"),
-                                    delta: content,
-                                    provider_metadata: None,
-                                });
-                            }
-
-                            if let Some(deltas) = choice.delta.tool_calls {
+                            if let Some(deltas) = choice.delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
                                 if reasoning_started {
                                     yield Ok(StreamPart::ReasoningEnd {
                                         id: reasoning_id.clone(),
@@ -608,30 +570,13 @@ impl LanguageModel for OpenAICompatibleChatModel {
                             }
 
                             if let Some(reason) = choice.finish_reason {
-                                if reasoning_started {
-                                    yield Ok(StreamPart::ReasoningEnd {
-                                        id: reasoning_id.clone(),
-                                        provider_metadata: None,
-                                    });
-                                    reasoning_started = false;
-                                }
-                                if text_started {
-                                    yield Ok(StreamPart::TextEnd {
-                                        id: format!("{text_id}"),
-                                        provider_metadata: None,
-                                    });
-                                    text_started = false;
-                                }
                                 final_finish_reason = Some(parse_finish_reason(&reason));
                             }
                         }
                     }
                     Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
-                            return;
-                        }
+                        final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
+                        yield Ok(StreamPart::Error { error });
                     }
                 }
             }
@@ -644,9 +589,25 @@ impl LanguageModel for OpenAICompatibleChatModel {
             }
             if text_started {
                 yield Ok(StreamPart::TextEnd {
-                    id: format!("{text_id}"),
+                    id: text_id.to_string(),
                     provider_metadata: None,
                 });
+            }
+            for (index, entry) in pending {
+                let delta = StreamingToolCallDelta {
+                    index: Some(index),
+                    id: entry.id.as_deref(),
+                    arguments: Some(&entry.arguments),
+                    provider_metadata: signature_metadata(Some(&entry.extra)),
+                    ..Default::default()
+                };
+                if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
+                    yield Err(error.into());
+                    return;
+                }
+                for part in tool_parts.drain(..) {
+                    yield Ok(part);
+                }
             }
             // A parsable argument buffer can still be a prefix of a longer
             // input: finalize only when the stream flushes.
@@ -655,10 +616,8 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 yield Ok(part);
             }
 
-            let mut namespace = Map::new();
-            prediction_tokens(final_usage_parsed.as_ref(), &mut namespace);
             let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
-            metadata.insert(metadata_key.clone(), namespace);
+            metadata.insert(metadata_key.clone(), Map::new());
             if let Some(extractor) = &metadata_extractor
                 && let Some(extra) = extractor.build_metadata()
             {
@@ -667,27 +626,30 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 }
             }
 
+            prediction_tokens(final_usage_parsed.as_ref(), metadata.entry(metadata_key).or_default());
+
+            if final_finish_reason.is_none() {
+                yield Ok(StreamPart::Error {
+                    error: AiMuxError::InvalidResponseData("Response stream ended without a finish reason.".to_string()),
+                });
+            }
             yield Ok(StreamPart::Finish {
-                finish_reason: if stream_errored {
-                    FinishReason { unified: FinishReasonUnified::Error, raw: None }
-                } else {
-                    final_finish_reason.unwrap_or(FinishReason {
-                        unified: FinishReasonUnified::Stop,
-                        raw: None,
-                    })
-                },
-                usage: if stream_errored { Usage::default() } else {
-                    convert_usage.as_ref().map(|convert| convert(final_usage_raw.as_ref().unwrap_or(&Value::Null)))
-                        .unwrap_or_else(|| usage_from_raw(final_usage_raw.as_ref()))
-                },
+                finish_reason: final_finish_reason.unwrap_or(FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                }),
+                usage: dialect.convert_usage.as_ref().map_or_else(
+                    || usage_from_raw(final_usage_raw.as_ref()),
+                    |convert| convert(final_usage_raw.as_ref()),
+                ),
                 provider_metadata: Some(metadata),
             });
         };
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
+            request: Some(RequestInfo { body: Some(body) }),
+            response: Some(StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })
@@ -701,20 +663,54 @@ struct PendingToolCall {
     extra: Value,
 }
 
-/// Text segments of a message `content`: a string, or an array of
-/// `{ type: "text", text }` parts.
-fn content_texts(content: Option<&Value>) -> Vec<String> {
-    match content {
-        Some(Value::String(text)) if !text.is_empty() => vec![text.clone()],
+/// Normalize text and thinking parts, preserving their order.
+fn content_parts(content: Option<&Value>) -> Vec<GenerateContent> {
+    let parts: Vec<(bool, String)> = match content {
+        Some(Value::String(text)) if !text.is_empty() => vec![(false, text.clone())],
         Some(Value::Array(parts)) => parts
             .iter()
-            .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
-            .filter_map(|part| part.get("text").and_then(Value::as_str))
-            .filter(|text| !text.is_empty())
-            .map(str::to_string)
+            .filter_map(|part| match part.get("type").and_then(Value::as_str) {
+                Some("text") => part
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(|text| (false, text.to_string())),
+                Some("thinking") => part
+                    .get("thinking")
+                    .and_then(Value::as_array)
+                    .map(|chunks| {
+                        (
+                            true,
+                            chunks
+                                .iter()
+                                .filter(|chunk| {
+                                    chunk.get("type").and_then(Value::as_str) == Some("text")
+                                })
+                                .filter_map(|chunk| chunk.get("text").and_then(Value::as_str))
+                                .collect::<String>(),
+                        )
+                    }),
+                _ => None,
+            })
+            .filter(|(_, text)| !text.is_empty())
             .collect(),
         _ => Vec::new(),
-    }
+    };
+    parts
+        .into_iter()
+        .map(|(reasoning, text)| {
+            if reasoning {
+                GenerateContent::Reasoning(ReasoningOutput {
+                    text,
+                    provider_metadata: None,
+                })
+            } else {
+                GenerateContent::Text {
+                    text,
+                    provider_metadata: None,
+                }
+            }
+        })
+        .collect()
 }
 
 /// One `GET {base_url}/models` exchange for discovery: no retry, no
@@ -742,10 +738,11 @@ pub(crate) async fn list_models_once(
         config.with_transport(
             aimux_provider_utils::HttpRequest {
                 url,
-                headers,
+                headers: headers.list,
                 ..Default::default()
             },
             origin,
+            headers.fetch_user_agent,
         ),
         aimux_provider_utils::create_json_response_handler::<ModelsList>(),
         config.failed_response_handler(),
@@ -798,11 +795,9 @@ mod tests {
             profile: ChatProfile {
                 include_usage: false,
                 supports_structured_outputs: false,
-                supports_multi_part_tool_content: false,
                 dialect,
-                supported_urls: None,
-                convert_usage: None,
             },
+            package: crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
         })
         .unwrap()
     }

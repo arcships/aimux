@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
-use aimux_core::language_model::LanguageModel;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
     ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
@@ -34,7 +34,8 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, validate_base_url,
+    FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, normalize_headers,
+    validate_base_url, with_user_agent_suffix,
 };
 
 use crate::shared::{Credential, EndpointConfig, TransformRequestBody, provider_headers};
@@ -117,6 +118,10 @@ pub struct OpenResponsesProviderSettings {
     /// Rewrites every JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
+    /// The package part of the user-agent (AI SDK `userAgentSuffix`).
+    /// `None` sends `ai-sdk-open-responses/<version>` of the pinned
+    /// `@ai-sdk/open-responses`.
+    pub user_agent_suffix: Option<String>,
 }
 
 impl OpenResponsesProviderSettings {
@@ -130,6 +135,7 @@ impl OpenResponsesProviderSettings {
             headers: None,
             fetch: None,
             transform_request_body: None,
+            user_agent_suffix: None,
         }
     }
 }
@@ -147,6 +153,7 @@ impl std::fmt::Debug for OpenResponsesProviderSettings {
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
             )
+            .field("user_agent_suffix", &self.user_agent_suffix)
             .finish()
     }
 }
@@ -183,22 +190,36 @@ pub fn create_open_responses(
     };
     let provider_layer = provider_headers(credential, Vec::new(), None);
     let user = settings.headers;
+    // open-responses-provider.ts:114-127: the key and the user headers, then
+    // `withUserAgentSuffix(…, userAgentSuffix ?? ai-sdk-open-responses/VERSION)`.
+    let package = crate::shared::aisdk_pins::OPEN_RESPONSES;
+    let suffix: Arc<str> = settings
+        .user_agent_suffix
+        .unwrap_or_else(|| format!("ai-sdk-{}/{}", package.name, package.version))
+        .into();
     let headers: HeadersFn = Resolvable::from_async_fn(move || {
         let provider_layer = provider_layer.clone();
         let user = user.clone();
+        let suffix = suffix.clone();
         async move {
             let layer = provider_layer.resolve().await?;
-            match &user {
-                Some(user) => Ok(combine_headers(&[&layer, &user.resolve().await?])),
-                None => Ok(layer),
-            }
+            let combined = match &user {
+                Some(user) => combine_headers(&[&layer, &user.resolve().await?]),
+                None => layer,
+            };
+            let mut headers = normalize_headers(combined).into_iter().collect();
+            with_user_agent_suffix(&mut headers, &suffix);
+            Ok(headers
+                .into_iter()
+                .map(|(name, value)| (name, Some(value)))
+                .collect())
         }
     });
     Ok(OpenResponsesProvider {
         name: settings.name,
         base_url,
         headers,
-        fetch: settings.fetch,
+        fetch: Some(crate::shared::package_fetch(settings.fetch, package)),
         transform_request_body: settings.transform_request_body,
     })
 }
@@ -274,9 +295,16 @@ impl LanguageModel for OpenResponsesModel {
         &self.model_id
     }
 
+    /// Image URLs go to the API as they are
+    /// (open-responses-language-model.ts:101-103).
+    async fn supported_urls(&self) -> SupportedUrls {
+        let http = regex::Regex::new(r"^https?://.*$").expect("static pattern");
+        SupportedUrls(std::iter::once(("image/*".to_string(), vec![http])).collect())
+    }
+
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        validate_tool_output_media(&options.prompt)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        validate_tool_output_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
         let body = exchange.transform_body(body);
@@ -415,8 +443,8 @@ impl LanguageModel for OpenResponsesModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        validate_tool_output_media(&options.prompt)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        validate_tool_output_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
 

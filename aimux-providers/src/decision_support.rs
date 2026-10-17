@@ -56,7 +56,11 @@ impl DecisionConfig {
             Self::Compatible(config) => {
                 let headers = config.request_headers(options.headers.as_ref()).await?;
                 let origin = config.base_url.resolve()?;
-                config.with_transport(HttpRequest::new(url, headers, options), origin)
+                config.with_transport(
+                    HttpRequest::new(url, headers.list, options),
+                    origin,
+                    headers.fetch_user_agent,
+                )
             }
         })
     }
