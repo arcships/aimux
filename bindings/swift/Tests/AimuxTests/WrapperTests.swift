@@ -1,7 +1,7 @@
 // WrapperTests.swift — tests for the typed Codable wrapper layer (Types.swift).
 //
 // Exercises the `Model` extension methods that take `ModelPrompt` /
-// `GenerateTextOptions` and return `GenerateTextResult` / `StreamPart`,
+// `GenerateTextOptions` and return `GenerateTextResult` / `TextStreamPart`,
 // verifying the JSON↔Codable boundary is handled correctly end-to-end
 // (Swift typed API → FFI → reqwest → MockHTTPServer). The raw string-based
 // API is left untouched; these tests use only the typed layer.
@@ -14,7 +14,7 @@ final class WrapperTests: XCTestCase {
     // MARK: - generateText: plain text result
 
     /// A plain string prompt returns a `GenerateTextResult` with `.text`,
-    /// `.content` (a `Text` content item), a unified `.stop` finish reason,
+    /// `.content` (a `text` content part), a unified `.stop` finish reason,
     /// and token usage decoded from the mock.
     func testTypedGenerateTextPlainText() throws {
         let server = MockHTTPServer(response: .json(openaiPlainResponse))
@@ -30,9 +30,9 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(result.usage.outputTokens, 8)
         XCTAssertEqual(result.steps.count, 1)
 
-        // content carries a `Text` content item.
+        // content carries a `text` content part.
         let textContent = result.content.compactMap { part -> String? in
-            part["Text"]?["text"]?.stringValue
+            part["type"]?.stringValue == "text" ? part["text"]?.stringValue : nil
         }
         XCTAssertEqual(textContent, ["Rust is a systems programming language."])
 
@@ -63,12 +63,12 @@ final class WrapperTests: XCTestCase {
             toolCallId: "call_1",
             toolName: "get_weather",
             input: jv(#"{"location":"Tokyo"}"#),
-            providerMetadata: jv(#"{"openai":{"item_id":"item_1"}}"#)
+            providerMetadata: ["openai": ["itemId": .string("item_1")]]
         )
 
         let encoded = try JSONEncoder().encode(original)
         let wire = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
-        let metadata = wire?["provider_metadata"] as? [String: Any]
+        let metadata = wire?["providerMetadata"] as? [String: Any]
         XCTAssertNotNil(metadata?["openai"])
 
         let decoded = try JSONDecoder().decode(ToolCall.self, from: encoded)
@@ -101,11 +101,11 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(result.toolCalls[0].toolCallId, "call_abc")
         XCTAssertEqual(result.toolCalls[0].input["location"]?.stringValue, "Tokyo")
 
-        // content contains a ToolCall variant with the parsed input.
-        let toolContents = result.content.compactMap { $0["ToolCall"] }
+        // content contains a tool-call item with the parsed input.
+        let toolContents = result.content.filter { $0["type"]?.stringValue == "tool-call" }
         XCTAssertEqual(toolContents.count, 1)
-        XCTAssertEqual(toolContents[0]["tool_name"]?.stringValue, "get_weather")
-        XCTAssertEqual(toolContents[0]["tool_call_id"]?.stringValue, "call_abc")
+        XCTAssertEqual(toolContents[0]["toolName"]?.stringValue, "get_weather")
+        XCTAssertEqual(toolContents[0]["toolCallId"]?.stringValue, "call_abc")
         XCTAssertEqual(toolContents[0]["input"]?["location"]?.stringValue, "Tokyo")
         XCTAssertEqual(result.finishReason, .toolCalls)
     }
@@ -165,6 +165,146 @@ final class WrapperTests: XCTestCase {
     /// `{"type":"tool","toolName":...}` (camelCase `toolName`) for the named
     /// tool. (The provider later remaps the named form to its own wire shape,
     /// so we validate the wrapper's encoding directly here.)
+    /// `body?: unknown` (provider language-model-v4-generate-result.ts:41, :56)
+    /// and `inputSchemaInput?: unknown` (provider-utils
+    /// types/tool-approval-request.ts:41): an explicit null is kept apart from
+    /// a missing value.
+    func testUnknownFieldsKeepNullApartFromMissing() throws {
+        let missing = try JSONDecoder().decode(ResponseInfo.self, from: Data("{}".utf8))
+        XCTAssertNil(missing.body)
+        let null = try JSONDecoder().decode(ResponseInfo.self, from: Data(#"{"body":null}"#.utf8))
+        XCTAssertEqual(null.body, .null)
+        XCTAssertEqual(String(decoding: try JSONEncoder().encode(null), as: UTF8.self), #"{"body":null}"#)
+        let request = try JSONDecoder().decode(RequestInfo.self, from: Data(#"{"body":null}"#.utf8))
+        XCTAssertEqual(request.body, .null)
+    }
+
+    /// GeneratedFile is {base64, mediaType, providerMetadata?} (ai
+    /// generate-text/generated-file.ts:10-32); a text file part is
+    /// {type, file, providerMetadata?} (convert-language-model-content.ts:55-70);
+    /// the provider's LanguageModelV4File keeps {type, data, mediaType}.
+    func testGeneratedFilesAreBase64AndMediaType() throws {
+        let file = GeneratedFile(base64: "aGk=", mediaType: "text/plain")
+        let decoded = try JSONDecoder().decode(GeneratedFile.self, from: Data(#"{"base64":"aGk=","mediaType":"text/plain"}"#.utf8))
+        XCTAssertEqual(decoded, file)
+        XCTAssertEqual(file.bytes(), [104, 105])
+
+        let output = GeneratedFileOutput(file: file, providerMetadata: ["google": ["thoughtSignature": .string("sig")]])
+        let wire = #"{"type":"file","file":{"base64":"aGk=","mediaType":"text/plain"},"providerMetadata":{"google":{"thoughtSignature":"sig"}}}"#
+        XCTAssertEqual(try JSONDecoder().decode(TextStreamPart.self, from: Data(wire.utf8)), .file(output))
+        XCTAssertEqual(try JSONDecoder().decode(TextContent.self, from: Data(wire.utf8)), .file(output))
+
+        let raw = #"{"type":"file","data":{"type":"url","url":"https://example.com/a.png"},"mediaType":"image/png"}"#
+        XCTAssertEqual(try JSONDecoder().decode(RawGenerateContent.self, from: Data(raw.utf8)),
+                       .file(LanguageModelFile(data: .url(url: "https://example.com/a.png"), mediaType: "image/png")))
+    }
+
+    /// The text stream's tool parts are the AI SDK's TypedToolResult and
+    /// TypedToolOutputDenied, camelCase (ai generate-text/tool-result.ts:10-42,
+    /// tool-output-denied.ts:7-15), and a finish part's totalUsage is its
+    /// LanguageModelUsage (types/usage.ts:10-67): camelCase counts, an unknown
+    /// count absent.
+    func testTextStreamToolPartsAndUsageAreCamelCase() throws {
+        let cases: [(String, TextStreamPart)] = [
+            (#"{"type":"tool-result","toolCallId":"srv-1","toolName":"web_search","input":{"q":"rust"},"output":"ok","providerExecuted":true}"#,
+             .toolResult(TypedToolResult(toolCallId: "srv-1", toolName: "web_search", input: .object(["q": .string("rust")]),
+                                         output: .string("ok"), providerExecuted: true, providerMetadata: nil,
+                                         dynamic: nil, preliminary: nil))),
+            (#"{"type":"tool-output-denied","toolCallId":"c","toolName":"t"}"#,
+             .toolOutputDenied(ToolOutputDenied(toolCallId: "c", toolName: "t", providerExecuted: nil, dynamic: nil))),
+            (#"{"type":"finish","finishReason":"stop","totalUsage":{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}}"#,
+             .finish(finishReason: .stop, rawFinishReason: nil,
+                     totalUsage: LanguageModelUsage(inputTokens: 3, inputTokenDetails: InputTokenDetails(cacheReadTokens: 1),
+                                                    outputTokens: 2, totalTokens: 5))),
+        ]
+        for (wire, part) in cases {
+            XCTAssertEqual(try JSONDecoder().decode(TextStreamPart.self, from: Data(wire.utf8)), part)
+            let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(part)) as? NSDictionary
+            XCTAssertEqual(encoded, try JSONSerialization.jsonObject(with: Data(wire.utf8)) as? NSDictionary)
+        }
+    }
+
+    /// The text stream's text-delta and reasoning-delta carry `text` (ai
+    /// generate-text/stream-text-result.ts:435-440, :466-471); a
+    /// tool-input-delta keeps `delta` (:496-501).
+    func testTextStreamDeltasAreText() throws {
+        let cases: [(String, TextStreamPart)] = [
+            (#"{"type":"text-delta","id":"t1","text":"Hello"}"#, .textDelta(id: "t1", text: "Hello", providerMetadata: nil)),
+            (#"{"type":"reasoning-delta","id":"t1","text":"Hmm"}"#, .reasoningDelta(id: "t1", text: "Hmm", providerMetadata: nil)),
+            (#"{"type":"tool-input-delta","id":"t1","delta":"{"}"#, .toolInputDelta(id: "t1", delta: "{", providerMetadata: nil)),
+        ]
+        for (wire, part) in cases {
+            XCTAssertEqual(try JSONDecoder().decode(TextStreamPart.self, from: Data(wire.utf8)), part)
+            let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(part)) as? NSDictionary
+            XCTAssertEqual(encoded, try JSONSerialization.jsonObject(with: Data(wire.utf8)) as? NSDictionary)
+        }
+        XCTAssertThrowsError(try JSONDecoder().decode(TextStreamPart.self, from: Data(#"{"type":"text-delta","id":"t1","delta":"Hello"}"#.utf8)))
+    }
+
+    /// A result's toolCalls and sources are the AI SDK's TypedToolCall and
+    /// Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+    /// and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+    /// :36); generate-text-result.ts:73, :78. A repair function's call is a
+    /// tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+    func testStandaloneToolCallsAndSourcesAreTagged() throws {
+        func object(_ data: Data) throws -> NSDictionary? {
+            try JSONSerialization.jsonObject(with: data) as? NSDictionary
+        }
+        let call = #"{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}"#
+        let decoded = try JSONDecoder().decode(ToolCall.self, from: Data(call.utf8))
+        XCTAssertEqual(try object(JSONEncoder().encode(decoded)), try object(Data(call.utf8)))
+        let raw = RawToolCall(toolCallId: "c", toolName: "t", input: "{}")
+        XCTAssertEqual(try object(JSONEncoder().encode(raw)),
+                       try object(Data(#"{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}"#.utf8)))
+        let url = #"{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}"#
+        let source = try JSONDecoder().decode(Source.self, from: Data(url.utf8))
+        XCTAssertEqual(try object(JSONEncoder().encode(source)), try object(Data(url.utf8)))
+        // In a stream part the union's tag and the source's agree.
+        let part = try JSONDecoder().decode(TextStreamPart.self, from: Data(url.utf8))
+        XCTAssertEqual(try object(JSONEncoder().encode(part)), try object(Data(url.utf8)))
+
+        // JSON written before the tag still reads; another tag is rejected.
+        XCTAssertNoThrow(try JSONDecoder().decode(ToolCall.self, from: Data(#"{"toolCallId":"c","toolName":"t","input":{}}"#.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            ToolCall.self, from: Data(#"{"type":"source","toolCallId":"c","toolName":"t","input":{}}"#.utf8)))
+
+        // The native repair function writes the standalone call tagged.
+        let invalid = #"{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}"#
+        let options = #"{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}"#
+        let repaired = try applyToolCallRepair(toolCall: invalid, options: options, reply: #"{"type":"unchanged"}"#)
+        XCTAssertTrue(repaired.hasPrefix(#"{"type":"tool-call","toolCallId":"call-1""#), repaired)
+    }
+
+    /// FilePart.data is FileData | DataContent | URL | ProviderReference
+    /// (provider-utils types/content-part.ts:75, file-data.ts:44-48);
+    /// ReasoningFilePart.data is tagged data or a URL, or a string (:164).
+    /// There is no file-base64 / file-url / file-reference part.
+    func testFilePartsAreTheAiSdkFilePart() throws {
+        let cases: [(String, ContentPart)] = [
+            (#"{"type":"file","data":{"type":"url","url":"https://example.com/a.pdf"},"mediaType":"application/pdf"}"#,
+             .file(data: .tagged(.url(url: "https://example.com/a.pdf")), mediaType: "application/pdf")),
+            (#"{"type":"file","data":{"type":"data","data":"aGk="},"mediaType":"text/plain"}"#,
+             .file(data: .tagged(.data(data: .base64("aGk="))), mediaType: "text/plain")),
+            (#"{"type":"file","data":"aGk=","mediaType":"text/plain"}"#,
+             .file(data: .bare("aGk="), mediaType: "text/plain")),
+            (#"{"type":"file","data":{"openai":"file-abc"},"mediaType":"application/pdf"}"#,
+             .file(data: .reference(["openai": "file-abc"]), mediaType: "application/pdf")),
+            (#"{"type":"file","data":{"type":"reference","reference":{"openai":"file-abc"}},"mediaType":"application/pdf"}"#,
+             .file(data: .tagged(.reference(reference: ["openai": "file-abc"])), mediaType: "application/pdf")),
+            (#"{"type":"reasoning-file","data":"aGk=","mediaType":"image/png"}"#,
+             .reasoningFile(data: .bare("aGk="), mediaType: "image/png")),
+        ]
+        for (wire, part) in cases {
+            let decoded = try JSONDecoder().decode(ContentPart.self, from: Data(wire.utf8))
+            XCTAssertEqual(decoded, part)
+            XCTAssertEqual(try JSONDecoder().decode(ContentPart.self, from: try JSONEncoder().encode(part)), part)
+        }
+        for removed in ["file-base64", "file-url", "file-reference"] {
+            let wire = #"{"type":"\#(removed)","data":"aGk=","url":"https://example.com/a.pdf","mediaType":"application/pdf"}"#
+            XCTAssertThrowsError(try JSONDecoder().decode(ContentPart.self, from: Data(wire.utf8)))
+        }
+    }
+
     func testToolChoiceCodableWire() throws {
         let pairs: [(ToolChoice, String)] = [
             (ToolChoice.auto, "\"auto\""),
@@ -185,9 +325,9 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ToolChoice.self, from: data), tool)
     }
 
-    // MARK: - streamText: typed StreamPart
+    // MARK: - streamText: typed TextStreamPart
 
-    /// Streaming text deltas are delivered as typed `StreamPart.textDelta`
+    /// Streaming text deltas are delivered as typed `TextStreamPart.textDelta`
     /// values, reassembling into the full text.
     func testTypedStreamTextYieldsStreamParts() throws {
         let server = MockHTTPServer(response: .sse(sse(openaiStreamTextEvents)))
@@ -195,7 +335,7 @@ final class WrapperTests: XCTestCase {
         defer { server.stop() }
 
         let model = try chatModel(server.baseURL)
-        var parts: [StreamPart] = []
+        var parts: [TextStreamPart] = []
         var streamErr: (any Error)?
         model.streamText(
             prompt: .text("Say hello"),
@@ -212,9 +352,9 @@ final class WrapperTests: XCTestCase {
         }
         XCTAssertEqual(text, "Hello world")
 
-        // Every emitted part decoded into a concrete StreamPart variant; the
-        // stream opens with start and start-step and closes with finish-step
-        // and finish.
+        // Every emitted part decoded into a concrete TextStreamPart variant;
+        // the stream opens with start and start-step and closes with
+        // finish-step and finish.
         XCTAssertTrue(parts.contains { if case .textDelta = $0 { true } else { false } })
         XCTAssertEqual(parts.first, .start)
         if case .startStep = parts[1] {} else { XCTFail("expected startStep, got \(parts[1])") }
@@ -227,7 +367,7 @@ final class WrapperTests: XCTestCase {
     }
 
     /// Streaming tool-call fragments are delivered as typed tool-related
-    /// `StreamPart`s, including a final `.toolCall` carrying the tool name.
+    /// `TextStreamPart`s, including a final `.toolCall` carrying the tool name.
     func testTypedStreamTextToolCall() throws {
         let server = MockHTTPServer(response: .sse(sse(openaiStreamToolEvents)))
         try server.start()
@@ -240,7 +380,7 @@ final class WrapperTests: XCTestCase {
                 inputSchema: jv(#"{"type":"object","properties":{"location":{"type":"string"}}}"#)
             ))
         ])
-        var parts: [StreamPart] = []
+        var parts: [TextStreamPart] = []
         var streamErr: (any Error)?
         model.streamText(
             prompt: .text("What's the weather?"),
@@ -260,11 +400,11 @@ final class WrapperTests: XCTestCase {
             default: return false
             }
         }
-        XCTAssertTrue(hasToolPart, "stream should contain a tool-related StreamPart")
+        XCTAssertTrue(hasToolPart, "stream should contain a tool-related TextStreamPart")
 
         // The complete ToolCall part carries the tool name and structured input.
         let toolCall = parts.compactMap { part -> (String, JSONValue)? in
-            if case .toolCall(_, let name, let input, _, _, _, _, _) = part { return (name, input) }
+            if case .toolCall(let call) = part { return (call.toolName, call.input) }
             return nil
         }.first
         XCTAssertEqual(toolCall?.0, "get_weather")
@@ -294,28 +434,35 @@ final class WrapperTests: XCTestCase {
         let json = """
         {
           "content": [
-            {"Text":{"text":"hello"}},
-            {"ToolCall":{"tool_call_id":"call_1","tool_name":"get_weather","input":{"location":"Tokyo"}}}
+            {"type":"text","text":"hello"},
+            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
           ],
           "text": "hello",
-          "reasoning": [],
-          "reasoning_text": null,
+          "reasoning": [{"type":"reasoning","text":"hmm"}],
+          "reasoningText": "hmm",
           "files": [],
-          "sources": [],
-          "tool_calls": [
-            {"tool_call_id":"call_1","tool_name":"get_weather","input":{"location":"Tokyo"}}
+          "sources": [{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}],
+          "toolCalls": [
+            {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
           ],
-          "tool_results": [],
-          "finish_reason": "tool-calls",
-          "raw_finish_reason": "tool_calls",
-          "usage": {"input_tokens":3,"input_token_details":{},"output_tokens":2,"output_token_details":{},"total_tokens":5},
-          "total_usage": {"input_tokens":3,"input_token_details":{},"output_tokens":2,"output_token_details":{},"total_tokens":5},
-          "warnings": [],
+          "toolResults": [],
+          "finishReason": "tool-calls",
+          "rawFinishReason": "tool_calls",
+          "usage": {"inputTokens":3,"inputTokenDetails":{},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5},
+          "totalUsage": {"inputTokens":3,"inputTokenDetails":{},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5},
+          "warnings": [{"type":"other","message":"careful"}],
           "request": {},
-          "response": {"id":"resp_1","timestamp":"2026-01-01T00:00:00Z","model_id":"gpt-4o","messages":[]},
-          "response_messages": [],
-          "provider_metadata": null,
-          "steps": [{"call_id":"c1","step_number":0}]
+          "response": {"id":"resp_1","timestamp":"2026-01-01T00:00:00.000Z","modelId":"gpt-4o","messages":[]},
+          "responseMessages": [
+            {"role":"assistant","content":[
+              {"type":"tool-call","toolCallId":"call_1","toolName":"get_weather","input":{"location":"Tokyo"}}
+            ]},
+            {"role":"tool","content":[
+              {"type":"tool-result","toolCallId":"call_1","toolName":"get_weather",
+               "output":{"type":"json","value":{"temp":22}}}
+            ]}
+          ],
+          "steps": [{"callId":"c1","stepNumber":0}]
         }
         """
         let original = try JSONDecoder().decode(GenerateTextResult.self,
@@ -325,10 +472,17 @@ final class WrapperTests: XCTestCase {
         XCTAssertEqual(original.finishReason, .toolCalls)
         XCTAssertEqual(original.rawFinishReason, "tool_calls")
         XCTAssertEqual(original.usage.totalTokens, 5)
-        XCTAssertNil(original.reasoningText)
+        XCTAssertEqual(original.reasoningText, "hmm")
         XCTAssertNil(original.output)
         XCTAssertEqual(original.response.id, "resp_1")
         XCTAssertEqual(original.response.modelId, "gpt-4o")
+        XCTAssertEqual(original.warnings, [.other(message: "careful")])
+        XCTAssertEqual(original.reasoning, [.reasoning(ReasoningOutput(text: "hmm"))])
+        guard case .parts(let toolContent) = original.responseMessages[1].content,
+              case .toolResult(_, _, let output, _) = toolContent[0] else {
+            return XCTFail("expected a tool-result part, got \(original.responseMessages[1].content)")
+        }
+        XCTAssertEqual(output, .json(.object(["temp": .number(22)])))
 
         // Encode → decode yields an equal value.
         let reencoded = try JSONEncoder().encode(original)
@@ -339,10 +493,10 @@ final class WrapperTests: XCTestCase {
 
 // MARK: - Helpers
 
-/// Drain an `AsyncThrowingStream<StreamPart, Error>` into an array (the mock stream completes
+/// Drain an `AsyncThrowingStream<TextStreamPart, Error>` into an array (the mock stream completes
 /// synchronously inside `streamText`, so this returns promptly).
-private func collect(_ stream: AsyncThrowingStream<StreamPart, Error>) async throws -> [StreamPart] {
-    var parts: [StreamPart] = []
+private func collect(_ stream: AsyncThrowingStream<TextStreamPart, Error>) async throws -> [TextStreamPart] {
+    var parts: [TextStreamPart] = []
     for try await part in stream { parts.append(part) }
     return parts
 }

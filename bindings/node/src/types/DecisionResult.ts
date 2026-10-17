@@ -14,4 +14,4 @@ export type DecisionResult = {
 /**
  * Exactly one answer per question, under the original question ids.
  */
-answers: { [key in string]: DecisionAnswer }, rounding?: DecisionRounding, usage?: DecisionUsage, warnings: Array<Warning>, provider_metadata?: { [key in string]: { [key in string]: JsonValue } }, response?: ResponseInfo, };
+answers: { [key in string]: DecisionAnswer }, rounding?: DecisionRounding, usage?: DecisionUsage, warnings: Array<Warning>, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, response?: ResponseInfo, };

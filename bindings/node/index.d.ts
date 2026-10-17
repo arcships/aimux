@@ -34,8 +34,8 @@ export declare class AbortBridge {
 
 export declare class DecisionModel {
   /**
-   * The DecisionModelV4 properties as JSON: `specification_version`,
-   * `provider`, `model_id`, `supported_question_types`.
+   * The DecisionModelV4 properties as JSON: `specificationVersion`,
+   * `provider`, `modelId`, `supportedQuestionTypes`.
    */
   describe(): AimuxResult<string>
   /** `opts_json` is `DecideOptions` JSON; resolves to `DecideResult` JSON. */
@@ -118,7 +118,7 @@ export declare class Model {
    *
    * Same signature as [`Model::generate_text`]; returns a JSON-serialized
    * `GenerateObjectResult` (core's deprecated `generate_object` wrapper).
-   * Pass `output: { "Object": { "schema": ... } }`
+   * Pass `output: { "type": "object", "schema": ... }`
    * via `options` to describe the value; the model's text must parse and
    * match the schema.
    */
@@ -305,10 +305,10 @@ export declare function anthropicAws(apiKey: string, region: string, modelId: st
  * Resolve one invalid tool call against a host's repair reply.
  *
  * `optsJson` is the same string the call was generated with; the tool set
- * comes from it. `replyJson` is `{"type":"repaired","tool_call":{…}}`,
+ * comes from it. `replyJson` is `{"type":"repaired","toolCall":{…}}`,
  * `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Returns the
- * resulting `ToolCall` JSON — valid, or invalid carrying a nested
- * `ToolCallRepairError`.
+ * resulting `ToolCall` JSON, tagged `"type": "tool-call"` — valid, or
+ * invalid carrying a nested `ToolCallRepairError`.
  *
  * Options carrying no tools throw `InvalidArgumentError`: such a call is not
  * repairable, and `toolCallRepairContext` already said so by returning
@@ -319,7 +319,7 @@ export declare function applyToolCallRepair(toolCallJson: string, optsJson: stri
 /**
  * Apply a repair reply to a serialized `GenerateTextResult`: the call is
  * repaired in the result's steps (content, approval requests and response
- * messages) and the derived `tool_calls`, `content` and `response_messages`
+ * messages) and the derived `toolCalls`, `content` and `responseMessages`
  * are written from them. `optsJson` is the same string the call was
  * generated with.
  *
@@ -557,11 +557,11 @@ export declare function router(models: Array<Model>, configJson?: string | undef
 export declare function sessionCalls(sessionId: string): AimuxResult<string>
 
 /**
- * Start a streaming transcription session. `opts_json` (optional):
- * `{ "input_audio_format": {"format_type","rate"}, "provider_options",
- * "headers", "include_raw_chunks" }`. `bridge` — optional AbortSignal; firing
- * it aborts the session. The returned parts are JSON-serialized
- * `TranscriptionStreamPart`s.
+ * Start a streaming transcription session. `opts_json` (optional, camelCase
+ * as in the C ABI, unknown keys rejected): `{ "inputAudioFormat":
+ * {"formatType","rate"}, "providerOptions", "headers", "includeRawChunks",
+ * "timeout" }`. `bridge` — optional AbortSignal; firing it aborts the
+ * session. The returned parts are JSON-serialized `TranscriptionStreamPart`s.
  */
 export declare function startTranscriptionSession(model: TranscriptionModel, optsJson?: string | undefined | null, bridge?: AbortBridge | undefined | null): Promise<AimuxResult<TranscriptionSession>>
 
@@ -571,14 +571,14 @@ export declare function tavilySearch(apiKey: string, baseUrl?: string | undefine
 /**
  * Build the repair argument for one invalid tool call.
  *
- * `toolCallJson` is a `GenerateTextResult.tool_calls` entry with
+ * `toolCallJson` is a `GenerateTextResult.toolCalls` entry with
  * `invalid: true`. `prompt` and `optsJson` are **the same two strings the
  * call was generated with** (`generateText` / `streamText`); messages,
  * instructions, and the tool set are derived from them here, so no caller
  * repeats that derivation.
  *
- * Returns `{tool_call, error, input_schema, tools, messages, instructions}`
- * — the AI SDK `repairToolCall` argument, with `tool_call.input` the
+ * Returns `{toolCall, error, inputSchema, tools, messages, instructions}`
+ * — the AI SDK `repairToolCall` argument, with `toolCall.input` the
  * provider's raw argument text — or the JSON literal `"null"` when the
  * options carried no tools: as in the AI SDK, a call made without a tool set
  * is never repaired, and the caller skips it. `"null"` is a success.

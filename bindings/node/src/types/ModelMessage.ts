@@ -7,4 +7,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A single user-facing chat message, a union by role.
  */
-export type ModelMessage = { "role": "system", content: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "role": "user", content: UserContent, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "role": "assistant", content: AssistantContent, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, } | { "role": "tool", content: Array<ToolContentPart>, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ModelMessage = { "role": "system", content: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "role": "user", content: UserContent, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "role": "assistant", content: AssistantContent, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, } | { "role": "tool", content: Array<ToolContentPart>, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

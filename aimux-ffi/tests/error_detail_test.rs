@@ -16,9 +16,9 @@ use aimux_ffi::{
     aimux_abort_signal_drop, aimux_abort_signal_new, aimux_azure_new, aimux_cohere_reranking_new,
     aimux_consume_stream_text, aimux_drop_handle, aimux_error_t, aimux_generate_object,
     aimux_generate_text, aimux_google_image_new, aimux_google_video_new, aimux_init_proxy,
-    aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new, aimux_openai_new,
-    aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new,
-    aimux_register_providers, aimux_stream_text, aimux_tavily_search_new,
+    aimux_moa_new, aimux_openai_embedding_new, aimux_openai_files_new, aimux_openai_image_new,
+    aimux_openai_new, aimux_openai_speech_new, aimux_openai_transcription_new, aimux_provider_new,
+    aimux_register_providers, aimux_router_new, aimux_stream_text, aimux_tavily_search_new,
 };
 use common::{c, expect_aimux_error, expect_ffi_error, ok};
 
@@ -71,6 +71,29 @@ fn generate_text_prompt_json_wire_vs_schema() {
     aimux_drop_handle(h);
 }
 
+/// RFC-0042 §7.2 at the C boundary: a prompt part with an unknown `type` is
+/// InvalidArgument naming the type, not "data did not match any variant of
+/// untagged enum ModelPrompt".
+#[test]
+fn generate_text_unknown_part_type_is_named() {
+    let h = valid_handle();
+    let mut out: *mut c_char = ptr::null_mut();
+    for prompt in [
+        r#"[{"role":"user","content":[{"type":"no-such-part","text":"hi"}]}]"#,
+        r#"{"prompt":[{"role":"user","content":[{"type":"no-such-part","text":"hi"}]}]}"#,
+    ] {
+        let e = aimux_generate_text(h, c(prompt).as_ptr(), ptr::null(), &mut out);
+        let (code, m) = expect_aimux_error(e, prompt);
+        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT);
+        assert!(
+            m.contains("prompt_json:") && m.contains("unknown variant `no-such-part`"),
+            "{m}"
+        );
+        assert!(out.is_null());
+    }
+    aimux_drop_handle(h);
+}
+
 #[test]
 fn generate_text_null_prompt_json_fails() {
     let h = valid_handle();
@@ -80,6 +103,30 @@ fn generate_text_null_prompt_json_fails() {
         expect_ffi_error(e, "generate_text"),
         "prompt_json: must not be NULL"
     );
+    aimux_drop_handle(h);
+}
+
+/// Options are camelCase JSON; a key this version does not read (aimux 0.5's
+/// `max_retries`, a nested `total_ms`, a typo) fails the call with
+/// InvalidArgument naming it, before any request.
+#[test]
+fn generate_text_rejects_unknown_option_keys() {
+    let h = valid_handle();
+    let mut out: *mut c_char = ptr::null_mut();
+    for (opts, key) in [
+        (r#"{"max_retries":0}"#, "max_retries"),
+        (r#"{"timeout":{"total_ms":1000}}"#, "total_ms"),
+        (r#"{"maxRetries":0,"temprature":0.2}"#, "temprature"),
+    ] {
+        let e = aimux_generate_text(h, c("\"hi\"").as_ptr(), c(opts).as_ptr(), &mut out);
+        let (code, m) = expect_aimux_error(e, opts);
+        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT, "{opts}");
+        assert!(
+            m.contains("opts_json:") && m.contains(&format!("unknown field `{key}`")),
+            "{opts}: {m}"
+        );
+        assert!(out.is_null());
+    }
     aimux_drop_handle(h);
 }
 
@@ -370,5 +417,63 @@ fn stream_text_null_callback_is_an_ffi_error() {
         ptr::null_mut(),
     );
     assert_eq!(expect_ffi_error(e, "on_done"), "on_done: must not be NULL");
+    aimux_drop_handle(h);
+}
+
+/// The router and MoA configs are camelCase, as the header documents, and
+/// strict: aimux 0.5's `provider_name` / `fail_mode` fail naming the key
+/// instead of leaving the default in place.
+#[test]
+fn composite_configs_reject_unknown_keys() {
+    let h = valid_handle();
+    let children = [h];
+    let mut router = 0;
+    ok(
+        aimux_router_new(
+            children.as_ptr(),
+            children.len(),
+            c(r#"{"router":"rule","fallback":"none","providerName":"r","modelId":"m"}"#).as_ptr(),
+            &mut router,
+        ),
+        "router_new",
+    );
+    assert_ne!(router, 0);
+    aimux_drop_handle(router);
+
+    for (config, key) in [
+        (r#"{"provider_name":"r"}"#, "provider_name"),
+        (r#"{"modelId":"m","model_id":"m"}"#, "model_id"),
+    ] {
+        let mut router = 0;
+        let e = aimux_router_new(
+            children.as_ptr(),
+            children.len(),
+            c(config).as_ptr(),
+            &mut router,
+        );
+        let (code, m) = expect_aimux_error(e, config);
+        assert_eq!(code, AIMUX_E_INVALID_ARGUMENT, "{config}");
+        assert!(
+            m.contains("config_json:") && m.contains(&format!("unknown field `{key}`")),
+            "{config}: {m}"
+        );
+        assert_eq!(router, 0);
+    }
+
+    let mut moa = 0;
+    let e = aimux_moa_new(
+        ptr::null(),
+        0,
+        h,
+        c(r#"{"fail_mode":"fail-fast"}"#).as_ptr(),
+        &mut moa,
+    );
+    let (code, m) = expect_aimux_error(e, "moa_new");
+    assert_eq!(code, AIMUX_E_INVALID_ARGUMENT);
+    assert!(
+        m.contains("config_json:") && m.contains("unknown field `fail_mode`"),
+        "{m}"
+    );
+    assert_eq!(moa, 0);
     aimux_drop_handle(h);
 }

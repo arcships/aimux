@@ -9,8 +9,9 @@ final class DecisionTests: XCTestCase {
         defer { model.close() }
         provider = nil // ProviderHandle uses ARC; the decision model owns its handle.
         let description = try JSONSerialization.jsonObject(with: Data(model.describe().utf8)) as! [String: Any]
-        XCTAssertEqual(description["specification_version"] as? String, "v4")
+        XCTAssertEqual(description["specificationVersion"] as? String, "v4")
         XCTAssertEqual(description["provider"] as? String, "openai")
+        XCTAssertEqual(description["modelId"] as? String, "gpt-6-luna")
         XCTAssertNil(provider)
     }
 
@@ -34,13 +35,15 @@ final class DecisionTests: XCTestCase {
         defer { model.close() }
         let description = try decode(model.describe())
         XCTAssertEqual(description["provider"] as? String, "jev")
-        XCTAssertEqual((description["supported_question_types"] as? [String])?.count, 3)
+        XCTAssertEqual((description["supportedQuestionTypes"] as? [String])?.count, 3)
         XCTAssertEqual(server.lastRequestBody, "")
         let request = fixture["request"] as! [String: Any]
         let result = try decode(model.decide(options: encode(request)))
         let answers = result["answers"] as! [String: Any]
         XCTAssertEqual((answers["urgent"] as? [String: Any])?["probability"] as? Double, 0.9)
-        XCTAssertEqual((result["rounding"] as? [String: Any])?["score_decimals"] as? Int, 2)
+        XCTAssertEqual((result["rounding"] as? [String: Any])?["scoreDecimals"] as? Int, 2)
+        XCTAssertEqual(result["usage"] as? NSDictionary,
+            ["inputTokens": 50, "outputTokens": 10, "totalTokens": 60] as NSDictionary)
         let questions = request["questions"] as! [String: Any]
         let actual = try decode(server.lastRequestBody)["questions"] as! [String: Any]
         XCTAssertEqual(server.lastRequestPath, "/v1/systemone")
@@ -80,7 +83,7 @@ final class DecisionTests: XCTestCase {
         XCTAssertEqual(server.lastRequestPath, "/v1/decisions")
         let answers = result["answers"] as! [String: Any]
         XCTAssertEqual((answers["choice"] as! [String: Any])["choice"] as? String, "boolean_true")
-        let metadata = (result["provider_metadata"] as! [String: Any])["openai"] as! [String: Any]
+        let metadata = (result["providerMetadata"] as! [String: Any])["openai"] as! [String: Any]
         let choice = (metadata["answers"] as! [String: Any])["choice"] as! [String: Any]
         XCTAssertEqual(choice["value"] as? Bool, true)
         XCTAssertEqual((answers["score"] as! [String: Any])["score"] as? Double, 0.75)

@@ -22,7 +22,7 @@ fn key(options: &Value) -> Value {
         "state": options["state"],
         "questions": options["questions"],
         "headers": options.get("headers").cloned().unwrap_or(Value::Null),
-        "provider_options": options.get("provider_options").cloned().unwrap_or(Value::Null),
+        "providerOptions": options.get("providerOptions").cloned().unwrap_or(Value::Null),
     })
 }
 
@@ -192,15 +192,28 @@ pub async fn replay_decision_with_model(
             "decision replay requires a decision recording".into(),
         ));
     }
-    let options: DecideOptions =
-        serde_json::from_value(recording.input.options.clone()).map_err(|e| {
-            if recording.provider.provider_id.is_empty() {
-                AiMuxError::JsonParse(format!(
-                    "decision replay: the recording was {OLDER_RECORDING}: {e}"
-                ))
-            } else {
-                AiMuxError::JsonParse(e.to_string())
-            }
-        })?;
+    let unread = crate::replay::snake_case_option_keys(&recording.input.options);
+    if !unread.is_empty() {
+        let older = if recording.provider.provider_id.is_empty() {
+            format!("the recording was {OLDER_RECORDING}: ")
+        } else {
+            String::new()
+        };
+        return Err(AiMuxError::JsonParse(format!(
+            "decision replay: {older}this version reads the options camelCase and would \
+             ignore {}",
+            unread.join(", ")
+        )));
+    }
+    let options = crate::replay::readable_options(&recording.input.options);
+    let options: DecideOptions = serde_json::from_value(options).map_err(|e| {
+        if recording.provider.provider_id.is_empty() {
+            AiMuxError::JsonParse(format!(
+                "decision replay: the recording was {OLDER_RECORDING}: {e}"
+            ))
+        } else {
+            AiMuxError::JsonParse(e.to_string())
+        }
+    })?;
     decide(model, options).await
 }

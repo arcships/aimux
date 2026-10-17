@@ -46,7 +46,7 @@ try (Model model = Model.providerFromEnv("groq", "llama-3.3-70b")) {
     String result = model.generateText("\"Hello\"");
 }
 
-// Optional config JSON ({"base_url": "..."}):
+// Optional config JSON ({"baseUrl": "..."}); an unknown key is InvalidArgumentError:
 try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
     String result = model.generateText("\"Hello\"");
 }
@@ -54,6 +54,9 @@ try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
 
 `deepseek(apiKey, modelId)` remains as a by-name shortcut to the vendor package.
 Unknown names throw `NoSuchProviderError` naming the requested provider.
+There is no provider-registration API: the provider set is the built-in
+registry, and a custom endpoint is a `baseUrl` in the `configJson` above (or a
+`...WithBase` factory).
 
 ## Errors
 
@@ -344,7 +347,7 @@ try (SpeechModel model = SpeechModel.openai("sk-...", "tts-1")) {
     String opts = new JSONObject()
         .put("text", "Hello")
         .put("voice", "alloy")
-        .put("output_format", "mp3")
+        .put("outputFormat", "mp3")
         .toString();
     String result = model.generate(opts);
 }
@@ -389,7 +392,7 @@ Factories: `VideoModel.google` / `googleWithBase`.
 
 ```java
 try (RerankingModel model = RerankingModel.cohere("sk-...", "rerank-v3.0")) {
-    String result = model.rerank("{\"query\":\"...\",\"documents\":{...},\"top_n\":2}");
+    String result = model.rerank("{\"query\":\"...\",\"documents\":{\"type\":\"text\",\"values\":[...]},\"topN\":2}");
 }
 ```
 
@@ -399,7 +402,7 @@ Factories: `RerankingModel.cohere` / `cohereWithBase`.
 
 ```java
 try (SearchModel model = SearchModel.tavily("sk-...")) {
-    String result = model.search("{\"query\":\"What is Rust?\",\"max_results\":5}");
+    String result = model.search("{\"query\":\"What is Rust?\",\"maxResults\":5}");
 }
 // result: {"results":[{"title":"Rust",...}],"answer":"Rust is a systems language."}
 ```
@@ -412,7 +415,7 @@ Factories: `SearchModel.tavily` / `tavilyWithBase`.
 try (Files files = Files.openai("sk-...")) {
     String result = files.uploadFile(base64Data, "application/pdf");
 }
-// result: {"provider_reference":{"openai":"file-abc"}, ...}
+// result: {"providerReference":{"openai":"file-abc"}, ...}
 ```
 
 Factories: `Files.openai` / `openaiWithBase`.
@@ -428,8 +431,47 @@ custom serializer for the scalar-or-object wire form), `ContentPart` (sealed),
 `MessageContent` (sealed), `ModelMessage`, `GenerateTextOptions`,
 `FileBytes` / `FileData`, `GenerateContent`, `GenerateResult`,
 `LanguageModelUsage`, `GenerateTextResult`, `GenerateObjectResult`,
-`StreamPart` (sealed). All sealed hierarchies serialize
-in the wrapper-object wire form (e.g. `{"TextDelta":{...}}`).
+`StreamPart` (sealed), `ToolResultOutput`. Field names
+are the AI SDK's camelCase (`toolCallId`, `providerOptions`, `finishReason`, ...)
+and optional fields are absent, never `null`. Sealed hierarchies are tagged on
+`type` with the upstream kebab-case names (e.g. `{"type":"text-delta",...}`,
+`{"type":"tool-call",...}`); bytes (`FileBytes`, image and file parts) are
+base64 strings, as the AI SDK's JSON carries a `Uint8Array`. An `unknown`
+value (`body`, `inputSchemaInput`) is a `JsonNode`: a JSON `null` reads as
+`NullNode` and is written back as `null`, a missing field stays Java `null`
+and is omitted. A response `timestamp` is a JavaScript `Date` in the AI SDK's
+JSON: a `toISOString()` string, UTC with milliseconds
+(`"2025-03-06T13:50:19.000Z"`), which `Instant.parse` reads.
+
+A `ContentPart.File` is the AI SDK `FilePart`: its `data` is a `FilePartData`
+(`Tagged(FileData)`, `Bare` for a base64 or URL string, or `Reference` for a
+bare `{provider: id}`); the builder also takes a `FileData` or inline bytes
+(written as tagged data). `ContentPart.ReasoningFile.data` is a
+`ReasoningFilePartData`. There is no `file-base64` / `file-url` /
+`file-reference` part.
+
+A generated file is a `Types.GeneratedFile`, the AI SDK's
+`{"base64", "mediaType", "providerMetadata"?}` (`getBytes()` decodes it).
+`StreamPart.File` and `StreamPart.ReasoningFile` (also the result's `content`
+and `reasoning` file parts) carry it as `{"type": "file", "file": {...},
+"providerMetadata"?}`; the provider-level `GenerateResult.content` keeps
+`mediaType` and tagged `data`.
+
+A `ContentPart.ToolResult` (`type: "tool-result"`) carries `toolCallId`,
+`toolName`, `output` and `providerOptions`; `output` is a `ToolResultOutput`
+built with `text` / `json` / `executionDenied` / `errorText` / `errorJson` /
+`content`. The provider-level `GenerateContent.ToolResult` keeps `result`,
+`isError`, `preliminary` and `dynamic`; the stream's `StreamPart.ToolResult`
+is a provider-executed tool's result (Rust `TypedToolResult`: `output` and
+the call's `input`), next to `StreamPart.ToolError` and
+`StreamPart.ToolOutputDenied`.
+
+`GenerateTextOptions.output` is the AI SDK's `output` as a JSON node, for
+example `{"type":"object","schema":{...}}` (tagged by `type`: `text`,
+`object`, `array`, `choice` or `json`); the parsed value is
+`GenerateTextResult.output`, a `NullNode` when the model produced JSON `null`.
+`ImageCallOptions` / `VideoCallOptions` take `size` / `resolution` as `"WxH"`
+strings (e.g. `"1024x1024"`) and `aspectRatio` as `"W:H"` (e.g. `"16:9"`).
 
 `RawToolCall` and `ToolCallRepairContext` serve
 [tool-call repair](#tool-call-repair); `ToolCallRepair` (the hook itself) is a
@@ -440,14 +482,21 @@ plus `getInvalid()` (set by Core when tool lookup, input parse, or schema
 validation fails, even after repair) and `getError()` (the serialized
 `AiMuxError` for that failure).
 
+The top-level `ToolCall` and `RawToolCall` serialize `"type": "tool-call"` and
+`Source` serializes `"type": "source"` (`getType()`), as the AI SDK's
+`TypedToolCall` and `Source` in a result's `toolCalls` and `sources`. Reading
+accepts JSON without the tag and rejects a different one.
+
 `MultimodalTypes.java` declares the typed multimodal surface:
 `EmbeddingCallOptions` / `EmbeddingResult`, `SpeechCallOptions` / `SpeechResult`,
 `ImageCallOptions` / `ImageResult`, `TranscriptionCallOptions` /
 `TranscriptionResult`, `RerankingCallOptions` / `RerankingResult`,
 `VideoCallOptions` / `VideoPollOptions` / `VideoResult`, `SearchCallOptions` / `SearchResult`,
 `UploadFileCallOptions` / `UploadFileResult`. Sealed unions (`AudioData`,
-`ImageOutputs`, `VideoData`) use custom Jackson serializers with the
-externally-tagged wire form. Response types (`EmbeddingResponse`, etc.) match
+`ImageOutputs`, `VideoFileData`) are base64 strings on the wire (a `Binary`
+value is written as base64)
+and `VideoData` / `VideoFile` are tagged on `type`, all with custom Jackson
+serializers. Response types (`EmbeddingResponse`, etc.) match
 the `aimux-core` `.ts` wire definitions exactly (`{headers, body, ...}`).
 
 ## Error Handling
@@ -476,5 +525,7 @@ cargo build -p aimux-ffi --release
 cd bindings/java
 export JAVA_HOME=...   # JDK 9+ (bytecode targets Java 8 via --release 8)
 export LD_LIBRARY_PATH="$(pwd)/../../target/release:${LD_LIBRARY_PATH}"
+# or point the tests at another build (e.g. a debug build in a shared target dir):
+# export AIMUX_FFI_LIB_DIR=/path/to/target/debug
 gradle test
 ```

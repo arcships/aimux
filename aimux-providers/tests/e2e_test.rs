@@ -390,7 +390,7 @@ async fn e2e_openai_stream_part_sequence() {
     // Must contain at least one TextDelta
     let has_text_delta = parts
         .iter()
-        .any(|p| matches!(p, TextStreamPart::TextDelta { text: delta, .. } if delta == "Hi"));
+        .any(|p| matches!(p, TextStreamPart::TextDelta { text, .. } if text == "Hi"));
     assert!(has_text_delta, "expected a TextDelta with 'Hi'");
 }
 
@@ -446,7 +446,7 @@ async fn e2e_anthropic_stream_part_sequence() {
     // Must contain at least one TextDelta
     let has_text_delta = parts
         .iter()
-        .any(|p| matches!(p, TextStreamPart::TextDelta { text: delta, .. } if delta == "Hi"));
+        .any(|p| matches!(p, TextStreamPart::TextDelta { text, .. } if text == "Hi"));
     assert!(has_text_delta, "expected a TextDelta with 'Hi'");
 }
 

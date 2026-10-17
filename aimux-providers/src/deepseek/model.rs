@@ -52,10 +52,9 @@ struct RequestBodyResult {
     warnings: Vec<Warning>,
 }
 
-fn timestamp(created: Option<f64>) -> Option<String> {
-    created
-        .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-        .map(|dt| dt.to_rfc3339())
+/// `new Date(created * 1000)`.
+fn timestamp(created: Option<f64>) -> Option<aimux_core::Timestamp> {
+    created.and_then(aimux_core::Timestamp::from_unix_seconds)
 }
 
 /// The HTTP status a stream error code stands for: a number or a three-digit

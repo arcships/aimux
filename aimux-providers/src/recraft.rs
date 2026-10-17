@@ -340,7 +340,7 @@ impl ImageModel for RecraftImageModel {
             });
         }
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let recraft_opts = parse_recraft_options(&options.provider_options);
         let body = build_generation_body(&self.model_id, options, &recraft_opts);
 

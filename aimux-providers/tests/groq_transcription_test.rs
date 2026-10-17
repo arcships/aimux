@@ -212,7 +212,7 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
     let result = model.do_generate(&call("audio/wav", None)).await.unwrap();
 
     let timestamp = result.response.timestamp.unwrap();
-    assert!(chrono::DateTime::parse_from_rfc3339(&timestamp).is_ok());
+    assert!(chrono::DateTime::parse_from_rfc3339(&timestamp.to_string()).is_ok());
     assert_eq!(
         result.response.model_id.as_deref(),
         Some("whisper-large-v3-turbo")

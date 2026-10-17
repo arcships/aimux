@@ -8,29 +8,34 @@
 //! `tool-model-message.ts:23`). `convert_to_language_model_prompt` turns them
 //! into the provider-facing parts of `language_model_message`.
 //!
-//! The JSON is this layer's wire: `type` tags and field names are snake_case,
-//! and a file is one of the five file variants (`image`, `file`,
-//! `file_base64`, `file_url`, `file_reference`) rather than upstream's single
-//! `file` part with a `FileData` payload.
+//! The JSON is the AI SDK's: kebab-case `type` tags, camelCase fields, and
+//! one `file` part whose `data` is upstream's `FilePart.data` ([`FilePartData`]).
 //!
 //! [`ModelMessage`]: crate::message::ModelMessage
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::shared::{GeneratedFileData, SharedProviderOptions, SharedProviderReference};
+use crate::shared::{
+    FileBytes, FileData, GeneratedFileData, SharedProviderOptions, SharedProviderReference,
+};
 use crate::types::NamespacedKind;
 
 /// A part of a user message: upstream's `TextPart | ImagePart | FilePart`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserContentPart {
     /// A text segment.
     Text {
         text: String,
         /// Provider-specific options for this part (e.g. `openai.promptCacheBreakpoint`).
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -39,55 +44,29 @@ pub enum UserContentPart {
     ///
     /// Deprecated upstream (`provider-utils` `types/content-part.ts:26-29`):
     /// use a `file` part with an `image` media type. The prompt conversion
-    /// turns it into one and logs a deprecation warning.
+    /// turns it into one and logs a deprecation warning. The JSON holds the
+    /// bytes as a base64 string.
     Image {
+        #[ts(type = "string")]
+        #[serde(with = "crate::wire::base64_bytes")]
         image: Vec<u8>,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// A file (raw bytes + MIME type).
+    /// A file (upstream `FilePart`, `provider-utils` `types/content-part.ts:62-102`):
+    /// `data` is tagged `FileData` or a bare base64 string, URL string or
+    /// provider reference, and a `data:` URL's media type wins over
+    /// `media_type` when the prompt is converted.
     File {
-        data: Vec<u8>,
+        data: FilePartData,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file whose inline data is an already-base64-encoded string.
-    ///
-    /// The AI SDK `file` part with `data: { type: 'data', data: '<base64>' }`:
-    /// `data` holds the base64 string verbatim (it is not decoded), so it
-    /// round-trips through providers that emit a `base64` source unchanged.
-    FileBase64 {
-        data: String,
-        media_type: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file referenced by URL (the AI SDK `file` part with
-    /// `data: { type: 'url', url }`).
-    FileUrl {
-        url: String,
-        media_type: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file referenced by a provider-specific id (the AI SDK `file` part
-    /// with `data: { type: 'reference', reference: { openai: 'file-xxx' } }`).
-    /// `reference` is a JSON object keyed by provider name.
-    FileReference {
-        media_type: String,
-        reference: Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -97,13 +76,18 @@ pub enum UserContentPart {
 /// FilePart | ReasoningPart | ReasoningFilePart | ToolCallPart |
 /// ToolResultPart | ToolApprovalRequest`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantContentPart {
     /// A text segment.
     Text {
         text: String,
         /// Provider-specific options for this part.
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -111,44 +95,22 @@ pub enum AssistantContentPart {
     /// Provider-specific custom content.
     Custom {
         kind: NamespacedKind,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// A file (raw bytes + MIME type).
+    /// A file (upstream `FilePart`, `provider-utils` `types/content-part.ts:62-102`):
+    /// `data` is tagged `FileData` or a bare base64 string, URL string or
+    /// provider reference, and a `data:` URL's media type wins over
+    /// `media_type` when the prompt is converted.
     File {
-        data: Vec<u8>,
+        data: FilePartData,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file whose inline data is an already-base64-encoded string.
-    FileBase64 {
-        data: String,
-        media_type: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file referenced by URL.
-    FileUrl {
-        url: String,
-        media_type: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        provider_options: Option<SharedProviderOptions>,
-    },
-
-    /// A file referenced by a provider-specific id.
-    FileReference {
-        media_type: String,
-        reference: Value,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        filename: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -164,14 +126,17 @@ pub enum AssistantContentPart {
         /// Provider-specific options for this part (e.g.
         /// `anthropic.signature`, `anthropic.redactedData`,
         /// `anthropic.cacheControl`).
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 
-    /// A file generated during reasoning.
+    /// A file generated during reasoning (upstream `ReasoningFilePart`,
+    /// `types/content-part.ts:146-180`).
     ReasoningFile {
-        data: GeneratedFileData,
+        data: ReasoningFilePartData,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -185,10 +150,12 @@ pub enum AssistantContentPart {
         /// Whether the tool call is executed by the provider rather than by
         /// the client. Providers need it to replay server tool calls on a
         /// later turn.
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
         /// Provider-specific options for this part (e.g.
         /// `anthropic.cacheControl`).
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -202,13 +169,21 @@ pub enum AssistantContentPart {
     ToolApprovalRequest {
         approval_id: String,
         tool_call_id: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         is_automatic: Option<bool>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        #[serde(
+            default,
+            deserialize_with = "crate::wire::present",
+            skip_serializing_if = "Option::is_none"
+        )]
         input_schema_input: Option<Value>,
     },
 }
@@ -218,7 +193,11 @@ pub enum AssistantContentPart {
 // the size gap between the two parts is not worth a box.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolContentPart {
     /// The result of a tool call.
@@ -231,8 +210,10 @@ pub enum ToolContentPart {
     ToolApprovalResponse {
         approval_id: String,
         approved: bool,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_executed: Option<bool>,
     },
@@ -243,6 +224,69 @@ impl UserContentPart {
     pub fn text(text: impl Into<String>) -> Self {
         Self::Text {
             text: text.into(),
+            provider_options: None,
+        }
+    }
+
+    /// An image part (no provider options).
+    pub fn image(image: Vec<u8>, media_type: impl Into<String>) -> Self {
+        Self::Image {
+            image,
+            media_type: media_type.into(),
+            provider_options: None,
+        }
+    }
+
+    /// A file part with inline bytes, written as
+    /// `data: { type: 'data', data: '<base64>' }` (no provider options, no
+    /// filename).
+    pub fn file(data: Vec<u8>, media_type: impl Into<String>) -> Self {
+        Self::file_data(
+            FileData::Data {
+                data: FileBytes::Binary(data),
+            },
+            media_type,
+        )
+    }
+
+    /// A file part whose inline data is an already-base64-encoded string,
+    /// passed on verbatim (no provider options, no filename).
+    pub fn file_base64(data: impl Into<String>, media_type: impl Into<String>) -> Self {
+        Self::file_data(
+            FileData::Data {
+                data: FileBytes::Base64(data.into()),
+            },
+            media_type,
+        )
+    }
+
+    /// A file part referenced by URL, `data: { type: 'url', url }` (no
+    /// provider options).
+    pub fn file_url(url: impl Into<String>, media_type: impl Into<String>) -> Self {
+        Self::file_data(
+            FileData::Url {
+                url: url.into(),
+                original_url: None,
+            },
+            media_type,
+        )
+    }
+
+    /// A file part referenced by a provider reference,
+    /// `data: { type: 'reference', reference: { [provider]: id } }` (no
+    /// provider options, no filename).
+    pub fn file_reference(
+        media_type: impl Into<String>,
+        reference: SharedProviderReference,
+    ) -> Self {
+        Self::file_data(FileData::Reference { reference }, media_type)
+    }
+
+    fn file_data(data: FileData, media_type: impl Into<String>) -> Self {
+        Self::File {
+            data: FilePartData::Tagged(data),
+            media_type: media_type.into(),
+            filename: None,
             provider_options: None,
         }
     }
@@ -289,193 +333,68 @@ impl ToolContentPart {
     }
 }
 
-/// The result of a tool call (upstream `ToolResultPart`).
-///
-/// JSON: besides the upstream `output` object, the part keeps accepting the
-/// earlier `result` form, an arbitrary JSON value read by
-/// [`ToolResultOutput::from_result`] (with `is_error: true` the value is an
-/// error). `output` holding a value that is not a [`ToolResultOutput`] object
-/// is read the same way. A `text`, `json`, `error-text` or `error-json`
-/// output without its own `provider_options` is written in the `result`
-/// form; any other output is written as `output`.
+/// The result of a tool call (upstream `ToolResultPart`,
+/// `provider-utils` `types/content-part.ts:218-241`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(try_from = "ToolResultPartJson", into = "ToolResultPartJson")]
-#[ts(as = "ToolResultPartJson")]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     /// The tool name. Required upstream; when absent here, the conversion
     /// takes it from the preceding tool call with the same id.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
     pub output: ToolResultOutput,
     /// Provider-specific options for this part (e.g. `anthropic.cacheControl`).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
-}
-
-/// The JSON of a [`ToolResultPart`]: the upstream `output` or the earlier
-/// `result` form.
-#[derive(Serialize, Deserialize, TS)]
-struct ToolResultPartJson {
-    tool_call_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    tool_name: Option<String>,
-    /// A `ToolResultOutput`, or any other JSON value, read as `result` is.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present"
-    )]
-    #[ts(optional, as = "Option<OutputJson>", inline)]
-    output: Option<Value>,
-    /// Any JSON value: a string is a `text` output, anything else `json`.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "present"
-    )]
-    #[ts(optional, type = "JsonValue")]
-    result: Option<Value>,
-    /// With `result`: the value is an error, an `error-text` output.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    is_error: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    provider_options: Option<SharedProviderOptions>,
-}
-
-/// The TypeScript type of [`ToolResultPartJson::output`].
-#[derive(TS)]
-#[allow(dead_code)]
-enum OutputJson {
-    #[ts(untagged)]
-    Output(ToolResultOutput),
-    #[ts(untagged)]
-    Value(Value),
-}
-
-/// Keep an explicit `null` apart from a missing field.
-fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
-    Value::deserialize(deserializer).map(Some)
-}
-
-/// The `type` tags of [`ToolResultOutput`].
-const OUTPUT_TYPES: [&str; 6] = [
-    "text",
-    "json",
-    "execution-denied",
-    "error-text",
-    "error-json",
-    "content",
-];
-
-impl TryFrom<ToolResultPartJson> for ToolResultPart {
-    type Error = String;
-
-    fn try_from(json: ToolResultPartJson) -> Result<Self, Self::Error> {
-        let is_typed = |value: &Value| {
-            value
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|tag| OUTPUT_TYPES.contains(&tag))
-        };
-        let output = match (json.result, json.output) {
-            (Some(_), Some(_)) => {
-                return Err("a tool result has `output` or `result`, not both".into());
-            }
-            (None, Some(output)) if is_typed(&output) => {
-                if json.is_error.is_some() {
-                    return Err(
-                        "`is_error` applies to a `result` value, not to a typed `output`".into(),
-                    );
-                }
-                serde_json::from_value(output)
-                    .map_err(|error| format!("invalid tool result output: {error}"))?
-            }
-            (Some(value), None) | (None, Some(value)) => {
-                ToolResultOutput::from_result(value, json.is_error == Some(true))
-            }
-            (None, None) => return Err("missing field `output`".into()),
-        };
-        Ok(Self {
-            tool_call_id: json.tool_call_id,
-            tool_name: json.tool_name,
-            output,
-            provider_options: json.provider_options,
-        })
-    }
-}
-
-impl From<ToolResultPart> for ToolResultPartJson {
-    fn from(part: ToolResultPart) -> Self {
-        let (result, is_error, output) = match part.output {
-            ToolResultOutput::Text {
-                value,
-                provider_options: None,
-            } => (Some(Value::String(value)), None, None),
-            ToolResultOutput::Json {
-                value,
-                provider_options: None,
-            } => (Some(value), None, None),
-            ToolResultOutput::ErrorText {
-                value,
-                provider_options: None,
-            } => (Some(Value::String(value)), Some(true), None),
-            ToolResultOutput::ErrorJson {
-                value,
-                provider_options: None,
-            } => (Some(value), Some(true), None),
-            output => (
-                None,
-                None,
-                Some(serde_json::to_value(output).expect("a tool result output serializes")),
-            ),
-        };
-        Self {
-            tool_call_id: part.tool_call_id,
-            tool_name: part.tool_name,
-            output,
-            result,
-            is_error,
-            provider_options: part.provider_options,
-        }
-    }
 }
 
 /// The output of a tool call (upstream `ToolResultOutput`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultOutput {
     /// Text for the model.
     Text {
         value: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// JSON for the model.
     Json {
         value: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// The user denied the tool call.
     ExecutionDenied {
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// An error message.
     ErrorText {
         value: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// An error as JSON.
     ErrorJson {
         value: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -525,12 +444,17 @@ impl ToolResultOutput {
 /// conversion turns each into a `file` part with a deprecation warning, as
 /// upstream's `mapToolResultOutput` does.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultContentPart {
     /// Text.
     Text {
         text: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -538,8 +462,10 @@ pub enum ToolResultContentPart {
     File {
         data: crate::shared::FileData,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -547,16 +473,20 @@ pub enum ToolResultContentPart {
     FileData {
         data: String,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         filename: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// A file URL. Deprecated: use `file` with `{ type: 'url' }` data.
     FileUrl {
         url: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         media_type: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -564,6 +494,7 @@ pub enum ToolResultContentPart {
     /// data.
     FileId {
         file_id: ToolResultFileId,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -571,6 +502,7 @@ pub enum ToolResultContentPart {
     /// `{ type: 'reference' }` data.
     FileReference {
         provider_reference: SharedProviderReference,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -578,12 +510,14 @@ pub enum ToolResultContentPart {
     ImageData {
         data: String,
         media_type: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// An image URL. Deprecated: use `file` with an `image` media type.
     ImageUrl {
         url: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -591,6 +525,7 @@ pub enum ToolResultContentPart {
     /// media type.
     ImageFileId {
         file_id: ToolResultFileId,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -598,11 +533,13 @@ pub enum ToolResultContentPart {
     /// media type.
     ImageFileReference {
         provider_reference: SharedProviderReference,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     /// Provider-specific content.
     Custom {
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -617,4 +554,128 @@ pub enum ToolResultContentPart {
 pub enum ToolResultFileId {
     Id(String),
     ByProvider(SharedProviderReference),
+}
+
+/// `FilePart.data` (`provider-utils` `types/content-part.ts:75`):
+/// `FileData | DataContent | URL | ProviderReference`, in JSON a tagged
+/// `FileData`, a string (base64 or a URL) or a bare `{ [provider]: id }`.
+///
+/// A string is read as the AI SDK reads it when it converts the prompt
+/// (`ai` `prompt/file-part-data.ts:125-131`): a URL when it parses as one
+/// (a `data:` URL becomes inline data), base64 otherwise.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(untagged)]
+#[cfg_attr(feature = "ts-export", ts(export))]
+pub enum FilePartData {
+    /// `{ type: 'data' | 'url' | 'reference' | 'text', ... }`.
+    Tagged(FileData),
+    /// A base64 string or a URL string.
+    String(String),
+    /// A bare provider reference.
+    Reference(SharedProviderReference),
+}
+
+/// `ReasoningFilePart.data` (`types/content-part.ts:164`):
+/// `FileDataData | FileDataUrl | DataContent | URL`, in JSON tagged data or a
+/// URL, or a string (base64 or a URL).
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(untagged)]
+#[cfg_attr(feature = "ts-export", ts(export))]
+pub enum ReasoningFilePartData {
+    /// `{ type: 'data' | 'url', ... }`.
+    Tagged(GeneratedFileData),
+    /// A base64 string or a URL string.
+    String(String),
+}
+
+// ── Deserialize by JSON kind ────────────────────────────────────────────────
+//
+// The two file data types serialize untagged, but are read by JSON kind: an
+// untagged `Deserialize` reports only "data did not match any variant", which
+// hides the tagged data's own error (RFC-0042 §7.2,
+// `rfc/0042-v4-type-boundaries.md:211`), and it read an object with an
+// unknown `type` as a provider reference whose provider is "type".
+
+/// An object with a `type` key is tagged file data and never a provider
+/// reference, as the AI SDK decides (`ai@7.0.127`
+/// `src/prompt/file-part-data.ts:14-21` `isTaggedFileData`;
+/// `@ai-sdk/provider-utils@5.0.55` `src/is-provider-reference.ts:9-21`, which
+/// requires `!('type' in data)`), so an unknown `type` is a decode error
+/// naming it. A string is the string form; any other object is a reference.
+impl<'de> Deserialize<'de> for FilePartData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KindVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for KindVisitor {
+            type Value = FilePartData;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str(
+                    "file data: a tagged object, a base64 or URL string, or a provider reference",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(FilePartData::String(value.to_owned()))
+            }
+
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(FilePartData::String(value))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let object = serde_json::Map::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?;
+                let tagged = object.contains_key("type");
+                let object = Value::Object(object);
+                if tagged {
+                    FileData::deserialize(object).map(FilePartData::Tagged)
+                } else {
+                    SharedProviderReference::deserialize(object).map(FilePartData::Reference)
+                }
+                .map_err(serde::de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(KindVisitor)
+    }
+}
+
+/// A string is the string form, an object is tagged generated-file data with
+/// its own error.
+impl<'de> Deserialize<'de> for ReasoningFilePartData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KindVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for KindVisitor {
+            type Value = ReasoningFilePartData;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter
+                    .write_str("reasoning file data: a tagged object or a base64 or URL string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                Ok(ReasoningFilePartData::String(value.to_owned()))
+            }
+
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                Ok(ReasoningFilePartData::String(value))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                map: A,
+            ) -> Result<Self::Value, A::Error> {
+                GeneratedFileData::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+                    .map(ReasoningFilePartData::Tagged)
+            }
+        }
+
+        deserializer.deserialize_any(KindVisitor)
+    }
 }

@@ -7,7 +7,7 @@
 //! the ABI contract:
 //!
 //! - **Constructor class** (`*_new` / `*_new_with_base` / composites): fake
-//!   API key + `base_url` pointing at a loopback port nothing listens on
+//!   API key + `baseUrl` pointing at a loopback port nothing listens on
 //!   (`http://127.0.0.1:1`) → must return NULL and write a non-zero handle,
 //!   which is then released with [`aimux_ffi::aimux_drop_handle`].
 //!   Constructors that cannot take a base URL (e.g. `aimux_provider_from_env`)
@@ -18,7 +18,7 @@
 //!   transcription / rerank / video / search / files): handle + minimal
 //!   options against the unreachable base URL → must return a returned error
 //!   with the AiMuxError view and leave the out-param NULL (a clean error path).
-//!   Text calls pass `{"max_retries":0}` to skip the retry backoff; the
+//!   Text calls pass `{"maxRetries":0}` to skip the retry backoff; the
 //!   multimodal option structs expose no retry override, so those tests run
 //!   as separate `#[test]`s to parallelise the default backoff.
 //! - Every returned error and every returned JSON string is released
@@ -495,7 +495,7 @@ fn constructor_exports_build_and_release_handles() {
     );
 
     // Registry-backed constructors (RFC-0017 / RFC-0027).
-    let provider_opts = c(r#"{"base_url":"http://127.0.0.1:1"}"#);
+    let provider_opts = c(r#"{"baseUrl":"http://127.0.0.1:1"}"#);
     ctor!(
         "provider_new",
         aimux_provider_new(
@@ -590,7 +590,7 @@ fn provider_from_env_handle() {
 fn text_generation_exports_fail_cleanly_on_unreachable_host() {
     let h = unreachable_model();
     let prompt = c("\"ffi smoke\"");
-    let opts = c(r#"{"max_retries":0}"#);
+    let opts = c(r#"{"maxRetries":0}"#);
     let mut out: *mut c_char = ptr::null_mut();
 
     let e = aimux_generate_text(h, prompt.as_ptr(), opts.as_ptr(), &mut out);
@@ -614,7 +614,7 @@ fn text_generation_exports_fail_cleanly_on_unreachable_host() {
 fn streaming_exports_fail_cleanly_on_unreachable_host() {
     let h = unreachable_model();
     let prompt = c("\"ffi smoke\"");
-    let opts = c(r#"{"max_retries":0}"#);
+    let opts = c(r#"{"maxRetries":0}"#);
     let done_before = DONE_SEEN.load(Ordering::Relaxed);
 
     let e = aimux_stream_text(
@@ -717,7 +717,7 @@ fn image_generate_fails_cleanly_on_unreachable_host() {
         &mut h,
     );
     expect_handle(e, h, "image handle");
-    let opts = c(r#"{"prompt":"a rust crab","n":1,"provider_options":{}}"#);
+    let opts = c(r#"{"prompt":"a rust crab","n":1,"providerOptions":{}}"#);
     let mut out: *mut c_char = ptr::null_mut();
     let e = aimux_image_generate(h, opts.as_ptr(), &mut out);
     expect_ptr_aimux_failure(e, out, "image_generate");
@@ -773,7 +773,7 @@ fn rerank_fails_cleanly_on_unreachable_host() {
         &mut h,
     );
     expect_handle(e, h, "reranking handle");
-    let opts = c(r#"{"query":"rust","documents":{"Text":{"values":["a","b"]}}}"#);
+    let opts = c(r#"{"query":"rust","documents":{"type":"text","values":["a","b"]}}"#);
     let mut out: *mut c_char = ptr::null_mut();
     let e = aimux_rerank(h, opts.as_ptr(), &mut out);
     expect_ptr_aimux_failure(e, out, "rerank");
@@ -794,7 +794,7 @@ fn video_generate_fails_cleanly_on_unreachable_host() {
     // pins the serde defaults and the poll wire keys at the ABI boundary —
     // typed binding structs omit unset fields, so a strict parse here would
     // regress every C-ABI language at once.
-    let opts = c(r#"{"prompt":"waves","poll":{"interval_ms":1,"timeout_ms":1}}"#);
+    let opts = c(r#"{"prompt":"waves","poll":{"intervalMs":1,"timeoutMs":1}}"#);
     let mut out: *mut c_char = ptr::null_mut();
     let e = aimux_video_generate(h, opts.as_ptr(), &mut out);
     assert!(out.is_null(), "video_generate: expected NULL out-param");
@@ -901,7 +901,7 @@ fn provider_discovery_and_catalogue_exports_fail_cleanly() {
     let e = aimux_provider_handle_new(
         c("groq").as_ptr(),
         c(FAKE_KEY).as_ptr(),
-        c(r#"{"base_url":"http://127.0.0.1:1"}"#).as_ptr(),
+        c(r#"{"baseUrl":"http://127.0.0.1:1"}"#).as_ptr(),
         &mut provider,
     );
     expect_handle(e, provider, "provider_handle_new");
@@ -1114,17 +1114,17 @@ fn recording_exports_lifecycle_cleanly() {
 
 // ── host-side tool-call repair (RFC-0035, 3 exports) ───────────────────────
 
-const REPAIR_TOOLS: &str = r#"[{"type":"function","name":"weather","input_schema":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}]"#;
-const REPAIR_INVALID: &str = r#"{"tool_call_id":"call-1","tool_name":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,"error":{"InvalidToolInput":{"tool_name":"weather","tool_input":"{\"town\":\"SG\"}","cause":"missing city"}}}"#;
-const REPAIR_REPLY: &str = r#"{"type":"repaired","tool_call":{"tool_call_id":"call-1","tool_name":"weather","input":"{\"city\":\"SG\"}"}}"#;
+const REPAIR_TOOLS: &str = r#"[{"type":"function","name":"weather","inputSchema":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}]"#;
+const REPAIR_INVALID: &str = r#"{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}"#;
+const REPAIR_REPLY: &str = r#"{"type":"repaired","toolCall":{"toolCallId":"call-1","toolName":"weather","input":"{\"city\":\"SG\"}"}}"#;
 
 /// A serialized one-step `GenerateTextResult` whose step finished with tool
 /// calls and holds `content` (a JSON array of content parts). Only the steps
 /// and the total usage are read back from a result.
 fn tool_call_result(content: &str) -> String {
-    let usage = r#"{"input_tokens":1,"output_tokens":1,"total_tokens":2}"#;
+    let usage = r#"{"inputTokens":1,"outputTokens":1,"totalTokens":2}"#;
     format!(
-        r#"{{"steps":[{{"call_id":"","step_number":0,"model":{{"provider":"openai","model_id":"gpt-4o-mini"}},"content":{content},"finish_reason":"tool-calls","usage":{usage},"performance":{{"effective_output_tokens_per_second":0.0,"effective_total_tokens_per_second":0.0,"step_time_ms":0.0,"response_time_ms":0.0}},"response":{{"id":"","timestamp":"","model_id":""}}}}],"total_usage":{usage}}}"#
+        r#"{{"steps":[{{"callId":"","stepNumber":0,"model":{{"provider":"openai","modelId":"gpt-4o-mini"}},"content":{content},"finishReason":"tool-calls","usage":{usage},"performance":{{"effectiveOutputTokensPerSecond":0.0,"effectiveTotalTokensPerSecond":0.0,"stepTimeMs":0.0,"responseTimeMs":0.0}},"response":{{"id":"","timestamp":"2024-01-01T00:00:00.000Z","modelId":""}}}}],"totalUsage":{usage}}}"#
     )
 }
 
@@ -1145,7 +1145,7 @@ fn tool_call_repair_exports_round_trip() {
     ok(e, "tool_call_repair_context");
     let context = read_and_free_json(out, "tool_call_repair_context");
     assert!(
-        context.contains("\"input_schema\"") && context.contains("{\\\"town\\\":\\\"SG\\\"}"),
+        context.contains("\"inputSchema\"") && context.contains("{\\\"town\\\":\\\"SG\\\"}"),
         "context should carry the schema and the raw argument text: {context}"
     );
     // The `{"prompt": …}` wrapper unwrapped into the one user message.
@@ -1153,6 +1153,12 @@ fn tool_call_repair_exports_round_trip() {
         context.contains(r#""messages":[{"role":"user","content":"weather in SG?"}]"#)
             && context.contains(r#""instructions":"be terse""#),
         "messages and instructions come from prompt_json / opts_json: {context}"
+    );
+    // The repair function's `toolCall` is a tagged `LanguageModelV4ToolCall`
+    // (provider language-model-v4-tool-call.ts:7).
+    assert!(
+        context.contains(r#""toolCall":{"type":"tool-call","toolCallId":"call-1""#),
+        "{context}"
     );
 
     let e = aimux_apply_tool_call_repair(
@@ -1167,8 +1173,16 @@ fn tool_call_repair_exports_round_trip() {
         repaired.contains(r#""input":{"city":"SG"}"#) && !repaired.contains("invalid"),
         "repaired call should be valid: {repaired}"
     );
+    // A standalone call is a tagged `TypedToolCall` (ai generate-text/tool-call.ts:8-14).
+    assert!(
+        repaired.starts_with(r#"{"type":"tool-call","toolCallId":"call-1""#),
+        "{repaired}"
+    );
 
-    let result = tool_call_result(&format!(r#"[{{"ToolCall":{REPAIR_INVALID}}}]"#));
+    let result = tool_call_result(&format!(
+        r#"[{{"type":"tool-call",{}]"#,
+        &REPAIR_INVALID[1..]
+    ));
     let e = aimux_apply_tool_call_repair_to_result(
         c(&result).as_ptr(),
         c(&opts).as_ptr(),
@@ -1179,6 +1193,10 @@ fn tool_call_repair_exports_round_trip() {
     ok(e, "apply_tool_call_repair_to_result");
     let patched = read_and_free_json(out, "apply_tool_call_repair_to_result");
     assert!(patched.contains(r#""invalid":true"#), "{patched}");
+    assert!(
+        patched.contains(r#""toolCalls":[{"type":"tool-call","toolCallId":"call-1""#),
+        "{patched}"
+    );
 
     // A reply naming a tool call the document does not have is an AiMuxError.
     let e = aimux_apply_tool_call_repair_to_result(
@@ -1200,7 +1218,7 @@ fn tool_call_repair_exports_round_trip() {
 #[test]
 fn a_repaired_result_converts_to_a_chat_completion() {
     let result = tool_call_result(
-        r#"[{"ToolCall":{"tool_call_id":"call-1","tool_name":"weather","input":{"city":"SG"}}}]"#,
+        r#"[{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}]"#,
     );
     let h = unreachable_model();
 

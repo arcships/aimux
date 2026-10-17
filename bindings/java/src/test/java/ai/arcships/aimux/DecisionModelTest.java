@@ -16,8 +16,9 @@ class DecisionModelTest {
         try (DecisionModel model = provider.decisionModel("gpt-6-luna")) {
             provider.close();
             JsonNode description = new ObjectMapper().readTree(model.describe());
-            assertEquals("v4", description.get("specification_version").asText());
+            assertEquals("v4", description.get("specificationVersion").asText());
             assertEquals("openai", description.get("provider").asText());
+            assertEquals("gpt-6-luna", description.get("modelId").asText());
             assertThrows(IllegalStateException.class, () -> provider.decisionModel("gpt-6-luna"));
         } finally { provider.close(); }
     }
@@ -40,11 +41,13 @@ class DecisionModelTest {
                 "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/systemone", "native")) {
             JsonNode description = mapper.readTree(model.describe());
             assertEquals("jev", description.get("provider").asText());
-            assertEquals(3, description.get("supported_question_types").size());
+            assertEquals(3, description.get("supportedQuestionTypes").size());
             assertNull(captured.get());
             JsonNode result = mapper.readTree(model.decide(fixture.get("request").toString()));
             assertEquals(0.9, result.get("answers").get("urgent").get("probability").asDouble());
-            assertEquals(2, result.get("rounding").get("score_decimals").asInt());
+            assertEquals(2, result.get("rounding").get("scoreDecimals").asInt());
+            assertEquals(mapper.readTree("{\"inputTokens\":50,\"outputTokens\":10,\"totalTokens\":60}"),
+                result.get("usage"));
             assertEquals(fixture.get("request").get("questions").get("urgent").get("criteria"),
                 captured.get().get("questions").get("urgent").get("criteria"));
             assertEquals(fixture.get("request").get("questions").get("severity").get("criteria"),
@@ -76,7 +79,7 @@ class DecisionModelTest {
             JsonNode result = mapper.readTree(model.decide(fixture.get("options").toString()));
             assertEquals(fixture.get("request"), captured.get());
             assertEquals("boolean_true", result.get("answers").get("choice").get("choice").asText());
-            JsonNode value = result.get("provider_metadata").get("openai").get("answers").get("choice").get("value");
+            JsonNode value = result.get("providerMetadata").get("openai").get("answers").get("choice").get("value");
             assertTrue(value.isBoolean());
             assertTrue(value.asBoolean());
             assertEquals(0.75, result.get("answers").get("score").get("score").asDouble());

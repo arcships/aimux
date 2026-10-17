@@ -7,8 +7,8 @@ export type InputAudioFormat = {
 /**
  * Audio format type, e.g. `"audio/pcm"`, `"audio/pcmu"`, `"audio/pcma"`.
  */
-format_type: string, 
+formatType: string, 
 /**
  * Sample rate in Hz. Only applicable for formats that require a rate.
  */
-rate: number | null, };
+rate?: number, };

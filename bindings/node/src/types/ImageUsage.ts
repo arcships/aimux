@@ -9,12 +9,12 @@ export type ImageUsage = {
 /**
  * Number of input (prompt) tokens used.
  */
-input_tokens: number | null, 
+inputTokens?: number, 
 /**
  * Number of output tokens used, if reported.
  */
-output_tokens: number | null, 
+outputTokens?: number, 
 /**
  * Total tokens as reported by the provider.
  */
-total_tokens: number | null, };
+totalTokens?: number, };

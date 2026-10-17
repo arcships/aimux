@@ -101,7 +101,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
             )));
         }
         (self.project_location)().await?;
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let config = crate::google::transcription::TranscriptionOptions::parse(
             Namespace::Vertex.read(options.provider_options.as_ref()),
         )?
@@ -252,7 +252,7 @@ impl VertexGeminiTranscriptionModel {
             body: Some(setup["setup"].to_string()),
         });
         let response = Some(TranscriptionResponse {
-            timestamp: Some(chrono::Utc::now().to_rfc3339()),
+            timestamp: Some(aimux_core::Timestamp::now()),
             model_id: Some(self.model_id.clone()),
             ..Default::default()
         });

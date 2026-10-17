@@ -12,18 +12,22 @@
  *
  * All values are milliseconds; `None` disables the corresponding limit. A
  * `total` timeout also covers retry backoff and the whole streamed response.
+ *
+ * Unknown keys, upstream's `toolMs` / `tools` among them, are rejected
+ * (RFC-0042 §7.2): aimux 0.5's `total_ms` is an error naming it, not a call
+ * without a timeout.
  */
 export type TimeoutConfiguration = {
 /**
  * Overall timeout for the entire call (including retries and, for
  * streaming, the whole stream), in milliseconds.
  */
-total_ms: number | null,
+totalMs?: number,
 /**
  * Timeout for one generation step, including that step's attempts and
  * retry backoff, in milliseconds. Aimux currently has one step.
  */
-step_ms: number | null,
+stepMs?: number,
 /**
  * Timeout waiting for the first stream chunk (streaming only).
  *
@@ -31,8 +35,8 @@ step_ms: number | null,
  * and any retries before the first semantic output: it is the
  * user-perceived time-to-first-output budget, not a per-attempt timer.
  */
-first_chunk_ms: number | null,
+firstChunkMs?: number,
 /**
  * Maximum idle time between consecutive stream chunks (streaming only).
  */
-chunk_ms: number | null, };
+chunkMs?: number, };

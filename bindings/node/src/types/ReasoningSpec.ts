@@ -13,23 +13,23 @@ supported: boolean,
 /**
  * Whether reasoning should be on by default.
  */
-default_enabled: boolean, 
+defaultEnabled: boolean, 
 /**
  * Primary control mode.
  */
-mode: ReasoningMode | null, 
+mode?: ReasoningMode, 
 /**
  * Default effort level (when `mode` is Effort/Mixed).
  */
-effort_default?: string | null, 
+effortDefault?: string, 
 /**
  * Supported effort levels.
  */
-effort_options?: Array<string>, 
+effortOptions?: Array<string>, 
 /**
  * Minimum token budget (when `mode` is Budget/Mixed).
  */
-budget_min?: number | null, 
+budgetMin?: number, 
 /**
  * Interleaved reasoning (thinking blocks between tool calls).
  */
@@ -37,4 +37,4 @@ interleaved: boolean,
 /**
  * Output visibility.
  */
-visibility: ReasoningVisibility | null, };
+visibility?: ReasoningVisibility, };

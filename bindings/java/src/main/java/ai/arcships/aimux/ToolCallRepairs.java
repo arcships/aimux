@@ -44,7 +44,7 @@ final class ToolCallRepairs {
         return AimuxResult.extractString(e, out, "apply_tool_call_repair");
     }
 
-    /** Patch a whole result document (tool_calls and response_messages). */
+    /** Patch a whole result document (toolCalls and responseMessages). */
     static String applyToResult(String resultJson, String optsJson, String toolCallId, String replyJson) {
         PointerByReference out = new PointerByReference();
         Pointer e = AimuxFFI.INSTANCE.aimux_apply_tool_call_repair_to_result(
@@ -83,7 +83,7 @@ final class ToolCallRepairs {
                 continue; // no tool set — never repaired (AI SDK rule)
             }
             patched = applyToResult(patched, optsJson,
-                call.path("tool_call_id").asText(), reply(hook, contextJson));
+                call.path("toolCallId").asText(), reply(hook, contextJson));
         }
         return patched;
     }
@@ -103,8 +103,8 @@ final class ToolCallRepairs {
             return partJson;
         }
         JsonNode part = parse(partJson);
-        JsonNode call = part.path("ToolCall");
-        if (!call.isObject() || !call.path("invalid").asBoolean(false)) {
+        JsonNode call = part;
+        if (!"tool-call".equals(part.path("type").asText()) || !call.path("invalid").asBoolean(false)) {
             return partJson;
         }
         String contextJson = context(call.toString(), promptJson, optsJson);
@@ -113,7 +113,8 @@ final class ToolCallRepairs {
         }
         String repaired = apply(call.toString(), optsJson, reply(offCallbackThread(hook, model), contextJson));
         ObjectNode out = Types.AimuxJson.MAPPER.createObjectNode();
-        out.set("ToolCall", parse(repaired));
+        out.put("type", "tool-call");
+        out.setAll((ObjectNode) parse(repaired));
         return out.toString();
     }
 
@@ -181,7 +182,7 @@ final class ToolCallRepairs {
             replacement = hook.repair(context);
         } catch (Exception e) {
             // The host's own failure is data, not a thrown error: it comes back
-            // as ToolCallRepair { original_error, cause }.
+            // as ToolCallRepair { originalError, cause }.
             ObjectNode failed = Types.AimuxJson.MAPPER.createObjectNode();
             failed.put("type", "failed");
             failed.put("message", e.getMessage() == null ? e.toString() : e.getMessage());
@@ -192,13 +193,13 @@ final class ToolCallRepairs {
         }
         ObjectNode repaired = Types.AimuxJson.MAPPER.createObjectNode();
         repaired.put("type", "repaired");
-        repaired.set("tool_call", Types.AimuxJson.MAPPER.valueToTree(replacement));
+        repaired.set("toolCall", Types.AimuxJson.MAPPER.valueToTree(replacement));
         return repaired.toString();
     }
 
-    /** The top-level {@code tool_calls} of a text result (missing on an object result). */
+    /** The top-level {@code toolCalls} of a text result (missing on an object result). */
     private static JsonNode toolCalls(JsonNode result) {
-        return result.path("tool_calls");
+        return result.path("toolCalls");
     }
 
     private static boolean isNull(String json) {

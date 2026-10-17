@@ -13,15 +13,12 @@ pub struct DecisionModel {
 
 #[pymethods]
 impl DecisionModel {
-    /// The DecisionModelV4 properties as JSON: `specification_version`,
-    /// `provider`, `model_id`, `supported_question_types`.
+    /// The DecisionModelV4 properties as JSON: `specificationVersion`,
+    /// `provider`, `modelId`, `supportedQuestionTypes`.
     pub fn describe(&self) -> PyResult<String> {
-        serialize_result(&serde_json::json!({
-            "specification_version": self.inner.specification_version(),
-            "provider": self.inner.provider(),
-            "model_id": self.inner.model_id(),
-            "supported_question_types": self.inner.supported_question_types(),
-        }))
+        serialize_result(&aimux_core::decision_model::decision_model_properties(
+            self.inner.as_ref(),
+        ))
     }
 
     /// `opts_json` is `DecideOptions` JSON; returns `DecideResult` JSON.

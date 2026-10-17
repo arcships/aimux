@@ -3,6 +3,6 @@
 /**
  * Decimal places the provider rounded its output to; omit for full
  * precision. Validation allows half a unit in the last place per rounded
- * value.
+ * value (`decision-model-v4-result.ts:39-42`).
  */
-export type DecisionRounding = { probability_decimals?: number, score_decimals?: number, };
+export type DecisionRounding = { probabilityDecimals?: number, scoreDecimals?: number, };

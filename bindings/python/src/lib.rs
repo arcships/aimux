@@ -174,7 +174,7 @@ impl Model {
     /// prompt_json: JSON string (bare prompt or {"prompt": ...})
     /// opts_json: optional JSON-serialized GenerateTextOptions
     /// Returns JSON-serialized GenerateObjectResult (core's deprecated
-    /// `generate_object` wrapper). Pass `output: { "Object": { "schema": ... } }`
+    /// `generate_object` wrapper). Pass `output: { "type": "object", "schema": ... }`
     /// via opts_json to describe the value; the model's text must parse and
     /// match the schema.
     #[pyo3(signature = (prompt_json, opts_json=None))]
@@ -1078,7 +1078,8 @@ fn mock_replay(recordings_jsonl: &str) -> PyResult<Model> {
 /// (per config_json). `models` must be non-empty.
 ///
 /// `config_json` (optional): {"router": "rule"|"weighted", "weights": [...],
-/// "fallback": "on_error"|"none", "provider_name", "model_id"}.
+/// "fallback": "on_error"|"none", "providerName", "modelId"}; an unknown key
+/// is an error.
 #[pyfunction]
 #[pyo3(signature = (models, config_json=None))]
 fn router(models: Vec<PyRef<Model>>, config_json: Option<&str>) -> PyResult<Model> {
@@ -1139,8 +1140,10 @@ fn moa(
     })
 }
 
-/// Lenient router config (mirrors the FFI-side shape; all fields optional).
+/// Router config, the C ABI's shape: camelCase, all fields optional,
+/// unknown keys rejected.
 #[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouterFfiConfig {
     router: Option<String>,
     weights: Option<Vec<f64>>,
@@ -1193,10 +1196,10 @@ fn tool_call_repair_context(
 /// Resolve one invalid tool call against a host's repair reply.
 ///
 /// `opts_json` is the same string the call was generated with; the tool set
-/// comes from it. `reply_json` is ``{"type":"repaired","tool_call":{…}}``,
+/// comes from it. `reply_json` is ``{"type":"repaired","toolCall":{…}}``,
 /// ``{"type":"unchanged"}``, or ``{"type":"failed","message":"…"}``. Returns
-/// the resulting ``ToolCall`` JSON — valid, or invalid carrying a nested
-/// ``ToolCallRepairError``.
+/// the resulting ``ToolCall`` JSON, tagged ``"type": "tool-call"`` — valid,
+/// or invalid carrying a nested ``ToolCallRepairError``.
 ///
 /// Options carrying no tools raise ``InvalidArgumentError``: such a call is
 /// not repairable, and ``tool_call_repair_context`` already said so by
@@ -1217,7 +1220,7 @@ fn apply_tool_call_repair(
         reply,
     )
     .map_err(|e| to_py_err(&e))?;
-    serialize_result(&repaired)
+    serialize_result(&aimux_core::wire::Tagged(&repaired))
 }
 
 /// Apply a repair reply to a serialized ``GenerateTextResult``, rewriting the
@@ -1354,5 +1357,30 @@ fn parse_opts(json: Option<&str>) -> PyResult<GenerateTextOptions> {
             }
             wire_json("opts_json", s)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RouterFfiConfig;
+
+    /// The router config is the C ABI's: camelCase, unknown keys rejected,
+    /// so the same JSON names the router in every binding.
+    #[test]
+    fn router_config_is_camel_case_and_strict() {
+        let cfg: RouterFfiConfig = serde_json::from_str(
+            r#"{"router":"weighted","weights":[1.0],"fallback":"none","providerName":"r","modelId":"m"}"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.router.as_deref(), Some("weighted"));
+        assert_eq!(cfg.provider_name.as_deref(), Some("r"));
+        assert_eq!(cfg.model_id.as_deref(), Some("m"));
+        let error = serde_json::from_str::<RouterFfiConfig>(r#"{"provider_name":"r"}"#)
+            .err()
+            .expect("a snake_case key is rejected");
+        assert!(
+            error.to_string().contains("unknown field `provider_name`"),
+            "{error}"
+        );
     }
 }

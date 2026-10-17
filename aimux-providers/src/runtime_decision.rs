@@ -434,7 +434,7 @@ impl RuntimeDecisionModel {
             }
         }
         if let Some(latency) = latency {
-            metadata.insert("latency_ms".into(), latency);
+            metadata.insert("latencyMs".into(), latency);
         }
         Ok(result)
     }

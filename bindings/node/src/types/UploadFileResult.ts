@@ -12,20 +12,20 @@ export type UploadFileResult = {
  * A provider reference mapping provider names to provider-specific file
  * identifiers.
  */
-provider_reference: { [key in string]: string }, 
+providerReference: { [key in string]: string }, 
 /**
  * The IANA media type of the uploaded file, if available from the
  * provider.
  */
-media_type: string | null, 
+mediaType?: string, 
 /**
  * The filename of the uploaded file, if available from the provider.
  */
-filename: string | null, 
+filename?: string, 
 /**
  * Additional provider-specific metadata, keyed by provider name.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, 
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Warnings from the provider.
  */

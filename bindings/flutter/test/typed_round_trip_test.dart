@@ -1,543 +1,384 @@
-// Round-trip serialization tests for the typed `GenerateContent` /
-// `StreamPart` sealed class hierarchies in `types.dart`.
-//
-// These tests are pure Dart — no FFI, no Rust core, no mock server. They
-// verify that every known variant (and the `Unknown` fallback) survives a
-// `toJson()` -> `fromJson()` round-trip with all fields intact, and that the
-// externally-tagged wire shape matches the Rust core contract:
-//
-//   - `File` variants serialize `data` + `media_type` and **never** `filename`.
-//   - `ToolResult` variants use the `result` key, **not** `output`.
-//   - `Unknown` variants pass the tag + payload through verbatim.
-//
-// Run:
-//   export PATH="/home/eric8810/.local/dart-sdk/bin:$PATH"
-//   cd bindings/flutter && dart test test/typed_round_trip_test.dart
-
+// Pure-Dart round trips for the typed `GenerateContent` / `StreamPart` unions,
+// tool calls, options and results against the generated wire shapes in
+// `bindings/node/src/types/`: camelCase fields, `type`-tagged unions with
+// kebab-case values, optional fields absent (never null).
 import 'dart:convert';
 
 import 'package:aimux/types.dart';
 import 'package:test/test.dart';
 
-/// Deep-flatten a `toJson()` result across the JSON boundary.
-///
-/// The variants nesting `@JsonSerializable` types (`StreamPartFinishStep`,
-/// `StreamPartFinish`) are re-parsed after crossing a JSON-string boundary,
-/// as in the real pipeline (Rust core → JSON → Dart).
-Map<String, dynamic> deepFlatten(Map<String, dynamic> json) =>
-    jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
+const _meta = {
+  'openai': {'itemId': 'item_1'}
+};
+// The provider's LanguageModelV4File (`language-model-v4-file.ts`).
+const _file = {
+  'data': {'type': 'data', 'data': 'aGk='},
+  'mediaType': 'image/png',
+};
+// The AI SDK's GeneratedFile is {base64, mediaType, providerMetadata?}
+// (`generate-text/generated-file.ts:10-32`); a stream file part is
+// {type, file, providerMetadata?} (`stream-language-model-call.ts:569-590`).
+const _generatedFile = {'base64': 'aGk=', 'mediaType': 'image/png'};
+// The call-level LanguageModelUsage of a result and of the stream's
+// finish-step / finish parts: the AI SDK's (`types/usage.ts:10-67`),
+// camelCase, an unknown count absent.
+const _lmUsage = {
+  'inputTokens': 3,
+  'inputTokenDetails': {'cacheReadTokens': 1},
+  'outputTokens': 2,
+  'outputTokenDetails': <String, dynamic>{},
+  'totalTokens': 5,
+};
 
 void main() {
-  group('Provider tool round-trip', () {
-    test('preserves deferred results and omits null', () {
-      for (final supported in <bool?>[null, true, false]) {
-        final original = Tool.provider(
-          id: 'anthropic.code_execution_20250522',
-          name: 'code_execution',
-          args: {},
-          supportsDeferredResults: supported,
-        );
-        final json = deepFlatten(original.toJson());
-        expect(json.containsKey('supportsDeferredResults'), supported != null);
-        expect(json['supportsDeferredResults'], supported);
-        final decoded = Tool.fromJson(json);
-        expect(decoded.supportsDeferredResults, supported);
-        expect(decoded.toJson(), json);
+  group('ToolCall', () {
+    test('round-trips and omits absent optionals', () {
+      final json = {
+        'type': 'tool-call',
+        'toolCallId': 'call_1',
+        'toolName': 'get_weather',
+        'input': {'city': 'Paris'},
+        'providerExecuted': true,
+        'dynamic': false,
+        'providerMetadata': _meta,
+        'invalid': true,
+        'error': {'name': 'AI_NoSuchToolError', 'toolName': 'x'},
+      };
+      expect(ToolCall.fromJson(json).toJson(), json);
+
+      final minimal = ToolCall(toolCallId: 'c', toolName: 't', input: const {});
+      expect(minimal.toJson().keys, ['type', 'toolCallId', 'toolName', 'input']);
+    });
+
+    // Provider metadata is a JS object upstream (@ai-sdk/provider
+    // shared-v4-provider-metadata.ts:24), so its keys keep insertion order
+    // (#229 NP2-1); a decoded Dart map keeps them too.
+    test('provider namespaces keep insertion order', () {
+      const metadata = '{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}';
+      final text = '{"type":"tool-call","toolCallId":"call-1","toolName":"weather",'
+          '"input":{},"providerMetadata":$metadata}';
+      final call = ToolCall.fromJson(jsonDecode(text) as Map<String, dynamic>);
+      expect(call.providerMetadata!.keys, ['zeta', 'alpha', 'mid']);
+      expect(jsonEncode(call.toJson()), text);
+    });
+
+    // A result's toolCalls and sources are the AI SDK's TypedToolCall and
+    // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+    // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+    // :36); generate-text-result.ts:73, :78 (#229 NP2-7).
+    test('standalone calls and sources carry their type tag', () {
+      final source = {
+        'type': 'source',
+        'sourceType': 'url',
+        'id': 's1',
+        'url': 'https://example.com',
+      };
+      expect(Source.fromJson(source).toJson(), source);
+      expect(
+          const RawToolCall(toolCallId: 'c', toolName: 't', input: '{}')
+              .toJson(),
+          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': '{}'});
+      // JSON written before the tag still reads; another tag is rejected.
+      expect(
+          ToolCall.fromJson({'toolCallId': 'c', 'toolName': 't', 'input': {}})
+              .toJson()['type'],
+          'tool-call');
+      expect(
+          () => ToolCall.fromJson(
+              {'type': 'source', 'toolCallId': 'c', 'toolName': 't', 'input': {}}),
+          throwsFormatException);
+    });
+
+    test('RawToolCall keeps every provider field through copyWith', () {
+      final call = RawToolCall.fromJson({
+        'toolCallId': 'call-1',
+        'toolName': 'weather',
+        'input': '{"town":"Tokyo"}',
+        'providerExecuted': true,
+        'dynamic': true,
+        'providerMetadata': _meta,
+      });
+      expect(call.copyWith(input: '{"city":"Tokyo"}').toJson(), {
+        'type': 'tool-call',
+        'toolCallId': 'call-1',
+        'toolName': 'weather',
+        'input': '{"city":"Tokyo"}',
+        'providerExecuted': true,
+        'dynamic': true,
+        'providerMetadata': _meta,
+      });
+    });
+  });
+
+  group('GenerateContent', () {
+    final cases = <Map<String, dynamic>>[
+      {'type': 'text', 'text': 'hi', 'providerMetadata': _meta},
+      {
+        'type': 'tool-call',
+        'toolCallId': 'c1',
+        'toolName': 'w',
+        'input': '{"a":1}',
+        'dynamic': true,
+      },
+      {'type': 'source', 'sourceType': 'url', 'id': 's', 'url': 'https://x'},
+      {
+        'type': 'source',
+        'sourceType': 'document',
+        'id': 's',
+        'mediaType': 'application/pdf',
+        'title': 'T',
+        'filename': 'f.pdf',
+      },
+      {'type': 'reasoning', 'text': 'hmm'},
+      {'type': 'file', ..._file},
+      {'type': 'reasoning-file', ..._file},
+      {'type': 'custom', 'kind': 'k'},
+      {'type': 'tool-approval-request', 'approvalId': 'a', 'toolCallId': 'c'},
+      {
+        'type': 'tool-result',
+        'toolCallId': 'c1',
+        'toolName': 'web_search',
+        'result': {'count': 3},
+        'isError': false,
+        'preliminary': true,
+        'dynamic': false,
+      },
+    ];
+    for (final json in cases) {
+      test(json['type'] as String, () {
+        final c = GenerateContent.fromJson(json);
+        expect(c, isNot(isA<GenerateContentUnknown>()));
+        expect(c.tag, json['type']);
+        expect(c.toJson(), json);
+      });
+    }
+
+    test('unknown type passes through verbatim', () {
+      final json = {'type': 'future', 'n': 42};
+      final c = GenerateContent.fromJson(json);
+      expect(c, isA<GenerateContentUnknown>());
+      expect(c.tag, 'future');
+      expect(c.toJson(), json);
+    });
+  });
+
+  group('StreamPart', () {
+    final call = {
+      'type': 'tool-call',
+      'toolCallId': 'c1',
+      'toolName': 'w',
+      'input': {'a': 1},
+      'invalid': true,
+    };
+    final cases = <Map<String, dynamic>>[
+      {'type': 'text-start', 'id': 't'},
+      {'type': 'text-delta', 'id': 't', 'text': 'hel', 'providerMetadata': _meta},
+      {'type': 'text-end', 'id': 't'},
+      {'type': 'start'},
+      {
+        'type': 'start-step',
+        'request': <String, dynamic>{},
+        'warnings': [
+          {'type': 'other', 'message': 'm'}
+        ]
+      },
+      {
+        'type': 'finish-step',
+        'response': {'id': 'r', 'modelId': 'gpt-4o'},
+        'usage': _lmUsage,
+        'performance': {'stepTimeMs': 1.0},
+        'finishReason': 'tool-calls',
+        'rawFinishReason': 'tool_calls',
+      },
+      {'type': 'finish', 'finishReason': 'stop', 'totalUsage': _lmUsage},
+      {'type': 'abort', 'reason': 'stop'},
+      {
+        'type': 'error',
+        'error': {'name': 'AI_APICallError', 'message': 'boom', 'isRetryable': false},
+      },
+      {
+        'type': 'tool-input-start',
+        'id': 'tc',
+        'toolName': 'w',
+        'providerExecuted': true,
+        'dynamic': false,
+        'title': 'Weather',
+      },
+      {'type': 'tool-input-delta', 'id': 'tc', 'delta': '{"lo'},
+      {'type': 'tool-input-end', 'id': 'tc'},
+      {'type': 'tool-call', ...call},
+      {
+        'type': 'tool-result',
+        'toolCallId': 'c1',
+        'toolName': 'w',
+        'input': {'q': 'rust'},
+        'output': {'count': 3},
+        'providerExecuted': true,
+      },
+      // A deferred result has no input.
+      {'type': 'tool-result', 'toolCallId': 'srv-0', 'toolName': 'code_execution', 'output': 'done'},
+      {
+        'type': 'tool-error',
+        'toolCallId': 'srv-2',
+        'toolName': 'code_execution',
+        'input': {'code': '1/0'},
+        'error': {'error_code': 'unavailable'},
+        'providerExecuted': true,
+      },
+      {'type': 'tool-output-denied', 'toolCallId': 'c', 'toolName': 't'},
+      {'type': 'file', 'file': _generatedFile, 'providerMetadata': _meta},
+      {'type': 'reasoning-file', 'file': _generatedFile},
+      {'type': 'custom', 'kind': 'k'},
+      {
+        'type': 'tool-approval-request',
+        'approvalId': 'a',
+        'toolCall': call,
+        'reason': 'r',
+      },
+      {
+        'type': 'tool-approval-response',
+        'approvalId': 'a',
+        'toolCall': call,
+        'approved': false,
+      },
+      {'type': 'reasoning-start', 'id': 'r1'},
+      {'type': 'reasoning-delta', 'id': 'r1', 'text': 'thi'},
+      {'type': 'reasoning-end', 'id': 'r1'},
+      {'type': 'source', 'sourceType': 'url', 'id': 's', 'url': 'https://x'},
+      {'type': 'raw', 'rawValue': {'raw': 'chunk'}},
+    ];
+    for (final json in cases) {
+      test(json['type'] as String, () {
+        final p = StreamPart.fromJson(json);
+        expect(p, isNot(isA<StreamPartUnknown>()));
+        expect(p.type, json['type']);
+        expect(p.toJson(), json);
+      });
+    }
+
+    test('unknown type passes through verbatim', () {
+      final json = {'type': 'future-part', 'n': 7};
+      final p = StreamPart.fromJson(json);
+      expect(p, isA<StreamPartUnknown>());
+      expect(p.type, 'future-part');
+      expect(p.toJson(), json);
+    });
+  });
+
+  test('GeneratedFile is base64 and mediaType', () {
+    final file = GeneratedFile.fromJson(_generatedFile);
+    expect(file.bytes, [104, 105]);
+    expect(file.toJson(), _generatedFile);
+    final part = StreamPart.fromJson({'type': 'file', 'file': _generatedFile});
+    expect((part as StreamPartFile).file.base64, 'aGk=');
+  });
+
+  group('options and results', () {
+    test('GenerateTextOptions uses camelCase keys and omits unset fields', () {
+      final options = GenerateTextOptions(
+        maxOutputTokens: 10,
+        stopSequences: ['x'],
+        toolChoice: ToolChoice.tool('w'),
+        timeout: TimeoutConfiguration(totalMs: 1000),
+        includeRawChunks: true,
+        sessionId: 'sess-1',
+        tools: [
+          Tool.function(FunctionTool(name: 'w', inputSchema: {'type': 'object'})),
+        ],
+      );
+      final json = options.toJson();
+      expect(json, {
+        'maxOutputTokens': 10,
+        'stopSequences': ['x'],
+        'toolChoice': {'type': 'tool', 'toolName': 'w'},
+        'timeout': {'totalMs': 1000},
+        'includeRawChunks': true,
+        'sessionId': 'sess-1',
+        'tools': [
+          {'type': 'function', 'name': 'w', 'inputSchema': {'type': 'object'}}
+        ],
+      });
+      expect(GenerateTextOptions.fromJson(json).toJson(), json);
+      expect(GenerateTextOptions().toJson(), isEmpty);
+    });
+
+    test('provider tool', () {
+      final json = {
+        'type': 'provider',
+        'id': 'anthropic.web_search_20250305',
+        'name': 'web_search',
+        'args': {'maxUses': 1},
+      };
+      expect(Tool.fromJson(json).toJson(), json);
+      expect(Tool.fromJson(json).supportsDeferredResults, isNull);
+      // supportsDeferredResults is kept when set
+      // (provider-utils@5.0.55 src/types/tool.ts:316-326).
+      for (final supported in [true, false]) {
+        final deferred = {...json, 'supportsDeferredResults': supported};
+        expect(Tool.fromJson(deferred).supportsDeferredResults, supported);
+        expect(Tool.fromJson(deferred).toJson(), deferred);
       }
     });
-  });
 
-  group('ToolCall round-trip', () {
-    test('preserves provider_metadata', () {
-      final original = ToolCall(
-        toolCallId: 'call_1',
-        toolName: 'get_weather',
-        input: {'city': 'Paris'},
-        providerMetadata: {
-          'openai': {'itemId': 'item_1'},
-        },
-      );
-      final json = original.toJson();
-      expect(json['provider_metadata'], {
-        'openai': {'itemId': 'item_1'},
-      });
+    test('GenerateTextResult round-trips', () {
+      final json = jsonDecode(jsonEncode({
+        'content': [
+          {'type': 'text', 'text': 'hi'}
+        ],
+        'text': 'hi',
+        'reasoning': [],
+        'files': [],
+        'sources': [],
+        'toolCalls': [
+          {'type': 'tool-call', 'toolCallId': 'c', 'toolName': 't', 'input': {}}
+        ],
+        'toolResults': [],
+        'finishReason': 'tool-calls',
+        'rawFinishReason': 'tool_calls',
+        'usage': _lmUsage,
+        'totalUsage': _lmUsage,
+        'warnings': [],
+        'request': {},
+        'response': {'id': 'r'},
+        'responseMessages': [
+          {'role': 'assistant', 'content': 'hi'}
+        ],
+        'steps': [
+          {'callId': 'c1', 'stepNumber': 0}
+        ],
+      })) as Map<String, dynamic>;
+      final result = GenerateTextResult.fromJson(json);
+      expect(result.finishReason, 'tool-calls');
+      expect(result.usage.totalTokens, 5);
+      expect(result.totalUsage.inputTokenDetails.cacheReadTokens, 1);
+      expect(result.reasoningText, isNull);
+      expect(result.output, isNull);
+      expect(result.hasOutput, isFalse);
+      expect(result.steps, hasLength(1));
+      expect(jsonDecode(jsonEncode(result)), json);
 
-      final decoded = ToolCall.fromJson(json);
-      expect(decoded.providerMetadata, original.providerMetadata);
+      // A parsed JSON null output is written back as null, apart from no
+      // output (the public JSON keeps null apart from undefined).
+      final parsedNull = Map<String, dynamic>.of(json)..['output'] = null;
+      final withNull = GenerateTextResult.fromJson(parsedNull);
+      expect(withNull.output, isNull);
+      expect(withNull.hasOutput, isTrue);
+      expect(jsonDecode(jsonEncode(withNull)), parsedNull);
     });
 
-    test('provider_metadata accepts arbitrary JSON and omits null', () {
-      final scalar = ToolCall(
-        toolCallId: 'call_scalar',
-        toolName: 'tool',
-        input: const {},
-        providerMetadata: 'opaque-provider-token',
-      );
-      expect(scalar.toJson()['provider_metadata'], 'opaque-provider-token');
-      expect(ToolCall.fromJson(scalar.toJson()).providerMetadata,
-          'opaque-provider-token');
-
-      final absent = ToolCall(
-        toolCallId: 'call_absent',
-        toolName: 'tool',
-        input: const {},
-      );
-      expect(absent.toJson(), isNot(contains('provider_metadata')));
+    test('GenerateObjectResult round-trips', () {
+      final json = jsonDecode(jsonEncode({
+        'object': {'answer': 42},
+        'finishReason': 'stop',
+        'usage': _lmUsage,
+        'warnings': [],
+        'request': {},
+        'response': {'id': 'r', 'timestamp': '2026-01-01T00:00:00.000Z', 'modelId': 'gpt-4o'},
+      })) as Map<String, dynamic>;
+      final result = GenerateObjectResult.fromJson(json);
+      expect((result.object as Map<String, dynamic>)['answer'], 42);
+      expect(result.response.modelId, 'gpt-4o');
+      expect(jsonDecode(jsonEncode(result)), json);
     });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // GenerateContent (6 variants + Unknown)
-  // ─────────────────────────────────────────────────────────────────────────
-  group('GenerateContent round-trip', () {
-    test('Text variant', () {
-      final original =
-          GenerateContentText(text: 'hello', providerMetadata: null);
-      final decoded = GenerateContent.fromJson(original.toJson());
-
-      expect(decoded, isA<GenerateContentText>());
-      expect(decoded.tag, 'Text');
-      final t = decoded as GenerateContentText;
-      expect(t.text, 'hello');
-      expect(t.providerMetadata, isNull);
-    });
-
-    test('Text variant preserves provider_metadata', () {
-      final original = GenerateContentText(
-        text: 'hi',
-        providerMetadata: {'model': 'gpt-4o'},
-      );
-      final decoded = GenerateContent.fromJson(original.toJson());
-
-      final t = decoded as GenerateContentText;
-      expect(t.providerMetadata, {'model': 'gpt-4o'});
-    });
-
-    test('ToolCall variant', () {
-      final original = GenerateContentToolCall(
-        toolCallId: 'call_1',
-        toolName: 'get_weather',
-        input: {'location': 'Tokyo'},
-        providerExecuted: true,
-        isDynamic: false,
-        providerMetadata: null,
-      );
-      final decoded = GenerateContent.fromJson(original.toJson());
-
-      expect(decoded, isA<GenerateContentToolCall>());
-      expect(decoded.tag, 'ToolCall');
-      final tc = decoded as GenerateContentToolCall;
-      expect(tc.toolCallId, 'call_1');
-      expect(tc.toolName, 'get_weather');
-      expect((tc.input as Map<String, dynamic>)['location'], 'Tokyo');
-      expect(tc.providerExecuted, true);
-      expect(tc.isDynamic, false);
-    });
-
-    test('Reasoning variant', () {
-      final original =
-          GenerateContentReasoning(text: 'thinking...', providerMetadata: null);
-      final decoded = GenerateContent.fromJson(original.toJson());
-
-      expect(decoded, isA<GenerateContentReasoning>());
-      expect(decoded.tag, 'Reasoning');
-      final r = decoded as GenerateContentReasoning;
-      expect(r.text, 'thinking...');
-    });
-
-
-
-    test('ToolResult variant — uses result, not output', () {
-      final original = GenerateContentToolResult(
-        toolCallId: 'call_1',
-        toolName: 'web_search',
-        result: {'count': 3, 'hits': ['a', 'b', 'c']},
-        isError: false,
-        preliminary: true,
-        isDynamic: false,
-        providerMetadata: null,
-      );
-      final json = original.toJson();
-
-      expect(json.keys, ['ToolResult']);
-      final payload = json['ToolResult'] as Map<String, dynamic>;
-
-      // Contract: `result` key, never `output`.
-      expect(payload, contains('result'));
-      expect(payload, isNot(contains('output')));
-      expect(payload, contains('tool_call_id'));
-      expect(payload, contains('tool_name'));
-      expect(payload, contains('is_error'));
-      expect(payload, contains('preliminary'));
-      expect(payload, contains('dynamic'));
-
-      final decoded = GenerateContent.fromJson(json);
-      expect(decoded, isA<GenerateContentToolResult>());
-      expect(decoded.tag, 'ToolResult');
-      final tr = decoded as GenerateContentToolResult;
-      expect(tr.toolCallId, 'call_1');
-      expect(tr.toolName, 'web_search');
-      expect((tr.result as Map<String, dynamic>)['count'], 3);
-      expect(tr.isError, false);
-      expect(tr.preliminary, true);
-      expect(tr.isDynamic, false);
-    });
-
-    test('Unknown variant — tag + data pass through verbatim', () {
-      final original = GenerateContentUnknown(
-        tag: 'FutureVariant',
-        data: {'foo': 'bar', 'n': 42},
-      );
-      final json = original.toJson();
-
-      // Unknown re-encodes as `{tag: data}`.
-      expect(json.keys, ['FutureVariant']);
-      expect(json['FutureVariant'], {'foo': 'bar', 'n': 42});
-
-      final decoded = GenerateContent.fromJson(json);
-      expect(decoded, isA<GenerateContentUnknown>());
-      final u = decoded as GenerateContentUnknown;
-      expect(u.tag, 'FutureVariant');
-      expect(u.data, {'foo': 'bar', 'n': 42});
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // StreamPart (18 variants + Unknown)
-  // ─────────────────────────────────────────────────────────────────────────
-  group('StreamPart round-trip', () {
-    // ── Text variants ──
-    test('TextStart variant', () {
-      final original = StreamPartTextStart(id: 't1', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartTextStart>());
-      expect(decoded.type, 'TextStart');
-      expect((decoded as StreamPartTextStart).id, 't1');
-    });
-
-    test('TextDelta variant', () {
-      final original =
-          StreamPartTextDelta(id: 't1', text: 'hel', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartTextDelta>());
-      expect(decoded.type, 'TextDelta');
-      final d = decoded as StreamPartTextDelta;
-      expect(d.id, 't1');
-      expect(d.text, 'hel');
-    });
-
-    test('TextEnd variant', () {
-      final original = StreamPartTextEnd(id: 't1', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartTextEnd>());
-      expect(decoded.type, 'TextEnd');
-      expect((decoded as StreamPartTextEnd).id, 't1');
-    });
-
-    // ── Stream lifecycle ──
-    test('Start variant', () {
-      final decoded = StreamPart.fromJson(StreamPartStart().toJson());
-      expect(decoded, isA<StreamPartStart>());
-      expect(decoded.type, 'Start');
-    });
-
-    test('StartStep variant', () {
-      final original = StreamPartStartStep(request: {}, warnings: [
-        {'code': 'deprecation', 'message': 'soon'},
-      ]);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartStartStep>());
-      expect(decoded.type, 'StartStep');
-      final s = decoded as StreamPartStartStep;
-      expect(s.warnings, hasLength(1));
-      expect(s.warnings.first['code'], 'deprecation');
-    });
-
-    test('FinishStep and Finish variants', () {
-      final usage = {
-        'input_tokens': 3,
-        'input_token_details': {'cache_read_tokens': 1},
-        'output_tokens': 2,
-        'output_token_details': {},
-        'total_tokens': 5,
-      };
-      final step = StreamPart.fromJson(deepFlatten({
-        'FinishStep': {
-          'response': {'id': 'resp_1', 'timestamp': 't', 'model_id': 'gpt-4o', 'headers': null},
-          'usage': usage,
-          'performance': {'step_time_ms': 1.0},
-          'finish_reason': 'tool-calls',
-          'raw_finish_reason': 'tool_calls',
-        },
-      }));
-      expect(step, isA<StreamPartFinishStep>());
-      final fs = step as StreamPartFinishStep;
-      expect(fs.response.modelId, 'gpt-4o');
-      expect(fs.usage.totalTokens, 5);
-      expect(fs.finishReason, 'tool-calls');
-      expect(StreamPart.fromJson(deepFlatten(fs.toJson())), isA<StreamPartFinishStep>());
-
-      final finish = StreamPart.fromJson(deepFlatten({
-        'Finish': {'finish_reason': 'stop', 'raw_finish_reason': null, 'total_usage': usage},
-      })) as StreamPartFinish;
-      expect(finish.finishReason, 'stop');
-      expect(finish.totalUsage.inputTokenDetails.cacheReadTokens, 1);
-      final again = StreamPart.fromJson(deepFlatten(finish.toJson())) as StreamPartFinish;
-      expect(again.totalUsage.inputTokens, 3);
-    });
-
-    test('Abort variant', () {
-      final decoded = StreamPart.fromJson(StreamPartAbort(reason: 'stop').toJson());
-      expect(decoded, isA<StreamPartAbort>());
-      expect((decoded as StreamPartAbort).reason, 'stop');
-    });
-
-    test('Error variant', () {
-      final original = StreamPartError(error: {'message': 'boom', 'code': 500});
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartError>());
-      expect(decoded.type, 'Error');
-      final e = decoded as StreamPartError;
-      expect((e.error as Map<String, dynamic>)['message'], 'boom');
-    });
-
-    // ── Tool calls ──
-    test('ToolInputStart variant — has title field', () {
-      final original = StreamPartToolInputStart(
-        id: 'tc1',
-        toolName: 'get_weather',
-        providerExecuted: true,
-        isDynamic: false,
-        title: 'Weather lookup',
-        providerMetadata: null,
-      );
-      final json = original.toJson();
-
-      final payload = json['ToolInputStart'] as Map<String, dynamic>;
-      expect(payload, contains('title'));
-      expect(payload['title'], 'Weather lookup');
-
-      final decoded = StreamPart.fromJson(json);
-      expect(decoded, isA<StreamPartToolInputStart>());
-      expect(decoded.type, 'ToolInputStart');
-      final t = decoded as StreamPartToolInputStart;
-      expect(t.id, 'tc1');
-      expect(t.toolName, 'get_weather');
-      expect(t.title, 'Weather lookup');
-      expect(t.providerExecuted, true);
-      expect(t.isDynamic, false);
-    });
-
-    test('ToolInputDelta variant', () {
-      final original =
-          StreamPartToolInputDelta(id: 'tc1', delta: '{"loc', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartToolInputDelta>());
-      expect(decoded.type, 'ToolInputDelta');
-      final d = decoded as StreamPartToolInputDelta;
-      expect(d.id, 'tc1');
-      expect(d.delta, '{"loc');
-    });
-
-    test('ToolInputEnd variant', () {
-      final original =
-          StreamPartToolInputEnd(id: 'tc1', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartToolInputEnd>());
-      expect(decoded.type, 'ToolInputEnd');
-      expect((decoded as StreamPartToolInputEnd).id, 'tc1');
-    });
-
-    test('ToolCall variant — has provider_metadata field', () {
-      final original = StreamPartToolCall(
-        toolCallId: 'call_1',
-        toolName: 'get_weather',
-        input: {'location': 'Tokyo'},
-        providerExecuted: true,
-        isDynamic: false,
-        providerMetadata: {'provider': 'openai'},
-      );
-      final json = original.toJson();
-
-      final payload = json['ToolCall'] as Map<String, dynamic>;
-      expect(payload, contains('provider_metadata'));
-      expect(payload['provider_metadata'], {'provider': 'openai'});
-
-      final decoded = StreamPart.fromJson(json);
-      expect(decoded, isA<StreamPartToolCall>());
-      expect(decoded.type, 'ToolCall');
-      final tc = decoded as StreamPartToolCall;
-      expect(tc.toolCallId, 'call_1');
-      expect(tc.toolName, 'get_weather');
-      expect((tc.input as Map<String, dynamic>)['location'], 'Tokyo');
-      expect(tc.providerMetadata, {'provider': 'openai'});
-    });
-
-    test('ToolResult variant — the typed tool result with output and input', () {
-      final original = StreamPartToolResult(
-        toolCallId: 'call_1',
-        toolName: 'web_search',
-        input: {'q': 'rust'},
-        output: {'count': 3},
-        providerExecuted: true,
-        isDynamic: false,
-        providerMetadata: null,
-      );
-      final json = original.toJson();
-
-      final payload = json['ToolResult'] as Map<String, dynamic>;
-      expect(payload, contains('output'));
-      expect(payload, isNot(contains('result')));
-
-      final decoded = StreamPart.fromJson(json);
-      expect(decoded, isA<StreamPartToolResult>());
-      expect(decoded.type, 'ToolResult');
-      final tr = decoded as StreamPartToolResult;
-      expect(tr.toolCallId, 'call_1');
-      expect(tr.toolName, 'web_search');
-      expect((tr.input as Map<String, dynamic>)['q'], 'rust');
-      expect((tr.output as Map<String, dynamic>)['count'], 3);
-      expect(tr.providerExecuted, true);
-      expect(tr.isDynamic, false);
-
-      final deferred = StreamPart.fromJson({
-        'ToolResult': {'tool_call_id': 'srv-0', 'tool_name': 'code_execution', 'output': 'done', 'provider_executed': true},
-      }) as StreamPartToolResult;
-      expect(deferred.input, isNull);
-    });
-
-    test('ToolError variant', () {
-      final error = StreamPart.fromJson({
-        'ToolError': {
-          'tool_call_id': 'srv-2',
-          'tool_name': 'code_execution',
-          'input': {'code': '1/0'},
-          'error': {'error_code': 'unavailable'},
-          'provider_executed': true,
-        },
-      });
-      expect(error, isA<StreamPartToolError>());
-      expect(error.type, 'ToolError');
-      expect((error as StreamPartToolError).error, {'error_code': 'unavailable'});
-      expect(error.providerExecuted, true);
-      expect(error.isDynamic, isNull);
-      expect(StreamPart.fromJson(error.toJson()).toJson(), error.toJson());
-    });
-
-    test('ToolOutputDenied and ToolApprovalResponse variants', () {
-      final denied = StreamPart.fromJson({
-        'ToolOutputDenied': {'tool_call_id': 'c', 'tool_name': 't'},
-      });
-      expect(denied, isA<StreamPartToolOutputDenied>());
-      expect(denied.type, 'ToolOutputDenied');
-      expect(denied.toJson(), {
-        'ToolOutputDenied': {'tool_call_id': 'c', 'tool_name': 't'},
-      });
-
-      final response = StreamPart.fromJson({
-        'ToolApprovalResponse': {
-          'approval_id': 'a',
-          'tool_call': {'tool_call_id': 'c', 'tool_name': 't', 'input': <String, dynamic>{}},
-          'approved': false,
-        },
-      });
-      expect(response.type, 'ToolApprovalResponse');
-      expect((response as StreamPartToolApprovalResponse).approved, false);
-    });
-
-    // ── File ──
-
-
-    // ── Reasoning ──
-    test('ReasoningStart variant', () {
-      final original =
-          StreamPartReasoningStart(id: 'r1', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartReasoningStart>());
-      expect(decoded.type, 'ReasoningStart');
-      expect((decoded as StreamPartReasoningStart).id, 'r1');
-    });
-
-    test('ReasoningDelta variant', () {
-      final original =
-          StreamPartReasoningDelta(id: 'r1', text: 'thi', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartReasoningDelta>());
-      expect(decoded.type, 'ReasoningDelta');
-      final d = decoded as StreamPartReasoningDelta;
-      expect(d.id, 'r1');
-      expect(d.text, 'thi');
-    });
-
-    test('ReasoningEnd variant', () {
-      final original =
-          StreamPartReasoningEnd(id: 'r1', providerMetadata: null);
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartReasoningEnd>());
-      expect(decoded.type, 'ReasoningEnd');
-      expect((decoded as StreamPartReasoningEnd).id, 'r1');
-    });
-
-    // ── Metadata / sources / raw ──
-    test('Raw variant', () {
-      final original = StreamPartRaw(rawValue: {'raw': 'chunk'});
-      final decoded = StreamPart.fromJson(original.toJson());
-
-      expect(decoded, isA<StreamPartRaw>());
-      expect(decoded.type, 'Raw');
-      final r = decoded as StreamPartRaw;
-      expect((r.rawValue as Map<String, dynamic>)['raw'], 'chunk');
-    });
-
-    test('Unknown variant — tag + data pass through verbatim', () {
-      final original =
-          StreamPartUnknown(tag: 'FuturePart', data: {'foo': 'bar', 'n': 7});
-      final json = original.toJson();
-
-      expect(json.keys, ['FuturePart']);
-      expect(json['FuturePart'], {'foo': 'bar', 'n': 7});
-
-      final decoded = StreamPart.fromJson(json);
-      expect(decoded, isA<StreamPartUnknown>());
-      expect(decoded.type, 'FuturePart');
-      final u = decoded as StreamPartUnknown;
-      expect(u.tag, 'FuturePart');
-      expect(u.data, {'foo': 'bar', 'n': 7});
-    });
-  });
-
-  test('GenerateTextOptions includeRawChunks round-trips', () {
-    // RFC-0016 M2 true-case through the Dart typed options.
-    final original = GenerateTextOptions(includeRawChunks: true);
-    final json = original.toJson();
-    expect(json['include_raw_chunks'], isTrue);
-    final back = GenerateTextOptions.fromJson(json);
-    expect(back.includeRawChunks, isTrue);
-
-    // Default omits the field (toJson only emits non-null).
-    final defaults = GenerateTextOptions().toJson();
-    expect(defaults.containsKey('include_raw_chunks'), isFalse);
-  });
-
-  test('GenerateTextOptions sessionId round-trips', () {
-    // RFC-0024: explicit session_id crosses the wire as snake_case.
-    final original = GenerateTextOptions(sessionId: 'sess-1');
-    final json = original.toJson();
-    expect(json['session_id'], 'sess-1');
-    final back = GenerateTextOptions.fromJson(json);
-    expect(back.sessionId, 'sess-1');
-
-    final defaults = GenerateTextOptions().toJson();
-    expect(defaults.containsKey('session_id'), isFalse);
   });
 }

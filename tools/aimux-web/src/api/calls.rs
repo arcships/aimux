@@ -21,7 +21,7 @@ use crate::wire::{self, WireCallRequest, WireCallResponse};
 
 /// `POST /api/calls` — validates the wire request, builds (or reuses) the
 /// model, and returns either a non-streaming JSON result or an SSE stream of
-/// `StreamPart` events + a final `meta` event (trace anchor).
+/// `TextStreamPart` events + a final `meta` event (trace anchor).
 pub async fn call(State(state): State<AppState>, Json(req): Json<WireCallRequest>) -> Response {
     match run(state, req).await {
         Ok(resp) => resp,
@@ -72,7 +72,7 @@ async fn run(state: AppState, req: WireCallRequest) -> Result<Response, AiMuxErr
     }
 }
 
-/// Non-streaming: JSON `{text, finish_reason, usage, meta}`.
+/// Non-streaming: JSON `{text, finishReason, usage, meta}`.
 async fn non_stream_response(
     state: AppState,
     model: Arc<dyn LanguageModel>,
@@ -216,10 +216,10 @@ mod tests {
         serde_json::json!({
             "provider": provider,
             "model": "m",
-            "api_key": api_key,
-            "base_url": base_url,
+            "apiKey": api_key,
+            "baseUrl": base_url,
             "stream": false,
-            "options": {"max_retries": 0},
+            "options": {"maxRetries": 0},
             "messages": [{"role": "user", "content": [{"type": "text", "text": "hi"}]}],
         })
     }

@@ -7,12 +7,12 @@ export type ModelLimits = {
 /**
  * Maximum total context window (input + output), in tokens.
  */
-context?: number | null, 
+context?: number, 
 /**
  * Maximum output tokens.
  */
-output?: number | null, 
+output?: number, 
 /**
  * Maximum input tokens (when distinct from `context`).
  */
-input?: number | null, };
+input?: number, };

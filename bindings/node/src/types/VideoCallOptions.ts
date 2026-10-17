@@ -12,72 +12,72 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `VideoModelV4CallOptions`.
  */
-export type VideoCallOptions = {
+export type VideoCallOptions = { 
 /**
  * Text prompt for the video generation. `None` when not required.
  */
-prompt: string | null,
+prompt?: string, 
 /**
  * Number of videos to generate. Default `1`; most models only support
  * `n = 1` due to computational cost.
  */
-n: number,
+n: number, 
 /**
  * Aspect ratio, in `{width}:{height}` format (e.g. `"16:9"`).
  */
-aspect_ratio: AspectRatio | null,
+aspectRatio?: AspectRatio, 
 /**
  * Resolution, in `{width}x{height}` format (e.g. `"1280x720"`).
  */
-resolution: Size | null,
+resolution?: Size, 
 /**
  * Duration of the video in seconds. Typically 3–10 seconds.
  */
-duration: number | null,
+duration?: number, 
 /**
  * Frames per second. Common values: 24, 30, 60.
  */
-fps: number | null,
+fps?: number, 
 /**
  * Seed for deterministic generation. `None` uses a random seed.
  */
-seed: number | null,
+seed?: number, 
 /**
  * Input image for image-to-video generation (the starting frame).
  */
-image: VideoFile | null,
+image?: VideoFile, 
 /**
  * Role-tagged image inputs for first-last-frame generation.
  */
-frame_images: Array<VideoFrameImage> | null,
+frameImages?: Array<VideoFrameImage>, 
 /**
  * Reference inputs for reference-to-video generation (images or videos).
  */
-input_references: Array<VideoFile> | null,
+inputReferences?: Array<VideoFile>, 
 /**
  * Whether the model should generate audio alongside the video.
  */
-generate_audio: boolean | null,
+generateAudio?: boolean, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } },
+providerOptions: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
  * retrying. `None` uses 2, the AI SDK default.
  */
-max_retries: number | null,
+maxRetries?: number, 
 /**
  * Poll pacing for the start/status flow, the AI SDK's `generateVideo`
  * `poll` option. Unset fields use the AI SDK defaults (5000 ms between
  * status checks, 600000 ms in total).
  */
-poll: VideoPollOptions | null,
+poll?: VideoPollOptions, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null,
+timeout?: TimeoutConfiguration, 
 /**
  * Additional HTTP headers to send with the request.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };

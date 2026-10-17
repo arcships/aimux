@@ -17,69 +17,69 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * operation (`OperationSettings`), not call options, as in the AI SDK
  * (`language-model-v4-call-options.ts:8-138` has none of them).
  */
-export type CallOptions = {
+export type CallOptions = { 
 /**
  * The standardized prompt (message array). Required.
  */
-prompt: Array<LanguageModelMessage>,
+prompt: Array<LanguageModelMessage>, 
 /**
  * Maximum tokens to generate.
  */
-max_output_tokens: number | null,
+maxOutputTokens?: number, 
 /**
  * Sampling temperature.
  */
-temperature: number | null,
+temperature?: number, 
 /**
  * Stop sequences.
  */
-stop_sequences: Array<string> | null,
+stopSequences?: Array<string>, 
 /**
  * Nucleus sampling `top_p`.
  */
-top_p: number | null,
+topP?: number, 
 /**
  * Top-k sampling.
  */
-top_k: number | null,
+topK?: number, 
 /**
  * Presence penalty.
  */
-presence_penalty: number | null,
+presencePenalty?: number, 
 /**
  * Frequency penalty.
  */
-frequency_penalty: number | null,
+frequencyPenalty?: number, 
 /**
  * Response format (text or JSON).
  */
-response_format: ResponseFormat | null,
+responseFormat?: ResponseFormat, 
 /**
  * Seed for reproducibility.
  */
-seed: number | null,
+seed?: number, 
 /**
  * Tools available to the model (function tools and/or provider-defined tools).
  */
-tools: Array<Tool> | null,
+tools?: Array<Tool>, 
 /**
  * How the model should choose tools. `generate_text` / `stream_text`
  * always set it through [`prepare_tool_choice`], as the AI SDK does.
  */
-tool_choice: LanguageModelV4ToolChoice | null,
+toolChoice?: LanguageModelV4ToolChoice, 
 /**
  * Extra HTTP headers.
  */
-headers: { [key in string]: string } | null,
+headers?: { [key in string]: string }, 
 /**
  * Provider-specific options (keyed by provider name).
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null,
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
  * Anthropic `thinking` config.
  */
-reasoning: ReasoningEffort | null,
+reasoning?: ReasoningEffort, 
 /**
  * Emit raw provider stream chunks as `StreamPart::Raw` (the AI SDK's
  * `includeRawChunks`). When `Some(true)`, a streaming model yields one
@@ -92,4 +92,4 @@ reasoning: ReasoningEffort | null,
  * the OpenAI and ElevenLabs transcription streams; the other model
  * families do not emit `Raw` yet.
  */
-include_raw_chunks: boolean | null, };
+includeRawChunks?: boolean, };

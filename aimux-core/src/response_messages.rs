@@ -6,16 +6,18 @@
 
 use std::collections::HashMap;
 
-use base64::Engine;
 use serde_json::Value;
 
-use crate::content::{AssistantContentPart, ToolContentPart, ToolResultOutput, ToolResultPart};
+use crate::content::{
+    AssistantContentPart, FilePartData, ReasoningFilePartData, ToolContentPart, ToolResultOutput,
+    ToolResultPart,
+};
 use crate::message::ModelMessage;
 use crate::result::{
-    ContentPart, GeneratedFile, ReasoningFileOutput, ReasoningOutput, Source,
-    ToolApprovalRequestOutput, ToolApprovalResponseOutput, TypedToolError, TypedToolResult,
+    ContentPart, GeneratedFileOutput, ReasoningOutput, Source, ToolApprovalRequestOutput,
+    ToolApprovalResponseOutput, TypedToolError, TypedToolResult,
 };
-use crate::shared::{FileBytes, GeneratedFileData, SharedProviderMetadata};
+use crate::shared::SharedProviderMetadata;
 use crate::types::NamespacedKind;
 
 /// Match the AI SDK's response-message safety rule for invalid tool calls:
@@ -158,16 +160,13 @@ impl ResponseMessageBuilder {
 
     /// A generated file, wrapped as `{ file, providerMetadata }`
     /// (`convert-language-model-content.ts:55-73`).
-    pub fn file(&mut self, file: &GeneratedFile, reasoning: bool) {
+    pub fn file(&mut self, output: GeneratedFileOutput, reasoning: bool) {
         self.content.push(if reasoning {
-            ContentPart::ReasoningFile(ReasoningFileOutput {
-                file: file.clone(),
-                provider_metadata: file.provider_metadata.clone(),
-            })
+            ContentPart::ReasoningFile(output)
         } else {
             ContentPart::File {
-                file: file.clone(),
-                provider_metadata: file.provider_metadata.clone(),
+                file: output.file,
+                provider_metadata: output.provider_metadata,
             }
         });
     }
@@ -280,29 +279,18 @@ impl ResponseMessageBuilder {
                     kind: kind.clone(),
                     provider_options: provider_metadata.clone(),
                 },
+                // `to-response-messages.ts:69-84`: `data` is the file's base64.
                 ContentPart::File {
                     file,
                     provider_metadata,
-                } => match &file.data {
-                    GeneratedFileData::Data { data } => AssistantContentPart::FileBase64 {
-                        data: file_base64(data),
-                        media_type: file.media_type.clone(),
-                        filename: None,
-                        provider_options: provider_metadata.clone(),
-                    },
-                    GeneratedFileData::Url { url, .. } => AssistantContentPart::FileUrl {
-                        url: url.clone(),
-                        media_type: file.media_type.clone(),
-                        provider_options: provider_metadata.clone(),
-                    },
+                } => AssistantContentPart::File {
+                    data: FilePartData::String(file.base64().into_owned()),
+                    media_type: file.media_type.clone(),
+                    filename: None,
+                    provider_options: provider_metadata.clone(),
                 },
                 ContentPart::ReasoningFile(output) => AssistantContentPart::ReasoningFile {
-                    data: match &output.file.data {
-                        GeneratedFileData::Data { data } => GeneratedFileData::Data {
-                            data: FileBytes::Base64(file_base64(data)),
-                        },
-                        url => url.clone(),
-                    },
+                    data: ReasoningFilePartData::String(output.file.base64().into_owned()),
                     media_type: output.file.media_type.clone(),
                     provider_options: output.provider_metadata.clone(),
                 },
@@ -456,13 +444,6 @@ fn tool_message_content(
         .collect()
 }
 
-fn file_base64(data: &FileBytes) -> String {
-    match data {
-        FileBytes::Base64(data) => data.clone(),
-        FileBytes::Binary(data) => base64::engine::general_purpose::STANDARD.encode(data),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,7 +473,7 @@ mod tests {
                 "content": [{
                     "type": "reasoning",
                     "text": "thinking",
-                    "provider_options": { "anthropic": { "signature": "sig-1" } }
+                    "providerOptions": { "anthropic": { "signature": "sig-1" } }
                 }]
             }])
         );

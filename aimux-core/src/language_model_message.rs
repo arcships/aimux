@@ -6,7 +6,10 @@
 //! file part. `convert_to_language_model_prompt` is the single conversion from
 //! the user-facing `ModelMessage`s.
 
-use crate::content::{self as user, AssistantContentPart, ToolContentPart, UserContentPart};
+use crate::content::{
+    self as user, AssistantContentPart, FilePartData, ReasoningFilePartData, ToolContentPart,
+    UserContentPart,
+};
 use crate::download::{DownloadFunction, DownloadedFile, PlannedDownload};
 use crate::error::AiMuxError;
 use crate::language_model::SupportedUrls;
@@ -30,112 +33,150 @@ pub type LanguageModelPrompt = Vec<LanguageModelMessage>;
 /// `provider_options` is message-level (e.g. `anthropic.cacheControl`),
 /// mirroring `LanguageModelV4Message.providerOptions`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "role", rename_all = "snake_case")]
+#[serde(
+    tag = "role",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum LanguageModelMessage {
     System {
         content: String,
+        #[ts(optional)]
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     User {
         content: Vec<UserPart>,
+        #[ts(optional)]
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Assistant {
         content: Vec<AssistantPart>,
+        #[ts(optional)]
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Tool {
         content: Vec<ToolPart>,
+        #[ts(optional)]
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 }
 
 /// Text content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TextPart {
     pub text: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// File content part (the only file part; `data` is a tagged `FileData`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FilePart {
     pub data: FileData,
     pub media_type: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Reasoning / thinking content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 #[ts(rename = "LanguageModelReasoningPart")]
 pub struct ReasoningPart {
     pub text: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Tool call content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolCallPart {
     pub tool_call_id: String,
     pub tool_name: String,
     pub input: Value,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Tool result content part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 #[ts(rename = "LanguageModelToolResultPart")]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     pub tool_name: String,
     pub output: ToolResultOutput,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The provider-facing result of a tool call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 #[ts(rename = "LanguageModelToolResultOutput")]
 pub enum ToolResultOutput {
     Text {
         value: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Json {
         value: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ExecutionDenied {
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ErrorText {
         value: String,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ErrorJson {
         value: Value,
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -146,12 +187,17 @@ pub enum ToolResultOutput {
 
 /// Content within a tool result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultContent {
     Text(TextPart),
     File(FilePart),
     Custom {
+        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -159,38 +205,49 @@ pub enum ToolResultContent {
 
 /// A file generated as part of reasoning.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningFilePart {
     pub data: GeneratedFileData,
     pub media_type: String,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Provider-specific content identified by its provider and kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct CustomPart {
     pub kind: NamespacedKind,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The user's decision for a provider-executed tool approval request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolApprovalResponsePart {
     pub approval_id: String,
     pub approved: bool,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Parts allowed in a user message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserPart {
     Text(TextPart),
@@ -199,7 +256,11 @@ pub enum UserPart {
 
 /// Parts allowed in an assistant message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantPart {
     Text(TextPart),
@@ -213,7 +274,11 @@ pub enum AssistantPart {
 
 /// Parts allowed in a tool message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolPart {
     ToolResult(ToolResultPart),
@@ -248,13 +313,6 @@ fn file_part(
     }
 }
 
-fn reference(reference: &Value) -> Result<FileData, AiMuxError> {
-    Ok(FileData::Reference {
-        reference: serde_json::from_value(reference.clone())
-            .map_err(|e| AiMuxError::InvalidPrompt(format!("invalid file reference: {e}")))?,
-    })
-}
-
 fn bytes(data: &[u8]) -> FileData {
     FileData::Data {
         data: FileBytes::Binary(data.to_vec()),
@@ -267,17 +325,101 @@ fn base64(data: &str) -> FileData {
     }
 }
 
-fn url(url: &str) -> FileData {
-    FileData::Url {
-        url: url.to_owned(),
-        original_url: None,
-    }
-}
-
 fn text_part(text: &str, provider_options: Option<&SharedProviderOptions>) -> TextPart {
     TextPart {
         text: text.to_owned(),
         provider_options: provider_options.cloned(),
+    }
+}
+
+/// `convertToLanguageModelV4FilePart` (`ai` `prompt/file-part-data.ts:89-141`):
+/// the tagged provider `FileData` for a file part's `data`, and the media type
+/// of a `data:` URL, which takes precedence over the part's `mediaType`.
+///
+/// A string is a URL when it parses as one and base64 otherwise; a `data:`
+/// URL becomes inline base64 data; a URL string that parsing changes keeps
+/// the given text as `originalUrl`.
+///
+/// # Errors
+///
+/// `InvalidPrompt` (upstream `InvalidDataContentError`) for a `data:` URL
+/// passed as inline data or a `data:` URL without a comma.
+pub fn convert_file_part_data(
+    data: &FilePartData,
+) -> Result<(FileData, Option<String>), AiMuxError> {
+    match data {
+        FilePartData::Tagged(FileData::Data {
+            data: FileBytes::Base64(text),
+        }) if text.starts_with("data:") => Err(AiMuxError::InvalidPrompt(
+            "Data URLs are not valid inline data. Pass them as { type: \"url\", url } instead."
+                .into(),
+        )),
+        FilePartData::Tagged(FileData::Url { url, original_url }) => {
+            convert_url_to_file_part_data(url, original_url.clone())
+        }
+        FilePartData::Tagged(data) => Ok((data.clone(), None)),
+        FilePartData::String(text) => match url::Url::parse(text) {
+            Ok(parsed) => {
+                let (mut data, media_type) = convert_url_to_file_part_data(parsed.as_str(), None)?;
+                if let FileData::Url { url, original_url } = &mut data
+                    && url != text
+                {
+                    *original_url = Some(text.clone());
+                }
+                Ok((data, media_type))
+            }
+            Err(_) => Ok((
+                FileData::Data {
+                    data: FileBytes::Base64(text.clone()),
+                },
+                None,
+            )),
+        },
+        FilePartData::Reference(reference) => Ok((
+            FileData::Reference {
+                reference: reference.clone(),
+            },
+            None,
+        )),
+    }
+}
+
+/// `convertUrlToFilePartData` (`file-part-data.ts:27-48`) with `splitDataUrl`
+/// (`split-data-url.ts`): a `data:` URL is split into its media type and
+/// base64 content; any other URL stays a URL.
+fn convert_url_to_file_part_data(
+    url: &str,
+    original_url: Option<String>,
+) -> Result<(FileData, Option<String>), AiMuxError> {
+    let data_url = match url::Url::parse(url) {
+        Ok(parsed) if parsed.scheme() == "data" => parsed,
+        _ => {
+            return Ok((
+                FileData::Url {
+                    url: url.to_owned(),
+                    original_url,
+                },
+                None,
+            ));
+        }
+    };
+    let url = data_url.as_str();
+    let mut pieces = url.split(',');
+    let header = pieces.next().unwrap_or_default();
+    let media_type = header
+        .split(';')
+        .next()
+        .and_then(|scheme_and_type| scheme_and_type.split(':').nth(1));
+    match (media_type, pieces.next()) {
+        (Some(media_type), Some(base64_content)) => Ok((
+            FileData::Data {
+                data: FileBytes::Base64(base64_content.to_owned()),
+            },
+            Some(media_type.to_owned()),
+        )),
+        _ => Err(AiMuxError::InvalidPrompt(format!(
+            "Invalid data URL format in content {url}"
+        ))),
     }
 }
 
@@ -368,11 +510,13 @@ pub(crate) async fn download_assets(
                 ..
             } => {
                 for part in parts {
-                    if let UserContentPart::FileUrl {
-                        url, media_type, ..
+                    if let UserContentPart::File {
+                        data, media_type, ..
                     } = part
+                        && let Ok((FileData::Url { url, .. }, data_url_media_type)) =
+                            convert_file_part_data(data)
                     {
-                        plan(url, media_type);
+                        plan(&url, data_url_media_type.as_deref().unwrap_or(media_type));
                     }
                 }
             }
@@ -440,42 +584,24 @@ fn user_part(
             media_type,
             filename,
             provider_options,
-        } => UserPart::File(file_part(
-            bytes(data),
-            media_type,
-            filename.as_ref(),
-            provider_options.as_ref(),
-        )),
-        UserContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => UserPart::File(file_part(
-            base64(data),
-            media_type,
-            filename.as_ref(),
-            provider_options.as_ref(),
-        )),
-        UserContentPart::FileUrl {
-            url: file_url,
-            media_type,
-            provider_options,
-        } => UserPart::File(match assets.get(file_url) {
-            Some(file) => downloaded_file_part(file, media_type, None, provider_options.clone()),
-            None => file_part(url(file_url), media_type, None, provider_options.as_ref()),
-        }),
-        UserContentPart::FileReference {
-            media_type,
-            reference: file_reference,
-            filename,
-            provider_options,
-        } => UserPart::File(file_part(
-            reference(file_reference)?,
-            media_type,
-            filename.as_ref(),
-            provider_options.as_ref(),
-        )),
+        } => {
+            let (data, data_url_media_type) = convert_file_part_data(data)?;
+            let media_type = data_url_media_type.as_deref().unwrap_or(media_type);
+            UserPart::File(match &data {
+                FileData::Url { url, .. } if assets.contains_key(url) => downloaded_file_part(
+                    &assets[url],
+                    media_type,
+                    filename.clone(),
+                    provider_options.clone(),
+                ),
+                _ => file_part(
+                    data,
+                    media_type,
+                    filename.as_ref(),
+                    provider_options.as_ref(),
+                ),
+            })
+        }
     })
 }
 
@@ -502,44 +628,15 @@ fn assistant_part(
             media_type,
             filename,
             provider_options,
-        } => AssistantPart::File(file_part(
-            bytes(data),
-            media_type,
-            filename.as_ref(),
-            provider_options.as_ref(),
-        )),
-        AssistantContentPart::FileBase64 {
-            data,
-            media_type,
-            filename,
-            provider_options,
-        } => AssistantPart::File(file_part(
-            base64(data),
-            media_type,
-            filename.as_ref(),
-            provider_options.as_ref(),
-        )),
-        AssistantContentPart::FileUrl {
-            url: file_url,
-            media_type,
-            provider_options,
-        } => AssistantPart::File(file_part(
-            url(file_url),
-            media_type,
-            None,
-            provider_options.as_ref(),
-        )),
-        AssistantContentPart::FileReference {
-            media_type,
-            reference: file_reference,
-            filename,
-            provider_options,
-        } => AssistantPart::File(file_part(
-            reference(file_reference)?,
-            media_type,
-            filename.as_ref(),
-            provider_options.as_ref(),
-        )),
+        } => {
+            let (data, data_url_media_type) = convert_file_part_data(data)?;
+            AssistantPart::File(file_part(
+                data,
+                data_url_media_type.as_deref().unwrap_or(media_type),
+                filename.as_ref(),
+                provider_options.as_ref(),
+            ))
+        }
         AssistantContentPart::Reasoning {
             text,
             provider_options,
@@ -551,11 +648,36 @@ fn assistant_part(
             data,
             media_type,
             provider_options,
-        } => AssistantPart::ReasoningFile(ReasoningFilePart {
-            data: data.clone(),
-            media_type: media_type.clone(),
-            provider_options: provider_options.clone(),
-        }),
+        } => {
+            let data = match data {
+                ReasoningFilePartData::Tagged(GeneratedFileData::Data { data }) => {
+                    FilePartData::Tagged(FileData::Data { data: data.clone() })
+                }
+                ReasoningFilePartData::Tagged(GeneratedFileData::Url { url, original_url }) => {
+                    FilePartData::Tagged(FileData::Url {
+                        url: url.clone(),
+                        original_url: original_url.clone(),
+                    })
+                }
+                ReasoningFilePartData::String(text) => FilePartData::String(text.clone()),
+            };
+            // `convert-to-language-model-prompt.ts:313-327`.
+            let (data, data_url_media_type) = convert_file_part_data(&data)?;
+            let data = match data {
+                FileData::Data { data } => GeneratedFileData::Data { data },
+                FileData::Url { url, original_url } => GeneratedFileData::Url { url, original_url },
+                FileData::Reference { .. } | FileData::Text { .. } => {
+                    return Err(AiMuxError::InvalidPrompt(
+                        "Unsupported reasoning-file data type".into(),
+                    ));
+                }
+            };
+            AssistantPart::ReasoningFile(ReasoningFilePart {
+                data,
+                media_type: data_url_media_type.unwrap_or_else(|| media_type.clone()),
+                provider_options: provider_options.clone(),
+            })
+        }
         AssistantContentPart::ToolCall {
             tool_call_id,
             tool_name,
@@ -1243,7 +1365,7 @@ mod tests {
     fn tool_output(items: Value) -> Vec<ModelMessage> {
         serde_json::from_value(json!([
             { "role": "tool", "content": [
-                { "type": "tool_result", "tool_call_id": "c1", "tool_name": "t",
+                { "type": "tool-result", "toolCallId": "c1", "toolName": "t",
                   "output": { "type": "content", "value": items } }
             ] }
         ]))
@@ -1300,17 +1422,17 @@ mod tests {
     fn deprecated_tool_output_items_become_file_parts() {
         let (parts, warnings) = convert_output(
             json!([
-                { "type": "file-data", "data": "AAEC", "media_type": "application/pdf",
+                { "type": "file-data", "data": "AAEC", "mediaType": "application/pdf",
                   "filename": "a.pdf" },
                 { "type": "file-url", "url": "https://example.com/a.pdf",
-                  "media_type": "application/pdf" },
-                { "type": "file-id", "file_id": "file-1" },
-                { "type": "file-id", "file_id": { "anthropic": "file-2" } },
-                { "type": "file-reference", "provider_reference": { "openai": "file-3" } },
-                { "type": "image-data", "data": "iVBO", "media_type": "image/png" },
+                  "mediaType": "application/pdf" },
+                { "type": "file-id", "fileId": "file-1" },
+                { "type": "file-id", "fileId": { "anthropic": "file-2" } },
+                { "type": "file-reference", "providerReference": { "openai": "file-3" } },
+                { "type": "image-data", "data": "iVBO", "mediaType": "image/png" },
                 { "type": "image-url", "url": "https://example.com/cat.png" },
-                { "type": "image-file-id", "file_id": "file-4" },
-                { "type": "image-file-reference", "provider_reference": { "openai": "file-5" } },
+                { "type": "image-file-id", "fileId": "file-4" },
+                { "type": "image-file-reference", "providerReference": { "openai": "file-5" } },
             ]),
             Some("openai"),
         )
@@ -1438,7 +1560,7 @@ mod tests {
     #[test]
     fn string_file_id_needs_a_provider() {
         let error =
-            convert_output(json!([{ "type": "file-id", "file_id": "file-1" }]), None).unwrap_err();
+            convert_output(json!([{ "type": "file-id", "fileId": "file-1" }]), None).unwrap_err();
         assert_eq!(
             error.to_string(),
             AiMuxError::InvalidPrompt(
@@ -1469,7 +1591,7 @@ mod tests {
     fn user_image_part_logs_a_deprecation_warning() {
         let messages: Vec<ModelMessage> = serde_json::from_value(json!([
             { "role": "user", "content": [
-                { "type": "image", "image": [1, 2], "media_type": "image/png" }
+                { "type": "image", "image": "AQI=", "mediaType": "image/png" }
             ] }
         ]))
         .unwrap();
@@ -1503,23 +1625,30 @@ mod download_tests {
     use regex::Regex;
     use serde_json::json;
 
+    fn url(url: &str) -> FileData {
+        FileData::Url {
+            url: url.to_owned(),
+            original_url: None,
+        }
+    }
+
     fn messages() -> Vec<ModelMessage> {
         serde_json::from_value(json!([
             { "role": "user", "content": [
-                { "type": "file_url", "url": "https://model.test/a.png", "media_type": "image/png" },
-                { "type": "file_url", "url": "https://cdn.test/b", "media_type": "image" },
-                { "type": "file_url", "url": "data:image/png;base64,AAAA", "media_type": "image/png" }
+                { "type": "file", "data": "https://model.test/a.png", "mediaType": "image/png" },
+                { "type": "file", "data": { "type": "url", "url": "https://cdn.test/b" }, "mediaType": "image" },
+                { "type": "file", "data": "data:image/png;base64,AAAA", "mediaType": "image/png" }
             ] },
             { "role": "assistant", "content": [
-                { "type": "file_url", "url": "https://cdn.test/assistant.png", "media_type": "image/png" },
-                { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} }
+                { "type": "file", "data": "https://cdn.test/assistant.png", "mediaType": "image/png" },
+                { "type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": {} }
             ] },
             { "role": "tool", "content": [
-                { "type": "tool_result", "tool_call_id": "c1", "tool_name": "t",
+                { "type": "tool-result", "toolCallId": "c1", "toolName": "t",
                   "output": { "type": "content", "value": [
-                      { "type": "file", "data": { "Url": { "url": "https://cdn.test/c.pdf" } },
-                        "media_type": "application/pdf" },
-                      { "type": "file-url", "url": "https://cdn.test/c.pdf", "media_type": "application/pdf" }
+                      { "type": "file", "data": { "type": "url", "url": "https://cdn.test/c.pdf" },
+                        "mediaType": "application/pdf" },
+                      { "type": "file-url", "url": "https://cdn.test/c.pdf", "mediaType": "application/pdf" }
                   ] } }
             ] }
         ]))
@@ -1607,7 +1736,8 @@ mod download_tests {
                 (url("https://model.test/a.png"), "image/png"),
                 // Downloaded: a top-level media type takes the downloaded one.
                 (bytes(b"https://cdn.test/b"), "image/jpeg"),
-                (url("data:image/png;base64,AAAA"), "image/png"),
+                // A `data:` URL is inline data (`file-part-data.ts:31-41`).
+                (base64("AAAA"), "image/png"),
             ]
         );
 

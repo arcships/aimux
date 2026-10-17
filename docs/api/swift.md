@@ -41,8 +41,9 @@ The vendor packages and 282 registry-backed OpenAI-compatible providers are reac
 let model = try Model.provider(name: "groq", modelId: "llama-3.3-70b")
 let result = try model.generateText(prompt: "\"Hello\"")
 
-// Optional config JSON ({"base_url": "..."}):
-let model2 = try Model.provider(name: "groq", apiKey: "sk-...", modelId: "llama-3.3-70b")
+// Optional config JSON ({"baseUrl": "..."}; unknown keys are rejected):
+let model2 = try Model.provider(name: "groq", apiKey: "sk-...", modelId: "llama-3.3-70b",
+                                configJson: #"{"baseUrl":"https://proxy.example/v1"}"#)
 ```
 
 Unknown names throw `.noSuchProvider` (payload: the provider id).
@@ -65,14 +66,47 @@ print(result2)
 > Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
+The JSON is the AI SDK JSON: camelCase fields, optional fields absent (never
+`null`; an `unknown` value such as `body` keeps a JSON `null` as
+`JSONValue.null`; a response `timestamp` is a `toISOString()` string such as
+`"2025-03-06T13:50:19.000Z"`, which `ISO8601DateFormatter` with
+`.withFractionalSeconds` reads), unions tagged by `type` (`{"type":"tool-call","toolCallId":…}`). The
+typed overloads take and return Codable values with exactly that shape:
+
+```swift
+let options = GenerateTextOptions(
+    tools: [.function(FunctionTool(name: "get_weather", inputSchema: schema))],
+    toolChoice: .required
+)
+let result = try model.generateText(prompt: .text("Weather in Tokyo?"), options: options)
+print(result.text, result.toolCalls.first?.toolName ?? "-", result.usage.inputTokens.total ?? 0)
+
+// Send a tool result back: the part carries `toolName` and a typed `output`.
+let followUp: [ModelMessage] = [
+    .user("Weather in Tokyo?"),
+    ModelMessage(role: .assistant, content: .parts([
+        .toolCall(toolCallId: "call_1", toolName: "get_weather", input: .object(["location": .string("Tokyo")]))
+    ])),
+    ModelMessage(role: .tool, content: .parts([
+        .toolResult(toolCallId: "call_1", toolName: "get_weather",
+                    output: .json(.object(["temperature": .number(22)])))
+    ])),
+]
+```
+
+`ToolResultOutput` is `.text`, `.json`, `.executionDenied(reason:)`,
+`.errorText`, `.errorJson` or `.content([ToolResultContent])`
+(`{"type":"text"|"json"|"execution-denied"|"error-text"|"error-json"|"content"}`).
+
 ## Streaming Generation
 
 `streamText(prompt:options:onPart:onDone:onError:)` delivers each part as a
-`StreamPart` JSON string.
+`TextStreamPart` JSON string (`{"type":"text-delta","id":…,"text":…}`); the
+typed overload decodes it into `TextStreamPart`.
 
 ```swift
 model.streamText(prompt: "\"Write a haiku\"") { part in
-    print(part) // StreamPart JSON string
+    print(part) // TextStreamPart JSON string
 } onDone: {
     print("[done]")
 } onError: { error in
@@ -178,7 +212,7 @@ and yields the invariant `DecodingError.dataCorrupted("aimux ffi: <context>:
 | `.aborted` | `AIMUX_E_ABORTED` (13) | Request aborted |
 | `.noSuchTool` | `AIMUX_E_NO_SUCH_TOOL` (15) | The model called a tool outside the supplied tool set; carries `toolName` and `availableTools` (`[String]?`, `nil` when no tool set was supplied) |
 | `.invalidToolInput` | `AIMUX_E_INVALID_TOOL_INPUT` (16) | Tool arguments failed to parse/validate; carries `toolName` and `toolInput` (the raw argument text) |
-| `.toolCallRepair` | `AIMUX_E_TOOL_CALL_REPAIR` (17) | A `repairToolCall` hook itself failed; carries `originalError` (the repaired-over error as wire JSON, the `ToolCall.error` encoding) |
+| `.toolCallRepair` | `AIMUX_E_TOOL_CALL_REPAIR` (17) | A `repairToolCall` hook itself failed; carries `originalError` (the repaired-over error as `AiMuxError` JSON tagged by `name`, the `ToolCall.error` encoding) |
 | `.noOutputGenerated` | `AIMUX_E_NO_OUTPUT_GENERATED` (18) | No output was generated |
 | `.loadApiKey` | `AIMUX_E_LOAD_API_KEY` (19) | No API key passed and the fallback environment variable is unset; carries `envVar` |
 | `.loadSetting` | `AIMUX_E_LOAD_SETTING` (20) | A required provider setting is missing; carries `envVar` |
@@ -257,23 +291,52 @@ throws the same.
 
 ## Types
 
-`bindings/swift/Sources/Aimux/Types.swift` declares lightweight Codable types
-mirroring the shared JSON shape — usable with the JSON-string APIs:
+`bindings/swift/Sources/Aimux/Types.swift` declares Codable types decoding and
+encoding exactly the JSON of the generated `bindings/node/src/types/*.ts`
+(camelCase fields, unions tagged by `type`) — usable with the JSON-string APIs:
 
 `JSONValue` (recursive JSON enum with `stringValue` / `boolValue` /
-`doubleValue` / `intValue` / `arrayValue` / `objectValue` accessors), `Role`,
-`FinishReasonUnified`, `ReasoningEffort`, `FinishReason`, `TokenUsage`,
-`Usage`, `LanguageModelUsage`, `ResponseMetadata`, `Warning`, `FunctionTool`,
-`ProviderTool`, `Tool`, `ToolChoice`, `ResponseFormat`, `ContentPart`,
-`MessageContent`, `ModelMessage`, `ModelPrompt`, `ToolCall`, `FileBytes`,
-`FileData`, `GenerateContent`, `GenerateResult`, `GenerateTextResult`,
-`GenerateObjectResult`, `GenerateTextOptions`, `StreamPart`, `RawToolCall`,
-`ToolCallRepairContext` (all `Codable, Equatable`).
+`doubleValue` / `intValue` / `arrayValue` / `objectValue` accessors),
+`ProviderOptions` / `ProviderMetadata` (`[String: [String: JSONValue]]`),
+`Role`, `FinishReasonUnified`, `ReasoningEffort`, `FinishReason`,
+`InputTokenUsage`, `OutputTokenUsage`, `Usage`, `LanguageModelUsage`
+(with `InputTokenDetails` / `OutputTokenDetails`), `ResponseMetadata`,
+`ResponseInfo`, `RequestInfo`, `Warning`, `FunctionTool`, `ProviderTool`,
+`Tool`, `ToolChoice`, `ResponseFormat`, `ContentPart`, `ToolResultOutput`,
+`ToolResultContent`, `MessageContent`, `ModelMessage`, `ModelPrompt`,
+`ToolCall`, `ToolResult`, `FileBytes`, `FileData`, `FilePartData` (the AI SDK
+`FilePart.data`: `.tagged(FileData)`, `.bare(String)` or `.reference`),
+`ReasoningFilePartData`, `GeneratedFile` (the AI SDK's `{base64, mediaType}`;
+`GeneratedFileOutput` wraps it as a `file` / `reasoning-file` part and
+`LanguageModelFile` is the provider-level file), `Source`,
+`GenerateContent` (`RawGenerateContent` / `TextContent`), `GenerateResult`,
+`GenerateTextResult`, `GenerateObjectResult`, `TypedToolResult`,
+`TypedToolError`, `ToolOutputDenied`, `ToolApprovalResponseOutput`,
+`GenerateTextOptions`, `TimeoutConfiguration`, `TextStreamPart`, `RawToolCall`,
+`ToolCallRepairContext`, the OpenAI-shaped `ChatCompletion` /
+`ChatCompletionChunk` (vendor shape, snake_case), and the multimodal results
+(`EmbeddingResult`, `SpeechResult`, `ImageResult`, `TranscriptionResult`,
+`VideoResult`, `RerankingResult`, `SearchResult`, `UploadFileResult`), all
+`Codable, Equatable`.
 
-`ToolCall` (top-level and `StreamPart.toolCall`) carries `providerMetadata`
+`ToolCall`, `RawToolCall` and `Source` encode their AI SDK `type` tag
+(`"tool-call"`, `"source"`) wherever they stand, as the AI SDK's
+`TypedToolCall` and `Source` do in a result's `toolCalls` and `sources`;
+decoding accepts JSON without the tag and rejects a different one.
+
+`ToolCall` (top-level and `TextStreamPart.toolCall`) carries `providerMetadata`
 plus `invalid` (set by Core when tool lookup, input parse, or schema validation
-fails, even after repair) and `error` (the serialized `AiMuxError` for that
-failure).
+fails, even after repair) and `error` (the `AiMuxError` object for that
+failure, tagged by `name`, e.g. `"AI_InvalidToolInputError"`; held as a
+`JSONValue`, as is `TextStreamPart.error`).
+
+Key order: the AI SDK's provider options, provider metadata and provider
+references are JS objects, which keep their keys in insertion order, and the
+JSON strings the Swift APIs return keep that order. The typed values do not:
+`ProviderOptions`, `ProviderMetadata`, `UploadFileResult.providerReference`
+and `JSONValue.object` are Swift `Dictionary` values, so a value decoded and
+encoded again may list its keys in another order. Pass the JSON string
+through unchanged when the order matters.
 
 Example:
 
@@ -285,7 +348,7 @@ print(decoded.usage.inputTokens ?? 0)
 
 ## Coverage
 
-Text generation and streaming are supported. Multimodal features (embedding,
-TTS, STT, image, video, rerank, search, files) are reachable only through the
-raw [C ABI](c.md) until the wrappers are extended — see the
-[coverage matrix](../API.md#feature-coverage).
+Text generation and streaming have typed wrappers. The multimodal features
+(embedding, TTS, STT, image, video, rerank, search, files) take their options
+as JSON strings and return JSON strings that decode into the typed result
+structs above; see the [coverage matrix](../API.md#feature-coverage).

@@ -80,7 +80,7 @@ const FILES_RESPONSE = JSON.stringify({
 // fetch result). A single-response mock can't cover the full flow, so the video
 // test only exercises construction + result-JSON parsing (see test below).
 const VIDEO_RESULT_JSON = JSON.stringify({
-  videos: [{ Url: { url: 'https://example.com/v.mp4', media_type: 'video/mp4' } }],
+  videos: [{ type: 'url', url: 'https://example.com/v.mp4', mediaType: 'video/mp4' }],
 })
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -104,7 +104,9 @@ test('e2e: OpenAI embedding via mock server', async (t) => {
 
 test('e2e: OpenAI speech (TTS) via mock server returns binary audio', async (t) => {
   // The speech provider returns AudioData::Binary with the raw response bytes.
-  // The mock serves raw bytes with an audio content-type (not JSON).
+  // The mock serves raw bytes with an audio content-type (not JSON). The JSON
+  // carries them as a base64 string, as the AI SDK's JSON does for a
+  // `Uint8Array` (SpeechModelV4Result.audio: string | Uint8Array).
   const audioBytes = Buffer.from('fake-mp3-audio-data')
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'audio/mpeg' })
@@ -114,11 +116,10 @@ test('e2e: OpenAI speech (TTS) via mock server returns binary audio', async (t) 
   try {
     const speaker = await openaiSpeech('test-key', 'tts-1', url)
     const r = JSON.parse(
-      await speaker.generate(JSON.stringify({ text: 'Hi', voice: 'alloy', output_format: 'mp3' })),
+      await speaker.generate(JSON.stringify({ text: 'Hi', voice: 'alloy', outputFormat: 'mp3' })),
     )
 
-    t.truthy(r.audio.Binary, 'audio comes back as AudioData::Binary')
-    t.true(r.audio.Binary.length > 0, 'binary audio is non-empty')
+    t.is(r.audio, audioBytes.toString('base64'), 'binary audio is a base64 string')
   } finally {
     await closeServer(server)
   }
@@ -132,14 +133,14 @@ test('e2e: OpenAI image generation via mock server', async (t) => {
 
   try {
     const imager = await openaiImage('test-key', 'dall-e-3', url)
-    // ImageCallOptions has non-Option required fields `n` and `provider_options`,
+    // ImageCallOptions has non-Option required fields `n` and `providerOptions`,
     // so both must be present in the opts JSON for serde deserialization.
     const r = JSON.parse(
-      await imager.generate(JSON.stringify({ prompt: 'otter', n: 1, provider_options: {} })),
+      await imager.generate(JSON.stringify({ prompt: 'otter', n: 1, providerOptions: {} })),
     )
 
-    t.is(r.images.Base64.length, 1)
-    t.is(r.images.Base64[0], 'aW1hZ2Ux')
+    t.is(r.images.length, 1)
+    t.is(r.images[0], 'aW1hZ2Ux')
   } finally {
     await closeServer(server)
   }
@@ -169,14 +170,14 @@ test('e2e: Cohere reranking via mock server', async (t) => {
 
   try {
     const reranker = await cohereReranking('test-key', 'rerank-v3.0', url)
-    // `docs_json` deserializes into the externally-tagged `RerankingDocuments`
-    // enum, so it must be `{"Text":{"values":[...]}}` (not a bare array).
+    // `docs_json` deserializes into the `type`-tagged `RerankingDocuments`
+    // enum, so it must be `{"type":"text","values":[...]}` (not a bare array).
     const r = JSON.parse(
-      await reranker.rerank('which?', JSON.stringify({ Text: { values: ['doc1', 'doc2'] } })),
+      await reranker.rerank('which?', JSON.stringify({ type: 'text', values: ['doc1', 'doc2'] })),
     )
 
     t.is(r.ranking.length, 2)
-    t.is(r.ranking[0].relevance_score, 0.95)
+    t.is(r.ranking[0].relevanceScore, 0.95)
   } finally {
     await closeServer(server)
   }
@@ -210,7 +211,7 @@ test('e2e: OpenAI files upload via mock server', async (t) => {
     const files = await openaiFiles('test-key', url)
     const r = JSON.parse(await files.uploadFile('dGVzdA==', 'application/pdf'))
 
-    t.is(r.provider_reference.openai, 'file-abc')
+    t.is(r.providerReference.openai, 'file-abc')
   } finally {
     await closeServer(server)
   }
@@ -225,6 +226,6 @@ test('e2e: Google video construction + result parsing', async (t) => {
   t.truthy(video, 'googleVideo factory constructs without throwing')
 
   const r = JSON.parse(VIDEO_RESULT_JSON)
-  t.is(r.videos[0].Url.url, 'https://example.com/v.mp4')
-  t.is(r.videos[0].Url.media_type, 'video/mp4')
+  t.is(r.videos[0].url, 'https://example.com/v.mp4')
+  t.is(r.videos[0].mediaType, 'video/mp4')
 })

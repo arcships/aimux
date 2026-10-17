@@ -88,7 +88,7 @@ class AimuxExceptionTest {
 
     @Test
     void ffiInvalidWireJsonIsBindingInvariant() {
-        Pointer eh = AimuxFFI.INSTANCE.aimux_register_providers("{not json");
+        Pointer eh = AimuxFFI.INSTANCE.aimux_init_proxy("{not json");
         assertThat(eh).isNotNull();
         assertThat(AimuxFFI.INSTANCE.aimux_error_code(eh)).isEqualTo(202);
         RuntimeException e = AimuxResult.expectAimuxError(eh, "ctx");
@@ -112,19 +112,19 @@ class AimuxExceptionTest {
 
     @Test
     void trailingGarbageJsonIsIllegalArgument() {
-        assertThatThrownBy(() -> Aimux.registerProviders("{} garbage"))
+        assertThatThrownBy(() -> Aimux.initProxy("{} garbage"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("configJson");
-        assertThatThrownBy(() -> Aimux.registerProviders(""))
+        assertThatThrownBy(() -> Aimux.initProxy(""))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("configJson: invalid JSON: empty");
-        assertThatThrownBy(() -> Aimux.registerProviders(null))
+        assertThatThrownBy(() -> Aimux.initProxy(null))
             .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void malformedConfigJsonIsIllegalArgument() {
-        assertThatThrownBy(() -> Aimux.registerProviders("{not json"))
+        assertThatThrownBy(() -> Aimux.initProxy("{not json"))
             .isInstanceOf(IllegalArgumentException.class)
             .isNotInstanceOf(AimuxException.class)
             .hasMessageContaining("configJson");

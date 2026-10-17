@@ -9,6 +9,163 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- aimux's public JSON equals the AI SDK's JSON. Struct fields serialize
+  camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
+  AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,
+  `"reasoning-file"`, Source `sourceType`, Warning/FileData/ResponseFormat/
+  stream parts no longer externally tagged); bytes are base64 strings;
+  optional fields are omitted instead of `null` and generate as `field?: T`;
+  `AiMuxError` is tagged by `name`
+  (`AI_APICallError`, `AI_RetryError`, ...). Vendor request and response types
+  and the OpenAI chat-completion output keep their vendor wire formats.
+  Persisted recordings and trace records change with the same rule;
+  recordings stay schema 2 and still read the snake_case envelope keys
+  aimux 0.5 writes (`call_id`, `recorded_at`, `model_id`, ...).
+
+- MoA `failMode` values (`"best-effort"`, `"fail-fast"`) and the recording
+  operation value `"language-model"` use kebab-case.
+
+- Bytes are base64 strings in the public JSON, as the AI SDK writes a
+  `Uint8Array`: image part `image`, file part `data`, `FileBytes`, speech
+  `audio`, image outputs, video `binary` data and audio/image/video inputs. An
+  array of numbers is no longer read. Bindings keep their byte-valued APIs
+  (`Binary` variants, Python `bytes`) and encode them at the JSON boundary
+  (#232 C33). Decision images (`images[].data` in a provider's options)
+  follow the same rule; Python `decide` encodes `bytes` image data there
+  (C33a).
+
+- JSON `null` is kept apart from a missing value where the AI SDK's type is
+  `unknown`: response and request `body` (language, speech, transcription,
+  embedding, reranking and search results), `APICallError.data` and the tool
+  approval request's `inputSchemaInput` read `"body": null` as a present null
+  and write it back, and omit the field only when it was missing. Python
+  serializes without `exclude_none` and keeps a set `None` of an `Any` field;
+  Go reads these bodies as `json.RawMessage`, and `Error.Data` changes from
+  `any` to `json.RawMessage` (`nil` when missing, `null` when null); Dart
+  gains `hasBody` / `hasInputSchemaInput` (#232 C34).
+
+- File content parts are the AI SDK's `FilePart`: one `file` tag whose `data`
+  is a tagged `FileData` (`{type:"data"|"url"|"reference"|"text"}`), a string
+  (base64 or a URL) or a bare `{provider: id}` reference. The `file-base64`,
+  `file-url` and `file-reference` parts are removed; write
+  `{type:"file", data:{type:"url", url}}` and so on. A `reasoning-file`
+  part's `data` also takes a bare string. A `data:` URL's media type wins over
+  the part's `mediaType`, and response messages carry files as bare base64
+  strings. Bindings replace the three part classes with a typed `FilePartData`
+  (#232 C35).
+
+- Generated files are the AI SDK's `GeneratedFile`: `files[]` holds
+  `{base64, mediaType, providerMetadata?}` instead of
+  `{type:"data"|"url", ...}`, and the text results' and stream's `file` /
+  `reasoning-file` parts are `{type, file: GeneratedFile, providerMetadata?}`.
+  `ReasoningFileOutput` is replaced by `GeneratedFileOutput`; the
+  provider-level `raw.content` keeps the V4 file
+  (`LanguageModelFile`: `{mediaType, data}`). Bindings gain a `GeneratedFile`
+  type with a bytes accessor (#232 C46).
+
+- Response timestamps are written as JavaScript's `Date.toISOString()`
+  (`"2025-03-06T13:50:19.000Z"`: UTC, milliseconds) instead of each
+  provider's own form (`+00:00` offsets, nanoseconds, Bedrock's HTTP date,
+  Open Responses' Unix seconds). Reading one requires an RFC 3339 date-time;
+  other text is an error, so stored results or recordings with another form
+  no longer parse. In Rust the fields are `Option<Timestamp>`
+  (`aimux_core::Timestamp`) instead of `Option<String>`. Binding types stay
+  strings (#232 C48).
+
+- The text stream's `text-delta` and `reasoning-delta` parts carry their
+  text under `text`, as the AI SDK's `TextStreamPart` does, instead of
+  `delta`. `tool-input-delta` keeps `delta`, and so does the provider-level
+  `StreamPart`. Rust matches `TextStreamPart::TextDelta { text, .. }`; the
+  bindings' typed parts rename `delta` to `text` (Go `TextDeltaPayload.Text`,
+  Java `getText()`, Kotlin/Swift/Dart `text`) (#229 B9).
+
+- Provider options, provider metadata and provider references keep their
+  keys in insertion order end to end, as the AI SDK's JS objects do: Rust
+  holds them as `IndexMap` (see the provider options entry below) and the
+  bindings no longer sort them. Go: `Tool.ProviderOptions` and
+  `TranscriptionSessionOpts.ProviderOptions` are `json.RawMessage` instead of
+  `map[string]json.RawMessage`, and `UploadFileResult.ProviderReference` is a
+  `ProviderReference` (raw JSON, read with `Get(provider)`) instead of
+  `map[string]string`. Java's `UploadFileResult` defaults to a
+  `LinkedHashMap`. Swift's typed dictionaries remain unordered (#229 NP2-1).
+
+- A tool call or source outside `content` carries its AI SDK `type` tag: the
+  text results' `toolCalls[]` and an approval request's `toolCall` are
+  `{"type": "tool-call", ...}` (the AI SDK's `TypedToolCall`), and their
+  `sources[]` are `{"type": "source", "sourceType", ...}`. So are the repair
+  context's `toolCall` and the call `apply_tool_call_repair` returns (a
+  `LanguageModelV4ToolCall`). Reading accepts JSON without the tag and rejects
+  a different one. Rust keeps `ToolCall` and `Source` untagged and writes the
+  tag through `wire::typed` / `wire::typed_vec` / `wire::Tagged`; TypeScript
+  types the fields as the new `TypedToolCall` and `TypedSource`. Every
+  binding's standalone `ToolCall`, `RawToolCall` and `Source` writes the tag
+  (Go through `MarshalJSON`; Java, Kotlin, Swift, Dart and Python as a fixed
+  `type` field) (#229 NP2-7).
+
+- Tool-call input parsed from the model's argument text writes an integral
+  number as JavaScript does: `1e2` and `100.0` become `100`, `-0.0` becomes
+  `0`, as `JSON.stringify(JSON.parse(text))` writes them, instead of
+  serde_json's `100.0`. Other numbers are unchanged. Bindings that tell
+  integers from floats (Python `int`, Go raw JSON, Jackson `IntNode`) now see
+  integers (#229).
+
+- The text results' usage, steps and typed tool outputs follow the same JSON
+  rules. `LanguageModelUsage` (`usage`, `totalUsage`, each step's and the
+  `finish` / `finish-step` parts' usage) is camelCase: `inputTokens`,
+  `inputTokenDetails {noCacheTokens, cacheReadTokens, cacheWriteTokens}`,
+  `outputTokens`, `outputTokenDetails {textTokens, reasoningTokens}`,
+  `totalTokens`, `raw?`; an unknown count is omitted instead of `null`, the
+  two detail objects are always written. `steps[]` are camelCase (`callId`,
+  `stepNumber`, `model {provider, modelId}`, `rawFinishReason?`,
+  `performance {stepTimeMs, responseTimeMs, timeToFirstOutputMs?, ...}`,
+  `response {id, timestamp, modelId, headers?, body?, messages}`). Tool
+  results, tool errors, `tool-output-denied` and `tool-approval-response`
+  parts write `toolCallId`, `toolName`, `providerExecuted`, `approvalId`; an
+  approval response's `toolCall` carries `type: "tool-call"`, and the
+  results' `toolResults[]` are `{"type": "tool-result", ...}` (the AI SDK's
+  `TypedToolResult`; TypeScript `TaggedToolResult`). Recordings write the
+  outcome's usage the same way. Go, Java, Kotlin, Swift and Dart read and
+  write the camelCase keys with unchanged field names; Python dicts and Node
+  objects carry the new keys. Kotlin, Swift and Dart keep a parsed JSON
+  `null` output apart from no output (Kotlin `JsonNull`, Swift `.null`, Dart
+  `hasOutput`).
+
+- `Output` (the `output` option of `generateText` / `streamText` and
+  `generate_object`) is tagged by `type`, as the AI SDK names its output
+  modes: `{"type": "text"}`, `{"type": "object", "schema", "name?",
+  "description?"}`, `{"type": "array", "element", "minItems?", "maxItems?",
+  ...}`, `{"type": "choice", "options"}`, `{"type": "json"}`. The externally
+  tagged `{"Object": {...}}` form is no longer read.
+
+- Decisions follow the same JSON rules. `DecideOptions` and
+  `DecisionCallOptions` write `maxRetries` and `providerOptions`;
+  `DecisionResult` and `DecideResult` write `rounding {probabilityDecimals,
+  scoreDecimals}`, `providerMetadata` and `usage {inputTokens, outputTokens,
+  totalTokens}`, an unknown count omitted instead of `null`
+  (`decision-result.ts:27-31`). The model description of
+  `aimux_decision_capabilities` and every binding's `describe` is
+  `{specificationVersion, provider, modelId, supportedQuestionTypes}`. The
+  options and metadata aimux defines in a provider's namespace are camelCase
+  too: `images[].mediaType`, OpenAI `choiceValues` and `safetyIdentifier`,
+  candidate scoring's `modelRevision`, `tokenizerRevision`,
+  `promptFormatVersion` and `encoded.<id>.{promptTokenIds, labelTokenIds}`,
+  and the metadata's `probabilitySource` and `latencyMs`; options a runtime
+  receives as given keep the runtime's names (`keep_alive`,
+  `chat_template_kwargs`, ...). Python's `decide` takes the JSON keys as
+  keyword arguments (`maxRetries=0`). Decision recordings write the options
+  and result this way, and replay refuses recorded options with snake_case
+  keys instead of ignoring them.
+
+- Request options reject keys they do not have (RFC-0042 §7.2):
+  `GenerateTextOptions` and its `timeout`, the options of the other
+  operations (embedding, speech, image, transcription, reranking, video and
+  its `poll`, search, file upload, `decide`), the MoA config, and the router
+  and transcription-session configs of the C ABI, Node and Python. aimux
+  0.5's snake_case keys (`max_retries`, `timeout.total_ms`, `fail_mode`,
+  `provider_name`) and typos fail naming the key instead of falling back to
+  the default. The Node and Python router and transcription-session configs
+  are camelCase, as the C ABI's are.
+
 - Middleware wraps generation and streaming with callbacks for both operations,
   parameter transforms and provider/model/supported-URL overrides. Explicit
   model and provider ids take precedence over middleware overrides.
@@ -200,10 +357,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool_approval_response { approval_id, approved, reason, provider_executed }`,
   which reaches the provider only for a provider-executed tool, as upstream;
   a tool message left empty is dropped. Wire format: the role and part tags
-  are unchanged; a tool result still reads the earlier `result` (or untyped
-  `output`) value with `is_error` and writes `text` / `json` / error outputs
-  that way, while `output` holding an AI SDK output object is read as typed;
-  a part its role does not allow (an `image` in an assistant message, a
+  are unchanged; a tool result carries only `output`, an AI SDK output
+  object, and the earlier `result` / `is_error` fields are no longer read or
+  written; a part its role does not allow (an `image` in an assistant message, a
   non-text system message, a string or text part in a tool message) is now
   rejected when the prompt is parsed instead of when it is converted.
 
@@ -662,7 +818,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replay time with an error that names it: its empty `provider_id`
   (`ProviderRecord::registry_id`) for a rebuild from a registry, a prompt in
   the older format (`InputRecord::unreadable_prompt`, loaded as empty),
-  older call options, or the pre-V4 decision options and results.
+  older call options (snake_case keys the camelCase options would ignore are
+  refused), or the pre-V4 decision options and results.
   `rebuild_provider(record, registry)` resolves `provider_id` through the
   caller-supplied registry, retaining its settings.
   If the default model method differs from the recorded one, pass the model
@@ -796,7 +953,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   levels). Answers are `{choice, probabilities?}`, `{score, probabilities?}`
   (keyed `"0"`, `"1"`, …) and `{probability}`. `decide` takes `DecideOptions`
   (the call options plus `max_retries`, default 2, and `timeout`) and returns
-  `DecideResult` (answers, usage with `total_tokens`, warnings, rounding,
+  `DecideResult` (answers, usage with `totalTokens`, warnings, rounding,
   provider metadata, response). It validates the input, rejects unsupported
   question types before any I/O and validates the answers once after the
   retries, with the upstream messages. The model call runs inside
@@ -806,9 +963,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `supported_question_types` and `do_decide(&DecisionCallOptions)`;
   `capabilities()` and `DecisionCapabilities` are removed, and provider limits
   are checked in `do_decide` before HTTP. Images and OpenAI typed choice
-  values move to `provider_options.<provider>`; the probability source,
-  confidence, OpenAI typed values, Laya abstentions and `latency_ms` move to
-  `provider_metadata.<provider>`. An OpenAI refusal or a vLLM skipped question
+  values move to `providerOptions.<provider>`; the probability source,
+  confidence, OpenAI typed values, Laya abstentions and `latencyMs` move to
+  `providerMetadata.<provider>`. An OpenAI refusal or a vLLM skipped question
   fails the decision instead of returning a partial answer. Decision
   recordings hold the `DecideOptions` and the `DecideResult`; recordings made
   before this change load but do not replay.
@@ -831,7 +988,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures used to surface as `AIMUX_E_INVALID_ARGUMENT`.
 - `aimux_decide` takes `DecideOptions` JSON and returns `DecideResult` JSON.
   `aimux_decision_capabilities` keeps its name and signature but returns
-  `{specification_version, provider, model_id, supported_question_types}`.
+  `{specificationVersion, provider, modelId, supportedQuestionTypes}`.
   `aimux_provider_decision_model` on a provider without decision models
   returns `AIMUX_E_NO_SUCH_MODEL` (was `AIMUX_E_UNSUPPORTED_FUNCTIONALITY`).
 - `aimux_provider_new`, `aimux_provider_handle_new` and `config_json` resolve
@@ -883,7 +1040,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **All bindings**
 
-- Typed provider tools in Java, Kotlin, Swift, Python and Flutter carry
+- Typed provider tools in Java, Kotlin, Swift, Python, Flutter and Go carry
   optional `supportsDeferredResults`, omitted from JSON when absent
   (provider-utils@5.0.55 src/types/tool.ts:316-326).
 
@@ -1037,6 +1194,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the remaining differences are listed: stream retries, the first-chunk
   timeout's start, `additionalRetryableError` and per-batch idempotency
   keys.
+
+- RFC-0035 shows the repair context, reply and result patch in the final
+  JSON (`toolCall` tagged `tool-call`, errors tagged by `name`, camelCase
+  keys). It says that a repaired call failing re-validation is returned as an
+  invalid call, not wrapped in `AI_ToolCallRepairError`, as upstream does, and
+  registers the pre-evaluated `inputSchema` and Swift's delayed abort as
+  differences from upstream.
 
 ## [0.5.0] - 2026-09-27
 

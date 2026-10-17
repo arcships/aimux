@@ -37,11 +37,12 @@ import 'package:test/test.dart';
 // Mock server (mirrors structured_e2e_test.dart)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A chat-completions model against [baseUrl]: the registry's `deepseek` entry
-/// with a `base_url` setting (`Model.openai` speaks the Responses API).
+/// A chat-completions model against [baseUrl]: the registry's `deepseek`
+/// entry with a `baseUrl` setting (`Model.openai` speaks the Responses API;
+/// Groq reads stream usage from `x_groq` only, as upstream does).
 Model mockChatModel(String baseUrl, String apiKey, String modelId) =>
     Model.provider('deepseek', modelId,
-        apiKey: apiKey, configJson: jsonEncode({'base_url': baseUrl}));
+        apiKey: apiKey, configJson: jsonEncode({'baseUrl': baseUrl}));
 
 class MockOpenAIServer {
   final HttpServer _server;
@@ -414,23 +415,24 @@ void main() {
     ));
 
     expect(parts, isNotEmpty);
-    // Every part is a single-key tagged union with a non-empty tag.
+    // Every part is a `type`-tagged union member the binding models.
     expect(parts.every((p) => p.type.isNotEmpty), isTrue);
+    expect(parts.whereType<StreamPartUnknown>(), isEmpty);
 
-    // The ToolCall part is a typed subclass with named fields.
+    // The tool-call part carries the parsed call.
     final toolCall = parts.whereType<StreamPartToolCall>().first;
-    expect(toolCall.type, 'ToolCall');
-    expect(toolCall.toolName, 'get_weather');
-    expect(toolCall.toolCallId, 'call_xyz');
-    expect((toolCall.input as Map<String, dynamic>)['location'], 'Tokyo');
+    expect(toolCall.type, 'tool-call');
+    expect(toolCall.call.toolName, 'get_weather');
+    expect(toolCall.call.toolCallId, 'call_xyz');
+    expect((toolCall.call.input as Map<String, dynamic>)['location'], 'Tokyo');
 
-    // The stream opens with Start and StartStep and closes with FinishStep
-    // and a Finish part carrying the total usage and finish reason.
+    // The stream opens with start and start-step and closes with finish-step
+    // and a finish part carrying the total usage and finish reason.
     expect(parts.first, isA<StreamPartStart>());
     expect(parts[1], isA<StreamPartStartStep>());
     expect(parts[parts.length - 2], isA<StreamPartFinishStep>());
     final finish = parts.last as StreamPartFinish;
-    expect(finish.type, 'Finish');
+    expect(finish.type, 'finish');
     expect(finish.finishReason, 'tool-calls');
     expect(finish.totalUsage, isA<LanguageModelUsage>());
     expect(finish.totalUsage.inputTokens, 5);
@@ -443,7 +445,7 @@ void main() {
   });
 
   test('streamText emits Raw parts when includeRawChunks enabled', () async {
-    // RFC-0016 M2: include_raw_chunks surfaces one Raw part per JSON SSE
+    // RFC-0016 M2: includeRawChunks surfaces one Raw part per JSON SSE
     // event (parsed payload), before the parsed parts; [DONE] excluded.
     final server = await startMockServer([
       {'sse': true, 'body': buildTextSse()},
@@ -480,8 +482,8 @@ void main() {
     expect(text, 'Hello world');
   });
 
-  test('streamText parses non-empty StartStep warnings', () async {
-    // RFC-0016 M9: StartStep carries the call's warnings; a non-empty array
+  test('streamText parses non-empty start-step warnings', () async {
+    // RFC-0016 M9: start-step carries the call's warnings; a non-empty array
     // (e.g. from a provider that rejects top_k) must decode without breaking
     // the stream. The openai full profile produces no warning, so the
     // assertion is decode-ability + field presence (the warning itself is
@@ -499,7 +501,7 @@ void main() {
     ));
 
     final start = parts.whereType<StreamPartStartStep>().first;
-    expect(start.type, 'StartStep');
+    expect(start.type, 'start-step');
     expect(start.warnings, isA<List<dynamic>>());
   });
 }

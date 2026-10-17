@@ -8,33 +8,33 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `RerankingModelV4CallOptions`.
  */
-export type RerankingCallOptions = {
+export type RerankingCallOptions = { 
 /**
  * Documents to rerank.
  */
-documents: RerankingDocuments,
+documents: RerankingDocuments, 
 /**
  * The query to rerank the documents against.
  */
-query: string,
+query: string, 
 /**
  * Optional limit: return only the top `n` documents.
  */
-top_n: number | null,
+topN?: number, 
 /**
  * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
  * retrying. `None` uses 2, the AI SDK default.
  */
-max_retries: number | null,
+maxRetries?: number, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null,
+timeout?: TimeoutConfiguration, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null,
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Additional HTTP headers to send with the request.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };

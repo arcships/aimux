@@ -61,9 +61,7 @@ fn options() -> DecisionCallOptions {
                 "instructions": ["Rate severity."],
                 "criteria": ["Low", "Medium", "High"]
             }
-        },
-        "headers": null,
-        "provider_options": null
+        }
     }))
     .unwrap()
 }

@@ -354,8 +354,7 @@ pub(crate) async fn execute_generate(
             timestamp: data
                 .created
                 .filter(|created| *created != 0)
-                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                .map(|dt| dt.to_rfc3339()),
+                .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
             model_id: data.model,
             headers: Some(response_headers),
             body: Some(response_value),
@@ -514,8 +513,7 @@ pub(crate) async fn execute_stream(
                             timestamp: chunk
                                 .created
                                 .filter(|created| *created != 0)
-                                .and_then(|secs| chrono::DateTime::from_timestamp(secs as i64, 0))
-                                .map(|dt| dt.to_rfc3339()),
+                                .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
                             model_id: chunk.model.clone(),
                         }));
                     }

@@ -105,13 +105,13 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     serde_json::json!({
         "prompt": serde_json::to_value(&opts.prompt).unwrap_or_default(),
         "temperature": opts.temperature,
-        "max_output_tokens": opts.max_output_tokens,
+        "maxOutputTokens": opts.max_output_tokens,
         "seed": opts.seed,
-        "response_format": serde_json::to_value(&opts.response_format).unwrap_or_default(),
+        "responseFormat": serde_json::to_value(&opts.response_format).unwrap_or_default(),
         "tools": serde_json::to_value(&opts.tools).unwrap_or_default(),
-        "tool_choice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
+        "toolChoice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
         "headers": serde_json::to_value(&opts.headers).unwrap_or_default(),
-        "provider_options": serde_json::to_value(&opts.provider_options).unwrap_or_default(),
+        "providerOptions": serde_json::to_value(&opts.provider_options).unwrap_or_default(),
     })
 }
 
@@ -121,13 +121,13 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
     serde_json::json!({
         "prompt": serde_json::to_value(&rec.input.prompt).unwrap_or_default(),
         "temperature": o.get("temperature").cloned().unwrap_or_default(),
-        "max_output_tokens": o.get("max_output_tokens").cloned().unwrap_or_default(),
+        "maxOutputTokens": o.get("maxOutputTokens").cloned().unwrap_or_default(),
         "seed": o.get("seed").cloned().unwrap_or_default(),
-        "response_format": o.get("response_format").cloned().unwrap_or_default(),
+        "responseFormat": o.get("responseFormat").cloned().unwrap_or_default(),
         "tools": o.get("tools").cloned().unwrap_or_default(),
-        "tool_choice": o.get("tool_choice").cloned().unwrap_or_default(),
+        "toolChoice": o.get("toolChoice").cloned().unwrap_or_default(),
         "headers": o.get("headers").cloned().unwrap_or_default(),
-        "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
+        "providerOptions": o.get("providerOptions").cloned().unwrap_or_default(),
     })
 }
 
@@ -181,7 +181,7 @@ pub(crate) fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Valu
 /// 被脱敏为 `"[REDACTED]"` 而请求值为数值,精确比较会 miss(保守:宁可 miss
 /// 不可误 hit,因为 max_output_tokens 影响响应,通配会引入伪命中)。
 fn canonical_keys_match(rec_key: &serde_json::Value, call_key: &serde_json::Value) -> bool {
-    const REDACTED_FIELDS: [&str; 2] = ["headers", "provider_options"];
+    const REDACTED_FIELDS: [&str; 2] = ["headers", "providerOptions"];
     let (ro, co) = match (rec_key.as_object(), call_key.as_object()) {
         (Some(a), Some(b)) => (a, b),
         _ => return rec_key == call_key,
@@ -547,6 +547,45 @@ fn last_response(rec: &Recording) -> Result<&crate::recording::ResponseRecord, A
     Err(AiMuxError::InvalidArgument(
         "mock replay: recording has no successful (2xx, finalized, error-free) response".into(),
     ))
+}
+
+/// The keys of recorded options this version would silently ignore: the
+/// snake_case keys aimux 0.5 and earlier wrote (`tool_choice`,
+/// `max_retries`, `timeout.total_ms`, ...), which this version reads
+/// camelCase. A null value carries nothing and is not reported.
+pub(crate) fn snake_case_option_keys(options: &serde_json::Value) -> Vec<String> {
+    let snake = |(key, value): (&String, &serde_json::Value)| {
+        (key.contains('_') && !value.is_null()).then(|| key.clone())
+    };
+    let Some(options) = options.as_object() else {
+        return Vec::new();
+    };
+    let mut keys: Vec<String> = options.iter().filter_map(snake).collect();
+    if let Some(timeout) = options.get("timeout").and_then(|t| t.as_object()) {
+        keys.extend(
+            timeout
+                .iter()
+                .filter_map(snake)
+                .map(|key| format!("timeout.{key}")),
+        );
+    }
+    keys
+}
+
+/// The recorded options as this version reads them: the null-valued keys of
+/// the `timeout` object are dropped. aimux 0.5 wrote every timeout key, an
+/// unset one as `null` (`"step_ms": null`); such a key carries nothing, so
+/// [`snake_case_option_keys`] does not report it, but the strict
+/// `TimeoutConfiguration` would reject its name.
+pub(crate) fn readable_options(options: &serde_json::Value) -> serde_json::Value {
+    let mut options = options.clone();
+    if let Some(timeout) = options
+        .get_mut("timeout")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        timeout.retain(|_, value| !value.is_null());
+    }
+    options
 }
 
 /// 解析 finish_reason 字符串为 unified 枚举。
@@ -984,7 +1023,9 @@ pub struct ReplayOverrides {
 /// Returns `AiMuxError::InvalidArgument` for a recording whose prompt this
 /// version cannot read ([`InputRecord::unreadable_prompt`](crate::recording::InputRecord::unreadable_prompt)),
 /// `AiMuxError::JsonParse` when the recorded call options cannot be
-/// deserialized, and propagates errors from the generation pipeline.
+/// deserialized or hold snake_case keys this version would ignore (options
+/// written by aimux 0.5 or earlier), and propagates errors from the
+/// generation pipeline.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,
@@ -1008,16 +1049,23 @@ pub async fn replay_with_model(
     } else {
         ""
     };
+    let unread = snake_case_option_keys(&recording.input.options);
+    if !unread.is_empty() {
+        return Err(AiMuxError::JsonParse(format!(
+            "mock replay: input options invalid{older}: this version reads the options \
+             camelCase and would ignore {}",
+            unread.join(", ")
+        )));
+    }
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
     //    and the operation settings recorded next to them.
-    let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| {
-            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-        })?;
-    let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| {
-            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-        })?;
+    let options = readable_options(&recording.input.options);
+    let mut call_options: CallOptions = serde_json::from_value(options.clone()).map_err(|e| {
+        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+    })?;
+    let settings: OperationSettings = serde_json::from_value(options).map_err(|e| {
+        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+    })?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {
@@ -1155,7 +1203,7 @@ mod tests {
                 // A recorded call always carries the prepared tool choice.
                 options: serde_json::json!({
                     "temperature": 0.7,
-                    "tool_choice": { "type": "auto" },
+                    "toolChoice": { "type": "auto" },
                 }),
             },
             provider: ProviderRecord::new("openai", "openai", "gpt-4o"),
@@ -1504,6 +1552,35 @@ mod tests {
                 .and_then(|response| response.model_id.as_deref()),
             Some("gpt-4o")
         );
+    }
+
+    /// Options written by aimux 0.5 and earlier use snake_case keys, which
+    /// this version's camelCase options would silently ignore; options this
+    /// version writes have none at the levels it reads.
+    #[test]
+    fn snake_case_recorded_options_are_reported() {
+        let master = serde_json::json!({
+            "prompt": [],
+            "max_output_tokens": null,
+            "temperature": 0.0,
+            "tool_choice": "auto",
+            "max_retries": 0,
+            "timeout": {"total_ms": 30000, "step_ms": null},
+            "providerOptions": {"vllm": {"chat_template_kwargs": {}}}
+        });
+        assert_eq!(
+            snake_case_option_keys(&master),
+            ["tool_choice", "max_retries", "timeout.total_ms"]
+        );
+        let options = CallOptions {
+            max_output_tokens: Some(5),
+            tool_choice: Some(crate::tool::LanguageModelV4ToolChoice::Auto),
+            ..Default::default()
+        };
+        let mut written = serde_json::to_value(&options).unwrap();
+        written["maxRetries"] = 0.into();
+        written["timeout"] = serde_json::json!({"totalMs": 30000});
+        assert!(snake_case_option_keys(&written).is_empty(), "{written}");
     }
 
     #[test]

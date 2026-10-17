@@ -32,7 +32,7 @@ EMBEDDING = json.dumps({
     "usage": {"prompt_tokens": 1, "total_tokens": 1},
 })
 
-LIMITS = {"max_retries": 0, "timeout": {"total_ms": 10000}}
+LIMITS = {"maxRetries": 0, "timeout": {"totalMs": 10000}}
 
 
 class _ThreadServer:

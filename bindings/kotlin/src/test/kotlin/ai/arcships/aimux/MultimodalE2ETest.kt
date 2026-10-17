@@ -73,24 +73,23 @@ class MultimodalE2ETest {
         // mock body below is ASCII-safe (a base64-looking string carried as raw
         // bytes), so it round-trips through the String-based mock unchanged —
         // the same trick the Go test uses (`base64Audio`). The core then wraps
-        // the raw bytes as AudioData::Binary.
+        // the raw bytes as AudioData::Binary, written as base64.
         server.contentType = "audio/mpeg"
         server.responseBody = "SGVsbG8gd29ybGQ="
 
         SpeechModel.openai("sk-test", "tts-1", server.baseUrl).use { model ->
-            val opts = JSONObject().apply {
-                put("text", "Hi")
-                put("voice", "alloy")
-                put("output_format", "mp3")
-                put("provider_options", JSONObject())
-            }.toString()
+            val opts = AimuxJson.encodeToString(
+                SpeechCallOptions.serializer(),
+                SpeechCallOptions(text = "Hi", voice = "alloy", outputFormat = "mp3"),
+            )
 
-            val result = JSONObject(model.generate(opts))
+            val result = AimuxJson.decodeFromString(SpeechResult.serializer(), model.generate(opts))
 
-            // Wire format: {"audio":{"Binary":[<bytes>]}, ...}
-            val audio = result.getJSONObject("audio")
-            assertThat(audio.has("Binary")).isTrue()
-            assertThat(audio.getJSONArray("Binary").length()).isGreaterThan(0)
+            // SpeechModelV4Result.audio is a Uint8Array upstream
+            // (speech-model-v4-result.ts:16): a base64 string in the JSON.
+            assertThat(result.audio).isEqualTo(
+                AudioData.Base64(java.util.Base64.getEncoder().encodeToString("SGVsbG8gd29ybGQ=".toByteArray())),
+            )
         }
     }
 
@@ -101,18 +100,20 @@ class MultimodalE2ETest {
         server.responseBody = """{"data":[{"b64_json":"aW1hZ2Ux"}]}"""
 
         ImageModel.openai("sk-test", "dall-e-3", server.baseUrl).use { model ->
-            val opts = JSONObject().apply {
-                put("prompt", "otter")
-                put("n", 1)
-                put("provider_options", JSONObject())
-            }.toString()
+            // `n` and `providerOptions` are required on the wire and always encoded.
+            val opts = AimuxJson.encodeToString(
+                ImageCallOptions.serializer(),
+                ImageCallOptions(prompt = "otter", size = Size(1024, 1024), aspectRatio = AspectRatio(16, 9)),
+            )
+            assertThat(JSONObject(opts).getString("size")).isEqualTo("1024x1024")
+            assertThat(JSONObject(opts).getString("aspectRatio")).isEqualTo("16:9")
+            assertThat(JSONObject(opts).has("n")).isTrue()
+            assertThat(JSONObject(opts).has("providerOptions")).isTrue()
 
-            val result = JSONObject(model.generate(opts))
+            val result = AimuxJson.decodeFromString(ImageResult.serializer(), model.generate(opts))
 
-            // Wire format: {"images":{"Base64":["aW1hZ2Ux"]}, ...}
-            val base64 = result.getJSONObject("images").getJSONArray("Base64")
-            assertThat(base64.length()).isEqualTo(1)
-            assertThat(base64.getString(0)).isEqualTo("aW1hZ2Ux")
+            // Wire format: {"images":["aW1hZ2Ux"], ...} (untagged: strings are base64).
+            assertThat(result.images).isEqualTo(ImageOutputs.Base64(listOf("aW1hZ2Ux")))
         }
     }
 
@@ -138,21 +139,21 @@ class MultimodalE2ETest {
             """{"results":[{"index":1,"relevance_score":0.95},{"index":0,"relevance_score":0.3}]}"""
 
         RerankingModel.cohere("sk-test", "rerank-v3.0", server.baseUrl).use { model ->
-            val opts = JSONObject().apply {
-                put("query", "which?")
-                put("documents", JSONObject("""{"Text":{"values":["doc1","doc2"]}}"""))
-                put("top_n", 2)
-                put("provider_options", JSONObject())
-            }.toString()
+            val opts = AimuxJson.encodeToString(
+                RerankingCallOptions.serializer(),
+                RerankingCallOptions(
+                    documents = RerankingDocuments.Text(listOf("doc1", "doc2")),
+                    query = "which?",
+                    topN = 2,
+                ),
+            )
+            assertThat(JSONObject(opts).getJSONObject("documents").getString("type")).isEqualTo("text")
 
-            val result = JSONObject(model.rerank(opts))
+            val result = AimuxJson.decodeFromString(RerankingResult.serializer(), model.rerank(opts))
 
-            // Wire format: {"ranking":[{"index":1,"relevance_score":0.95}, ...], ...}
-            val ranking = result.getJSONArray("ranking")
-            assertThat(ranking.length()).isEqualTo(2)
-            val first = ranking.getJSONObject(0)
-            assertThat(first.getInt("index")).isEqualTo(1)
-            assertThat(first.getDouble("relevance_score")).isEqualTo(0.95)
+            // Wire format: {"ranking":[{"index":1,"relevanceScore":0.95}, ...], ...}
+            assertThat(result.ranking).hasSize(2)
+            assertThat(result.ranking[0]).isEqualTo(RerankingRank(index = 1, relevanceScore = 0.95))
         }
     }
 
@@ -164,11 +165,10 @@ class MultimodalE2ETest {
             """{"results":[{"title":"Rust","url":"https://rust-lang.org","content":"Rust is..."}],"answer":"Rust is a systems language."}"""
 
         SearchModel.tavily("sk-test", server.baseUrl).use { model ->
-            val opts = JSONObject().apply {
-                put("query", "What is Rust?")
-                put("max_results", 5)
-                put("provider_options", JSONObject())
-            }.toString()
+            val opts = AimuxJson.encodeToString(
+                SearchCallOptions.serializer(),
+                SearchCallOptions(query = "What is Rust?", maxResults = 5),
+            )
 
             val result = JSONObject(model.search(opts))
 
@@ -189,8 +189,8 @@ class MultimodalE2ETest {
         Files.openai("sk-test", server.baseUrl).use { model ->
             val result = JSONObject(model.uploadFile("dGVzdA==", "application/pdf"))
 
-            // Wire format: {"provider_reference":{"openai":"file-abc"}, ...}
-            assertThat(result.getJSONObject("provider_reference").getString("openai"))
+            // Wire format: {"providerReference":{"openai":"file-abc"}, ...}
+            assertThat(result.getJSONObject("providerReference").getString("openai"))
                 .isEqualTo("file-abc")
         }
     }
@@ -209,13 +209,11 @@ class MultimodalE2ETest {
             assertThat(model).isNotNull()
         }
 
-        // Wire format: {"videos":[{"Url":{"url":"...","media_type":"..."}}], ...}
-        val parsed = JSONObject(
-            """{"videos":[{"Url":{"url":"https://example.com/v.mp4","media_type":"video/mp4"}}]}""",
+        // Wire format: {"videos":[{"type":"url","url":"...","mediaType":"..."}], ...}
+        val parsed = AimuxJson.decodeFromString(
+            VideoResult.serializer(),
+            """{"videos":[{"type":"url","url":"https://example.com/v.mp4","mediaType":"video/mp4"}]}""",
         )
-        val videos = parsed.getJSONArray("videos")
-        assertThat(videos.length()).isEqualTo(1)
-        assertThat(videos.getJSONObject(0).getJSONObject("Url").getString("url"))
-            .isEqualTo("https://example.com/v.mp4")
+        assertThat(parsed.videos).containsExactly(VideoData.Url("https://example.com/v.mp4", "video/mp4"))
     }
 }

@@ -37,7 +37,7 @@ use crate::error::AiMuxError;
 use crate::generate::GenerateTextResult;
 use crate::parse_tool_call::original_tool_call_text;
 use crate::result::{
-    ContentPart, GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source,
+    ContentPart, GenerateContent, GenerateResult, GeneratedFileOutput, ReasoningOutput, Source,
     TypedToolError, TypedToolResult,
 };
 use crate::shared::GeneratedFileData;
@@ -252,7 +252,9 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
             },
         },
         GenerateContent::Source(source) => CompletionContent::Source(source),
-        GenerateContent::File(file) => CompletionContent::File(file),
+        GenerateContent::File(file) => {
+            CompletionContent::File(file_data_to_text(&file.data, &file.media_type))
+        }
         GenerateContent::ToolResult(result) => CompletionContent::ToolResult {
             tool_name: &result.tool_name,
             output: &result.result,
@@ -296,7 +298,9 @@ pub(crate) fn text_result_to_chat_completion(
             arguments: parsed_tool_call_arguments(&call.input, call.invalid, call.error.as_ref()),
         },
         ContentPart::Source(source) => CompletionContent::Source(source),
-        ContentPart::File { file, .. } => CompletionContent::File(file),
+        ContentPart::File { file, .. } => {
+            CompletionContent::File(format!("data:{};base64,{}", file.media_type, file.base64()))
+        }
         ContentPart::ToolResult(result) => CompletionContent::ToolResult {
             tool_name: &result.tool_name,
             output: &result.output,
@@ -347,7 +351,8 @@ enum CompletionContent<'a> {
         arguments: String,
     },
     Source(&'a Source),
-    File(&'a GeneratedFile),
+    /// A generated file as text: its URL or a `data:` URL.
+    File(String),
     /// A provider-executed tool result or error.
     ToolResult {
         tool_name: &'a str,
@@ -411,13 +416,11 @@ fn build_chat_completion<'a>(
                 }
                 content_text.push_str(url);
             }
-            CompletionContent::File(GeneratedFile {
-                data, media_type, ..
-            }) => {
+            CompletionContent::File(text) => {
                 if !content_text.is_empty() {
                     content_text.push('\n');
                 }
-                content_text.push_str(&file_data_to_text(data, media_type));
+                content_text.push_str(&text);
             }
             CompletionContent::Source(Source::Document { .. }) | CompletionContent::None => {}
             CompletionContent::ToolResult {
@@ -954,13 +957,11 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            TextStreamPart::File(GeneratedFile {
-                data, media_type, ..
-            }) => {
+            TextStreamPart::File(GeneratedFileOutput { file, .. }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = file_data_to_text(data, media_type);
+                let text = format!("data:{};base64,{}", file.media_type, file.base64());
                 let mut chunk = self.base_chunk();
                 chunk.choices = vec![ChatCompletionChunkChoice {
                     index: 0,

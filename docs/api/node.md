@@ -44,7 +44,7 @@ The 3rd argument of every constructor is a base URL string or a
 parameters, e.g. `{ account_id: '…' }` for `cloudflare_workers_ai`).
 `maxRetries` and `bodyOverrides` are kept in the type only so that passing them
 throws `InvalidArgumentError`; retry is a per-call option
-(`max_retries` in the call options).
+(`maxRetries` in the call options).
 
 > **Scope:** `provider(name)` reaches vendor packages and the 282 preset rows;
 > typed factories remain available. Custom endpoints use the `baseUrl` override.
@@ -178,16 +178,16 @@ const { openai, generateText } = require('@arcships/aimux')
 
 const model = await openai('sk-...', 'gpt-4o', 'https://api.openai.com/v1')
 const result = await generateText(model, 'Explain Rust ownership.', {
-  max_output_tokens: 100,
+  maxOutputTokens: 100,
   temperature: 0.7,
-  max_retries: 0,                          // disable retries for this call
-  timeout: { total_ms: 30_000, first_chunk_ms: 5_000, chunk_ms: 2_000 },
+  maxRetries: 0,                           // disable retries for this call
+  timeout: { totalMs: 30_000, firstChunkMs: 5_000, chunkMs: 2_000 },
 })
 
 console.log(result.text)           // generated text
 console.log(result.usage)          // token usage
-console.log(result.finish_reason)  // finish reason
-console.log(result.tool_calls)     // tool calls (if any)
+console.log(result.finishReason)   // finish reason
+console.log(result.toolCalls)      // tool calls (if any)
 ```
 
 Cancellation via `AbortSignal` (4th argument — works for both
@@ -210,8 +210,8 @@ optional `AbortBridge` (wrap a JS `AbortSignal`) as their last argument:
 ```typescript
 // access structured content (the final step's parts; result.steps has them all)
 const result = await generateText(model, "...", { tools })
-const toolCallPart = result.content.find(c => 'ToolCall' in c)
-const reasoningPart = result.content.find(c => 'Reasoning' in c)
+const toolCallPart = result.content.find(c => c.type === 'tool-call')
+const reasoningPart = result.content.find(c => c.type === 'reasoning')
 ```
 
 ## Streaming Generation
@@ -223,11 +223,11 @@ const { openai, streamText } = require('@arcships/aimux')
 
 const model = await openai('sk-...', 'gpt-4o')
 for await (const part of streamText(model, 'Write a haiku about Rust.')) {
-  if ('TextDelta' in part) {
-    process.stdout.write(part.TextDelta.text)
+  if (part.type === 'text-delta') {
+    process.stdout.write(part.text)
   }
-  if ('Finish' in part) {
-    console.log(`\n[done: ${part.Finish.finish_reason}]`)
+  if (part.type === 'finish') {
+    console.log(`\n[done: ${part.finishReason}]`)
   }
 }
 ```
@@ -246,7 +246,7 @@ const tools = [{
   type: 'function',
   name: 'get_weather',
   description: 'Get current weather',
-  input_schema: {
+  inputSchema: {
     type: 'object',
     properties: {
       location: { type: 'string', description: 'City name' }
@@ -256,9 +256,9 @@ const tools = [{
 }]
 
 const result = await generateText(model, "What's the weather in Tokyo?", { tools })
-if (result.tool_calls.length > 0) {
-  const call = result.tool_calls[0]
-  console.log(call.tool_name)     // get_weather
+if (result.toolCalls.length > 0) {
+  const call = result.toolCalls[0]
+  console.log(call.toolName)     // get_weather
   console.log(call.input)         // { location: "Tokyo" }
 }
 ```
@@ -276,13 +276,13 @@ JavaScript, after the model call and before the result is decoded, so it can
 ```typescript
 const result = await generateText(model, "What's the weather in Tokyo?", {
   tools,
-  repairToolCall: async ({ tool_call, error, input_schema, messages }) => {
-    // tool_call.input is the model's raw argument TEXT, not a parsed object.
+  repairToolCall: async ({ toolCall, error, inputSchema, messages }) => {
+    // toolCall.input is the model's raw argument TEXT, not a parsed object.
     const fixed = await generateText(model, [
       ...messages,
-      { role: 'user', content: `Rewrite these arguments to match ${JSON.stringify(input_schema)}: ${tool_call.input}` },
+      { role: 'user', content: `Rewrite these arguments to match ${JSON.stringify(inputSchema)}: ${toolCall.input}` },
     ])
-    return { ...tool_call, input: fixed.text }   // null → leave the call invalid
+    return { ...toolCall, input: fixed.text }   // null → leave the call invalid
   },
 })
 ```
@@ -294,19 +294,21 @@ Each invalid call is repaired at most once, and a call made without a tool set
 is never repaired.
 
 Both `generateText` and `streamText` support it — in the stream, the settled
-`ToolCall` part is replaced, while `ToolInputDelta` parts are the provider's raw
+`tool-call` part is replaced, while `tool-input-delta` parts are the provider's raw
 text and pass through untouched. `generateTextAsOpenai` supports it too: the
 OpenAI shape carries no `invalid` marker, so it repairs the native result and
 converts it (`Model.generateTextResultAsOpenai`). `streamTextAsOpenai` does not
 reflect repair — its argument deltas are the provider's text, as in the AI SDK.
 `RawToolCall` and `ToolCallRepairReply` are exported from the package root.
+The context's `toolCall` carries `type: 'tool-call'`, as the AI SDK's
+`LanguageModelV4ToolCall` does; a returned call may carry it or not.
 
 ### Tool Selection Strategy
 
 ```typescript
 const opts = {
   tools,
-  tool_choice: 'auto'        // 'auto' | 'none' | 'required' | { type: 'tool', toolName: 'get_weather' }
+  toolChoice: 'auto'         // 'auto' | 'none' | 'required' | { type: 'tool', toolName: 'get_weather' }
 }
 ```
 
@@ -319,12 +321,12 @@ const opts = {
 const result = await generateText(model, [
   { role: 'user', content: "What's the weather in Tokyo?" },
   { role: 'assistant', content: [{
-    type: 'tool_call', tool_call_id: 'call_abc',
-    tool_name: 'get_weather', input: { location: 'Tokyo' },
+    type: 'tool-call', toolCallId: 'call_abc',
+    toolName: 'get_weather', input: { location: 'Tokyo' },
   }] },
   { role: 'tool', content: [{
-    type: 'tool_result', tool_call_id: 'call_abc', tool_name: 'get_weather',
-    result: { temperature: 22, condition: 'sunny' },
+    type: 'tool-result', toolCallId: 'call_abc', toolName: 'get_weather',
+    output: { type: 'json', value: { temperature: 22, condition: 'sunny' } },
   }] },
 ], { tools })
 ```
@@ -357,14 +359,12 @@ const speaker = await openaiSpeech('sk-...', 'tts-1')
 const resultJson = await speaker.generate(JSON.stringify({
   text: 'Hello world!',
   voice: 'alloy',
-  output_format: 'mp3',
+  outputFormat: 'mp3',
 }))
 const result = JSON.parse(resultJson)
 
-// audio is in result.audio (base64 or binary)
-if (result.audio.Base64) {
-  fs.writeFileSync('out.mp3', Buffer.from(result.audio.Base64, 'base64'))
-}
+// result.audio is a base64 string (bytes are base64 in the JSON)
+fs.writeFileSync('out.mp3', Buffer.from(result.audio, 'base64'))
 ```
 
 ## Speech to Text (STT)
@@ -395,13 +395,12 @@ const imager = await openaiImage('sk-...', 'dall-e-3')
 const resultJson = await imager.generate(JSON.stringify({
   prompt: 'A cute baby sea otter',
   n: 1,
-  provider_options: {},
+  providerOptions: {},
 }))
 const result = JSON.parse(resultJson)
 
-if (result.images.Base64) {
-  fs.writeFileSync('out.png', Buffer.from(result.images.Base64[0], 'base64'))
-}
+// result.images is an array of base64 strings (bytes are base64 in the JSON)
+fs.writeFileSync('out.png', Buffer.from(result.images[0], 'base64'))
 ```
 
 Multimodal calls accept an optional `AbortBridge` as their last argument —
@@ -410,7 +409,7 @@ wrap the JS `AbortSignal` in one:
 ```typescript
 const controller = new AbortController()
 const resultJson = await imager.generate(
-  JSON.stringify({ prompt: 'A cute baby sea otter', n: 1, provider_options: {} }),
+  JSON.stringify({ prompt: 'A cute baby sea otter', n: 1, providerOptions: {} }),
   new AbortBridge(controller.signal),
 )
 controller.abort() // cancels the image call
@@ -428,15 +427,15 @@ const videor = await googleVideo('sk-...', 'veo-3.0')
 const resultJson = await videor.generate(JSON.stringify({
   prompt: 'A cat playing piano',
   n: 1,
-  poll: { interval_ms: 1_000, timeout_ms: 120_000 },
-  provider_options: {},
+  poll: { intervalMs: 1_000, timeoutMs: 120_000 },
+  providerOptions: {},
 }))
 const result = JSON.parse(resultJson)
 
-// result.videos is usually [{ Binary: { data, media_type } }]
-const video = result.videos[0].Binary
-if (video) {
-  require('fs').writeFileSync('video.mp4', Buffer.from(video.data))
+// result.videos is usually [{ type: 'binary', data, mediaType }] (data is base64)
+const video = result.videos[0]
+if (video.type === 'binary') {
+  require('fs').writeFileSync('video.mp4', Buffer.from(video.data, 'base64'))
 }
 ```
 
@@ -453,17 +452,17 @@ const { cohereReranking } = require('@arcships/aimux/raw')
 const reranker = await cohereReranking('sk-...', 'rerank-v3.0')
 const resultJson = await reranker.rerank(
   'What is Rust?',
-  // docs_json is the externally-tagged `RerankingDocuments` enum —
-  // `{ Object: { values } }` for JSON documents, `{ Text: { values } }` for plain strings
-  JSON.stringify({ Object: { values: [
+  // docs_json is the `type`-tagged `RerankingDocuments` enum —
+  // `{ type: 'object', values }` for JSON documents, `{ type: 'text', values }` for plain strings
+  JSON.stringify({ type: 'object', values: [
     { text: 'Rust is a systems programming language.' },
     { text: 'Rust is a chemical element.' },
-  ] } }),
+  ] }),
 )
 const result = JSON.parse(resultJson)
 
-// result.ranking sorted by relevance (each rank: { index, relevance_score })
-result.ranking.forEach(r => console.log(r.index, r.relevance_score))
+// result.ranking sorted by relevance (each rank: { index, relevanceScore })
+result.ranking.forEach(r => console.log(r.index, r.relevanceScore))
 ```
 
 ## Search
@@ -492,7 +491,7 @@ const fileBase64 = fs.readFileSync('doc.pdf').toString('base64')
 const resultJson = await files.uploadFile(fileBase64, 'application/pdf')
 const result = JSON.parse(resultJson)
 
-console.log(result.provider_reference)  // { openai: 'file-xxx' }
+console.log(result.providerReference)  // { openai: 'file-xxx' }
 ```
 
 ## API Surface
@@ -533,53 +532,64 @@ them, not a local copy):
 ```typescript
 import type {
   GenerateTextOptions, GenerateTextResult, TextStreamPart, ModelMessage,
-  Tool, ToolChoice, ToolCall, TypedToolResult, LanguageModelUsage, StepResult,
-  FinishReasonUnified, Warning, UserContent, AssistantContent, ContentPart, Output,
-  ReasoningEffort, FunctionTool,
+  Tool, ToolChoice, ToolCall, TypedToolCall, TypedSource, TypedToolResult,
+  LanguageModelUsage, StepResult, FinishReasonUnified, Usage, FinishReason, Warning,
+  UserContent, AssistantContent, ContentPart, Output, ResponseFormat, ReasoningEffort,
+  GenerateResult, FunctionTool,
 } from '@arcships/aimux'
 ```
 
 ```typescript
 // bindings/node/src/types/GenerateTextResult.ts (ts-rs generated, abridged)
 export type GenerateTextResult = {
-  content: Array<ContentPart>             // the final step's content parts (the core ContentPart)
+  content: Array<ContentPart>             // the content parts (the core ContentPart)
   text: string                            // the final step's text
-  tool_calls: Array<ToolCall>             // the final step's tool calls (parsed)
-  tool_results: Array<TypedToolResult>    // the final step's provider-executed tool results
-  finish_reason: FinishReasonUnified      // 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other'
-  raw_finish_reason: string | null        // provider's own finish-reason string
+  reasoning: Array<ReasoningPart>         // the final step's reasoning
+  reasoningText?: string                  // the reasoning text, absent when there is none
+  files: Array<GeneratedFile>             // files generated by the model: { base64, mediaType, providerMetadata? }
+  sources: Array<TypedSource>             // sources / citations, each { type: 'source', sourceType, ... }
+  toolCalls: Array<TypedToolCall>         // tool calls (parsed), each { type: 'tool-call', ... }
+  toolResults: Array<TypedToolResult>     // provider-executed tool results
+  finishReason: FinishReasonUnified       // 'stop' | 'length' | 'content-filter' | 'tool-calls' | 'error' | 'other'
+  rawFinishReason?: string                // provider's own finish-reason string
   usage: LanguageModelUsage               // token usage summed over the steps
-  warnings: Array<Warning>                // the final step's warnings
+  totalUsage: LanguageModelUsage          // equal to usage
+  warnings: Array<Warning>                // warnings
+  request: RequestInfo                    // the final step's request
+  response: StepResponse                  // the final step's response (id, timestamp, model id, messages)
+  responseMessages: Array<ModelMessage>   // assistant/tool messages ready for the next turn
+  providerMetadata?: ProviderMetadata     // the final step's provider metadata
   steps: Array<StepResult>                // every model call of the generation
-  response_messages: Array<ModelMessage>  // assistant/tool messages ready for the next turn
   output?: JsonValue                      // the value parsed by the `output` option
-  // deprecated upstream (the final step's values): reasoning, reasoning_text,
-  // files, sources, request, response, provider_metadata, total_usage
+  // deprecated upstream (the final step's values): reasoning, reasoningText,
+  // request, response, providerMetadata, totalUsage
 }
 ```
 
-`TextStreamPart` is an external-tagged union (each part is a one-key
-object — type narrowing via `'TextDelta' in part` etc. works out of the box).
-The stream opens with `Start`, frames each step with `StartStep` …
-`FinishStep`, and ends with `Finish` (or `Abort`):
+`streamText` emits `TextStreamPart`, a union tagged by `type` (type narrowing via
+`part.type === 'text-delta'` etc. works out of the box). The stream opens with
+`start`, frames each step with `start-step` … `finish-step`, and ends with
+`finish` (or `abort`):
 
 ```typescript
 // bindings/node/src/types/TextStreamPart.ts (variants, abridged)
 export type TextStreamPart =
-  | { Start: {} } | { StartStep: ... } | { FinishStep: ... } | { Finish: ... }
-  | { TextStart: ... } | { TextDelta: { id, text, ... } } | { TextEnd: ... }
-  | { ToolInputStart: ... } | { ToolInputDelta: ... } | { ToolInputEnd: ... }
-  | { ToolCall: ... } | { ToolResult: TypedToolResult } | { ToolError: TypedToolError }
-  | { ToolOutputDenied: ... } | { ToolApprovalRequest: ... } | { ToolApprovalResponse: ... }
-  | { ReasoningStart: ... } | { ReasoningDelta: ... } | { ReasoningEnd: ... }
-  | { Source: ... } | { File: ... } | { ReasoningFile: ... } | { Custom: ... }
-  | { Abort: ... } | { Error: ... } | { Raw: ... }
+  | { type: 'start' } | { type: 'start-step', ... } | { type: 'finish-step', ... } | { type: 'finish', ... }
+  | { type: 'text-start', ... } | { type: 'text-delta', id, text, ... } | { type: 'text-end', ... }
+  | { type: 'tool-input-start', ... } | { type: 'tool-input-delta', ... } | { type: 'tool-input-end', ... }
+  | { type: 'tool-call', ... } | { type: 'tool-result', ... } | { type: 'tool-error', ... }
+  | { type: 'tool-output-denied', ... } | { type: 'tool-approval-request', ... } | { type: 'tool-approval-response', ... }
+  | { type: 'reasoning-start', ... } | { type: 'reasoning-delta', ... } | { type: 'reasoning-end', ... }
+  | { type: 'source', ... } | { type: 'file', ... } | { type: 'reasoning-file', ... } | { type: 'custom', ... }
+  | { type: 'abort', ... } | { type: 'error', ... } | { type: 'raw', ... }
 ```
 
 Provider-layer `StreamPart` also has `ResponseMetadata`; the call layer
 consumes those events internally.
 
 The full declarations live in `bindings/node/src/types/` — `GenerateTextOptions.ts`,
-`ModelMessage.ts`, `Tool.ts`, `ToolChoice.ts`, `ContentPart.ts`,
+`ModelMessage.ts`, `Tool.ts`, `ToolChoice.ts`, `ContentPart.ts` (a file part is
+the AI SDK `FilePart`; its `data` is `FilePartData.ts`: a tagged `FileData`, a
+base64 or URL string, or a bare provider reference),
 `GenerateContent.ts`, `GenerateResult.ts`, and the `types/` directory of the
 package (140 files).

@@ -419,8 +419,8 @@ impl LanguageModel for OpenResponsesModel {
                 .map(std::string::ToString::to_string),
             timestamp: raw
                 .get("created_at")
-                .and_then(serde_json::Value::as_u64)
-                .map(|ts| format!("{ts}")),
+                .and_then(serde_json::Value::as_f64)
+                .and_then(aimux_core::Timestamp::from_unix_seconds),
             model_id: raw
                 .get("model")
                 .and_then(|v| v.as_str())

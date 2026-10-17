@@ -55,8 +55,8 @@ fn a_namespaced_kind_is_any_text_with_a_dot() {
 fn a_tool_result_is_never_null() {
     let result = |value| {
         serde_json::from_value::<ToolResult>(json!({
-            "tool_call_id": "call-1",
-            "tool_name": "web_search",
+            "toolCallId": "call-1",
+            "toolName": "web_search",
             "result": value,
         }))
     };

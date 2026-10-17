@@ -252,7 +252,7 @@ impl Model {
     ///
     /// Same signature as [`Model::generate_text`]; returns a JSON-serialized
     /// `GenerateObjectResult` (core's deprecated `generate_object` wrapper).
-    /// Pass `output: { "Object": { "schema": ... } }`
+    /// Pass `output: { "type": "object", "schema": ... }`
     /// via `options` to describe the value; the model's text must parse and
     /// match the schema.
     #[napi(ts_return_type = "Promise<string>")]
@@ -982,8 +982,10 @@ pub fn moa(
     })())
 }
 
-/// Lenient router config (mirrors the FFI-side shape; all fields optional).
+/// Router config, the C ABI's shape: camelCase, all fields optional,
+/// unknown keys rejected.
 #[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouterFfiConfig {
     router: Option<String>,
     weights: Option<Vec<f64>>,
@@ -1630,14 +1632,14 @@ fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
 
 /// Build the repair argument for one invalid tool call.
 ///
-/// `toolCallJson` is a `GenerateTextResult.tool_calls` entry with
+/// `toolCallJson` is a `GenerateTextResult.toolCalls` entry with
 /// `invalid: true`. `prompt` and `optsJson` are **the same two strings the
 /// call was generated with** (`generateText` / `streamText`); messages,
 /// instructions, and the tool set are derived from them here, so no caller
 /// repeats that derivation.
 ///
-/// Returns `{tool_call, error, input_schema, tools, messages, instructions}`
-/// — the AI SDK `repairToolCall` argument, with `tool_call.input` the
+/// Returns `{toolCall, error, inputSchema, tools, messages, instructions}`
+/// — the AI SDK `repairToolCall` argument, with `toolCall.input` the
 /// provider's raw argument text — or the JSON literal `"null"` when the
 /// options carried no tools: as in the AI SDK, a call made without a tool set
 /// is never repaired, and the caller skips it. `"null"` is a success.
@@ -1669,10 +1671,10 @@ pub fn tool_call_repair_context(
 /// Resolve one invalid tool call against a host's repair reply.
 ///
 /// `optsJson` is the same string the call was generated with; the tool set
-/// comes from it. `replyJson` is `{"type":"repaired","tool_call":{…}}`,
+/// comes from it. `replyJson` is `{"type":"repaired","toolCall":{…}}`,
 /// `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Returns the
-/// resulting `ToolCall` JSON — valid, or invalid carrying a nested
-/// `ToolCallRepairError`.
+/// resulting `ToolCall` JSON, tagged `"type": "tool-call"` — valid, or
+/// invalid carrying a nested `ToolCallRepairError`.
 ///
 /// Options carrying no tools throw `InvalidArgumentError`: such a call is not
 /// repairable, and `toolCallRepairContext` already said so by returning
@@ -1693,13 +1695,13 @@ pub fn apply_tool_call_repair(
             reply,
         )
         .map_err(|e| AiMuxBindingError::from(&e))?;
-        serialize_result(&repaired)
+        serialize_result(&aimux_core::wire::Tagged(&repaired))
     })())
 }
 
 /// Apply a repair reply to a serialized `GenerateTextResult`: the call is
 /// repaired in the result's steps (content, approval requests and response
-/// messages) and the derived `tool_calls`, `content` and `response_messages`
+/// messages) and the derived `toolCalls`, `content` and `responseMessages`
 /// are written from them. `optsJson` is the same string the call was
 /// generated with.
 ///
@@ -1726,4 +1728,29 @@ pub fn apply_tool_call_repair_to_result(
         .map_err(|e| AiMuxBindingError::from(&e))?;
         serialize_result(&patched)
     })())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RouterFfiConfig;
+
+    /// The router config is the C ABI's: camelCase, unknown keys rejected,
+    /// so the same JSON names the router in every binding.
+    #[test]
+    fn router_config_is_camel_case_and_strict() {
+        let cfg: RouterFfiConfig = serde_json::from_str(
+            r#"{"router":"weighted","weights":[1.0],"fallback":"none","providerName":"r","modelId":"m"}"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.router.as_deref(), Some("weighted"));
+        assert_eq!(cfg.provider_name.as_deref(), Some("r"));
+        assert_eq!(cfg.model_id.as_deref(), Some("m"));
+        let error = serde_json::from_str::<RouterFfiConfig>(r#"{"provider_name":"r"}"#)
+            .err()
+            .expect("a snake_case key is rejected");
+        assert!(
+            error.to_string().contains("unknown field `provider_name`"),
+            "{error}"
+        );
+    }
 }

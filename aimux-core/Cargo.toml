@@ -31,6 +31,8 @@ tokio-util = "0.7"
 httpdate = { workspace = true }
 rand = { workspace = true }
 base64 = "0.22"
+# `Timestamp`: RFC 3339 parsing and `toISOString` formatting.
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 jsonschema = { workspace = true }
 regex = "1"
 

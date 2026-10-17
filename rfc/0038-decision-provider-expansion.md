@@ -2,7 +2,7 @@
 
 状态：已实现，PR #226 验证中。资料核对日期：2026-10-08。
 
-> **修订**: Decision 已按上游 `DecisionModelV4` 改写（[aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) §3.1、§5）。各 provider 的 wire 与限制不变；请求侧扩展都在 `provider_options.<provider>`（图片与 OpenAI 的 `choice_values` 由顶层字段移入，`safety_identifier` 与运行时 `protocol` 不变），结果侧扩展移入 `provider_metadata.<provider>`（概率来源、confidence、OpenAI 原生值、Laya 弃答、latency）。OpenAI 拒答与 vLLM 条件跳题使调用失败，因为决策必须回答每一道题；能力结构取消，限制在 HTTP 之前检查，录制不含能力快照。下文描述改写前的 contract，现行 API 见 [docs/api/decision.md](../docs/api/decision.md)。
+> **修订**: Decision 已按上游 `DecisionModelV4` 改写（[aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) §3.1、§5）。各 provider 的 wire 与限制不变；请求侧扩展都在 `providerOptions.<provider>`（图片与 OpenAI 的 `choiceValues` 由顶层字段移入，`safetyIdentifier` 与运行时 `protocol` 不变），结果侧扩展移入 `providerMetadata.<provider>`（概率来源 `probabilitySource`、confidence、OpenAI 原生值、Laya 弃答、`latencyMs`）。公共 JSON 层起 aimux 自己解析的参数 camelCase（`images[].mediaType`、候选评分的 `modelRevision`/`tokenizerRevision`/`promptFormatVersion`/`encoded.<id>.promptTokenIds`/`labelTokenIds`），原样转发给运行时的参数保持运行时的字段名。OpenAI 拒答与 vLLM 条件跳题使调用失败，因为决策必须回答每一道题；能力结构取消，限制在 HTTP 之前检查，录制不含能力快照。下文描述改写前的 contract，现行 API 见 [docs/api/decision.md](../docs/api/decision.md)。
 
 前置：[RFC-0037](0037-decision-api.md)，TypeSafe Jev 已通过 PR #221 合入。
 
@@ -56,7 +56,7 @@ projector、endpoint 是否可用由服务返回实际错误。vLLM 示例必须
 
 - `state` 是文本或 JSON 证据；`images` 是独立的内嵌图片列表，不从 state 猜媒体。
 - `DecisionImage` 为 `{data: FileBytes, media_type, detail?}`，复用已有
-  `FileBytes` 的 `{"Base64":"..."}` / `{"Binary":[...]}` 表达。
+  `FileBytes` 的表达：base64 字符串或字节数组。
 - Choice 的 `label` 始终是答案及概率 map 的稳定字符串键。新增可选 `value`，
   类型为 string / boolean；缺省使用 label。原生 boolean `true` 与字符串
   `"true"` 可同时出现，只需不同 label。响应保留 selected label 和显式 value。

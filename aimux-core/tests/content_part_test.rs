@@ -10,7 +10,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::message::{ModelMessage, ModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{
-    ContentPart, GenerateContent, GenerateResult, GeneratedFile, StreamResult, TypedToolError,
+    ContentPart, GenerateContent, GenerateResult, LanguageModelFile, StreamResult, TypedToolError,
     TypedToolResult,
 };
 use aimux_core::shared::{FileBytes, GeneratedFileData};
@@ -100,17 +100,18 @@ fn tags(content: &[ContentPart]) -> Vec<String> {
     content
         .iter()
         .map(|part| match serde_json::to_value(part).unwrap() {
-            Value::Object(map) => map.keys().next().unwrap().clone(),
+            Value::Object(map) => map["type"].as_str().unwrap().to_owned(),
             other => panic!("{other}"),
         })
         .collect()
 }
 
 // `convert-language-model-content.ts:55-73`: a generated file is wrapped as
-// `{ file, providerMetadata }`, like a reasoning file.
+// `{ file, providerMetadata }`, like a reasoning file, and the file is the
+// AI SDK's `GeneratedFile` (`generated-file.ts:10-32`).
 #[tokio::test]
 async fn a_generated_file_is_wrapped() {
-    let file = GeneratedFile {
+    let file = LanguageModelFile {
         data: GeneratedFileData::Data {
             data: FileBytes::Base64("aGk=".into()),
         },
@@ -124,17 +125,14 @@ async fn a_generated_file_is_wrapped() {
     .await;
     assert_eq!(
         tags(&result.final_step().content),
-        ["File", "ReasoningFile"]
+        ["file", "reasoning-file"]
     );
     let wire = serde_json::to_value(&result.final_step().content).unwrap();
     assert_eq!(
         wire[0],
-        json!({ "File": { "file": {
-            "data": { "Data": { "data": { "Base64": "aGk=" } } },
-            "media_type": "text/plain"
-        } } })
+        json!({ "type": "file", "file": { "base64": "aGk=", "mediaType": "text/plain" } })
     );
-    assert_eq!(wire[0]["File"], wire[1]["ReasoningFile"]);
+    assert_eq!(wire[0]["file"], wire[1]["file"]);
 }
 
 // `convert-language-model-content.ts:87-176`: a provider tool result is a
@@ -160,14 +158,14 @@ async fn tool_results_errors_and_invalid_calls_become_their_own_parts() {
     assert_eq!(
         tags(&result.final_step().content),
         [
-            "ToolCall",
-            "ToolResult",
-            "ToolCall",
-            "ToolError",
-            "ToolResult",
-            "ToolCall",
-            "Text",
-            "ToolError"
+            "tool-call",
+            "tool-result",
+            "tool-call",
+            "tool-error",
+            "tool-result",
+            "tool-call",
+            "text",
+            "tool-error"
         ]
     );
     let ContentPart::ToolResult(found) = &result.final_step().content[1] else {

@@ -7,24 +7,24 @@ import type { LanguageModelV4ToolChoice } from "./LanguageModelV4ToolChoice";
  * What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
  * SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
  */
-export type ToolChoiceViolationError = {
+export type ToolChoiceViolationError = { 
 /**
  * The enforced tool choice (`required`, or `tool` with a name) that the
  * response did not satisfy.
  */
-tool_choice: LanguageModelV4ToolChoice,
+toolChoice: LanguageModelV4ToolChoice, 
 /**
  * Why the model finished.
  */
-finish_reason: FinishReasonUnified,
+finishReason: FinishReasonUnified, 
 /**
  * The provider that returned the response.
  */
-provider: string,
+provider: string, 
 /**
  * The model that returned the response.
  */
-model_id: string,
+modelId: string, 
 /**
  * The content the model returned, before tool-call parsing, so a tool
  * call returned as text or reasoning can be recovered.

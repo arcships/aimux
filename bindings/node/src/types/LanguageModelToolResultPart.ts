@@ -5,4 +5,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Tool result content part.
  */
-export type LanguageModelToolResultPart = { tool_call_id: string, tool_name: string, output: LanguageModelToolResultOutput, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type LanguageModelToolResultPart = { toolCallId: string, toolName: string, output: LanguageModelToolResultOutput, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

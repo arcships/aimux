@@ -62,12 +62,14 @@ pub mod speech_model;
 pub mod step_result;
 pub mod stream_part;
 mod timeout;
+pub mod timestamp;
 pub mod tool;
 pub mod trace;
 pub mod transcription_model;
 pub mod types;
 pub mod util;
 pub mod video_model;
+pub mod wire;
 pub mod wrap_provider;
 
 /// Convenience re-exports.
@@ -127,9 +129,10 @@ pub mod prelude {
         RerankingCallOptions, RerankingModel, RerankingResult, rerank,
     };
     pub use crate::result::{
-        ContentPart, GenerateResult, GeneratedFile, RawToolApprovalRequest, ReasoningOutput,
-        ReasoningPart, Source, StreamResult, ToolApprovalRequestOutput, ToolApprovalResponseOutput,
-        ToolOutputDenied, TypedToolError, TypedToolResult,
+        ContentPart, GenerateResult, GeneratedFile, GeneratedFileOutput, LanguageModelFile,
+        RawToolApprovalRequest, ReasoningOutput, ReasoningPart, Source, StreamResult,
+        ToolApprovalRequestOutput, ToolApprovalResponseOutput, ToolOutputDenied, TypedToolError,
+        TypedToolResult,
     };
     pub use crate::router::{
         FallbackPolicy, Router, RouterConfig, RouterModel, RuleRouter, WeightedRouter,
@@ -153,6 +156,7 @@ pub mod prelude {
         StepResultPerformance,
     };
     pub use crate::stream_part::{StreamPart, TextStreamPart};
+    pub use crate::timestamp::Timestamp;
     pub use crate::tool::{
         FunctionTool, FunctionToolInputExample, ProviderTool, RawToolCall, Tool, ToolCall,
         ToolResult,
@@ -188,5 +192,6 @@ pub use reranking_model::RerankingModel;
 pub use search_model::SearchModel;
 pub use skills_model::Skills;
 pub use speech_model::SpeechModel;
+pub use timestamp::{Timestamp, TimestampError};
 pub use transcription_model::TranscriptionModel;
 pub use video_model::VideoModel;

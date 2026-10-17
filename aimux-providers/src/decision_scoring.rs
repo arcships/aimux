@@ -1,5 +1,10 @@
 //! Explicit pre-encoded, single-token candidate scoring. The caller owns the
 //! tokenizer and prompt encoding; every upstream exchange is recorded normally.
+//!
+//! The options are aimux's own, so they are camelCase as the public JSON is
+//! (`modelRevision`, `tokenizerRevision`, `promptFormatVersion`,
+//! `encoded.<id>.{promptTokenIds, labelTokenIds}`); the vendor request keeps
+//! the vendor's field names.
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use aimux_core::AiMuxError;
@@ -11,14 +16,14 @@ use crate::decision_support::{DecisionImage, candidate_count, invalid, post};
 use crate::runtime_decision::{RuntimeDecisionModel, result_from_distributions};
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct EncodedQuestion {
     prompt_token_ids: Vec<u32>,
     label_token_ids: Vec<u32>,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Options {
     encoded: BTreeMap<String, EncodedQuestion>,
     /// Provenance supplied by the encoder; no claim that aimux verified deployment.
@@ -47,7 +52,7 @@ pub(crate) async fn score(
     .iter()
     .any(|s| s.trim().is_empty())
     {
-        return Err(AiMuxError::InvalidArgument("candidate scoring requires model_revision, tokenizer_revision and prompt_format_version provenance".into()));
+        return Err(AiMuxError::InvalidArgument("candidate scoring requires modelRevision, tokenizerRevision and promptFormatVersion provenance".into()));
     }
     let temperature = options.temperature.unwrap_or(1.0);
     if !temperature.is_finite()

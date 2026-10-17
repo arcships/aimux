@@ -4,6 +4,8 @@ import com.sun.jna.ptr.PointerByReference
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -123,7 +125,7 @@ class ModelTest {
         val server = MockProviderServer()
         server.responseBody = plainOpenAiResponse()
         try {
-            val model = Model.openai("sk-test-fake-key", "gpt-4o-mini", server.baseUrl)
+            val model = chatCompletionsModel(server.baseUrl)
             val iterations = 300
             val unexpected = AtomicReference<Throwable?>(null)
             val sawClosed = AtomicBoolean(false)
@@ -174,6 +176,24 @@ class ModelTest {
         }
     }
 
+    @Test
+    fun `response timestamp is toISOString`() {
+        // The response timestamp is a Date (provider
+        // language-model-v4-response-metadata.ts:10), built as
+        // new Date(created * 1000); its JSON is toISOString().
+        val server = MockProviderServer()
+        server.responseBody = JSONObject(plainOpenAiResponse()).put("created", 1741269019).toString()
+        try {
+            chatCompletionsModel(server.baseUrl).use { model ->
+                val result = JSONObject(model.generateText("\"Hello\""))
+                assertThat(result.getJSONObject("response").getString("timestamp"))
+                    .isEqualTo("2025-03-06T13:50:19.000Z")
+            }
+        } finally {
+            server.stop()
+        }
+    }
+
     // ── recording (RFC-0023) ────────────────────────────────────────────────
 
     @Test
@@ -212,7 +232,29 @@ class ModelTest {
 
     // ── canned OpenAI responses ────────────────────────────────────────────
 
-    /** Plain OpenAI Responses response (no tool calls). */
+    /** Plain OpenAI chat-completions response (no tool calls). */
     private fun plainOpenAiResponse(): String =
-        OpenAiResponsesFixtures.text("Rust is a systems programming language.")
+        JSONObject().apply {
+            put("id", "chatcmpl-test")
+            put("model", "gpt-4o")
+            put(
+                "choices",
+                JSONArray().put(
+                    JSONObject()
+                        .put(
+                            "message",
+                            JSONObject()
+                                .put("role", "assistant")
+                                .put("content", "Rust is a systems programming language."),
+                        ).put("finish_reason", "stop"),
+                ),
+            )
+            put(
+                "usage",
+                JSONObject()
+                    .put("prompt_tokens", 10)
+                    .put("completion_tokens", 8)
+                    .put("total_tokens", 18),
+            )
+        }.toString()
 }

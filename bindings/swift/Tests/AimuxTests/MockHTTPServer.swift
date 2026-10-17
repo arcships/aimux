@@ -24,7 +24,7 @@ import Darwin
 func chatModel(_ baseURL: String) throws -> Model {
     try Model.provider(
         name: "deepseek", apiKey: "test-key", modelId: "gpt-4o",
-        configJson: #"{"base_url":"\#(baseURL)"}"#
+        configJson: #"{"baseUrl":"\#(baseURL)"}"#
     )
 }
 

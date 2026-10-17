@@ -311,7 +311,7 @@ impl SpeechModel for ElevenLabsSpeechModel {
         let response_headers = resp.response_headers;
         let audio_bytes = resp.value.to_vec();
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
@@ -800,7 +800,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             .and_then(|w| w.last())
             .and_then(|w| w.end);
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text: parsed.text,
@@ -1194,7 +1194,7 @@ impl ElevenLabsTranscriptionModel {
             stream: Box::pin(stream),
             request: Some(TranscriptionRequest { body: Some(ws_url) }),
             response: Some(TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(model_id),
                 headers: None,
                 body: None,

@@ -98,7 +98,7 @@ impl ProviderProfile {
 /// FFI `config_json` and the Node/Python configs reach this check and report it
 /// as `InvalidArgument`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "ProviderOptionsWire")]
+#[serde(rename_all = "camelCase", try_from = "ProviderOptionsWire")]
 pub struct ProviderOptions {
     /// Override the registry base URL.
     pub base_url: Option<String>,
@@ -116,13 +116,17 @@ pub struct ProviderOptions {
 /// Wire shape of [`ProviderOptions`]: the same keys plus the two removed ones,
 /// kept only so their presence can be reported instead of dropped.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ProviderOptionsWire {
+    #[serde(alias = "base_url")]
     base_url: Option<String>,
     headers: Option<HashMap<String, String>>,
     organization: Option<String>,
     project: Option<String>,
     params: Option<HashMap<String, String>>,
+    #[serde(alias = "max_retries")]
     max_retries: Option<Value>,
+    #[serde(alias = "body_overrides")]
     body_overrides: Option<Value>,
 }
 

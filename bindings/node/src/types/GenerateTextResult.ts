@@ -6,11 +6,11 @@ import type { LanguageModelUsage } from "./LanguageModelUsage";
 import type { ModelMessage } from "./ModelMessage";
 import type { ReasoningPart } from "./ReasoningPart";
 import type { RequestInfo } from "./RequestInfo";
-import type { Source } from "./Source";
 import type { StepResponse } from "./StepResponse";
 import type { StepResult } from "./StepResult";
-import type { ToolCall } from "./ToolCall";
-import type { TypedToolResult } from "./TypedToolResult";
+import type { TaggedToolResult } from "./TaggedToolResult";
+import type { TypedSource } from "./TypedSource";
+import type { TypedToolCall } from "./TypedToolCall";
 import type { Warning } from "./Warning";
 import type { JsonValue } from "./serde_json/JsonValue";
 
@@ -20,31 +20,43 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * `finalStep` and the static/dynamic subsets are left out: they are the
  * last entry of `steps` and a filter on `dynamic`.
  */
-export type GenerateTextResult = { content: Array<ContentPart>, text: string,
+export type GenerateTextResult = { content: Array<ContentPart>, text: string, 
 /**
  * Deprecated upstream: the last step's reasoning.
  */
-reasoning: Array<ReasoningPart>,
+reasoning: Array<ReasoningPart>, 
 /**
  * Deprecated upstream: the last step's reasoning text.
  */
-reasoning_text: string | null, files: Array<GeneratedFile>, sources: Array<Source>, tool_calls: Array<ToolCall>, tool_results: Array<TypedToolResult>, finish_reason: FinishReasonUnified, raw_finish_reason: string | null, usage: LanguageModelUsage,
+reasoningText?: string, files: Array<GeneratedFile>, 
+/**
+ * Each with its `type` tag (`generate-text-result.ts:73`).
+ */
+sources: Array<TypedSource>, 
+/**
+ * Each with its `type` tag (`generate-text-result.ts:78`).
+ */
+toolCalls: Array<TypedToolCall>, 
+/**
+ * Each with its `type` tag (`generate-text-result.ts:93`).
+ */
+toolResults: Array<TaggedToolResult>, finishReason: FinishReasonUnified, rawFinishReason?: string, usage: LanguageModelUsage, 
 /**
  * Deprecated upstream: equal to `usage`.
  */
-total_usage: LanguageModelUsage, warnings: Array<Warning>,
+totalUsage: LanguageModelUsage, warnings: Array<Warning>, 
 /**
  * Deprecated upstream: the last step's request.
  */
-request: RequestInfo,
+request: RequestInfo, 
 /**
  * Deprecated upstream: the last step's response.
  */
-response: StepResponse, response_messages: Array<ModelMessage>,
+response: StepResponse, responseMessages: Array<ModelMessage>, 
 /**
  * Deprecated upstream: the last step's provider metadata.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, steps: Array<StepResult>,
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, steps: Array<StepResult>, 
 /**
  * Absent when the output was not parsed.
  */

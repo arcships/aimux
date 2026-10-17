@@ -1,7 +1,7 @@
 # RFC-0037: 稳定的 typed Decision API
 
 > **Status**: TypeSafe 官方字段、全语言绑定、能力查询与精度规则已实现
-> **修订**: Decision 已按上游 `DecisionModelV4` 改写（[aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) §3.1、§5；`@ai-sdk/provider@4.0.22 src/decision-model/v4/`、`ai@7.0.128 src/decide/decide.ts`）：题目是以 ID 为键的对象，Choice / Score 用 `criteria`，答案为 `choice` / `score` / `probability`；`decide` 接受 `DecideOptions`、返回 `DecideResult`。能力查询与能力结构取消，模型只报告规范版本、provider、模型 ID 与支持的题型，录制不含能力快照。拒答使整个调用失败。概率来源与 confidence 进入 `provider_metadata`，图片与 typed choice value 进入 `provider_options`。`Provider::decision_model` 是可选方法，缺省 `None`。下文描述改写前的 contract，现行 API 见 [docs/api/decision.md](../docs/api/decision.md)。
+> **修订**: Decision 已按上游 `DecisionModelV4` 改写（[aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) §3.1、§5；`@ai-sdk/provider@4.0.22 src/decision-model/v4/`、`ai@7.0.128 src/decide/decide.ts`）：题目是以 ID 为键的对象，Choice / Score 用 `criteria`，答案为 `choice` / `score` / `probability`；`decide` 接受 `DecideOptions`、返回 `DecideResult`。能力查询与能力结构取消，模型只报告规范版本、provider、模型 ID 与支持的题型，录制不含能力快照。拒答使整个调用失败。概率来源与 confidence 进入 `providerMetadata`，图片与 typed choice value 进入 `providerOptions`；公共 JSON 层起请求、结果与模型描述都是 AI SDK 的 camelCase JSON（`maxRetries`、`rounding.probabilityDecimals`、usage `inputTokens`，未知计数省略）。`Provider::decision_model` 是可选方法，缺省 `None`。下文描述改写前的 contract，现行 API 见 [docs/api/decision.md](../docs/api/decision.md)。
 > **Date**: 2026-10-06
 > **Scope**: Core、TypeSafe 官方 Jev、Rust / C ABI / Node / Python / Go / Java / Kotlin / Swift / Flutter
 > **Research**: [调查报告](../docs/research/decision-api/report.zh-CN.md)、[接口材料](../docs/research/decision-api/interface-materials.zh-CN.md)
@@ -118,8 +118,8 @@ server 验证；另于 2026-10-06 使用 Python binding 对官方 endpoint 完�
 CI 无需线上 key。
 
 `decide` 复用统一 JSONL/ring recorder，输入标记为 decision（旧记录默认
-language model），state/questions 存入 input.options，能力声明存入 input.decision_capabilities，provider 仅保留身份，
-规范化结果存入 outcome.decision_result。每次 retry 分配独立 attempt，
+language model），state/questions 存入 input.options，能力声明存入 input.decisionCapabilities，provider 仅保留身份，
+规范化结果存入 outcome.decisionResult。每次 retry 分配独立 attempt，
 录制器快照跨 HTTP、取消和收尾保持一致。覆盖成功、错误、超时、取消、
 脱敏、无重复占位记录、严格匹配和 recorder 替换。
 `aimux-replay --mock` 支持标准 JSONL 的离线 decision 回放；不带 --mock

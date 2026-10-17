@@ -11,8 +11,12 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Unlike `CallOptions` (provider-facing), this does not include `prompt`
  * (passed separately) and defaults are more ergonomic.
+ *
+ * Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+ * 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+ * naming the key instead of the default it would silently fall back to.
  */
-export type GenerateTextOptions = { max_output_tokens: number | null, temperature: number | null, stop_sequences: Array<string> | null, top_p: number | null, top_k: number | null, presence_penalty: number | null, frequency_penalty: number | null,
+export type GenerateTextOptions = { maxOutputTokens?: number, temperature?: number, stopSequences?: Array<string>, topP?: number, topK?: number, presencePenalty?: number, frequencyPenalty?: number,
 /**
  * The structured output to generate, the AI SDK's `output`
  * (`generate-text/output.ts`). It sets the model call's
@@ -20,32 +24,32 @@ export type GenerateTextOptions = { max_output_tokens: number | null, temperatur
  * [`GenerateTextResult::output`]. `None` sends no response format and
  * takes the text as the output.
  */
-output: Output | null, seed: number | null, tools: Array<Tool> | null, tool_choice: ToolChoice | null, headers: { [key in string]: string } | null, provider_options: { [key in string]: { [key in string]: JsonValue } } | null,
+output?: Output, seed?: number, tools?: Array<Tool>, toolChoice?: ToolChoice, headers?: { [key in string]: string }, providerOptions?: { [key in string]: { [key in string]: JsonValue } },
 /**
  * Top-level reasoning effort.
  */
-reasoning: ReasoningEffort | null,
+reasoning?: ReasoningEffort,
 /**
  * System instructions prepended to the prompt.
  */
-instructions: string | null,
+instructions?: string,
 /**
  * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
  * retrying. `None` uses 2, the AI SDK default.
  */
-max_retries: number | null,
+maxRetries?: number,
 /**
  * Per-call timeout configuration (total / first-chunk / chunk idle).
  */
-timeout: TimeoutConfiguration | null,
+timeout?: TimeoutConfiguration,
 /**
  * Session identifier, for grouping consecutive calls into a session
  * (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
  * headers. When `None` and the optional session inferer is enabled, one
  * may be inferred from prompt-prefix continuation.
  */
-session_id: string | null,
+sessionId?: string,
 /**
  * Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
  */
-include_raw_chunks: boolean | null, };
+includeRawChunks?: boolean, };

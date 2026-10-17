@@ -1667,7 +1667,7 @@ pub extern "C" fn aimux_provider_handle_new(
 /// List models on a provider handle (RFC-0027 runtime discovery).
 ///
 /// `handle` is from `aimux_provider_handle_new`. Writes a JSON array of
-/// sparse `RuntimeModel` (id / owned_by / created) — **no community
+/// sparse `RuntimeModel` (id / ownedBy / created) — **no community
 /// enrichment**. To supplement with model specs, call `aimux_get_model_specs`
 /// separately and merge in the host.
 #[unsafe(no_mangle)]
@@ -1764,7 +1764,7 @@ pub extern "C" fn aimux_generate_text(
 ///
 /// Same signature as [`aimux_generate_text`]; writes the serialized
 /// `GenerateObjectResult`. The caller passes `output` (for example
-/// `{ "Object": { "schema": ... } }`) via `opts_json` to describe the value;
+/// `{ "type": "object", "schema": ... }`) via `opts_json` to describe the value;
 /// without one any JSON value is accepted. The model's text must parse as
 /// JSON and match the schema.
 #[unsafe(no_mangle)]
@@ -1909,13 +1909,13 @@ pub extern "C" fn aimux_stream_text_with_abort(
 
 /// Build the repair argument for one invalid tool call (RFC-0035).
 ///
-/// `tool_call_json` is one entry of `GenerateTextResult.tool_calls` with
+/// `tool_call_json` is one entry of `GenerateTextResult.toolCalls` with
 /// `"invalid": true`. `prompt_json` and `opts_json` are **the same two
 /// strings the call was generated with** ([`aimux_generate_text`] /
 /// [`aimux_stream_text`]); messages, instructions, and the tool set are
 /// derived from them here, so no host repeats that derivation.
 ///
-/// Writes `{tool_call, error, input_schema, tools, messages, instructions}` —
+/// Writes `{toolCall, error, inputSchema, tools, messages, instructions}` —
 /// the AI SDK `repairToolCall` argument — to `*out_json`, or the JSON literal
 /// `null` when `opts_json` carried no tools: as in the AI SDK, a call made
 /// without a tool set is never repaired, and the host skips it. `null` is a
@@ -1947,9 +1947,10 @@ pub extern "C" fn aimux_tool_call_repair_context(
 /// Resolve one invalid tool call against a host's repair reply (RFC-0035).
 ///
 /// `opts_json` is the same string the call was generated with; the tool set
-/// comes from it. `reply_json` is `{"type":"repaired","tool_call":{…}}`,
+/// comes from it. `reply_json` is `{"type":"repaired","toolCall":{…}}`,
 /// `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Writes the
-/// resulting `ToolCall` — valid, or invalid with the AI SDK's nested
+/// resulting `ToolCall`, tagged `"type": "tool-call"` as a standalone call
+/// is — valid, or invalid with the AI SDK's nested
 /// `ToolCallRepairError` — to `*out_json`. Same purity as
 /// [`aimux_tool_call_repair_context`].
 ///
@@ -1967,11 +1968,8 @@ pub extern "C" fn aimux_apply_tool_call_repair(
         let tool_call: ToolCall = parse_json_arg(tool_call_json, "tool_call_json")?;
         let opts = parse_opts_arg(opts_json)?;
         let reply: ToolCallRepairReply = parse_json_arg(reply_json, "reply_json")?;
-        to_json(&apply_tool_call_repair(
-            &tool_call,
-            opts.tools.as_deref(),
-            reply,
-        )?)
+        let repaired = apply_tool_call_repair(&tool_call, opts.tools.as_deref(), reply)?;
+        to_json(&aimux_core::wire::Tagged(&repaired))
     })
 }
 
@@ -1981,7 +1979,7 @@ pub extern "C" fn aimux_apply_tool_call_repair(
 /// `aimux_generate_text` or `aimux_consume_stream_text`); `opts_json` is the
 /// same string the call was generated with. The call is repaired in the
 /// result's steps (content, approval requests and response messages) and
-/// the derived `tool_calls`, `content` and `response_messages` are written
+/// the derived `toolCalls`, `content` and `responseMessages` are written
 /// from them. The OpenAI-shaped
 /// `ChatCompletion` is not supported — it carries no `invalid`/`error`, so
 /// repair is driven from the native result, which
@@ -2651,9 +2649,10 @@ pub extern "C" fn aimux_transcription_generate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// JSON options for `aimux_transcription_session_new` (all fields optional):
-/// `{ "input_audio_format": { "format_type": "audio/pcm", "rate": 24000 },
-///    "provider_options": { … }, "headers": { … }, "include_raw_chunks": false }`.
+/// `{ "inputAudioFormat": { "formatType": "audio/pcm", "rate": 24000 },
+///    "providerOptions": { … }, "headers": { … }, "includeRawChunks": false }`.
 #[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TranscriptionSessionFfiOptions {
     input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
     provider_options: Option<aimux_core::shared::SharedProviderOptions>,
@@ -3072,7 +3071,7 @@ pub extern "C" fn aimux_jev_decision_new_with_probability_source(
 }
 
 /// Describe the model without a network call. Writes JSON
-/// `{specification_version, provider, model_id, supported_question_types}`,
+/// `{specificationVersion, provider, modelId, supportedQuestionTypes}`,
 /// the `DecisionModelV4` properties.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_decision_capabilities(
@@ -3086,13 +3085,7 @@ pub extern "C" fn aimux_decision_capabilities(
             }
             .into());
         };
-        let description = serde_json::json!({
-            "specification_version": model.specification_version(),
-            "provider": model.provider(),
-            "model_id": model.model_id(),
-            "supported_question_types": model.supported_question_types(),
-        });
-        Ok(description.to_string())
+        Ok(aimux_core::decision_model::decision_model_properties(model.as_ref()).to_string())
     })
 }
 
@@ -3631,7 +3624,7 @@ fn model_handles(
 /// `handles` is an array of `len` existing model handles (e.g. from
 /// `aimux_openai_new`). `config_json` selects the router + fallback policy:
 /// `{ "router": "rule" | "weighted", "weights": [..], "fallback": "on_error" |
-/// "none", "provider_name": "router", "model_id": "router" }`. All keys are
+/// "none", "providerName": "router", "modelId": "router" }`. All keys are
 /// optional; defaults are `rule` / `on_error` / `"router"` / `"router"`.
 ///
 /// Fails on: NULL `handles` with `len > 0`, bad JSON, zero-length `handles`,
@@ -3688,9 +3681,9 @@ pub extern "C" fn aimux_router_new(
 /// `reference_handles` is an array of `ref_len` existing model handles (may be
 /// 0 — MoaModel then degrades to running just the aggregator). `aggregator`
 /// is a single existing model handle. `config_json` is a serialized `MoaConfig`
-/// (all fields optional): `{ "provider_name": "moa", "model_id": "moa",
-/// "aggregator_instructions": null, "strip_reference_tools": true,
-/// "fail_mode": "best_effort" | "fail_fast" }`.
+/// (all fields optional): `{ "providerName": "moa", "modelId": "moa",
+/// "aggregatorInstructions": null, "stripReferenceTools": true,
+/// "failMode": "best-effort" | "fail-fast" }`.
 ///
 /// Fails on: bad JSON, an unknown aggregator handle (references may be empty;
 /// aggregator may not).
@@ -3722,8 +3715,10 @@ pub extern "C" fn aimux_moa_new(
     })
 }
 
-/// FFI-side router config (lenient: all fields optional).
+/// FFI-side router config: camelCase, all fields optional, unknown keys
+/// rejected.
 #[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouterFfiConfig {
     router: Option<String>,
     weights: Option<Vec<f64>>,
@@ -4570,8 +4565,8 @@ mod tests {
         let error_index = collected
             .parts
             .iter()
-            .position(|p| p.contains("\"Error\""))
-            .expect("the recoverable frame arrives as a StreamPart::Error part");
+            .position(|p| p.contains(r#""type":"error""#))
+            .expect("the recoverable frame arrives as an error part");
         assert!(
             collected.parts[error_index + 1..]
                 .iter()
@@ -4930,15 +4925,15 @@ mod tests {
         // Pull parts: StreamStart, delta("3 "), delta("2 "), Final, Finish,
         // then ENDED.
         let p1 = pull_part(session);
-        assert!(p1.contains("StreamStart"), "part 1: {p1}");
+        assert!(p1.contains("\"type\":\"stream-start\""), "part 1: {p1}");
         let p2 = pull_part(session);
         assert!(p2.contains("3 "), "part 2: {p2}");
         let p3 = pull_part(session);
         assert!(p3.contains("2 "), "part 3: {p3}");
         let p4 = pull_part(session);
-        assert!(p4.contains("TranscriptFinal"), "part 4: {p4}");
+        assert!(p4.contains("\"type\":\"transcript-final\""), "part 4: {p4}");
         let p5 = pull_part(session);
-        assert!(p5.contains("Finish"), "part 5: {p5}");
+        assert!(p5.contains("\"type\":\"finish\""), "part 5: {p5}");
         assert!(p5.contains("3 2 "), "finish text: {p5}");
 
         // Stream ended: NULL error, ENDED state, no part.

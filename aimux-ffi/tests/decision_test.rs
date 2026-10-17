@@ -85,7 +85,7 @@ fn probability_source_survives_c_abi_round_trip() {
             "create with provenance",
         );
         let request = c(
-            r#"{"state":"text","questions":{"q":{"type":"boolean","instructions":"test"}},"max_retries":0,"timeout":{"total_ms":2000}}"#,
+            r#"{"state":"text","questions":{"q":{"type":"boolean","instructions":"test"}},"maxRetries":0,"timeout":{"totalMs":2000}}"#,
         );
         let mut out = ptr::null_mut();
         ok(
@@ -94,14 +94,14 @@ fn probability_source_survives_c_abi_round_trip() {
         );
         let result: serde_json::Value = serde_json::from_str(&take(out)).unwrap();
         assert_eq!(
-            result["provider_metadata"]["jev"]["probability_source"],
+            result["providerMetadata"]["jev"]["probabilitySource"],
             source
         );
         assert_eq!(
             result["answers"]["q"],
             serde_json::json!({"type": "boolean", "probability": 0.89})
         );
-        assert_eq!(result["usage"]["total_tokens"], 11);
+        assert_eq!(result["usage"]["totalTokens"], 11);
         aimux_drop_handle(handle);
         server.join().unwrap();
     }
@@ -143,10 +143,10 @@ fn decision_model_description_is_local_and_validates_handle_lifecycle() {
     assert_eq!(
         description,
         serde_json::json!({
-            "specification_version": "v4",
+            "specificationVersion": "v4",
             "provider": "jev",
-            "model_id": "jev-latest",
-            "supported_question_types": ["choice", "score", "boolean"]
+            "modelId": "jev-latest",
+            "supportedQuestionTypes": ["choice", "score", "boolean"]
         })
     );
     aimux_drop_handle(handle);

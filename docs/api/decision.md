@@ -16,10 +16,15 @@ OpenAI/Google 语言模型的结构化输出适配。
 |---|---|
 | `state` | 字符串、JSON 对象或 JSON 数组；数组仍是一个 state |
 | `questions` | 以问题 ID 为键的对象，插入顺序即问题顺序 |
-| `max_retries` | 瞬时失败的重试次数，缺省 2 |
-| `timeout` | 操作截止时间（aimux 扩展），沿用已有毫秒配置 |
+| `maxRetries` | 瞬时失败的重试次数，缺省 2 |
+| `timeout` | 操作截止时间（aimux 扩展），沿用已有毫秒配置（`{totalMs, ...}`） |
 | `headers` | 额外请求头 |
-| `provider_options` | provider 命名空间下的扩展参数，见各 provider 一节 |
+| `providerOptions` | provider 命名空间下的扩展参数，见各 provider 一节 |
+
+请求与结果都是 AI SDK 的 JSON：字段 camelCase（`decide.ts:53-61`、
+`decision-result.ts:22-39`、`decision-model-v4-result.ts:31-56`），未知的值省略而不写 `null`。
+provider 命名空间里 aimux 自己解析的参数同样 camelCase（如 `images[].mediaType`、
+`safetyIdentifier`）；原样转发给服务的参数保持服务自己的字段名（如 `keep_alive`）。
 
 三种题型：
 
@@ -40,17 +45,17 @@ criteria 是至少两级的有序数组，Boolean 的 criteria 可省略，只�
 UnsupportedFunctionality。
 
 `decide` 依次执行：校验输入（`validate-decision.ts:50-125`）→ 在任何 I/O 前拒绝
-模型不支持的题型 → 按 `max_retries` 重试 `do_decide` → 重试结束后校验答案 →
+模型不支持的题型 → 按 `maxRetries` 重试 `do_decide` → 重试结束后校验答案 →
 补全 usage 与 response。结果 `DecideResult`：
 
 | 字段 | 说明 |
 |---|---|
 | `answers` | 每题恰好一个答案，按问题顺序 |
-| `usage` | `{input_tokens, output_tokens, total_tokens}`；未报告的为 null，两者都已知时才有合计 |
+| `usage` | `{inputTokens, outputTokens, totalTokens}`；未报告的省略，两者都已知时才有合计 |
 | `warnings` | provider 警告 |
-| `rounding` | provider 声明的 `probability_decimals` / `score_decimals` |
-| `provider_metadata` | 以 provider 名为键的扩展信息 |
-| `response` | `timestamp`（缺省为调用结束时）、`model_id`（缺省为模型 ID）、`headers`、`body` |
+| `rounding` | provider 声明的 `probabilityDecimals` / `scoreDecimals` |
+| `providerMetadata` | 以 provider 名为键的扩展信息 |
+| `response` | `timestamp`（缺省为调用结束时）、`modelId`（缺省为模型 ID）、`headers`、`body` |
 
 答案形态：Boolean `{type:'boolean', probability}` 为 P(true)；Choice
 `{type:'choice', choice, probabilities?}`，choice 是选项名；Score
@@ -70,7 +75,7 @@ const model = await provider.decisionModel('gpt-6-luna')
 const result = await decide(model, {
   state: 'Please refund the duplicate charge',
   questions: { refund: { type: 'boolean', instructions: 'Is a refund requested?' } },
-  provider_options: { openai: { safety_identifier: 'app-user-123' } },
+  providerOptions: { openai: { safetyIdentifier: 'app-user-123' } },
 })
 console.log(result.answers.refund) // { type: 'boolean', probability: 0.93 }
 ```
@@ -79,19 +84,19 @@ Python 对应 `create_provider('openai', key).decision_model('gpt-6-luna')`，�
 调用下文的 `decide`。Rust 使用 `create_openai(settings)` 返回的 provider 的
 `decision(model_id)` 或 `Provider::decision_model`。服务地址为 `{base_url}/decisions`，默认使用
 `https://api.openai.com/v1`；继承 provider 的认证、headers、organization/project 和传输，
-重试次数由调用的 `max_retries` 控制。Registry 的 `openai:<model>` 解析到这个原生模型。
+重试次数由调用的 `maxRetries` 控制。Registry 的 `openai:<model>` 解析到这个原生模型。
 
 文本 state 原样发送；JSON 对象／数组序列化为文本。Boolean 映射 predicate。
 Choice 支持 2–255 项，Score 至少两级，每级接受文本或 `{label, description?}`。
 服务拒答某题时返回错误 `OpenAI declined to answer question "<id>"`。
 
-`provider_options.openai` 接受：
+`providerOptions.openai` 接受（与 OpenAI 语言模型的选项一样 camelCase）：
 
 | 参数 | 说明 |
 |---|---|
-| `images` | 最多 128 张内嵌图 `{data: <base64>, media_type, detail?}`，detail 支持 low/high/auto/original，位于 state 之前 |
-| `choice_values` | `{<question id>: {<option>: true \| false \| "text"}}`，选项的原生值；缺省使用选项名 |
-| `safety_identifier` | 最多 128 字符 |
+| `images` | 最多 128 张内嵌图 `{data: <base64>, mediaType, detail?}`，detail 支持 low/high/auto/original，位于 state 之前 |
+| `choiceValues` | `{<question id>: {<option>: true \| false \| "text"}}`，选项的原生值；缺省使用选项名 |
+| `safetyIdentifier` | 最多 128 字符，作为 `safety_identifier` 发送 |
 
 ```ts
 const result = await decide(model, {
@@ -103,18 +108,18 @@ const result = await decide(model, {
       { label: 'high', description: 'All details visible' },
     ] },
   },
-  provider_options: { openai: {
-    images: [{ data: imageBase64, media_type: 'image/png', detail: 'low' }],
-    choice_values: { choice: { boolean_true: true, text_true: 'true' } },
+  providerOptions: { openai: {
+    images: [{ data: imageBase64, mediaType: 'image/png', detail: 'low' }],
+    choiceValues: { choice: { boolean_true: true, text_true: 'true' } },
   } },
 })
 // answers.choice.choice = 'boolean_true'；
-// provider_metadata.openai.answers.choice.value = true
+// providerMetadata.openai.answers.choice.value = true
 ```
 
 对象/数组 instructions 和 Boolean criteria 返回 Unsupported。
 原生概率保留原值，不套用 Jev 两位小数规则；每题 confidence 在
-`provider_metadata.openai.answers.<id>.confidence`。usage 缺失或合计不一致
+`providerMetadata.openai.answers.<id>.confidence`。usage 缺失或合计不一致
 不影响有效答案。本地 fixture 基于[官方 reference](https://developers.openai.com/api/reference/resources/decisions/methods/create)，并非新增服务的线上录制。
 
 ## 语言模型结构化输出
@@ -137,7 +142,7 @@ const model = await runtime.decisionModel('my-served-model')
 const result = await decide(model, {
   state: { ticket: 'Checkout failed' },
   questions: { urgent: { type: 'boolean', instructions: 'Needs action today?' } },
-  provider_options: { sglang: { protocol: 'decisions', temperature: 1 } },
+  providerOptions: { sglang: { protocol: 'decisions', temperature: 1 } },
 })
 ```
 
@@ -159,7 +164,7 @@ const result = await decide(model, {
 SGLang 30000，vLLM/Laya 8000。完整地址均含 `/v1`。Cloudflare 使用显式 account
 baseUrl，model 可为 `clef` / `clef-flash` 或 `@cf/cloudflare/` 前缀。
 
-`provider_options.<provider>` 可含 `protocol`、`images`，以及下列参数；上游继续校验参数值及模型适用性：
+`providerOptions.<provider>` 可含 `protocol`、`images`，以及下列原样转发给服务的参数（保持服务的字段名）；上游继续校验参数值及模型适用性：
 
 | Namespace / protocol | 参数 |
 |---|---|
@@ -179,13 +184,16 @@ vLLM 上游 SystemOne wrapper 的 ask 子集参数存在答案索引问题，本
 因为决策必须回答每一道题。
 
 Laya 低置信度弃答时保留预测，弃答信息在
-`provider_metadata.laya.answers.<id>.abstention`。
+`providerMetadata.laya.answers.<id>.abstention`。
 SGLang decisions 的 label_mass 不等于 confidence，不作为 confidence 报告。
 SGLang SystemOne 普通生成模型返回 `x_label_mass`，来源记为 `logit_scoring`；
 专用决策 checkpoint 的响应省略该字段，来源为 `native`。概率来源在
-`provider_metadata.<provider>.probability_source`，SystemOne 原有 confidence 在
-`provider_metadata.<provider>.answers.<id>.confidence`，LocalAI 等服务的
-`latency_ms` 在 `provider_metadata.<provider>.latency_ms`，均保持原值。
+`providerMetadata.<provider>.probabilitySource`，SystemOne 原有 confidence 在
+`providerMetadata.<provider>.answers.<id>.confidence`，LocalAI 等服务的
+`latency_ms` 在 `providerMetadata.<provider>.latencyMs`，均保持原值。
+
+`images[].data` 在 JSON 中是 base64 字符串（与 AI SDK 把 `Uint8Array` 写成 base64
+一致），不接受数字数组。
 
 各支持图片的 runtime 使用同一 images 形态（与 OpenAI 相同），由 adapter 转成本地协议。Cloudflare
 最多 4 张 PNG/JPEG/WebP、单图 4 MiB、合计 8 MiB；LocalAI 最多 8 张 PNG/JPEG、
@@ -202,13 +210,13 @@ SGLang detail 接受 low/high/auto；其他本地 SystemOne provider 不接受 d
 const result = await decide(model, {
   state: 'The state encoded into the prompt',
   questions: { urgent: { type: 'boolean', instructions: 'Needs action today?' } },
-  provider_options: { sglang: {
+  providerOptions: { sglang: {
     protocol: 'score',
-    model_revision: 'weights-commit',
-    tokenizer_revision: 'tokenizer-commit',
-    prompt_format_version: 'my-encoder-v1',
+    modelRevision: 'weights-commit',
+    tokenizerRevision: 'tokenizer-commit',
+    promptFormatVersion: 'my-encoder-v1',
     temperature: 1,
-    encoded: { urgent: { prompt_token_ids: promptIds, label_token_ids: [yesId, noId] } },
+    encoded: { urgent: { promptTokenIds: promptIds, labelTokenIds: [yesId, noId] } },
   } },
 })
 ```
@@ -268,12 +276,12 @@ const result = await decide(model, {
     urgency: { type: 'score', instructions: 'Rate urgency from low to high',
       criteria: ['low', 'normal', 'high'] },
   },
-  max_retries: 0,
+  maxRetries: 0,
 })
 console.log(result.answers, result.rounding)
 console.log(describeDecisionModel(model))
-// { specification_version: 'v4', provider: 'jev', model_id: 'jev-latest',
-//   supported_question_types: ['choice', 'score', 'boolean'] }
+// { specificationVersion: 'v4', provider: 'jev', modelId: 'jev-latest',
+//   supportedQuestionTypes: ['choice', 'score', 'boolean'] }
 ```
 
 默认请求 TypeSafe 官方 `https://api.typesafe.ai/v1/systemone`。
@@ -292,14 +300,15 @@ from aimux import jev_decision, decide, describe_decision_model
 model = jev_decision(os.environ['TYPESAFE_API_KEY'], 'jev-latest')
 result = decide(model, {'message': 'Please refund the duplicate charge'}, {
     'refund': {'type': 'boolean', 'instructions': 'Is a refund requested?'},
-}, max_retries=0)
+}, maxRetries=0)
 print(result['answers']['refund']['probability'])
 print(describe_decision_model(model))
 ```
 
-`decide(model, state, questions, **options)` 的关键字参数即 `DecideOptions` 的其余字段。
+`decide(model, state, questions, **options)` 的关键字参数即 `DecideOptions` 其余字段的 JSON 键
+（`maxRetries`、`timeout`、`headers`、`providerOptions`），结果是 `DecideResult` 的 dict。
 `jev_decision` 可选第四个参数 `probability_source` 缺省为 `'native'`，结果在
-`provider_metadata['jev']['probability_source']` 保留声明的来源。
+`providerMetadata['jev']['probabilitySource']` 保留声明的来源。
 
 ## Jev 原生题目描述字段
 
@@ -357,7 +366,7 @@ Java/Kotlin/Swift 的调用及描述返回 JSON 字符串；Flutter 返回 Map �
 `DecideResult` JSON，`aimux_decide_with_abort` 可传入现有 abort handle。返回错误遵循
 [错误模型](../error-model.md)。用 aimux_drop_handle 释放模型，
 aimux_free_string 释放结果。`aimux_decision_capabilities(handle, &out_json)`
-返回 `{specification_version, provider, model_id, supported_question_types}`，
+返回 `{specificationVersion, provider, modelId, supportedQuestionTypes}`（`decision-model-v4.ts:7-11`），
 无网络请求，并遵守相同的字符串生命周期（导出名保持兼容）。
 
 显式配置概率来源时可使用 `aimux_jev_decision_new_with_probability_source(key, model_id,
@@ -375,10 +384,10 @@ Boolean probability 表示 P(true)，调用方设置业务阈值。Choice 的 ch
 是选项名，有分布时必须是最大概率项（允许并列）。Score 是零起点的浮点位置，
 有分布时必须等于概率加权的平均位置。分布若提供必须完整、和为 1。
 Core 在重试结束后按 `validate-decision.ts:176-298` 校验答案：缺省容差为 1e-6；
-provider 在结果的 `rounding` 中分别声明 `probability_decimals` 和
-`score_decimals`（0–15）时，每个舍入值容许半个末位单位。TypeSafe 声明两者均为 2。
+provider 在结果的 `rounding` 中分别声明 `probabilityDecimals` 和
+`scoreDecimals`（0–15）时，每个舍入值容许半个末位单位。TypeSafe 声明两者均为 2。
 原始数字不会被改写。
-probability_source 表示来源，不保证校准；confidence 保留 provider 定义。
+`probabilitySource` 表示来源，不保证校准；confidence 保留 provider 定义。
 raw response、实际执行的 model 和原始 usage 可用于审计。
 TypeSafe 的 usage 对象必须存在；input_tokens/output_tokens 可缺省或为 null，
 未报告的数量保留为未知，不影响有效答案。
@@ -406,12 +415,12 @@ finally:
 ```
 
 标准 `recordings.jsonl` 每行记录一次逻辑调用：`input.operation = "decision"`，
-`input.options` 是脱敏后的 `DecideOptions`（state/questions/headers/provider_options
+`input.options` 是脱敏后的 `DecideOptions`（state/questions/headers/providerOptions
 及操作设置）；不保存能力快照，模型属性由回放时调用方 registry 重建的 model 提供；
-provider 只记录 provider_id/provider/model_id，endpoint 与凭证来自调用方配置；
+provider 只记录 providerId/provider/modelId，endpoint 与凭证来自调用方配置；
 exchanges 记录各重试 attempt 的 HTTP 请求、响应和时延；
-`outcome.decision_result` 保存 `decide` 返回的 `DecideResult`，`outcome.usage`
-保存 `DecideUsage`。凭据沿用统一脱敏规则。
+`outcome.decisionResult` 保存 `decide` 返回的 `DecideResult`，`outcome.usage`
+保存 `DecideUsage`，均为上述 camelCase JSON。凭据沿用统一脱敏规则。
 录制使用 schema 2，与 aimux 0.5 相同；语言录制缺少 operation 时仍按 language model 解析。
 aimux 0.5 写的 decision 录制可以读取，但其选项与结果是旧形状、没有 provider_id，回放时报错说明。
 
@@ -424,7 +433,7 @@ aimux-replay ./recordings/recordings.jsonl --dry-run
 
 Rust 可用 `aimux_core::replay::MockDecisionReplayModel::from_jsonl` 加载录制，
 再通过 `decide` 或 `replay_decision_with_model` 离线回放。匹配 provider/model、
-state/questions、headers 和 provider_options；timeout/retry 控制不参与匹配。
+state/questions、headers 和 providerOptions；timeout/retry 控制不参与匹配。
 mock 接受任意题型，返回录制的结果。
 输入未命中或记录不完整时返回错误。请求回放可通过
 `aimux_providers::rebuild_decision_provider` 从调用方 registry 重建上述任一官方 provider 的 decision model，再调用

@@ -381,8 +381,8 @@ class TranscriptionModel {
   /// gpt-realtime-whisper).
   ///
   /// [optsJson] — optional session options JSON
-  /// (`{"input_audio_format": {...}, "provider_options", "headers",
-  /// "include_raw_chunks"}`).
+  /// (`{"inputAudioFormat": {...}, "providerOptions", "headers",
+  /// "includeRawChunks"}`).
   /// [abortHandle] — optional abort handle; firing it aborts the session.
   TranscriptionSession startStream({String? optsJson, int abortHandle = 0}) {
     _checkOpen();

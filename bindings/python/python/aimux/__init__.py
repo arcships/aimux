@@ -4,6 +4,7 @@ This wrapper layer parses JSON strings from the native layer into Python dicts,
 providing a Pythonic API surface.
 """
 
+import base64
 import json
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
@@ -181,8 +182,8 @@ __all__ = [
 
 
 def describe_decision_model(model: DecisionModel) -> Dict[str, Any]:
-    """The model's DecisionModelV4 properties (specification_version, provider,
-    model_id, supported_question_types), without HTTP."""
+    """The model's DecisionModelV4 properties (specificationVersion, provider,
+    modelId, supportedQuestionTypes), without HTTP."""
     return json.loads(model.describe())
 
 
@@ -190,12 +191,35 @@ def decide(model: DecisionModel, state: Any, questions: Dict[str, Dict[str, Any]
            **options: Any) -> Dict[str, Any]:
     """Answer typed questions, keyed by ID, over one shared state.
 
-    Options are those of ``DecideOptions`` (max_retries, timeout, headers,
-    provider_options); the result is ``DecideResult``. Boolean answers are
-    P(true).
+    The keyword options are the ``DecideOptions`` JSON keys, camelCase as
+    the AI SDK's: ``maxRetries``, ``timeout`` (``{"totalMs": ...}``),
+    ``headers``, ``providerOptions``. The result is the ``DecideResult`` dict
+    (``answers``, ``usage`` with ``inputTokens`` / ``outputTokens`` /
+    ``totalTokens``, an unknown count absent, ``warnings``, ``rounding``,
+    ``providerMetadata``, ``response``). Boolean answers are P(true). A
+    provider's ``images[].data`` is a base64 string, the AI SDK's JSON for
+    bytes; ``bytes`` are encoded here.
     """
+    provider_options = options.get('providerOptions')
+    if isinstance(provider_options, dict):
+        options['providerOptions'] = {
+            name: _base64_images(value) for name, value in provider_options.items()
+        }
     payload = dict(options, state=state, questions=questions)
     return json.loads(model.decide(json.dumps(payload)))
+
+
+def _base64_images(options: Any) -> Any:
+    if not isinstance(options, dict) or not isinstance(options.get('images'), list):
+        return options
+    return dict(options, images=[_base64_image(image) for image in options['images']])
+
+
+def _base64_image(image: Any) -> Any:
+    data = image.get('data') if isinstance(image, dict) else None
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        return dict(image, data=base64.b64encode(bytes(data)).decode('ascii'))
+    return image
 
 
 def session_calls(session_id: str) -> List[Dict[str, Any]]:
@@ -276,12 +300,12 @@ def _prompt_to_json(prompt: Union[str, List[Dict[str, Any]]]) -> str:
     return json.dumps({"prompt": prompt})
 
 
-#: The ``options["repair_tool_call"]`` function (RFC-0035), the equivalent of
+#: The ``options["repairToolCall"]`` function (RFC-0035), the equivalent of
 #: the AI SDK ``repairToolCall``.
 #:
 #: It is called once per tool call that came back ``invalid``, with the repair
-#: context ``{tool_call, error, input_schema, tools, messages, instructions}``
-#: — ``tool_call["input"]`` being the provider's raw argument text. Return a
+#: context ``{toolCall, error, inputSchema, tools, messages, instructions}``
+#: — ``toolCall["input"]`` being the provider's raw argument text. Return a
 #: replacement raw tool call (same shape, ``input`` a string) to re-validate,
 #: or ``None`` to leave the call invalid. Raising marks the repair failed: the
 #: call keeps its original error with the exception message as the cause.
@@ -297,16 +321,16 @@ RepairToolCall = Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
 def _opts_to_json(options: Optional[Dict[str, Any]]) -> Optional[str]:
     """Convert options dict to JSON string.
 
-    ``repair_tool_call`` is a Python callable and stays on this side of the
+    ``repairToolCall`` is a Python callable and stays on this side of the
     boundary; everything else is passed through to the native layer.
     """
     if options is None:
         return None
-    return json.dumps({k: v for k, v in options.items() if k != "repair_tool_call"})
+    return json.dumps({k: v for k, v in options.items() if k != "repairToolCall"})
 
 
 def _repair_fn(options: Optional[Dict[str, Any]]) -> Optional[_repair.RepairAdapter]:
-    fn = options.get("repair_tool_call") if options else None
+    fn = options.get("repairToolCall") if options else None
     if fn is None:
         return None
     return lambda context: _repair.run_hook(fn, context)
@@ -325,8 +349,8 @@ def generate_text(
         options: Optional generation options.
 
     Returns:
-        The ``GenerateTextResult`` dict: text, content, tool_calls,
-        finish_reason, usage, warnings, steps, response_messages, … and
+        The ``GenerateTextResult`` dict: text, content, toolCalls,
+        finishReason, usage, warnings, steps, responseMessages, … and
         ``output`` when ``options["output"]`` was parsed.
     """
     prompt_json = _prompt_to_json(prompt)
@@ -346,7 +370,7 @@ def generate_object(
     """Generate a structured JSON object from the model (M12, RFC-0016).
 
     Same signature as ``generate_text``; core's deprecated
-    ``generate_object`` wrapper. Pass ``output: {"Object": {"schema": ...}}``
+    ``generate_object`` wrapper. Pass ``output: {"type": "object", "schema": ...}``
     via options to describe the value; the model's text must parse and match
     the schema.
 
@@ -356,8 +380,8 @@ def generate_object(
         options: Optional generation options (incl. output).
 
     Returns:
-        Dict with keys: object, reasoning, finish_reason, usage, warnings,
-        request, response, provider_metadata.
+        Dict with keys: object, reasoning, finishReason, usage, warnings,
+        request, response, providerMetadata.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -401,13 +425,14 @@ def stream_text(
     prompt: Union[str, List[Dict[str, Any]]],
     options: Optional[Dict[str, Any]] = None,
 ):
-    """Stream text from a model. Yields TextStreamPart dicts: ``Start``,
-    then per step ``StartStep`` … ``FinishStep``, then ``Finish``.
+    """Stream text from a model. Yields TextStreamPart dicts (tagged by
+    ``type``): ``start``, then per step ``start-step`` … ``finish-step``,
+    then ``finish``.
 
     Usage:
         for part in stream_text(model, "Write a haiku about Rust."):
-            if "TextDelta" in part:
-                print(part["TextDelta"]["text"], end="")
+            if part["type"] == "text-delta":
+                print(part["text"], end="")
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -458,7 +483,7 @@ def stream_text_as_openai(
     ``chat.completion.chunk`` object. Works with any provider.
 
     Stream options (include_usage, include_reasoning) are read from
-    options["provider_options"]["openai"]["stream_options"] (both default True).
+    options["providerOptions"]["openai"]["stream_options"] (both default True).
 
     Usage:
         for chunk in stream_text_as_openai(model, "Write a haiku."):

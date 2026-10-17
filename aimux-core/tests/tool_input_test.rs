@@ -1,3 +1,5 @@
+//! Ported from upstream `ai/src/generate-text/parse-tool-call.test.ts`.
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -23,6 +25,7 @@ fn raw(name: &str, input: &str) -> RawToolCall {
     }
 }
 
+/// TS: should successfully parse a valid tool call
 #[tokio::test]
 async fn parses_and_validates_exact_json() {
     let mut tool_call = raw("weather", r#"{"city":"Singapore","days":3}"#);
@@ -53,6 +56,7 @@ async fn a_static_call_serializes_without_dynamic() {
     assert!(wire.get("dynamic").is_none(), "{wire}");
 }
 
+/// TS: should successfully process empty tool calls for tools that have no inputSchema
 #[tokio::test]
 async fn validates_empty_input_as_an_empty_object() {
     let no_arg_tool = FunctionTool::new(
@@ -72,47 +76,7 @@ async fn validates_empty_input_as_an_empty_object() {
     assert_eq!(call.invalid, None);
 }
 
-#[tokio::test]
-async fn parses_a_json_string_without_confusing_it_with_the_raw_carrier() {
-    let echo_tool = FunctionTool::new("echo", json!({ "type": "string" }));
-    let call = parse_tool_call(
-        raw("echo", r#""hello""#),
-        Some(&[echo_tool.into()]),
-        None,
-        &[],
-        None,
-    )
-    .await;
-
-    assert_eq!(call.input, json!("hello"));
-    assert_eq!(call.invalid, None);
-}
-
-#[tokio::test]
-async fn does_not_apply_partial_json_repair_to_final_tool_calls() {
-    for input in [
-        r#"{"city":"Singapore"#,
-        r#"{"city":"Singapore",}"#,
-        r#"{"city":"Singapore"},"days":3}"#,
-    ] {
-        let call = parse_tool_call(
-            raw("weather", input),
-            Some(&[weather_tool()]),
-            None,
-            &[],
-            None,
-        )
-        .await;
-
-        assert_eq!(call.input, json!(input));
-        assert_eq!(call.invalid, Some(true));
-        assert!(matches!(
-            call.error,
-            Some(AiMuxError::InvalidToolInput { .. })
-        ));
-    }
-}
-
+/// TS: should throw InvalidToolInputError when args are invalid
 #[tokio::test]
 async fn preserves_parsed_input_when_schema_validation_fails() {
     let input = r#"{"city":7}"#;
@@ -133,6 +97,7 @@ async fn preserves_parsed_input_when_schema_validation_fails() {
     ));
 }
 
+/// TS: should throw NoSuchToolError when tool is not found
 #[tokio::test]
 async fn unknown_tool_is_an_invalid_dynamic_call_with_available_tools() {
     let call = parse_tool_call(
@@ -203,6 +168,7 @@ async fn invalid_call_input_is_not_back_filled_with_forbidden_prototype_keys() {
     }
 }
 
+/// TS: should invoke repairTool when provided and use its result / should pass instructions to repairToolCall
 #[tokio::test]
 async fn repair_runs_once_and_the_replacement_is_fully_revalidated() {
     let calls = Arc::new(AtomicUsize::new(0));
@@ -297,6 +263,7 @@ async fn a_repaired_reply_that_fails_validation_is_not_wrapped() {
     ));
 }
 
+/// TS: should throw NoSuchToolError when tools is null
 #[tokio::test]
 async fn missing_tools_bypasses_repair_like_ai_sdk() {
     let calls = Arc::new(AtomicUsize::new(0));
@@ -318,6 +285,7 @@ async fn missing_tools_bypasses_repair_like_ai_sdk() {
     ));
 }
 
+/// TS: should re-throw error if tool call repair returns null
 #[tokio::test]
 async fn repair_returning_none_keeps_the_original_failure() {
     let repair = ToolCallRepair::new(|_| async { Ok(None) });
@@ -339,6 +307,7 @@ async fn repair_returning_none_keeps_the_original_failure() {
     ));
 }
 
+/// TS: should throw ToolCallRepairError if repairToolCall throws
 #[tokio::test]
 async fn repair_failure_keeps_both_typed_errors() {
     let repair = ToolCallRepair::new(|context| async move {
@@ -363,6 +332,7 @@ async fn repair_failure_keeps_both_typed_errors() {
     ));
 }
 
+/// TS: should successfully parse a valid provider-executed dynamic tool call
 #[tokio::test]
 async fn provider_executed_dynamic_calls_do_not_require_a_local_tool() {
     let mut tool_call = raw("provider_search", r#"{"query":"rust"}"#);

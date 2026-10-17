@@ -15,11 +15,11 @@ async function main() {
 
   console.log('Streaming:\n')
   for await (const part of streamText(model, 'Write a haiku about Rust.')) {
-    // TextStreamPart is an externally tagged union — narrow by key.
-    if ('TextDelta' in part) {
-      process.stdout.write(part.TextDelta.text)
-    } else if ('Finish' in part) {
-      console.log(`\n\n[done: ${part.Finish.finish_reason}]`)
+    // TextStreamPart is a tagged union — check the type field
+    if (part.type === 'text-delta') {
+      process.stdout.write(part.text)
+    } else if (part.type === 'finish') {
+      console.log(`\n\n[done: ${part.finishReason}]`)
     }
   }
 }

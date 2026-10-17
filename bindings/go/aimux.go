@@ -352,18 +352,6 @@ func MockReplay(recordingsJsonl string) (*Model, error) {
 	return wrapHandle(&h, C.aimux_mock_replay_new(cJsonl, &h))
 }
 
-// RegisterProviders registers external OpenAI-compatible providers from a JSON
-// config string (RFC-0020). Entries override same-named built-ins or add new
-// ones. configJSON shape: { "providers": [ { "name", "base_url", ... } ] }.
-func RegisterProviders(configJSON string) error {
-	if err := requireJSON("config_json", configJSON); err != nil {
-		return err
-	}
-	cJSON := C.CString(configJSON)
-	defer C.free(unsafe.Pointer(cJSON))
-	return expectAimuxError(C.aimux_register_providers(cJSON))
-}
-
 // InitProxy replaces the default transport with one routed by this proxy
 // configuration (M6, RFC-0016). Requests started afterwards use it; calling it
 // again replaces the previous configuration. configJSON is required (pass "{}"
@@ -384,7 +372,7 @@ func InitProxy(configJSON string) error {
 // on error (per configJSON). models must be non-empty.
 //
 // configJSON (optional): {"router": "rule"|"weighted", "weights": [...],
-// "fallback": "on_error"|"none", "provider_name", "model_id"}.
+// "fallback": "on_error"|"none", "providerName", "modelId"}.
 //
 // The same model may appear several times. A nil entry returns an error
 // ("aimux: router: models[i] is nil"), never a panic. Concurrent Close is
@@ -661,13 +649,13 @@ func ProviderWithBase(name, apiKey, modelID, baseURL string) (*Model, error) {
 	return ProviderWithConfig(name, apiKey, modelID, &ProviderConfig{BaseURL: baseURL})
 }
 
-// ProviderConfig mirrors the Rust ProviderOptions accepted by
-// aimux_provider_new's config_json (RFC-0017 §3.4). Zero-value fields are
-// omitted. Retry is a per-call setting (CallOptions.MaxRetries), and request-body
-// overrides no longer exist: a config_json carrying max_retries or
-// body_overrides is rejected as CodeInvalidArgument, so this struct has neither.
+// ProviderConfig is the config_json accepted by aimux_provider_new and
+// aimux_provider_handle_new (RFC-0017 §3.4). Zero-value fields are omitted.
+// Retry is a per-call setting (GenerateTextOptions.MaxRetries), and request-body
+// overrides no longer exist: any other key in config_json is rejected as
+// CodeInvalidArgument, so this struct has neither.
 type ProviderConfig struct {
-	BaseURL      string            `json:"base_url,omitempty"`
+	BaseURL      string            `json:"baseUrl,omitempty"`
 	Headers      map[string]string `json:"headers,omitempty"`
 	Organization string            `json:"organization,omitempty"`
 	Project      string            `json:"project,omitempty"`
@@ -861,7 +849,7 @@ func (m *Model) GenerateText(promptJson, optsJson string) (string, error) {
 // GenerateObject generates a structured JSON object (M12, RFC-0016).
 //
 // Same signature as GenerateText; returns the JSON-serialized
-// GenerateObjectResult. Pass "output": {"Object": {"schema": {...}}} via
+// GenerateObjectResult. Pass "output": {"type": "object", "schema": {...}} via
 // optsJson to describe the object; the model's text must parse as JSON and
 // match the schema.
 func (m *Model) GenerateObject(promptJson, optsJson string) (string, error) {
@@ -1050,8 +1038,8 @@ func (m *Model) StreamTextContext(ctx context.Context, promptJson, optsJson stri
 // ChatCompletionChunk (OpenAI "chat.completion.chunk" object). Works with any
 // provider.
 //
-// Opts may carry providerOptions.openai.stream_options with include_usage
-// (bool, default true) and include_reasoning (bool, default true).
+// Opts may carry providerOptions.openai.streamOptions with includeUsage
+// (bool, default true) and includeReasoning (bool, default true).
 func (m *Model) StreamTextAsOpenAI(promptJson, optsJson string) *Stream {
 	return m.StreamTextAsOpenAIContext(context.Background(), promptJson, optsJson)
 }
@@ -1231,8 +1219,10 @@ func aimuxErrorFromC(e *C.aimux_error_t) *Error {
 		if s := str(C.aimux_error_response_headers(e)); s != "" {
 			_ = json.Unmarshal([]byte(s), &err.ResponseHeaders)
 		}
+		// Kept as raw JSON so a null payload stays apart from a missing one
+		// (the getter returns NULL only for a missing one).
 		if s := str(C.aimux_error_provider_data(e)); s != "" {
-			_ = json.Unmarshal([]byte(s), &err.Data)
+			err.Data = json.RawMessage(s)
 		}
 	case CodeNoSuchModel:
 		err.ModelID = str(C.aimux_error_model_id(e))

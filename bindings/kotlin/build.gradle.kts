@@ -33,7 +33,12 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
-    systemProperty("jna.library.path", rootProject.projectDir.resolve("../../target/release").canonicalPath)
+    // AIMUX_FFI_LIB_DIR points at the directory holding libaimux_ffi (e.g. a
+    // custom CARGO_TARGET_DIR/debug); the default is the in-tree release build.
+    systemProperty(
+        "jna.library.path",
+        System.getenv("AIMUX_FFI_LIB_DIR") ?: rootProject.projectDir.resolve("../../target/release").canonicalPath,
+    )
     // Gradle prints only "there were failing tests" by default; the names live
     // in an HTML report that CI logs never surface. Without this, a red build
     // tells you nothing about which test broke.

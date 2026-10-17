@@ -133,6 +133,30 @@ async fn what_cannot_be_replayed_fails_at_replay_time() {
     assert!(err.to_string().contains("aimux 0.5 or earlier"), "{err}");
 }
 
+/// Master wrote every timeout key, an unset one as `null`
+/// (`"step_ms": null`). Such a key carries nothing: request replay drops it
+/// before the timeout object, which rejects unknown keys, is read.
+#[tokio::test]
+async fn null_timeout_keys_as_master_wrote_them_still_replay() {
+    let mut recording = parse(LANGUAGE).remove(0);
+    let mock = MockReplayModel::new("openai", "gpt-4o", vec![recording.clone()]);
+    // The first master call with this version's keys, and the timeout object
+    // as master wrote one with nothing set.
+    recording.input.options = serde_json::json!({
+        "prompt": recording.input.prompt,
+        "temperature": 0.0,
+        "toolChoice": { "type": "auto" },
+        "timeout": {
+            "total_ms": null,
+            "step_ms": null,
+            "first_chunk_ms": null,
+            "chunk_ms": null,
+        },
+    });
+    let result = replay_with_model(&recording, &mock, None).await.unwrap();
+    assert_eq!(result.text(), "Paris.");
+}
+
 /// Master's decision recordings load. Their options and results use the
 /// pre-V4 decision shapes, so replaying them fails at replay time and says
 /// they were written by aimux 0.5 or earlier.

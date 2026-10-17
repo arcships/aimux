@@ -14,6 +14,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -21,7 +23,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,8 +33,8 @@ import java.util.Objects;
  *
  * <p>Port of the Kotlin binding's {@code MultimodalTypes.kt}. Same shapes as the
  * ts-rs generated {@code .ts} types in {@code bindings/node/src/types/}. Field
- * names are camelCase in Java and map to the wire format's snake_case via
- * {@link JsonProperty}.
+ * names are camelCase in Java and on the wire (the AI SDK JSON); {@link JsonProperty}
+ * pins them.
  *
  * <p>These types are intentionally lenient on decode (unknown keys ignored,
  * every field has a default) so future engine additions don't break existing
@@ -44,12 +46,11 @@ import java.util.Objects;
  *     .readValue(jsonStr, MultimodalTypes.EmbeddingResult.class);
  * }</pre>
  *
- * <p>The {@code Base64}/{@code Binary}/{@code Url} unions ({@link AudioData},
- * {@link ImageOutputs}, {@link VideoData}) are serde-style externally-tagged
- * enums on the wire ({@code {"Base64": ...}} / {@code {"Binary": ...}} /
- * {@code {"Url": ...}}), so each has a custom serializer — the same pattern as
- * {@link Types.FileBytes} in {@code Types.java} and
- * {@code StreamPartSerializer} in the Kotlin binding.
+ * <p>The byte unions ({@link AudioData}, {@link ImageOutputs}, {@link VideoFileData})
+ * are base64 strings on the wire (the AI SDK's JSON for a {@code Uint8Array}), and
+ * {@link VideoData} / {@link VideoFile} are tagged on {@code type}, so each has a
+ * custom serializer — the same pattern as {@link Types.FileBytes} in
+ * {@code Types.java}.
  */
 public final class MultimodalTypes {
     private MultimodalTypes() {}
@@ -187,7 +188,7 @@ public final class MultimodalTypes {
     public static class EmbeddingResult {
         @JsonProperty("embeddings") private List<List<Float>> embeddings = new ArrayList<>();
         @JsonProperty("usage") private EmbeddingUsage usage;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("response") private EmbeddingResponse response;
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
 
@@ -252,9 +253,9 @@ public final class MultimodalTypes {
     /** Options for an embedding call. */
     public static class EmbeddingCallOptions {
         @JsonProperty("values") private List<String> values = new ArrayList<>();
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("maxRetries") private Integer maxRetries;
         @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
@@ -325,8 +326,9 @@ public final class MultimodalTypes {
     /**
      * Generated audio: a base64 string or raw binary bytes.
      *
-     * <p>Wire format (serde externally-tagged): {@code {"Base64": "..."}} |
-     * {@code {"Binary": [n,...]}}.
+     * <p>Wire format: a base64 string ({@code SpeechModelV4Result.audio},
+     * {@code speech-model-v4-result.ts:16}). {@link Binary} is written as base64;
+     * parsing yields {@link Base64}.
      */
     public abstract static class AudioData {
         private AudioData() {}
@@ -382,23 +384,17 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Custom (de)serializer for {@link AudioData}: {@code {"Base64": "..."}} | {@code {"Binary": [n,...]}}. */
+    /** Serializer for {@link AudioData}: a base64 string. */
     public static class AudioDataSerializer extends JsonSerializer<AudioData> {
         @Override
         public void serialize(AudioData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            gen.writeStartObject();
             if (value instanceof AudioData.Base64) {
-                gen.writeStringField("Base64", ((AudioData.Base64) value).getValue());
+                gen.writeString(((AudioData.Base64) value).getValue());
             } else if (value instanceof AudioData.Binary) {
-                gen.writeArrayFieldStart("Binary");
-                for (Integer b : ((AudioData.Binary) value).getValue()) {
-                    gen.writeNumber(b);
-                }
-                gen.writeEndArray();
+                gen.writeString(Types.Base64Bytes.encode(((AudioData.Binary) value).getValue()));
             } else {
                 throw new IOException("Unknown AudioData: " + value);
             }
-            gen.writeEndObject();
         }
     }
 
@@ -407,26 +403,10 @@ public final class MultimodalTypes {
         @Override
         public AudioData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("AudioData must be a single-key externally-tagged object, got: " + node);
+            if (node.isTextual()) {
+                return new AudioData.Base64(node.asText());
             }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            switch (tag) {
-                case "Base64":
-                    return new AudioData.Base64(inner.asText());
-                case "Binary": {
-                    List<Integer> bytes = new ArrayList<>();
-                    if (inner.isArray()) {
-                        for (JsonNode item : inner) {
-                            bytes.add(item.asInt());
-                        }
-                    }
-                    return new AudioData.Binary(bytes);
-                }
-                default:
-                    throw new IOException("Unknown AudioData tag: '" + tag + "'");
-            }
+            throw new IOException("AudioData must be a base64 string, got: " + node);
         }
     }
 
@@ -476,7 +456,7 @@ public final class MultimodalTypes {
     /** Provider response metadata for speech. */
     public static class SpeechResponse {
         @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("modelId") private String modelId;
         @JsonProperty("headers") private Map<String, String> headers;
         @JsonProperty("body") private JsonNode body;
 
@@ -541,7 +521,7 @@ public final class MultimodalTypes {
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("request") private SpeechRequest request;
         @JsonProperty("response") private SpeechResponse response = new SpeechResponse();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
         @JsonCreator
         SpeechResult() {}
@@ -608,13 +588,13 @@ public final class MultimodalTypes {
     public static class SpeechCallOptions {
         @JsonProperty("text") private String text = "";
         @JsonProperty("voice") private String voice;
-        @JsonProperty("output_format") private String outputFormat;
+        @JsonProperty("outputFormat") private String outputFormat;
         @JsonProperty("instructions") private String instructions;
         @JsonProperty("speed") private Double speed;
         @JsonProperty("language") private String language;
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("maxRetries") private Integer maxRetries;
         @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
@@ -715,8 +695,9 @@ public final class MultimodalTypes {
     /**
      * Generated images: all base64 strings or all binary byte arrays.
      *
-     * <p>Wire format (serde externally-tagged):
-     * {@code {"Base64": ["...", ...]}} | {@code {"Binary": [[n,...], ...]}}.
+     * <p>Wire format: base64 strings {@code ["...", ...]}
+     * ({@code ImageModelV4Result.images}, {@code image-model-v4-result.ts:23}).
+     * {@link Binary} is written as base64; parsing yields {@link Base64}.
      */
     public abstract static class ImageOutputs {
         private ImageOutputs() {}
@@ -772,80 +753,50 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Custom (de)serializer for {@link ImageOutputs}: {@code {"Base64": [...]}} | {@code {"Binary": [[...],...]}}. */
+    /** Serializer for {@link ImageOutputs}: an array of base64 strings ({@code image-model-v4-result.ts:23}). */
     public static class ImageOutputsSerializer extends JsonSerializer<ImageOutputs> {
         @Override
         public void serialize(ImageOutputs value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            gen.writeStartObject();
+            gen.writeStartArray();
             if (value instanceof ImageOutputs.Base64) {
-                gen.writeArrayFieldStart("Base64");
                 for (String s : ((ImageOutputs.Base64) value).getValue()) {
                     gen.writeString(s);
                 }
-                gen.writeEndArray();
             } else if (value instanceof ImageOutputs.Binary) {
-                gen.writeArrayFieldStart("Binary");
                 for (List<Integer> row : ((ImageOutputs.Binary) value).getValue()) {
-                    gen.writeStartArray();
-                    for (Integer b : row) {
-                        gen.writeNumber(b);
-                    }
-                    gen.writeEndArray();
+                    gen.writeString(Types.Base64Bytes.encode(row));
                 }
-                gen.writeEndArray();
             } else {
                 throw new IOException("Unknown ImageOutputs: " + value);
             }
-            gen.writeEndObject();
+            gen.writeEndArray();
         }
     }
 
-    /** Custom (de)serializer for {@link ImageOutputs}. */
+    /** Custom (de)serializer for {@link ImageOutputs}; an empty array decodes as {@link ImageOutputs.Base64}. */
     public static class ImageOutputsDeserializer extends JsonDeserializer<ImageOutputs> {
         @Override
         public ImageOutputs deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("ImageOutputs must be a single-key externally-tagged object, got: " + node);
+            if (!node.isArray()) {
+                throw new IOException("ImageOutputs must be an array, got: " + node);
             }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            switch (tag) {
-                case "Base64": {
-                    List<String> values = new ArrayList<>();
-                    if (inner.isArray()) {
-                        for (JsonNode item : inner) {
-                            values.add(item.asText());
-                        }
-                    }
-                    return new ImageOutputs.Base64(values);
+            List<String> values = new ArrayList<>();
+            for (JsonNode item : node) {
+                if (!item.isTextual()) {
+                    throw new IOException("ImageOutputs must be base64 strings, got: " + item);
                 }
-                case "Binary": {
-                    List<List<Integer>> rows = new ArrayList<>();
-                    if (inner.isArray()) {
-                        for (JsonNode rowNode : inner) {
-                            List<Integer> row = new ArrayList<>();
-                            if (rowNode.isArray()) {
-                                for (JsonNode item : rowNode) {
-                                    row.add(item.asInt());
-                                }
-                            }
-                            rows.add(row);
-                        }
-                    }
-                    return new ImageOutputs.Binary(rows);
-                }
-                default:
-                    throw new IOException("Unknown ImageOutputs tag: '" + tag + "'");
+                values.add(item.asText());
             }
+            return new ImageOutputs.Base64(values);
         }
     }
 
     /** Token usage for image generation (if reported). */
     public static class ImageUsage {
-        @JsonProperty("input_tokens") private Long inputTokens;
-        @JsonProperty("output_tokens") private Long outputTokens;
-        @JsonProperty("total_tokens") private Long totalTokens;
+        @JsonProperty("inputTokens") private Long inputTokens;
+        @JsonProperty("outputTokens") private Long outputTokens;
+        @JsonProperty("totalTokens") private Long totalTokens;
 
         @JsonCreator
         ImageUsage() {}
@@ -898,7 +849,7 @@ public final class MultimodalTypes {
     /** Provider response metadata for images. */
     public static class ImageResponse {
         @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("modelId") private String modelId;
         @JsonProperty("headers") private Map<String, String> headers;
 
         @JsonCreator
@@ -953,7 +904,7 @@ public final class MultimodalTypes {
     public static class ImageResult {
         @JsonProperty("images") private ImageOutputs images = new ImageOutputs.Base64(new ArrayList<String>());
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("response") private ImageResponse response = new ImageResponse();
         @JsonProperty("usage") private ImageUsage usage;
 
@@ -1023,13 +974,13 @@ public final class MultimodalTypes {
         @JsonProperty("prompt") private String prompt;
         @JsonProperty("n") private Integer n;
         @JsonProperty("size") private String size;
-        @JsonProperty("aspect_ratio") private String aspectRatio;
+        @JsonProperty("aspectRatio") private String aspectRatio;
         @JsonProperty("seed") private Long seed;
         @JsonProperty("files") private List<JsonNode> files = new ArrayList<>();
         @JsonProperty("mask") private JsonNode mask;
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("maxRetries") private Integer maxRetries;
         @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
@@ -1138,9 +1089,9 @@ public final class MultimodalTypes {
         @JsonProperty("text") private String text = "";
         // Core declares these as required f64 (TranscriptionSegment.ts), so they
         // are primitives: NON_NULL inclusion would drop boxed nulls and the core
-        // would reject the payload with `missing field start_second`.
-        @JsonProperty("start_second") private double startSecond;
-        @JsonProperty("end_second") private double endSecond;
+        // would reject the payload with `missing field startSecond`.
+        @JsonProperty("startSecond") private double startSecond;
+        @JsonProperty("endSecond") private double endSecond;
 
         @JsonCreator
         TranscriptionSegment() {}
@@ -1236,7 +1187,7 @@ public final class MultimodalTypes {
     /** Provider response metadata for transcription. */
     public static class TranscriptionResponse {
         @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("modelId") private String modelId;
         @JsonProperty("headers") private Map<String, String> headers;
         @JsonProperty("body") private JsonNode body;
 
@@ -1300,11 +1251,11 @@ public final class MultimodalTypes {
         @JsonProperty("text") private String text = "";
         @JsonProperty("segments") private List<TranscriptionSegment> segments = new ArrayList<>();
         @JsonProperty("language") private String language;
-        @JsonProperty("duration_in_seconds") private Double durationInSeconds;
+        @JsonProperty("durationInSeconds") private Double durationInSeconds;
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("request") private TranscriptionRequest request;
         @JsonProperty("response") private TranscriptionResponse response = new TranscriptionResponse();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
 
         @JsonCreator
         TranscriptionResult() {}
@@ -1391,10 +1342,10 @@ public final class MultimodalTypes {
     /** Options for transcription. */
     public static class TranscriptionCallOptions {
         @JsonProperty("audio") private JsonNode audio = JsonNodeFactory.instance.objectNode();
-        @JsonProperty("media_type") private String mediaType = "";
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("mediaType") private String mediaType = "";
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("maxRetries") private Integer maxRetries;
         @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
@@ -1471,7 +1422,7 @@ public final class MultimodalTypes {
     /** A single reranked entry. */
     public static class RerankingRank {
         @JsonProperty("index") private int index;
-        @JsonProperty("relevance_score") private double relevanceScore;
+        @JsonProperty("relevanceScore") private double relevanceScore;
 
         @JsonCreator
         RerankingRank() {}
@@ -1520,7 +1471,7 @@ public final class MultimodalTypes {
     public static class RerankingResponse {
         @JsonProperty("id") private String id;
         @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("modelId") private String modelId;
         @JsonProperty("headers") private Map<String, String> headers;
         @JsonProperty("body") private JsonNode body;
 
@@ -1587,7 +1538,7 @@ public final class MultimodalTypes {
     /** Result of a reranking call. */
     public static class RerankingResult {
         @JsonProperty("ranking") private List<RerankingRank> ranking = new ArrayList<>();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("response") private RerankingResponse response;
 
@@ -1651,10 +1602,10 @@ public final class MultimodalTypes {
     public static class RerankingCallOptions {
         @JsonProperty("documents") private JsonNode documents = JsonNodeFactory.instance.arrayNode();
         @JsonProperty("query") private String query = "";
-        @JsonProperty("top_n") private Integer topN;
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("topN") private Integer topN;
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("maxRetries") private Integer maxRetries;
         @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
@@ -1736,7 +1687,7 @@ public final class MultimodalTypes {
     /** The URL variant of {@link VideoData}. */
     public static class VideoUrlData {
         @JsonProperty("url") private String url = "";
-        @JsonProperty("media_type") private String mediaType = "";
+        @JsonProperty("mediaType") private String mediaType = "";
 
         @JsonCreator
         VideoUrlData() {}
@@ -1784,7 +1735,7 @@ public final class MultimodalTypes {
     /** The base64 variant of {@link VideoData}. */
     public static class VideoBase64Data {
         @JsonProperty("data") private String data = "";
-        @JsonProperty("media_type") private String mediaType = "";
+        @JsonProperty("mediaType") private String mediaType = "";
 
         @JsonCreator
         VideoBase64Data() {}
@@ -1831,8 +1782,12 @@ public final class MultimodalTypes {
 
     /** The binary variant of {@link VideoData}. */
     public static class VideoBinaryData {
-        @JsonProperty("data") private List<Integer> data = new ArrayList<>();
-        @JsonProperty("media_type") private String mediaType = "";
+        /** Video bytes (0–255), a base64 string on the wire ({@code video-model-v4-result.ts:28-29}). */
+        @JsonProperty("data")
+        @JsonSerialize(using = Types.Base64BytesSerializer.class)
+        @JsonDeserialize(using = Types.Base64BytesDeserializer.class)
+        private List<Integer> data = new ArrayList<>();
+        @JsonProperty("mediaType") private String mediaType = "";
 
         @JsonCreator
         VideoBinaryData() {}
@@ -1880,8 +1835,8 @@ public final class MultimodalTypes {
     /**
      * Generated video: a URL, base64 string, or raw binary bytes.
      *
-     * <p>Wire format (serde externally-tagged):
-     * {@code {"Url": {...}}} | {@code {"Base64": {...}}} | {@code {"Binary": {...}}}.
+     * <p>Wire format (tagged on {@code type}): {@code {"type":"url",...}} |
+     * {@code {"type":"base64",...}} | {@code {"type":"binary",...}}.
      */
     public abstract static class VideoData {
         private VideoData() {}
@@ -1962,24 +1917,24 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Custom (de)serializer for {@link VideoData}: {@code {"Url": {...}}} | {@code {"Base64": {...}}} | {@code {"Binary": {...}}}. */
+    /** Custom (de)serializer for {@link VideoData} — internally tagged on `"type"` with the payload inlined. */
     public static class VideoDataSerializer extends JsonSerializer<VideoData> {
         @Override
         public void serialize(VideoData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            gen.writeStartObject();
+            ObjectNode out = JsonNodeFactory.instance.objectNode();
             if (value instanceof VideoData.Url) {
-                gen.writeFieldName("Url");
-                gen.writeTree(AimuxJson.MAPPER.valueToTree(((VideoData.Url) value).getValue()));
+                out.put("type", "url");
+                out.setAll((ObjectNode) AimuxJson.MAPPER.valueToTree(((VideoData.Url) value).getValue()));
             } else if (value instanceof VideoData.Base64) {
-                gen.writeFieldName("Base64");
-                gen.writeTree(AimuxJson.MAPPER.valueToTree(((VideoData.Base64) value).getValue()));
+                out.put("type", "base64");
+                out.setAll((ObjectNode) AimuxJson.MAPPER.valueToTree(((VideoData.Base64) value).getValue()));
             } else if (value instanceof VideoData.Binary) {
-                gen.writeFieldName("Binary");
-                gen.writeTree(AimuxJson.MAPPER.valueToTree(((VideoData.Binary) value).getValue()));
+                out.put("type", "binary");
+                out.setAll((ObjectNode) AimuxJson.MAPPER.valueToTree(((VideoData.Binary) value).getValue()));
             } else {
                 throw new IOException("Unknown VideoData: " + value);
             }
-            gen.writeEndObject();
+            gen.writeTree(out);
         }
     }
 
@@ -1988,23 +1943,16 @@ public final class MultimodalTypes {
         @Override
         public VideoData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("VideoData must be a single-key externally-tagged object, got: " + node);
-            }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            if (!inner.isObject()) {
-                inner = JsonNodeFactory.instance.objectNode();
-            }
+            String tag = node.path("type").asText();
             switch (tag) {
-                case "Url":
-                    return new VideoData.Url(AimuxJson.MAPPER.treeToValue(inner, VideoUrlData.class));
-                case "Base64":
-                    return new VideoData.Base64(AimuxJson.MAPPER.treeToValue(inner, VideoBase64Data.class));
-                case "Binary":
-                    return new VideoData.Binary(AimuxJson.MAPPER.treeToValue(inner, VideoBinaryData.class));
+                case "url":
+                    return new VideoData.Url(AimuxJson.MAPPER.treeToValue(node, VideoUrlData.class));
+                case "base64":
+                    return new VideoData.Base64(AimuxJson.MAPPER.treeToValue(node, VideoBase64Data.class));
+                case "binary":
+                    return new VideoData.Binary(AimuxJson.MAPPER.treeToValue(node, VideoBinaryData.class));
                 default:
-                    throw new IOException("Unknown VideoData tag: '" + tag + "'");
+                    throw new IOException("Unknown VideoData type: '" + tag + "'");
             }
         }
     }
@@ -2012,7 +1960,7 @@ public final class MultimodalTypes {
     /** Provider response metadata for video. */
     public static class VideoResponse {
         @JsonProperty("timestamp") private String timestamp;
-        @JsonProperty("model_id") private String modelId;
+        @JsonProperty("modelId") private String modelId;
         @JsonProperty("headers") private Map<String, String> headers;
 
         @JsonCreator
@@ -2067,7 +2015,7 @@ public final class MultimodalTypes {
     public static class VideoResult {
         @JsonProperty("videos") private List<VideoData> videos = new ArrayList<>();
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("response") private VideoResponse response = new VideoResponse();
 
         @JsonCreator
@@ -2129,8 +2077,8 @@ public final class MultimodalTypes {
     /**
      * File payload for a {@link VideoFile}: a base64 string or raw binary bytes.
      *
-     * <p>Wire format (serde externally-tagged): {@code {"Base64": "..."}} |
-     * {@code {"Binary": [n,...]}}.
+     * <p>Wire format: a base64 string. {@link Binary} is written as base64; parsing
+     * yields {@link Base64}.
      */
     public abstract static class VideoFileData {
         private VideoFileData() {}
@@ -2186,23 +2134,17 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Custom (de)serializer for {@link VideoFileData}: {@code {"Base64": "..."}} | {@code {"Binary": [n,...]}}. */
+    /** Serializer for {@link VideoFileData}: a base64 string. */
     public static class VideoFileDataSerializer extends JsonSerializer<VideoFileData> {
         @Override
         public void serialize(VideoFileData value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            gen.writeStartObject();
             if (value instanceof VideoFileData.Base64) {
-                gen.writeStringField("Base64", ((VideoFileData.Base64) value).getValue());
+                gen.writeString(((VideoFileData.Base64) value).getValue());
             } else if (value instanceof VideoFileData.Binary) {
-                gen.writeArrayFieldStart("Binary");
-                for (Integer b : ((VideoFileData.Binary) value).getValue()) {
-                    gen.writeNumber(b);
-                }
-                gen.writeEndArray();
+                gen.writeString(Types.Base64Bytes.encode(((VideoFileData.Binary) value).getValue()));
             } else {
                 throw new IOException("Unknown VideoFileData: " + value);
             }
-            gen.writeEndObject();
         }
     }
 
@@ -2211,32 +2153,16 @@ public final class MultimodalTypes {
         @Override
         public VideoFileData deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("VideoFileData must be a single-key externally-tagged object, got: " + node);
+            if (node.isTextual()) {
+                return new VideoFileData.Base64(node.asText());
             }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            switch (tag) {
-                case "Base64":
-                    return new VideoFileData.Base64(inner.asText());
-                case "Binary": {
-                    List<Integer> bytes = new ArrayList<>();
-                    if (inner.isArray()) {
-                        for (JsonNode item : inner) {
-                            bytes.add(item.asInt());
-                        }
-                    }
-                    return new VideoFileData.Binary(bytes);
-                }
-                default:
-                    throw new IOException("Unknown VideoFileData tag: '" + tag + "'");
-            }
+            throw new IOException("VideoFileData must be a base64 string, got: " + node);
         }
     }
 
     /** The {@code File} variant payload of {@link VideoFile}. */
     public static class VideoFileFileData {
-        @JsonProperty("media_type") private String mediaType = "";
+        @JsonProperty("mediaType") private String mediaType = "";
         @JsonProperty("data") private VideoFileData data = new VideoFileData.Base64("");
 
         @JsonCreator
@@ -2285,7 +2211,7 @@ public final class MultimodalTypes {
     /** The {@code Url} variant payload of {@link VideoFile}. */
     public static class VideoFileUrlData {
         @JsonProperty("url") private String url = "";
-        @JsonProperty("media_type") private String mediaType;
+        @JsonProperty("mediaType") private String mediaType;
 
         @JsonCreator
         VideoFileUrlData() {}
@@ -2333,8 +2259,8 @@ public final class MultimodalTypes {
     /**
      * A video or image file used for video editing or image-to-video generation.
      *
-     * <p>Wire format (serde externally-tagged): {@code {"File": {...}}} |
-     * {@code {"Url": {...}}}.
+     * <p>Wire format (tagged on {@code type}): {@code {"type":"file",...}} |
+     * {@code {"type":"url",...}}.
      */
     public abstract static class VideoFile {
         private VideoFile() {}
@@ -2390,21 +2316,21 @@ public final class MultimodalTypes {
         }
     }
 
-    /** Custom (de)serializer for {@link VideoFile}: {@code {"File": {...}}} | {@code {"Url": {...}}}. */
+    /** Custom (de)serializer for {@link VideoFile} — internally tagged on `"type"` with the payload inlined. */
     public static class VideoFileSerializer extends JsonSerializer<VideoFile> {
         @Override
         public void serialize(VideoFile value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-            gen.writeStartObject();
+            ObjectNode out = JsonNodeFactory.instance.objectNode();
             if (value instanceof VideoFile.File) {
-                gen.writeFieldName("File");
-                gen.writeTree(AimuxJson.MAPPER.valueToTree(((VideoFile.File) value).getValue()));
+                out.put("type", "file");
+                out.setAll((ObjectNode) AimuxJson.MAPPER.valueToTree(((VideoFile.File) value).getValue()));
             } else if (value instanceof VideoFile.Url) {
-                gen.writeFieldName("Url");
-                gen.writeTree(AimuxJson.MAPPER.valueToTree(((VideoFile.Url) value).getValue()));
+                out.put("type", "url");
+                out.setAll((ObjectNode) AimuxJson.MAPPER.valueToTree(((VideoFile.Url) value).getValue()));
             } else {
                 throw new IOException("Unknown VideoFile: " + value);
             }
-            gen.writeEndObject();
+            gen.writeTree(out);
         }
     }
 
@@ -2413,35 +2339,28 @@ public final class MultimodalTypes {
         @Override
         public VideoFile deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
             JsonNode node = p.getCodec().readTree(p);
-            if (!node.isObject() || node.size() != 1) {
-                throw new IOException("VideoFile must be a single-key externally-tagged object, got: " + node);
-            }
-            String tag = node.fieldNames().next();
-            JsonNode inner = node.get(tag);
-            if (!inner.isObject()) {
-                inner = JsonNodeFactory.instance.objectNode();
-            }
+            String tag = node.path("type").asText();
             switch (tag) {
-                case "File":
-                    return new VideoFile.File(AimuxJson.MAPPER.treeToValue(inner, VideoFileFileData.class));
-                case "Url":
-                    return new VideoFile.Url(AimuxJson.MAPPER.treeToValue(inner, VideoFileUrlData.class));
+                case "file":
+                    return new VideoFile.File(AimuxJson.MAPPER.treeToValue(node, VideoFileFileData.class));
+                case "url":
+                    return new VideoFile.Url(AimuxJson.MAPPER.treeToValue(node, VideoFileUrlData.class));
                 default:
-                    throw new IOException("Unknown VideoFile tag: '" + tag + "'");
+                    throw new IOException("Unknown VideoFile type: '" + tag + "'");
             }
         }
     }
 
     /** The role a frame image plays in video generation. */
     public enum VideoFrameType {
-        @JsonProperty("FirstFrame") FIRST_FRAME,
-        @JsonProperty("LastFrame") LAST_FRAME,
+        @JsonProperty("first_frame") FIRST_FRAME,
+        @JsonProperty("last_frame") LAST_FRAME,
     }
 
     /** A role-tagged image input for image-to-video and first-last-frame generation. */
     public static class VideoFrameImage {
         @JsonProperty("image") private VideoFile image = new VideoFile.File(new VideoFileFileData());
-        @JsonProperty("frame_type") private VideoFrameType frameType = VideoFrameType.FIRST_FRAME;
+        @JsonProperty("frameType") private VideoFrameType frameType = VideoFrameType.FIRST_FRAME;
 
         @JsonCreator
         VideoFrameImage() {}
@@ -2488,8 +2407,8 @@ public final class MultimodalTypes {
 
     /** Per-call pacing overrides for the Core-owned video status poll loop. */
     public static class VideoPollOptions {
-        @JsonProperty("interval_ms") private Long intervalMs;
-        @JsonProperty("timeout_ms") private Long timeoutMs;
+        @JsonProperty("intervalMs") private Long intervalMs;
+        @JsonProperty("timeoutMs") private Long timeoutMs;
 
         @JsonCreator
         VideoPollOptions() {}
@@ -2538,18 +2457,18 @@ public final class MultimodalTypes {
     public static class VideoCallOptions {
         @JsonProperty("prompt") private String prompt;
         @JsonProperty("n") private Integer n;
-        @JsonProperty("aspect_ratio") private String aspectRatio;
+        @JsonProperty("aspectRatio") private String aspectRatio;
         @JsonProperty("resolution") private String resolution;
         @JsonProperty("duration") private Long duration;
         @JsonProperty("fps") private Long fps;
         @JsonProperty("seed") private Long seed;
         @JsonProperty("image") private VideoFile image;
-        @JsonProperty("frame_images") private List<VideoFrameImage> frameImages;
-        @JsonProperty("input_references") private List<VideoFile> inputReferences;
-        @JsonProperty("generate_audio") private Boolean generateAudio;
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("frameImages") private List<VideoFrameImage> frameImages;
+        @JsonProperty("inputReferences") private List<VideoFile> inputReferences;
+        @JsonProperty("generateAudio") private Boolean generateAudio;
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("maxRetries") private Integer maxRetries;
         @JsonProperty("poll") private VideoPollOptions poll;
         @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
@@ -2690,7 +2609,7 @@ public final class MultimodalTypes {
         @JsonProperty("title") private String title = "";
         @JsonProperty("url") private String url = "";
         @JsonProperty("content") private String content = "";
-        @JsonProperty("raw_content") private String rawContent;
+        @JsonProperty("rawContent") private String rawContent;
         @JsonProperty("score") private Double score;
 
         @JsonCreator
@@ -2806,7 +2725,7 @@ public final class MultimodalTypes {
     public static class SearchResult {
         @JsonProperty("results") private List<SearchResultItem> results = new ArrayList<>();
         @JsonProperty("answer") private String answer;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
         @JsonProperty("response") private SearchResponse response;
 
@@ -2874,14 +2793,14 @@ public final class MultimodalTypes {
     /** Options for a search call. */
     public static class SearchCallOptions {
         @JsonProperty("query") private String query = "";
-        @JsonProperty("max_results") private Integer maxResults;
-        @JsonProperty("include_raw_content") private Boolean includeRawContent;
-        @JsonProperty("time_range") private String timeRange;
-        @JsonProperty("include_domains") private List<String> includeDomains = new ArrayList<>();
-        @JsonProperty("exclude_domains") private List<String> excludeDomains = new ArrayList<>();
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("maxResults") private Integer maxResults;
+        @JsonProperty("includeRawContent") private Boolean includeRawContent;
+        @JsonProperty("timeRange") private String timeRange;
+        @JsonProperty("includeDomains") private List<String> includeDomains = new ArrayList<>();
+        @JsonProperty("excludeDomains") private List<String> excludeDomains = new ArrayList<>();
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
-        @JsonProperty("max_retries") private Integer maxRetries;
+        @JsonProperty("maxRetries") private Integer maxRetries;
         @JsonProperty("timeout") private Types.TimeoutConfiguration timeout;
 
         @JsonCreator
@@ -2984,10 +2903,10 @@ public final class MultimodalTypes {
 
     /** Result of a file upload. */
     public static class UploadFileResult {
-        @JsonProperty("provider_reference") private Map<String, String> providerReference = new HashMap<>();
-        @JsonProperty("media_type") private String mediaType;
+        @JsonProperty("providerReference") private Map<String, String> providerReference = new LinkedHashMap<>();
+        @JsonProperty("mediaType") private String mediaType;
         @JsonProperty("filename") private String filename;
-        @JsonProperty("provider_metadata") private JsonNode providerMetadata;
+        @JsonProperty("providerMetadata") private JsonNode providerMetadata;
         @JsonProperty("warnings") private List<JsonNode> warnings = new ArrayList<>();
 
         @JsonCreator
@@ -3015,7 +2934,7 @@ public final class MultimodalTypes {
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
-            private Map<String, String> providerReference = new HashMap<>();
+            private Map<String, String> providerReference = new LinkedHashMap<>();
             private String mediaType;
             private String filename;
             private JsonNode providerMetadata;
@@ -3056,9 +2975,9 @@ public final class MultimodalTypes {
     /** Options for a file upload. */
     public static class UploadFileCallOptions {
         @JsonProperty("data") private JsonNode data = JsonNodeFactory.instance.objectNode();
-        @JsonProperty("media_type") private String mediaType = "";
+        @JsonProperty("mediaType") private String mediaType = "";
         @JsonProperty("filename") private String filename;
-        @JsonProperty("provider_options") private JsonNode providerOptions;
+        @JsonProperty("providerOptions") private JsonNode providerOptions;
         @JsonProperty("headers") private Map<String, String> headers;
 
         @JsonCreator

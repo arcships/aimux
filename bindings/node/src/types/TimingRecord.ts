@@ -4,4 +4,4 @@ export type TimingRecord = {
 /**
  * ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
  */
-latency_ms: number, ttfb_ms: number | null, };
+latencyMs: number, ttfbMs?: number, };

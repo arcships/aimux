@@ -48,10 +48,10 @@ fn provider_decision_factory_keeps_model_alive_after_provider_drop() {
     assert_eq!(
         json,
         serde_json::json!({
-            "specification_version": "v4",
+            "specificationVersion": "v4",
             "provider": "openai",
-            "model_id": "gpt-6-luna",
-            "supported_question_types": ["choice", "score", "boolean"]
+            "modelId": "gpt-6-luna",
+            "supportedQuestionTypes": ["choice", "score", "boolean"]
         })
     );
     // SAFETY: capabilities was allocated by aimux_decision_capabilities above.
@@ -134,7 +134,7 @@ fn provider_handle_new_with_config_json() {
     let e = aimux_provider_handle_new(
         c("deepseek").as_ptr(),
         c("sk-test-fake").as_ptr(),
-        c(r#"{"base_url":"https://example.com/v1"}"#).as_ptr(),
+        c(r#"{"baseUrl":"https://example.com/v1"}"#).as_ptr(),
         &mut h,
     );
     aimux_drop_handle(expect_handle(e, h, "provider_handle_new(deepseek, config)"));

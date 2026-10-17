@@ -11,10 +11,10 @@ import (
 
 // Code is the machine-readable Aimux error code. Values match
 // aimux-ffi aimux_error_code_t (1..3, 5..20; 4 is retired). Retry is 14;
-// tool-call errors occupy 15..17; a missing API key / provider setting are
-// 19 / 20; NoOutputGenerated is 18. A code outside that set is a header/library
-// mismatch and expectAimuxError
-// panics rather than inventing an "unknown" variant. Recording failures are
+// tool-call errors occupy 15..17; NoOutputGenerated is 18; a missing API key /
+// provider setting are 19 / 20. A code outside that set is a header/library
+// mismatch and expectAimuxError panics rather than inventing an "unknown"
+// variant. Recording failures are
 // a different type: see RecordingError.
 //
 // Every HTTP-shaped failure arrives as CodeAPICall, classified by Status
@@ -165,9 +165,10 @@ type Error struct {
 	// Provider request-id evidence, when present, is a header here — there
 	// is no separate request-id field. CodeAPICall only.
 	ResponseHeaders map[string]string
-	// Data is the provider's parsed error data, decoded from JSON.
-	// CodeAPICall only.
-	Data       any
+	// Data is the provider's parsed error data as raw JSON, the AI SDK's
+	// `APICallError.data` (`unknown`): nil when the error carries none, and
+	// the JSON `null` when the data was null. CodeAPICall only.
+	Data       json.RawMessage
 	ModelID    string // CodeNoSuchModel: the model id asked for
 	ModelType  string // CodeNoSuchModel: the model type it was asked for as
 	ProviderID string // CodeNoSuchProvider: the provider id asked for

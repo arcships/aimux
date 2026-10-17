@@ -20,14 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
  * the Kotlin binding's StructuredE2ETest.kt).
  *
  * <p>These spin up a local mock HTTP server speaking the OpenAI
- * Responses wire format, point an OpenAI {@code Model} at it via the
- * base-url constructor, and assert that the binding correctly:
+ * chat-completions wire format, point an OpenAI-compatible {@code Model} at it
+ * through the provider registry, and assert that the binding correctly:
  * <ol>
- *   <li>parses tool_calls out of a provider response,</li>
+ *   <li>parses toolCalls out of a provider response,</li>
  *   <li>forwards multi-role messages,</li>
- *   <li>forwards {@code tool_choice},</li>
+ *   <li>forwards {@code toolChoice},</li>
  *   <li>parses tool-call stream parts from an SSE stream,</li>
- *   <li>runs a full tool-call round-trip (tool_call + tool_result + final answer).</li>
+ *   <li>runs a full tool-call round-trip (tool-call + tool-result + final answer).</li>
  * </ol>
  *
  * No real network access is performed — every request hits 127.0.0.1.
@@ -50,22 +50,107 @@ class StructuredE2ETest {
 
     /** Plain OpenAI text response (no tool calls). */
     private static String plainOpenAiResponse() {
-        return OpenAiResponsesFixtures.text("Rust is a systems programming language.", 10, 8);
+        return new JSONObject()
+            .put("id", "chatcmpl-test")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject()
+                    .put("message", new JSONObject()
+                        .put("role", "assistant")
+                        .put("content", "Rust is a systems programming language."))
+                    .put("finish_reason", "stop")))
+            .put("usage", new JSONObject()
+                .put("prompt_tokens", 10)
+                .put("completion_tokens", 8)
+                .put("total_tokens", 18))
+            .toString();
     }
 
     /** OpenAI response that requests a tool call (get_weather). */
     private static String toolCallOpenAiResponse() {
-        return OpenAiResponsesFixtures.toolCall();
+        return new JSONObject()
+            .put("id", "chatcmpl-tc")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject()
+                    .put("message", new JSONObject()
+                        .put("role", "assistant")
+                        .put("content", JSONObject.NULL)
+                        .put("tool_calls", new JSONArray().put(
+                            new JSONObject()
+                                .put("id", "call_abc")
+                                .put("type", "function")
+                                .put("function", new JSONObject()
+                                    .put("name", "get_weather")
+                                    .put("arguments", "{\"location\":\"Tokyo\"}")))))
+                    .put("finish_reason", "tool_calls")))
+            .put("usage", new JSONObject()
+                .put("prompt_tokens", 20)
+                .put("completion_tokens", 10)
+                .put("total_tokens", 30))
+            .toString();
     }
 
     /** A plain text response used as the second leg of the tool-call round-trip. */
     private static String finalTextResponse() {
-        return OpenAiResponsesFixtures.text("The weather in Tokyo is sunny.", 30, 8);
+        return new JSONObject()
+            .put("id", "chatcmpl-2")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject()
+                    .put("message", new JSONObject()
+                        .put("role", "assistant")
+                        .put("content", "The weather in Tokyo is sunny."))
+                    .put("finish_reason", "stop")))
+            .put("usage", new JSONObject()
+                .put("prompt_tokens", 30)
+                .put("completion_tokens", 8)
+                .put("total_tokens", 38))
+            .toString();
     }
 
-    /** OpenAI Responses SSE: item added -> argument deltas -> item done -> completed. */
+    /** OpenAI SSE stream: tool_calls name delta -> arguments delta -> finish -> [DONE]. */
     private static String toolCallSseResponse() {
-        return OpenAiResponsesFixtures.toolCallStream();
+        StringBuilder sb = new StringBuilder();
+        sb.append("data: ").append(new JSONObject()
+            .put("id", "1")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject().put("delta", new JSONObject()
+                    .put("role", "assistant")
+                    .put("tool_calls", new JSONArray().put(
+                        new JSONObject()
+                            .put("index", 0)
+                            .put("id", "call_xyz")
+                            .put("type", "function")
+                            .put("function", new JSONObject()
+                                .put("name", "get_weather")
+                                .put("arguments", ""))))))))
+            .append("\n\n");
+        sb.append("data: ").append(new JSONObject()
+            .put("id", "1")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject().put("delta", new JSONObject()
+                    .put("tool_calls", new JSONArray().put(
+                        new JSONObject()
+                            .put("index", 0)
+                            .put("function", new JSONObject()
+                                .put("arguments", "{\"location\":\"Tokyo\"}"))))))))
+            .append("\n\n");
+        sb.append("data: ").append(new JSONObject()
+            .put("id", "1")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject().put("delta", new JSONObject())
+                    .put("finish_reason", "tool_calls")))
+            .put("usage", new JSONObject()
+                .put("prompt_tokens", 5)
+                .put("completion_tokens", 2)
+                .put("total_tokens", 7)))
+            .append("\n\n");
+        sb.append("data: [DONE]\n\n");
+        return sb.toString();
     }
 
     /** A {@code tools} option describing a single get_weather function tool. */
@@ -75,12 +160,12 @@ class StructuredE2ETest {
             new JSONObject()
                 .put("type", "function")
                 .put("name", "get_weather")
-                .put("input_schema", new JSONObject()
+                .put("inputSchema", new JSONObject()
                     .put("type", "object")
                     .put("properties", new JSONObject()
                         .put("location", new JSONObject().put("type", "string"))))));
         if (includeToolChoice != null) {
-            opts.put("tool_choice", includeToolChoice);
+            opts.put("toolChoice", includeToolChoice);
         }
         return opts.toString();
     }
@@ -95,23 +180,23 @@ class StructuredE2ETest {
     void generateTextParsesToolCalls() {
         server.setResponseBody(toolCallOpenAiResponse());
 
-        try (Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+        try (Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             String resultJson = model.generateText("\"What is the weather in Tokyo?\"", weatherToolsOpts());
             JSONObject result = new JSONObject(resultJson);
 
-            // tool_calls[0].tool_name == "get_weather"
-            JSONArray toolCalls = result.getJSONArray("tool_calls");
+            // toolCalls[0].toolName == "get_weather"
+            JSONArray toolCalls = result.getJSONArray("toolCalls");
             assertThat(toolCalls.length()).isGreaterThan(0);
             JSONObject firstCall = toolCalls.getJSONObject(0);
-            assertThat(firstCall.getString("tool_name")).isEqualTo("get_weather");
-            assertThat(firstCall.getString("tool_call_id")).isEqualTo("call_abc");
+            assertThat(firstCall.getString("toolName")).isEqualTo("get_weather");
+            assertThat(firstCall.getString("toolCallId")).isEqualTo("call_abc");
             assertThat(firstCall.getJSONObject("input").getString("location")).isEqualTo("Tokyo");
 
-            // content contains a "ToolCall" variant.
+            // content contains a "tool-call" part.
             JSONArray content = result.getJSONArray("content");
             boolean hasToolCallVariant = false;
             for (int i = 0; i < content.length(); i++) {
-                if (content.getJSONObject(i).has("ToolCall")) {
+                if ("tool-call".equals(content.getJSONObject(i).optString("type"))) {
                     hasToolCallVariant = true;
                     break;
                 }
@@ -130,7 +215,7 @@ class StructuredE2ETest {
             .put(new JSONObject().put("role", "system").put("content", "You are a helpful assistant."))
             .put(new JSONObject().put("role", "user").put("content", "What is Rust?"));
 
-        try (Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+        try (Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             String resultJson = model.generateText(prompt.toString());
             JSONObject result = new JSONObject(resultJson);
             assertThat(result.getString("text"))
@@ -139,7 +224,7 @@ class StructuredE2ETest {
             // The provider received both messages (system + user).
             JSONObject reqBody = new JSONObject(server.lastRequestBody());
             assertThat(reqBody.getString("model")).isEqualTo("gpt-4o");
-            JSONArray messages = reqBody.getJSONArray("input");
+            JSONArray messages = reqBody.getJSONArray("messages");
             assertThat(messages.length()).isEqualTo(2);
             assertThat(messages.getJSONObject(0).getString("role")).isEqualTo("system");
             assertThat(messages.getJSONObject(1).getString("role")).isEqualTo("user");
@@ -150,7 +235,7 @@ class StructuredE2ETest {
     void toolChoiceReachesProvider() {
         server.setResponseBody(toolCallOpenAiResponse());
 
-        try (Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+        try (Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             model.generateText("\"What is the weather in Tokyo?\"", weatherToolsOpts("required"));
 
             JSONObject reqBody = new JSONObject(server.lastRequestBody());
@@ -162,11 +247,11 @@ class StructuredE2ETest {
 
     @Test
     void streamTextParsesToolCallStreamParts() {
-        // Responses SSE: function-call item -> argument deltas -> completed.
+        // SSE: tool_calls delta (name) -> arguments delta -> finish_reason.
         server.setContentType("text/event-stream");
         server.setResponseBody(toolCallSseResponse());
 
-        try (Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+        try (Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             // Run the blocking FFI stream call on a separate thread so the JNA
             // callbacks (which attach to the calling thread) don't deadlock with
             // tokio's block_on. The main thread collects parts via a queue.
@@ -201,24 +286,24 @@ class StructuredE2ETest {
             }
 
             assertThat(collected).isNotEmpty();
-            // Stream must surface tool-call activity: either a complete ToolCall
-            // part or ToolInputDelta deltas (or both).
+            // Stream must surface tool-call activity: either a complete tool-call
+            // part or tool-input-delta deltas (or both).
             boolean hasToolPart = false;
             for (String part : collected) {
-                if (part.contains("\"ToolCall\"") || part.contains("\"ToolInputDelta\"")) {
+                if (part.contains("\"type\":\"tool-call\"") || part.contains("\"type\":\"tool-input-delta\"")) {
                     hasToolPart = true;
                     break;
                 }
             }
             assertThat(hasToolPart)
-                .as("expected a ToolCall or ToolInputDelta stream part; got: %s", collected)
+                .as("expected a tool-call or tool-input-delta stream part; got: %s", collected)
                 .isTrue();
 
             // The finish part should also be present, carrying the tool-calls
             // finish reason.
             boolean hasFinish = false;
             for (String part : collected) {
-                if (part.contains("\"Finish\"")) {
+                if (part.contains("\"type\":\"finish\"")) {
                     hasFinish = true;
                     break;
                 }
@@ -235,58 +320,60 @@ class StructuredE2ETest {
         // second (FIFO queue).
         server.setResponses(toolCallOpenAiResponse(), finalTextResponse());
 
-        try (Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o", server.baseUrl())) {
+        try (Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o", server.chatConfig())) {
             // 1st call: provider asks to call get_weather.
             String firstResultJson =
                 model.generateText("\"What's the weather in Tokyo?\"", weatherToolsOpts());
             JSONObject firstResult = new JSONObject(firstResultJson);
-            JSONArray toolCalls = firstResult.getJSONArray("tool_calls");
+            JSONArray toolCalls = firstResult.getJSONArray("toolCalls");
             assertThat(toolCalls.length()).isGreaterThan(0);
             JSONObject firstCall = toolCalls.getJSONObject(0);
-            assertThat(firstCall.getString("tool_name")).isEqualTo("get_weather");
-            assertThat(firstCall.getString("tool_call_id")).isEqualTo("call_abc");
+            assertThat(firstCall.getString("toolName")).isEqualTo("get_weather");
+            assertThat(firstCall.getString("toolCallId")).isEqualTo("call_abc");
             assertThat(firstCall.getJSONObject("input").getString("location"))
                 .isEqualTo("Tokyo");
 
             // 2nd call: echo the full conversation back, including the
-            // assistant's tool_call and the ToolResult we synthesised.
-            // Input uses the engine's ContentPart variants (tool_call /
-            // tool_result); the engine converts these to the OpenAI wire
-            // format on the outbound request. NOTE: the tool_result part uses
-            // the `result` field (never `output`) — the engine's
-            // ContentPart::ToolResult requires it (aimux-core/content.rs).
+            // assistant's tool-call and the tool-result we synthesised.
+            // Input uses the AI SDK ContentPart variants (tool-call /
+            // tool-result); the engine converts these to the OpenAI wire
+            // format on the outbound request. The tool-result part carries
+            // `output` (a ToolResultOutput union), never `result`.
             JSONArray messages = new JSONArray()
                 .put(new JSONObject().put("role", "user").put("content", "What's the weather in Tokyo?"))
                 .put(new JSONObject().put("role", "assistant")
                     .put("content", new JSONArray().put(
                         new JSONObject()
-                            .put("type", "tool_call")
-                            .put("tool_call_id", "call_abc")
-                            .put("tool_name", "get_weather")
+                            .put("type", "tool-call")
+                            .put("toolCallId", "call_abc")
+                            .put("toolName", "get_weather")
                             .put("input", new JSONObject().put("location", "Tokyo")))))
                 .put(new JSONObject().put("role", "tool")
                     .put("content", new JSONArray().put(
                         new JSONObject()
-                            .put("type", "tool_result")
-                            .put("tool_call_id", "call_abc")
-                            .put("result", new JSONObject()
-                                .put("temperature", 22)
-                                .put("condition", "sunny")))));
+                            .put("type", "tool-result")
+                            .put("toolCallId", "call_abc")
+                            .put("toolName", "get_weather")
+                            .put("output", new JSONObject()
+                                .put("type", "json")
+                                .put("value", new JSONObject()
+                                    .put("temperature", 22)
+                                    .put("condition", "sunny"))))));
 
             String secondResultJson = model.generateText(messages.toString(), weatherToolsOpts());
             JSONObject secondResult = new JSONObject(secondResultJson);
             assertThat(secondResult.getString("text"))
                 .isEqualTo("The weather in Tokyo is sunny.");
 
-            // The provider received 3 input items; the last is the function-call output,
-            // carrying the matching call_id.
+            // The provider received 3 messages; the last is the tool result,
+            // carrying the matching tool_call_id.
             JSONObject reqBody = new JSONObject(server.lastRequestBody());
-            JSONArray reqMessages = reqBody.getJSONArray("input");
+            JSONArray reqMessages = reqBody.getJSONArray("messages");
             assertThat(reqMessages.length()).isEqualTo(3);
             JSONObject lastMsg = reqMessages.getJSONObject(2);
-            assertThat(lastMsg.getString("type")).isEqualTo("function_call_output");
-            assertThat(lastMsg.getString("call_id")).isEqualTo("call_abc");
-            JSONObject output = new JSONObject(lastMsg.getString("output"));
+            assertThat(lastMsg.getString("role")).isEqualTo("tool");
+            assertThat(lastMsg.getString("tool_call_id")).isEqualTo("call_abc");
+            JSONObject output = new JSONObject(lastMsg.getString("content"));
             assertThat(output.getInt("temperature")).isEqualTo(22);
             assertThat(output.getString("condition")).isEqualTo("sunny");
         }

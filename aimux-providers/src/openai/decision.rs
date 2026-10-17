@@ -2,9 +2,10 @@
 //! package decides through its Responses model instead).
 //!
 //! The V4 call options carry what the API takes beyond them in
-//! `provider_options.openai`: `images` (inline images before the state),
-//! `choice_values` (native choice values per question and option label; a
-//! label is its own value otherwise) and `safety_identifier`.
+//! `providerOptions.openai`, camelCase as the OpenAI language models' options
+//! are: `images` (inline images before the state), `choiceValues` (native
+//! choice values per question and option label; a label is its own value
+//! otherwise) and `safetyIdentifier` (sent as `safety_identifier`).
 use std::collections::{HashMap, HashSet};
 
 use aimux_core::AiMuxError;
@@ -59,7 +60,7 @@ enum NativeValue {
 }
 
 #[derive(Default, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderOptions {
     safety_identifier: Option<String>,
     #[serde(default)]
@@ -164,12 +165,12 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
     for (id, values) in &provider_options.choice_values {
         let Some(DecisionQuestion::Choice { criteria, .. }) = options.questions.get(id) else {
             return Err(AiMuxError::InvalidArgument(format!(
-                "OpenAI choice_values name {id:?}, which is not a choice question"
+                "OpenAI choiceValues name {id:?}, which is not a choice question"
             )));
         };
         if let Some(label) = values.keys().find(|label| !criteria.contains_key(*label)) {
             return Err(AiMuxError::InvalidArgument(format!(
-                "OpenAI choice_values for {id:?} name an unknown option {label:?}"
+                "OpenAI choiceValues for {id:?} name an unknown option {label:?}"
             )));
         }
     }
@@ -252,7 +253,7 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
     if let Some(identifier) = provider_options.safety_identifier {
         if identifier.chars().count() > 128 {
             return Err(AiMuxError::InvalidArgument(
-                "safety_identifier exceeds 128 characters".into(),
+                "safetyIdentifier exceeds 128 characters".into(),
             ));
         }
         body["safety_identifier"] = json!(identifier);
@@ -363,7 +364,7 @@ fn convert_response(
                     .provider_options
                     .as_ref()
                     .and_then(|p| p.get("openai"))
-                    .and_then(|openai| openai.get("choice_values"))
+                    .and_then(|openai| openai.get("choiceValues"))
                     .and_then(|values| values.get(&wire.name))
                     && typed.get(&selected).is_some()
                 {

@@ -14,16 +14,24 @@ import java.nio.charset.StandardCharsets
 // ─────────────────────────────────────────────────────────────────────────────
 // Structured end-to-end tests for the Kotlin/JVM binding.
 //
-// These spin up a local mock HTTP server speaking the OpenAI Responses
-// wire format, point an OpenAI `Model` at it via the `base_url` constructor,
+// These spin up a local mock HTTP server speaking the OpenAI chat-completions
+// wire format, point an OpenAI `Model` at it via the `baseUrl` constructor,
 // and assert that the binding correctly:
-//   1. parses tool_calls out of a provider response,
+//   1. parses toolCalls out of a provider response,
 //   2. forwards multi-role messages,
-//   3. forwards `tool_choice`,
+//   3. forwards `toolChoice`,
 //   4. parses tool-call stream parts from an SSE stream.
 //
 // No real network access is performed — every request hits 127.0.0.1.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A chat-completions model pointed at [baseUrl]. `Model.openai` speaks the
+ * Responses API, so these tests reach the OpenAI-compatible chat wire through
+ * a registry provider instead.
+ */
+internal fun chatCompletionsModel(baseUrl: String): Model =
+    Model.provider("deepseek", "sk-test-fake-key", "gpt-4o", """{"baseUrl":"$baseUrl"}""")
 
 /// A tiny mock HTTP server that records the last request body and replays a
 /// preset response. Listens on a random loopback port.
@@ -128,10 +136,79 @@ class StructuredE2ETest {
 
     /** Plain OpenAI text response (no tool calls). */
     private val plainOpenAiResponse: String =
-        OpenAiResponsesFixtures.text("Rust is a systems programming language.")
+        JSONObject().apply {
+            put("id", "chatcmpl-test")
+            put("model", "gpt-4o")
+            put(
+                "choices",
+                JSONArray().put(
+                    JSONObject().apply {
+                        put(
+                            "message",
+                            JSONObject().apply {
+                                put("role", "assistant")
+                                put("content", "Rust is a systems programming language.")
+                            },
+                        )
+                        put("finish_reason", "stop")
+                    },
+                ),
+            )
+            put(
+                "usage",
+                JSONObject().apply {
+                    put("prompt_tokens", 10)
+                    put("completion_tokens", 8)
+                    put("total_tokens", 18)
+                },
+            )
+        }.toString()
 
     /** OpenAI response that requests a tool call (get_weather). */
-    private val toolCallOpenAiResponse: String = OpenAiResponsesFixtures.toolCall()
+    private val toolCallOpenAiResponse: String =
+        JSONObject().apply {
+            put("id", "chatcmpl-tc")
+            put("model", "gpt-4o")
+            put(
+                "choices",
+                JSONArray().put(
+                    JSONObject().apply {
+                        put(
+                            "message",
+                            JSONObject().apply {
+                                put("role", "assistant")
+                                put("content", JSONObject.NULL)
+                                put(
+                                    "tool_calls",
+                                    JSONArray().put(
+                                        JSONObject().apply {
+                                            put("id", "call_abc")
+                                            put("type", "function")
+                                            put(
+                                                "function",
+                                                JSONObject().apply {
+                                                    put("name", "get_weather")
+                                                    put("arguments", "{\"location\":\"Tokyo\"}")
+                                                },
+                                            )
+                                        },
+                                    ),
+                                )
+                            },
+                        )
+                        put("finish_reason", "tool_calls")
+                    },
+                ),
+            )
+            put(
+                "usage",
+                JSONObject().apply {
+                    put("prompt_tokens", 20)
+                    put("completion_tokens", 10)
+                    put("total_tokens", 30)
+                },
+            )
+        }.toString()
 
     /** A `tools` option describing a single get_weather function tool. */
     private fun weatherToolsOpts(includeToolChoice: String? = null): String =
@@ -143,7 +220,7 @@ class StructuredE2ETest {
                         put("type", "function")
                         put("name", "get_weather")
                         put(
-                            "input_schema",
+                            "inputSchema",
                             JSONObject().apply {
                                 put("type", "object")
                                 put(
@@ -158,7 +235,7 @@ class StructuredE2ETest {
                 ),
             )
             if (includeToolChoice != null) {
-                put("tool_choice", includeToolChoice)
+                put("toolChoice", includeToolChoice)
             }
         }.toString()
 
@@ -168,22 +245,22 @@ class StructuredE2ETest {
     fun `generateText parses tool_calls`() {
         server.responseBody = toolCallOpenAiResponse
 
-        Model.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        chatCompletionsModel(server.baseUrl).use { model ->
             val resultJson = model.generateText("\"What is the weather in Tokyo?\"", weatherToolsOpts())
             val result = JSONObject(resultJson)
 
-            // tool_calls[0].tool_name == "get_weather"
-            val toolCalls = result.getJSONArray("tool_calls")
+            // toolCalls[0].toolName == "get_weather"
+            val toolCalls = result.getJSONArray("toolCalls")
             assertThat(toolCalls.length()).isGreaterThan(0)
             val firstCall = toolCalls.getJSONObject(0)
-            assertThat(firstCall.getString("tool_name")).isEqualTo("get_weather")
-            assertThat(firstCall.getString("tool_call_id")).isEqualTo("call_abc")
+            assertThat(firstCall.getString("toolName")).isEqualTo("get_weather")
+            assertThat(firstCall.getString("toolCallId")).isEqualTo("call_abc")
             assertThat(firstCall.getJSONObject("input").getString("location")).isEqualTo("Tokyo")
 
-            // content contains a "ToolCall" variant.
+            // content contains a `tool-call` item.
             val content = result.getJSONArray("content")
             val hasToolCallVariant = (0 until content.length()).any {
-                content.getJSONObject(it).has("ToolCall")
+                content.getJSONObject(it).getString("type") == "tool-call"
             }
             assertThat(hasToolCallVariant).isTrue()
         }
@@ -206,7 +283,7 @@ class StructuredE2ETest {
             })
         }.toString()
 
-        Model.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        chatCompletionsModel(server.baseUrl).use { model ->
             val resultJson = model.generateText(promptJson)
             val result = JSONObject(resultJson)
             assertThat(result.getString("text"))
@@ -215,7 +292,7 @@ class StructuredE2ETest {
             // The provider received both messages (system + user).
             val reqBody = JSONObject(server.lastRequestBody)
             assertThat(reqBody.getString("model")).isEqualTo("gpt-4o")
-            val messages = reqBody.getJSONArray("input")
+            val messages = reqBody.getJSONArray("messages")
             assertThat(messages.length()).isEqualTo(2)
             assertThat(messages.getJSONObject(0).getString("role")).isEqualTo("system")
             assertThat(messages.getJSONObject(1).getString("role")).isEqualTo("user")
@@ -226,7 +303,7 @@ class StructuredE2ETest {
     fun `tool_choice reaches provider`() {
         server.responseBody = toolCallOpenAiResponse
 
-        Model.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        chatCompletionsModel(server.baseUrl).use { model ->
             model.generateText("\"What is the weather in Tokyo?\"", weatherToolsOpts(includeToolChoice = "required"))
 
             val reqBody = JSONObject(server.lastRequestBody)
@@ -238,11 +315,110 @@ class StructuredE2ETest {
 
     @Test
     fun `streamText parses tool-call stream parts`() {
-        // Responses SSE: function-call item -> argument deltas -> completed.
+        // SSE: tool_calls delta (name) -> arguments delta -> finish_reason.
         server.contentType = "text/event-stream"
-        server.responseBody = OpenAiResponsesFixtures.toolCallStream()
+        server.responseBody = buildString {
+            append("data: ")
+            append(
+                JSONObject().apply {
+                    put("id", "1")
+                    put("model", "gpt-4o")
+                    put(
+                        "choices",
+                        JSONArray().put(
+                            JSONObject().apply {
+                                put(
+                                    "delta",
+                                    JSONObject().apply {
+                                        put("role", "assistant")
+                                        put(
+                                            "tool_calls",
+                                            JSONArray().put(
+                                                JSONObject().apply {
+                                                    put("index", 0)
+                                                    put("id", "call_xyz")
+                                                    put("type", "function")
+                                                    put(
+                                                        "function",
+                                                        JSONObject().apply {
+                                                            put("name", "get_weather")
+                                                            put("arguments", "")
+                                                        },
+                                                    )
+                                                },
+                                            ),
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }.toString(),
+            )
+            append("\n\n")
+            append("data: ")
+            append(
+                JSONObject().apply {
+                    put("id", "1")
+                    put("model", "gpt-4o")
+                    put(
+                        "choices",
+                        JSONArray().put(
+                            JSONObject().apply {
+                                put(
+                                    "delta",
+                                    JSONObject().apply {
+                                        put(
+                                            "tool_calls",
+                                            JSONArray().put(
+                                                JSONObject().apply {
+                                                    put("index", 0)
+                                                    put(
+                                                        "function",
+                                                        JSONObject().apply {
+                                                            put("arguments", "{\"location\":\"Tokyo\"}")
+                                                        },
+                                                    )
+                                                },
+                                            ),
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }.toString(),
+            )
+            append("\n\n")
+            append("data: ")
+            append(
+                JSONObject().apply {
+                    put("id", "1")
+                    put("model", "gpt-4o")
+                    put(
+                        "choices",
+                        JSONArray().put(
+                            JSONObject().apply {
+                                put("delta", JSONObject())
+                                put("finish_reason", "tool_calls")
+                            },
+                        ),
+                    )
+                    put(
+                        "usage",
+                        JSONObject().apply {
+                            put("prompt_tokens", 5)
+                            put("completion_tokens", 2)
+                            put("total_tokens", 7)
+                        },
+                    )
+                }.toString(),
+            )
+            append("\n\n")
+            append("data: [DONE]\n\n")
+        }
 
-        Model.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        chatCompletionsModel(server.baseUrl).use { model ->
             // Run the blocking FFI stream call on a separate thread so the JNA
             // callbacks (which attach to the calling thread) don't deadlock with
             // tokio's block_on. The main thread collects parts via a queue.
@@ -267,18 +443,18 @@ class StructuredE2ETest {
             streamThread.join(5000)
 
             assertThat(collected).isNotEmpty()
-            // Stream must surface tool-call activity: either a complete ToolCall
-            // part or ToolInputDelta deltas (or both).
+            // Stream must surface tool-call activity: either a complete tool-call
+            // part or tool-input-delta deltas (or both).
             val hasToolPart = collected.any {
-                it.contains("\"ToolCall\"") || it.contains("\"ToolInputDelta\"")
+                it.contains("\"type\":\"tool-call\"") || it.contains("\"type\":\"tool-input-delta\"")
             }
             assertThat(hasToolPart)
-                .`as`("expected a ToolCall or ToolInputDelta stream part; got: $collected")
+                .`as`("expected a tool-call or tool-input-delta stream part; got: $collected")
                 .isTrue()
 
             // The finish part should also be present, carrying the tool-calls
             // finish reason.
-            val hasFinish = collected.any { it.contains("\"Finish\"") }
+            val hasFinish = collected.any { it.contains("\"type\":\"finish\"") }
             assertThat(hasFinish).isTrue()
         }
     }
@@ -289,28 +465,53 @@ class StructuredE2ETest {
         // back-filled between them. The mock server returns a tool-call
         // response for the first request, then a plain text response for the
         // second (FIFO queue).
-        val finalTextResponse =
-            OpenAiResponsesFixtures.text("The weather in Tokyo is sunny.", 30, 8)
+        val finalTextResponse = JSONObject().apply {
+            put("id", "chatcmpl-2")
+            put("model", "gpt-4o")
+            put(
+                "choices",
+                JSONArray().put(
+                    JSONObject().apply {
+                        put(
+                            "message",
+                            JSONObject().apply {
+                                put("role", "assistant")
+                                put("content", "The weather in Tokyo is sunny.")
+                            },
+                        )
+                        put("finish_reason", "stop")
+                    },
+                ),
+            )
+            put(
+                "usage",
+                JSONObject().apply {
+                    put("prompt_tokens", 30)
+                    put("completion_tokens", 8)
+                    put("total_tokens", 38)
+                },
+            )
+        }.toString()
 
         server.setResponses(toolCallOpenAiResponse, finalTextResponse)
 
-        Model.openai("sk-test-fake-key", "gpt-4o", server.baseUrl).use { model ->
+        chatCompletionsModel(server.baseUrl).use { model ->
             // 1st call: provider asks to call get_weather.
             val firstResultJson =
                 model.generateText("\"What's the weather in Tokyo?\"", weatherToolsOpts())
             val firstResult = JSONObject(firstResultJson)
-            val toolCalls = firstResult.getJSONArray("tool_calls")
+            val toolCalls = firstResult.getJSONArray("toolCalls")
             assertThat(toolCalls.length()).isGreaterThan(0)
             val firstCall = toolCalls.getJSONObject(0)
-            assertThat(firstCall.getString("tool_name")).isEqualTo("get_weather")
-            assertThat(firstCall.getString("tool_call_id")).isEqualTo("call_abc")
+            assertThat(firstCall.getString("toolName")).isEqualTo("get_weather")
+            assertThat(firstCall.getString("toolCallId")).isEqualTo("call_abc")
             assertThat(firstCall.getJSONObject("input").getString("location"))
                 .isEqualTo("Tokyo")
 
             // 2nd call: echo the full conversation back, including the
-            // assistant's tool_call and the ToolResult we synthesised.
-            // Input uses the engine's ContentPart variants (tool_call /
-            // tool_result); the engine converts these to the OpenAI wire
+            // assistant's tool call and the tool result we synthesised.
+            // Input uses the engine's ContentPart variants (tool-call /
+            // tool-result); the engine converts these to the OpenAI wire
             // format on the outbound request.
             val messages = JSONArray().apply {
                 put(JSONObject().apply {
@@ -323,9 +524,9 @@ class StructuredE2ETest {
                         "content",
                         JSONArray().put(
                             JSONObject().apply {
-                                put("type", "tool_call")
-                                put("tool_call_id", "call_abc")
-                                put("tool_name", "get_weather")
+                                put("type", "tool-call")
+                                put("toolCallId", "call_abc")
+                                put("toolName", "get_weather")
                                 put("input", JSONObject().put("location", "Tokyo"))
                             },
                         ),
@@ -337,11 +538,15 @@ class StructuredE2ETest {
                         "content",
                         JSONArray().put(
                             JSONObject().apply {
-                                put("type", "tool_result")
-                                put("tool_call_id", "call_abc")
+                                put("type", "tool-result")
+                                put("toolCallId", "call_abc")
+                                put("toolName", "get_weather")
                                 put(
-                                    "result",
-                                    JSONObject().put("temperature", 22).put("condition", "sunny"),
+                                    "output",
+                                    JSONObject().put("type", "json").put(
+                                        "value",
+                                        JSONObject().put("temperature", 22).put("condition", "sunny"),
+                                    ),
                                 )
                             },
                         ),
@@ -354,15 +559,15 @@ class StructuredE2ETest {
             assertThat(secondResult.getString("text"))
                 .isEqualTo("The weather in Tokyo is sunny.")
 
-            // The provider received 3 input items; the last is the function-call output,
-            // carrying the matching call_id.
+            // The provider received 3 messages; the last is the tool result,
+            // carrying the matching tool_call_id.
             val reqBody = JSONObject(server.lastRequestBody)
-            val reqMessages = reqBody.getJSONArray("input")
+            val reqMessages = reqBody.getJSONArray("messages")
             assertThat(reqMessages.length()).isEqualTo(3)
             val lastMsg = reqMessages.getJSONObject(2)
-            assertThat(lastMsg.getString("type")).isEqualTo("function_call_output")
-            assertThat(lastMsg.getString("call_id")).isEqualTo("call_abc")
-            val output = JSONObject(lastMsg.getString("output"))
+            assertThat(lastMsg.getString("role")).isEqualTo("tool")
+            assertThat(lastMsg.getString("tool_call_id")).isEqualTo("call_abc")
+            val output = JSONObject(lastMsg.getString("content"))
             assertThat(output.getInt("temperature")).isEqualTo(22)
             assertThat(output.getString("condition")).isEqualTo("sunny")
         }

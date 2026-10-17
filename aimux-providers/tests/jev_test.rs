@@ -118,11 +118,12 @@ async fn recorded_official_live_responses_replay_through_core_validation() {
         let result = decide(model(&server).as_ref(), request).await.unwrap();
         let result = serde_json::to_value(result).unwrap();
         let expected = recording.outcome.decision_result.unwrap();
-        for field in ["answers", "rounding", "usage", "provider_metadata"] {
+        for field in ["answers", "rounding", "usage", "providerMetadata"] {
+            assert!(expected.get(field).is_some(), "{field}");
             assert_eq!(result[field], expected[field]);
         }
         assert_eq!(result["response"]["body"], expected["response"]["body"]);
-        assert_eq!(result["response"]["model_id"], "jev-1.13.0");
+        assert_eq!(result["response"]["modelId"], "jev-1.13.0");
     }
 }
 
@@ -232,7 +233,7 @@ async fn official_contract_round_trip_preserves_types_and_raw_metadata() {
     assert_eq!(
         Value::Object(result.provider_metadata.as_ref().unwrap()["jev"].clone()),
         json!({
-            "probability_source": "native",
+            "probabilitySource": "native",
             "answers": {"department": {"confidence": 0.78}, "frustration": {"confidence": 1.0}}
         })
     );

@@ -1,18 +1,16 @@
 // Structured end-to-end tests for the Go binding.
 //
-// These spin up a local mock HTTP server speaking the OpenAI Responses API
-// wire format, point an OpenAI Model at it via the base_url constructor,
+// These spin up a local mock HTTP server speaking the OpenAI chat-completions
+// wire format, point a chat-completions Model at it via a base URL,
 // and assert that the binding correctly:
-//   1. parses text from a provider response,
-//   2. parses tool_calls out of a provider response,
-//   3. forwards multi-role messages,
-//   4. forwards tool_choice,
-//   5. parses tool-call stream parts from an SSE stream,
-//   6. yields text-delta stream parts.
+//  1. parses text from a provider response,
+//  2. parses tool_calls out of a provider response,
+//  3. forwards multi-role messages,
+//  4. forwards tool_choice,
+//  5. parses tool-call stream parts from an SSE stream,
+//  6. yields text-delta stream parts.
 //
 // No real network access is performed — every request hits 127.0.0.1.
-// Mirrors the Kotlin StructuredE2ETest.kt.
-
 package aimux
 
 import (
@@ -23,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -39,7 +38,6 @@ type mockProviderServer struct {
 	mu              sync.Mutex
 	lastRequestBody string
 	lastMethod      string
-	lastPath        string
 
 	status       int
 	contentType  string
@@ -65,7 +63,6 @@ func (s *mockProviderServer) handle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.lastRequestBody = string(body)
 	s.lastMethod = r.Method
-	s.lastPath = r.URL.Path
 	status := s.status
 	ct := s.contentType
 	var resp string
@@ -105,12 +102,6 @@ func (s *mockProviderServer) LastRequestBody() string {
 	return s.lastRequestBody
 }
 
-func (s *mockProviderServer) LastRequestPath() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lastPath
-}
-
 // SetResponse sets the response body and content type (thread-safe).
 func (s *mockProviderServer) SetResponse(body string) {
 	s.mu.Lock()
@@ -136,9 +127,8 @@ func newBackpressureSSEServer(chunks int) (*httptest.Server, <-chan struct{}, <-
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		flusher, _ := w.(http.Flusher)
-		_, _ = fmt.Fprint(w, "data: "+responsesTextStart+"\n\n")
 		for i := 0; i < chunks; i++ {
-			chunk := `{"type":"response.output_text.delta","item_id":"msg-test","output_index":0,"content_index":0,"delta":"x"}`
+			chunk := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"content":"x"}}]}`
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
 			if flusher != nil {
 				flusher.Flush()
@@ -164,32 +154,48 @@ func waitForChannelFull[T any](t *testing.T, channel chan T) {
 	}
 }
 
+// chatModel is a model that speaks the OpenAI chat-completions wire format at
+// baseURL: the registry's OpenAI-compatible preset (the OpenAI constructors
+// talk to the Responses API).
+func chatModel(t *testing.T, baseURL string) *Model {
+	t.Helper()
+	m, err := ProviderWithBase("deepseek", "sk-test-fake-key", "gpt-4o", baseURL)
+	if err != nil {
+		t.Fatalf("ProviderWithBase: %v", err)
+	}
+	return m
+}
+
 // ── Canned OpenAI responses ────────────────────────────────────────────────────
 
 // plainOpenAIResponse is a plain OpenAI text response (no tool calls).
 const plainOpenAIResponse = `{
-  "id": "resp-test",
+  "id": "chatcmpl-test",
   "model": "gpt-4o",
-  "created_at": 1,
-  "status": "completed",
-  "output": [{
-    "type": "message", "id": "msg-test", "role": "assistant", "status": "completed",
-    "content": [{"type":"output_text","text":"Rust is a systems programming language.","annotations":[]}]
+  "choices": [{
+    "message": {"role": "assistant", "content": "Rust is a systems programming language."},
+    "finish_reason": "stop"
   }],
-  "usage": {"input_tokens": 10, "output_tokens": 8, "total_tokens": 18}
+  "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18}
 }`
 
 // toolCallOpenAIResponse is an OpenAI response that requests a tool call.
 const toolCallOpenAIResponse = `{
-  "id": "resp-tc",
+  "id": "chatcmpl-tc",
   "model": "gpt-4o",
-  "created_at": 1,
-  "status": "completed",
-  "output": [{
-    "type": "function_call", "id": "fc-abc", "call_id": "call_abc",
-    "name": "get_weather", "arguments": "{\"location\":\"Tokyo\"}", "status": "completed"
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_abc",
+        "type": "function",
+        "function": {"name": "get_weather", "arguments": "{\"location\":\"Tokyo\"}"}
+      }]
+    },
+    "finish_reason": "tool_calls"
   }],
-  "usage": {"input_tokens": 20, "output_tokens": 10, "total_tokens": 30}
+  "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}
 }`
 
 // weatherToolsOpts builds a JSON options string with a get_weather tool.
@@ -199,7 +205,7 @@ func weatherToolsOpts(toolChoice string) string {
 			{
 				"type": "function",
 				"name": "get_weather",
-				"input_schema": map[string]any{
+				"inputSchema": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
 						"location": map[string]any{"type": "string"},
@@ -209,7 +215,7 @@ func weatherToolsOpts(toolChoice string) string {
 		},
 	}
 	if toolChoice != "" {
-		opts["tool_choice"] = toolChoice
+		opts["toolChoice"] = toolChoice
 	}
 	b, _ := json.Marshal(opts)
 	return string(b)
@@ -222,7 +228,7 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	result, err := m.GenerateText(`"What is Rust?"`, "")
@@ -241,8 +247,48 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 	if len(parsed.ToolCalls) != 0 {
 		t.Errorf("expected no tool calls, got %d", len(parsed.ToolCalls))
 	}
-	if srv.LastRequestPath() != "/responses" {
-		t.Errorf("expected /responses endpoint, got %q", srv.LastRequestPath())
+	// ProviderWithBase marshals the public baseUrl option through the FFI. The
+	// loopback server must receive this call, rather than the vendor's default URL.
+	var request struct {
+		Model    string `json:"model"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(srv.LastRequestBody()), &request); err != nil {
+		t.Fatalf("custom baseUrl did not receive a valid request: %v", err)
+	}
+	if request.Model != "gpt-4o" || len(request.Messages) != 1 {
+		t.Fatalf("unexpected request at custom baseUrl: %#v", request)
+	}
+	if request.Messages[0].Role != "user" || request.Messages[0].Content != "What is Rust?" {
+		t.Errorf("prompt did not reach custom baseUrl: %#v", request.Messages[0])
+	}
+}
+
+// The AI SDK parses tool input with JSON.parse (ai
+// generate-text/parse-tool-call.ts:256; provider-utils secure-json-parse.ts:31),
+// so JSON.stringify writes an integral 1e2 or 3.0 as 100 or 3.
+func TestE2E_IntegralToolInputNumbersAreIntegers(t *testing.T) {
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(strings.Replace(toolCallOpenAIResponse, `{\"location\":\"Tokyo\"}`,
+		`{\"location\":\"Tokyo\",\"days\":3.0,\"n\":1e2,\"t\":1.5}`, 1))
+
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	result, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	parsed, err := ParseGenerateTextResult(result)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if got := string(parsed.ToolCalls[0].Input); got != `{"location":"Tokyo","days":3,"n":100,"t":1.5}` {
+		t.Errorf("tool input: %s", got)
 	}
 }
 
@@ -251,7 +297,7 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(toolCallOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	result, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
@@ -281,19 +327,21 @@ func TestE2E_GenerateTextParsesToolCalls(t *testing.T) {
 		t.Errorf("expected location Tokyo, got %v", input["location"])
 	}
 
-	// content should contain a "ToolCall" variant.
+	// content should contain a "tool-call" part.
 	var contentWrap struct {
-		Content []map[string]json.RawMessage `json:"content"`
+		Content []struct {
+			Type string `json:"type"`
+		} `json:"content"`
 	}
 	json.Unmarshal([]byte(result), &contentWrap)
-	hasToolCallVariant := false
+	hasToolCallPart := false
 	for _, part := range contentWrap.Content {
-		if _, ok := part["ToolCall"]; ok {
-			hasToolCallVariant = true
+		if part.Type == "tool-call" {
+			hasToolCallPart = true
 		}
 	}
-	if !hasToolCallVariant {
-		t.Error("expected content to contain a ToolCall variant")
+	if !hasToolCallPart {
+		t.Error("expected content to contain a tool-call part")
 	}
 }
 
@@ -302,7 +350,7 @@ func TestE2E_MultiRoleMessagesReachProvider(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	msgs := []ModelMessage{
@@ -327,7 +375,7 @@ func TestE2E_MultiRoleMessagesReachProvider(t *testing.T) {
 	if reqBody["model"] != "gpt-4o" {
 		t.Errorf("expected model gpt-4o, got %v", reqBody["model"])
 	}
-	messages := reqBody["input"].([]any)
+	messages := reqBody["messages"].([]any)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -349,7 +397,7 @@ func TestE2E_ToolChoiceReachesProvider(t *testing.T) {
 	defer srv.Close()
 	srv.SetResponse(toolCallOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	_, err := m.GenerateText(`"What is the weather in Tokyo?"`, weatherToolsOpts("required"))
@@ -372,11 +420,11 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 	defer srv.Close()
 	srv.SetContentType("text/event-stream")
 
-	// Responses SSE: output item -> arguments delta -> completed tool -> finish.
+	// SSE stream: tool_calls delta (name) -> arguments delta -> finish_reason.
 	sseResponse := buildToolCallSSE()
 	srv.SetResponse(sseResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	stream := m.StreamText(`"What is the weather in Tokyo?"`, weatherToolsOpts(""))
@@ -400,14 +448,15 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 			t.Errorf("failed to parse stream part: %v", err)
 			continue
 		}
-		if sp.Tag == "" {
-			t.Error("expected non-empty stream part tag")
+		// Types we expect: stream-start, text-delta, tool-call, finish, etc.
+		if sp.Type == "" {
+			t.Error("expected non-empty stream part type")
 		}
-		switch sp.Tag {
-		case "ToolCall":
+		switch sp.Type {
+		case "tool-call":
 			gotToolCall = true
 			var call ToolCall
-			if err := json.Unmarshal(sp.Payload, &call); err != nil {
+			if err := json.Unmarshal(sp.Raw, &call); err != nil {
 				t.Fatalf("decode tool call: %v", err)
 			}
 			if call.ToolName != "get_weather" || call.ToolCallID != "call_xyz" {
@@ -417,12 +466,12 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 			if err := json.Unmarshal(call.Input, &input); err != nil || input["location"] != "Tokyo" {
 				t.Errorf("unexpected tool arguments: %q (%v)", call.Input, err)
 			}
-		case "Finish":
+		case "finish":
 			gotFinish = true
 		}
 	}
 	if !gotToolCall || !gotFinish {
-		t.Errorf("expected completed tool call and Finish; gotToolCall=%t gotFinish=%t", gotToolCall, gotFinish)
+		t.Errorf("expected completed tool call and finish; gotToolCall=%t gotFinish=%t", gotToolCall, gotFinish)
 	}
 }
 
@@ -435,7 +484,7 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 	sseResponse := buildTextDeltaSSE()
 	srv.SetResponse(sseResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	stream := m.StreamText(`"Say hello"`, "")
@@ -448,12 +497,12 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 			t.Errorf("failed to parse: %v", err)
 			continue
 		}
-		switch sp.Tag {
-		case "TextDelta":
+		switch sp.Type {
+		case "text-delta":
 			var td TextDeltaPayload
-			json.Unmarshal(sp.Payload, &td)
+			json.Unmarshal(sp.Raw, &td)
 			textBuilder.WriteString(td.Text)
-		case "Finish":
+		case "finish":
 			gotFinish = true
 		}
 	}
@@ -466,7 +515,7 @@ func TestE2E_StreamTextYieldsTextDeltas(t *testing.T) {
 		t.Errorf("expected 'Hello world', got %q", text)
 	}
 	if !gotFinish {
-		t.Error("expected a Finish part")
+		t.Error("expected a finish part")
 	}
 }
 
@@ -489,7 +538,7 @@ func TestStreamTextContextCancelsInFlightRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := m.StreamTextContext(ctx, `"wait"`, "")
@@ -526,7 +575,7 @@ func TestStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 	srv, allSent, requestDone := newBackpressureSSEServer(800)
 	defer srv.Close()
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 	stream := m.StreamText(`"fill the channel"`, "")
 	defer stream.Cancel()
@@ -566,29 +615,7 @@ func TestStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 
 // ── SSE builders ───────────────────────────────────────────────────────────────
 
-const responsesTextStart = `{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg-test","role":"assistant","content":[],"status":"in_progress"}}`
-
-func responsesSSE(events ...string) string {
-	var sb strings.Builder
-	for _, event := range events {
-		sb.WriteString("data: " + event + "\n\n")
-	}
-	return sb.String()
-}
-
 func buildTextDeltaSSE() string {
-	return responsesSSE(
-		`{"type":"response.created","response":{"id":"resp-test","model":"gpt-4o","created_at":1,"status":"in_progress","output":[]}}`,
-		responsesTextStart,
-		`{"type":"response.output_text.delta","item_id":"msg-test","output_index":0,"content_index":0,"delta":"Hello"}`,
-		`{"type":"response.output_text.delta","item_id":"msg-test","output_index":0,"content_index":0,"delta":" world"}`,
-		`{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg-test","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello world","annotations":[]}]}}`,
-		`{"type":"response.completed","response":{"id":"resp-test","model":"gpt-4o","created_at":1,"status":"completed","output":[],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}`,
-	)
-}
-
-// Chat providers emit raw chunks; the Responses provider does not support them.
-func buildChatTextDeltaSSE() string {
 	chunk1 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"role":"assistant","content":"Hello"}}]}`
 	chunk2 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"content":" world"}}]}`
 	chunk3 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`
@@ -601,19 +628,20 @@ func buildChatTextDeltaSSE() string {
 }
 
 func buildToolCallSSE() string {
-	return responsesSSE(
-		`{"type":"response.created","response":{"id":"resp-tc","model":"gpt-4o","created_at":1,"status":"in_progress","output":[]}}`,
-		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc-xyz","call_id":"call_xyz","name":"get_weather","arguments":"","status":"in_progress"}}`,
-		`{"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc-xyz","delta":"{\"location\":\"Tokyo\"}"}`,
-		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc-xyz","call_id":"call_xyz","name":"get_weather","arguments":"{\"location\":\"Tokyo\"}","status":"completed"}}`,
-		`{"type":"response.completed","response":{"id":"resp-tc","model":"gpt-4o","created_at":1,"status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}`,
-	)
+	chunk1 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_xyz","type":"function","function":{"name":"get_weather","arguments":""}}]}}]}`
+	chunk2 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"location\":\"Tokyo\"}"}}]}}]}`
+	chunk3 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`
+	var sb strings.Builder
+	sb.WriteString("data: " + chunk1 + "\n\n")
+	sb.WriteString("data: " + chunk2 + "\n\n")
+	sb.WriteString("data: " + chunk3 + "\n\n")
+	sb.WriteString("data: [DONE]\n\n")
+	return sb.String()
 }
 
 // ── Tool-call full round-trip ─────────────────────────────────────────────────
 
-// TestE2E_ToolCallFullRoundTrip mirrors Kotlin's `tool-call full round-trip`
-// scenario: the model requests a tool call, the client sends the tool result
+// TestE2E_ToolCallFullRoundTrip: the model requests a tool call, the client sends the tool result
 // back as a multi-part tool message, and the model produces a final answer.
 // This verifies ModelMessage multi-part content reaches the provider correctly.
 func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
@@ -623,7 +651,7 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	// Queue: first call returns a tool_call, second call returns the final text.
 	srv.setResponses(toolCallOpenAIResponse, plainOpenAIResponse)
 
-	m := OpenAIWithBase("sk-test-fake-key", "gpt-4o", srv.URL)
+	m := chatModel(t, srv.URL)
 	defer m.Close()
 
 	// 1. First call: model requests get_weather tool call.
@@ -641,22 +669,22 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	}
 
 	// 2. Build a multi-part tool-result message using ModelMessage's Content
-	//    (any) field — this is the path that was previously unsupported.
+	//    (any) field.
 	toolResultMsg := ModelMessage{
 		Role: RoleTool,
 		Content: []map[string]any{
 			{
-				"type":         "tool_result",
-				"tool_call_id": call.ToolCallID,
-				"tool_name":    call.ToolName,
-				"result":       map[string]any{"temperature": "20C"},
+				"type":       "tool-result",
+				"toolCallId": call.ToolCallID,
+				"toolName":   call.ToolName,
+				"output":     map[string]any{"type": "json", "value": map[string]any{"temperature": "20C"}},
 			},
 		},
 	}
 	conversation := []ModelMessage{
 		NewTextMessage(RoleUser, "What is the weather in Tokyo?"),
 		{Role: RoleAssistant, Content: []map[string]any{
-			{"type": "tool_call", "tool_call_id": call.ToolCallID, "tool_name": call.ToolName, "input": map[string]any{"location": "Tokyo"}},
+			{"type": "tool-call", "toolCallId": call.ToolCallID, "toolName": call.ToolName, "input": map[string]any{"location": "Tokyo"}},
 		}},
 		toolResultMsg,
 	}
@@ -673,42 +701,172 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	}
 
 	// Verify the second request carried the tool-result message correctly.
-	// Responses preserves the assistant's function_call and sends the tool's
-	// JSON result as a function_call_output with the same call_id.
+	// The engine converts a tool-result part into OpenAI's wire
+	// format: {"role":"tool","tool_call_id":"...","content":"<stringified result>"}.
 	reqBody := srv.LastRequestBody()
 	var body struct {
-		Input []struct {
-			Role       string `json:"role"`
-			Type       string `json:"type"`
-			Name       string `json:"name"`
-			Arguments  string `json:"arguments"`
-			Output     string `json:"output"`
-			ToolCallID string `json:"call_id"`
-		} `json:"input"`
+		Messages []struct {
+			Role       string          `json:"role"`
+			Content    json.RawMessage `json:"content"`
+			ToolCallID string          `json:"tool_call_id,omitempty"`
+			ToolCalls  []struct {
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+		} `json:"messages"`
 	}
 	if err := json.Unmarshal([]byte(reqBody), &body); err != nil {
 		t.Fatalf("decode request: %v", err)
 	}
-	if len(body.Input) != 3 {
-		t.Fatalf("expected 3 input items, got %d", len(body.Input))
+	if len(body.Messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(body.Messages))
 	}
-	second := body.Input[1]
-	if second.Type != "function_call" || second.ToolCallID != call.ToolCallID || second.Name != call.ToolName {
-		t.Errorf("assistant tool call did not round-trip: %#v", second)
+	second := body.Messages[1]
+	if second.Role != "assistant" || len(second.ToolCalls) != 1 {
+		t.Fatalf("assistant tool call did not round-trip: %#v", second)
+	}
+	priorCall := second.ToolCalls[0]
+	if priorCall.ID != call.ToolCallID || priorCall.Function.Name != call.ToolName {
+		t.Errorf("assistant tool call identity did not round-trip: %#v", priorCall)
 	}
 	var arguments map[string]any
-	if err := json.Unmarshal([]byte(second.Arguments), &arguments); err != nil || arguments["location"] != "Tokyo" {
-		t.Errorf("assistant arguments did not round-trip: %q (%v)", second.Arguments, err)
+	if err := json.Unmarshal([]byte(priorCall.Function.Arguments), &arguments); err != nil || arguments["location"] != "Tokyo" {
+		t.Errorf("assistant arguments did not round-trip: %q (%v)", priorCall.Function.Arguments, err)
 	}
-	third := body.Input[2]
-	if third.Type != "function_call_output" {
-		t.Errorf("expected function_call_output, got %q", third.Type)
+	// The third message (tool result) in OpenAI format.
+	third := body.Messages[2]
+	if third.Role != "tool" {
+		t.Errorf("expected third role 'tool', got %q", third.Role)
 	}
 	if third.ToolCallID != call.ToolCallID {
 		t.Errorf("expected tool_call_id %q, got %q", call.ToolCallID, third.ToolCallID)
 	}
+	var content string
+	if err := json.Unmarshal(third.Content, &content); err != nil {
+		t.Fatalf("decode tool content: %v", err)
+	}
 	var output map[string]any
-	if err := json.Unmarshal([]byte(third.Output), &output); err != nil || output["temperature"] != "20C" {
-		t.Errorf("tool output did not round-trip: %q (%v)", third.Output, err)
+	if err := json.Unmarshal([]byte(content), &output); err != nil || output["temperature"] != "20C" {
+		t.Errorf("tool output did not round-trip: %q (%v)", content, err)
+	}
+}
+
+func TestE2E_FilePartsAreTheAiSdkFilePart(t *testing.T) {
+	// FilePart.data is FileData | DataContent | URL | ProviderReference upstream
+	// (provider-utils types/content-part.ts:75): a data: URL's media type wins
+	// (ai prompt/file-part-data.ts:31-41) and a bare reference is a reference
+	// (:133-138). There is no file-base64 / file-url / file-reference part.
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(plainOpenAIResponse)
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	prompt := `[{"role":"user","content":[
+		{"type":"file","data":{"type":"url","url":"https://example.com/a.png"},"mediaType":"image/png"},
+		{"type":"file","data":"data:image/png;base64,iVBORw==","mediaType":"image"},
+		{"type":"file","data":{"deepseek":"file-abc"},"mediaType":"image/png"}]}]`
+	if _, err := m.GenerateText(prompt, ""); err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	var request struct {
+		Messages []struct {
+			Content []map[string]any `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(srv.LastRequestBody()), &request); err != nil {
+		t.Fatalf("request body: %v", err)
+	}
+	content := request.Messages[0].Content
+	if got := content[0]["image_url"].(map[string]any)["url"]; got != "https://example.com/a.png" {
+		t.Errorf("url file part: %v", content[0])
+	}
+	if got := content[1]["image_url"].(map[string]any)["url"]; got != "data:image/png;base64,iVBORw==" {
+		t.Errorf("data URL file part: %v", content[1])
+	}
+	if content[2]["type"] != "file" || content[2]["file_id"] != "file-abc" {
+		t.Errorf("bare reference file part: %v", content[2])
+	}
+
+	for _, removed := range []string{"file-base64", "file-url", "file-reference"} {
+		part := `{"type":"` + removed + `","data":"aGk=","url":"https://example.com/a.png","mediaType":"image/png"}`
+		if _, err := m.GenerateText(`[{"role":"user","content":[`+part+`]}]`, ""); err == nil {
+			t.Errorf("%s was accepted", removed)
+		}
+	}
+}
+
+func TestE2E_GeneratedFilesAreBase64AndMediaType(t *testing.T) {
+	// A generated file is GeneratedFile upstream, whose JSON is
+	// {base64, mediaType} (ai generate-text/generated-file.ts:10-32); the
+	// content part wraps it as {type: "file", file}
+	// (generate-text/convert-language-model-content.ts:55-70).
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(`{"candidates":[{"content":{"role":"model","parts":[
+		{"text":"Here:"},{"inlineData":{"mimeType":"image/png","data":"iVBORw=="}}]},
+		"finishReason":"STOP"}],
+		"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}`)
+	m, err := NewVertexWithBase("token", "project", "us-central1", "gemini-2.0-flash", srv.URL)
+	if err != nil {
+		t.Fatalf("NewVertexWithBase: %v", err)
+	}
+	defer m.Close()
+
+	out, err := m.GenerateText(`"draw"`, "")
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	var wire struct {
+		Files   []map[string]any `json:"files"`
+		Content []map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(out), &wire); err != nil {
+		t.Fatalf("result: %v", err)
+	}
+	want := map[string]any{"base64": "iVBORw==", "mediaType": "image/png"}
+	if len(wire.Files) != 1 || !reflect.DeepEqual(wire.Files[0], want) {
+		t.Fatalf("files: %v", wire.Files)
+	}
+	if !reflect.DeepEqual(wire.Content[1], map[string]any{"type": "file", "file": want}) {
+		t.Errorf("file content part: %v", wire.Content[1])
+	}
+
+	var typed GenerateTextResult
+	if err := json.Unmarshal([]byte(out), &typed); err != nil {
+		t.Fatalf("typed result: %v", err)
+	}
+	if bytes, err := typed.Files[0].Bytes(); err != nil || typed.Files[0].MediaType != "image/png" ||
+		!reflect.DeepEqual(bytes, []byte{0x89, 'P', 'N', 'G'}) {
+		t.Errorf("typed file: %+v %v %v", typed.Files[0], bytes, err)
+	}
+}
+
+func TestE2E_ResponseTimestampIsToISOString(t *testing.T) {
+	// The response timestamp is a Date (provider
+	// language-model-v4-response-metadata.ts:10), built as
+	// new Date(created * 1000); its JSON is toISOString().
+	srv := newMockServer()
+	defer srv.Close()
+	srv.SetResponse(strings.Replace(plainOpenAIResponse, `"id": "chatcmpl-test",`, `"id": "chatcmpl-test", "created": 1741269019,`, 1))
+	m := chatModel(t, srv.URL)
+	defer m.Close()
+
+	out, err := m.GenerateText(`"What is Rust?"`, "")
+	if err != nil {
+		t.Fatalf("generate_text failed: %v", err)
+	}
+	parsed, err := ParseGenerateTextResult(out)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if parsed.Response.Timestamp != "2025-03-06T13:50:19.000Z" {
+		t.Fatalf("timestamp: %v", parsed.Response.Timestamp)
+	}
+	if _, err := time.Parse(time.RFC3339, parsed.Response.Timestamp); err != nil {
+		t.Errorf("not RFC 3339: %v", err)
 	}
 }

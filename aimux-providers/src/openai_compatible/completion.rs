@@ -325,8 +325,7 @@ fn metadata(response: &CompletionResponse) -> ResponseMetadata {
         id: response.id.clone(),
         timestamp: response
             .created
-            .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
-            .map(|dt| dt.to_rfc3339()),
+            .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
         model_id: response.model.clone(),
     }
 }

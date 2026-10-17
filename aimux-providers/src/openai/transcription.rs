@@ -376,7 +376,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             Vec::new()
         };
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text: parsed.text,
@@ -669,7 +669,7 @@ impl OpenAITranscriptionModel {
                 body: Some(serde_json::to_string(&session_update).unwrap_or_default()),
             }),
             response: Some(TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(model_id),
                 headers: None,
                 body: None,

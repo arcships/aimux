@@ -34,9 +34,9 @@ use crate::options::{CallOptions, ToolChoice, prepare_tool_choice};
 use crate::output::Output;
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
-    ContentPart, GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput,
-    ReasoningPart, Source, StreamResult, ToolApprovalRequestOutput, TypedToolError,
-    TypedToolResult,
+    ContentPart, GenerateContent, GenerateResult, GeneratedFile, GeneratedFileOutput,
+    LanguageModelFile, ReasoningPart, Source, StreamResult, ToolApprovalRequestOutput,
+    TypedToolError, TypedToolResult,
 };
 use crate::shared::{RequestInfo, SharedHeaders, SharedProviderOptions};
 use crate::step_result::{
@@ -64,7 +64,7 @@ fn response_metadata_defaults(
     });
     metadata
         .timestamp
-        .get_or_insert_with(crate::util::rfc3339_now);
+        .get_or_insert_with(crate::timestamp::Timestamp::now);
     metadata.model_id.get_or_insert_with(|| model_id.to_owned());
     metadata
 }
@@ -87,14 +87,22 @@ fn is_output_chunk<C, A, R>(part: &StreamPart<C, A, R>) -> bool {
     }
 }
 
+/// The text-generation file part for a provider file: its URL is downloaded,
+/// the file is `{ base64, mediaType }`, and the part keeps the provider
+/// metadata (`convert-language-model-content.ts:55-70`,
+/// `stream-language-model-call.ts:569-590`).
 async fn resolve_file(
-    mut file: GeneratedFile,
+    file: LanguageModelFile,
     abort_signal: Option<&AbortSignal>,
-) -> Result<GeneratedFile, AiMuxError> {
-    file.data = crate::shared::GeneratedFileData::Data {
-        data: crate::download::resolve_generated_file_data(&file.data, abort_signal).await?,
-    };
-    Ok(file)
+) -> Result<GeneratedFileOutput, AiMuxError> {
+    Ok(GeneratedFileOutput {
+        file: GeneratedFile {
+            data: crate::download::resolve_generated_file_data(&file.data, abort_signal).await?,
+            media_type: file.media_type,
+            provider_metadata: None,
+        },
+        provider_metadata: file.provider_metadata,
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,42 +113,81 @@ async fn resolve_file(
 ///
 /// Unlike `CallOptions` (provider-facing), this does not include `prompt`
 /// (passed separately) and defaults are more ergonomic.
+///
+/// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
+/// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
+/// naming the key instead of the default it would silently fall back to.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateTextOptions {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_k: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<f64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f64>,
     /// The structured output to generate, the AI SDK's `output`
     /// (`generate-text/output.ts`). It sets the model call's
     /// `response_format` and parses the final text into
     /// [`GenerateTextResult::output`]. `None` sends no response format and
     /// takes the text as the output.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<Output>,
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
     /// Top-level reasoning effort.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<ReasoningEffort>,
     /// System instructions prepended to the prompt.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     /// retrying. `None` uses 2, the AI SDK default.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
     /// Session identifier, for grouping consecutive calls into a session
     /// (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
     /// headers. When `None` and the optional session inferer is enabled, one
     /// may be inferred from prompt-prefix continuation.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// Abort signal for cancelling the call.
     ///
@@ -150,6 +197,8 @@ pub struct GenerateTextOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
     /// Optional one-shot repair callback for unknown, malformed, or
     /// schema-invalid tool calls.
@@ -513,6 +562,7 @@ impl GenerateTextResult {
 /// `finalStep` and the static/dynamic subsets are left out: they are the
 /// last entry of `steps` and a filter on `dynamic`.
 #[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[ts(rename = "GenerateTextResult")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 struct GenerateTextResultSnapshot<'a> {
@@ -521,12 +571,25 @@ struct GenerateTextResultSnapshot<'a> {
     /// Deprecated upstream: the last step's reasoning.
     reasoning: Vec<ReasoningPart>,
     /// Deprecated upstream: the last step's reasoning text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     reasoning_text: Option<String>,
     files: Vec<&'a GeneratedFile>,
+    /// Each with its `type` tag (`generate-text-result.ts:73`).
+    #[serde(with = "crate::wire::typed_vec")]
+    #[ts(as = "Vec<crate::result::TypedSource>")]
     sources: Vec<&'a Source>,
+    /// Each with its `type` tag (`generate-text-result.ts:78`).
+    #[serde(with = "crate::wire::typed_vec")]
+    #[ts(as = "Vec<crate::tool::TypedToolCall>")]
     tool_calls: Vec<&'a ToolCall>,
+    /// Each with its `type` tag (`generate-text-result.ts:93`).
+    #[serde(with = "crate::wire::typed_vec")]
+    #[ts(as = "Vec<crate::result::TaggedToolResult>")]
     tool_results: Vec<&'a TypedToolResult>,
     finish_reason: FinishReasonUnified,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     raw_finish_reason: Option<&'a str>,
     usage: &'a LanguageModelUsage,
     /// Deprecated upstream: equal to `usage`.
@@ -538,6 +601,8 @@ struct GenerateTextResultSnapshot<'a> {
     response: &'a StepResponse,
     response_messages: Vec<&'a ModelMessage>,
     /// Deprecated upstream: the last step's provider metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     provider_metadata: Option<&'a ProviderMetadata>,
     steps: &'a [StepResult],
     /// Absent when the output was not parsed.
@@ -554,6 +619,7 @@ impl Serialize for GenerateTextResult {
 
 /// The values a serialized [`GenerateTextResult`] is read back from.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GenerateTextResultFacts {
     steps: Vec<StepResult>,
     total_usage: LanguageModelUsage,
@@ -615,12 +681,14 @@ fn stream_output(step: &StepResult, output: Option<&Output>) -> OutputState {
 /// Result of the deprecated [`generate_object`]: the AI SDK's
 /// `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResult {
     /// The generated object, as parsed by the output.
     pub object: Value,
     /// The reasoning text, `None` when there is none.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
     /// Why the model call finished.
     pub finish_reason: FinishReasonUnified,
@@ -635,21 +703,25 @@ pub struct GenerateObjectResult {
     /// The response of the model call, without messages.
     pub response: GenerateObjectResponse,
     /// Provider metadata of the model call.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// `GenerateObjectResult.response`: the AI SDK's
 /// `Omit<LanguageModelResponseMetadata, 'messages'>`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResponse {
     pub id: String,
-    pub timestamp: String,
+    pub timestamp: crate::timestamp::Timestamp,
     pub model_id: String,
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
 }
 
@@ -775,8 +847,8 @@ impl StreamTextResult {
                 TextStreamPart::ToolError(error) => rm.tool_error(error),
                 TextStreamPart::ToolApprovalResponse(response) => rm.approval_response(response),
                 TextStreamPart::Source(source) => rm.source(source),
-                TextStreamPart::File(file) => rm.file(&file, false),
-                TextStreamPart::ReasoningFile(output) => rm.file(&output.file, true),
+                TextStreamPart::File(output) => rm.file(output, false),
+                TextStreamPart::ReasoningFile(output) => rm.file(output, true),
                 TextStreamPart::Custom {
                     kind,
                     provider_metadata,
@@ -1252,22 +1324,22 @@ async fn convert_generated_content(
             GenerateContent::Reasoning(reasoning) => rm.reasoning(reasoning),
             GenerateContent::Source(source) => rm.source(source.clone()),
             GenerateContent::File(file) => {
-                let file = timeout::run(
+                let output = timeout::run(
                     resolve_file(file.clone(), abort_signal),
                     abort_signal,
                     operation_timeout,
                 )
                 .await?;
-                rm.file(&file, false);
+                rm.file(output, false);
             }
             GenerateContent::ReasoningFile(file) => {
-                let file = timeout::run(
+                let output = timeout::run(
                     resolve_file(file.clone(), abort_signal),
                     abort_signal,
                     operation_timeout,
                 )
                 .await?;
-                rm.file(&file, true);
+                rm.file(output, true);
             }
             GenerateContent::Custom {
                 kind,
@@ -1366,7 +1438,9 @@ fn build_generated_step(
         request: request.unwrap_or_default(),
         response: StepResponse {
             id: metadata.id.unwrap_or_default(),
-            timestamp: metadata.timestamp.unwrap_or_default(),
+            timestamp: metadata
+                .timestamp
+                .unwrap_or_else(crate::timestamp::Timestamp::now),
             model_id: metadata.model_id.unwrap_or_default(),
             headers: response.headers,
             body: response.body,
@@ -1442,7 +1516,7 @@ pub async fn generate_object(
         request: step.request.clone(),
         response: GenerateObjectResponse {
             id: step.response.id.clone(),
-            timestamp: step.response.timestamp.clone(),
+            timestamp: step.response.timestamp,
             model_id: step.response.model_id.clone(),
             headers: step.response.headers.clone(),
             body: step.response.body.clone(),
@@ -1784,6 +1858,12 @@ async fn stream_in_operation(
                             yield Ok(TextStreamPart::ToolError(error));
                         }
                     }
+                    StreamPartPayload::File(file) => {
+                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                            Ok(output) => yield Ok(TextStreamPart::File(output)),
+                            Err(error) => yield Ok(TextStreamPart::Error { error }),
+                        }
+                    }
                     StreamPartPayload::ToolApprovalRequest(approval) => {
                         if let Some(call) = tool_calls.get(&approval.tool_call_id) {
                             yield Ok(TextStreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
@@ -1798,9 +1878,7 @@ async fn stream_in_operation(
                     }
                     StreamPartPayload::ReasoningFile(file) => {
                         match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                            Ok(file) => yield Ok(TextStreamPart::ReasoningFile(ReasoningFileOutput {
-                                provider_metadata: file.provider_metadata.clone(), file,
-                            })),
+                            Ok(output) => yield Ok(TextStreamPart::ReasoningFile(output)),
                             Err(error) => yield Ok(TextStreamPart::Error { error }),
                         }
                     }
@@ -1837,19 +1915,13 @@ async fn stream_in_operation(
                             let input = tool_calls.get(&result.tool_call_id).map(|call| call.input.clone());
                             yield Ok(provider_tool_result_part(result, input));
                         }
-                        StreamPart::File(file) => {
-                            match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                                Ok(file) => yield Ok(TextStreamPart::File(file)),
-                                Err(error) => yield Ok(TextStreamPart::Error { error }),
-                            }
-                        }
                         // An empty text delta without provider metadata is not
                         // forwarded (stream-text.ts:2881-2891); providers emit
                         // one, e.g. OpenAI chat's opening `"content": ""`.
                         StreamPart::TextDelta { delta, provider_metadata: None, .. } if delta.is_empty() => {}
                         part => {
                             if let Some(part) = part
-                                .widen::<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput>()
+                                .widen::<ToolCall, ToolApprovalRequestOutput, GeneratedFileOutput>()
                                 .into_text_stream_part()
                             {
                                 yield Ok(part);
@@ -1997,7 +2069,10 @@ impl StreamStep {
             TextStreamPart::FinishStep {
                 response: StepResponseMetadata {
                     id: self.response.id.unwrap_or_default(),
-                    timestamp: self.response.timestamp.unwrap_or_default(),
+                    timestamp: self
+                        .response
+                        .timestamp
+                        .unwrap_or_else(crate::timestamp::Timestamp::now),
                     model_id: self.response.model_id.unwrap_or_default(),
                     headers,
                 },

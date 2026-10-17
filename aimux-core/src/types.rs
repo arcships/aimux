@@ -6,11 +6,14 @@ use ts_rs::TS;
 
 /// Unified finish reason (why the model stopped generating).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FinishReason {
     /// The unified reason.
     pub unified: FinishReasonUnified,
     /// The raw provider-specific reason string.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
 }
 
@@ -29,43 +32,55 @@ pub enum FinishReasonUnified {
 
 /// Token usage statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Usage {
     pub input_tokens: InputTokenUsage,
     pub output_tokens: OutputTokenUsage,
     /// Raw usage information from the provider (opaque, provider-specific).
+    #[ts(optional, type = "Record<string, unknown>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "Record<string, unknown> | null")]
     pub raw: Option<serde_json::Map<String, Value>>,
 }
 
 /// Input token usage detail.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputTokenUsage {
     /// Total tokens.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<u32>,
     /// Tokens that were not served from cache.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_cache: Option<u32>,
     /// Tokens served from cache (read).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read: Option<u32>,
     /// Tokens written to cache.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<u32>,
 }
 
 /// Output token usage detail.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutputTokenUsage {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<u32>,
     /// Text (non-reasoning) tokens (output side).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<u32>,
     /// Reasoning tokens (output side).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<u32>,
 }
 
@@ -75,55 +90,67 @@ pub struct OutputTokenUsage {
 /// The user-facing counterpart of the provider-level [`Usage`]: flat totals
 /// plus detail objects, converted with [`as_language_model_usage`] and summed
 /// across steps with [`add_language_model_usage`]. Unknown counts stay `None`,
-/// never zero.
+/// never zero, and are absent from the JSON, as `JSON.stringify` drops an
+/// `undefined` count; the detail objects are always present.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct LanguageModelUsage {
     /// Total input (prompt) tokens.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
     /// Breakdown of the input tokens.
     #[serde(default)]
     pub input_token_details: InputTokenDetails,
     /// Total output (completion) tokens.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
     /// Breakdown of the output tokens.
     #[serde(default)]
     pub output_token_details: OutputTokenDetails,
     /// Input plus output tokens, when either is known.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
     /// The provider's raw usage object, passed through unchanged.
+    #[ts(optional, type = "Record<string, unknown>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "Record<string, unknown> | null")]
     pub raw: Option<serde_json::Map<String, Value>>,
 }
 
 /// `LanguageModelUsage.inputTokenDetails`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputTokenDetails {
     /// Input tokens that were not read from or written to a cache.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_cache_tokens: Option<u32>,
     /// Input tokens read from a cache.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read_tokens: Option<u32>,
     /// Input tokens written to a cache.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write_tokens: Option<u32>,
 }
 
 /// `LanguageModelUsage.outputTokenDetails`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutputTokenDetails {
     /// Output tokens of text.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_tokens: Option<u32>,
     /// Output tokens spent on reasoning.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
 }
 
@@ -267,16 +294,25 @@ impl std::str::FromStr for ReasoningEffort {
 
 /// A warning issued by the provider (e.g. unsupported parameter).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Warning {
     /// A feature is not supported by this provider.
     Unsupported {
         feature: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         details: Option<String>,
     },
     /// A feature has compatibility issues.
     Compatibility {
         feature: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         details: Option<String>,
     },
     /// A deprecated setting was used.
@@ -287,10 +323,17 @@ pub enum Warning {
 
 /// Metadata about the API response.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseMetadata {
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    pub timestamp: Option<String>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<crate::timestamp::Timestamp>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
 }
 
@@ -453,8 +496,9 @@ mod tests {
 
     /// `addLanguageModelUsage` (`types/usage.ts:122-155`) sums each count,
     /// keeps a count unknown only when both sides are (`addTokenCounts`,
-    /// `:157-164`), and returns no `raw`. The JSON is flat: counts, then the
-    /// two detail objects.
+    /// `:157-164`), and returns no `raw`. The JSON is the AI SDK's
+    /// `LanguageModelUsage` (`:10-67`) through `JSON.stringify`: camelCase
+    /// counts and detail objects, an unknown (`undefined`) count absent.
     #[test]
     fn usages_add_as_the_ai_sdk() {
         let step = as_language_model_usage(&provider_usage());
@@ -472,16 +516,17 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&total).unwrap(),
             serde_json::json!({
-                "input_tokens": 10,
-                "input_token_details": {
-                    "no_cache_tokens": 6,
-                    "cache_read_tokens": 4,
-                    "cache_write_tokens": null,
-                },
-                "output_tokens": 5,
-                "output_token_details": { "text_tokens": 3, "reasoning_tokens": 2 },
-                "total_tokens": 15,
+                "inputTokens": 10,
+                "inputTokenDetails": { "noCacheTokens": 6, "cacheReadTokens": 4 },
+                "outputTokens": 5,
+                "outputTokenDetails": { "textTokens": 3, "reasoningTokens": 2 },
+                "totalTokens": 15,
             })
+        );
+        // An unknown usage keeps its detail objects, empty.
+        assert_eq!(
+            serde_json::to_value(LanguageModelUsage::default()).unwrap(),
+            serde_json::json!({ "inputTokenDetails": {}, "outputTokenDetails": {} })
         );
     }
 }

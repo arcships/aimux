@@ -21,7 +21,7 @@ pub async fn detail(State(state): State<AppState>, Path(id): Path<String>) -> Re
         .filter(|r| r.session_id.as_deref() == Some(id.as_str()))
         .collect();
     Json(json!({
-        "session_id": id,
+        "sessionId": id,
         "calls": calls,
         "recordings": recordings,
     }))

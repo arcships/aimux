@@ -197,7 +197,7 @@ impl TranscriptionModel for XaiTranscriptionModel {
             warnings: Vec::new(),
             request: None,
             response: TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(String::new()),
                 headers: Some(resp.response_headers),
                 body: resp.raw_value,
@@ -490,7 +490,7 @@ mod stream {
             stream: Box::pin(stream),
             request: Some(TranscriptionRequest { body: Some(ws_url) }),
             response: Some(TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(String::new()),
                 headers: None,
                 body: None,

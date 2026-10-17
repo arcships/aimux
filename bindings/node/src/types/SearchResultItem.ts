@@ -8,25 +8,25 @@ export type SearchResultItem = {
 /**
  * The title of the result (e.g. page title).
  */
-title: string | null, 
+title?: string, 
 /**
  * The URL of the result.
  */
-url: string | null, 
+url?: string, 
 /**
  * A snippet/summary of the result content.
  */
-content: string | null, 
+content?: string, 
 /**
  * Raw page content (when `include_raw_content` is requested and
  * supported by the provider).
  */
-raw_content: string | null, 
+rawContent?: string, 
 /**
  * A relevance score (0.0–1.0) if the provider returns one.
  */
-score: number | null, 
+score?: number, 
 /**
  * Provider-specific metadata for this result.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

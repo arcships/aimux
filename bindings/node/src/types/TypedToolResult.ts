@@ -6,11 +6,13 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * `generate-text/tool-result.ts:10-42`).
  *
  * aimux has no user-level tool definitions, so upstream's `toolMetadata`
- * and `title`, which come from them, are absent.
+ * and `title`, which come from them, are absent. Its `type` tag is written
+ * by the union that holds it (`content`, the text stream) or, in a result's
+ * `toolResults`, by [`crate::wire::typed_vec`] ([`TaggedToolResult`]).
  */
-export type TypedToolResult = { tool_call_id: string, tool_name: string,
+export type TypedToolResult = { toolCallId: string, toolName: string, 
 /**
  * The input of the tool call the result answers; absent for a deferred
  * provider result, whose call is not in this response.
  */
-input?: JsonValue | null, output: JsonValue, provider_executed?: boolean | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, dynamic?: boolean | null, preliminary?: boolean | null, };
+input?: JsonValue, output: JsonValue, providerExecuted?: boolean, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, dynamic?: boolean, preliminary?: boolean, };

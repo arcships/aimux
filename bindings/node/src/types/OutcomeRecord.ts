@@ -10,13 +10,13 @@ export type OutcomeRecord = {
  * The result `decide` returned (`DecideResult`), independent of a
  * provider's wire format.
  */
-decision_result?: JsonValue | null, status: OutcomeStatus, finish_reason: string | null, error: string | null, 
+decisionResult?: JsonValue, status: OutcomeStatus, finishReason?: string, error?: string, 
 /**
  * Lossless structured domain error. In particular, `RetryError.errors`
  * keeps the complete attempt history rather than only its display text.
  */
-error_value: JsonValue | null, 
+errorValue?: JsonValue, 
 /**
  * 序列化的 Usage。
  */
-usage: JsonValue | null, };
+usage?: JsonValue, };

@@ -27,7 +27,7 @@ use crate::types::{Usage, Warning};
 
 /// Reference-failure policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum MoaFailMode {
     /// Drop a failed reference + emit a `Warning::Other`; keep going (default).
     #[default]
@@ -36,7 +36,11 @@ pub enum MoaFailMode {
     FailFast,
 }
 
+/// MoA configuration, camelCase JSON with every field optional. Unknown keys
+/// are rejected, so aimux 0.5's `fail_mode` is an error naming it rather than
+/// the default policy.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MoaConfig {
     /// `provider()` value (default `"moa"`).
     #[serde(default = "default_moa_provider")]

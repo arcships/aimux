@@ -1121,11 +1121,7 @@ fn convert_usage(usage: Option<&Value>) -> Usage {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Format a Unix timestamp (seconds) as an ISO-8601 string with millisecond
-/// precision and a `Z` suffix, matching the TS `new Date(ts * 1000)` snapshot
-/// format (e.g. `"2025-03-06T13:50:19.000Z"`).
-fn format_timestamp(secs: u64) -> Option<String> {
-    use chrono::{DateTime, Utc};
-    let dt = DateTime::<Utc>::from_timestamp(secs as i64, 0)?;
-    Some(dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+/// `new Date(secs * 1000)` for a Unix timestamp in seconds.
+fn format_timestamp(secs: u64) -> Option<aimux_core::Timestamp> {
+    aimux_core::Timestamp::from_unix_seconds(secs as f64)
 }

@@ -19,13 +19,13 @@ model: string,
  * var), `Some("env:VAR")`, or a plaintext literal — the latter only
  * while the console is loopback-bound (RFC-0029 §5.5).
  */
-api_key?: string | null,
+apiKey?: string,
 /**
  * Base URL override (proxies / local endpoints).
  */
-base_url?: string | null,
+baseUrl?: string,
 /**
- * Stream the response as SSE (`StreamPart` events). Default true.
+ * Stream the response as SSE (`TextStreamPart` events). Default true.
  */
 stream: boolean,
 /**
@@ -35,8 +35,8 @@ mock: boolean, options: WireOptions,
 /**
  * Session grouping id (RFC-0024). The console reuses one id per agent run.
  */
-session_id?: string | null,
+sessionId?: string,
 /**
  * Informational step marker (the backend assigns the authoritative step).
  */
-step?: number | null, messages: Array<WireMessage>, };
+step?: number, messages: Array<WireMessage>, };

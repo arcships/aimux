@@ -4,4 +4,4 @@ import type { ToolResultPart } from "./ToolResultPart";
 /**
  * A part of a tool message: upstream's `ToolResultPart | ToolApprovalResponse`.
  */
-export type ToolContentPart = { "type": "tool_result" } & ToolResultPart | { "type": "tool_approval_response", approval_id: string, approved: boolean, reason?: string | null, provider_executed?: boolean | null, };
+export type ToolContentPart = { "type": "tool-result" } & ToolResultPart | { "type": "tool-approval-response", approvalId: string, approved: boolean, reason?: string, providerExecuted?: boolean, };

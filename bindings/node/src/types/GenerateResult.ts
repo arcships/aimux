@@ -10,32 +10,32 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Result of `LanguageModel::do_generate` (non-streaming).
  */
-export type GenerateResult = {
+export type GenerateResult = { 
 /**
  * Generated content items (text, tool calls, etc.).
  */
-content: Array<GenerateContent>,
+content: Array<GenerateContent>, 
 /**
  * Why generation stopped.
  */
-finish_reason: FinishReason,
+finishReason: FinishReason, 
 /**
  * Token usage.
  */
-usage: Usage,
+usage: Usage, 
 /**
  * Warnings issued by the provider.
  */
-warnings: Array<Warning>,
+warnings: Array<Warning>, 
 /**
  * Provider-specific metadata.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null,
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Optional request information for telemetry and debugging.
  */
-request: RequestInfo | null,
+request?: RequestInfo, 
 /**
  * Optional response metadata, headers, and body.
  */
-response: ResponseInfo | null, };
+response?: ResponseInfo, };

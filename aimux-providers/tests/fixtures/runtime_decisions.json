@@ -36,7 +36,7 @@
         ]
       }
     },
-    "max_retries": 0
+    "maxRetries": 0
   },
   "request": {
     "model": "served-decision",

@@ -327,7 +327,7 @@ async fn the_result_completes_usage_and_response() {
             });
             result.response = Some(ResponseInfo {
                 id: Some("resp-1".into()),
-                timestamp: Some("2026-01-01T00:00:00Z".into()),
+                timestamp: Some("2026-01-01T00:00:00Z".parse().unwrap()),
                 model_id: Some("served".into()),
                 ..Default::default()
             });
@@ -357,8 +357,12 @@ async fn the_result_completes_usage_and_response() {
     assert_eq!(second.usage.total_tokens, None);
     assert_eq!(second.response.id.as_deref(), Some("resp-1"));
     assert_eq!(
-        second.response.timestamp.as_deref(),
-        Some("2026-01-01T00:00:00Z")
+        second
+            .response
+            .timestamp
+            .map(|time| time.to_string())
+            .as_deref(),
+        Some("2026-01-01T00:00:00.000Z")
     );
     assert_eq!(second.response.model_id.as_deref(), Some("served"));
     let value = serde_json::to_value(&second).unwrap();

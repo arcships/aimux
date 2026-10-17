@@ -475,7 +475,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
             provider_metadata = Some(md);
         }
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
 
         Ok(TranscriptionResult {
             text,

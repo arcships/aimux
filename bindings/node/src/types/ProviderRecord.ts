@@ -6,18 +6,18 @@
  * 只记身份,不记配置:回放时按 `provider_id` + `model_id` 重新构建 model,
  * 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
  */
-export type ProviderRecord = {
+export type ProviderRecord = { 
 /**
  * provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
  * Empty in a recording written by aimux 0.5 or earlier, which has none
  * ([`Self::registry_id`]).
  */
-provider_id: string,
+providerId: string, 
 /**
  * `model.provider()`,如 "openai.chat"。
  */
-provider: string,
+provider: string, 
 /**
  * `model.model_id()`,如 "gpt-4o"。
  */
-model_id: string, };
+modelId: string, };

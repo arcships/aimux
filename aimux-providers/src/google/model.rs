@@ -10,7 +10,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
 use aimux_core::result::{
-    GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source, StreamResult,
+    GenerateContent, GenerateResult, LanguageModelFile, ReasoningOutput, Source, StreamResult,
 };
 use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
@@ -512,7 +512,7 @@ impl LanguageModel for GoogleModel {
                                         inline.get("data").and_then(|v| v.as_str()),
                                         inline.get("mimeType").and_then(|v| v.as_str()),
                                     ) {
-                                        let file = GeneratedFile {
+                                        let file = LanguageModelFile {
                                             data: GeneratedFileData::Data { data: FileBytes::Base64(data.to_string()) },
                                             media_type: mime.to_string(),
                                             provider_metadata: thought_sig_meta.clone(),
@@ -795,7 +795,7 @@ fn extract_content_from_candidate(
                     inline.get("data").and_then(|v| v.as_str()),
                     inline.get("mimeType").and_then(|v| v.as_str()),
                 ) {
-                    let file = GeneratedFile {
+                    let file = LanguageModelFile {
                         data: GeneratedFileData::Data {
                             data: FileBytes::Base64(data.to_string()),
                         },
@@ -898,7 +898,7 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         | GenerateContent::ToolCall(RawToolCall {
             provider_metadata, ..
         })
-        | GenerateContent::File(GeneratedFile {
+        | GenerateContent::File(LanguageModelFile {
             provider_metadata, ..
         })
         | GenerateContent::Source(Source::Url {
@@ -907,7 +907,7 @@ fn set_provider_metadata(item: &mut GenerateContent, meta: ProviderMetadata) {
         | GenerateContent::Source(Source::Document {
             provider_metadata, ..
         })
-        | GenerateContent::ReasoningFile(GeneratedFile {
+        | GenerateContent::ReasoningFile(LanguageModelFile {
             provider_metadata, ..
         })
         | GenerateContent::Custom {

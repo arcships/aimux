@@ -135,7 +135,7 @@ fn generate_result(text: &str) -> GenerateResult {
         request: None,
         response: Some(ResponseInfo {
             id: Some("response".into()),
-            timestamp: Some("1970-01-01T00:00:00.000Z".into()),
+            timestamp: aimux_core::Timestamp::from_unix_millis(0),
             model_id: Some("resolved".into()),
             headers: Some([("x-request-id".to_string(), "id".to_string())].into()),
             body: Some(json!({ "raw": true })),

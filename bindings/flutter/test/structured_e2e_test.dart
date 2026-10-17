@@ -218,7 +218,7 @@ Map<String, dynamic> _weatherTool() {
   return {
     'type': 'function',
     'name': 'get_weather',
-    'input_schema': {
+    'inputSchema': {
       'type': 'object',
       'properties': {
         'location': {'type': 'string'},
@@ -236,7 +236,7 @@ void main() {
   const apiKey = 'sk-test-mock-key';
   const modelId = 'gpt-4o';
 
-  test('generateText parses tool_calls', () async {
+  test('generateText parses toolCalls', () async {
     final server = await startMockServer([
       {'body': toolCallOpenAIResponse},
     ]);
@@ -256,17 +256,17 @@ void main() {
     expect(server.recorded.first.path, '/chat/completions');
 
     // Tool call parsed into the user-facing result.
-    expect(result, contains('tool_calls'));
-    final toolCalls = result['tool_calls'] as List;
+    expect(result, contains('toolCalls'));
+    final toolCalls = result['toolCalls'] as List;
     expect(toolCalls, hasLength(1));
-    expect(toolCalls[0]['tool_name'], 'get_weather');
-    expect(toolCalls[0]['tool_call_id'], 'call_abc');
+    expect(toolCalls[0]['toolName'], 'get_weather');
+    expect(toolCalls[0]['toolCallId'], 'call_abc');
     expect((toolCalls[0]['input'] as Map)['location'], 'Tokyo');
 
-    // The content contains a ToolCall content variant.
+    // The content contains a tool-call part.
     final content = result['content'] as List;
     final hasToolCallVariant =
-        content.any((c) => (c as Map).containsKey('ToolCall'));
+        content.any((c) => (c as Map)['type'] == 'tool-call');
     expect(hasToolCallVariant, isTrue);
   });
 
@@ -317,7 +317,7 @@ void main() {
       'What is the weather in Tokyo?',
       {
         'tools': [_weatherTool()],
-        'tool_choice': 'required',
+        'toolChoice': 'required',
       },
     ));
 
@@ -350,18 +350,17 @@ void main() {
     // The stream delivered tool-call parts.
     expect(parts, isNotEmpty);
     final hasToolInputDelta =
-        parts.any((p) => (p as Map).containsKey('ToolInputDelta'));
+        parts.any((p) => (p as Map)['type'] == 'tool-input-delta');
     final hasToolCall =
-        parts.any((p) => (p as Map).containsKey('ToolCall'));
+        parts.any((p) => (p as Map)['type'] == 'tool-call');
     expect(hasToolInputDelta || hasToolCall, isTrue,
         reason: 'expected a tool-call stream part; got: $parts');
 
     // The assembled ToolCall should carry the get_weather tool + Tokyo input.
-    final toolCallPart = parts
-        .cast<Map<String, dynamic>?>()
-        .firstWhere((p) => p!.containsKey('ToolCall'));
-    final tc = toolCallPart!['ToolCall'] as Map<String, dynamic>;
-    expect(tc['tool_name'], 'get_weather');
+    final tc = parts
+        .cast<Map<String, dynamic>>()
+        .firstWhere((p) => p['type'] == 'tool-call');
+    expect(tc['toolName'], 'get_weather');
     expect((tc['input'] as Map)['location'], 'Tokyo');
   });
 
@@ -394,11 +393,11 @@ void main() {
       {'tools': [_weatherTool()]},
     ));
 
-    expect(firstResult, contains('tool_calls'));
-    final toolCalls = firstResult['tool_calls'] as List;
+    expect(firstResult, contains('toolCalls'));
+    final toolCalls = firstResult['toolCalls'] as List;
     expect(toolCalls, hasLength(1));
-    expect(toolCalls[0]['tool_name'], 'get_weather');
-    expect(toolCalls[0]['tool_call_id'], 'call_abc');
+    expect(toolCalls[0]['toolName'], 'get_weather');
+    expect(toolCalls[0]['toolCallId'], 'call_abc');
 
     // 2. Build the follow-up messages: original user question, the assistant's
     //    tool call, and the tool result we "executed" and are filling back in.
@@ -408,9 +407,9 @@ void main() {
         'role': 'assistant',
         'content': [
           {
-            'type': 'tool_call',
-            'tool_call_id': 'call_abc',
-            'tool_name': 'get_weather',
+            'type': 'tool-call',
+            'toolCallId': 'call_abc',
+            'toolName': 'get_weather',
             'input': {'location': 'Tokyo'},
           }
         ],
@@ -419,9 +418,13 @@ void main() {
         'role': 'tool',
         'content': [
           {
-            'type': 'tool_result',
-            'tool_call_id': 'call_abc',
-            'output': {'temperature': 22, 'condition': 'sunny'},
+            'type': 'tool-result',
+            'toolCallId': 'call_abc',
+            'toolName': 'get_weather',
+            'output': {
+              'type': 'json',
+              'value': {'temperature': 22, 'condition': 'sunny'},
+            },
           }
         ],
       },

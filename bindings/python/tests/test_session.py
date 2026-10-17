@@ -35,14 +35,14 @@ class TestSessionGrouping:
             calls = session_calls("sess-1")
             assert len(calls) == 2
             assert [c["step"] for c in calls] == [0, 1]
-            assert calls[0]["call_id"] != calls[1]["call_id"]
-            assert calls[0]["recorded_at"].endswith("Z")
+            assert calls[0]["callId"] != calls[1]["callId"]
+            assert calls[0]["recordedAt"].endswith("Z")
 
             # A call without session_id (inference off) is not grouped.
             generate_text(model, "third")
             sessions = list_sessions()
             assert len(sessions) == 1
-            assert sessions[0]["session_id"] == "sess-1"
+            assert sessions[0]["sessionId"] == "sess-1"
             assert sessions[0]["source"] == "Explicit"
 
             # Unknown session → empty.
@@ -71,7 +71,7 @@ class TestSessionGrouping:
             )
 
             sessions = list_sessions()
-            autos = [s for s in sessions if s["session_id"].startswith("auto-")]
+            autos = [s for s in sessions if s["sessionId"].startswith("auto-")]
             assert len(autos) == 1, "prefix continuation stays in one auto session"
             assert autos[0]["source"] == "Inferred"
             assert len(autos[0]["calls"]) == 2

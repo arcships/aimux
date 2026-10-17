@@ -8,32 +8,32 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `TranscriptionModelV4CallOptions`.
  */
-export type TranscriptionCallOptions = {
+export type TranscriptionCallOptions = { 
 /**
  * Audio to transcribe: raw bytes, a base64-encoded string, or a URL
  * that [`transcribe`] downloads.
  */
-audio: AudioInput,
+audio: AudioInput, 
 /**
  * The IANA media type of the audio data, e.g. `"audio/mp3"`. For a URL,
  * the media type the download reports replaces it, as the AI SDK uses
  * the downloaded media type (`transcribe.ts:227-233`).
  */
-media_type: string,
+mediaType: string, 
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null,
+providerOptions?: { [key in string]: { [key in string]: JsonValue } }, 
 /**
  * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
  * retrying. `None` uses 2, the AI SDK default.
  */
-max_retries: number | null,
+maxRetries?: number, 
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null,
+timeout?: TimeoutConfiguration, 
 /**
  * Additional HTTP headers to send with the request.
  */
-headers: { [key in string]: string } | null, };
+headers?: { [key in string]: string }, };

@@ -10,17 +10,22 @@ SequencedMockServer) and canned provider responses from test_e2e.py.
 import json
 
 import pytest
+from pydantic import TypeAdapter
 
 from aimux import deepseek, anthropic
 from aimux.wrapper import (
+    ContentPart,
+    GenerateContent,
+    GeneratedFile,
     GenerateTextOptions,
     GenerateTextResult,
     ModelMessage,
+    StreamPart,
+    TextContent,
     TextContentPart,
     FunctionTool,
     ProviderTool,
     ToolChoiceTool,
-    StreamPart,
     generate_text,
     stream_text,
     parse_stream_part,
@@ -82,13 +87,13 @@ class TestGenerateText:
         assert tc.tool_call_id == "call_abc"
         assert tc.input == {"location": "Tokyo"}
 
-        # content carries the parsed ToolCall variant as a typed TextContent.
+        # content carries the parsed tool call as a typed TextContent.
         assert isinstance(result.content, list)
-        tool_call_parts = [c for c in result.content if c.root.type == "ToolCall"]
-        assert tool_call_parts, "content must contain a ToolCall variant"
-        assert tool_call_parts[0].root.tool_name == "get_weather"
-        assert tool_call_parts[0].root.tool_call_id == "call_abc"
-        assert tool_call_parts[0].root.input == {"location": "Tokyo"}
+        tool_call_parts = [c for c in result.content if c.type == "tool-call"]
+        assert tool_call_parts, "content must contain a tool-call part"
+        assert tool_call_parts[0].tool_name == "get_weather"
+        assert tool_call_parts[0].tool_call_id == "call_abc"
+        assert tool_call_parts[0].input == {"location": "Tokyo"}
 
     def test_content_is_text_variant(self):
         with MockServer(OPENAI_CHAT) as mock:
@@ -97,8 +102,8 @@ class TestGenerateText:
 
         # content[0] is a typed Text content part.
         first = result.content[0]
-        assert first.root.type == "Text"
-        assert first.root.text == "Rust is a systems programming language."
+        assert first.type == "text"
+        assert first.text == "Rust is a systems programming language."
 
 
 # ── stream_text: typed-ish dicts ─────────────────────────────────────────────
@@ -111,7 +116,7 @@ class TestStreamText:
             parts = list(stream_text(model, "Say hello"))
 
         assert len(parts) > 0
-        text = "".join(p["TextDelta"]["text"] for p in parts if "TextDelta" in p)
+        text = "".join(p["text"] for p in parts if p["type"] == "text-delta")
         assert text == "Hello world"
 
     def test_stream_part_can_be_typed(self):
@@ -119,15 +124,17 @@ class TestStreamText:
         with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)
             first_delta = next(
-                p for p in stream_text(model, "Say hello") if "TextDelta" in p
+                p for p in stream_text(model, "Say hello") if p["type"] == "text-delta"
             )
 
+        # The text stream's delta field is ``text`` (ai
+        # stream-text-result.ts:435-440); tool-input-delta keeps ``delta``.
+        assert set(first_delta) == {"type", "id", "text"}
         sp = parse_stream_part(first_delta)
-        assert isinstance(sp, StreamPart)
-        assert sp.root.type == "TextDelta"
-        assert sp.root.text == "Hello"
-        # Round-trips back to the external-tag dict form.
-        assert sp.model_dump(exclude_none=True) == first_delta
+        assert sp.type == "text-delta"
+        assert sp.text == "Hello"
+        # Round-trips back to the wire dict form.
+        assert sp.model_dump(exclude_none=True, by_alias=True) == first_delta
 
     # ── RFC-0016 M2: include_raw_chunks ─────────────────────────────────────
 
@@ -141,19 +148,19 @@ class TestStreamText:
                             GenerateTextOptions(include_raw_chunks=True))
             )
 
-        raw_parts = [p for p in parts if "Raw" in p]
+        raw_parts = [p for p in parts if p["type"] == "raw"]
         # OPENAI_STREAM has 3 JSON events (2 content chunks + 1 usage chunk);
         # the [DONE] sentinel emits no Raw.
         assert len(raw_parts) == 3
         # Each Raw carries the parsed JSON payload of the SSE event.
         assert (
-            raw_parts[0]["Raw"]["raw_value"]["choices"][0]["delta"]["content"]
+            raw_parts[0]["rawValue"]["choices"][0]["delta"]["content"]
             == "Hello"
         )
         # Raw for the first event precedes its TextDelta.
         first_raw_idx = parts.index(raw_parts[0])
         first_text_idx = next(
-            i for i, p in enumerate(parts) if "TextDelta" in p
+            i for i, p in enumerate(parts) if p["type"] == "text-delta"
         )
         assert first_raw_idx < first_text_idx
 
@@ -163,13 +170,13 @@ class TestStreamText:
             model = deepseek("test-key", "gpt-4o", mock.url)
             parts = list(stream_text(model, "Say hello"))
 
-        assert all("Raw" not in p for p in parts)
+        assert all(p["type"] != "raw" for p in parts)
 
     def test_include_raw_chunks_option_roundtrip(self):
         """Pure model-layer round-trip of the include_raw_chunks option."""
         opts = GenerateTextOptions(include_raw_chunks=True)
-        dumped = opts.model_dump_json(exclude_none=True)
-        assert '"include_raw_chunks":true' in dumped
+        dumped = _opts_to_json(opts)
+        assert '"includeRawChunks":true' in dumped
         back = GenerateTextOptions.model_validate_json(dumped)
         assert back.include_raw_chunks is True
 
@@ -246,18 +253,18 @@ class TestOptionsReachProvider:
     def test_tool_choice_serializes_camel_case_tool_name(self):
         """At the wrapper→Rust JSON boundary, the ``tool`` tool-choice variant
         must serialize as ``{"type":"tool","toolName":"..."}`` (camelCase), the
-        hand-rolled serde wire format Rust expects. This is a deterministic
+        AI SDK shape Rust expects. This is a deterministic
         unit test of the boundary, independent of provider conversion."""
         opts = GenerateTextOptions(
             tools=[FunctionTool(name="get_weather", input_schema={"type": "object"})],
             tool_choice=ToolChoiceTool(tool_name="get_weather"),
         )
         wire = json.loads(_opts_to_json(opts))
-        assert wire["tool_choice"] == {"type": "tool", "toolName": "get_weather"}
+        assert wire["toolChoice"] == {"type": "tool", "toolName": "get_weather"}
 
         # And it round-trips back into the typed model.
         from aimux.wrapper import ToolChoiceTool as _TCT
-        back = _TCT.model_validate(wire["tool_choice"])
+        back = _TCT.model_validate(wire["toolChoice"])
         assert back.tool_name == "get_weather"
 
 
@@ -305,6 +312,236 @@ class TestPromptMessages:
         assert isinstance(msg["content"], list)
         assert msg["content"][0] == {"type": "text", "text": "Hello, multimodal world."}
 
+    def test_image_bytes_are_base64_on_the_wire(self):
+        """ImagePart.image is DataContent upstream (provider-utils
+        types/content-part.ts:42): bytes are a base64 string in the JSON."""
+        part = TypeAdapter(ContentPart).validate_python(
+            {"type": "image", "image": b"\x89PNG", "mediaType": "image/png"}
+        )
+        assert part.model_dump(by_alias=True, exclude_none=True) == {
+            "type": "image",
+            "image": "iVBORw==",
+            "mediaType": "image/png",
+        }
+        with RecordingMockServer(ANTHROPIC_MSG) as mock:
+            model = anthropic("test-key", "claude-3-5-sonnet-20241022", mock.url)
+            generate_text(model, [ModelMessage(role="user", content=[part])])
+            body = mock.received_body()
+        source = body["messages"][0]["content"][0]["source"]
+        assert source == {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}
+
+
+    def test_file_parts_are_the_ai_sdk_file_part(self):
+        """FilePart.data is FileData | DataContent | URL | ProviderReference
+        upstream (provider-utils types/content-part.ts:75, file-data.ts:44-48);
+        there is no file-base64 / file-url / file-reference part."""
+        adapter = TypeAdapter(ContentPart)
+        for wire in [
+            {"type": "file", "data": {"type": "data", "data": "aGk="}, "mediaType": "text/plain"},
+            {"type": "file", "data": {"type": "url", "url": "https://example.com/a.pdf"},
+             "mediaType": "application/pdf"},
+            {"type": "file", "data": {"type": "reference", "reference": {"anthropic": "file-abc"}},
+             "mediaType": "application/pdf", "filename": "a.pdf"},
+            {"type": "file", "data": {"type": "text", "text": "hello"}, "mediaType": "text/plain"},
+            {"type": "file", "data": "aGk=", "mediaType": "text/plain"},
+            {"type": "file", "data": {"anthropic": "file-abc"}, "mediaType": "application/pdf"},
+            {"type": "reasoning-file", "data": "aGk=", "mediaType": "image/png"},
+            {"type": "reasoning-file", "data": {"type": "url", "url": "https://example.com/a.png"},
+             "mediaType": "image/png"},
+        ]:
+            assert adapter.dump_python(adapter.validate_python(wire), by_alias=True) == wire
+        assert adapter.dump_python(
+            adapter.validate_python({"type": "file", "data": b"hi", "mediaType": "text/plain"}),
+            by_alias=True,
+        ) == {"type": "file", "data": "aGk=", "mediaType": "text/plain"}
+        for removed in ("file-base64", "file-url", "file-reference"):
+            with pytest.raises(ValueError):
+                adapter.validate_python(
+                    {"type": removed, "data": "aGk=", "url": "https://example.com/a.pdf",
+                     "mediaType": "application/pdf"}
+                )
+
+        # A data: URL's media type wins (ai prompt/file-part-data.ts:31-41);
+        # a bare reference is a reference (:133-138).
+        parts = [
+            adapter.validate_python(
+                {"type": "file", "data": "data:image/png;base64,iVBORw==", "mediaType": "image"}
+            ),
+            adapter.validate_python(
+                {"type": "file", "data": {"anthropic": "file-abc"}, "mediaType": "application/pdf"}
+            ),
+        ]
+        with RecordingMockServer(ANTHROPIC_MSG) as mock:
+            model = anthropic("test-key", "claude-3-5-sonnet-20241022", mock.url)
+            generate_text(model, [ModelMessage(role="user", content=parts)])
+            body = mock.received_body()
+        content = body["messages"][0]["content"]
+        assert content[0]["source"] == {"type": "base64", "media_type": "image/png", "data": "iVBORw=="}
+        assert content[1] == {"type": "document", "source": {"type": "file", "file_id": "file-abc"}}
+
+
+# ── Generated files (#232 C46) ─────────────────────────────────────────────
+
+class TestGeneratedFiles:
+
+    def test_generated_file_is_base64_and_media_type(self):
+        """GeneratedFile is {base64, mediaType, providerMetadata?} (ai
+        generate-text/generated-file.ts:10-32); a text file part is
+        {type, file, providerMetadata?} (convert-language-model-content.ts:55-70);
+        the provider's LanguageModelV4File keeps {type, mediaType, data}."""
+        file = GeneratedFile.model_validate({"base64": "aGk=", "mediaType": "text/plain"})
+        assert file.model_dump(by_alias=True) == {"base64": "aGk=", "mediaType": "text/plain"}
+        assert GeneratedFile(base64=b"hi", media_type="text/plain").base64 == "aGk="
+        assert file.to_bytes() == b"hi"
+
+        for tag in ("file", "reasoning-file"):
+            wire = {
+                "type": tag,
+                "file": {"base64": "aGk=", "mediaType": "text/plain"},
+                "providerMetadata": {"google": {"thoughtSignature": "sig"}},
+            }
+            for adapter in (TypeAdapter(TextContent), TypeAdapter(StreamPart)):
+                assert adapter.dump_python(adapter.validate_python(wire), by_alias=True) == wire
+
+        raw = {
+            "type": "file",
+            "data": {"type": "url", "url": "https://example.com/a.png"},
+            "mediaType": "image/png",
+        }
+        adapter = TypeAdapter(GenerateContent)
+        assert adapter.dump_python(adapter.validate_python(raw), by_alias=True) == raw
+
+
+# ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
+
+class TestStandaloneTypeTags:
+
+    def test_standalone_tool_calls_and_sources_are_tagged(self):
+        """A result's toolCalls and sources are the AI SDK's TypedToolCall and
+        Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
+        and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
+        :36); generate-text-result.ts:73, :78. A repair function's call is a
+        tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7)."""
+        from aimux import apply_tool_call_repair, tool_call_repair_context
+        from aimux.wrapper import GenerateTextResult, RawToolCall, ToolCall
+
+        call = {"type": "tool-call", "toolCallId": "call-1", "toolName": "weather", "input": {"city": "SG"}}
+        url = {"type": "source", "sourceType": "url", "id": "s1", "url": "https://example.com"}
+        result = GenerateTextResult.model_validate(
+            {"text": "", "finishReason": "stop", "toolCalls": [call], "sources": [url]}
+        )
+        dumped = result.model_dump(by_alias=True)
+        assert dumped["toolCalls"] == [call]
+        assert dumped["sources"] == [url]
+        assert RawToolCall(tool_call_id="c", tool_name="t", input="{}").model_dump(by_alias=True) == {
+            "type": "tool-call", "toolCallId": "c", "toolName": "t", "input": "{}",
+        }
+
+        # JSON written before the tag still reads; another tag is rejected.
+        assert ToolCall.model_validate({"toolCallId": "c", "toolName": "t", "input": {}}).type == "tool-call"
+        with pytest.raises(ValueError):
+            ToolCall.model_validate({"type": "source", "toolCallId": "c", "toolName": "t", "input": {}})
+
+        # The native repair functions write the standalone call tagged.
+        invalid = json.dumps({
+            "toolCallId": "call-1", "toolName": "weather", "input": {"town": "SG"},
+            "dynamic": True, "invalid": True,
+            "error": {"name": "AI_InvalidToolInputError", "toolName": "weather",
+                      "toolInput": '{"town":"SG"}', "cause": "missing city"},
+        })
+        opts = '{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}'
+        out = json.loads(apply_tool_call_repair(invalid, opts, '{"type":"unchanged"}'))
+        assert out["type"] == "tool-call" and list(out)[0] == "type"
+        context = json.loads(tool_call_repair_context(invalid, '{"prompt":"weather?"}', opts))
+        assert context["toolCall"]["type"] == "tool-call"
+
+
+# ── Provider namespace order (#229 NP2-1) ────────────────────────────────────
+
+class TestNamespaceOrder:
+
+    def test_namespace_maps_keep_insertion_order(self):
+        """Provider options, provider metadata and provider references are JS
+        objects upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+        shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20),
+        so their keys keep insertion order, through Rust and back."""
+        from aimux import apply_tool_call_repair
+        from aimux.wrapper import ToolCall
+
+        metadata = '{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}'
+        invalid = (
+            '{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},'
+            '"dynamic":true,"invalid":true,"providerMetadata":' + metadata + ','
+            '"error":{"name":"AI_InvalidToolInputError","toolName":"weather",'
+            '"toolInput":"{\\"town\\":\\"SG\\"}","cause":"missing city"}}'
+        )
+        opts = '{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}'
+        out = apply_tool_call_repair(invalid, opts, '{"type":"unchanged"}')
+        assert json.dumps(json.loads(out)["providerMetadata"], separators=(",", ":")) == metadata
+
+        call = ToolCall.model_validate_json(out)
+        assert list(call.provider_metadata) == ["zeta", "alpha", "mid"]
+        assert '"providerMetadata":' + metadata in call.model_dump_json(by_alias=True)
+
+
+# ── JSON null and undefined (#232 C34) ───────────────────────────────────────
+
+class TestNullIsKeptApartFromMissing:
+
+    def test_unknown_fields_keep_null(self):
+        """``body?: unknown`` (provider language-model-v4-generate-result.ts:41,
+        :56) and ``inputSchemaInput?: unknown`` (provider-utils
+        types/tool-approval-request.ts:41): the AI SDK's JSON keeps ``null``
+        and omits ``undefined``; so does the dump of a parsed model."""
+        from aimux.wrapper import GenerateResponseMetadata, RequestInfo
+
+        for wire in ({}, {"body": None}, {"body": {"a": None}}):
+            assert GenerateResponseMetadata.model_validate(wire).model_dump(
+                mode="json", by_alias=True) == wire
+            assert RequestInfo.model_validate(wire).model_dump(
+                mode="json", by_alias=True) == wire
+        approval = {"type": "tool-approval-request", "approvalId": "a1",
+                    "toolCallId": "c1", "inputSchemaInput": None}
+        part = TypeAdapter(ContentPart).validate_python(approval)
+        assert part.model_dump(mode="json", by_alias=True) == approval
+
+    def test_null_tool_input_is_sent_as_null(self):
+        """A tool call's ``input`` is a JSON value; ``null`` is sent back as
+        ``null`` instead of being dropped (which Rust rejects as missing)."""
+        part = TypeAdapter(ContentPart).validate_python(
+            {"type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": None})
+        assert part.model_dump(mode="json", by_alias=True)["input"] is None
+        assert TextContentPart(text="x").model_dump(mode="json", by_alias=True) == {
+            "type": "text", "text": "x"}
+
+
+class TestStepsAndUsageAreCamelCase:
+
+    def test_usage_and_step_round_trip(self):
+        """``LanguageModelUsage`` (ai types/usage.ts:10-67) is camelCase with
+        an unknown count absent; a step is ``StepResult``'s own fields
+        (generate-text/step-result.ts:138-278), camelCase."""
+        from aimux.wrapper import LanguageModelUsage, StepResult
+
+        usage = {"inputTokens": 3, "inputTokenDetails": {"cacheReadTokens": 1},
+                 "outputTokens": 2, "outputTokenDetails": {}, "totalTokens": 5}
+        parsed = LanguageModelUsage.model_validate(usage)
+        assert parsed.input_token_details.cache_read_tokens == 1
+        assert parsed.model_dump(mode="json", by_alias=True) == usage
+
+        step = {
+            "callId": "c1", "stepNumber": 0,
+            "model": {"provider": "openai", "modelId": "gpt-4o"},
+            "content": [], "finishReason": "stop", "usage": usage,
+            "performance": {"stepTimeMs": 1.0}, "warnings": [], "request": {},
+            "response": {"id": "r1", "timestamp": "2026-01-01T00:00:00.000Z",
+                         "modelId": "gpt-4o", "body": None, "messages": []},
+        }
+        parsed_step = StepResult.model_validate(step)
+        assert parsed_step.model.model_id == "gpt-4o"
+        assert parsed_step.response.model_id == "gpt-4o"
+        assert parsed_step.model_dump(mode="json", by_alias=True) == step
+
 
 # ── tool-call round trip with typed content parts ────────────────────────────
 
@@ -347,9 +584,9 @@ class TestToolCallRoundTrip:
                     role="assistant",
                     content=[
                         {
-                            "type": "tool_call",
-                            "tool_call_id": "call_abc",
-                            "tool_name": "get_weather",
+                            "type": "tool-call",
+                            "toolCallId": "call_abc",
+                            "toolName": "get_weather",
                             "input": {"location": "Tokyo"},
                         }
                     ],
@@ -358,9 +595,13 @@ class TestToolCallRoundTrip:
                     role="tool",
                     content=[
                         {
-                            "type": "tool_result",
-                            "tool_call_id": "call_abc",
-                            "result": {"temperature": 22, "condition": "sunny"},
+                            "type": "tool-result",
+                            "toolCallId": "call_abc",
+                            "toolName": "get_weather",
+                            "output": {
+                                "type": "json",
+                                "value": {"temperature": 22, "condition": "sunny"},
+                            },
                         }
                     ],
                 ),

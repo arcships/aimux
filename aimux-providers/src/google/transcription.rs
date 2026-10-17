@@ -215,7 +215,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
                 self.model_id
             )));
         }
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let parsed = TranscriptionOptions::parse(super::options::google_options(
             options.provider_options.as_ref(),
         ))?;
@@ -385,7 +385,7 @@ impl GoogleTranscriptionModel {
                 body: Some(setup.to_string()),
             }),
             response: Some(TranscriptionResponse {
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
                 ..Default::default()
             }),

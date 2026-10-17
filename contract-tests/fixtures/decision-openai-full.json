@@ -27,17 +27,17 @@
         ]
       }
     },
-    "max_retries": 0,
-    "provider_options": {
+    "maxRetries": 0,
+    "providerOptions": {
       "openai": {
         "images": [
           {
             "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=",
-            "media_type": "image/png",
+            "mediaType": "image/png",
             "detail": "low"
           }
         ],
-        "choice_values": {
+        "choiceValues": {
           "choice": {
             "boolean_true": true,
             "text_true": "true"

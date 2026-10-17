@@ -31,7 +31,7 @@ async function open(id: string) {
 onMounted(load)
 
 function recLatency(r: Recording): number {
-  return r.exchanges?.reduce((s, e) => s + (e.timing?.latency_ms ?? 0), 0) ?? 0
+  return r.exchanges?.reduce((s, e) => s + (e.timing?.latencyMs ?? 0), 0) ?? 0
 }
 
 function verdictBadge(r: Recording): string {
@@ -55,18 +55,18 @@ function verdictBadge(r: Recording): string {
         <template v-else>
           <button
             v-for="s in sessions"
-            :key="s.session_id"
+            :key="s.sessionId"
             class="block w-full border-b px-4 py-3 text-left hover:bg-accent/40 cursor-pointer"
-            :class="{ 'bg-accent/60': selected === s.session_id }"
-            @click="open(s.session_id)"
+            :class="{ 'bg-accent/60': selected === s.sessionId }"
+            @click="open(s.sessionId)"
           >
             <div class="flex items-center gap-2">
-              <span class="truncate font-mono text-xs">{{ s.session_id }}</span>
+              <span class="truncate font-mono text-xs">{{ s.sessionId }}</span>
               <Badge variant="secondary" class="text-[10px]">{{ s.source }}</Badge>
               <span class="ml-auto text-xs text-muted-foreground">{{ s.calls.length }} calls</span>
             </div>
             <div class="mt-1 text-[11px] text-muted-foreground">
-              最后：{{ s.calls[s.calls.length - 1]?.recorded_at?.replace('T', ' ').slice(0, 19) ?? '—' }}
+              最后：{{ s.calls[s.calls.length - 1]?.recordedAt?.replace('T', ' ').slice(0, 19) ?? '—' }}
             </div>
           </button>
           <div v-if="!sessions.length" class="p-6 text-center text-xs text-muted-foreground">
@@ -88,12 +88,12 @@ function verdictBadge(r: Recording): string {
         <div class="space-y-2">
           <div
             v-for="r in [...recordings].sort((a, b) => (a.step ?? 0) - (b.step ?? 0))"
-            :key="r.call_id"
+            :key="r.callId"
             class="flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 hover:bg-accent/40"
-            @click="router.push({ path: '/traces', query: { call: r.call_id } })"
+            @click="router.push({ path: '/traces', query: { call: r.callId } })"
           >
             <span class="w-12 font-mono text-xs text-muted-foreground">step{{ r.step }}</span>
-            <span class="w-36 truncate font-mono text-xs">{{ r.provider?.provider }}/{{ r.provider?.model_id }}</span>
+            <span class="w-36 truncate font-mono text-xs">{{ r.provider?.provider }}/{{ r.provider?.modelId }}</span>
             <span class="text-xs text-muted-foreground">{{ recLatency(r) }}ms</span>
             <span class="ml-auto"><Badge :variant="verdictBadge(r) === 'error' ? 'destructive' : verdictBadge(r) === 'success' ? 'success' : 'secondary'">{{ r.outcome?.status }}</Badge></span>
           </div>

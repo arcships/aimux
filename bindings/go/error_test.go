@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,7 +162,7 @@ func TestRetryableIsNotDerivedFromStatus(t *testing.T) {
 // Malformed raw JSON is caught by the binding before the C call: a plain
 // error naming the parameter, not an *Error.
 func TestInvalidJSONNamesParameter(t *testing.T) {
-	err := RegisterProviders("{not json")
+	err := InitProxy("{not json")
 	if err == nil {
 		t.Fatal("expected error for malformed config")
 	}
@@ -408,7 +410,7 @@ func TestMarshalledOptionsRejectRawPassThrough(t *testing.T) {
 		}, "opts: invalid JSON"},
 		{"transcription session opts lone surrogate", func() error {
 			b, e := marshalJSON("opts", &TranscriptionSessionOpts{
-				ProviderOptions: map[string]json.RawMessage{"x": json.RawMessage(`"\ud800"`)},
+				ProviderOptions: json.RawMessage(`{"x":"\ud800"}`),
 			})
 			_ = b
 			return e
@@ -469,13 +471,12 @@ func TestEmbedRejectsRawPassThroughOpts(t *testing.T) {
 	if _, err := m.Embed([]string{"hi"}, &EmbeddingCallOptions{
 		ProviderOptions: jsonObj(`{"a":"\ud800"}`),
 	}); err == nil || !strings.Contains(err.Error(), "opts: invalid JSON") {
-		t.Fatalf("Embed with a lone surrogate in provider_options: %v", err)
+		t.Fatalf("Embed with a lone surrogate in providerOptions: %v", err)
 	}
 }
 
 func TestCodeFromCRejectsOutOfRange(t *testing.T) {
-	// 4 is retired; 14 is Retry; 15..17 are tool-call errors; 18 is
-	// NoOutputGenerated; 19 / 20 are the missing-key / missing-setting codes.
+	// 4 is retired; 18 is NoOutputGenerated; 19/20 load key/setting; 21 is invalid.
 	for _, bad := range []int{0, 4, 21, 999} {
 		if _, ok := codeFromC(bad); ok {
 			t.Fatalf("%d is not an AiMuxError variant", bad)
@@ -529,5 +530,43 @@ func TestRetryErrorHistory(t *testing.T) {
 	}
 	if c, ok := codeFromC(17); !ok || c != CodeToolCallRepair {
 		t.Fatalf("17 → %v, %v", c, ok)
+	}
+}
+
+// APICallError.data is `unknown` in the AI SDK (@ai-sdk/provider
+// errors/api-call-error.ts:18, :53): a null error body is data `null`,
+// which is not the same as no data. Error.Data keeps the raw JSON, so the
+// two stay apart (#232 C34).
+func TestAPICallDataKeepsNullApartFromMissing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want json.RawMessage
+	}{
+		{"object", `{"error":{"message":"bad input"}}`, json.RawMessage(`{"error":{"message":"bad input"}}`)},
+		{"null", `null`, json.RawMessage(`null`)},
+		{"not json", `bad input`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			m, err := NewOpenAIWithBase("sk-test-fake-key", "gpt-4o-mini", server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			_, err = m.GenerateText(`"hi"`, `{"maxRetries":0}`)
+			var e *Error
+			if !errors.As(err, &e) || e.Code != CodeAPICall {
+				t.Fatalf("expected an API call error, got %T: %v", err, err)
+			}
+			if string(e.Data) != string(tc.want) || (e.Data == nil) != (tc.want == nil) {
+				t.Fatalf("Data = %q (nil %v); want %q (nil %v)", e.Data, e.Data == nil, tc.want, tc.want == nil)
+			}
+		})
 	}
 }

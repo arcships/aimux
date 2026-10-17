@@ -134,7 +134,7 @@ func TestE2E_Embedding(t *testing.T) {
 	if len(result.Embeddings[0]) != 3 {
 		t.Errorf("expected 3 dimensions, got %d", len(result.Embeddings[0]))
 	}
-	if result.Usage == nil || result.Usage.Tokens == nil || *result.Usage.Tokens != 5 {
+	if result.Usage == nil || result.Usage.Tokens != 5 {
 		t.Error("usage tokens mismatch")
 	}
 }
@@ -143,15 +143,29 @@ func TestE2E_Embedding(t *testing.T) {
 
 func TestE2E_SpeechResultParsing(t *testing.T) {
 	result, err := ParseSpeechResult(`{
-		"audio": {"Base64": "aGVsbG8="},
+		"audio": "aGVsbG8=",
 		"warnings": [],
-		"response": {"id": "resp-1"}
+		"response": {"modelId": "tts-1"}
 	}`)
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if result.Audio.Base64 == nil || *result.Audio.Base64 != "aGVsbG8=" {
-		t.Error("audio base64 mismatch")
+	if string(result.Audio) != "hello" {
+		t.Errorf("audio mismatch: %q", result.Audio)
+	}
+	// SpeechModelV4Result.audio is a Uint8Array upstream
+	// (speech-model-v4-result.ts:16): a base64 string in the JSON, read as
+	// atob reads it (URL-safe characters, no padding), never a number array.
+	result, err = ParseSpeechResult(`{"audio": "AAEC-v8", "warnings": [], "response": {}}`)
+	if err != nil || string(result.Audio) != "\x00\x01\x02\xfa\xff" {
+		t.Errorf("unpadded url-safe audio: %q, %v", result.Audio, err)
+	}
+	if _, err = ParseSpeechResult(`{"audio": [104,105], "warnings": [], "response": {}}`); err == nil {
+		t.Error("a number array is not the AI SDK's JSON for bytes")
+	}
+	encoded, _ := json.Marshal(SpeechResult{Audio: Bytes{0, 1, 2, 250, 255}})
+	if !strings.Contains(string(encoded), `"audio":"AAEC+v8="`) {
+		t.Errorf("audio must encode as base64: %s", encoded)
 	}
 }
 
@@ -159,18 +173,18 @@ func TestE2E_SpeechResultParsing(t *testing.T) {
 
 func TestE2E_ImageResultParsing(t *testing.T) {
 	result, err := ParseImageResult(`{
-		"images": {"Base64": ["aW1hZ2Ux"]},
+		"images": ["aW1hZ2Ux"],
 		"warnings": [],
-		"response": {"id": "resp-1"}
+		"response": {"modelId": "dall-e-3"}
 	}`)
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if len(result.Images.Base64) != 1 {
-		t.Fatalf("expected 1 image, got %d", len(result.Images.Base64))
+	if len(result.Images) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(result.Images))
 	}
-	if result.Images.Base64[0] != "aW1hZ2Ux" {
-		t.Error("image base64 mismatch")
+	if string(result.Images[0]) != "image1" {
+		t.Error("image mismatch")
 	}
 }
 
@@ -179,7 +193,7 @@ func TestE2E_ImageResultParsing(t *testing.T) {
 func TestE2E_TranscriptionResultParsing(t *testing.T) {
 	result, err := ParseTranscriptionResult(`{
 		"text": "Hello world",
-		"segments": [{"text": "Hello", "start": 0.0, "end": 1.0}],
+		"segments": [{"text": "Hello", "startSecond": 0.0, "endSecond": 1.0}],
 		"language": "en",
 		"warnings": [],
 		"response": {"id": "resp-1"}
@@ -206,8 +220,8 @@ func TestE2E_TranscriptionResultParsing(t *testing.T) {
 func TestE2E_RerankingResultParsing(t *testing.T) {
 	result, err := ParseRerankingResult(`{
 		"ranking": [
-			{"index": 1, "relevance_score": 0.95},
-			{"index": 0, "relevance_score": 0.30}
+			{"index": 1, "relevanceScore": 0.95},
+			{"index": 0, "relevanceScore": 0.30}
 		],
 		"warnings": []
 	}`)
@@ -229,9 +243,9 @@ func TestE2E_RerankingResultParsing(t *testing.T) {
 
 func TestE2E_VideoResultParsing(t *testing.T) {
 	result, err := ParseVideoResult(`{
-		"videos": [{"Url": {"url": "https://example.com/video.mp4", "media_type": "video/mp4"}}],
+		"videos": [{"type": "url", "url": "https://example.com/video.mp4", "mediaType": "video/mp4"}],
 		"warnings": [],
-		"response": {"id": "resp-1"}
+		"response": {"modelId": "veo"}
 	}`)
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
@@ -239,7 +253,7 @@ func TestE2E_VideoResultParsing(t *testing.T) {
 	if len(result.Videos) != 1 {
 		t.Fatalf("expected 1 video, got %d", len(result.Videos))
 	}
-	if result.Videos[0].Url == nil || result.Videos[0].Url.URL != "https://example.com/video.mp4" {
+	if result.Videos[0].Type != "url" || result.Videos[0].URL != "https://example.com/video.mp4" {
 		t.Error("video URL mismatch")
 	}
 }
@@ -266,7 +280,7 @@ func TestVideoPollOptionsWireFormat(t *testing.T) {
 	if !ok {
 		t.Fatalf("poll missing from wire format: %s", encoded)
 	}
-	if poll["interval_ms"] != float64(intervalMS) || poll["timeout_ms"] != float64(timeoutMS) {
+	if poll["intervalMs"] != float64(intervalMS) || poll["timeoutMs"] != float64(timeoutMS) {
 		t.Fatalf("unexpected poll wire format: %s", encoded)
 	}
 }
@@ -299,15 +313,15 @@ func TestE2E_SearchResultParsing(t *testing.T) {
 
 func TestE2E_UploadFileResultParsing(t *testing.T) {
 	result, err := ParseUploadFileResult(`{
-		"provider_reference": {"openai": "file-abc123"},
-		"media_type": "application/pdf",
+		"providerReference": {"openai": "file-abc123"},
+		"mediaType": "application/pdf",
 		"filename": "doc.pdf",
 		"warnings": []
 	}`)
 	if err != nil {
 		t.Fatalf("parse failed: %v", err)
 	}
-	if result.ProviderReference["openai"] != "file-abc123" {
+	if id, _ := result.ProviderReference.Get("openai"); id != "file-abc123" {
 		t.Error("provider reference mismatch")
 	}
 	if result.MediaType == nil || *result.MediaType != "application/pdf" {
@@ -319,7 +333,7 @@ func TestE2E_UploadFileResultParsing(t *testing.T) {
 
 func TestE2E_RerankWithOptions(t *testing.T) {
 	// Cohere reranking uses its own endpoint; we verify options marshaling.
-	docs := `{"Text":{"values":["doc1","doc2","doc3"]}}`
+	docs := `{"type":"text","values":["doc1","doc2","doc3"]}`
 	opts := &RerankingCallOptions{
 		Documents: json.RawMessage(docs),
 		Query:     "which is most relevant?",
@@ -336,8 +350,8 @@ func TestE2E_RerankWithOptions(t *testing.T) {
 	if !strings.Contains(s, `"query"`) {
 		t.Errorf("expected query field: %s", s)
 	}
-	if !strings.Contains(s, `"top_n"`) {
-		t.Errorf("expected top_n field: %s", s)
+	if !strings.Contains(s, `"topN"`) {
+		t.Errorf("expected topN field: %s", s)
 	}
 }
 
@@ -590,4 +604,25 @@ func TestTranscriptionSessionCloseUnblocksNextPart(t *testing.T) {
 	}
 	// Idempotence remains part of the public session contract.
 	session.Close()
+}
+
+// Response bodies are the AI SDK's body?: unknown
+// (language-model-v4-generate-result.ts:41, :56): an explicit null is kept
+// apart from a missing body when decoded and encoded again.
+func TestResponseBodyKeepsNullApartFromMissing(t *testing.T) {
+	for _, body := range []string{`,"body":null`, ``, `,"body":{"a":null}`} {
+		wire := `{"audio":"aGk=","warnings":[],"response":{"modelId":"tts-1"` + body + `}}`
+		result, err := ParseSpeechResult(wire)
+		if err != nil {
+			t.Fatalf("parse %s: %v", wire, err)
+		}
+		encoded, _ := json.Marshal(result.Response)
+		if want := `{"modelId":"tts-1"` + body + `}`; string(encoded) != want {
+			t.Errorf("body %q: got %s, want %s", body, encoded, want)
+		}
+	}
+	var info ResponseInfo
+	if err := json.Unmarshal([]byte(`{"body":null}`), &info); err != nil || string(info.Body) != "null" {
+		t.Errorf("ResponseInfo body null: %q, %v", info.Body, err)
+	}
 }

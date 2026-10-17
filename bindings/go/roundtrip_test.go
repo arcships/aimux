@@ -1,9 +1,9 @@
 // Round-trip (de)serialization tests for the typed wire-format types.
 //
-// Mirrors Kotlin TypedModelRoundTripTest.kt: build a typed value, marshal to
-// JSON, unmarshal back, assert equality. These pin down wire-format field
-// names and tag spellings the typed wrappers rely on — without them, a rename
-// in aimux-core could silently break Go clients.
+// Build a typed value, marshal to JSON, unmarshal back, assert equality. These
+// pin down wire-format field names and tag spellings the typed wrappers rely
+// on (camelCase, the AI SDK JSON) — without them, a rename in aimux-core could
+// silently break Go clients.
 //
 // Also includes regression tests for the two bugs found in code review:
 //   - ToolChoiceTool JSON injection (now uses json.Marshal)
@@ -122,9 +122,9 @@ func TestToolCallRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	// Verify wire field names match Kotlin (snake_case).
+	// Verify wire field names (camelCase).
 	s := string(b)
-	for _, want := range []string{`"tool_call_id"`, `"tool_name"`, `"input"`, `"provider_executed"`, `"dynamic"`, `"provider_metadata"`} {
+	for _, want := range []string{`"toolCallId"`, `"toolName"`, `"input"`, `"providerExecuted"`, `"dynamic"`, `"providerMetadata"`} {
 		if !contains(s, want) {
 			t.Errorf("expected %s in wire JSON, got %s", want, s)
 		}
@@ -134,19 +134,19 @@ func TestToolCallRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
 	if decoded.ToolCallID != original.ToolCallID {
-		t.Errorf("tool_call_id mismatch: got %s, want %s", decoded.ToolCallID, original.ToolCallID)
+		t.Errorf("toolCallId mismatch: got %s, want %s", decoded.ToolCallID, original.ToolCallID)
 	}
 	if decoded.ToolName != original.ToolName {
-		t.Errorf("tool_name mismatch: got %s, want %s", decoded.ToolName, original.ToolName)
+		t.Errorf("toolName mismatch: got %s, want %s", decoded.ToolName, original.ToolName)
 	}
 	if decoded.ProviderExecuted == nil || *decoded.ProviderExecuted != true {
-		t.Error("provider_executed did not round-trip")
+		t.Error("providerExecuted did not round-trip")
 	}
 	if decoded.Dynamic == nil || *decoded.Dynamic != false {
 		t.Error("dynamic did not round-trip")
 	}
 	if string(decoded.ProviderMetadata) != string(original.ProviderMetadata) {
-		t.Errorf("provider_metadata mismatch: got %s, want %s", decoded.ProviderMetadata, original.ProviderMetadata)
+		t.Errorf("providerMetadata mismatch: got %s, want %s", decoded.ProviderMetadata, original.ProviderMetadata)
 	}
 }
 
@@ -179,9 +179,10 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 		Role: RoleTool,
 		Content: []map[string]any{
 			{
-				"type":         "tool_result",
-				"tool_call_id": "call_1",
-				"result":       map[string]any{"temp": "20"},
+				"type":       "tool-result",
+				"toolCallId": "call_1",
+				"toolName":   "get_weather",
+				"output":     map[string]any{"type": "json", "value": map[string]any{"temp": "20"}},
 			},
 		},
 	}
@@ -203,14 +204,14 @@ func TestModelMessageMultiPartRoundTrip(t *testing.T) {
 	if len(raw.Content) != 1 {
 		t.Fatalf("expected 1 content part, got %d", len(raw.Content))
 	}
-	// Verify the tool_result structure.
+	// Verify the tool-result structure.
 	var part map[string]any
 	json.Unmarshal(raw.Content[0], &part)
-	if part["type"] != "tool_result" {
-		t.Errorf("expected type 'tool_result', got %v", part["type"])
+	if part["type"] != "tool-result" {
+		t.Errorf("expected type 'tool-result', got %v", part["type"])
 	}
-	if part["tool_call_id"] != "call_1" {
-		t.Errorf("expected tool_call_id 'call_1', got %v", part["tool_call_id"])
+	if part["toolCallId"] != "call_1" {
+		t.Errorf("expected toolCallId 'call_1', got %v", part["toolCallId"])
 	}
 }
 
@@ -239,11 +240,11 @@ func TestGenerateTextOptionsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
-	// Verify snake_case wire fields present.
+	// Verify camelCase wire fields present.
 	s := string(b)
 	for _, want := range []string{
-		`"temperature"`, `"top_k"`, `"reasoning"`, `"instructions"`,
-		`"tool_choice"`, `"tools"`, `"input_schema"`,
+		`"temperature"`, `"topK"`, `"reasoning"`, `"instructions"`,
+		`"toolChoice"`, `"tools"`, `"inputSchema"`,
 	} {
 		if !contains(s, want) {
 			t.Errorf("expected %s in wire JSON, got %s", want, s)
@@ -275,22 +276,22 @@ func TestGenerateTextOptionsDefaultOmitsFields(t *testing.T) {
 	}
 }
 
-// RFC-0016 M2: include_raw_chunks round-trips through the typed options.
+// includeRawChunks round-trips through the typed options.
 func TestGenerateTextOptionsIncludeRawChunksRoundTrip(t *testing.T) {
 	original := GenerateTextOptions{IncludeRawChunks: boolPtr(true)}
 	b, err := json.Marshal(original)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(b), `"include_raw_chunks":true`) {
-		t.Errorf("expected include_raw_chunks:true in %s", b)
+	if !strings.Contains(string(b), `"includeRawChunks":true`) {
+		t.Errorf("expected includeRawChunks:true in %s", b)
 	}
 	var back GenerateTextOptions
 	if err := json.Unmarshal(b, &back); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if back.IncludeRawChunks == nil || *back.IncludeRawChunks != true {
-		t.Errorf("round-trip lost include_raw_chunks: %#v", back.IncludeRawChunks)
+		t.Errorf("round-trip lost includeRawChunks: %#v", back.IncludeRawChunks)
 	}
 }
 
@@ -318,11 +319,11 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 	cases := []struct {
 		name string
 		json string
-		tag  string
+		typ  string
 	}{
-		{"TextDelta", `{"TextDelta":{"id":"tx1","text":"Hello"}}`, "TextDelta"},
-		{"Finish", `{"Finish":{"finish_reason":"stop","raw_finish_reason":null,"total_usage":{"input_tokens":3}}}`, "Finish"},
-		{"StartStep", `{"StartStep":{"request":{},"warnings":[]}}`, "StartStep"},
+		{"text-delta", `{"type":"text-delta","id":"tx1","text":"Hello"}`, "text-delta"},
+		{"finish", `{"type":"finish","finishReason":"stop","totalUsage":{"inputTokens":3,"inputTokenDetails":{},"outputTokenDetails":{}}}`, "finish"},
+		{"start-step", `{"type":"start-step","request":{},"warnings":[]}`, "start-step"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -330,29 +331,43 @@ func TestStreamPartParseRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse failed: %v", err)
 			}
-			if sp.Tag != c.tag {
-				t.Errorf("tag mismatch: got %s, want %s", sp.Tag, c.tag)
+			if sp.Type != c.typ {
+				t.Errorf("type mismatch: got %s, want %s", sp.Type, c.typ)
 			}
-			if len(sp.Payload) == 0 {
-				t.Error("expected non-empty payload")
+			if string(sp.Raw) != c.json {
+				t.Errorf("raw mismatch: got %s", sp.Raw)
 			}
 		})
 	}
 }
 
 func TestParseTextDeltaPayload(t *testing.T) {
-	sp, _ := ParseStreamPart(`{"TextDelta":{"id":"tx1","text":"Hello"}}`)
+	// The text stream's delta field is "text" (ai stream-text-result.ts:435-440).
+	sp, _ := ParseStreamPart(`{"type":"text-delta","id":"tx1","text":"Hello"}`)
 	var td TextDeltaPayload
-	json.Unmarshal(sp.Payload, &td)
+	json.Unmarshal(sp.Raw, &td)
 	if td.ID != "tx1" || td.Text != "Hello" {
 		t.Errorf("got %+v", td)
 	}
+	if out, _ := json.Marshal(td); string(out) != `{"id":"tx1","text":"Hello"}` {
+		t.Errorf("marshal: %s", out)
+	}
 }
 
+func TestStreamPartSource(t *testing.T) {
+	sp, _ := ParseStreamPart(`{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"}`)
+	src, err := sp.Source()
+	if err != nil || src.URL == nil || src.URL.URL != "https://example.com" {
+		t.Fatalf("source: %+v, %v", src, err)
+	}
+}
+
+// The finish part's totalUsage is the AI SDK's LanguageModelUsage (ai
+// types/usage.ts:10-67): camelCase counts, an unknown count absent.
 func TestParseFinishPayload(t *testing.T) {
-	sp, _ := ParseStreamPart(`{"Finish":{"finish_reason":"tool-calls","raw_finish_reason":"tool_use","total_usage":{"input_tokens":3,"input_token_details":{"cache_read_tokens":1},"output_tokens":2,"output_token_details":{},"total_tokens":5}}}`)
+	sp, _ := ParseStreamPart(`{"type":"finish","finishReason":"tool-calls","rawFinishReason":"tool_use","totalUsage":{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}}`)
 	var finish FinishPayload
-	if err := json.Unmarshal(sp.Payload, &finish); err != nil {
+	if err := json.Unmarshal(sp.Raw, &finish); err != nil {
 		t.Fatal(err)
 	}
 	if finish.FinishReason != "tool-calls" || finish.RawFinishReason == nil || *finish.RawFinishReason != "tool_use" {
@@ -363,17 +378,18 @@ func TestParseFinishPayload(t *testing.T) {
 		u.InputTokenDetails.CacheReadTokens == nil || *u.InputTokenDetails.CacheReadTokens != 1 {
 		t.Errorf("total usage: %+v", u)
 	}
+	if out, _ := json.Marshal(u); string(out) != `{"inputTokens":3,"inputTokenDetails":{"cacheReadTokens":1},"outputTokens":2,"outputTokenDetails":{},"totalTokens":5}` {
+		t.Errorf("marshal: %s", out)
+	}
 }
 
-// TestParseStreamPartRejectsInvalid validates the externally-tagged union
-// enforcement: zero keys or multiple keys must produce an error.
+// TestParseStreamPartRejectsInvalid: a part without a "type" is an error.
 func TestParseStreamPartRejectsInvalid(t *testing.T) {
 	cases := []struct {
 		name string
 		json string
 	}{
 		{"empty_object", `{}`},
-		{"multiple_keys", `{"TextDelta":{"text":"a"},"Finish":{}}`},
 		{"not_object", `[]`},
 		{"invalid_json", `{`},
 	}
@@ -400,4 +416,161 @@ func contains(s, sub string) bool {
 		}
 		return false
 	})()
+}
+
+// ── Provider namespace order (#229 NP2-1) ───────────────────────────────────
+
+// Provider options, provider metadata and provider references are JS objects
+// upstream (@ai-sdk/provider shared-v4-provider-options.ts:24,
+// shared-v4-provider-metadata.ts:24, shared-v4-provider-reference.ts:20), so
+// their keys keep insertion order. They go through Rust as ordered maps and
+// stay raw JSON in Go, never a sorting Go map.
+func TestNamespaceMapsKeepInsertionOrder(t *testing.T) {
+	const metadata = `{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}}`
+	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,` +
+		`"invalid":true,"providerMetadata":` + metadata + `,"error":{"name":"AI_InvalidToolInputError",` +
+		`"toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
+	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
+	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
+	if err != nil {
+		t.Fatalf("apply repair: %v", err)
+	}
+	var call ToolCall
+	if err := json.Unmarshal([]byte(out), &call); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if got := string(call.ProviderMetadata); got != metadata {
+		t.Errorf("providerMetadata through Rust: got %s, want %s", got, metadata)
+	}
+
+	tool, err := json.Marshal(Tool{
+		Type:            "function",
+		Name:            "weather",
+		ProviderOptions: json.RawMessage(`{"zeta":{},"alpha":{}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(tool), `"providerOptions":{"zeta":{},"alpha":{}}`) {
+		t.Errorf("tool providerOptions reordered: %s", tool)
+	}
+
+	const reference = `{"openai":"file-abc123","anthropic":"file-xyz789","google":"files/1"}`
+	var upload UploadFileResult
+	if err := json.Unmarshal([]byte(`{"providerReference":`+reference+`}`), &upload); err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := upload.ProviderReference.Get("anthropic"); !ok || id != "file-xyz789" {
+		t.Errorf("Get(anthropic) = %q, %v", id, ok)
+	}
+	if _, ok := upload.ProviderReference.Get("mistral"); ok {
+		t.Error("Get(mistral) found an id")
+	}
+	encoded, _ := json.Marshal(upload)
+	if !strings.HasPrefix(string(encoded), `{"providerReference":`+reference) {
+		t.Errorf("providerReference reordered: %s", encoded)
+	}
+	empty, _ := json.Marshal(UploadFileResult{})
+	if !strings.HasPrefix(string(empty), `{"providerReference":{}`) {
+		t.Errorf("empty providerReference: %s", empty)
+	}
+}
+
+// supportsDeferredResults is kept when set and omitted when absent
+// (provider-utils@5.0.55 src/types/tool.ts:316-326).
+func TestProviderToolSupportsDeferredResults(t *testing.T) {
+	supported := true
+	for _, flag := range []*bool{nil, &supported} {
+		provider, err := json.Marshal(Tool{
+			Type:                    "provider",
+			ID:                      "anthropic.code_execution_20250825",
+			Name:                    "code_execution",
+			SupportsDeferredResults: flag,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{"type":"provider","name":"code_execution","id":"anthropic.code_execution_20250825"}`
+		if flag != nil {
+			want = `{"type":"provider","name":"code_execution","id":"anthropic.code_execution_20250825","supportsDeferredResults":true}`
+		}
+		if string(provider) != want {
+			t.Errorf("provider tool: got %s, want %s", provider, want)
+		}
+		var decoded Tool
+		if err := json.Unmarshal(provider, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if (decoded.SupportsDeferredResults == nil) != (flag == nil) {
+			t.Errorf("supportsDeferredResults did not round-trip: %s", provider)
+		}
+	}
+}
+
+// ── Standalone type tags (#229 NP2-7) ───────────────────────────────────────
+
+// A result's toolCalls and sources are the AI SDK's TypedToolCall and Source,
+// tagged {"type":"tool-call",...} (ai generate-text/tool-call.ts:8-14) and
+// {"type":"source","sourceType":...} (provider language-model-v4-source.ts:8,
+// :36); generate-text-result.ts:73, :78. A repair function's call is a tagged
+// LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
+func TestStandaloneToolCallsAndSourcesAreTagged(t *testing.T) {
+	const wire = `{"text":"","toolCalls":[{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}],` +
+		`"sources":[{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"},` +
+		`{"type":"source","sourceType":"document","id":"s2","mediaType":"application/pdf","title":"Doc"}]}`
+	var result GenerateTextResult
+	if err := json.Unmarshal([]byte(wire), &result); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"toolCalls":[{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"city":"SG"}}]`,
+		`"sources":[{"type":"source","sourceType":"url","id":"s1","url":"https://example.com"},` +
+			`{"type":"source","sourceType":"document","id":"s2","mediaType":"application/pdf","title":"Doc"}]`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("want %s in %s", want, encoded)
+		}
+	}
+
+	raw, _ := json.Marshal(RawToolCall{ToolCallID: "c", ToolName: "t", Input: "{}"})
+	if string(raw) != `{"type":"tool-call","toolCallId":"c","toolName":"t","input":"{}"}` {
+		t.Errorf("raw tool call: %s", raw)
+	}
+
+	// JSON written before the tag still reads; another tag is an error.
+	var untagged ToolCall
+	if err := json.Unmarshal([]byte(`{"toolCallId":"c","toolName":"t","input":{}}`), &untagged); err != nil {
+		t.Errorf("untagged call: %v", err)
+	}
+	var mistagged ToolCall
+	if err := json.Unmarshal([]byte(`{"type":"source","toolCallId":"c","toolName":"t"}`), &mistagged); err == nil {
+		t.Error("a source-tagged tool call was accepted")
+	}
+	var source Source
+	if err := json.Unmarshal([]byte(`{"type":"tool-call","sourceType":"url","id":"s","url":"u"}`), &source); err == nil {
+		t.Error("a tool-call-tagged source was accepted")
+	}
+
+	// The native repair export writes the standalone call tagged.
+	invalid := `{"toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,` +
+		`"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`
+	opts := `{"tools":[{"type":"function","name":"weather","inputSchema":{"type":"object"}}]}`
+	out, err := applyToolCallRepairJSON(invalid, opts, `{"type":"unchanged"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, `{"type":"tool-call","toolCallId":"call-1"`) {
+		t.Errorf("repaired call: %s", out)
+	}
+	context, err := toolCallRepairContextJSON(invalid, `{"prompt":"weather?"}`, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(context, `"toolCall":{"type":"tool-call","toolCallId":"call-1"`) {
+		t.Errorf("repair context: %s", context)
+	}
 }

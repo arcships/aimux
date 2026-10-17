@@ -9,30 +9,31 @@ import type { OutputTokenDetails } from "./OutputTokenDetails";
  * The user-facing counterpart of the provider-level [`Usage`]: flat totals
  * plus detail objects, converted with [`as_language_model_usage`] and summed
  * across steps with [`add_language_model_usage`]. Unknown counts stay `None`,
- * never zero.
+ * never zero, and are absent from the JSON, as `JSON.stringify` drops an
+ * `undefined` count; the detail objects are always present.
  */
-export type LanguageModelUsage = {
+export type LanguageModelUsage = { 
 /**
  * Total input (prompt) tokens.
  */
-input_tokens: number | null,
+inputTokens?: number, 
 /**
  * Breakdown of the input tokens.
  */
-input_token_details: InputTokenDetails,
+inputTokenDetails: InputTokenDetails, 
 /**
  * Total output (completion) tokens.
  */
-output_tokens: number | null,
+outputTokens?: number, 
 /**
  * Breakdown of the output tokens.
  */
-output_token_details: OutputTokenDetails,
+outputTokenDetails: OutputTokenDetails, 
 /**
  * Input plus output tokens, when either is known.
  */
-total_tokens: number | null,
+totalTokens?: number, 
 /**
  * The provider's raw usage object, passed through unchanged.
  */
-raw?: Record<string, unknown> | null, };
+raw?: Record<string, unknown>, };

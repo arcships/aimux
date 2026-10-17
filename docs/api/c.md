@@ -152,7 +152,7 @@ Tool-contract payloads have their own getters, mirroring the `NoSuchModel`
 ones: `aimux_error_tool_name` (codes 15/16), `aimux_error_available_tools`
 (15; a JSON string array, NULL when no tool set was supplied),
 `aimux_error_tool_input` (16), and `aimux_error_original_error` (17; the
-original failure as the same externally-tagged JSON used by
+original failure as the same name-tagged JSON used by
 `ToolCall.error`). All returned strings are caller-owned.
 
 `AIMUX_E_LOAD_API_KEY` (19) and `AIMUX_E_LOAD_SETTING` (20) are the AI SDK's
@@ -163,9 +163,10 @@ so these arrive from the call (or from `aimux_provider_new` for registry
 providers), never from a request that was sent. `aimux_error_provider_code`
 returns the environment variable that was consulted; `aimux_error_provider_message`
 the key's description (`"OpenAI"`) or the setting name (`"region"`). A provider
-`config_json` is `{"base_url", "headers", "organization", "project", "params"}`;
-`max_retries` (a per-call option) and `body_overrides` (removed) are rejected
-with `AIMUX_E_INVALID_ARGUMENT`.
+`config_json` uses `baseUrl`, `headers`, `organization`, `project`, and `params`.
+The existing `base_url` input is also accepted; serialization uses `baseUrl`.
+`maxRetries` (a per-call option) and `bodyOverrides` (removed), including their
+snake_case spellings, are rejected with `AIMUX_E_INVALID_ARGUMENT`.
 
 Internal panics abort the process in this workspace's **release** profile
 (`panic = "abort"`); in a `panic=unwind` build a Rust callback's panic is
@@ -379,9 +380,9 @@ its error becomes `ToolCallRepair { original_error, cause }`. `failed` reports
 
 | Function | Description |
 |------|------|
-| `aimux_tool_call_repair_context(tool_call_json, prompt_json, opts_json, char **out_json)` | [AiMuxError] `{tool_call, error, input_schema, tools, messages, instructions}` — the AI SDK `repairToolCall` argument — **or the JSON literal `null`** |
-| `aimux_apply_tool_call_repair(tool_call_json, opts_json, reply_json, char **out_json)` | [AiMuxError] Resolve one call; writes the resulting `ToolCall` JSON |
-| `aimux_apply_tool_call_repair_to_result(result_json, opts_json, tool_call_id, reply_json, char **out_json)` | [AiMuxError] Patch a `GenerateTextResult` (of `aimux_generate_text` or `aimux_consume_stream_text`): rewrites the call in the steps' content **and** the matching response-message tool-call part (its `tool_call_id` included — a repair may rename the call); the top-level `tool_calls` and `response_messages` follow |
+| `aimux_tool_call_repair_context(tool_call_json, prompt_json, opts_json, char **out_json)` | [AiMuxError] `{toolCall, error, inputSchema, tools, messages, instructions}` — the AI SDK `repairToolCall` argument, its `toolCall` tagged `"type":"tool-call"` — **or the JSON literal `null`** |
+| `aimux_apply_tool_call_repair(tool_call_json, opts_json, reply_json, char **out_json)` | [AiMuxError] Resolve one call; writes the resulting `ToolCall` JSON, tagged `"type":"tool-call"` like a result's `toolCalls[]` entry |
+| `aimux_apply_tool_call_repair_to_result(result_json, opts_json, tool_call_id, reply_json, char **out_json)` | [AiMuxError] Patch a `GenerateTextResult` (of `aimux_generate_text` or `aimux_consume_stream_text`): rewrites the call in the steps' content **and** the matching response-message tool-call part (its `toolCallId` included — a repair may rename the call); the top-level `toolCalls` and `responseMessages` follow |
 
 **`opts_json` with no `tools` is not an error for the context call**: it writes
 the JSON literal `null`, which means "this call is not repairable — skip it".

@@ -11,4 +11,4 @@ index: number,
 /**
  * The relevance score of the document after reranking.
  */
-relevance_score: number, };
+relevanceScore: number, };

@@ -5,4 +5,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A file generated as part of reasoning.
  */
-export type ReasoningFilePart = { data: GeneratedFileData, media_type: string, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type ReasoningFilePart = { data: GeneratedFileData, mediaType: string, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

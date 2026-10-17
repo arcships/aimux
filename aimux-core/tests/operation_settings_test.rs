@@ -156,7 +156,7 @@ fn options_with(settings: &OperationSettings) -> GenerateTextOptions {
 }
 
 fn assert_no_operation_settings(options: &serde_json::Value) {
-    for key in ["max_retries", "timeout", "session_id"] {
+    for key in ["maxRetries", "timeout", "sessionId"] {
         assert!(
             options.get(key).is_none(),
             "call options carry `{key}`: {options}"
@@ -349,9 +349,9 @@ async fn the_recorded_input_keeps_the_operation_settings_and_replay_restores_the
     // Under the keys the call options used to carry, so the record format
     // is unchanged.
     let options = &recording.input.options;
-    assert_eq!(options["max_retries"], 1);
-    assert_eq!(options["timeout"]["total_ms"], 60_000);
-    assert_eq!(options["session_id"], "session-op");
+    assert_eq!(options["maxRetries"], 1);
+    assert_eq!(options["timeout"]["totalMs"], 60_000);
+    assert_eq!(options["sessionId"], "session-op");
 
     let replayed = Probe::default();
     aimux_core::replay::replay_with_model(&recording, &replayed, None)

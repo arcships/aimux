@@ -122,7 +122,7 @@ pub(super) fn text_stream(
         Ok(StreamPart::ResponseMetadata(
             crate::types::ResponseMetadata {
                 id: Some("resp-1".into()),
-                timestamp: Some("2026-01-01T00:00:00.000Z".into()),
+                timestamp: Some("2026-01-01T00:00:00.000Z".parse().unwrap()),
                 model_id: Some("mock-model-2026".into()),
             },
         )),
@@ -159,11 +159,10 @@ pub(super) async fn collect(result: StreamTextResult) -> Vec<TextStreamPart> {
 }
 
 pub(super) fn kind(part: &TextStreamPart) -> String {
-    let value = serde_json::to_value(part).unwrap();
-    value
-        .as_object()
-        .and_then(|object| object.keys().next().cloned())
-        .unwrap_or_else(|| value.as_str().unwrap_or_default().to_string())
+    serde_json::to_value(part).unwrap()["type"]
+        .as_str()
+        .expect("a stream part is tagged by `type`")
+        .to_owned()
 }
 
 fn generated(content: Vec<GenerateContent>, reason: FinishReasonUnified) -> GenerateResult {
@@ -217,14 +216,14 @@ async fn the_stream_is_framed_as_the_ai_sdk_full_stream() {
     assert_eq!(
         kinds,
         [
-            "Start",
-            "StartStep",
-            "TextStart",
-            "TextDelta",
-            "TextDelta",
-            "TextEnd",
-            "FinishStep",
-            "Finish"
+            "start",
+            "start-step",
+            "text-start",
+            "text-delta",
+            "text-delta",
+            "text-end",
+            "finish-step",
+            "finish"
         ]
     );
 
@@ -234,12 +233,12 @@ async fn the_stream_is_framed_as_the_ai_sdk_full_stream() {
     assert_eq!(request.body, Some(json!({ "model": "mock-model" })));
     assert_eq!(
         serde_json::to_value(warnings).unwrap(),
-        json!([{ "Other": { "message": "careful" } }])
+        json!([{ "type": "other", "message": "careful" }])
     );
 
     assert_eq!(
         serde_json::to_value(&parts[3]).unwrap(),
-        json!({ "TextDelta": { "id": "t1", "text": "Hel" } })
+        json!({ "type": "text-delta", "id": "t1", "text": "Hel" })
     );
 
     let TextStreamPart::FinishStep {
@@ -255,7 +254,7 @@ async fn the_stream_is_framed_as_the_ai_sdk_full_stream() {
     };
     assert_eq!(response.id, "resp-1");
     assert_eq!(response.model_id, "mock-model-2026");
-    assert_eq!(response.timestamp, "2026-01-01T00:00:00.000Z");
+    assert_eq!(response.timestamp.to_string(), "2026-01-01T00:00:00.000Z");
     assert_eq!(
         response.headers.as_ref().unwrap()["x-request-id"],
         "req-1".to_string()
@@ -298,7 +297,7 @@ async fn the_stream_is_framed_as_the_ai_sdk_full_stream() {
     assert_eq!(total_usage.total_tokens, Some(16));
     assert!(total_usage.raw.is_none());
     assert_eq!(
-        serde_json::to_value(&parts[7]).unwrap()["Finish"]["finish_reason"],
+        serde_json::to_value(&parts[7]).unwrap()["finishReason"],
         json!("stop")
     );
 }
@@ -372,7 +371,8 @@ async fn generate_text_derives_its_result_from_the_step() {
     let step = result.final_step();
     assert_eq!(step.response.id, "resp-1");
     assert_eq!(step.response.model_id, "mock-model");
-    assert!(!step.response.timestamp.is_empty());
+    // The call layer stamps a response without a timestamp.
+    assert!(step.response.timestamp.unix_millis() > 0);
     assert_eq!(step.response.body, Some(json!({ "id": "resp-1" })));
     assert_eq!(step.performance.time_to_first_output_ms, None);
     assert_eq!(step.performance.output_tokens_per_second, None);
@@ -406,8 +406,9 @@ async fn generate_text_derives_its_result_from_the_step() {
 
 /// The serialized result writes the derived values next to the stored ones
 /// and reads back only `steps`, `total_usage` and `output`. The finish reason
-/// is a string and the usage is the flat `LanguageModelUsage`
-/// (usage.ts:10-68).
+/// is a string and the usage is the flat `LanguageModelUsage` (usage.ts:10-67),
+/// camelCase with an unknown count absent; a step is its own fields
+/// (step-result.ts:138-278), camelCase.
 #[tokio::test]
 async fn the_result_snapshot_round_trips() {
     let model = ScriptedModel::generating(generated(
@@ -419,16 +420,25 @@ async fn the_result_snapshot_round_trips() {
         .unwrap();
     let wire = serde_json::to_value(&result).unwrap();
     assert_eq!(wire["text"], json!("Hello"));
-    assert_eq!(wire["finish_reason"], json!("stop"));
-    assert_eq!(wire["raw_finish_reason"], json!("stop"));
-    assert_eq!(wire["usage"]["input_tokens"], json!(10));
+    assert_eq!(wire["finishReason"], json!("stop"));
+    assert_eq!(wire["rawFinishReason"], json!("stop"));
+    assert_eq!(wire["usage"]["inputTokens"], json!(10));
     assert_eq!(
-        wire["usage"]["input_token_details"],
-        json!({ "no_cache_tokens": 6, "cache_read_tokens": 4, "cache_write_tokens": null })
+        wire["usage"]["inputTokenDetails"],
+        json!({ "noCacheTokens": 6, "cacheReadTokens": 4 })
     );
-    assert_eq!(wire["usage"]["total_tokens"], json!(16));
+    assert_eq!(wire["usage"]["totalTokens"], json!(16));
     assert_eq!(wire["output"], json!("Hello"));
     assert_eq!(wire["steps"].as_array().unwrap().len(), 1);
+    let step = &wire["steps"][0];
+    assert_eq!(step["stepNumber"], json!(0));
+    assert_eq!(step["finishReason"], json!("stop"));
+    assert_eq!(step["rawFinishReason"], json!("stop"));
+    assert!(step["callId"].is_string());
+    assert!(step["model"]["modelId"].is_string());
+    assert!(step["response"]["modelId"].is_string());
+    assert!(step["performance"]["responseTimeMs"].is_number());
+    assert!(step["performance"].get("timeToFirstOutputMs").is_none());
     assert!(wire.get("raw").is_none());
 
     let back: GenerateTextResult = serde_json::from_value(wire.clone()).unwrap();
@@ -555,7 +565,7 @@ async fn an_aborted_stream_ends_with_an_abort_part() {
             assert_eq!(reason.as_deref(), Some("request aborted"));
         }
     }
-    assert_eq!(kinds, ["Start", "StartStep", "TextDelta", "Abort"]);
+    assert_eq!(kinds, ["start", "start-step", "text-delta", "abort"]);
 
     let mut model = ScriptedModel::streaming(vec![Ok(StreamPart::StreamStart {
         warnings: Vec::new(),
@@ -594,7 +604,7 @@ async fn an_incomplete_stream_without_output_is_an_error() {
     )
     .await;
     let kinds: Vec<String> = parts.iter().map(kind).collect();
-    assert_eq!(kinds, ["Start", "Error"]);
+    assert_eq!(kinds, ["start", "error"]);
     assert!(matches!(
         &parts[1],
         TextStreamPart::Error { error: AiMuxError::NoOutputGenerated(message) }
@@ -615,7 +625,7 @@ async fn an_incomplete_stream_without_output_is_an_error() {
     let kinds: Vec<String> = parts.iter().map(kind).collect();
     assert_eq!(
         kinds,
-        ["Start", "StartStep", "TextDelta", "FinishStep", "Finish"]
+        ["start", "start-step", "text-delta", "finish-step", "finish"]
     );
     let TextStreamPart::FinishStep {
         finish_reason,
@@ -825,51 +835,54 @@ async fn stream_tool_results_and_errors_follow_the_ai_sdk() {
     assert_eq!(
         kinds,
         [
-            "Start",
-            "StartStep",
-            "TextStart",
-            "TextDelta",
-            "TextEnd",
-            "ToolCall",
-            "ToolResult",
-            "ToolCall",
-            "ToolError",
-            "ToolResult",
-            "FinishStep",
-            "Finish"
+            "start",
+            "start-step",
+            "text-start",
+            "text-delta",
+            "text-end",
+            "tool-call",
+            "tool-result",
+            "tool-call",
+            "tool-error",
+            "tool-result",
+            "finish-step",
+            "finish"
         ]
     );
     assert_eq!(
         serde_json::to_value(&parts[6]).unwrap(),
-        json!({ "ToolResult": {
-            "tool_call_id": "srv-1",
-            "tool_name": "web_search",
+        json!({
+            "type": "tool-result",
+            "toolCallId": "srv-1",
+            "toolName": "web_search",
             "input": { "q": "rust" },
             "output": [{ "url": "https://example.com" }],
-            "provider_executed": true,
+            "providerExecuted": true,
             "dynamic": true,
-        } })
+        })
     );
     assert_eq!(
         serde_json::to_value(&parts[8]).unwrap(),
-        json!({ "ToolError": {
-            "tool_call_id": "srv-2",
-            "tool_name": "code_execution",
+        json!({
+            "type": "tool-error",
+            "toolCallId": "srv-2",
+            "toolName": "code_execution",
             "input": { "code": "1/0" },
             "error": { "error_code": "unavailable" },
-            "provider_executed": true,
+            "providerExecuted": true,
             "dynamic": true,
-        } })
+        })
     );
     assert_eq!(
         serde_json::to_value(&parts[9]).unwrap(),
-        json!({ "ToolResult": {
-            "tool_call_id": "srv-0",
-            "tool_name": "code_execution",
+        json!({
+            "type": "tool-result",
+            "toolCallId": "srv-0",
+            "toolName": "code_execution",
             "output": { "stdout": "2" },
-            "provider_executed": true,
+            "providerExecuted": true,
             "dynamic": true,
-        } })
+        })
     );
 }
 
@@ -939,16 +952,16 @@ async fn an_invalid_tool_call_is_followed_by_a_tool_error() {
     assert_eq!(
         kinds,
         [
-            "Start",
-            "StartStep",
-            "TextStart",
-            "TextDelta",
-            "TextEnd",
-            "ToolCall",
-            "ToolError",
-            "ToolCall",
-            "FinishStep",
-            "Finish"
+            "start",
+            "start-step",
+            "text-start",
+            "text-delta",
+            "text-end",
+            "tool-call",
+            "tool-error",
+            "tool-call",
+            "finish-step",
+            "finish"
         ]
     );
     let TextStreamPart::ToolCall(invalid) = &parts[5] else {
@@ -1067,22 +1080,6 @@ const UPSTREAM_STREAM_PART_TYPES: [&str; 26] = [
     "raw",
 ];
 
-/// `TextStream` → `text-stream`.
-fn kebab(name: &str) -> String {
-    let mut out = String::new();
-    for (index, c) in name.chars().enumerate() {
-        if c.is_ascii_uppercase() {
-            if index > 0 {
-                out.push('-');
-            }
-            out.push(c.to_ascii_lowercase());
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 /// NP2-5: `TextStreamPart` has exactly the AI SDK's 26 part types, in the
 /// union's order (stream-text-result.ts:581-607). The variant tags are read
 /// from the exported TypeScript type.
@@ -1090,12 +1087,10 @@ fn kebab(name: &str) -> String {
 fn the_stream_part_set_is_the_ai_sdks() {
     let ts = <TextStreamPart as ts_rs::TS>::inline(&ts_rs::Config::default());
     let tags: Vec<String> = ts
-        .match_indices("{ \"")
-        .filter_map(|(index, _)| {
-            let rest = &ts[index + 3..];
-            let tag = &rest[..rest.find('"')?];
-            tag.starts_with(|c: char| c.is_ascii_uppercase())
-                .then(|| kebab(tag))
+        .match_indices("{ \"type\": \"")
+        .filter_map(|(index, tag)| {
+            let rest = &ts[index + tag.len()..];
+            Some(rest[..rest.find('"')?].to_owned())
         })
         .collect();
     assert_eq!(tags, UPSTREAM_STREAM_PART_TYPES);
@@ -1356,8 +1351,8 @@ impl LanguageModel for UrlModel {
 fn url_prompt() -> Vec<ModelMessage> {
     serde_json::from_value(json!([
         { "role": "user", "content": [
-            { "type": "file_url", "url": "https://model.test/a.png", "media_type": "image/png" },
-            { "type": "file_url", "url": "https://cdn.test/b.png", "media_type": "image/png" }
+            { "type": "file", "data": "https://model.test/a.png", "mediaType": "image/png" },
+            { "type": "file", "data": "https://cdn.test/b.png", "mediaType": "image/png" }
         ] }
     ]))
     .unwrap()
@@ -1478,7 +1473,7 @@ async fn the_default_prompt_download_is_guarded() {
     };
     let prompt: Vec<ModelMessage> = serde_json::from_value(json!([
         { "role": "user", "content": [
-            { "type": "file_url", "url": "http://127.0.0.1:9/a.png", "media_type": "image/png" }
+            { "type": "file", "data": "http://127.0.0.1:9/a.png", "mediaType": "image/png" }
         ] }
     ]))
     .unwrap();
@@ -1569,7 +1564,7 @@ async fn a_repeated_tool_call_id_resolves_to_the_last_call_in_the_stream() {
         .find(|part| matches!(part, TextStreamPart::ToolResult(_)))
         .expect("the provider result");
     assert_eq!(
-        serde_json::to_value(result).unwrap()["ToolResult"]["input"],
+        serde_json::to_value(result).unwrap()["input"],
         json!({ "q": "second" })
     );
 }

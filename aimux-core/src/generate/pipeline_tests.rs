@@ -338,7 +338,7 @@ async fn the_finish_part_ends_the_stream() {
         .collect();
     assert_eq!(
         kinds,
-        ["Start", "StartStep", "TextDelta", "FinishStep", "Finish"]
+        ["start", "start-step", "text-delta", "finish-step", "finish"]
     );
 }
 
@@ -356,7 +356,7 @@ async fn a_provider_error_part_does_not_hide_the_finish() {
         .collect();
     assert_eq!(
         kinds,
-        ["Start", "StartStep", "Error", "FinishStep", "Finish"]
+        ["start", "start-step", "error", "finish-step", "finish"]
     );
     let Some(Ok(TextStreamPart::Finish { finish_reason, .. })) = parts.last() else {
         unreachable!()

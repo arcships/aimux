@@ -27,13 +27,14 @@ tokio::task_local! {
 
 /// Operation settings that are not part of the model call.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OperationSettings {
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)`
     /// disables retrying. `None` uses the default.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     /// Timeout configuration (total / step / first-chunk / chunk idle).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<TimeoutConfiguration>,
     /// Explicit session id (RFC-0024), for grouping consecutive calls.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,17 +83,14 @@ mod tests {
     #[test]
     fn the_settings_serialize_as_the_call_options_fields_did() {
         // The recorded input keeps the keys it had when the three settings
-        // were `CallOptions` fields: `max_retries` and `timeout` always,
-        // `session_id` only when set.
+        // were `CallOptions` fields: `maxRetries`, `timeout` and `sessionId`,
+        // each only when set.
         let json = serde_json::to_value(OperationSettings::default()).unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({ "max_retries": null, "timeout": null })
-        );
+        assert_eq!(json, serde_json::json!({}));
         let back: OperationSettings = serde_json::from_value(serde_json::json!({
-            "max_retries": 1,
-            "timeout": { "total_ms": 5, "step_ms": null, "first_chunk_ms": null, "chunk_ms": null },
-            "session_id": "s",
+            "maxRetries": 1,
+            "timeout": { "totalMs": 5 },
+            "sessionId": "s",
             "temperature": 0.5
         }))
         .unwrap();

@@ -5,4 +5,4 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * Provider-specific content identified by its provider and kind.
  */
-export type CustomPart = { kind: NamespacedKind, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, };
+export type CustomPart = { kind: NamespacedKind, providerOptions?: { [key in string]: { [key in string]: JsonValue } }, };

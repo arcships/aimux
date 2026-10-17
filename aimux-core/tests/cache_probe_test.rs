@@ -21,7 +21,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::operation::OperationSettings;
 use aimux_core::options::CallOptions;
 use aimux_core::recording::{RecordingContext, RingRecorder};
-use aimux_core::result::{GenerateResult, GeneratedFile, StreamResult};
+use aimux_core::result::{GenerateResult, LanguageModelFile, StreamResult};
 use aimux_core::shared::{GeneratedFileData, RequestInfo};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::trace::{
@@ -593,8 +593,8 @@ fn no_output() -> Vec<Part> {
 }
 
 /// The one place naming the stream's file type.
-fn png_url() -> GeneratedFile {
-    GeneratedFile {
+fn png_url() -> LanguageModelFile {
+    LanguageModelFile {
         data: GeneratedFileData::Url {
             url: "https://example.test/image.png".into(),
             original_url: None,

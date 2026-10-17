@@ -6,8 +6,8 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * `generate-text/tool-error.ts:6-36`). `toolMetadata` and `title` are
  * absent, as on [`TypedToolResult`].
  */
-export type TypedToolError = { tool_call_id: string, tool_name: string,
+export type TypedToolError = { toolCallId: string, toolName: string, 
 /**
  * The input of the tool call; absent for a deferred provider result.
  */
-input?: JsonValue | null, error: JsonValue, provider_executed?: boolean | null, provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, dynamic?: boolean | null, };
+input?: JsonValue, error: JsonValue, providerExecuted?: boolean, providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, dynamic?: boolean, };

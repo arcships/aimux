@@ -70,7 +70,7 @@ where
 
 /// Operation stored in a unified recording. Older recordings are language calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum RecordingOperation {
     #[default]
@@ -86,17 +86,22 @@ impl RecordingOperation {
 
 /// 一次完整调用的录制记录(三层 + call_id 关联)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Recording {
     /// 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
     /// Recordings written by aimux 0.5 and earlier also carry a configuration
     /// snapshot under `provider` (base URL, key source, profile, provider
-    /// options), which is ignored.
+    /// options), which is ignored, and write the envelope's keys snake_case
+    /// (`call_id`, `recorded_at`, ...), which are read as aliases of the
+    /// camelCase keys this version writes.
     #[serde(deserialize_with = "deserialize_known_schema")]
     pub schema: u32,
     /// 暴露逻辑调用 ID,关联三层。
+    #[serde(alias = "call_id")]
     pub call_id: String,
     /// ISO 8601 时间戳。
+    #[serde(alias = "recorded_at")]
     pub recorded_at: String,
 
     /// ① 输入侧:调用参数(prompt + options)。
@@ -118,15 +123,17 @@ pub struct Recording {
     pub complete: bool,
     /// 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
     /// P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
-    #[serde(default)]
+    #[serde(default, alias = "transport_closed")]
     pub transport_closed: bool,
 
     /// 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
     /// 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
     /// 或之后均可(writer 端按 call_id 合并)。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(default, alias = "session_id", skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<u32>,
 }
@@ -175,6 +182,7 @@ impl Recording {
 
 /// ① 输入侧:完整调用参数,足以重建 generate_text 调用。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputRecord {
     #[serde(default, skip_serializing_if = "RecordingOperation::is_language_model")]
@@ -253,16 +261,18 @@ impl InputRecord {
 /// 只记身份,不记配置:回放时按 `provider_id` + `model_id` 重新构建 model,
 /// 凭证与 base URL 只来自环境/registry(RFC-0036 §3.3)。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ProviderRecord {
     /// provider 名(registry 名),回放重建的查找键,如 "openai"、"deepseek"。
     /// Empty in a recording written by aimux 0.5 or earlier, which has none
     /// ([`Self::registry_id`]).
-    #[serde(default)]
+    #[serde(default, alias = "provider_id")]
     pub provider_id: String,
     /// `model.provider()`,如 "openai.chat"。
     pub provider: String,
     /// `model.model_id()`,如 "gpt-4o"。
+    #[serde(alias = "model_id")]
     pub model_id: String,
 }
 
@@ -308,10 +318,12 @@ impl ProviderRecord {
 
 /// ③ HTTP 侧:单次 attempt 的 wire 交换。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct HttpExchange {
     /// Composite step this exchange belongs to (e.g. `router[0]:openai/gpt-4o`
     /// or `moa.ref[1]:...`). `None` for a plain, non-composite operation.
+    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
     /// Core operation attempt, starting at 1. Attempt numbers are unique
@@ -319,12 +331,16 @@ pub struct HttpExchange {
     /// `(attempt, exchange_index)` alone still identifies an exchange.
     pub attempt: u32,
     /// HTTP exchange within the operation attempt, starting at 1.
-    #[serde(default)]
+    #[serde(default, alias = "exchange_index")]
     pub exchange_index: u32,
     pub request: HttpRecord,
     /// None = 请求失败未获响应。
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<ResponseRecord>,
     pub timing: TimingRecord,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// 流式:该 exchange 是否已终结(收到 response 补全)。非流式恒 true。
     #[serde(default = "default_finalized")]
@@ -336,6 +352,7 @@ fn default_finalized() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct HttpRecord {
     pub method: String,
@@ -343,30 +360,44 @@ pub struct HttpRecord {
     /// 敏感头(authorization/cookie/含 api-key/key/x-amz-security-token 等)已脱敏为 "\[REDACTED\]"。
     pub headers: Vec<(String, String)>,
     /// 明文(脱敏后);None = 无 body。
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseRecord {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     /// 非流式:完整 JSON;流式:原始 SSE 拼接文本(上限截断)。
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
+    #[ts(optional)]
+    #[serde(
+        default,
+        alias = "stream_chunks",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub stream_chunks: Option<usize>,
     /// 首字节延迟(流式)。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, alias = "ttfb_ms", skip_serializing_if = "Option::is_none")]
     pub ttfb_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TimingRecord {
     /// ms 级延迟,TS 用 number(远小于 2^53,避免 bigint)。
     #[ts(type = "number")]
+    #[serde(alias = "latency_ms")]
     pub latency_ms: u64,
-    #[ts(type = "number | null")]
+    #[ts(optional, type = "number")]
+    #[serde(default, alias = "ttfb_ms", skip_serializing_if = "Option::is_none")]
     pub ttfb_ms: Option<u64>,
 }
 
@@ -389,20 +420,41 @@ pub enum OutcomeStatus {
 
 /// 最终结果摘要。
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutcomeRecord {
     /// The result `decide` returned (`DecideResult`), independent of a
     /// provider's wire format.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[serde(
+        default,
+        alias = "decision_result",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub decision_result: Option<serde_json::Value>,
     pub status: OutcomeStatus,
+    #[ts(optional)]
+    #[serde(
+        default,
+        alias = "finish_reason",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub finish_reason: Option<String>,
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// Lossless structured domain error. In particular, `RetryError.errors`
     /// keeps the complete attempt history rather than only its display text.
-    #[serde(default)]
+    #[ts(optional)]
+    #[serde(
+        default,
+        alias = "error_value",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub error_value: Option<serde_json::Value>,
     /// 序列化的 Usage。
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<serde_json::Value>,
 }
 
@@ -2182,8 +2234,8 @@ mod tests {
         opts.abort_signal = Some(crate::AbortSignal::new());
         let rec = InputRecord::from_call_options(&opts);
         let v = &rec.options;
-        assert!(v.get("call_id").is_none());
-        assert!(v.get("abort_signal").is_none());
+        assert!(v.get("callId").is_none());
+        assert!(v.get("abortSignal").is_none());
     }
 
     #[test]
@@ -2207,7 +2259,7 @@ mod tests {
             assert!(is_sensitive_key(key), "{key} must be redacted");
         }
         // Usage counters carry no credentials and must stay loggable.
-        for key in ["max_tokens", "input_tokens", "output_tokens", "model"] {
+        for key in ["maxTokens", "inputTokens", "outputTokens", "model"] {
             assert!(!is_sensitive_key(key), "{key} must stay visible");
         }
     }
@@ -2221,7 +2273,7 @@ mod tests {
                 "x-goog-api-key": "gkey",
                 "x-amz-security-token": "sts-tok"
             },
-            "provider_options": {
+            "providerOptions": {
                 "headers": { "Cookie": "s=1" },
                 "openai": {
                     "api_key": "sk-secret",
@@ -2231,9 +2283,9 @@ mod tests {
             },
             // 用量字段名含 "token" 子串,但非凭据——contains("token") 曾误伤。
             "usage": {
-                "max_output_tokens": 4096,
-                "prompt_tokens": 10,
-                "completion_tokens": 20
+                "maxOutputTokens": 4096,
+                "inputTokens": 10,
+                "outputTokens": 20
             },
             "temperature": 0.5,
         });
@@ -2242,17 +2294,14 @@ mod tests {
         assert_eq!(r["headers"]["x-goog-api-key"], "[REDACTED]");
         assert_eq!(r["headers"]["x-amz-security-token"], "[REDACTED]");
         assert_eq!(r["headers"]["X-Key"], "ok");
-        assert_eq!(r["provider_options"]["headers"]["Cookie"], "[REDACTED]");
-        assert_eq!(r["provider_options"]["openai"]["api_key"], "[REDACTED]");
-        assert_eq!(r["provider_options"]["openai"]["token"], "[REDACTED]");
-        assert_eq!(
-            r["provider_options"]["openai"]["access_token"],
-            "[REDACTED]"
-        );
+        assert_eq!(r["providerOptions"]["headers"]["Cookie"], "[REDACTED]");
+        assert_eq!(r["providerOptions"]["openai"]["api_key"], "[REDACTED]");
+        assert_eq!(r["providerOptions"]["openai"]["token"], "[REDACTED]");
+        assert_eq!(r["providerOptions"]["openai"]["access_token"], "[REDACTED]");
         // 含 "token" 子串的用量字段不再被误脱敏(回归 contains("token"))。
-        assert_eq!(r["usage"]["max_output_tokens"], 4096);
-        assert_eq!(r["usage"]["prompt_tokens"], 10);
-        assert_eq!(r["usage"]["completion_tokens"], 20);
+        assert_eq!(r["usage"]["maxOutputTokens"], 4096);
+        assert_eq!(r["usage"]["inputTokens"], 10);
+        assert_eq!(r["usage"]["outputTokens"], 20);
         assert_eq!(r["temperature"], 0.5);
     }
 
@@ -2268,6 +2317,25 @@ mod tests {
         assert_eq!(back.call_id, "call-1");
         assert_eq!(back.schema, RECORDING_SCHEMA);
         assert_eq!(back.provider.provider, "openai");
+    }
+
+    #[test]
+    fn recording_operation_round_trips_kebab_case() {
+        for (operation, wire) in [
+            (RecordingOperation::LanguageModel, "language-model"),
+            (RecordingOperation::Decision, "decision"),
+        ] {
+            let value = serde_json::to_value(operation).unwrap();
+            assert_eq!(value, serde_json::json!(wire));
+            assert_eq!(
+                serde_json::from_value::<RecordingOperation>(value).unwrap(),
+                operation
+            );
+        }
+
+        let input = InputRecord::from_call_options(&sample_options());
+        let value = serde_json::to_value(input).unwrap();
+        assert!(value.get("operation").is_none());
     }
 
     /// Recordings are written as schema 2, as master writes them. Schemas 1
@@ -2302,8 +2370,9 @@ mod tests {
     }
 
     /// Fields only this version writes are optional when reading, fields
-    /// only master writes are ignored, and a prompt this version cannot read
-    /// loads as empty with the reason kept for replay.
+    /// only master writes are ignored, master's snake_case envelope keys are
+    /// read (this version writes them camelCase), and a prompt this version
+    /// cannot read loads as empty with the reason kept for replay.
     #[test]
     fn a_master_shaped_record_loads() {
         let system = serde_json::json!([{
@@ -2323,15 +2392,57 @@ mod tests {
                 "profile": null,
                 "provider_options": null
             },
-            "exchanges": [],
-            "outcome": {"status": "success", "finish_reason": "stop", "error": null, "usage": null}
+            "exchanges": [{
+                "attempt": 1,
+                "exchange_index": 1,
+                "request": {"method": "POST", "url": "https://api.openai.com/v1/chat/completions", "headers": []},
+                "response": {"status": 200, "headers": [], "stream_chunks": 3, "ttfb_ms": 5},
+                "timing": {"latency_ms": 9, "ttfb_ms": 5}
+            }],
+            "outcome": {
+                "status": "success",
+                "finish_reason": "stop",
+                "error": null,
+                "error_value": {"kind": "x"},
+                "decision_result": {"answers": {}},
+                "usage": null
+            },
+            "transport_closed": true,
+            "session_id": "s"
         });
         let rec: Recording = serde_json::from_value(line).unwrap();
+        assert_eq!(rec.call_id, "c");
+        assert_eq!(rec.recorded_at, "2026-10-13T00:00:00.000Z");
         assert_eq!(rec.provider.provider_id, "");
+        assert_eq!(rec.provider.model_id, "gpt-4o");
         assert!(rec.provider.registry_id().is_err());
         assert!(rec.input.prompt.is_empty());
         assert!(rec.input.unreadable_prompt().is_some());
         assert!(!rec.complete);
+        assert!(rec.transport_closed);
+        assert_eq!(rec.session_id.as_deref(), Some("s"));
+        let exchange = &rec.exchanges[0];
+        assert_eq!(exchange.exchange_index, 1);
+        let response = exchange.response.as_ref().unwrap();
+        assert_eq!(
+            (response.stream_chunks, response.ttfb_ms),
+            (Some(3), Some(5))
+        );
+        assert_eq!(
+            (exchange.timing.latency_ms, exchange.timing.ttfb_ms),
+            (9, Some(5))
+        );
+        assert_eq!(rec.outcome.finish_reason.as_deref(), Some("stop"));
+        assert!(rec.outcome.error_value.is_some() && rec.outcome.decision_result.is_some());
+
+        // Written back with this version's camelCase keys, still schema 2.
+        let written = serde_json::to_value(&rec).unwrap();
+        assert_eq!(written["schema"], 2);
+        assert_eq!(written["callId"], "c");
+        assert_eq!(written["provider"]["modelId"], "gpt-4o");
+        assert_eq!(written["exchanges"][0]["timing"]["latencyMs"], 9);
+        assert_eq!(written["outcome"]["finishReason"], "stop");
+        assert!(written.get("call_id").is_none());
     }
 
     #[test]
@@ -2518,7 +2629,7 @@ mod tests {
         assert_eq!(parsed.session_id.as_deref(), Some("sess-abc"));
         assert_eq!(parsed.step, Some(3));
         // 序列化时 null 省略:只有归组的调用才带这两个字段。
-        assert!(content.contains("\"session_id\":\"sess-abc\""));
+        assert!(content.contains("\"sessionId\":\"sess-abc\""));
         assert!(content.contains("\"step\":3"));
     }
 
@@ -2531,7 +2642,7 @@ mod tests {
             ProviderRecord::from_model("openai", "gpt-4o"),
         );
         let json = serde_json::to_string(&rec).unwrap();
-        assert!(!json.contains("session_id"), "ungrouped must omit: {json}");
+        assert!(!json.contains("sessionId"), "ungrouped must omit: {json}");
         assert!(!json.contains("\"step\""), "ungrouped must omit: {json}");
 
         // 旧 jsonl(无 session 字段)仍能反序列化(serde default)。
@@ -2539,7 +2650,7 @@ mod tests {
             let mut r = serde_json::to_value(&rec).unwrap();
             r.as_object_mut()
                 .unwrap()
-                .insert("transport_closed".into(), serde_json::json!(true));
+                .insert("transportClosed".into(), serde_json::json!(true));
             r
         })
         .unwrap();
@@ -3225,7 +3336,7 @@ mod tests {
         rec.record_transport_closed("c");
         assert!(rec.try_flush().is_ok());
         let content = std::fs::read_to_string(rec.path()).unwrap();
-        assert!(content.contains("\"call_id\":\"c\""));
+        assert!(content.contains("\"callId\":\"c\""));
         let _ = std::fs::remove_dir_all(&dir);
 
         // 非法目录 → new 降级(tx=None)→ try_flush 返回 WriterGone。

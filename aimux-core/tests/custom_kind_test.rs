@@ -40,7 +40,7 @@ fn is_rejected<T: DeserializeOwned + std::fmt::Debug>(value: &Value) {
 fn a_custom_kind_needs_a_namespace() {
     let user = |kind: &str| json!({ "type": "custom", "kind": kind });
     let prompt = |kind: &str| json!({ "kind": kind });
-    let generated = |kind: &str| json!({ "Custom": { "kind": kind } });
+    let generated = |kind: &str| json!({ "type": "custom", "kind": kind });
 
     round_trips::<AssistantContentPart>(&user("openai.compaction"));
     round_trips::<CustomPart>(&prompt("openai.compaction"));

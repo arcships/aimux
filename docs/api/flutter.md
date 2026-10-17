@@ -58,8 +58,11 @@ final model = Model.provider('groq', 'llama-3.3-70b');
 final result = model.generateText('Hello');
 model.close();
 
-// Optional config JSON ({"base_url": "..."}):
-final model2 = Model.provider('groq', 'llama-3.3-70b', apiKey: 'sk-...');
+// Optional settings JSON; keys are camelCase ({"baseUrl": "...", "headers": {...},
+// "organization", "project", "params"}) and an unknown key is an
+// InvalidArgumentError:
+final model2 = Model.provider('groq', 'llama-3.3-70b',
+    apiKey: 'sk-...', configJson: '{"baseUrl": "http://localhost:3000"}');
 model2.close();
 ```
 
@@ -116,15 +119,13 @@ Every instance has `message`, `code` (`AimuxErrorCode` constants matching C
 subclass only: `APICallError.providerCode` / `.providerMessage` / `.responseBody`
 (`String?`), `NoSuchModelError.modelId` / `.modelType`, and
 `NoSuchProviderError.providerId`. A code outside the enum is a header/library
-mismatch and fails with `StateError`, not an error type.
-subclass only: `APICallError.providerCode` / `.providerMessage` / `.requestId` / `.responseBody`
-(`String?`), `NoSuchModelError.modelId` / `.modelType`,
-`NoSuchProviderError.providerId`, `NoSuchToolError.toolName` /
+mismatch and fails with `StateError`, not an error type. Further payload:
+`NoSuchToolError.toolName` /
 `.availableTools` (`List<String>?`, null when no tool set was supplied),
 `InvalidToolInputError.toolName` / `.toolInput` (the raw argument text), and
 `ToolCallRepairError.originalError` (the repaired-over error decoded from its
-wire JSON — the same shape as `ToolCall.error`). A code outside the enum is a
-header/library mismatch and fails with `StateError`, not an error type.
+wire JSON: an `AiMuxError` object keyed by `name`, the same shape as
+`ToolCall.error`).
 
 `APICallError` additionally exposes the sanitized URL/request values,
 response headers/body, parsed provider data/code, and retryability.
@@ -152,7 +153,7 @@ errors, never an aimux type. Raw JSON string parameters (`configJson`,
 `optsJson`, `valuesJson`, …) are validated with `jsonDecode` in Dart *before*
 the C call. Empty/blank is rejected for required raw-JSON params (`valuesJson`,
 the `optsJson` of speech/image/video/rerank/search, and the `configJson` of
-`registerProviders` / `initProxy`) and treated as "defaults" for optional ones
+`initProxy`) and treated as "defaults" for optional ones
 (nullable in the signature — provider/router/moa `configJson`,
 embed/upload/transcription `optsJson`), matching the C ABI; use-after-close is
 guarded locally. A returned C code in 200..206 is a binding/library invariant:
@@ -205,7 +206,7 @@ models, `TranscriptionSession`, `Files`) throws `StateError`.
 Stream terminal failures surface via `Stream.addError` with whatever the
 decoder produced (`AimuxException`, or the native `StateError` for a C ABI
 failure) and the stream is then closed — there is no `on_error` callback;
-provider mid-stream `StreamPart::Error` is data on `on_part`. A
+a provider mid-stream failure is an `error` part, data on `on_part`. A
 `TranscriptionSession.nextPart` timeout is a poll state, not an error:
 `AimuxTranscriptionTimeoutException` (session still live); a normal end is
 `AimuxTranscriptionEndedException`.
@@ -228,7 +229,7 @@ model.close();
 final model = Model.openai('sk-...', 'gpt-4o');
 final stream = model.streamText('Write a haiku');
 await for (final part in stream) {
-  if (part.containsKey('TextDelta')) print(part['TextDelta']['text']);
+  if (part['type'] == 'text-delta') print(part['text']);
 }
 model.close();
 ```
@@ -289,7 +290,7 @@ instance). Throwing means the repair failed: the call stays invalid and carries
 a `ToolCallRepairError` whose cause is the thrown object's `toString()`. A
 replacement that still fails schema validation does the same.
 
-`streamText` repairs the `ToolCall` part in flight — tool-input deltas are
+`streamText` repairs the `tool-call` part in flight — tool-input deltas are
 forwarded verbatim and in order — and is the only entry point that awaits an
 `async` hook; the synchronous ones reject a `Future` with a `StateError`.
 `generateTextAsOpenAI` repairs too: `ChatCompletion` carries no invalid
@@ -298,23 +299,86 @@ marker, so it repairs the native result and converts it
 repair — the chunk stream forwards the provider's argument deltas verbatim.
 
 `RawToolCall` carries every provider field (`providerExecuted`,
-`thoughtSignature`, `providerMetadata`), and the core adopts a replacement as
+`dynamic`, `providerMetadata`), and the core adopts a replacement as
 returned — build it with `context.toolCall.copyWith(input: …)` so those
 fields survive the repair.
+
+## Wire format
+
+The JSON that crosses the C ABI is the AI SDK's JSON, and `types.dart` reads
+and writes exactly the shapes of the generated TypeScript types
+(`bindings/node/src/types/*.ts`):
+
+- field names are camelCase (`toolCalls`, `finishReason`, `providerOptions`,
+  `maxOutputTokens`, ...); `config_json` / router / moa settings follow suit
+  (`baseUrl`, `providerName`, ...);
+- unions carry a `type` tag with kebab-case values (`text-delta`, `tool-call`,
+  `reasoning-file`, ...); sources use `sourceType`; errors use `name`
+  (`{"name": "AI_APICallError", ...}`);
+- a file part is the AI SDK `FilePart`: `ContentPartFile(data: FilePartData,
+  ...)` where `data` is `FilePartDataTagged(FileData)`, `FilePartDataBare`
+  (a base64 or URL string) or `FilePartDataReference` (`{provider: id}`);
+  `ContentPartFile.bytes(...)` writes inline bytes as tagged data. There is no
+  `file-base64` / `file-url` / `file-reference` part;
+- a generated file is a `GeneratedFile` (`{base64, mediaType}`, `bytes`
+  decodes it); `StreamPartFile` / `StreamPartReasoningFile` carry it as
+  `{type: 'file', file: {...}}`, while the provider-level `GenerateResult.content` keeps
+  a `LanguageModelFile` (`mediaType` and tagged `data`);
+- optional fields are absent, never `null`, except an `unknown` value
+  (`body`, `inputSchemaInput`): a JSON `null` there is kept, and `hasBody` /
+  `hasInputSchemaInput` tell it apart from a missing field;
+- a response `timestamp` is a JavaScript `Date` in the AI SDK's JSON: a
+  `toISOString()` string, UTC with milliseconds (`"2025-03-06T13:50:19.000Z"`),
+  which `DateTime.parse` reads;
+- bytes (`FileBytes`, image and file parts, audio and image outputs) are
+  base64 strings, as the AI SDK's JSON carries a `Uint8Array`;
+- image `size` is a `"WxH"` string and `aspectRatio` a `"W:H"` string.
+
+A tool result in a message is a `ContentPartToolResult(toolCallId, toolName,
+output)`; `output` is a `ToolResultOutput` (`text`, `json`, `executionDenied`,
+`errorText`, `errorJson` or `content`):
+
+```dart
+final followUp = [
+  ModelMessage(role: 'tool', content: [
+    ContentPartToolResult(
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      output: ToolResultOutput.json({'temperature': 22}),
+    ).toJson(),
+  ]),
+];
+```
+
+There is no provider-registration API: `aimux_register_providers` is gone, and
+so is `registerProviders`. Use `Model.provider` / `createProvider` with a
+`baseUrl` to reach a custom endpoint.
 
 ## Types
 
 `bindings/flutter/lib/types.dart` declares the typed model surface (with
 `toJson` / `fromJson` on each): `Role`, `FinishReasonUnified`,
-`ReasoningEffort`, `TokenUsage`, `Usage`, `FinishReason`, `ToolCall`,
-`FunctionTool`, `Tool`, `ToolChoice`, `ResponseMetadata`, `GenerateContent`
-(sealed), `GenerateResult`, `GenerateTextResult`, `GenerateTextOptions`,
-`ModelMessage`, `StreamPart` (sealed), `FileBytes`, `FileData`, `ContentPart`,
-`RawToolCall` / `ToolCallRepairContext` / `RepairToolCall` (tool-call repair).
+`ReasoningEffort`, `InputTokenUsage` / `OutputTokenUsage` / `Usage`,
+`FinishReason`, `ToolCall`, `FunctionTool`, `Tool`, `ToolChoice`,
+`RequestInfo` / `ResponseInfo` / `ResponseMetadata`, `GeneratedFile`,
+`Source`, `ToolResult`, `GenerateContent` (sealed), `GenerateResult`,
+`LanguageModelUsage`, `GenerateTextResult`, `GenerateObjectResult`,
+`GenerateTextOptions`, `ModelMessage`, `StreamPart` (sealed; the
+`TextStreamPart` shapes the stream emits), `FileBytes`, `FileData`,
+`ContentPart` (sealed), `ToolResultOutput`, and `RawToolCall` /
+`ToolCallRepairContext` / `RepairToolCall` (tool-call repair). A `type` the
+binding does not model decodes to the `...Unknown` fallback of each union and
+re-encodes verbatim.
 
 `ToolCall` carries `providerMetadata` plus `invalid` (set by Core when tool
 lookup, input parse, or schema validation fails, even after repair) and `error`
-(the serialized `AiMuxError` for that failure).
+(the `AiMuxError` object for that failure).
+
+A standalone `ToolCall` or `RawToolCall` (a result's `toolCalls`, an approval
+request's `toolCall`, a repair context's `toolCall`) writes
+`"type": "tool-call"`, and a `Source` writes `"type": "source"` next to its
+`sourceType`, as the AI SDK's `TypedToolCall` and `Source` do. Reading accepts
+JSON without the tag and rejects a different one.
 
 ## Coverage
 

@@ -24,7 +24,13 @@ use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions
 use crate::{AbortSignal, retry, timeout};
 
 /// Audio input: raw bytes, a base64-encoded string, or a URL.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+///
+/// The JSON is a string, as in the AI SDK's JSON: base64 for bytes, the URL
+/// text for a URL. Reading takes a string that parses as a URL as a URL and
+/// any other string as base64 (base64 has no `:`), as a file part's string
+/// data is read (ai@7.0.127 `prompt/file-part-data.ts:89-141`).
+#[derive(Debug, Clone, TS)]
+#[ts(type = "string")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AudioInput {
     /// Raw binary bytes.
@@ -49,7 +55,10 @@ impl AudioInput {
 }
 
 /// A chunk of audio in a streaming transcription request.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+///
+/// The JSON is a base64 string either way, as in the AI SDK's JSON.
+#[derive(Debug, Clone, TS)]
+#[ts(type = "string")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AudioChunk {
     /// Raw binary bytes.
@@ -58,8 +67,31 @@ pub enum AudioChunk {
     Base64(String),
 }
 
+crate::wire::base64_wire_enum!(AudioChunk);
+
+impl Serialize for AudioInput {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Base64(text) | Self::Url(text) => serializer.serialize_str(text),
+            Self::Binary(bytes) => serializer.serialize_str(&crate::wire::encode_base64(bytes)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AudioInput {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Ok(if url::Url::parse(&text).is_ok() {
+            Self::Url(text)
+        } else {
+            Self::Base64(text)
+        })
+    }
+}
+
 /// A transcript segment with timing information.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionSegment {
     /// The text content of this segment.
@@ -74,6 +106,7 @@ pub struct TranscriptionSegment {
 ///
 /// Aligned with V4 `TranscriptionModelV4CallOptions`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionCallOptions {
     /// Audio to transcribe: raw bytes, a base64-encoded string, or a URL
@@ -86,6 +119,8 @@ pub struct TranscriptionCallOptions {
     pub media_type: String,
 
     /// Additional provider-specific options, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Abort signal for cancelling the operation.
@@ -95,12 +130,18 @@ pub struct TranscriptionCallOptions {
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     /// retrying. `None` uses 2, the AI SDK default.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
 
     /// Additional HTTP headers to send with the request.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 
     /// The download of an [`AudioInput::Url`], the AI SDK's `transcribe`
@@ -133,6 +174,7 @@ impl TranscriptionCallOptions {
 ///
 /// Aligned with V4 `TranscriptionModelV4Result`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionResult {
     /// The complete transcribed text from the audio.
@@ -142,53 +184,80 @@ pub struct TranscriptionResult {
     pub segments: Vec<TranscriptionSegment>,
 
     /// The detected language (ISO 639-1 code, e.g. `"en"`), if detected.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
 
     /// The total duration of the audio in seconds, if determined.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_in_seconds: Option<f64>,
 
     /// Warnings for the call, e.g. unsupported settings.
     pub warnings: Vec<Warning>,
 
     /// Optional request information for telemetry and debugging.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<TranscriptionRequest>,
 
     /// Response information for telemetry and debugging.
     pub response: TranscriptionResponse,
 
     /// Additional provider-specific metadata, keyed by provider name.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 }
 
 /// Optional request information for a transcription call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionRequest {
     /// Raw request HTTP body that was sent (JSON stringified).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
 }
 
 /// Response information for a transcription call.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TranscriptionResponse {
-    /// Timestamp for the start of the generated response (ISO 8601 string).
-    pub timestamp: Option<String>,
+    /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     /// Response headers.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
+    #[ts(optional)]
+    #[serde(
+        default,
+        deserialize_with = "crate::wire::present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub body: Option<serde_json::Value>,
 }
 
 /// The input audio format for a streaming transcription request.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputAudioFormat {
     /// Audio format type, e.g. `"audio/pcm"`, `"audio/pcmu"`, `"audio/pcma"`.
     pub format_type: String,
     /// Sample rate in Hz. Only applicable for formats that require a rate.
+    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate: Option<u32>,
 }
 
@@ -240,47 +309,94 @@ impl std::fmt::Debug for TranscriptionStreamOptions {
 ///
 /// Aligned with V4 `TranscriptionModelV4StreamPart`.
 #[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum TranscriptionStreamPart {
     /// Stream start event, carrying warnings.
     StreamStart { warnings: Vec<Warning> },
     /// Append-only transcript delta.
     TranscriptDelta {
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         delta: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<SharedProviderMetadata>,
     },
     /// Non-final transcript text (may be revised by later parts).
     TranscriptPartial {
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         text: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         start_second: Option<f64>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_in_seconds: Option<f64>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         channel_index: Option<u32>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<SharedProviderMetadata>,
     },
     /// Final transcript text for a provider-defined segment or utterance.
     TranscriptFinal {
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
         text: String,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         start_second: Option<f64>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         end_second: Option<f64>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         channel_index: Option<u32>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<SharedProviderMetadata>,
     },
     /// Response metadata, emitted once available.
     ResponseMetadata {
-        timestamp: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timestamp: Option<crate::timestamp::Timestamp>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         model_id: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         headers: Option<SharedHeaders>,
+        #[ts(optional)]
+        #[serde(
+            default,
+            deserialize_with = "crate::wire::present",
+            skip_serializing_if = "Option::is_none"
+        )]
         body: Option<serde_json::Value>,
     },
     /// Metadata available after the stream finishes.
     Finish {
         text: String,
         segments: Vec<TranscriptionSegment>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         language: Option<String>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_in_seconds: Option<f64>,
+        #[ts(optional)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_metadata: Option<SharedProviderMetadata>,
     },
     /// Raw provider chunk (only when `include_raw_chunks` is `true`).

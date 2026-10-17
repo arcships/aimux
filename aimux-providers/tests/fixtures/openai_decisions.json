@@ -8,7 +8,7 @@
       "team": {"type": "choice", "instructions": "Which team should respond?", "criteria": {"billing": "Invoices", "support": null}},
       "severity": {"type": "score", "instructions": "How severe is the issue?", "criteria": ["minor", "major", "critical"]}
     },
-    "max_retries": 0
+    "maxRetries": 0
   },
   "request": {
     "model": "gpt-6-luna",

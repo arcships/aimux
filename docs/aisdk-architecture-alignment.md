@@ -398,7 +398,7 @@ fn do_stream<'a>(
 
 语音结果 `SpeechResult.usage: Option<JsonObject>` 同上游 `SpeechModelV4Result.usage?: JSONObject`（`@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`），按厂商原样保存用量，不归一化为 token 计数。Google 在响应带 `usageMetadata` 时原样传出（`@ai-sdk/google@4.0.87 src/google-speech-model.ts:356-358`），未报告或为 `null` 时为 `None`；其他厂商不报告用量。speech 结束事件上的 usage（`ai@7.0.127 src/generate-speech/generate-speech.ts:245`）属于 telemetry 接入，尚未完成。
 
-决策模型即上游 `DecisionModelV4`（`@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4.ts:6-16`）：`DecisionModel` 只有 `specification_version`、`provider`、`model_id`、`supported_question_types` 与 `do_decide`，call options、题目、答案与结果的形态同 `decision-model-v4-call-options.ts:7-14`、`decision-model-v4-result.ts:7-56`。`decide` 同 `ai@7.0.128 src/decide/decide.ts:76-185`：校验输入，I/O 前拒绝不支持的题型（`DecisionUnsupportedQuestionTypeError` 的文案），按 `maxRetries`（缺省 2）重试，重试后用 `validate-decision.ts` 的规则校验答案，补全 usage 合计与 response 时间、模型。ProviderV4（`provider-v4.ts:13`）没有决策方法，上游 registry 通过扩展读取 `decisionModel ?? evaluationModel`（`ai@7.0.128 src/registry/provider-registry.ts:447-461`）；aimux 的 `Provider::decision_model` 是可选方法，缺省 `None`，registry 与 custom provider 报 `NoSuchModel`（`decisionModel`）。上游 deprecated 的 `evaluationModel`、`doEvaluate` 等别名不移植（D31）。aimux 已有的扩展不另设结构：图片、typed choice value、运行时协议放在 `provider_options`，概率来源、confidence、弃答与 latency 放在 `provider_metadata`；模型不带能力结构，录制也不存能力快照。OpenAI 原生 Decisions、TypeSafe 与本地运行时是 aimux 扩展；上游 OpenAI、Google、Anthropic 的 `evaluationModel` 用语言模型结构化输出（`@ai-sdk/provider-utils@5.0.55 src/decision-language-model.ts`），aimux 对应 `DecisionLanguageModel`：`google:`、`anthropic:` 的 `decision_model` 即此适配器（`"{name}.evaluation"`），`openai:` 的 `decision_model` 走原生 Decisions，适配器另由 `OpenAIProvider::evaluation` 提供。
+决策模型即上游 `DecisionModelV4`（`@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4.ts:6-16`）：`DecisionModel` 只有 `specification_version`、`provider`、`model_id`、`supported_question_types` 与 `do_decide`，call options、题目、答案与结果的形态同 `decision-model-v4-call-options.ts:7-14`、`decision-model-v4-result.ts:7-56`。`decide` 同 `ai@7.0.128 src/decide/decide.ts:76-185`：校验输入，I/O 前拒绝不支持的题型（`DecisionUnsupportedQuestionTypeError` 的文案），按 `maxRetries`（缺省 2）重试，重试后用 `validate-decision.ts` 的规则校验答案，补全 usage 合计与 response 时间、模型。ProviderV4（`provider-v4.ts:13`）没有决策方法，上游 registry 通过扩展读取 `decisionModel ?? evaluationModel`（`ai@7.0.128 src/registry/provider-registry.ts:447-461`）；aimux 的 `Provider::decision_model` 是可选方法，缺省 `None`，registry 与 custom provider 报 `NoSuchModel`（`decisionModel`）。上游 deprecated 的 `evaluationModel`、`doEvaluate` 等别名不移植（D31）。aimux 已有的扩展不另设结构：图片、typed choice value、运行时协议放在 `providerOptions`，概率来源、confidence、弃答与 latency 放在 `providerMetadata`；模型不带能力结构，录制也不存能力快照。JSON 同公共 JSON 规则：选项、结果与模型描述 camelCase（`maxRetries`、`rounding.probabilityDecimals`、`{specificationVersion, provider, modelId, supportedQuestionTypes}`），`DecideResult.usage` 的未知计数省略（`decision-result.ts:27-31` 为 `undefined`）；provider 命名空间里 aimux 自己解析的参数与元数据也是 camelCase（`images[].mediaType`、`choiceValues`、`safetyIdentifier`、`probabilitySource`、`latencyMs`），原样转发给运行时的参数保持运行时的字段名。OpenAI 原生 Decisions、TypeSafe 与本地运行时是 aimux 扩展；上游 OpenAI、Google、Anthropic 的 `evaluationModel` 用语言模型结构化输出（`@ai-sdk/provider-utils@5.0.55 src/decision-language-model.ts`），aimux 对应 `DecisionLanguageModel`：`google:`、`anthropic:` 的 `decision_model` 即此适配器（`"{name}.evaluation"`），`openai:` 的 `decision_model` 走原生 Decisions，适配器另由 `OpenAIProvider::evaluation` 提供。
 
 Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
 
@@ -1120,7 +1120,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
 | 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
-| 上游对齐 | Decision | `DecisionModelV4` 与 `decide`；aimux 扩展进 `provider_options` / `provider_metadata`，无能力结构；不支持决策的 provider 返回 `None`；deprecated evaluation 别名不移植（§3.1） |
+| 上游对齐 | Decision | `DecisionModelV4` 与 `decide`；aimux 扩展进 `providerOptions` / `providerMetadata`，无能力结构；不支持决策的 provider 返回 `None`；deprecated evaluation 别名不移植（§3.1） |
 | 本期范围外 | Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
 | ABI 范围外 | C 宿主异步 fetch/model/headers/telemetry | 由独立异步 ABI 设计处理；本期提供 Rust 内建句柄 |
 | 上游对齐 | `specification_version` | `Provider` 与各模型 trait 保留 `specification_version()`，默认返回 `"v4"`，与上游 `ProviderV4` 及各模型 V4 接口的 `specificationVersion: 'v4'` 一致 |
@@ -1510,11 +1510,12 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - feature 组合矩阵 CI（§9.2）。
 - 协议 fixture 扩到四个家族以外，逐字段比对结果与流（§9.3）。
 - CLI 探测加 `--method`；现在 OpenAI 只能探测 Responses（§4.6、RFC-0025）。
-- 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省），回放不了的部分在回放时报错说明。
+- 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省；公共 JSON 层把信封与其中的选项、结果写成 camelCase，主线的 snake_case 信封键作为别名读取），回放不了的部分在回放时报错说明。
 - OpenAI 兼容输出的流带回上游的 id 与 model（RFC-0026）；这是回归，不是新功能。
 - Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
 - `decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`），随 Telemetry 一起做（§3.5）。
 - AWS SigV4 fetch（Bedrock、Anthropic-AWS）也给 GET 请求签名，即 `list_models`；上游只签带 body 的 POST（`amazon-bedrock-sigv4-fetch.ts:57-62`、`anthropic-aws-fetch.ts:57-62`）。模型列表是 aimux 独有的接口，不签名就调不通，所以保留这一差异，不再修改（§3.3）。
+- Swift 绑定的类型化值不保键序：`ProviderOptions`、`ProviderMetadata`、`UploadFileResult.providerReference` 与 `JSONValue.object` 是 Swift `Dictionary`，经 `JSONEncoder` / `JSONSerialization` 解码再编码后键的顺序可能改变；上游是 JS 对象，按插入顺序保留（#229 NP2-1，附录"namespace map 的顺序"）。Swift API 返回的 JSON 字符串保序，需要顺序时原样传递字符串（`docs/api/swift.md`）。要消除这一差异，需要把这些类型换成保序的容器，随绑定迁移那一层做。
 
 ### 9.2 必须通过的构建检查
 
@@ -1669,7 +1670,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | `Usage`、`TokenUsage` | 普通对象 | snake_case；`total=None` 输出 null，细分计数多数省略 | `C/types.rs:30` |
 | `Warning` | externally tagged | `{"Unsupported":{...}}` 等 | `C/types.rs:133` |
 | `ResponseFormat` | externally tagged | 单元分支为 `"Text"`；对象分支为 `{"Json":{...}}` | `C/options.rs:17` |
-| `ResponseMetadata`、`RequestInfo`、`ResponseInfo` | 普通对象 | snake_case；大量缺值输出 null；timestamp 是无约束字符串 | `C/types.rs:153`；`C/shared.rs:227` |
+| `ResponseMetadata`、`RequestInfo`、`ResponseInfo` | 普通对象 | snake_case；大量缺值输出 null；timestamp 是无约束字符串(C48 已改为 `Timestamp`) | `C/types.rs:153`；`C/shared.rs:227` |
 | `GenerateResult`、`GenerateTextResult`、聚合结果、对象结果 | 普通对象 | snake_case；request/response 结构不统一；大量派生字段独立存储 | `C/result.rs:165、212`；`C/generate.rs:143、195` |
 | `CallOptions`、`GenerateTextOptions` | 普通对象 | snake_case；多数可选项输出 null；运行时 signal、callback 等 `serde(skip)` | `C/options.rs:67`；`C/generate.rs:54` |
 | `AiMuxError` | 默认外部标签枚举 | 嵌入流、工具调用 error 后继续形成 PascalCase 外层；其内部分支另有命名约定 | `C/error.rs:168` |
@@ -1880,6 +1881,10 @@ pub enum Optional<T> {
 
 这样可以避免 `Option<Value>` 在反序列化时把“缺字段”和“值为 null”合并。普通运行时 API 可以继续用 Option；wire DTO 必须保留上游 JSONValue 的 null 语义。
 
+落地形式(#232 C34)：`Option<Value>` 字段使用 `#[serde(default, deserialize_with = "crate::wire::present", skip_serializing_if = "Option::is_none")]`，`None` 即 Missing，`Some(Value::Null)` 即显式 null，序列化时各自写回。已覆盖上游为 `unknown` 的字段：各模型结果的 response/request `body`(`language-model-v4-generate-result.ts:41, :56` 等)、`APICallError.data`(`errors/api-call-error.ts:18`)与工具审批请求的 `inputSchemaInput`(`provider-utils` `types/tool-approval-request.ts:41`)。绑定同样区分：Python 不再以 `exclude_none` 序列化，`Any` 字段显式设为 `None` 时写出 null；Go 以 `json.RawMessage` 读取这些 body 与 API 调用错误的 `Error.Data`；Kotlin 以 `JsonValuePresentSerializer`、Swift 以 `KeyedDecodingContainer.decodeIfPresent(JSONValue.self)` 重载、Dart 以 `hasBody`/`hasInputSchemaInput` 保留显式 null；Java 的 `JsonNode` 字段由 Jackson 读成 `NullNode`。
+
+namespace map 的顺序(#229 NP2-1)：Rust 侧 `NamespaceMap`/`SharedProviderReference` 按插入顺序读写，绑定侧也不得重排。Node(`JSON.parse`)、Python(`json.loads`/pydantic `dict`)、Java(Jackson `JsonNode`，`UploadFileResult.providerReference` 默认 `LinkedHashMap`)、Kotlin(`kotlinx.serialization` 的 `Map`)与 Dart(`jsonDecode` 的 `LinkedHashMap`)天然保序；Go 的 map 编码时按键排序，因此 `Tool.ProviderOptions`、`TranscriptionSessionOpts.ProviderOptions` 改为 `json.RawMessage`，`UploadFileResult.ProviderReference` 改为保存原始 JSON 的 `ProviderReference` 类型(以 `Get(provider)` 读取)。已知限制：Swift 的 `[String: String]` 与 `JSONValue.object` 是无序 `Dictionary`，经 `JSONEncoder` 写出时不保证顺序（§9.1 已知差距）。
+
 生成的 JSON TypeScript DTO 对缺失属性使用 `?`。上游运行时的 `number | undefined` 可在 SDK facade 中恢复，但不能要求 JSON 对象携带不存在的 undefined。
 
 provider options/metadata 的内部键完全透传，不执行 camelCase 改写。从 `model.provider()` 拆字符串推导 namespace 不作为通用规则；个别厂商包按上游各自的做法从 provider 名取 options 名（例如 `@ai-sdk/openai-compatible` 3.0.62 `openai-compatible-chat-language-model.ts:157-159`、`@ai-sdk/anthropic` 4.0.71 `anthropic-language-model.ts:373`），见下文衔接第 5 条。
@@ -2046,6 +2051,8 @@ pub enum GeneratedFileData {
 ```
 
 普通 V4 输入 FilePart 使用完整 `FileData`，并有 `filename?`。V4 reasoning-file 输入，以及 V4 file/reasoning-file 输出，只使用 data/url 子集。现有输出 FileData 允许 reference/text 的范围过宽。
+
+用户层 `ContentPart` 的文件部件已落地为上游 `FilePart`(#232 C35，`provider-utils` `types/content-part.ts:62-102`)：只有 `file` 一个标签，`data` 为 `FilePartData` = 带标签的 `FileData` | 字符串(base64 或 URL) | 裸 `ProviderReference`；`reasoning-file` 的 `data` 为 `ReasoningFilePartData` = data/url 标签 | 字符串。`file-base64`/`file-url`/`file-reference` 已删除。转换为 V4 prompt 时按 `convertToLanguageModelV4FilePart`(`ai` `prompt/file-part-data.ts:89-141`)：字符串能解析为 URL 即为 URL(规范化后与原文不同则保留 `originalUrl`)，否则为 base64；`data:` URL 拆为内联数据，其媒体类型优先于部件的 `mediaType`；`{type:'data'}` 内出现 `data:` URL 报错(上游 `InvalidDataContentError`，此处为 `AI_InvalidPromptError`)。响应消息中的 file/reasoning-file 部件按 `to-response-messages.ts:69-84` 写成裸 base64 字符串。
 
 `originalUrl?` 也必须补齐，依据 `S4/shared-v4-file-data.ts:25`。
 
@@ -2288,6 +2295,8 @@ raw?: JSONObject
 
 core ToolCall 的 input 是解析后的值；provider raw input String 在解析、校验、repair 之前一直保持原文。
 
+解析结果要等于上游 `JSON.parse` 的值(`A/generate-text/parse-tool-call.ts:116`、`:256`，provider-utils `secure-json-parse.ts:31`)。JS 只有一种数字类型，`JSON.stringify(JSON.parse("1e2"))` 是 `100`；serde_json 却把带小数点或指数的数字保存为 `f64`，写回时是 `100.0`。落地方式(最小改动)：只在工具输入文本解析处(`parse_input_text`，有效与非法调用共用)遍历一次解析结果，把有限、整数值、绝对值小于 1e21 的 `f64` 换成 JS 会写出的整数：`f64` 的 `Display` 与 JS `Number::toString` 一样给出最短往返数字再补零(`2 ** 60` 写作 `1152921504606847000`)，`-0` 写作 `0`。其余数字不动：非整数与 1e21 以上的数 serde_json 的写法本来就与 JS 相同(`1.5`、`1e+300`)；约 1.8e19 到 1e21 之间的整数值超出 `i64`/`u64`，没有 `arbitrary_precision` 时无法表示，仍写成浮点(已知差异)。不带小数点或指数、但超过 2^53 的整数字面量由 serde_json 精确保存，而 JS 会舍入到最近的 double，也是已知差异(#229 item 10)。
+
 | core 类型 | 字段与约束 |
 |---|---|
 | StaticToolCall | `toolCallId, toolName, input, providerExecuted?, providerMetadata?, toolMetadata?, title?, dynamic?:false, invalid?:false`；无 error |
@@ -2320,6 +2329,8 @@ pub struct GeneratedFile {
 
 V4 file URL 在进入 core GeneratedFile 前按上游行为下载，见 `A/generate-text/resolve-generated-file-data.ts:14`。普通生成文件与 reasoning 文件分别进入相应输出分支。
 
+已落地(#232 C46，`ai` `generate-text/generated-file.ts:10-32`)：`GeneratedFile` 的 JSON 为 `{base64, mediaType, providerMetadata?}`，`files[]` 与 content/stream 的 `file`/`reasoning-file` 部件均为 `{type, file: GeneratedFile, providerMetadata?}`(`convert-language-model-content.ts:55-70`、`stream-language-model-call.ts:569-590`)；部件的 `providerMetadata` 留在部件上，文件本身不带。provider 层仍用 `LanguageModelFile` = `{mediaType, data: GeneratedFileData, providerMetadata?}`(V4 `LanguageModelV4File`)。与上游的已知差异：上游流中的文件对象是 `DefaultGeneratedFileWithType`，`JSON.stringify` 时多一个 `type:'file'` 字段，aimux 不输出该字段。
+
 core `ContentPart` 为 **11 类**：
 
 ```rust
@@ -2346,7 +2357,7 @@ pub enum ContentPart {
 
 | 事件 | core 形态 |
 |---|---|
-| text-delta / reasoning-delta | `id, text, providerMetadata?`，字段是 text |
+| text-delta / reasoning-delta | `id, text, providerMetadata?`，字段是 text(#229 B9 已落地；provider 层 StreamPart 仍为 delta) |
 | tool-input-delta | 仍为 `id, delta, providerMetadata?` |
 | tool-input-start | 在 V4 字段上增加 `toolMetadata?` |
 | tool-call/result/error | core 解析及执行后的类型 |
@@ -2402,6 +2413,8 @@ sources
 toolCalls / staticToolCalls / dynamicToolCalls
 toolResults / staticToolResults / dynamicToolResults
 ```
+
+派生出的元素仍是上游的带标签对象(#229 NP2-7 已落地)：`toolCalls[]` 与审批请求的 `toolCall` 是 `TypedToolCall`，带 `type: "tool-call"`(`A/generate-text/tool-call.ts:8-14`、`A/generate-text/tool-approval-request-output.ts:20`)；`sources[]` 是 `Source` = `LanguageModelV4Source`，带 `type: "source"`(`A/types/language-model.ts:92`、`V4/language-model-v4-source.ts:8`、`:36`)。aimux 的 `ToolCall`/`Source` 本身不带标签(在 `content` 与流中由联合写出)，独立出现的字段经 `wire::typed`/`wire::typed_vec` 写出标签，标签在最前；读取时缺标签可接受(旧 JSON)，标签不符则报错。TypeScript 侧对应 `TypedToolCall`、`TypedSource`。修复函数参数里的 `toolCall` 与 `applyToolCallRepair` 的结果同样带 `type: "tool-call"`(上游 `LanguageModelV4ToolCall`，`V4/language-model-v4-tool-call.ts:7`)。各绑定的独立 ToolCall/RawToolCall/Source 类型同样写出标签。
 
 `StepResultPerformance` 不能遗漏本地 SDK 已有字段：
 
@@ -2567,6 +2580,8 @@ responseMessages 是 `AssistantModelMessage | ToolModelMessage` 的子集联合�
 | 非 JSON 宿主对象跨 ABI | 显式转换或报告序列化错误，不能静默 stringify |
 
 这些规则是 **aimux 的 AI SDK JSON 适配规范**，不能宣称是直接 `JSON.stringify` 任意 SDK 实例的结果。例如 GeneratedFile 含 getter 和内部缓存字段，必须通过 DTO 导出。
+
+timestamp 已落地(#232 C48)：core 的 `Timestamp` 对应上游 `Date`，按 UTC 毫秒精度保存，序列化为 `toISOString()` 形式(`2025-03-06T13:50:19.000Z`)，反序列化只接受 RFC 3339 日期时间(任意时区与小数位，读入后即 `new Date(text).toISOString()`)，其他文本报错。provider 按上游构造：`created` 秒数为 `new Date(created * 1000)`，Bedrock 取 `Date` 响应头。语言绑定的 wire 类型仍是字符串，文档说明用各语言的 ISO 8601 解析器读取；恢复原生日期类型尚未落地。
 
 同一工具调用在三个阶段的 JSON 应明确不同：
 

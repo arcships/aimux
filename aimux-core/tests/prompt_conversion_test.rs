@@ -30,14 +30,14 @@ fn convert(value: Value) -> Vec<LanguageModelMessage> {
 fn message_provider_options_reach_the_provider_prompt() {
     let options = json!({ "anthropic": { "cacheControl": { "type": "ephemeral" } } });
     let prompt = convert(json!([
-        { "role": "system", "content": "be brief", "provider_options": options },
-        { "role": "user", "content": "hi", "provider_options": options },
+        { "role": "system", "content": "be brief", "providerOptions": options },
+        { "role": "user", "content": "hi", "providerOptions": options },
         { "role": "assistant", "content": [
-            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} }
-        ], "provider_options": options },
+            { "type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": {} }
+        ], "providerOptions": options },
         { "role": "tool", "content": [
-            { "type": "tool_result", "tool_call_id": "c1", "result": "ok" }
-        ], "provider_options": options },
+            { "type": "tool-result", "toolCallId": "c1", "output": { "type": "text", "value": "ok" } }
+        ], "providerOptions": options },
     ]));
     let expected = provider_namespace(
         "anthropic",
@@ -64,10 +64,10 @@ fn message_provider_options_reach_the_provider_prompt() {
     }
     // The option survives a JSON round trip of the message.
     let message =
-        &messages(json!([{ "role": "user", "content": "hi", "provider_options": options }]))[0];
+        &messages(json!([{ "role": "user", "content": "hi", "providerOptions": options }]))[0];
     assert_eq!(
         serde_json::to_value(message).unwrap(),
-        json!({ "role": "user", "content": "hi", "provider_options": options })
+        json!({ "role": "user", "content": "hi", "providerOptions": options })
     );
 }
 
@@ -79,11 +79,11 @@ fn content_parts_are_checked_by_role() {
     let rejected = [
         // A tool call is not user content.
         json!({ "role": "user", "content": [
-            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} }
+            { "type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": {} }
         ] }),
         // An image part is user content only.
         json!({ "role": "assistant", "content": [
-            { "type": "image", "image": [1], "media_type": "image/png" }
+            { "type": "image", "image": "AQ==", "mediaType": "image/png" }
         ] }),
         // A tool message holds tool results and approval responses only.
         json!({ "role": "tool", "content": [{ "type": "text", "text": "x" }] }),
@@ -100,7 +100,7 @@ fn content_parts_are_checked_by_role() {
 
     let user = &messages(json!([{ "role": "user", "content": [
         { "type": "text", "text": "look" },
-        { "type": "image", "image": [1, 2], "media_type": "image/png" },
+        { "type": "image", "image": "AQI=", "mediaType": "image/png" },
     ] }]))[0];
     assert!(matches!(
         user,
@@ -118,12 +118,12 @@ fn empty_text_parts_are_dropped_as_upstream_drops_them() {
     let prompt = convert(json!([
         { "role": "user", "content": [
             { "type": "text", "text": "" },
-            { "type": "text", "text": "", "provider_options": options },
+            { "type": "text", "text": "", "providerOptions": options },
             { "type": "text", "text": "q" },
         ] },
         { "role": "assistant", "content": [
             { "type": "text", "text": "" },
-            { "type": "text", "text": "", "provider_options": options },
+            { "type": "text", "text": "", "providerOptions": options },
         ] },
         { "role": "user", "content": "" },
     ]));
@@ -152,18 +152,18 @@ fn tool_approvals_reach_the_provider_only_for_provider_executed_tools() {
     let prompt = convert(json!([
         { "role": "user", "content": "search" },
         { "role": "assistant", "content": [
-            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "web_search",
-              "input": {}, "provider_executed": true },
-            { "type": "tool_approval_request", "approval_id": "a1", "tool_call_id": "c1" },
-            { "type": "tool_call", "tool_call_id": "c2", "tool_name": "delete", "input": {} },
-            { "type": "tool_approval_request", "approval_id": "a2", "tool_call_id": "c2" },
+            { "type": "tool-call", "toolCallId": "c1", "toolName": "web_search",
+              "input": {}, "providerExecuted": true },
+            { "type": "tool-approval-request", "approvalId": "a1", "toolCallId": "c1" },
+            { "type": "tool-call", "toolCallId": "c2", "toolName": "delete", "input": {} },
+            { "type": "tool-approval-request", "approvalId": "a2", "toolCallId": "c2" },
         ] },
         { "role": "tool", "content": [
-            { "type": "tool_approval_response", "approval_id": "a1", "approved": true,
-              "reason": "fine", "provider_executed": true },
+            { "type": "tool-approval-response", "approvalId": "a1", "approved": true,
+              "reason": "fine", "providerExecuted": true },
         ] },
         { "role": "tool", "content": [
-            { "type": "tool_approval_response", "approval_id": "a2", "approved": false },
+            { "type": "tool-approval-response", "approvalId": "a2", "approved": false },
         ] },
     ]));
     assert_eq!(
@@ -203,10 +203,10 @@ fn tool_approvals_reach_the_provider_only_for_provider_executed_tools() {
 fn typed_tool_result_output_reaches_the_provider() {
     let prompt = convert(json!([
         { "role": "assistant", "content": [
-            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "delete", "input": {} }
+            { "type": "tool-call", "toolCallId": "c1", "toolName": "delete", "input": {} }
         ] },
         { "role": "tool", "content": [
-            { "type": "tool_result", "tool_call_id": "c1", "tool_name": "delete",
+            { "type": "tool-result", "toolCallId": "c1", "toolName": "delete",
               "output": { "type": "execution-denied", "reason": "no" } }
         ] },
     ]));
@@ -225,117 +225,71 @@ fn typed_tool_result_output_reaches_the_provider() {
     );
 }
 
-// The JSON of this layer keeps the earlier `result` form of a tool result,
-// read as `createToolModelOutput` reads a raw tool value
-// (`prompt/create-tool-model-output.ts:4`): a string is text, anything else
-// JSON, an error is error text holding `getErrorMessage(value)`.
+// A tool result is the upstream `ToolResultPart`
+// (`@ai-sdk/provider-utils@5.0.53` `types/content-part.ts:218-242`): a typed
+// `output` (`:247-300`), read and written as is. The earlier `result` form
+// and a bare `output` value are not `ToolResultOutput`s and are rejected.
 #[test]
-fn earlier_tool_result_json_still_reads_and_writes() {
-    let part = |value: Value| -> ToolResultPart {
-        let ToolContentPart::ToolResult(part) = serde_json::from_value(value).unwrap() else {
-            panic!()
-        };
-        part
-    };
+fn tool_result_json_is_the_ai_sdks() {
     let text = |value: &str| ToolResultOutput::Text {
         value: value.into(),
         provider_options: None,
     };
-    let error = |value: &str| ToolResultOutput::ErrorText {
-        value: value.into(),
-        provider_options: None,
+    let written = |output: ToolResultOutput| {
+        serde_json::to_value(ToolContentPart::tool_result("c1", "t", output)).unwrap()
     };
-
     let cases = [
-        (json!({ "result": "ok" }), text("ok")),
-        (json!({ "output": "bare string" }), text("bare string")),
         (
-            json!({ "result": { "temp": 22 } }),
-            ToolResultOutput::Json {
-                value: json!({ "temp": 22 }),
-                provider_options: None,
-            },
+            text("ok"),
+            json!({ "type": "tool-result", "toolCallId": "c1", "toolName": "t",
+                    "output": { "type": "text", "value": "ok" } }),
         ),
         (
-            json!({ "output": { "temp": 22 } }),
-            ToolResultOutput::Json {
-                value: json!({ "temp": 22 }),
+            ToolResultOutput::ErrorText {
+                value: "boom".into(),
                 provider_options: None,
             },
+            json!({ "type": "tool-result", "toolCallId": "c1", "toolName": "t",
+                    "output": { "type": "error-text", "value": "boom" } }),
         ),
         (
-            json!({ "result": null }),
             ToolResultOutput::Json {
                 value: Value::Null,
                 provider_options: None,
             },
-        ),
-        (json!({ "result": "boom", "is_error": true }), error("boom")),
-        (
-            json!({ "result": { "code": 1 }, "is_error": true }),
-            error(r#"{"code":1}"#),
+            json!({ "type": "tool-result", "toolCallId": "c1", "toolName": "t",
+                    "output": { "type": "json", "value": null } }),
         ),
         (
-            json!({ "result": null, "is_error": true }),
-            error("unknown error"),
-        ),
-        // A JSON value that only looks typed through `result` stays JSON.
-        (
-            json!({ "result": { "type": "text", "value": "x" } }),
-            ToolResultOutput::Json {
-                value: json!({ "type": "text", "value": "x" }),
+            ToolResultOutput::ExecutionDenied {
+                reason: None,
                 provider_options: None,
             },
-        ),
-        (
-            json!({ "output": { "type": "text", "value": "x" } }),
-            text("x"),
+            json!({ "type": "tool-result", "toolCallId": "c1", "toolName": "t",
+                    "output": { "type": "execution-denied" } }),
         ),
     ];
-    for (fields, expected) in cases {
-        let mut value = json!({ "type": "tool_result", "tool_call_id": "c1" });
-        value
-            .as_object_mut()
-            .unwrap()
-            .extend(fields.as_object().unwrap().clone());
-        assert_eq!(part(value.clone()).output, expected, "{value}");
+    for (output, expected) in cases {
+        assert_eq!(written(output.clone()), expected);
+        let ToolContentPart::ToolResult(part) =
+            serde_json::from_value::<ToolContentPart>(expected.clone()).unwrap()
+        else {
+            panic!("{expected}")
+        };
+        assert_eq!(part.output, output, "{expected}");
     }
 
     for invalid in [
-        json!({ "type": "tool_result", "tool_call_id": "c1" }),
-        json!({ "type": "tool_result", "tool_call_id": "c1", "result": 1, "output": 1 }),
-        json!({ "type": "tool_result", "tool_call_id": "c1", "is_error": true,
-                "output": { "type": "text", "value": "x" } }),
-        json!({ "type": "tool_result", "tool_call_id": "c1", "output": { "type": "text" } }),
+        json!({ "type": "tool-result", "toolCallId": "c1" }),
+        json!({ "type": "tool-result", "toolCallId": "c1", "result": "ok" }),
+        json!({ "type": "tool-result", "toolCallId": "c1", "output": "bare string" }),
+        json!({ "type": "tool-result", "toolCallId": "c1", "output": { "type": "text" } }),
     ] {
         assert!(
             serde_json::from_value::<ToolContentPart>(invalid.clone()).is_err(),
             "{invalid}"
         );
     }
-
-    // Written in the earlier form where it has one, so readers of this
-    // layer's JSON (the bindings) keep parsing it.
-    let written = |output: ToolResultOutput| {
-        serde_json::to_value(ToolContentPart::tool_result("c1", "t", output)).unwrap()
-    };
-    assert_eq!(
-        written(text("ok")),
-        json!({ "type": "tool_result", "tool_call_id": "c1", "tool_name": "t", "result": "ok" })
-    );
-    assert_eq!(
-        written(error("boom")),
-        json!({ "type": "tool_result", "tool_call_id": "c1", "tool_name": "t",
-                "result": "boom", "is_error": true })
-    );
-    assert_eq!(
-        written(ToolResultOutput::ExecutionDenied {
-            reason: None,
-            provider_options: None
-        }),
-        json!({ "type": "tool_result", "tool_call_id": "c1", "tool_name": "t",
-                "output": { "type": "execution-denied" } })
-    );
 }
 
 // A provider-executed tool result replays in the assistant message.
@@ -387,19 +341,19 @@ fn assistant_tool_result_converts_like_a_tool_message_result() {
 fn consecutive_tool_messages_are_combined() {
     let prompt = convert(json!([
         { "role": "assistant", "content": [
-            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "t", "input": {} },
-            { "type": "tool_call", "tool_call_id": "c2", "tool_name": "t", "input": {} },
+            { "type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": {} },
+            { "type": "tool-call", "toolCallId": "c2", "toolName": "t", "input": {} },
         ] },
         { "role": "tool", "content": [
-            { "type": "tool_result", "tool_call_id": "c1", "result": "one",
-              "provider_options": { "openai": { "b": 2, "nested": { "y": 2 } } } },
-        ], "provider_options": {
+            { "type": "tool-result", "toolCallId": "c1", "output": { "type": "text", "value": "one" },
+              "providerOptions": { "openai": { "b": 2, "nested": { "y": 2 } } } },
+        ], "providerOptions": {
             "anthropic": { "cacheControl": { "type": "ephemeral" } },
             "openai": { "a": 1, "b": 1, "nested": { "x": 1 } },
         } },
         { "role": "tool", "content": [
-            { "type": "tool_result", "tool_call_id": "c2", "result": "two" },
-        ], "provider_options": { "openai": { "c": 3 } } },
+            { "type": "tool-result", "toolCallId": "c2", "output": { "type": "text", "value": "two" } },
+        ], "providerOptions": { "openai": { "c": 3 } } },
     ]));
     assert_eq!(prompt.len(), 2, "{prompt:#?}");
     let LanguageModelMessage::Tool {
@@ -436,8 +390,9 @@ fn tool_calls_without_results_are_rejected() {
         convert_to_language_model_prompt(&messages(value), None, None)
             .expect_err("missing tool results")
     };
-    let call = |id: &str| json!({ "type": "tool_call", "tool_call_id": id, "tool_name": "t", "input": {} });
-    let result = |id: &str| json!({ "type": "tool_result", "tool_call_id": id, "result": "ok" });
+    let call =
+        |id: &str| json!({ "type": "tool-call", "toolCallId": id, "toolName": "t", "input": {} });
+    let result = |id: &str| json!({ "type": "tool-result", "toolCallId": id, "output": { "type": "text", "value": "ok" } });
 
     let before_user = error(json!([
         { "role": "assistant", "content": [call("c1"), call("c2")] },
@@ -468,13 +423,13 @@ fn tool_calls_without_results_are_rejected() {
     convert(json!([
         { "role": "user", "content": "go" },
         { "role": "assistant", "content": [
-            { "type": "tool_call", "tool_call_id": "c1", "tool_name": "web_search",
-              "input": {}, "provider_executed": true },
+            { "type": "tool-call", "toolCallId": "c1", "toolName": "web_search",
+              "input": {}, "providerExecuted": true },
             call("c2"),
-            { "type": "tool_approval_request", "approval_id": "a2", "tool_call_id": "c2" },
+            { "type": "tool-approval-request", "approvalId": "a2", "toolCallId": "c2" },
         ] },
         { "role": "tool", "content": [
-            { "type": "tool_approval_response", "approval_id": "a2", "approved": false },
+            { "type": "tool-approval-response", "approvalId": "a2", "approved": false },
         ] },
         { "role": "user", "content": "next" },
     ]));

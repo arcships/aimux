@@ -1,5 +1,6 @@
 package ai.arcships.aimux;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 
@@ -64,7 +65,7 @@ class ModelTest {
     @Test
     void generateTextReturnsJsonString() {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setResponseBody(plainOpenAiResponse());
 
             String resultJson = model.generateText("\"Hello\"");
@@ -73,8 +74,23 @@ class ModelTest {
             assertThat(result.getString("text"))
                 .isEqualTo("Rust is a systems programming language.");
             assertThat(server.lastRequestMethod()).isEqualTo("POST");
-            assertThat(server.lastRequestPath()).isEqualTo("/responses");
+            assertThat(server.lastRequestPath()).isEqualTo("/chat/completions");
             assertThat(server.lastRequestBody()).contains("gpt-4o-mini");
+        }
+    }
+
+    @Test
+    void responseTimestampIsToIsoString() {
+        // The response timestamp is a Date (provider
+        // language-model-v4-response-metadata.ts:10), built as
+        // new Date(created * 1000); its JSON is toISOString().
+        try (MockProviderServer server = new MockProviderServer();
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
+            server.setResponseBody(new JSONObject(plainOpenAiResponse()).put("created", 1741269019).toString());
+
+            JSONObject result = new JSONObject(model.generateText("\"Hello\""));
+            assertThat(result.getJSONObject("response").getString("timestamp"))
+                .isEqualTo("2025-03-06T13:50:19.000Z");
         }
     }
 
@@ -105,7 +121,7 @@ class ModelTest {
     @Test
     void streamTextInvokesOnDone() {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setContentType("text/event-stream");
             server.setResponseBody(openAiSseResponse());
 
@@ -146,7 +162,7 @@ class ModelTest {
     @Test
     void streamTextStreamIteratesParts() {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setContentType("text/event-stream");
             server.setResponseBody(openAiSseResponse());
 
@@ -184,7 +200,7 @@ class ModelTest {
     @Test
     void concurrentCloseAndGenerateDoesNotCrash() throws InterruptedException {
         try (MockProviderServer server = new MockProviderServer();
-             Model model = Model.openaiWithBase("sk-test-fake-key", "gpt-4o-mini", server.baseUrl())) {
+             Model model = Model.provider("deepseek", "sk-test-fake-key", "gpt-4o-mini", server.chatConfig())) {
             server.setResponseBody(plainOpenAiResponse());
 
             final int iterations = 300;
@@ -239,13 +255,54 @@ class ModelTest {
 
     // ── canned OpenAI responses ────────────────────────────────────────────
 
-    /** Plain OpenAI Responses response (no tool calls). */
+    /** Plain OpenAI chat-completions response (no tool calls). */
     private static String plainOpenAiResponse() {
-        return OpenAiResponsesFixtures.text("Rust is a systems programming language.", 10, 8);
+        return new JSONObject()
+            .put("id", "chatcmpl-test")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject()
+                    .put("message", new JSONObject()
+                        .put("role", "assistant")
+                        .put("content", "Rust is a systems programming language."))
+                    .put("finish_reason", "stop")))
+            .put("usage", new JSONObject()
+                .put("prompt_tokens", 10)
+                .put("completion_tokens", 8)
+                .put("total_tokens", 18))
+            .toString();
     }
 
-    /** OpenAI Responses SSE: two text deltas, item done and completed. */
+    /** OpenAI SSE stream: two content deltas + finish + [DONE]. */
     private static String openAiSseResponse() {
-        return OpenAiResponsesFixtures.textStream();
+        StringBuilder sb = new StringBuilder();
+        sb.append("data: ").append(new JSONObject()
+            .put("id", "1")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject().put("delta", new JSONObject()
+                    .put("role", "assistant")
+                    .put("content", "Hello")))))
+            .append("\n\n");
+        sb.append("data: ").append(new JSONObject()
+            .put("id", "1")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject().put("delta", new JSONObject()
+                    .put("content", " world")))))
+            .append("\n\n");
+        sb.append("data: ").append(new JSONObject()
+            .put("id", "1")
+            .put("model", "gpt-4o")
+            .put("choices", new JSONArray().put(
+                new JSONObject().put("delta", new JSONObject())
+                    .put("finish_reason", "stop")))
+            .put("usage", new JSONObject()
+                .put("prompt_tokens", 5)
+                .put("completion_tokens", 2)
+                .put("total_tokens", 7)))
+            .append("\n\n");
+        sb.append("data: [DONE]\n\n");
+        return sb.toString();
     }
 }

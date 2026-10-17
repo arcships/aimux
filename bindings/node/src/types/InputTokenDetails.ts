@@ -3,16 +3,16 @@
 /**
  * `LanguageModelUsage.inputTokenDetails`.
  */
-export type InputTokenDetails = {
+export type InputTokenDetails = { 
 /**
  * Input tokens that were not read from or written to a cache.
  */
-no_cache_tokens: number | null,
+noCacheTokens?: number, 
 /**
  * Input tokens read from a cache.
  */
-cache_read_tokens: number | null,
+cacheReadTokens?: number, 
 /**
  * Input tokens written to a cache.
  */
-cache_write_tokens: number | null, };
+cacheWriteTokens?: number, };

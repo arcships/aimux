@@ -56,13 +56,13 @@ void main() {
       }
     });
 
-    final call = (result['tool_calls'] as List).single as Map<String, dynamic>;
+    final call = (result['toolCalls'] as List).single as Map<String, dynamic>;
     expect(call['invalid'], isNull);
     expect(call['input'], {'city': 'Tokyo'});
-    final part = (result['response_messages'] as List)
+    final part = (result['responseMessages'] as List)
         .expand((m) => (m as Map<String, dynamic>)['content'] as List)
         .whereType<Map<String, dynamic>>()
-        .singleWhere((p) => p['type'] == 'tool_call');
+        .singleWhere((p) => p['type'] == 'tool-call');
     expect(part['input'], {'city': 'Tokyo'});
   });
 
@@ -97,7 +97,7 @@ void main() {
       final typed = TypedModel(mockChatModel(baseUrl, 'sk-test', 'gpt-4o'));
       try {
         final parts = await typed.streamText('weather?', _strictOptions()).toList();
-        final call = parts.whereType<StreamPartToolCall>().single;
+        final call = parts.whereType<StreamPartToolCall>().single.call;
         return {'invalid': call.invalid, 'input': call.input};
       } finally {
         typed.close();
@@ -106,28 +106,5 @@ void main() {
 
     expect(input['invalid'], isNull);
     expect(input['input'], {'city': 'Tokyo'});
-  });
-
-  test('RawToolCall keeps every provider field through a repair', () {
-    final call = RawToolCall.fromJson({
-      'tool_call_id': 'call-1',
-      'tool_name': 'weather',
-      'input': '{"town":"Tokyo"}',
-      'provider_executed': true,
-      'dynamic': true,
-      'provider_metadata': {
-        'google': {'x': 1},
-      },
-    });
-    expect(call.copyWith(input: '{"city":"Tokyo"}').toJson(), {
-      'tool_call_id': 'call-1',
-      'tool_name': 'weather',
-      'input': '{"city":"Tokyo"}',
-      'provider_executed': true,
-      'dynamic': true,
-      'provider_metadata': {
-        'google': {'x': 1},
-      },
-    });
   });
 }

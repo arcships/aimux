@@ -131,26 +131,6 @@ public final class Aimux {
     }
 
     /**
-     * Register external OpenAI-compatible providers from a JSON config string
-     * (RFC-0020).
-     *
-     * <p>{@code configJson} is {@code { "providers": [ { "name", "base_url", ... } ] }}.
-     * Entries override same-named built-ins or add new ones. Like
-     * {@link #initRecording}, this mutates process-global registry state.
-     *
-     * @param configJson Provider registry config JSON.
-     * @throws AimuxException if the registry rejects the config
-     *         ({@link AimuxException.InvalidArgumentError}).
-     */
-    public static void registerProviders(String configJson) {
-        AimuxResult.requireJsonNonNull(configJson, "configJson");
-        Pointer e = AimuxFFI.INSTANCE.aimux_register_providers(configJson);
-        if (e != null) {
-            throw AimuxResult.expectAimuxError(e, "registerProviders");
-        }
-    }
-
-    /**
      * Replace the default transport with one routed by this proxy configuration
      * (M6, RFC-0016). Requests started afterwards use it; calling it again
      * replaces the previous configuration.

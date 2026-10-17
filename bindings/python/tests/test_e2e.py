@@ -154,14 +154,24 @@ class TestOpenAIE2E:
             parts = list(stream_text(model, "Say hello"))
             assert len(parts) > 0
             text = "".join(
-                p["TextDelta"]["text"] for p in parts if "TextDelta" in p
+                p["text"] for p in parts if p["type"] == "text-delta"
             )
             assert text == "Hello world"
+
+    def test_response_timestamp_is_to_iso_string(self):
+        """The response timestamp is a Date (provider
+        language-model-v4-response-metadata.ts:10), built as
+        ``new Date(created * 1000)``; its JSON is ``toISOString()``."""
+        body = json.dumps({**json.loads(OPENAI_CHAT), "created": 1741269019})
+        with MockServer(body) as mock:
+            model = deepseek("test-key", "gpt-4o", mock.url)
+            result = generate_text(model, "What is Rust?")
+            assert result["response"]["timestamp"] == "2025-03-06T13:50:19.000Z"
 
     def test_generate_text_with_options(self):
         with MockServer(OPENAI_CHAT) as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)
-            generate_text(model, "Hello", {"max_output_tokens": 100, "temperature": 0.5})
+            generate_text(model, "Hello", {"maxOutputTokens": 100, "temperature": 0.5})
             # Options should reach the HTTP request (tested implicitly — if they
             # don't serialize, the Rust side would error)
 
@@ -181,7 +191,7 @@ class TestAnthropicE2E:
             parts = list(stream_text(model, "Hello"))
             assert len(parts) > 0
             text = "".join(
-                p["TextDelta"]["text"] for p in parts if "TextDelta" in p
+                p["text"] for p in parts if p["type"] == "text-delta"
             )
             assert text == "Hello from Claude"
 
@@ -342,6 +352,27 @@ OPENAI_TOOL_CALL = json.dumps({
 
 class TestStructuredContent:
 
+    def test_integral_tool_input_numbers_are_integers(self):
+        """The AI SDK parses tool input with JSON.parse (ai
+        generate-text/parse-tool-call.ts:256; provider-utils
+        secure-json-parse.ts:31): `1e2` and `3.0` are the integers 100 and 3,
+        and JSON.stringify writes them so."""
+        response = OPENAI_TOOL_CALL.replace(
+            '{\\"location\\":\\"Tokyo\\"}', '{\\"location\\":\\"Tokyo\\",\\"days\\":3.0,\\"n\\":1e2,\\"t\\":1.5}'
+        )
+        assert '\\"days\\":3.0' in response
+        with RecordingMockServer(response) as mock:
+            model = deepseek("test-key", "gpt-4o", mock.url)
+            result = generate_text(model, "Weather?", {"tools": [{
+                "type": "function",
+                "name": "get_weather",
+                "inputSchema": {"type": "object"},
+            }]})
+        tool_input = result["toolCalls"][0]["input"]
+        assert tool_input == {"location": "Tokyo", "days": 3, "n": 100, "t": 1.5}
+        assert type(tool_input["days"]) is int and type(tool_input["n"]) is int
+        assert type(tool_input["t"]) is float
+
     def test_generate_text_parses_tool_calls(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
             model = deepseek("test-key", "gpt-4o", mock.url)
@@ -350,7 +381,7 @@ class TestStructuredContent:
                     "type": "function",
                     "name": "get_weather",
                     "description": "Get weather for a location",
-                    "input_schema": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {"location": {"type": "string"}},
                         "required": ["location"],
@@ -359,20 +390,20 @@ class TestStructuredContent:
             }
             result = generate_text(model, "What's the weather in Tokyo?", opts)
 
-            # Convenience field: tool_calls extracted
-            assert len(result["tool_calls"]) == 1
-            assert result["tool_calls"][0]["tool_name"] == "get_weather"
-            assert result["tool_calls"][0]["tool_call_id"] == "call_abc"
-            assert result["tool_calls"][0]["input"] == {"location": "Tokyo"}
+            # Convenience field: toolCalls extracted
+            assert len(result["toolCalls"]) == 1
+            assert result["toolCalls"][0]["toolName"] == "get_weather"
+            assert result["toolCalls"][0]["toolCallId"] == "call_abc"
+            assert result["toolCalls"][0]["input"] == {"location": "Tokyo"}
 
             # Structured content: the final step's content holds the parsed
-            # ToolCall variant
+            # tool call
             assert isinstance(result["content"], list)
-            tc = next((c for c in result["content"] if "ToolCall" in c), None)
-            assert tc is not None, "content must contain a ToolCall variant"
-            assert tc["ToolCall"]["tool_name"] == "get_weather"
-            assert tc["ToolCall"]["tool_call_id"] == "call_abc"
-            assert tc["ToolCall"]["input"] == {"location": "Tokyo"}
+            tc = next((c for c in result["content"] if c["type"] == "tool-call"), None)
+            assert tc is not None, "content must contain a tool-call part"
+            assert tc["toolName"] == "get_weather"
+            assert tc["toolCallId"] == "call_abc"
+            assert tc["input"] == {"location": "Tokyo"}
 
     def test_multi_role_messages_reach_provider(self):
         with RecordingMockServer(OPENAI_CHAT) as mock:
@@ -399,12 +430,12 @@ class TestStructuredContent:
                 "tools": [{
                     "type": "function",
                     "name": "get_weather",
-                    "input_schema": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {"location": {"type": "string"}},
                     },
                 }],
-                "tool_choice": "required",
+                "toolChoice": "required",
             }
             generate_text(model, "Hello", opts)
 
@@ -412,7 +443,7 @@ class TestStructuredContent:
             assert body["tool_choice"] == "required"
 
     def test_stream_text_parses_tool_call_parts(self):
-        """Stream text should surface ToolCall/ToolInputDelta parts (not just TextDelta/Finish)."""
+        """Stream text should surface tool-call/tool-input-delta parts (not just text-delta/finish)."""
         sse_body = (
             'data: {"id":"1","model":"gpt-4o","choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_xyz","type":"function","function":{"name":"get_weather","arguments":""}}]}}]}\n\n'
             'data: {"id":"1","model":"gpt-4o","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"location\\":\\"Tokyo\\"}"}}]}}]}\n\n'
@@ -425,7 +456,7 @@ class TestStructuredContent:
                 "tools": [{
                     "type": "function",
                     "name": "get_weather",
-                    "input_schema": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {"location": {"type": "string"}},
                     },
@@ -434,18 +465,17 @@ class TestStructuredContent:
             parts = list(stream_text(model, "What's the weather in Tokyo?", opts))
             assert len(parts) > 0
 
-            # Stream must contain a tool-related StreamPart (not just TextDelta/Finish)
+            # Stream must contain a tool-related StreamPart (not just text-delta/finish)
             has_tool_part = any(
-                "ToolCall" in p or "ToolInputDelta" in p or "ToolInputStart" in p
+                p["type"] in ("tool-call", "tool-input-delta", "tool-input-start")
                 for p in parts
             )
             assert has_tool_part, f"expected a tool stream part; got: {parts}"
 
             # If a complete ToolCall part is present, verify its fields
-            tool_call_parts = [p for p in parts if "ToolCall" in p]
+            tool_call_parts = [p for p in parts if p["type"] == "tool-call"]
             if tool_call_parts:
-                tc = tool_call_parts[0]["ToolCall"]
-                assert tc["tool_name"] == "get_weather"
+                assert tool_call_parts[0]["toolName"] == "get_weather"
 
     def test_tool_call_round_trip(self):
         """Full tool-call round trip: two generate_text calls with a ToolResult
@@ -456,7 +486,7 @@ class TestStructuredContent:
         Second call → model returns final text (OPENAI_CHAT).
 
         The messages use the framework's user-facing content-part shape
-        (``tool_call`` / ``tool_result`` parts). The OpenAI converter turns
+        (``tool-call`` / ``tool-result`` parts). The OpenAI converter turns
         these into the provider-facing body (assistant ``tool_calls`` array +
         ``tool`` role message with ``tool_call_id``), which is what we assert
         on for the second request.
@@ -469,7 +499,7 @@ class TestStructuredContent:
                     "type": "function",
                     "name": "get_weather",
                     "description": "Get weather for a location",
-                    "input_schema": {
+                    "inputSchema": {
                         "type": "object",
                         "properties": {"location": {"type": "string"}},
                         "required": ["location"],
@@ -479,21 +509,23 @@ class TestStructuredContent:
 
             # Step 1: first call — the model requests a tool call.
             result = generate_text(model, "What's the weather in Tokyo?", opts)
-            assert len(result["tool_calls"]) == 1
-            assert result["tool_calls"][0]["tool_name"] == "get_weather"
-            assert result["tool_calls"][0]["tool_call_id"] == "call_abc"
+            assert len(result["toolCalls"]) == 1
+            assert result["toolCalls"][0]["toolName"] == "get_weather"
+            assert result["toolCalls"][0]["toolCallId"] == "call_abc"
 
             # Step 2: back-fill the ToolResult and re-send the conversation.
             # Roles: user → assistant(tool_call) → tool(result).
             messages = [
                 {"role": "user", "content": "What's the weather in Tokyo?"},
                 {"role": "assistant", "content": [
-                    {"type": "tool_call", "tool_call_id": "call_abc",
-                     "tool_name": "get_weather", "input": {"location": "Tokyo"}},
+                    {"type": "tool-call", "toolCallId": "call_abc",
+                     "toolName": "get_weather", "input": {"location": "Tokyo"}},
                 ]},
                 {"role": "tool", "content": [
-                    {"type": "tool_result", "tool_call_id": "call_abc",
-                     "result": {"temperature": 22, "condition": "sunny"}},
+                    {"type": "tool-result", "toolCallId": "call_abc",
+                     "toolName": "get_weather",
+                     "output": {"type": "json",
+                                "value": {"temperature": 22, "condition": "sunny"}}},
                 ]},
             ]
 

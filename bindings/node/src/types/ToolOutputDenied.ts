@@ -4,4 +4,4 @@
  * The output of a tool whose execution was denied (the AI SDK's
  * `StaticToolOutputDenied`, `ai` `generate-text/tool-output-denied.ts:7-15`).
  */
-export type ToolOutputDenied = { tool_call_id: string, tool_name: string, provider_executed?: boolean | null, dynamic?: boolean | null, };
+export type ToolOutputDenied = { toolCallId: string, toolName: string, providerExecuted?: boolean, dynamic?: boolean, };

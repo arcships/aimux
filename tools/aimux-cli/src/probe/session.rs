@@ -40,17 +40,17 @@ mod tests {
         serde_json::json!({
             "provider": "openai",
             "model": "gpt-4o",
-            "session_id": session,
-            "call_id": format!("t-{idx}"),
-            "sent_at_unix_ms": 1785900000000 + idx as i64 * 1000,
+            "sessionId": session,
+            "callId": format!("t-{idx}"),
+            "sentAtUnixMs": 1785900000000 + idx as i64 * 1000,
             "fingerprint": {
-                "body_hash": format!("{idx:032x}"),
-                "len_bytes": body_len,
-                "block_size": 4096,
-                "block_hashes": vec![format!("{:032x}", idx)],
-                "token_estimate": body_len / 4,
+                "bodyHash": format!("{idx:032x}"),
+                "lenBytes": body_len,
+                "blockSize": 4096,
+                "blockHashes": vec![format!("{:032x}", idx)],
+                "tokenEstimate": body_len / 4,
             },
-            "usage": {"input_total": body_len / 4},
+            "usage": {"inputTotal": body_len / 4},
         })
     }
 
@@ -80,7 +80,7 @@ mod tests {
         let chain = store.session_chain("sess-1").unwrap();
         let json = serde_json::to_string(&chain).unwrap();
         assert_eq!(chain.record_ids.len(), 2);
-        assert!(json.contains("\"session_id\":\"sess-1\""), "{json}");
+        assert!(json.contains("\"sessionId\":\"sess-1\""), "{json}");
 
         // 未知 session → 无输出错误路径。
         let args2 = SessionArgs {

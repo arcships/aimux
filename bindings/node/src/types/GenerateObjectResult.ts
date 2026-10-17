@@ -10,36 +10,36 @@ import type { JsonValue } from "./serde_json/JsonValue";
  * Result of the deprecated [`generate_object`]: the AI SDK's
  * `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
  */
-export type GenerateObjectResult = {
+export type GenerateObjectResult = { 
 /**
  * The generated object, as parsed by the output.
  */
-object: JsonValue,
+object: JsonValue, 
 /**
  * The reasoning text, `None` when there is none.
  */
-reasoning: string | null,
+reasoning?: string, 
 /**
  * Why the model call finished.
  */
-finish_reason: FinishReasonUnified,
+finishReason: FinishReasonUnified, 
 /**
  * Token usage of the model call.
  */
-usage: LanguageModelUsage,
+usage: LanguageModelUsage, 
 /**
  * Warnings of the model call.
  */
-warnings: Array<Warning>,
+warnings: Array<Warning>, 
 /**
  * The request of the model call.
  */
-request: RequestInfo,
+request: RequestInfo, 
 /**
  * The response of the model call, without messages.
  */
-response: GenerateObjectResponse,
+response: GenerateObjectResponse, 
 /**
  * Provider metadata of the model call.
  */
-provider_metadata: { [key in string]: { [key in string]: JsonValue } } | null, };
+providerMetadata?: { [key in string]: { [key in string]: JsonValue } }, };

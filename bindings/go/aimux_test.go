@@ -241,8 +241,9 @@ func TestProviderWithConfigParams(t *testing.T) {
 	}
 }
 
-// Keys are resolved at call time: construction succeeds, then the missing key
-// fails with CodeLoadAPIKey and names the variable it consulted.
+// A registry provider with no key and no env var fails with CodeLoadAPIKey and
+// names the variable it consulted. The key is read when a call is made (as in
+// the AI SDK), not when the model is built.
 func TestMissingAPIKeyIsLoadAPIKey(t *testing.T) {
 	if old, ok := os.LookupEnv("GROQ_API_KEY"); ok {
 		os.Unsetenv("GROQ_API_KEY")
@@ -250,10 +251,10 @@ func TestMissingAPIKeyIsLoadAPIKey(t *testing.T) {
 	}
 	m, err := Provider("groq", "", "llama-3.3-70b")
 	if err != nil {
-		t.Fatalf("construction should defer key loading: %v", err)
+		t.Fatalf("Provider: %v", err)
 	}
 	defer m.Close()
-	_, err = m.GenerateText(`"hello"`, `{"max_retries":0}`)
+	_, err = m.GenerateText(`"hi"`, `{"maxRetries":0}`)
 	var e *Error
 	if !errors.As(err, &e) || e.Code != CodeLoadAPIKey {
 		t.Fatalf("want CodeLoadAPIKey, got %v", err)

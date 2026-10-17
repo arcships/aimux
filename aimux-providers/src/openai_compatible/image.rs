@@ -121,7 +121,7 @@ impl ImageModel for OpenAICompatibleImageModel {
             });
         }
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = aimux_core::Timestamp::now();
         let headers = self
             .config
             .request_headers(options.headers.as_ref())

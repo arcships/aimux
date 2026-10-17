@@ -5,41 +5,41 @@ import type { OutputChunkTimingStats } from "./OutputChunkTimingStats";
  * Timing of a step (`StepResultPerformance`, `step-result.ts:62-133`).
  * Durations are milliseconds.
  */
-export type StepResultPerformance = {
+export type StepResultPerformance = { 
 /**
  * Output tokens per second over the whole response time.
  */
-effective_output_tokens_per_second: number,
+effectiveOutputTokensPerSecond: number, 
 /**
  * Output tokens per second after the first output chunk (streaming only).
  */
-output_tokens_per_second?: number | null,
+outputTokensPerSecond?: number, 
 /**
  * Input tokens per second until the first output chunk (streaming only).
  */
-input_tokens_per_second?: number | null,
+inputTokensPerSecond?: number, 
 /**
  * Input plus output tokens per second over the whole response time.
  */
-effective_total_tokens_per_second: number,
+effectiveTotalTokensPerSecond: number, 
 /**
  * The whole step, including retries and tool execution.
  */
-step_time_ms: number,
+stepTimeMs: number, 
 /**
  * From the model call to its finish, including retries.
  */
-response_time_ms: number,
+responseTimeMs: number, 
 /**
  * Execution time of each host-executed tool, by tool call id. Aimux does
  * not execute tools, so this is empty.
  */
-tool_execution_ms: { [key in string]: number },
+toolExecutionMs: { [key in string]: number }, 
 /**
  * From the model call to its first output chunk (streaming only).
  */
-time_to_first_output_ms?: number | null,
+timeToFirstOutputMs?: number, 
 /**
  * Gaps between output chunks (streaming only, two or more chunks).
  */
-time_between_output_chunks_ms?: OutputChunkTimingStats | null, };
+timeBetweenOutputChunksMs?: OutputChunkTimingStats, };

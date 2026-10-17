@@ -2,17 +2,20 @@
  * aimux — typed data classes mirroring the ts-rs output in `bindings/node/src/types`
  * (the generated TypeScript types).
  *
- * Field names use camelCase in Kotlin and are mapped to the wire format's
- * snake_case via [kotlinx.serialization.SerialName]. The raw JSON boundary is
- * handled by [TypedModel] — callers of this layer never parse JSON by hand.
+ * The wire JSON is the AI SDK's: camelCase field names, unions tagged with a
+ * `type` key (a few use `role`, `name` or `sourceType`), optional fields
+ * absent rather than null. Kotlin property names equal the wire names, so no
+ * [kotlinx.serialization.SerialName] is needed on fields. The raw JSON boundary
+ * is handled by [TypedModel] — callers of this layer never parse JSON by hand.
  *
- * These types intentionally lenient on decode (unknown keys ignored, every
- * field has a default) so that future provider/engine additions do not break
- * existing clients. The serialization config lives in [AimuxJson].
+ * Decode is lenient (unknown keys ignored, every result field has a default)
+ * so engine additions do not break existing clients. The serialization config
+ * lives in [AimuxJson].
  */
 
 package ai.arcships.aimux
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -21,6 +24,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Transient
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.descriptors.nullable
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
@@ -32,17 +36,18 @@ import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared Json instance.
 //
 //  - ignoreUnknownKeys  : tolerate forward-compatible fields from the engine.
-//  - explicitNulls=false: omit null fields when encoding (so GenerateTextOptions
-//                         only carries fields the caller actually set, matching
-//                         the engine's optional-everything schema).
+//  - explicitNulls=false: omit null fields when encoding (optional fields are
+//                         absent on the wire, never null).
 //  - encodeDefaults=false: do not encode default values (keeps payloads small).
+//
+// Unions tagged with `type` use kotlinx's default sealed-class polymorphism
+// (`classDiscriminator` stays "type").
 // ─────────────────────────────────────────────────────────────────────────────
 
 val AimuxJson: Json = Json {
@@ -50,6 +55,34 @@ val AimuxJson: Json = Json {
     explicitNulls = false
     encodeDefaults = false
 }
+
+/**
+ * (De)serializer for a `JsonElement?` that is an optional `unknown` upstream
+ * (a response `body`, `inputSchemaInput`): a missing field is `null` and an
+ * explicit JSON `null` is [JsonNull], as the AI SDK's JSON keeps `null` apart
+ * from `undefined` (Rust `wire::present`).
+ */
+object JsonValuePresentSerializer : KSerializer<JsonElement?> {
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor.nullable
+
+    override fun deserialize(decoder: Decoder): JsonElement? {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("a JSON value can only be decoded from JSON")
+        return json.decodeJsonElement()
+    }
+
+    override fun serialize(encoder: Encoder, value: JsonElement?) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("a JSON value can only be encoded to JSON")
+        json.encodeJsonElement(value ?: JsonNull)
+    }
+}
+
+/** Provider-specific options / metadata: `{ providerName: { key: value } }`. */
+typealias ProviderOptions = Map<String, Map<String, JsonElement>>
+
+/** Provider-specific metadata on a result (same shape as [ProviderOptions]). */
+typealias ProviderMetadata = Map<String, Map<String, JsonElement>>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Enums (simple string enums on the wire).
@@ -91,9 +124,9 @@ enum class ReasoningEffort {
 @Serializable
 data class InputTokenUsage(
     val total: Long? = null,
-    @SerialName("no_cache") val noCache: Long? = null,
-    @SerialName("cache_read") val cacheRead: Long? = null,
-    @SerialName("cache_write") val cacheWrite: Long? = null,
+    val noCache: Long? = null,
+    val cacheRead: Long? = null,
+    val cacheWrite: Long? = null,
 )
 
 @Serializable
@@ -103,16 +136,11 @@ data class OutputTokenUsage(
     val reasoning: Long? = null,
 )
 
-/**
- * Token usage statistics.
- *
- * Mirrors `Usage.ts`: `{ input_tokens: InputTokenUsage, output_tokens: OutputTokenUsage,
- * raw?: JsonValue | null }`.
- */
+/** Token usage statistics. Mirrors `Usage.ts`. */
 @Serializable
 data class Usage(
-    @SerialName("input_tokens") val inputTokens: InputTokenUsage = InputTokenUsage(),
-    @SerialName("output_tokens") val outputTokens: OutputTokenUsage = OutputTokenUsage(),
+    val inputTokens: InputTokenUsage = InputTokenUsage(),
+    val outputTokens: OutputTokenUsage = OutputTokenUsage(),
     val raw: JsonObject? = null,
 ) {
     companion object {
@@ -125,140 +153,146 @@ data class Usage(
 /** Input-token breakdown of a [LanguageModelUsage]. Mirrors `InputTokenDetails.ts`. */
 @Serializable
 data class InputTokenDetails(
-    @SerialName("no_cache_tokens") val noCacheTokens: Long? = null,
-    @SerialName("cache_read_tokens") val cacheReadTokens: Long? = null,
-    @SerialName("cache_write_tokens") val cacheWriteTokens: Long? = null,
+    val noCacheTokens: Long? = null,
+    val cacheReadTokens: Long? = null,
+    val cacheWriteTokens: Long? = null,
 )
 
 /** Output-token breakdown of a [LanguageModelUsage]. Mirrors `OutputTokenDetails.ts`. */
 @Serializable
 data class OutputTokenDetails(
-    @SerialName("text_tokens") val textTokens: Long? = null,
-    @SerialName("reasoning_tokens") val reasoningTokens: Long? = null,
+    val textTokens: Long? = null,
+    val reasoningTokens: Long? = null,
 )
 
 /**
- * Call-level token usage, the AI SDK's `LanguageModelUsage`: flat counts,
- * unknown counts `null`. Provider results keep [Usage].
+ * Call-level token usage, the AI SDK's `LanguageModelUsage`: flat camelCase
+ * counts, an unknown count `null` here and absent in the JSON. Provider
+ * results keep [Usage].
  *
  * Mirrors `LanguageModelUsage.ts`.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class LanguageModelUsage(
-    @SerialName("input_tokens") val inputTokens: Long? = null,
-    @SerialName("input_token_details") val inputTokenDetails: InputTokenDetails = InputTokenDetails(),
-    @SerialName("output_tokens") val outputTokens: Long? = null,
-    @SerialName("output_token_details") val outputTokenDetails: OutputTokenDetails = OutputTokenDetails(),
-    @SerialName("total_tokens") val totalTokens: Long? = null,
+    val inputTokens: Long? = null,
+    /** Always written, `{}` when every count is unknown, as upstream. */
+    @EncodeDefault
+    val inputTokenDetails: InputTokenDetails = InputTokenDetails(),
+    val outputTokens: Long? = null,
+    @EncodeDefault
+    val outputTokenDetails: OutputTokenDetails = OutputTokenDetails(),
+    val totalTokens: Long? = null,
     val raw: JsonObject? = null,
 )
 
-/**
- * Unified finish reason.
- *
- * Mirrors `FinishReason.ts`: `{ unified: FinishReasonUnified, raw: string | null }`.
- */
+/** Unified finish reason. Mirrors `FinishReason.ts`: `raw` is absent when the provider sent none. */
 @Serializable
 data class FinishReason(
     val unified: FinishReasonUnified = FinishReasonUnified.OTHER,
     val raw: String? = null,
 )
 
-/**
- * Metadata about the API response.
- *
- * Mirrors `ResponseMetadata.ts`: `{ id: string | null, timestamp: string | null,
- * model_id: string | null }`.
- */
+/** Mirrors `ResponseMetadata.ts`. */
 @Serializable
 data class ResponseMetadata(
     val id: String? = null,
     val timestamp: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
+    val modelId: String? = null,
 )
 
+/** Mirrors `ResponseInfo.ts`: [ResponseMetadata] plus the HTTP headers and body. */
 @Serializable
 data class ResponseInfo(
     val id: String? = null,
     val timestamp: String? = null,
-    @SerialName("model_id") val modelId: String? = null,
+    val modelId: String? = null,
     val headers: Map<String, String>? = null,
+    @Serializable(with = JsonValuePresentSerializer::class)
     val body: JsonElement? = null,
 )
 
 @Serializable
-data class RequestInfo(val body: JsonElement? = null)
+data class RequestInfo(
+    @Serializable(with = JsonValuePresentSerializer::class)
+    val body: JsonElement? = null,
+)
 
 /**
- * A tool call requested by the model.
+ * A tool call requested by the model. Mirrors `ToolCall.ts`.
  *
- * Mirrors `ToolCall.ts`: `{ tool_call_id, tool_name, input: JsonValue,
- * provider_executed?: bool | null, dynamic?: bool | null,
- * provider_metadata?: JsonValue | null }`.
+ * `input` is the parsed argument value (usually an object). `invalid` is set
+ * by Core when the call stays invalid after optional repair; `error` is the
+ * `name`-tagged `AiMuxError` JSON of the lookup, parse, schema, or repair
+ * failure (`{"name":"AI_NoSuchToolError",...}`).
  *
- * `input` is a [JsonElement] because it is usually an arbitrary JSON object
- * (the tool arguments) whose shape is tool-specific.
- *
- * `invalid` is set by Core when the tool call stays invalid after optional
- * repair; `error` is the typed lookup, parse, schema, or repair failure.
+ * Its JSON carries `"type": "tool-call"`: a call outside `content` is the AI
+ * SDK's tagged `TypedToolCall` (ai generate-text/tool-call.ts).
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ToolCall(
-    @SerialName("tool_call_id") val toolCallId: String,
-    @SerialName("tool_name") val toolName: String,
+    val toolCallId: String,
+    val toolName: String,
     val input: JsonElement = JsonObject(emptyMap()),
-    @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-    @SerialName("dynamic") val dynamic: Boolean? = null,
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    val providerExecuted: Boolean? = null,
+    val dynamic: Boolean? = null,
+    val providerMetadata: ProviderMetadata? = null,
     val invalid: Boolean? = null,
     val error: JsonElement? = null,
-)
+) {
+    /** Always `"tool-call"`. */
+    @EncodeDefault
+    val type: String = "tool-call"
+
+    init {
+        requireTypeTag("tool-call", type)
+    }
+}
+
+/**
+ * Check the `type` tag of a value that always carries one (a standalone tool
+ * call or source); JSON written before the tag has none, and reads the default.
+ */
+internal fun requireTypeTag(expected: String, actual: String) {
+    if (actual != expected) {
+        throw SerializationException("expected type \"$expected\", got \"$actual\"")
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tools (input side of GenerateTextOptions).
 //
-// `Tool` is an internally-tagged union on `type` (`"function" | "provider"`),
-// which matches kotlinx.serialization's default sealed-class polymorphism with
-// the `"type"` discriminator — no custom serializer needed.
+// `Tool` is an internally-tagged union on `type` (`"function" | "provider"`).
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Serializable
 data class FunctionToolInputExample(val input: JsonObject)
 
-/**
- * A user-defined function tool.
- *
- * Mirrors `FunctionTool.ts`. `input_schema` is a [JsonElement] (a JSON Schema).
- */
+/** A user-defined function tool. Mirrors `FunctionTool.ts`; `inputSchema` is a JSON Schema. */
 @Serializable
 data class FunctionTool(
     val name: String,
     val description: String? = null,
-    @SerialName("input_schema") val inputSchema: JsonElement,
+    val inputSchema: JsonElement,
     val strict: Boolean? = null,
-    @SerialName("provider_options") val providerOptions: Map<String, JsonElement>? = null,
-    @SerialName("input_examples") val inputExamples: List<FunctionToolInputExample>? = null,
+    val providerOptions: ProviderOptions? = null,
+    val inputExamples: List<FunctionToolInputExample>? = null,
 )
 
-/**
- * A provider-defined tool (e.g. `anthropic.web_search_20250305`).
- *
- * Mirrors `ProviderTool.ts`.
- */
+/** A provider-defined tool (e.g. `anthropic.web_search_20250305`). Mirrors `ProviderTool.ts`. */
 @Serializable
 data class ProviderTool(
     val id: String,
     val name: String,
     val args: JsonObject = JsonObject(emptyMap()),
     /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
-    @SerialName("supportsDeferredResults") val supportsDeferredResults: Boolean? = null,
+    val supportsDeferredResults: Boolean? = null,
 )
 
 /**
- * A tool that can be either a function tool or a provider tool.
- *
- * Mirrors `Tool.ts`. Serialized as `{"type":"function", ...}` /
- * `{"type":"provider", ...}` (internal `"type"` discriminator).
+ * A function tool or a provider tool. Mirrors `Tool.ts`; serialized as
+ * `{"type":"function", ...}` / `{"type":"provider", ...}`.
  */
 @Serializable
 sealed interface Tool {
@@ -267,10 +301,10 @@ sealed interface Tool {
     data class Function(
         val name: String,
         val description: String? = null,
-        @SerialName("input_schema") val inputSchema: JsonElement,
+        val inputSchema: JsonElement,
         val strict: Boolean? = null,
-        @SerialName("provider_options") val providerOptions: Map<String, JsonElement>? = null,
-        @SerialName("input_examples") val inputExamples: List<FunctionToolInputExample>? = null,
+        val providerOptions: ProviderOptions? = null,
+        val inputExamples: List<FunctionToolInputExample>? = null,
     ) : Tool {
         companion object {
             /** Convenience constructor from a [FunctionTool]. */
@@ -292,7 +326,7 @@ sealed interface Tool {
         val name: String,
         val args: JsonObject = JsonObject(emptyMap()),
         /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
-        @SerialName("supportsDeferredResults") val supportsDeferredResults: Boolean? = null,
+        val supportsDeferredResults: Boolean? = null,
     ) : Tool {
         companion object {
             fun from(tool: ProviderTool): Provider = Provider(
@@ -306,8 +340,8 @@ sealed interface Tool {
  * How the model should choose tools.
  *
  * Mirrors `ToolChoice.ts`: `"auto" | "none" | "required" | { type: "tool",
- * toolName: "..." }`. This is a mixed tagged/untagged shape (bare strings plus a
- * tagged object), so a custom serializer handles the two forms.
+ * toolName: "..." }`. This is a mixed untagged/tagged shape (bare strings plus
+ * a tagged object), so a custom serializer handles the two forms.
  */
 @Serializable(with = ToolChoiceSerializer::class)
 sealed interface ToolChoice {
@@ -367,168 +401,409 @@ object ToolChoiceSerializer : KSerializer<ToolChoice> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ContentPart (multi-part message content).
-//
-// `ContentPart` is an internally-tagged enum (`{"type": "text", "text": ...}`,
-// `{"type": "image", "image": [...], ...}`). A custom serializer dispatches on
-// the `"type"` key and re-injects it on encode.
+// File bytes / file data.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A part of a multi-part message.
- *
- * Mirrors `ContentPart.ts` (internally tagged on `type`). Shared between
- * [ModelMessage] (user-facing) and the provider-facing prompt. Every field has
- * a default and unknown keys are ignored on decode (see [AimuxJson]), so future
- * part additions do not break existing clients. `provider_options` is a
- * [JsonElement] because it is an opaque `Record<string, JSONObject>`.
+ * Bytes in the AI SDK's JSON: a `Uint8Array` is a base64 string there
+ * (`@ai-sdk/provider-utils` `uint8-utils.ts:12-23`), never an array of numbers.
+ * Byte values (0–255) are encoded and decoded at the JSON boundary.
  */
-@Serializable(with = ContentPartSerializer::class)
-sealed interface ContentPart {
-    @Serializable
-    data class Custom(val kind: String, @SerialName("provider_options") val providerOptions: JsonElement? = null) : ContentPart
+object Base64Bytes {
+    /** Standard, padded base64, as `btoa`. */
+    fun encode(bytes: List<Int>): String =
+        java.util.Base64.getEncoder().encodeToString(ByteArray(bytes.size) { bytes[it].toByte() })
 
-    @Serializable
-    data class ReasoningFile(val data: GeneratedFileData, @SerialName("media_type") val mediaType: String, @SerialName("provider_options") val providerOptions: JsonElement? = null) : ContentPart
+    /**
+     * Decodes as `convertBase64ToUint8Array` (`uint8-utils.ts:6-10`): `-` and `_`
+     * read as `+` and `/`, padding optional, ASCII whitespace ignored.
+     */
+    fun decode(text: String): List<Int> {
+        val normalized = buildString {
+            for (c in text) {
+                when (c) {
+                    ' ', '\t', '\n', '\u000C', '\r', '=' -> Unit
+                    '-' -> append('+')
+                    '_' -> append('/')
+                    else -> append(c)
+                }
+            }
+        }
+        val raw = try {
+            java.util.Base64.getDecoder().decode(normalized)
+        } catch (e: IllegalArgumentException) {
+            throw SerializationException("invalid base64 data: ${e.message}")
+        }
+        return raw.map { it.toInt() and 0xff }
+    }
 
-    @Serializable
-    data class ToolApprovalRequest(@SerialName("approval_id") val approvalId: String, @SerialName("tool_call_id") val toolCallId: String, val reason: String? = null, @SerialName("is_automatic") val isAutomatic: Boolean? = null, val signature: String? = null, @SerialName("input_schema_input") val inputSchemaInput: JsonElement? = null) : ContentPart
+    internal fun decode(el: JsonElement, what: String): List<Int> {
+        val text = (el as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw SerializationException("$what must be a base64 string, got: $el")
+        return decode(text)
+    }
+}
 
+/** (De)serializer for a byte list field: a base64 string on the wire. */
+object Base64ByteListSerializer : KSerializer<List<Int>> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.Base64Bytes")
 
-    @Serializable
-    data class Text(
-        val text: String = "",
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
+    override fun deserialize(decoder: Decoder): List<Int> {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("bytes can only be decoded from JSON")
+        return Base64Bytes.decode(json.decodeJsonElement(), "bytes")
+    }
 
-    @Serializable
-    data class Image(
-        val image: List<Int> = emptyList(),
-        @SerialName("media_type") val mediaType: String = "",
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
-
-    @Serializable
-    data class File(
-        val data: List<Int> = emptyList(),
-        @SerialName("media_type") val mediaType: String = "",
-        val filename: String? = null,
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
-
-    @Serializable
-    data class FileBase64(
-        val data: String = "",
-        @SerialName("media_type") val mediaType: String = "",
-        val filename: String? = null,
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
-
-    @Serializable
-    data class FileUrl(
-        val url: String = "",
-        @SerialName("media_type") val mediaType: String = "",
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
-
-    @Serializable
-    data class FileReference(
-        @SerialName("media_type") val mediaType: String = "",
-        val reference: JsonElement = JsonObject(emptyMap()),
-        val filename: String? = null,
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
-
-    @Serializable
-    data class Reasoning(
-        val text: String = "",
-        val signature: String? = null,
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
-
-    @Serializable
-    data class ToolCall(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
-        val input: JsonElement = JsonObject(emptyMap()),
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-    ) : ContentPart
-
-    @Serializable
-    data class ToolResult(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        val result: JsonElement = JsonObject(emptyMap()),
-        @SerialName("tool_name") val toolName: String? = null,
-        @SerialName("is_error") val isError: Boolean? = null,
-        @SerialName("preliminary") val preliminary: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("provider_options") val providerOptions: JsonElement? = null,
-    ) : ContentPart
+    override fun serialize(encoder: Encoder, value: List<Int>) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("bytes can only be encoded to JSON")
+        json.encodeJsonElement(JsonPrimitive(Base64Bytes.encode(value)))
+    }
 }
 
 /**
- * Custom (de)serializer for [ContentPart].
- *
- * The wire format is internally tagged: each part is a JSON object whose
- * `"type"` key selects the variant. On decode the `"type"` key is read and the
- * matching variant's generated serializer decodes the object (the `"type"` key
- * is ignored thanks to `ignoreUnknownKeys`). On encode the variant is encoded
- * and the `"type"` key is re-injected.
+ * Raw bytes or a base64 string. Mirrors `FileBytes.ts`: `string`, the AI SDK's
+ * `Uint8Array | string` in JSON (`shared-v4-file-data.ts:7-10`). [Binary] is
+ * written as base64; parsing yields [Base64]. Also the shape of every
+ * `Uint8Array | string` field (audio input, image / video file data).
  */
-object ContentPartSerializer : KSerializer<ContentPart> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("aimux.ContentPart")
+@Serializable(with = FileBytesSerializer::class)
+sealed interface FileBytes {
 
-    override fun deserialize(decoder: Decoder): ContentPart {
+    /** Raw binary bytes (0–255 ints), written as a base64 string. */
+    data class Binary(val data: List<Int> = emptyList()) : FileBytes
+
+    /** A base64-encoded string. */
+    data class Base64(val data: String = "") : FileBytes
+}
+
+object FileBytesSerializer : KSerializer<FileBytes> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.FileBytes")
+
+    override fun deserialize(decoder: Decoder): FileBytes {
         val json = decoder as? JsonDecoder
-            ?: throw SerializationException("ContentPart can only be decoded from JSON")
-        val element = json.decodeJsonElement()
-        val obj = element.jsonObject
-        val type = obj["type"]?.jsonPrimitive?.content
-            ?: throw SerializationException("ContentPart is missing the 'type' discriminator: $element")
-        val ctx = json.json
-        return when (type) {
-            "custom" -> ctx.decodeFromJsonElement(ContentPart.Custom.serializer(), obj)
-            "reasoning_file" -> ctx.decodeFromJsonElement(ContentPart.ReasoningFile.serializer(), obj)
-            "tool_approval_request" -> ctx.decodeFromJsonElement(ContentPart.ToolApprovalRequest.serializer(), obj)
-            "text" -> ctx.decodeFromJsonElement(ContentPart.Text.serializer(), obj)
-            "image" -> ctx.decodeFromJsonElement(ContentPart.Image.serializer(), obj)
-            "file" -> ctx.decodeFromJsonElement(ContentPart.File.serializer(), obj)
-            "file_base64" -> ctx.decodeFromJsonElement(ContentPart.FileBase64.serializer(), obj)
-            "file_url" -> ctx.decodeFromJsonElement(ContentPart.FileUrl.serializer(), obj)
-            "file_reference" -> ctx.decodeFromJsonElement(ContentPart.FileReference.serializer(), obj)
-            "reasoning" -> ctx.decodeFromJsonElement(ContentPart.Reasoning.serializer(), obj)
-            "tool_call" -> ctx.decodeFromJsonElement(ContentPart.ToolCall.serializer(), obj)
-            "tool_result" -> ctx.decodeFromJsonElement(ContentPart.ToolResult.serializer(), obj)
-            else -> throw SerializationException("Unknown ContentPart type: '$type'")
-        }
+            ?: throw SerializationException("FileBytes can only be decoded from JSON")
+        val el = json.decodeJsonElement()
+        val text = (el as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw SerializationException("FileBytes must be a base64 string, got: $el")
+        return FileBytes.Base64(text)
     }
 
-    override fun serialize(encoder: Encoder, value: ContentPart) {
+    override fun serialize(encoder: Encoder, value: FileBytes) {
         val json = encoder as? JsonEncoder
-            ?: throw SerializationException("ContentPart can only be encoded to JSON")
-        val ctx = json.json
-        val (typeTag, inner) = when (value) {
-            is ContentPart.Custom -> "custom" to ctx.encodeToJsonElement(ContentPart.Custom.serializer(), value)
-            is ContentPart.ReasoningFile -> "reasoning_file" to ctx.encodeToJsonElement(ContentPart.ReasoningFile.serializer(), value)
-            is ContentPart.ToolApprovalRequest -> "tool_approval_request" to ctx.encodeToJsonElement(ContentPart.ToolApprovalRequest.serializer(), value)
-            is ContentPart.Text -> "text" to ctx.encodeToJsonElement(ContentPart.Text.serializer(), value)
-            is ContentPart.Image -> "image" to ctx.encodeToJsonElement(ContentPart.Image.serializer(), value)
-            is ContentPart.File -> "file" to ctx.encodeToJsonElement(ContentPart.File.serializer(), value)
-            is ContentPart.FileBase64 -> "file_base64" to ctx.encodeToJsonElement(ContentPart.FileBase64.serializer(), value)
-            is ContentPart.FileUrl -> "file_url" to ctx.encodeToJsonElement(ContentPart.FileUrl.serializer(), value)
-            is ContentPart.FileReference -> "file_reference" to ctx.encodeToJsonElement(ContentPart.FileReference.serializer(), value)
-            is ContentPart.Reasoning -> "reasoning" to ctx.encodeToJsonElement(ContentPart.Reasoning.serializer(), value)
-            is ContentPart.ToolCall -> "tool_call" to ctx.encodeToJsonElement(ContentPart.ToolCall.serializer(), value)
-            is ContentPart.ToolResult -> "tool_result" to ctx.encodeToJsonElement(ContentPart.ToolResult.serializer(), value)
-        }
-        val merged = JsonObject(buildMap {
-            put("type", JsonPrimitive(typeTag))
-            putAll(inner as? JsonObject ?: JsonObject(emptyMap()))
-        })
-        json.encodeJsonElement(merged)
+            ?: throw SerializationException("FileBytes can only be encoded to JSON")
+        json.encodeJsonElement(
+            when (value) {
+                is FileBytes.Binary -> JsonPrimitive(Base64Bytes.encode(value.data))
+                is FileBytes.Base64 -> JsonPrimitive(value.data)
+            }
+        )
     }
+}
+
+/** File data, tagged on `type`. Mirrors `FileData.ts`. */
+@Serializable
+sealed interface FileData {
+
+    @Serializable
+    @SerialName("data")
+    data class Data(val data: FileBytes = FileBytes.Base64("")) : FileData
+
+    @Serializable
+    @SerialName("url")
+    data class Url(val url: String = "", val originalUrl: String? = null) : FileData
+
+    @Serializable
+    @SerialName("reference")
+    data class Reference(val reference: Map<String, String> = emptyMap()) : FileData
+
+    @Serializable
+    @SerialName("text")
+    data class Text(val text: String = "") : FileData
+}
+
+/** Generated file data, tagged on `type`. Mirrors `GeneratedFileData.ts`. */
+@Serializable
+sealed interface GeneratedFileData {
+
+    @Serializable
+    @SerialName("data")
+    data class Data(val data: FileBytes = FileBytes.Base64("")) : GeneratedFileData
+
+    @Serializable
+    @SerialName("url")
+    data class Url(val url: String = "", val originalUrl: String? = null) : GeneratedFileData
+}
+
+/**
+ * `FilePart.data` (Rust `FilePartData`, provider-utils
+ * `types/content-part.ts:75`): `FileData | DataContent | URL |
+ * ProviderReference`, in JSON a tagged [FileData], a string (base64 or a URL)
+ * or a bare `{provider: id}` reference.
+ */
+@Serializable(with = FilePartDataSerializer::class)
+sealed interface FilePartData {
+    /** A tagged [FileData]. */
+    data class Tagged(val data: FileData) : FilePartData
+
+    /** A bare string: base64 data or a URL. */
+    data class Bare(val value: String) : FilePartData
+
+    /** A bare provider reference, `{provider: id}`. */
+    data class Reference(val reference: Map<String, String>) : FilePartData
+}
+
+private val FILE_DATA_TAGS = setOf("data", "url", "reference", "text")
+private val GENERATED_FILE_DATA_TAGS = setOf("data", "url")
+
+private fun fileDataTag(element: JsonElement): String? =
+    ((element as? JsonObject)?.get("type") as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+object FilePartDataSerializer : KSerializer<FilePartData> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.FilePartData")
+
+    override fun deserialize(decoder: Decoder): FilePartData {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("FilePartData can only be decoded from JSON")
+        val el = json.decodeJsonElement()
+        if (el is JsonPrimitive && el.isString) return FilePartData.Bare(el.content)
+        if (fileDataTag(el) in FILE_DATA_TAGS) {
+            return FilePartData.Tagged(json.json.decodeFromJsonElement(FileData.serializer(), el))
+        }
+        if (el is JsonObject) {
+            return FilePartData.Reference(el.mapValues { (_, id) ->
+                (id as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    ?: throw SerializationException("a provider reference maps providers to string ids, got: $el")
+            })
+        }
+        throw SerializationException("file data must be a tagged object, a string or a provider reference, got: $el")
+    }
+
+    override fun serialize(encoder: Encoder, value: FilePartData) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("FilePartData can only be encoded to JSON")
+        json.encodeJsonElement(
+            when (value) {
+                is FilePartData.Tagged -> json.json.encodeToJsonElement(FileData.serializer(), value.data)
+                is FilePartData.Bare -> JsonPrimitive(value.value)
+                is FilePartData.Reference -> JsonObject(value.reference.mapValues { JsonPrimitive(it.value) })
+            }
+        )
+    }
+}
+
+/**
+ * `ReasoningFilePart.data` (Rust `ReasoningFilePartData`,
+ * `types/content-part.ts:164`): tagged data or a URL ([GeneratedFileData]), or
+ * a bare string (base64 or a URL).
+ */
+@Serializable(with = ReasoningFilePartDataSerializer::class)
+sealed interface ReasoningFilePartData {
+    /** Tagged data or a URL. */
+    data class Tagged(val data: GeneratedFileData) : ReasoningFilePartData
+
+    /** A bare string: base64 data or a URL. */
+    data class Bare(val value: String) : ReasoningFilePartData
+}
+
+object ReasoningFilePartDataSerializer : KSerializer<ReasoningFilePartData> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("aimux.ReasoningFilePartData")
+
+    override fun deserialize(decoder: Decoder): ReasoningFilePartData {
+        val json = decoder as? JsonDecoder
+            ?: throw SerializationException("ReasoningFilePartData can only be decoded from JSON")
+        val el = json.decodeJsonElement()
+        if (el is JsonPrimitive && el.isString) return ReasoningFilePartData.Bare(el.content)
+        if (fileDataTag(el) in GENERATED_FILE_DATA_TAGS) {
+            return ReasoningFilePartData.Tagged(json.json.decodeFromJsonElement(GeneratedFileData.serializer(), el))
+        }
+        throw SerializationException("reasoning file data must be tagged data or a URL, or a string, got: $el")
+    }
+
+    override fun serialize(encoder: Encoder, value: ReasoningFilePartData) {
+        val json = encoder as? JsonEncoder
+            ?: throw SerializationException("ReasoningFilePartData can only be encoded to JSON")
+        json.encodeJsonElement(
+            when (value) {
+                is ReasoningFilePartData.Tagged ->
+                    json.json.encodeToJsonElement(GeneratedFileData.serializer(), value.data)
+                is ReasoningFilePartData.Bare -> JsonPrimitive(value.value)
+            }
+        )
+    }
+}
+
+/**
+ * A generated file (Rust `GeneratedFile`, the AI SDK's `GeneratedFile`,
+ * `generate-text/generated-file.ts:10-32`): `{"base64", "mediaType",
+ * "providerMetadata"?}` on the wire. Mirrors `GeneratedFile.ts`.
+ */
+@Serializable
+data class GeneratedFile(
+    /** The file as a base64 string. */
+    val base64: String,
+    val mediaType: String,
+    val providerMetadata: ProviderMetadata? = null,
+) {
+    /** The file's bytes (0–255). */
+    fun bytes(): List<Int> = Base64Bytes.decode(base64)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool results inside a prompt (ContentPart `tool-result`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One element of a `content` tool output. Mirrors `ToolResultContent.ts`. */
+@Serializable
+sealed interface ToolResultContent {
+    @Serializable
+    @SerialName("text")
+    data class Text(val text: String = "", val providerOptions: ProviderOptions? = null) : ToolResultContent
+
+    @Serializable
+    @SerialName("file")
+    data class File(
+        val data: FileData = FileData.Data(),
+        val mediaType: String = "",
+        val filename: String? = null,
+        val providerOptions: ProviderOptions? = null,
+    ) : ToolResultContent
+
+    @Serializable
+    @SerialName("custom")
+    data class Custom(val providerOptions: ProviderOptions? = null) : ToolResultContent
+}
+
+/** The output of a tool call, tagged on `type`. Mirrors `ToolResultOutput.ts`. */
+@Serializable
+sealed interface ToolResultOutput {
+    @Serializable
+    @SerialName("text")
+    data class Text(val value: String, val providerOptions: ProviderOptions? = null) : ToolResultOutput
+
+    @Serializable
+    @SerialName("json")
+    data class JsonValue(val value: JsonElement, val providerOptions: ProviderOptions? = null) : ToolResultOutput
+
+    @Serializable
+    @SerialName("execution-denied")
+    data class ExecutionDenied(val reason: String? = null, val providerOptions: ProviderOptions? = null) : ToolResultOutput
+
+    @Serializable
+    @SerialName("error-text")
+    data class ErrorText(val value: String, val providerOptions: ProviderOptions? = null) : ToolResultOutput
+
+    @Serializable
+    @SerialName("error-json")
+    data class ErrorJson(val value: JsonElement, val providerOptions: ProviderOptions? = null) : ToolResultOutput
+
+    @Serializable
+    @SerialName("content")
+    data class Content(val value: List<ToolResultContent>) : ToolResultOutput
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ContentPart (multi-part message content), tagged on `type`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A part of a multi-part message. Mirrors `ContentPart.ts`.
+ *
+ * Shared by [ModelMessage] (user-facing) and the provider-facing prompt. A
+ * tool result carries a [ToolResultOutput] (`output`), not a bare value.
+ */
+@Serializable
+sealed interface ContentPart {
+    @Serializable
+    @SerialName("text")
+    data class Text(val text: String = "", val providerOptions: ProviderOptions? = null) : ContentPart
+
+    @Serializable
+    @SerialName("custom")
+    data class Custom(val kind: String, val providerOptions: ProviderOptions? = null) : ContentPart
+
+    /** The AI SDK `ReasoningFilePart` (`types/content-part.ts:146-180`). */
+    @Serializable
+    @SerialName("reasoning-file")
+    data class ReasoningFile(
+        val data: ReasoningFilePartData,
+        val mediaType: String,
+        val providerOptions: ProviderOptions? = null,
+    ) : ContentPart {
+        constructor(data: GeneratedFileData, mediaType: String, providerOptions: ProviderOptions? = null) :
+            this(ReasoningFilePartData.Tagged(data), mediaType, providerOptions)
+    }
+
+    @Serializable
+    @SerialName("tool-approval-request")
+    data class ToolApprovalRequest(
+        val approvalId: String,
+        val toolCallId: String,
+        val reason: String? = null,
+        val isAutomatic: Boolean? = null,
+        val signature: String? = null,
+        @Serializable(with = JsonValuePresentSerializer::class)
+        val inputSchemaInput: JsonElement? = null,
+    ) : ContentPart
+
+    @Serializable
+    @SerialName("image")
+    data class Image(
+        /** Image bytes (0–255), a base64 string on the wire. */
+        @Serializable(with = Base64ByteListSerializer::class)
+        val image: List<Int> = emptyList(),
+        val mediaType: String = "",
+        val providerOptions: ProviderOptions? = null,
+    ) : ContentPart
+
+    /**
+     * The AI SDK `FilePart` (provider-utils `types/content-part.ts:62-102`):
+     * `data` is a [FilePartData]: tagged [FileData], a bare string (base64 or a
+     * URL) or a bare provider reference.
+     */
+    @Serializable
+    @SerialName("file")
+    data class File(
+        val data: FilePartData,
+        val mediaType: String = "",
+        val filename: String? = null,
+        val providerOptions: ProviderOptions? = null,
+    ) : ContentPart {
+        /** Tagged data, e.g. [FileData.Url]. */
+        constructor(data: FileData, mediaType: String, filename: String? = null, providerOptions: ProviderOptions? = null) :
+            this(FilePartData.Tagged(data), mediaType, filename, providerOptions)
+
+        /** Inline bytes (0–255), written as `{"type":"data","data":"<base64>"}`. */
+        constructor(data: List<Int>, mediaType: String, filename: String? = null, providerOptions: ProviderOptions? = null) :
+            this(FileData.Data(FileBytes.Binary(data)), mediaType, filename, providerOptions)
+    }
+
+    @Serializable
+    @SerialName("reasoning")
+    data class Reasoning(
+        val text: String = "",
+        val signature: String? = null,
+        val providerOptions: ProviderOptions? = null,
+    ) : ContentPart
+
+    @Serializable
+    @SerialName("tool-call")
+    data class ToolCall(
+        val toolCallId: String = "",
+        val toolName: String = "",
+        val input: JsonElement = JsonObject(emptyMap()),
+        val providerExecuted: Boolean? = null,
+        val providerOptions: ProviderOptions? = null,
+    ) : ContentPart
+
+    @Serializable
+    @SerialName("tool-result")
+    data class ToolResult(
+        val toolCallId: String,
+        val toolName: String,
+        val output: ToolResultOutput,
+        val providerOptions: ProviderOptions? = null,
+    ) : ContentPart
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -538,9 +813,8 @@ object ContentPartSerializer : KSerializer<ContentPart> {
 /**
  * Message body: either a simple string or multi-part content.
  *
- * Mirrors `MessageContent.ts`: `string | Array<ContentPart>`. Modeled as a
- * sealed union with a custom (untagged) serializer: a JSON string decodes to
- * [MessageContent.Text], a JSON array decodes to [MessageContent.Parts].
+ * Mirrors `MessageContent.ts`: `string | Array<ContentPart>` (untagged): a JSON
+ * string decodes to [MessageContent.Text], a JSON array to [MessageContent.Parts].
  */
 @Serializable(with = MessageContentSerializer::class)
 sealed interface MessageContent {
@@ -552,9 +826,6 @@ sealed interface MessageContent {
     data class Parts(val parts: List<ContentPart> = emptyList()) : MessageContent
 }
 
-/**
- * Custom (de)serializer for the untagged [MessageContent] union.
- */
 object MessageContentSerializer : KSerializer<MessageContent> {
     override val descriptor: SerialDescriptor =
         buildClassSerialDescriptor("aimux.MessageContent")
@@ -590,10 +861,8 @@ object MessageContentSerializer : KSerializer<MessageContent> {
 }
 
 /**
- * A single user-facing chat message.
- *
- * Mirrors `ModelMessage.ts`: `{ role: Role, content: MessageContent }` where
- * [MessageContent] is a string-or-parts union. Use [contentString] /
+ * A single user-facing chat message. Mirrors `ModelMessage.ts`:
+ * `{ role: Role, content: MessageContent }`. Use [contentString] /
  * [contentParts] for ergonomic access, or the companion factories to build one.
  */
 @Serializable
@@ -628,23 +897,38 @@ data class ModelMessage(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Per-call timeout configuration.
- *
- * Mirrors `TimeoutConfiguration.ts`. All values are milliseconds; `null`
- * disables the corresponding limit. A `total` timeout also covers retry
- * backoff and the whole streamed response.
+ * Per-call timeout configuration. Mirrors `TimeoutConfiguration.ts`. All values
+ * are milliseconds; `null` disables the corresponding limit. A `total` timeout
+ * also covers retry backoff and the whole streamed response.
  */
 @Serializable
 data class TimeoutConfiguration(
     /** Overall timeout for the entire call (including retries and, for streaming, the whole stream), in milliseconds. */
-    @SerialName("total_ms") val totalMs: Long? = null,
+    val totalMs: Long? = null,
     /** Timeout for one model operation attempt, in milliseconds. */
-    @SerialName("step_ms") val stepMs: Long? = null,
+    val stepMs: Long? = null,
     /** Timeout waiting for the first stream chunk (streaming only). */
-    @SerialName("first_chunk_ms") val firstChunkMs: Long? = null,
+    val firstChunkMs: Long? = null,
     /** Maximum idle time between consecutive stream chunks (streaming only). */
-    @SerialName("chunk_ms") val chunkMs: Long? = null,
+    val chunkMs: Long? = null,
 )
+
+/** Response format, tagged on `type`. Mirrors `ResponseFormat.ts`. */
+@Serializable
+sealed interface ResponseFormat {
+    @Serializable
+    @SerialName("text")
+    data object Text : ResponseFormat
+
+    /** JSON output; `schema` is a JSON Schema for structured output. */
+    @Serializable
+    @SerialName("json")
+    data class Json(
+        val schema: JsonElement? = null,
+        val name: String? = null,
+        val description: String? = null,
+    ) : ResponseFormat
+}
 
 /**
  * User-facing options for `generate_text` / `stream_text`.
@@ -655,35 +939,36 @@ data class TimeoutConfiguration(
  */
 @Serializable
 data class GenerateTextOptions(
-    @SerialName("max_output_tokens") val maxOutputTokens: Long? = null,
+    val maxOutputTokens: Long? = null,
     val temperature: Double? = null,
-    @SerialName("stop_sequences") val stopSequences: List<String>? = null,
-    @SerialName("top_p") val topP: Double? = null,
-    @SerialName("top_k") val topK: Double? = null,
-    @SerialName("presence_penalty") val presencePenalty: Double? = null,
-    @SerialName("frequency_penalty") val frequencyPenalty: Double? = null,
+    val stopSequences: List<String>? = null,
+    val topP: Double? = null,
+    val topK: Double? = null,
+    val presencePenalty: Double? = null,
+    val frequencyPenalty: Double? = null,
     /**
-     * Structured output, the AI SDK's `output`: for example
-     * `{"Object": {"schema": {...}}}`, `{"Array": {"element": {...}}}`,
-     * `{"Choice": {"options": [...]}}` or `{"Json": {}}`. Untyped
+     * Structured output, the AI SDK's `output`, tagged by `type`: for example
+     * `{"type": "object", "schema": {...}}`,
+     * `{"type": "array", "element": {...}, "minItems": 1}`,
+     * `{"type": "choice", "options": [...]}` or `{"type": "json"}`. Untyped
      * ([JsonElement]). The parsed value is [GenerateTextResult.output].
      */
     val output: JsonElement? = null,
     val seed: Long? = null,
     val tools: List<Tool>? = null,
-    @SerialName("tool_choice") val toolChoice: ToolChoice? = null,
+    val toolChoice: ToolChoice? = null,
     val headers: Map<String, String>? = null,
-    @SerialName("provider_options") val providerOptions: Map<String, JsonElement>? = null,
+    val providerOptions: ProviderOptions? = null,
     val reasoning: ReasoningEffort? = null,
     val instructions: String? = null,
     /** Per-call retry count (0 = disable retries). */
-    @SerialName("max_retries") val maxRetries: Long? = null,
-    /** Emit raw provider stream chunks as `StreamPart.Raw` (debugging; OpenAI-compatible family only). */
-    @SerialName("include_raw_chunks") val includeRawChunks: Boolean? = null,
+    val maxRetries: Long? = null,
+    /** Emit raw provider stream chunks as `raw` stream parts (debugging; OpenAI-compatible family only). */
+    val includeRawChunks: Boolean? = null,
     /** Per-call timeout configuration (overall / first chunk / inter-chunk idle, in ms). */
-    @SerialName("timeout") val timeout: TimeoutConfiguration? = null,
+    val timeout: TimeoutConfiguration? = null,
     /** Session identifier (RFC-0024): groups consecutive calls into a session. */
-    @SerialName("session_id") val sessionId: String? = null,
+    val sessionId: String? = null,
     /**
      * One repair attempt per invalid tool call (RFC-0035), run on the JVM after
      * the call returns. Mirrors AI SDK `repairToolCall`.
@@ -713,205 +998,24 @@ data class GenerateTextOptions(
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// File bytes / file data (shared V4 file types).
-//
-// `FileBytes` and `FileData` are externally-tagged enums
-// (`{"Binary": [...]}`, `{"Data": {"data": ...}}`, ...). Each is modeled with a
-// custom serializer that dispatches on the single tag key.
+// Results.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Either raw bytes or a base64-encoded string.
- *
- * Mirrors `FileBytes.ts`: `{"Binary": Array<number>} | {"Base64": string}`.
- * The binary payload is a list of byte ints (serde's default `Vec<u8>` encoding).
+ * A URL or document used as a source for the response. Mirrors `Source.ts`
+ * (tagged on `sourceType`). Its JSON also carries `"type": "source"`, as the
+ * AI SDK's `Source` (provider language-model-v4-source.ts) does in a result's
+ * `sources`.
  */
-@Serializable(with = FileBytesSerializer::class)
-sealed interface FileBytes {
-
-    /** Raw binary bytes (a JSON array of 0–255 ints on the wire). */
-    data class Binary(val data: List<Int> = emptyList()) : FileBytes
-
-    /** A base64-encoded string. */
-    data class Base64(val data: String = "") : FileBytes
-}
-
-/**
- * Custom (de)serializer for [FileBytes].
- *
- * Externally tagged: `{"Binary": [..]}` / `{"Base64": "..."}`. The inner value
- * is the raw array/string (not an object), so it is read/written directly.
- */
-object FileBytesSerializer : KSerializer<FileBytes> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("aimux.FileBytes")
-
-    override fun deserialize(decoder: Decoder): FileBytes {
-        val json = decoder as? JsonDecoder
-            ?: throw SerializationException("FileBytes can only be decoded from JSON")
-        val element = json.decodeJsonElement()
-        val obj = element.jsonObject
-        require(obj.size == 1) {
-            "FileBytes must be a single-key externally-tagged object, got: $element"
-        }
-        val (tag, inner) = obj.entries.single()
-        return when (tag) {
-            "Binary" -> {
-                val arr = (inner as? JsonArray) ?: JsonArray(emptyList())
-                FileBytes.Binary(arr.map { it.jsonPrimitive.content.toInt() })
-            }
-            "Base64" -> FileBytes.Base64(inner.jsonPrimitive.content)
-            else -> throw SerializationException("Unknown FileBytes tag: '$tag'")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: FileBytes) {
-        val json = encoder as? JsonEncoder
-            ?: throw SerializationException("FileBytes can only be encoded to JSON")
-        val (tag, inner) = when (value) {
-            is FileBytes.Binary -> "Binary" to JsonArray(value.data.map { JsonPrimitive(it) })
-            is FileBytes.Base64 -> "Base64" to JsonPrimitive(value.data)
-        }
-        json.encodeJsonElement(JsonObject(mapOf(tag to inner)))
-    }
-}
-
-/**
- * File data as a tagged discriminated union.
- *
- * Mirrors `FileData.ts`: `{"Data": {"data": FileBytes}} | {"Url": {"url": ...}}
- * | {"Reference": {"reference": {...}}} | {"Text": {"text": ...}}`.
- */
-@Serializable(with = FileDataSerializer::class)
-sealed interface FileData {
-
-    @Serializable
-    data class Data(val data: FileBytes = FileBytes.Base64("")) : FileData
-
-    @Serializable
-    data class Url(val url: String = "", @SerialName("original_url") val originalUrl: String? = null) : FileData
-
-    @Serializable
-    data class Reference(val reference: JsonElement = JsonObject(emptyMap())) : FileData
-
-    @Serializable
-    data class Text(val text: String = "") : FileData
-}
-
-/**
- * Custom (de)serializer for [FileData].
- *
- * Externally tagged: each variant is a single-key object whose value is the
- * variant's inner object; delegation goes to the matching variant's generated
- * serializer.
- */
-object FileDataSerializer : KSerializer<FileData> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("aimux.FileData")
-
-    override fun deserialize(decoder: Decoder): FileData {
-        val json = decoder as? JsonDecoder
-            ?: throw SerializationException("FileData can only be decoded from JSON")
-        val element = json.decodeJsonElement()
-        val obj = element.jsonObject
-        require(obj.size == 1) {
-            "FileData must be a single-key externally-tagged object, got: $element"
-        }
-        val (tag, inner) = obj.entries.single()
-        val innerObj = inner as? JsonObject ?: JsonObject(emptyMap())
-        val ctx = json.json
-        return when (tag) {
-            "Data" -> ctx.decodeFromJsonElement(FileData.Data.serializer(), innerObj)
-            "Url" -> ctx.decodeFromJsonElement(FileData.Url.serializer(), innerObj)
-            "Reference" -> ctx.decodeFromJsonElement(FileData.Reference.serializer(), innerObj)
-            "Text" -> ctx.decodeFromJsonElement(FileData.Text.serializer(), innerObj)
-            else -> throw SerializationException("Unknown FileData tag: '$tag'")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: FileData) {
-        val json = encoder as? JsonEncoder
-            ?: throw SerializationException("FileData can only be encoded to JSON")
-        val ctx = json.json
-        val (tag, inner) = when (value) {
-            is FileData.Data -> "Data" to ctx.encodeToJsonElement(FileData.Data.serializer(), value)
-            is FileData.Url -> "Url" to ctx.encodeToJsonElement(FileData.Url.serializer(), value)
-            is FileData.Reference -> "Reference" to ctx.encodeToJsonElement(FileData.Reference.serializer(), value)
-            is FileData.Text -> "Text" to ctx.encodeToJsonElement(FileData.Text.serializer(), value)
-        }
-        json.encodeJsonElement(JsonObject(mapOf(tag to inner)))
-    }
-}
-
-@Serializable(with = GeneratedFileDataSerializer::class)
-sealed interface GeneratedFileData {
-
-    @Serializable
-    data class Data(val data: FileBytes = FileBytes.Base64("")) : GeneratedFileData
-
-    @Serializable
-    data class Url(val url: String = "", @SerialName("original_url") val originalUrl: String? = null) : GeneratedFileData
-
-
-}
-
-/**
- * Custom (de)serializer for [GeneratedFileData].
- *
- * Externally tagged: each variant is a single-key object whose value is the
- * variant's inner object; delegation goes to the matching variant's generated
- * serializer.
- */
-object GeneratedFileDataSerializer : KSerializer<GeneratedFileData> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("aimux.GeneratedFileData")
-
-    override fun deserialize(decoder: Decoder): GeneratedFileData {
-        val json = decoder as? JsonDecoder
-            ?: throw SerializationException("GeneratedFileData can only be decoded from JSON")
-        val element = json.decodeJsonElement()
-        val obj = element.jsonObject
-        require(obj.size == 1) {
-            "GeneratedFileData must be a single-key externally-tagged object, got: $element"
-        }
-        val (tag, inner) = obj.entries.single()
-        val innerObj = inner as? JsonObject ?: JsonObject(emptyMap())
-        val ctx = json.json
-        return when (tag) {
-            "Data" -> ctx.decodeFromJsonElement(GeneratedFileData.Data.serializer(), innerObj)
-            "Url" -> ctx.decodeFromJsonElement(GeneratedFileData.Url.serializer(), innerObj)
-            else -> throw SerializationException("Unknown GeneratedFileData tag: '$tag'")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: GeneratedFileData) {
-        val json = encoder as? JsonEncoder
-            ?: throw SerializationException("GeneratedFileData can only be encoded to JSON")
-        val ctx = json.json
-        val (tag, inner) = when (value) {
-            is GeneratedFileData.Data -> "Data" to ctx.encodeToJsonElement(GeneratedFileData.Data.serializer(), value)
-            is GeneratedFileData.Url -> "Url" to ctx.encodeToJsonElement(GeneratedFileData.Url.serializer(), value)
-        }
-        json.encodeJsonElement(JsonObject(mapOf(tag to inner)))
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GenerateContent / GenerateResult (the `raw` field of GenerateTextResult).
-//
-// `GenerateContent` is an externally-tagged enum
-// (`{"Text": {...}}`, `{"ToolCall": {...}}`, ...). It is modeled as a sealed
-// interface with a custom serializer; unrecognized variants fall back to
-// [GenerateContent.Unknown] for forward compatibility (mirroring [StreamPart]).
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** A URL or document used as a source for the response. */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
-@JsonClassDiscriminator("source_type")
+@JsonClassDiscriminator("sourceType")
 sealed interface Source {
     val id: String
-    val providerMetadata: JsonElement?
+    val providerMetadata: ProviderMetadata?
+
+    /** Always `"source"`. */
+    val type: String
 
     @Serializable
     @SerialName("url")
@@ -919,192 +1023,145 @@ sealed interface Source {
         override val id: String,
         val url: String,
         val title: String? = null,
-        @SerialName("provider_metadata") override val providerMetadata: JsonElement? = null,
-    ) : Source
+        override val providerMetadata: ProviderMetadata? = null,
+    ) : Source {
+        @EncodeDefault
+        override val type: String = "source"
+
+        init {
+            requireTypeTag("source", type)
+        }
+    }
 
     @Serializable
     @SerialName("document")
     data class Document(
         override val id: String,
-        @SerialName("media_type") val mediaType: String,
+        val mediaType: String,
         val title: String,
         val filename: String? = null,
-        @SerialName("provider_metadata") override val providerMetadata: JsonElement? = null,
-    ) : Source
+        override val providerMetadata: ProviderMetadata? = null,
+    ) : Source {
+        @EncodeDefault
+        override val type: String = "source"
+
+        init {
+            requireTypeTag("source", type)
+        }
+    }
+}
+
+/** A provider warning, tagged on `type`. Mirrors `Warning.ts`. */
+@Serializable
+sealed interface Warning {
+    @Serializable
+    @SerialName("unsupported")
+    data class Unsupported(val feature: String, val details: String? = null) : Warning
+
+    @Serializable
+    @SerialName("compatibility")
+    data class Compatibility(val feature: String, val details: String? = null) : Warning
+
+    @Serializable
+    @SerialName("deprecated")
+    data class Deprecated(val setting: String, val message: String) : Warning
+
+    @Serializable
+    @SerialName("other")
+    data class Other(val message: String) : Warning
 }
 
 /**
- * A content item in the generation result.
- *
- * Mirrors `GenerateContent.ts` (externally tagged). `provider_metadata` is a
- * [JsonElement] (`ProviderMetadata = serde_json::Value`). Every field has a
- * default; the `File` variant has no `filename` (matching Rust).
+ * A content item of the provider-level result (`GenerateResult.content`),
+ * tagged on `type`. Mirrors `GenerateContent<RawToolCall, RawToolApprovalRequest,
+ * GeneratedFile>`: a tool call's `input` is the raw argument text, and an
+ * approval request carries just the ids.
  */
-@Serializable(with = GenerateContentSerializer::class)
+@Serializable
 sealed interface GenerateContent {
     @Serializable
-    data class Custom(
-        val kind: String,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : GenerateContent
+    @SerialName("text")
+    data class Text(val text: String = "", val providerMetadata: ProviderMetadata? = null) : GenerateContent
 
     @Serializable
-    data class ReasoningFile(
-        val data: GeneratedFileData,
-        @SerialName("media_type") val mediaType: String,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : GenerateContent
-
-    @Serializable
-    data class ToolApprovalRequest(
-        @SerialName("approval_id") val approvalId: String,
-        @SerialName("tool_call_id") val toolCallId: String,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : GenerateContent
-
-
-    @Serializable
-    data class Text(
-        val text: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : GenerateContent
-
-    @Serializable
+    @SerialName("tool-call")
     data class ToolCall(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
-        val input: JsonElement = JsonObject(emptyMap()),
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : GenerateContent
-
-    data class Source(val source: ai.arcships.aimux.Source) : GenerateContent
-
-    @Serializable
-    data class Reasoning(
-        val text: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val toolCallId: String = "",
+        val toolName: String = "",
+        val input: String = "",
+        val providerExecuted: Boolean? = null,
+        val dynamic: Boolean? = null,
+        val providerMetadata: ProviderMetadata? = null,
     ) : GenerateContent
 
     @Serializable
+    @SerialName("source")
+    data class Source(
+        val sourceType: String,
+        val id: String,
+        val url: String? = null,
+        val mediaType: String? = null,
+        val title: String? = null,
+        val filename: String? = null,
+        val providerMetadata: ProviderMetadata? = null,
+    ) : GenerateContent
+
+    @Serializable
+    @SerialName("reasoning")
+    data class Reasoning(val text: String = "", val providerMetadata: ProviderMetadata? = null) : GenerateContent
+
+    @Serializable
+    @SerialName("file")
     data class File(
         val data: GeneratedFileData = GeneratedFileData.Data(),
-        @SerialName("media_type") val mediaType: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val mediaType: String = "",
+        val providerMetadata: ProviderMetadata? = null,
     ) : GenerateContent
 
     @Serializable
-    data class ToolResult(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
-        val result: JsonElement = JsonObject(emptyMap()),
-        @SerialName("is_error") val isError: Boolean? = null,
-        @SerialName("preliminary") val preliminary: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    @SerialName("reasoning-file")
+    data class ReasoningFile(
+        val data: GeneratedFileData = GeneratedFileData.Data(),
+        val mediaType: String = "",
+        val providerMetadata: ProviderMetadata? = null,
     ) : GenerateContent
 
-    /** Fallback for variants introduced after this wrapper was written. */
-    data class Unknown(val tag: String, val data: JsonElement) : GenerateContent
+    @Serializable
+    @SerialName("custom")
+    data class Custom(val kind: String, val providerMetadata: ProviderMetadata? = null) : GenerateContent
+
+    @Serializable
+    @SerialName("tool-approval-request")
+    data class ToolApprovalRequest(
+        val approvalId: String,
+        val toolCallId: String,
+        val providerMetadata: ProviderMetadata? = null,
+    ) : GenerateContent
+
+    @Serializable
+    @SerialName("tool-result")
+    data class ToolResult(
+        val toolCallId: String = "",
+        val toolName: String = "",
+        val result: JsonElement = JsonObject(emptyMap()),
+        val isError: Boolean? = null,
+        val preliminary: Boolean? = null,
+        val dynamic: Boolean? = null,
+        val providerMetadata: ProviderMetadata? = null,
+    ) : GenerateContent
 }
 
-/** The externally-tagged variant name for this [GenerateContent] (e.g. "Text", "ToolCall"). */
-val GenerateContent.variantTag: String
-    get() = when (this) {
-        is GenerateContent.Custom -> "Custom"
-        is GenerateContent.ReasoningFile -> "ReasoningFile"
-        is GenerateContent.ToolApprovalRequest -> "ToolApprovalRequest"
-        is GenerateContent.Text -> "Text"
-        is GenerateContent.ToolCall -> "ToolCall"
-        is GenerateContent.Source -> "Source"
-        is GenerateContent.Reasoning -> "Reasoning"
-        is GenerateContent.File -> "File"
-        is GenerateContent.ToolResult -> "ToolResult"
-        is GenerateContent.Unknown -> tag
-    }
-
-/**
- * Custom (de)serializer for [GenerateContent].
- *
- * The wire format is externally tagged: each item is a single-key JSON object
- * `{"<VariantName>": { ...inner... }}`. This serializer reads the tag, then
- * delegates to the matching variant's generated serializer. Unknown tags become
- * [GenerateContent.Unknown].
- */
-object GenerateContentSerializer : KSerializer<GenerateContent> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("aimux.GenerateContent")
-
-    override fun deserialize(decoder: Decoder): GenerateContent {
-        val json = decoder as? JsonDecoder
-            ?: throw SerializationException("GenerateContent can only be decoded from JSON")
-        val element = json.decodeJsonElement()
-        val obj = element.jsonObject
-        require(obj.size == 1) {
-            "GenerateContent must be a single-key externally-tagged object, got: $element"
-        }
-        val (tag, inner) = obj.entries.single()
-        val innerObj = inner as? JsonObject ?: JsonObject(emptyMap())
-        val ctx = json.json
-        return when (tag) {
-            "Custom" -> ctx.decodeFromJsonElement(GenerateContent.Custom.serializer(), innerObj)
-            "ReasoningFile" -> ctx.decodeFromJsonElement(GenerateContent.ReasoningFile.serializer(), innerObj)
-            "ToolApprovalRequest" -> ctx.decodeFromJsonElement(GenerateContent.ToolApprovalRequest.serializer(), innerObj)
-            "Text" -> ctx.decodeFromJsonElement(GenerateContent.Text.serializer(), innerObj)
-            "ToolCall" -> ctx.decodeFromJsonElement(GenerateContent.ToolCall.serializer(), innerObj)
-            "Source" -> GenerateContent.Source(ctx.decodeFromJsonElement(Source.serializer(), innerObj))
-            "Reasoning" -> ctx.decodeFromJsonElement(GenerateContent.Reasoning.serializer(), innerObj)
-            "File" -> ctx.decodeFromJsonElement(GenerateContent.File.serializer(), innerObj)
-            "ToolResult" -> ctx.decodeFromJsonElement(GenerateContent.ToolResult.serializer(), innerObj)
-            else -> GenerateContent.Unknown(tag, inner)
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: GenerateContent) {
-        val json = encoder as? JsonEncoder
-            ?: throw SerializationException("GenerateContent can only be encoded to JSON")
-        val ctx = json.json
-        val (tag, inner) = when (value) {
-            is GenerateContent.Custom -> "Custom" to ctx.encodeToJsonElement(GenerateContent.Custom.serializer(), value)
-            is GenerateContent.ReasoningFile -> "ReasoningFile" to ctx.encodeToJsonElement(GenerateContent.ReasoningFile.serializer(), value)
-            is GenerateContent.ToolApprovalRequest -> "ToolApprovalRequest" to ctx.encodeToJsonElement(GenerateContent.ToolApprovalRequest.serializer(), value)
-            is GenerateContent.Text -> "Text" to ctx.encodeToJsonElement(GenerateContent.Text.serializer(), value)
-            is GenerateContent.ToolCall -> "ToolCall" to ctx.encodeToJsonElement(GenerateContent.ToolCall.serializer(), value)
-            is GenerateContent.Source -> "Source" to ctx.encodeToJsonElement(Source.serializer(), value.source)
-            is GenerateContent.Reasoning -> "Reasoning" to ctx.encodeToJsonElement(GenerateContent.Reasoning.serializer(), value)
-            is GenerateContent.File -> "File" to ctx.encodeToJsonElement(GenerateContent.File.serializer(), value)
-            is GenerateContent.ToolResult -> "ToolResult" to ctx.encodeToJsonElement(GenerateContent.ToolResult.serializer(), value)
-            is GenerateContent.Unknown -> value.tag to value.data
-        }
-        json.encodeJsonElement(JsonObject(mapOf(tag to inner)))
-    }
-}
-
-/**
- * Result of `LanguageModel::do_generate` (non-streaming) — the raw provider
- * result surfaced via `GenerateTextResult.raw`.
- *
- * Mirrors `GenerateResult.ts`. [content] holds typed [GenerateContent] items.
- */
+/** Result of `LanguageModel::do_generate`, the provider-level result of one model call. Mirrors `GenerateResult.ts`. */
 @Serializable
 data class GenerateResult(
     val content: List<GenerateContent> = emptyList(),
-    @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
+    val finishReason: FinishReason = FinishReason(),
     val usage: Usage = Usage(),
-    val warnings: List<JsonElement> = emptyList(),
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    val response: ResponseInfo? = null,
+    val warnings: List<Warning> = emptyList(),
+    val providerMetadata: ProviderMetadata? = null,
     val request: RequestInfo? = null,
-) {
-    /** Names of the variant tags present in [content] (e.g. "Text", "ToolCall"). */
-    val contentVariantTags: List<String>
-        get() = content.map { it.variantTag }
-
-    /** `true` if any content item carries the given externally-tagged variant. */
-    fun hasContentVariant(tag: String): Boolean =
-        content.any { it.variantTag == tag }
-}
+    val response: ResponseInfo? = null,
+)
 
 /**
  * Result of `generate_text` and of a consumed stream (user-facing), the AI
@@ -1115,31 +1172,34 @@ data class GenerateResult(
  * over the steps. [reasoning], [reasoningText] (`null` when there is none),
  * [totalUsage] (equal to [usage]), [request], [response] and
  * [providerMetadata] are deprecated upstream. [output] is the value parsed by
- * the `output` option, `null` when it was not parsed.
+ * the `output` option: `null` when it was not parsed (absent from the JSON),
+ * [JsonNull] when the parsed value is JSON `null`.
  *
  * Mirrors `GenerateTextResult.ts`; [response] reads the id, timestamp and
- * model id of the step response.
+ * model id of the step response. `content`, `reasoning`, the tool results and
+ * the steps are kept as raw [JsonElement]s.
  */
 @Serializable
 data class GenerateTextResult(
     val text: String = "",
     val content: List<JsonElement> = emptyList(),
     val reasoning: List<JsonElement> = emptyList(),
-    @SerialName("reasoning_text") val reasoningText: String? = null,
-    val files: List<JsonElement> = emptyList(),
+    val reasoningText: String? = null,
+    val files: List<GeneratedFile> = emptyList(),
     val sources: List<Source> = emptyList(),
-    @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
-    @SerialName("tool_results") val toolResults: List<JsonElement> = emptyList(),
-    @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
-    @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
+    val toolCalls: List<ToolCall> = emptyList(),
+    val toolResults: List<JsonElement> = emptyList(),
+    val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
+    val rawFinishReason: String? = null,
     val usage: LanguageModelUsage = LanguageModelUsage(),
-    @SerialName("total_usage") val totalUsage: LanguageModelUsage = LanguageModelUsage(),
-    val warnings: List<JsonElement> = emptyList(),
-    val request: JsonElement? = null,
+    val totalUsage: LanguageModelUsage = LanguageModelUsage(),
+    val warnings: List<Warning> = emptyList(),
+    val request: RequestInfo = RequestInfo(),
     val response: ResponseMetadata = ResponseMetadata(),
-    @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    val responseMessages: List<ModelMessage> = emptyList(),
+    val providerMetadata: ProviderMetadata? = null,
     val steps: List<JsonElement> = emptyList(),
+    @Serializable(with = JsonValuePresentSerializer::class)
     val output: JsonElement? = null,
 )
 
@@ -1149,79 +1209,53 @@ data class GenerateTextResult(
  * finish reason, usage, warnings, request, response and provider metadata.
  * The AI SDK deprecates `generateObject` for `generateText` with an `output`.
  *
- * Mirrors `GenerateObjectResult.ts`. `object` is a [JsonElement] (arbitrary
- * JSON value, weak type); [response] reads the id, timestamp and model id.
+ * Mirrors `GenerateObjectResult.ts`. `object` is an arbitrary JSON value;
+ * [response] reads the id, timestamp and model id.
  */
 @Serializable
 data class GenerateObjectResult(
-    // `object` is an arbitrary JSON value — weak type (JsonElement).
     val `object`: JsonElement,
-    // Concatenated reasoning text (if the model produced reasoning/thinking).
+    /** The reasoning text, `null` when there is none. */
     val reasoning: String? = null,
-    @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
+    val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
     val usage: LanguageModelUsage = LanguageModelUsage(),
-    val warnings: List<JsonElement> = emptyList(),
-    val request: JsonElement? = null,
+    val warnings: List<Warning> = emptyList(),
+    val request: RequestInfo = RequestInfo(),
     val response: ResponseMetadata = ResponseMetadata(),
-    // Provider-specific metadata (e.g. Anthropic cache info). Weak type.
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    val providerMetadata: ProviderMetadata? = null,
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// StreamPart (the streaming chunk type).
+// StreamPart (the streaming chunk type), tagged on `type`.
 //
-// `StreamPart` is an externally-tagged enum
-// (`{"TextDelta": {...}}`, `{"ToolCall": {...}}`, ...). It is modeled as a
-// sealed class with a custom deserializer that dispatches on the single tag
-// key; unrecognized variants fall back to [StreamPart.Unknown] for forward
-// compatibility.
+// Mirrors `TextStreamPart.ts`, the AI SDK's full stream that
+// `aimux_stream_text` emits: `start`, then per step `start-step` …
+// `finish-step`, then `finish` (or `abort`). An unknown `type` fails decoding
+// ([TypedModel] reports it through `onError`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-@Serializable(with = StreamPartSerializer::class)
+@Serializable
 sealed interface StreamPart {
     @Serializable
-    data class Custom(
-        val kind: String,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
+    @SerialName("text-start")
+    data class TextStart(val id: String = "", val providerMetadata: ProviderMetadata? = null) : StreamPart
 
     @Serializable
-    data class ReasoningFile(
-        val file: GenerateContent.File,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
-
-    @Serializable
-    data class ToolApprovalRequest(
-        @SerialName("approval_id") val approvalId: String,
-        @SerialName("tool_call") val toolCall: ai.arcships.aimux.ToolCall,
-        val reason: String? = null,
-        @SerialName("is_automatic") val isAutomatic: Boolean? = null,
-        val signature: String? = null,
-    ) : StreamPart
-
-
-    @Serializable
-    data class TextStart(
-        val id: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
-
-    @Serializable
+    @SerialName("text-delta")
     data class TextDelta(
         val id: String = "",
+        /** The delta, under `text` as in the AI SDK's TextStreamPart. */
         val text: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
     @Serializable
-    data class TextEnd(
-        val id: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
+    @SerialName("text-end")
+    data class TextEnd(val id: String = "", val providerMetadata: ProviderMetadata? = null) : StreamPart
 
     /** Opens the stream (the AI SDK's `start` part). */
     @Serializable
+    @SerialName("start")
     class Start : StreamPart {
         override fun equals(other: Any?): Boolean = other is Start
         override fun hashCode(): Int = 0
@@ -1230,69 +1264,80 @@ sealed interface StreamPart {
 
     /** Opens a step: the step's request and the provider's call warnings. */
     @Serializable
+    @SerialName("start-step")
     data class StartStep(
-        val request: JsonElement? = null,
-        val warnings: List<JsonElement> = emptyList(),
+        val request: RequestInfo = RequestInfo(),
+        val warnings: List<Warning> = emptyList(),
     ) : StreamPart
 
     /** Closes a step: its response metadata, usage, performance and finish reason. */
     @Serializable
+    @SerialName("finish-step")
     data class FinishStep(
         val response: ResponseMetadata = ResponseMetadata(),
         val usage: LanguageModelUsage = LanguageModelUsage(),
+        /** Timing of the step (Rust `StepResultPerformance`). Weak type. */
         val performance: JsonElement? = null,
-        @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
-        @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
+        val rawFinishReason: String? = null,
+        val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
     /** Closes the stream: the last step's finish reason and the usage summed over the steps. */
     @Serializable
+    @SerialName("finish")
     data class Finish(
-        @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
-        @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
-        @SerialName("total_usage") val totalUsage: LanguageModelUsage = LanguageModelUsage(),
+        val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
+        val rawFinishReason: String? = null,
+        val totalUsage: LanguageModelUsage = LanguageModelUsage(),
     ) : StreamPart
 
     /** Ends a stream whose call was aborted. */
     @Serializable
+    @SerialName("abort")
     data class Abort(val reason: String? = null) : StreamPart
 
+    /** `error` is the `name`-tagged `AiMuxError` JSON. */
     @Serializable
+    @SerialName("error")
+    data class Error(val error: JsonElement = JsonObject(emptyMap())) : StreamPart
+
+    @Serializable
+    @SerialName("tool-input-start")
     data class ToolInputStart(
         val id: String = "",
-        @SerialName("tool_name") val toolName: String = "",
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
+        val toolName: String = "",
+        val providerExecuted: Boolean? = null,
+        val dynamic: Boolean? = null,
         val title: String? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
     @Serializable
+    @SerialName("tool-input-delta")
     data class ToolInputDelta(
         val id: String = "",
         val delta: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
     @Serializable
-    data class ToolInputEnd(
-        val id: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
+    @SerialName("tool-input-end")
+    data class ToolInputEnd(val id: String = "", val providerMetadata: ProviderMetadata? = null) : StreamPart
 
     /**
      * `invalid` is set by Core when the tool call stays invalid after optional
      * repair; `error` is the typed lookup, parse, schema, or repair failure.
      */
     @Serializable
+    @SerialName("tool-call")
     data class ToolCall(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
+        val toolCallId: String = "",
+        val toolName: String = "",
         val input: JsonElement = JsonObject(emptyMap()),
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val providerExecuted: Boolean? = null,
+        val dynamic: Boolean? = null,
+        val providerMetadata: ProviderMetadata? = null,
         val invalid: Boolean? = null,
         val error: JsonElement? = null,
     ) : StreamPart
@@ -1302,15 +1347,16 @@ sealed interface StreamPart {
      * input of the call it answers (`null` for a deferred result).
      */
     @Serializable
+    @SerialName("tool-result")
     data class ToolResult(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
+        val toolCallId: String = "",
+        val toolName: String = "",
         val input: JsonElement? = null,
         val output: JsonElement = JsonNull,
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
-        @SerialName("preliminary") val preliminary: Boolean? = null,
+        val providerExecuted: Boolean? = null,
+        val providerMetadata: ProviderMetadata? = null,
+        val dynamic: Boolean? = null,
+        val preliminary: Boolean? = null,
     ) : StreamPart
 
     /**
@@ -1318,198 +1364,105 @@ sealed interface StreamPart {
      * invalid tool call (Rust `TypedToolError`).
      */
     @Serializable
+    @SerialName("tool-error")
     data class ToolError(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
+        val toolCallId: String = "",
+        val toolName: String = "",
         val input: JsonElement? = null,
         val error: JsonElement = JsonNull,
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
+        val providerExecuted: Boolean? = null,
+        val providerMetadata: ProviderMetadata? = null,
+        val dynamic: Boolean? = null,
     ) : StreamPart
 
     /** A tool whose execution was denied (Rust `ToolOutputDenied`). */
     @Serializable
+    @SerialName("tool-output-denied")
     data class ToolOutputDenied(
-        @SerialName("tool_call_id") val toolCallId: String = "",
-        @SerialName("tool_name") val toolName: String = "",
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
+        val toolCallId: String = "",
+        val toolName: String = "",
+        val providerExecuted: Boolean? = null,
+        val dynamic: Boolean? = null,
+    ) : StreamPart
+
+    /**
+     * A file generated by the model (e.g. an image or document):
+     * `{"type": "file", "file": GeneratedFile, "providerMetadata"?}`
+     * (`stream-language-model-call.ts:569-590`).
+     */
+    @Serializable
+    @SerialName("file")
+    data class File(
+        val file: GeneratedFile,
+        val providerMetadata: ProviderMetadata? = null,
+    ) : StreamPart
+
+    /** A file generated as part of reasoning, with the same shape as [File]. */
+    @Serializable
+    @SerialName("reasoning-file")
+    data class ReasoningFile(
+        val file: GeneratedFile,
+        val providerMetadata: ProviderMetadata? = null,
+    ) : StreamPart
+
+    @Serializable
+    @SerialName("custom")
+    data class Custom(val kind: String, val providerMetadata: ProviderMetadata? = null) : StreamPart
+
+    @Serializable
+    @SerialName("tool-approval-request")
+    data class ToolApprovalRequest(
+        val approvalId: String,
+        val toolCall: ai.arcships.aimux.ToolCall,
+        val reason: String? = null,
+        val isAutomatic: Boolean? = null,
+        val signature: String? = null,
     ) : StreamPart
 
     /** The answer to a tool approval request (Rust `ToolApprovalResponseOutput`). */
     @Serializable
+    @SerialName("tool-approval-response")
     data class ToolApprovalResponse(
-        @SerialName("approval_id") val approvalId: String,
-        @SerialName("tool_call") val toolCall: ai.arcships.aimux.ToolCall,
+        val approvalId: String,
+        val toolCall: ai.arcships.aimux.ToolCall,
         val approved: Boolean,
         val reason: String? = null,
-        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
-    ) : StreamPart
-
-    // ── P2: file ──
-    /** A file generated by the model (e.g. an image or document). */
-    @Serializable
-    data class File(
-        val data: JsonElement = JsonObject(emptyMap()),
-        @SerialName("media_type") val mediaType: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val providerExecuted: Boolean? = null,
     ) : StreamPart
 
     @Serializable
-    data class ReasoningStart(
-        val id: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
+    @SerialName("reasoning-start")
+    data class ReasoningStart(val id: String = "", val providerMetadata: ProviderMetadata? = null) : StreamPart
 
     @Serializable
+    @SerialName("reasoning-delta")
     data class ReasoningDelta(
         val id: String = "",
+        /** The delta, under `text` as in the AI SDK's TextStreamPart. */
         val text: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
     @Serializable
-    data class ReasoningEnd(
-        val id: String = "",
-        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    @SerialName("reasoning-end")
+    data class ReasoningEnd(val id: String = "", val providerMetadata: ProviderMetadata? = null) : StreamPart
+
+    /** A source cited by the response (flat: `type: "source"` plus the [Source] fields). */
+    @Serializable
+    @SerialName("source")
+    data class Source(
+        val sourceType: String,
+        val id: String,
+        val url: String? = null,
+        val mediaType: String? = null,
+        val title: String? = null,
+        val filename: String? = null,
+        val providerMetadata: ProviderMetadata? = null,
     ) : StreamPart
 
-    data class Source(val source: ai.arcships.aimux.Source) : StreamPart
-
     @Serializable
-    data class Raw(
-        @SerialName("raw_value") val rawValue: JsonElement = JsonObject(emptyMap()),
-    ) : StreamPart
-
-    @Serializable
-    data class Error(val error: JsonElement = JsonObject(emptyMap())) : StreamPart
-
-    /** Fallback for variants introduced after this wrapper was written. */
-    data class Unknown(val tag: String, val data: JsonElement) : StreamPart
-}
-
-/** The externally-tagged variant name for this [StreamPart] (e.g. "TextDelta", "ToolCall"). */
-val StreamPart.variantTag: String
-    get() = when (this) {
-        is StreamPart.Custom -> "Custom"
-        is StreamPart.ReasoningFile -> "ReasoningFile"
-        is StreamPart.ToolApprovalRequest -> "ToolApprovalRequest"
-        is StreamPart.TextStart -> "TextStart"
-        is StreamPart.TextDelta -> "TextDelta"
-        is StreamPart.TextEnd -> "TextEnd"
-        is StreamPart.Start -> "Start"
-        is StreamPart.StartStep -> "StartStep"
-        is StreamPart.FinishStep -> "FinishStep"
-        is StreamPart.Finish -> "Finish"
-        is StreamPart.Abort -> "Abort"
-        is StreamPart.ToolInputStart -> "ToolInputStart"
-        is StreamPart.ToolInputDelta -> "ToolInputDelta"
-        is StreamPart.ToolInputEnd -> "ToolInputEnd"
-        is StreamPart.ToolCall -> "ToolCall"
-        is StreamPart.ToolResult -> "ToolResult"
-        is StreamPart.ToolError -> "ToolError"
-        is StreamPart.ToolOutputDenied -> "ToolOutputDenied"
-        is StreamPart.ToolApprovalResponse -> "ToolApprovalResponse"
-        is StreamPart.File -> "File"
-        is StreamPart.ReasoningStart -> "ReasoningStart"
-        is StreamPart.ReasoningDelta -> "ReasoningDelta"
-        is StreamPart.ReasoningEnd -> "ReasoningEnd"
-        is StreamPart.Source -> "Source"
-        is StreamPart.Raw -> "Raw"
-        is StreamPart.Error -> "Error"
-        is StreamPart.Unknown -> tag
-    }
-
-/**
- * Custom (de)serializer for [StreamPart].
- *
- * The wire format is externally tagged: each part is a single-key JSON object
- * `{"<VariantName>": { ...inner... }}`. This serializer reads the tag, then
- * delegates to the matching variant's generated serializer. Unknown tags become
- * [StreamPart.Unknown].
- */
-object StreamPartSerializer : KSerializer<StreamPart> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor("aimux.StreamPart")
-
-    override fun deserialize(decoder: Decoder): StreamPart {
-        val json = decoder as? JsonDecoder
-            ?: throw SerializationException("StreamPart can only be decoded from JSON")
-        val element = json.decodeJsonElement()
-        val obj = element.jsonObject
-        require(obj.size == 1) {
-            "StreamPart must be a single-key externally-tagged object, got: $element"
-        }
-        val (tag, inner) = obj.entries.single()
-        val innerObj = inner as? JsonObject ?: JsonObject(emptyMap())
-        val ctx = json.json
-        return when (tag) {
-            "Custom" -> ctx.decodeFromJsonElement(StreamPart.Custom.serializer(), innerObj)
-            "ReasoningFile" -> ctx.decodeFromJsonElement(StreamPart.ReasoningFile.serializer(), innerObj)
-            "ToolApprovalRequest" -> ctx.decodeFromJsonElement(StreamPart.ToolApprovalRequest.serializer(), innerObj)
-            "TextStart" -> ctx.decodeFromJsonElement(StreamPart.TextStart.serializer(), innerObj)
-            "TextDelta" -> ctx.decodeFromJsonElement(StreamPart.TextDelta.serializer(), innerObj)
-            "TextEnd" -> ctx.decodeFromJsonElement(StreamPart.TextEnd.serializer(), innerObj)
-            "Start" -> StreamPart.Start()
-            "StartStep" -> ctx.decodeFromJsonElement(StreamPart.StartStep.serializer(), innerObj)
-            "FinishStep" -> ctx.decodeFromJsonElement(StreamPart.FinishStep.serializer(), innerObj)
-            "Finish" -> ctx.decodeFromJsonElement(StreamPart.Finish.serializer(), innerObj)
-            "Abort" -> ctx.decodeFromJsonElement(StreamPart.Abort.serializer(), innerObj)
-            "ToolInputStart" -> ctx.decodeFromJsonElement(StreamPart.ToolInputStart.serializer(), innerObj)
-            "ToolInputDelta" -> ctx.decodeFromJsonElement(StreamPart.ToolInputDelta.serializer(), innerObj)
-            "ToolInputEnd" -> ctx.decodeFromJsonElement(StreamPart.ToolInputEnd.serializer(), innerObj)
-            "ToolCall" -> ctx.decodeFromJsonElement(StreamPart.ToolCall.serializer(), innerObj)
-            "ToolResult" -> ctx.decodeFromJsonElement(StreamPart.ToolResult.serializer(), innerObj)
-            "ToolError" -> ctx.decodeFromJsonElement(StreamPart.ToolError.serializer(), innerObj)
-            "ToolOutputDenied" -> ctx.decodeFromJsonElement(StreamPart.ToolOutputDenied.serializer(), innerObj)
-            "ToolApprovalResponse" -> ctx.decodeFromJsonElement(StreamPart.ToolApprovalResponse.serializer(), innerObj)
-            "File" -> ctx.decodeFromJsonElement(StreamPart.File.serializer(), innerObj)
-            "ReasoningStart" -> ctx.decodeFromJsonElement(StreamPart.ReasoningStart.serializer(), innerObj)
-            "ReasoningDelta" -> ctx.decodeFromJsonElement(StreamPart.ReasoningDelta.serializer(), innerObj)
-            "ReasoningEnd" -> ctx.decodeFromJsonElement(StreamPart.ReasoningEnd.serializer(), innerObj)
-            "Source" -> StreamPart.Source(ctx.decodeFromJsonElement(Source.serializer(), innerObj))
-            "Raw" -> ctx.decodeFromJsonElement(StreamPart.Raw.serializer(), innerObj)
-            "Error" -> ctx.decodeFromJsonElement(StreamPart.Error.serializer(), innerObj)
-            else -> StreamPart.Unknown(tag, inner)
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: StreamPart) {
-        val json = encoder as? JsonEncoder
-            ?: throw SerializationException("StreamPart can only be encoded to JSON")
-        val ctx = json.json
-        val (tag, inner) = when (value) {
-            is StreamPart.Custom -> "Custom" to ctx.encodeToJsonElement(StreamPart.Custom.serializer(), value)
-            is StreamPart.ReasoningFile -> "ReasoningFile" to ctx.encodeToJsonElement(StreamPart.ReasoningFile.serializer(), value)
-            is StreamPart.ToolApprovalRequest -> "ToolApprovalRequest" to ctx.encodeToJsonElement(StreamPart.ToolApprovalRequest.serializer(), value)
-            is StreamPart.TextStart -> "TextStart" to ctx.encodeToJsonElement(StreamPart.TextStart.serializer(), value)
-            is StreamPart.TextDelta -> "TextDelta" to ctx.encodeToJsonElement(StreamPart.TextDelta.serializer(), value)
-            is StreamPart.TextEnd -> "TextEnd" to ctx.encodeToJsonElement(StreamPart.TextEnd.serializer(), value)
-            is StreamPart.Start -> "Start" to JsonObject(emptyMap())
-            is StreamPart.StartStep -> "StartStep" to ctx.encodeToJsonElement(StreamPart.StartStep.serializer(), value)
-            is StreamPart.FinishStep -> "FinishStep" to ctx.encodeToJsonElement(StreamPart.FinishStep.serializer(), value)
-            is StreamPart.Finish -> "Finish" to ctx.encodeToJsonElement(StreamPart.Finish.serializer(), value)
-            is StreamPart.Abort -> "Abort" to ctx.encodeToJsonElement(StreamPart.Abort.serializer(), value)
-            is StreamPart.ToolInputStart -> "ToolInputStart" to ctx.encodeToJsonElement(StreamPart.ToolInputStart.serializer(), value)
-            is StreamPart.ToolInputDelta -> "ToolInputDelta" to ctx.encodeToJsonElement(StreamPart.ToolInputDelta.serializer(), value)
-            is StreamPart.ToolInputEnd -> "ToolInputEnd" to ctx.encodeToJsonElement(StreamPart.ToolInputEnd.serializer(), value)
-            is StreamPart.ToolCall -> "ToolCall" to ctx.encodeToJsonElement(StreamPart.ToolCall.serializer(), value)
-            is StreamPart.ToolResult -> "ToolResult" to ctx.encodeToJsonElement(StreamPart.ToolResult.serializer(), value)
-            is StreamPart.ToolError -> "ToolError" to ctx.encodeToJsonElement(StreamPart.ToolError.serializer(), value)
-            is StreamPart.ToolOutputDenied -> "ToolOutputDenied" to ctx.encodeToJsonElement(StreamPart.ToolOutputDenied.serializer(), value)
-            is StreamPart.ToolApprovalResponse -> "ToolApprovalResponse" to ctx.encodeToJsonElement(StreamPart.ToolApprovalResponse.serializer(), value)
-            is StreamPart.File -> "File" to ctx.encodeToJsonElement(StreamPart.File.serializer(), value)
-            is StreamPart.ReasoningStart -> "ReasoningStart" to ctx.encodeToJsonElement(StreamPart.ReasoningStart.serializer(), value)
-            is StreamPart.ReasoningDelta -> "ReasoningDelta" to ctx.encodeToJsonElement(StreamPart.ReasoningDelta.serializer(), value)
-            is StreamPart.ReasoningEnd -> "ReasoningEnd" to ctx.encodeToJsonElement(StreamPart.ReasoningEnd.serializer(), value)
-            is StreamPart.Source -> "Source" to ctx.encodeToJsonElement(Source.serializer(), value.source)
-            is StreamPart.Raw -> "Raw" to ctx.encodeToJsonElement(StreamPart.Raw.serializer(), value)
-            is StreamPart.Error -> "Error" to ctx.encodeToJsonElement(StreamPart.Error.serializer(), value)
-            is StreamPart.Unknown -> value.tag to value.data
-        }
-        json.encodeJsonElement(JsonObject(mapOf(tag to inner)))
-    }
+    @SerialName("raw")
+    data class Raw(val rawValue: JsonElement = JsonObject(emptyMap())) : StreamPart
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import type { JsonValue } from "./serde_json/JsonValue";
 /**
  * A function tool definition (JSON Schema parameters).
  */
-export type WireTool = { name: string, description?: string | null,
+export type WireTool = { name: string, description?: string,
 /**
  * JSON Schema describing the parameters.
  */
