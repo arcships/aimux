@@ -1,0 +1,22 @@
+{
+  "kind": "aimux",
+  "code": 11,
+  "message": "API call error: HTTP 429: slow down",
+  "error": {
+    "name": "AI_APICallError",
+    "url": "https://example.test/v1",
+    "requestBodyValues": {
+      "input": null
+    },
+    "statusCode": 429,
+    "providerCode": "rate_limit",
+    "message": "slow down",
+    "responseBody": "{\"error\":null}",
+    "responseHeaders": {
+      "retry-after-ms": "1500"
+    },
+    "data": null,
+    "isRetryable": true
+  },
+  "retryAfterMs": 1500
+}

@@ -1,0 +1,9 @@
+{
+  "kind": "protocol",
+  "code": 302,
+  "message": "unsupported ops version: 2.0",
+  "error": {
+    "name": "UnsupportedOpsVersion",
+    "message": "2.0"
+  }
+}

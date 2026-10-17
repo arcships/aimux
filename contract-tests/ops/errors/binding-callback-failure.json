@@ -1,0 +1,9 @@
+{
+  "kind": "binding",
+  "code": 206,
+  "message": "host callback failed: callback stopped",
+  "error": {
+    "name": "CallbackFailure",
+    "message": "callback stopped"
+  }
+}

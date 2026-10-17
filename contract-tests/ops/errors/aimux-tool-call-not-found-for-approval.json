@@ -1,0 +1,10 @@
+{
+  "kind": "aimux",
+  "code": 3,
+  "message": "Tool call \"call-1\" not found for approval request \"approval-1\".",
+  "error": {
+    "name": "AI_ToolCallNotFoundForApprovalError",
+    "toolCallId": "call-1",
+    "approvalId": "approval-1"
+  }
+}

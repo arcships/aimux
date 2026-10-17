@@ -1,6 +1,6 @@
 plugins {
     kotlin("jvm") version "2.0.0"
-    kotlin("plugin.serialization") version "2.0.0"
+    `java-library`
     `maven-publish`
     signing
     id("org.jetbrains.dokka") version "1.9.20"
@@ -14,45 +14,45 @@ repositories {
 }
 
 dependencies {
-    implementation("net.java.dev.jna:jna:5.14.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.0")
+    api("ai.arcships:aimux-java:$version") {
+        version { strictly(project.version.toString()) }
+    }
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    // Java's decoded error payload types are part of the Kotlin public facade.
+    api("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
-    testImplementation("org.assertj:assertj-core:3.26.0")
-    testImplementation("org.json:json:20240303")
 }
 
-// Declare the JVM the binding is built and tested against. Without this the
-// bytecode level of a published artifact depends on whichever JDK happened to
-// run the release, which is not something a Maven Central consumer can read
-// off the POM. 17 is what CI runs, so the declaration and the verification
-// agree — see bindings/java for the alternative shape, where an explicit
-// 1.8 target is backed by a four-JDK matrix.
+val verifyJavaArtifact by tasks.registering {
+    doLast {
+        val javaArtifact = configurations["compileClasspath"].incoming.resolutionResult
+            .allComponents.mapNotNull { it.moduleVersion }
+            .single { it.group == "ai.arcships" && it.name == "aimux-java" }
+        check(javaArtifact.version == project.version.toString()) {
+            "Kotlin ${project.version} requires the same Java artifact version, got $javaArtifact"
+        }
+    }
+}
+
+tasks.named("compileKotlin") {
+    dependsOn(verifyJavaArtifact)
+}
+
+// Keep published bytecode and tests on JVM 17.
 kotlin {
     jvmToolchain(17)
 }
 
 tasks.test {
     useJUnitPlatform()
-    // AIMUX_FFI_LIB_DIR points at the directory holding libaimux_ffi (e.g. a
-    // custom CARGO_TARGET_DIR/debug); the default is the in-tree release build.
     systemProperty(
         "jna.library.path",
-        System.getenv("AIMUX_FFI_LIB_DIR") ?: rootProject.projectDir.resolve("../../target/release").canonicalPath,
+        System.getenv("AIMUX_FFI_LIB_DIR") ?: projectDir.resolve("../../target/debug").canonicalPath
     )
-    // Gradle prints only "there were failing tests" by default; the names live
-    // in an HTML report that CI logs never surface. Without this, a red build
-    // tells you nothing about which test broke.
+    System.getenv("AIMUX_LIBRARY_PATH")?.let { systemProperty("aimux.library", it) }
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-    }
-}
-
-// Package the native library into the JAR for distribution.
-// In production, use per-platform JARs (like napi-rs does for Node).
-tasks.jar {
-    from("src/main/resources") {
-        into("native")
     }
 }
 
@@ -66,18 +66,7 @@ val javadocJar by tasks.registering(Jar::class) {
     from(tasks.named("dokkaJavadoc"))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Maven Central (Sonatype OSSRH) publishing — same layout as aimux-java.
-//
-// Secrets are NEVER stored in the repo. They are read from Gradle project
-// properties — set either as `ORG_GRADLE_PROJECT_<name>` environment variables
-// or `-P<name>=...` system properties:
-//   signingKey / signingPassword   ASCII-armored GPG private key + passphrase
-//   ossrhUsername / ossrhPassword  Sonatype (s01.oss.sonatype.org) credentials
-// When the keys are absent, signing/publishing configuration stays inert, so
-// local builds and `gradle test` are unaffected.
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Publishing credentials come from Gradle properties; absent keys leave signing inert.
 val ossrhUsername = findProperty("ossrhUsername") as String?
 val ossrhPassword = findProperty("ossrhPassword") as String?
 val signingKey = findProperty("signingKey") as String?
@@ -119,13 +108,6 @@ publishing {
 
     repositories {
         if (ossrhUsername != null && ossrhPassword != null) {
-            // Central Publisher Portal — OSSRH Staging API compatibility
-            // service (s01.oss.sonatype.org is deprecated; it returns 402).
-            // After uploading, release.yml POSTs /manual/upload/defaultRepository
-            // to move the deployment into the Portal.
-            // Snapshot versions go to the snapshots repository; release
-            // versions to the staging service (the snapshots repo rejects
-            // non-SNAPSHOT versions with 403).
             if (version.toString().endsWith("SNAPSHOT")) {
                 maven {
                     name = "CentralPortal"

@@ -1,0 +1,14 @@
+{
+  "kind": "aimux",
+  "code": 15,
+  "message": "Model tried to call unavailable tool 'weathr'. Available tools: weather, search.",
+  "error": {
+    "name": "AI_NoSuchToolError",
+    "toolName": "weathr",
+    "availableTools": [
+      "weather",
+      "search"
+    ],
+    "toolInput": "{\"city\":\"上海\"}"
+  }
+}

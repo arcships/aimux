@@ -1,0 +1,10 @@
+{
+  "kind": "recording",
+  "code": 100,
+  "message": "recording init failed for recordings/session.jsonl: permission denied",
+  "error": {
+    "name": "Init",
+    "path": "recordings/session.jsonl",
+    "source": "permission denied"
+  }
+}

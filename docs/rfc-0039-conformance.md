@@ -1,0 +1,346 @@
+# RFC-0039 conformance matrix
+
+This matrix indexes 203 implementation and release obligations, including
+explicit MUST rules outside the operation table. Section
+references identify RFC-0039; the stdio wire specification in §8 is deferred.
+The requirement text summarizes the normative target, not current behavior.
+Where the target differs, the status points to a registered difference or gap.
+The RFC-0039 source file is absent from this checkout; this index is not an
+independent certification that every normative sentence has been transcribed.
+
+**met** means the current code supplies the obligation and the named existing
+test covers it at the stated layer. It does not mean that test was run for this
+documentation change or that every platform passed. **gap** includes partial
+coverage, future capabilities, missing execution evidence and release/freeze
+obligations that a unit test cannot establish. A related test in a gap row is
+only evidence of the narrower behavior its name describes.
+
+All `path#test` references below name tests present in this tree, including
+macro-emitted tests. Paths into source modules identify embedded unit tests.
+The [implementation document](rfc-0039-implementation.md#registered-differences-from-rfc-0039)
+defines D1–D10, G-a–G-i and G-k; these are not waivers declaring release readiness.
+The [coverage ledger](rfc-0039-coverage-ledger.md) covers old APIs separately.
+
+Generated-output tests exist; this documentation audit does not claim they
+passed. No complete cutover, platform release, 1.0 freeze or successful
+live-provider test is claimed here. The Node native lifecycle test expects
+trace middleware creation and model wrapping to succeed. The external
+shared-driver test is ignored; the native eleven-scenario runner is enabled.
+
+## Evidence index
+
+Repeated evidence keys keep the matrix readable; each maps to an exact test
+unless explicitly labelled as a file-level reference.
+
+| Key | Existing test |
+|---|---|
+| abi | `aimux-ffi/tests/abi_primitives.rs#call_validates_strings_and_clears_output` |
+| abipoll | `aimux-ffi/tests/abi_primitives.rs#poll_clears_both_outputs_including_partial_null_arguments` |
+| abipush | `aimux-ffi/tests/abi_primitives.rs#push_validates_before_reading_and_accepts_null_empty_input` |
+| abort | `aimux-ops/tests/handles.rs#dropping_an_abort_preserves_cloned_capabilities_without_signalling` |
+| base64 | `aimux-ops/src/ops/modalities.rs#binary_results_use_v4_base64_wire` |
+| callback | `aimux-ffi/src/abi.rs#callback_borrows_frames_rejects_reentry_and_allows_abort` |
+| cleanup | `aimux-ops/tests/operation.rs#cleanup_is_capped_at_five_seconds_and_failure_is_recorded` |
+| controls | `aimux-ops/tests/manifest_contract.rs#all_owned_types_publish_schemas_and_family_controls_are_strict` |
+| dart | `bindings/flutter/test/native_runtime_test.dart#provider/model handles retain children after provider close` |
+| dartcredit | `bindings/flutter/test/stream_bridge_test.dart#pause exhausts credits, resume preserves every event` |
+| dartfinalizer | `bindings/flutter/test/aimux_test.dart#typed token trampoline queues cleanup off the finalizer thread` |
+| date | `aimux-ops/tests/retry_hint.rs#fixed_clock_http_date_golden_vectors` |
+| digest | `aimux-ops/tests/manifest_contract.rs#digest_is_stable_and_hashes_the_complete_canonical_manifest` |
+| dispatch | `aimux-ops/tests/dispatch_contract.rs#global_target_and_mode_preflight_are_explicit_and_projected` |
+| error | `aimux-ops/tests/error_envelope_golden.rs#codes_preserve_existing_groups_and_have_disjoint_ranges` |
+| exhaust | `aimux-ops/src/handle.rs#allocator_exhaustion_does_not_wrap` |
+| exports | `aimux-ffi/tests/exports_smoke_test.rs#cdylib_exports_only_abi_primitives` |
+| finalizer | `aimux-ffi/src/abi.rs#finalizer_enqueues_idempotent_c_owned_cleanup` |
+| fullcancel | `aimux-ops/tests/operation.rs#full_output_queue_never_loses_cancellation_terminal` |
+| gen | `tools/aimux-codegen/tests/generation.rs#deterministic_complete_outputs_cover_every_language_and_abi_primitive` |
+| gencheck | `tools/aimux-codegen/tests/generation.rs#check_detects_missing_stale_and_changed_files_without_rewriting` |
+| go | `bindings/go/abi_test.go#TestStreamCancellationFullQueueNoConsumer` |
+| goclose | `bindings/go/abi_test.go#TestCloseCallRace` |
+| gowire | `bindings/go/roundtrip_test.go#TestGenerateTextOptionsRoundTrip` |
+| ids | `aimux-ops/tests/handle_lifecycle.rs#ids_are_nonzero_monotonic_and_never_reused_after_drop` |
+| inventory | `aimux-ops/tests/manifest_contract.rs#rfc_inventory_has_exact_names_modes_and_handle_scopes` |
+| java | `bindings/java/src/test/java/ai/arcships/aimux/AbiContractTest.java#declaresOnlyTheFourteenPrimitivesWithPortableSizeT` |
+| javacallback | `bindings/java/src/test/java/ai/arcships/aimux/AbiContractTest.java#latchesConsumerThrowableSignalsAbortAndThrowsOnceAfterNativeReturns` |
+| javaclose | `bindings/java/src/test/java/ai/arcships/aimux/AbiContractTest.java#closeFromConsumerDoesNotWaitAndDropsAfterNativeReturn` |
+| javafuture | `bindings/java/src/test/java/ai/arcships/aimux/AbiContractTest.java#cancellationOfRunningCallSignalsNativeAbortWithoutInterruptingThread` |
+| kotlin | `bindings/kotlin/src/test/kotlin/ai/arcships/aimux/kotlin/NativeIntegrationTest.kt#real manifest loads and Java provider model objects retain identity` |
+| lifetime | `aimux-ops/tests/handle_lifecycle.rs#models_survive_provider_and_registry_removal` |
+| limits | `aimux-ops/tests/limits.rs#default_eight_mib_budget_and_terminal_survive_a_full_queue` |
+| locks | `aimux-ops/tests/dispatch_contract.rs#owner_allocations_are_unique_and_teardown_releases_locks_before_destruction` |
+| matrix | `aimux-ops/tests/ops_matrix.rs#every_manifest_op_crosses_every_kind_and_invalid_handle_state` |
+| metadata | `aimux-ops/tests/manifest_contract.rs#metadata_and_owned_control_schemas_are_complete` |
+| names | `aimux-ops/tests/manifest_contract.rs#names_are_case_sensitive_and_have_no_implicit_aliases` |
+| nested | `aimux-ops/tests/retry_hint.rs#retry_nesting_has_no_top_level_hint_and_retains_attempt_hints` |
+| node | `bindings/node/__test__/event_loop.spec.ts#event loop: timers advance with bounded drift during a native call` |
+| noderealm | `bindings/node/__test__/contract.native.ts` (file-level reference: foreign-Env rejection and environment teardown test) |
+| null | `aimux-ops/tests/error_envelope_golden.rs#optional_payload_fields_distinguish_absent_and_explicit_null` |
+| runtimeconfig | `aimux-ops/tests/runtime.rs#startup_configuration_uses_native_freeze_authorities` |
+| providercreate | `aimux-ops/src/ops/provider.rs#create_uses_the_existing_package_factory` |
+| registrycreate | `aimux-ops/src/ops/registry.rs#duplicate_keys_are_rejected` |
+| providermodel | `aimux-ops/src/ops/provider.rs#model_returns_all_eight_exact_handle_kinds` |
+| providerinvoke | `aimux-ops/src/ops/provider.rs#invoke_returns_only_runtime_discovery_and_forbids_arbitrary_rpc` |
+| providerwrap | `aimux-ops/src/ops/provider.rs#wrap_applies_each_middleware_and_keeps_files_and_discovery` |
+| providercustom | `aimux-ops/src/ops/provider.rs#custom_keeps_aliases_default_method_and_strong_references` |
+| modelresolve | `aimux-ops/src/ops/registry.rs#resolution_preserves_exact_ids_and_reports_safe_source` |
+| modelinfo | `aimux-ops/src/ops/registry.rs#direct_models_have_no_invented_source_and_empty_wrap_retains_modality` |
+| composite | `aimux-ops/tests/composite.rs#dropped_router_children_keep_working_with_independent_retry_budgets` |
+| text | `aimux-ops/src/ops/text.rs#real_dispatch_runs_all_six_text_operations` |
+| embedding | `aimux-ops/src/ops/modalities.rs#embedding_many_preserves_all_inputs` |
+| modality | `aimux-ops/src/ops/modalities.rs#transcription_base64_bytes` |
+| files | `aimux-ops/tests/files.rs#uploads_canonical_base64_and_preserves_options_and_context_abort` |
+| transcription | `aimux-ops/tests/operation.rs#native_binary_and_json_poll_share_the_registered_operation_service` |
+| binaryinput | `aimux-ops/tests/operation.rs#native_binary_and_json_poll_share_the_registered_operation_service` |
+| operationstate | `aimux-ops/tests/operation.rs#native_binary_and_json_poll_share_the_registered_operation_service` |
+| credential | `aimux-ops/tests/handles.rs#credential_creation_is_future_and_never_exports_supplied_material` |
+| middleware | `aimux-ops/tests/handles.rs#trace_middleware_creation_retains_store_and_audit_configuration` |
+| recording | `aimux-ops/tests/recording.rs#ring_lifecycle_keeps_snapshots_and_replacement_and_dropped_handles` |
+| session | `aimux-ops/tests/session.rs#queries_use_selected_store_and_preserve_core_wire_and_bounds` |
+| replaycapabilities | `aimux-ops/tests/replay.rs#future_capabilities_return_projected_unsupported_even_with_complete_http_data` |
+| replaylive | `aimux-ops/tests/replay.rs#language_live_matches_the_existing_core_result_twice` |
+| repair | `aimux-ops/src/ops/misc.rs#context_matches_core_and_preserves_no_tools_null` |
+| auth | `aimux-ops/tests/misc.rs#invalid_auth_request_is_projected_once_without_token_values` |
+| drop | `aimux-ops/tests/ops_matrix.rs#every_manifest_op_crosses_every_kind_and_invalid_handle_state` |
+| runtimeinfo | `aimux-ops/tests/runtime.rs#description_matches_the_real_manifest_and_digest` |
+| registryresolve | `aimux-ops/src/ops/registry.rs#resolution_preserves_exact_ids_and_reports_safe_source` |
+| operation | `aimux-ops/tests/operation.rs#native_binary_and_json_poll_share_the_registered_operation_service` |
+| ownership | `aimux-ops/tests/handle_lifecycle.rs#every_owner_pair_is_isolated_and_foreign_errors_reveal_nothing` |
+| poll | `aimux-ops/tests/operation.rs#a_concurrent_reader_fails_and_timeout_keeps_operation_running` |
+| projection | `aimux-ops/tests/dispatch_contract.rs#the_dispatch_projection_keeps_the_original_clock_and_cause` |
+| python | `bindings/python/tests/test_ops_native.py#test_gil_heartbeat_every_blocking_call_family` |
+| pythonstream | `bindings/python/tests/test_ops_native.py#test_full_queue_close_does_not_deadlock` |
+| pythonwire | `bindings/python/tests/test_ops_native.py#test_python_serialization_errors_use_binding_domain` |
+| queue | `aimux-ops/tests/limits.rs#item_budget_backpressures_and_preserves_fifo` |
+| recordingschema | `aimux-core/src/recording.rs#schema_two_is_written_and_released_schemas_are_read` |
+| reserve | `aimux-ops/tests/limits.rs#oversize_is_rejected_before_payload_allocation_even_when_full` |
+| retired | `aimux-ffi/tests/exports_smoke_test.rs#retired_headers_and_session_are_absent` |
+| retry | `aimux-ops/tests/retry_hint.rs#header_precedence_golden_vectors` |
+| schema | `tools/aimux-codegen/tests/generation.rs#schemas_resolve_locally_and_validate_as_draft_2020_12` |
+| secondary | `aimux-ops/tests/dispatch_contract.rs#secondary_handles_use_the_same_owner_resolver_before_handler_entry` |
+| stream | `aimux-ops/tests/stream_terminal.rs#run_native_shared_vectors` |
+| swift | `bindings/swift/Tests/AimuxTests/ContractTests.swift#boundedLosslessStream` |
+| swiftcancel | `bindings/swift/Tests/AimuxTests/ContractTests.swift#cancelFullQueue` |
+| swiftclose | `bindings/swift/Tests/AimuxTests/ContractTests.swift#concurrentCloseAndAdmission` |
+| terminal | `aimux-ffi/src/abi.rs#terminal_error_is_only_in_callback_and_missing_end_is_reported_there` |
+| trace | `aimux-ops/tests/trace_middleware.rs#model_and_provider_wrap_trace_generation_streams_and_retain_dependencies` |
+| types | `aimux-ops/tests/manifest_contract.rs#every_descriptor_type_reference_names_an_existing_type` |
+| unknown | `aimux-ops/tests/error_envelope_golden.rs#unknown_variants_and_nested_nulls_survive_without_reclassification` |
+
+## MUST and lifecycle obligations
+
+| ID | RFC section | Requirement | Existing test keys | Status |
+|---|---|---|---|---|
+| R001 | §2.1 | Use one typed dispatch path; do not duplicate the provider table or retry policy. | dispatch | met |
+| R002 | §2.1 | Shared dispatch returns Future/Stream and typed results; only the C adapter owns guarded blocking execution; Node/Python use their execution bridges. | dispatch, node, python | met |
+| R003 | §2.1 | Canonical types never depend on FFI. | metadata, controls | gap — [G-f](rfc-0039-implementation.md#registered-gaps): The crate dependency direction is checked from Cargo manifests; no dedicated architectural dependency test proves the full closure. |
+| R004 | §2.2 | Every op descriptor carries the RFC metadata: version, mode, scope, allowed kinds, type references, runtime handle fields, capabilities, cancellation, side effects, ownership, byte policy, retry owner and source inventory. | metadata, controls | met |
+| R005 | §2.2 | Reference canonical stable type IDs; never define duplicate business types in the op table. | metadata, controls | gap — [G-d](rfc-0039-implementation.md#registered-gaps): Business type IDs exist; complete canonical schemas/type generation are absent. |
+| R006 | §2.2 | Match exact case-sensitive op names; reject aliases and case changes. | names | met |
+| R007 | §2.2 | Reject unknown control fields while preserving open providerOptions and JSON values. | metadata, controls | met |
+| R008 | §3.1 | Handle 0 is global control scope only; never infer a provider. | matrix, inventory | met |
+| R009 | §3.1 | Represent every listed kind distinctly, including Registry, eight model kinds, runtime and devtools kinds. | matrix, inventory | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R010 | §3.1 | Operation subkind/state/capabilities govern access; audio push is transcription-only; distinguish trace middleware/store and session strings/operations. | matrix, inventory | met |
+| R011 | §3.2 | Every unlisted op × kind fails InvalidHandle with expected/actual before provider work; no wildcard fallback except explicit handle.drop rules. | matrix, inventory | met |
+| R012 | §3.2 | Expand each multi-op RFC row into independent descriptors and tests. | matrix, inventory | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R013 | §3.2 | runtime.describe returns credential-free versions/capabilities; runtime.configure permits only existing logging, startup proxy and defaults, rejects unknown keys and frozen changes. | runtimeconfig | met |
+| R014 | §3.2 | provider.create/default use the existing descriptor table, validate each typed runtime slot, and reject callback JSON. | providercreate | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Construction validates typed slots, but there is no complete authoritative provider/default descriptor inventory; some declared slots fail explicitly. |
+| R015 | §3.2 | registry.create rejects duplicate keys and resolves Provider references; registry.provider preserves source/extensions. | registrycreate | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Duplicate keys and provider retention are covered; complete per-handle source/extensions are not. |
+| R016 | §3.2 | provider.model selects exact modality by method/modelId, uses descriptor default, and reports UnsupportedFunctionality for missing methods. | providermodel | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Explicit methods work; every package does not supply an authoritative default method. |
+| R017 | §3.2 | provider.invoke accepts registered existing discovery/vendor methods only; never arbitrary method RPC. | providerinvoke | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Only listModels is supported, not a complete registered named-vendor-method surface. |
+| R018 | §3.2 | provider.wrap accepts only built-in middleware with per-capability checks and preserves source/extensions. | providerwrap | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Existing wrappers work; complete per-handle/package provenance is absent. |
+| R019 | §3.2 | provider.custom accepts explicit existing model mappings/defaults/built-in wrappers; reject host function objects. | providercustom | met |
+| R020 | §3.2 | model.resolve uses explicit Registry namespace/key/method/modelId and never Vercel Gateway. | modelresolve | met |
+| R021 | §3.2 | model.info exposes identity/modality/capabilities/source without settings/keys; model.wrap preserves modality with compatible built-in middleware. | modelinfo | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Identity/modality and wrappers exist; source metadata is object-level and owner-scoped. |
+| R022 | §3.2 | Router requires nonempty Language children, explicit strategy and per-child retry budgets; MoA requires Language references and aggregator; retain strong references rather than serialized identities. | composite | met |
+| R023 | §3.2 | Text call/stream/OpenAI operations resolve optional Abort and registry/model references during DTO lift; output.toOpenAI uses an explicit metadata selector. | text | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Text dispatch takes a Language handle; the stronger registry/string-model lifting requirement is not implemented in TextRequest. |
+| R024 | §3.2 | embedding.embedMany processes every input, not just the first; embedding operations honor optional Abort. | embedding | met |
+| R025 | §3.2 | Image/speech/transcription/reranking/video/search return canonical modality results; transcription bytes are V4 base64; adapter does not own video submit/poll retry. | modality | met |
+| R026 | §3.2 | provider.files requires existing advertised files capability; files.upload uses canonical base64 and never retries an entire upload automatically. | files | met |
+| R027 | §3.2 | transcription.start requires doStream; accepted connection failures are delivered through Operation terminal, not a second start error. | transcription | met |
+| R028 | §3.2 | operation.push accepts bytes only while transcription input is open; acknowledgement means queued acceptance, not provider processing. | binaryinput | met |
+| R029 | §3.2 | operation.inputDone is idempotent; operation.next is single-consumer poll returning part/ended/timeout; status retains terminal outcome; cancel distinguishes first/alreadyRequested/alreadyTerminal. | operationstate | met |
+| R030 | §3.2 | Abort signal is idempotent across threads; transport and credential creation expose only existing Rust built-ins and never secrets. | credential | gap — [G-c](rfc-0039-implementation.md#registered-gaps): Credential creation remains Future/UnsupportedFunctionality. |
+| R031 | §3.2 | Middleware is built-in only and trace variant requires TraceStore; trace queries/clear use data filters and session strings. | middleware | met |
+| R032 | §3.2 | Recorder selects ring/JSONL and explicit capture policy; attach is explicit; flush reports actual persistence failure; drop never claims flush. | recording | gap — [G-b](rfc-0039-implementation.md#registered-gaps): Current full capture and persistence errors are covered; the complete RFC-0041 capture/schema policy is not implemented. |
+| R033 | §3.2 | SessionStore infer is explicit; sessionId stays a string and unknown-session queries preserve their existing semantics. | session | met |
+| R034 | §3.2 | Replay uses current RFC-0041 format; capabilities are built-in typed handles; inspect/dryRun have no side effects. | replaycapabilities | gap — [G-b/G-c](rfc-0039-implementation.md#registered-gaps): Current recording reader remains; transport capability handles are unavailable. |
+| R035 | §3.2 | replay.live requires explicit current Registry/Model target and credentials; never restore old configuration. | replaylive | met |
+| R036 | §3.2 | Catalogue keeps existing source/download guards; tool repair operations are pure DTOs with no host callback handles. | repair | met |
+| R037 | §3.2 | auth.codexRefresh uses existing refresh input with no automatic retry, token recording or generic logging. | auth | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Invalid-input/secrecy coverage exists; no successful authenticated refresh test establishes the full requirement. |
+| R038 | §3.2 | handle.drop accepts every kind and 0/unknown idempotently; remove registry entry before cancel/reclaim. | drop | met |
+| R039 | §3.2 | Do not add descriptor-only skills/Evaluation/Batch/SpeechTranslation capabilities; unavailable current capabilities return UnsupportedFunctionality, never empty success. | runtimeinfo | met |
+| R040 | §3.2 | Resolve runtime string-model inputs through an explicit registry; never weaken the primary-handle matrix. | registryresolve | gap — [G-f](rfc-0039-implementation.md#registered-gaps): Explicit registry resolution exists; no general runtime string-model lift is supplied by text control DTOs. |
+| R041 | §3.3 | Allocate globally monotonic IDs from 1 without wrap/reuse; exhaustion fails without overwriting existing entries. | ids, exhaust | met |
+| R042 | §3.3 | JSON handles/request IDs/seq are decimal strings; C handles are uint64_t. | ids | met |
+| R043 | §3.3 | Record and validate unforgeable owner context: Node Env, Python interpreter and shared CProcess; foreign owners fail InvalidHandle without object details. | ownership, noderealm | met |
+| R044 | §3.3 | Never transfer bare handles across Node realms, Python interpreters or C/native adapter owners; no owner-transfer API. | ownership, noderealm | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Registry and Node realm rejection are covered; actual Python subinterpreter import/teardown is not established. |
+| R045 | §3.3 | Validate and clone under registry lock, release before await, callback, I/O, join or serialization. | locks | met |
+| R046 | §3.3 | Ordinary drop invalidates future lookups while an acquired strong-reference call may finish; explicit Abort cancels calls; Operation drop cancels its task. | lifetime, secondary | met |
+| R047 | §3.3 | Provider/Registry/Model/Files/composites retain dependencies; dropping parent or child handles leaves created objects usable. | lifetime, secondary | met |
+| R048 | §3.3 | Runtime capability injection captures strong references and obeys resolver/provider lifecycle, never dangling integer references. | lifetime, secondary | met |
+| R049 | §3.3 | Allow one reader plus concurrent push/cancel; reject a second reader as ConcurrentConsumer; linearize push/inputDone admission. | poll, operation | met |
+| R050 | §3.3 | Close/Dispose atomically takes the handle and is idempotent; finalizer is leak prevention, not flush or successful terminal. | finalizer, goclose | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Native cleanup and several close races are covered; every language/platform finalizer race has not been executed. |
+| R051 | §3.3 | Future stdio owner is connection-local; reject foreign-connection handles without details and never transfer bare handles across connections. | ownership | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Stdio connection ownership is deferred; the cited test covers native owners only. |
+| R052 | §4.1 | Generate exactly the frozen primitive signatures, uint64 handles, callback signature and ABI encoding major<<16 &#124; minor (v1). | gen, exports | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R053 | §4.1 | Only result callbacks are exposed; no reverse fetch/token/model callbacks; generated named conveniences call the primitives, with no old-ABI forwarding compatibility. | gen, exports | met |
+| R054 | §4.1 | aimux_abort only signals without block_on and is callable in callbacks; abort.signal reports invalid handles; drop/free tolerate 0/NULL. | callback | met |
+| R055 | §4.1 | Document invalid owned pointers, double free and unterminated C strings as caller violations; do not promise runtime recovery. | abi | met |
+| R056 | §4.2 | Use NUL-terminated UTF-8 with escaped internal NUL; reject invalid UTF-8 and do not normalize NULL/empty/null configuration to {}. | abi | met |
+| R057 | §4.2 | Fallible APIs return NULL on success and an owned error on failure; zero every provided pointer/numeric output before failure so no stale value remains. | abi | met |
+| R058 | §4.2 | All JSON/manifest/error getter strings are owned and freed with aimux_free_string; errors use aimux_error_free; never mix borrowed manifest ownership. | abi | met |
+| R059 | §4.2 | Callback bytes expire on callback return; wrappers synchronously copy retained bytes; keep context through aimux_stream return and never callback afterward. | callback | met |
+| R060 | §4.2 | Push copies/consumes bytes before returning; NULL+0 is legal, NULL+positive length is NullPointer; all length arithmetic is checked. | abipush | met |
+| R061 | §4.2 | Poll uses PART=1/ENDED=2/TIMEOUT=3; no JSON allocation for ended/timeout; adapters project the same typed PollResult; remove old next_part symbol. | abipoll | met |
+| R062 | §4.2 | Poll wait timeout is not Operation Timeout; poll errors zero out_part/out_state; actual operation timeout arrives as terminal error. | abipoll | met |
+| R063 | §4.3 | Run blocking C adapter work off GUI/JS/UI-isolate threads; detect reentrancy before every blocking path and return ReentrantCall without catch_unwind reliance. | callback, node | gap — [G-i](rfc-0039-implementation.md#registered-gaps): C reentry and native bridges are covered; all UI/main-actor heartbeat paths lack platform execution evidence. |
+| R064 | §4.3 | Catch host callback exceptions at boundary, latch first failure, abort, suppress later consumer delivery and throw exactly one CallbackFailure only after native/callback return. | javacallback | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Java/C++ latching has tests; equivalent execution for every language is not established. |
+| R065 | §4.3 | Void native callbacks do not detect host exceptions; native observes Abort/cancelled; no C++ exception crosses extern C. | javacallback | met |
+| R066 | §4.3 | Public callback contract requires bounded callbacks that only transfer results and states that a nonreturning callback cannot be forcibly cancelled. | callback | gap — [G-i](rfc-0039-implementation.md#registered-gaps): The public bounded-callback rule is documented; no test can prove forced interruption of a nonreturning callback. |
+| R067 | §4.3 | Background joins run outside registry locks; initial transcription cleanup cap is 5 seconds; expiry records cleanup failure/cancelled, never normal finish. | cleanup, locks | met |
+| R068 | §4.3 | Finalizers only cancel and enqueue reclamation; never block GC/finalizer threads. | finalizer | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Native queueing is tested; every platform GC/finalizer route still needs execution evidence. |
+| R069 | §5.1 | Pre-acceptance wire/handle/capability/start errors return exactly one error with no callback. | stream, terminal | met |
+| R070 | §5.1 | Every accepted Operation has exactly one terminal, including first connection failure; terminal control is distinct from business parts. | stream, terminal | met |
+| R071 | §5.1 | Recoverable V4 error and finish parts remain events; only actual runtime failure terminates the Operation. | stream, terminal | met |
+| R072 | §5.1 | Each C callback delivers one event/end; the last callback is end even for cancellation/failure; late cancellation cannot rewrite completed success. | stream, terminal | met |
+| R073 | §5.1 | After end delivery stream returns NULL and errors occur only in end.error; preflight errors occur only in the return value. | stream, terminal | met |
+| R074 | §5.1 | Callback transfer failure uses the wrapper latch: native emits cancelled end and returns NULL; wrapper delivers only saved CallbackFailure; exceptions never cross ABI. | stream, terminal | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Native terminal and host latches have tests; not every adapter has shared-vector execution evidence. |
+| R075 | §5.1 | No old on_done callback or NULL-JSON success sentinel; EOF alone is never success. | stream, terminal | met |
+| R076 | §5.1 | Pull terminal has a separate state slot; after buffered parts deliver terminal error once then ENDED; status retains outcome; full queues never lose Aborted. | stream, terminal | met |
+| R077 | §5.2 | Abort is one-shot/shareable/idempotent; operations hold a clone; dropping Abort handle does not signal. | abort | met |
+| R078 | §5.2 | Future.cancel, Task cancellation, iterator return/close and collector cancellation trigger underlying Abort. | javafuture, swiftcancel, pythonstream | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Cancellation paths exist with local tests; exhaustive cross-language runtime execution is incomplete. |
+| R079 | §5.2 | Cancellation interrupts connect, retry backoff, HTTP-body/WS receive, input wait, output-capacity wait and blocked push. | fullcancel | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Operation waits/full queues are covered; all real transports and retry/backoff routes are not proved by these tests. |
+| R080 | §5.2 | Cancellation stops subsequent work but cannot revoke completed billable submission; do not claim billing rollback. | nested | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Billing limits are documented; no automated test proves external submission rollback, which is not promised. |
+| R081 | §5.2 | After first semantic output adapters never regenerate, switch models or replay events; retries belong only to operation policy/safe poll/download, never another binding retry loop. | nested | met |
+| R082 | §5.2 | Disconnected execution can have unknown outcome; never automatically replay by the same ID on reconnect. | nested | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Unknown-outcome policy is documented; no reconnecting stdio transport exists. |
+| R083 | §5.3 | Enforce both input 64 items/8 MiB and output 256 items/8 MiB; one event/chunk ≤1 MiB; Node/Python smaller 64-item bridges obey byte/terminal rules; allow lowering, never unlimited. | limits | met |
+| R084 | §5.3 | Reject oversized items with ResourceLimit before allocation; item count alone is not a memory bound. | reserve | gap — [G-g](rfc-0039-implementation.md#registered-gaps): Admission is bounded before copy/serialization; this does not bound all preceding provider/core allocations. |
+| R085 | §5.3 | Resource limits need RFC-0038 measurements before stable freeze; do not present them as performance results. | limits | gap — [D5](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Implemented values are proposals; no RFC-0038 freeze measurements are claimed. |
+| R086 | §5.3 | Full queue stops upstream polling without dropping/overwriting deltas or collecting the full stream. | queue | gap — [G-g](rfc-0039-implementation.md#registered-gaps): Bounded bridges stop their producer, but the upstream core text pump is still unbounded. |
+| R087 | §5.3 | Abort/drop never require data capacity; independent terminal slot preserves outcome; explicit consumer close ends cancelled/consumerClosed and may discard pending data. | fullcancel | met |
+| R088 | §5.3 | Swift implements lossless awaitable/bounded or background-blocking bridge; no AsyncThrowingStream drop-oldest/newest policy. | swift | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Bounded Swift implementation/tests exist; full Swift runtime/platform evidence is not established here. |
+| R089 | §5.3 | Flutter cross-isolate bridge uses credit/ack; an unbounded SendPort is not backpressure. | dartcredit | met |
+| R090 | §6.1 | Use kind/code/message/error plus optional retryAfterMs and camelCase; RFC-0039 §6.1 still shows a type payload discriminator. | error, unknown, null | met — [D1](rfc-0039-implementation.md#registered-differences-from-rfc-0039): RFC-0042 uses name and isRetryable where defined, with no top-level retryable or type; correct the RFC example to name when merged up with master (the RFC file is absent from this branch base). |
+| R091 | §6.1 | Keep aimux/recording/binding/protocol domains with discriminated payloads; Node/Python parameter/serialization failures use binding, not provider API failure. | error, unknown, null | met |
+| R092 | §6.1 | Preserve current code meanings/ranges: AiMux 1–20, Recording 100–105, binding 200–206; protocol 300–306; do not reassign historic code slots. | error, unknown, null | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R093 | §6.1 | Preserve LoadApiKey/LoadSetting/provider/model/unsupported errors, Retry history, repair original/cause chains, RecordingError::Write and FFI parameter fields; never collapse to string Other. | error, unknown, null | met |
+| R094 | §6.1 | Expose HTTP status only when a response was observed; no fabricated 401/500 for key, parse or offline auth failures; preserve token-expired meaning. | error, unknown, null | met |
+| R095 | §6.1 | Preserve absent versus explicit null and missing hint versus 0; unknown errors keep their raw object/code without guessing a known subtype. | error, unknown, null | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Shared envelopes preserve unknown variants; exhaustive unknown-error preservation by every language is incomplete; no common unknown-error class is supplied. |
+| R096 | §6.1 | Project an error once with captured time; C/Node/Python share it; repeated getters must not recompute HTTP-date hint. | projection, date | met |
+| R097 | §6.2 | Capture injectable now once at first shared-dispatch error crossing. | projection, date | met |
+| R098 | §6.2 | Only ApiCall response headers derive hints; try retry-after-ms numeric, retry-after fractional seconds, then HTTP-date minus now, case-insensitively. | retry, date | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R099 | §6.2 | Accept finite nonnegative checked values, truncate milliseconds toward zero; NaN/Infinity/overflow/past dates yield no hint, never saturate; freeze negative-ms precedence by upstream golden. | retry, date | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R100 | §6.2 | Retry aggregate keeps attempt errors/hints, has no aggregate hint, and is nonretryable under existing AI SDK payload semantics; never copy the final attempt hint to the top. | nested, retry | met |
+| R101 | §6.2 | Hint never authorizes automatic retry; Abort/timeout do not retry; operation policy checks budget, attempts, semantic output and duplicate-charge risk. | nested, retry | met |
+| R102 | §6.2 | Use one normalized parser shared from core; no eight language-specific parsers; fixed-clock tests cover all listed numeric/date/header/nesting cases. | nested, retry | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R103 | §6.3 | Record boundary-specific classification: preflight proves no provider execution; runtime failure retains classification/attempts and prior data. | stream | met |
+| R104 | §6.3 | Recoverable provider errors remain data and retain subsequent events without changing terminal. | stream | met |
+| R105 | §6.3 | Serialization/bridge failure cancels and produces one binding/bridge failure, never {} or false success; cancellation preserves its source error and never resends. | stream | met |
+| R106 | §6.3 | Redact default errors, trace and recordings; refresh-token/credential payloads never enter generic debug dumps; capture policy follows RFC-0041. | trace | gap — [G-b](rfc-0039-implementation.md#registered-gaps): Current canonical redaction remains; full future recording policy and secret-path audit are not established by the cited test. |
+| R107 | §6.3 | For future stdio disconnect/write failure, expose transport failure/unknown outcome rather than success or redelivery; cancel unterminated operations and record incomplete reason. | stream | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Stdio disconnect/write-failure behavior is deferred. |
+| R108 | §7.1 | Reject ABI major mismatch at load; minor additions cannot alter existing layout/calling convention/ownership. | java | met |
+| R109 | §7.1 | opsVersion is major.minor with explicit supported type revisions/capabilities; same major is required; highest-common-minor selection applies only to future hello negotiation. | metadata | gap — [G-h](rfc-0039-implementation.md#registered-gaps): opsVersion exists; consumed-business-type revision/capability negotiation metadata does not. |
+| R110 | §7.1 | Manifest revision/digest identify canonical sorted-key JSON SHA-256, not another protocol version or proof of binary equality. | digest | met |
+| R111 | §7.1 | Recording schema is independently owned by RFC-0041; only new recordings are readable; no extra live-ops handshake version. | recordingschema | gap — [G-b](rfc-0039-implementation.md#registered-gaps): Writers use schema 2 and readers accept schemas 1 and 2; schema 3 and removal of old-schema reading are planned as the final step of this series under RFC-0041. |
+| R112 | §7.1 | Manifest records RFC-0042 schema/type revision and pinned SDK baseline; no dataFormatVersion/data_format_version handshake; JSON parseability does not establish variant compatibility. | types | gap — [G-d/G-h](rfc-0039-implementation.md#registered-gaps): There is no complete RFC-0042 type revision/hash and pinned SDK baseline catalogue. |
+| R113 | §7.2 | Future stdio starts with hello and decimal-string request ID; examples do not claim implementation. | schema | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Stdio hello/request-ID transport is deferred. |
+| R114 | §7.2 | Future hello returns chosen version/type capabilities/digest/supportedOps/flags/minimum limits and projects exact negotiated control schema; never ignore unknown controls. | schema | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Stdio negotiation and negotiated schema projection are deferred. |
+| R115 | §7.2 | Future hello rejects/closes on no common version, missing requiredOp or unavailable type capability; no legacy downgrade and no provider work before handshake. | schema | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): No stdio handshake implementation exists. |
+| R116 | §7.2 | FFI bindings and raw C initialize by checking ABI then manifest, exact current/expected ops version and consumed schema revision/hash; reject mismatch with no implicit minor negotiation. | gen | gap — [G-h](rfc-0039-implementation.md#registered-gaps): ABI/ops loaders exist; consumed-business-type revision/hash checks are unavailable. |
+| R117 | §7.2 | Bundled Node/Python also check generated-product consistency and expose version/digest; co-packaging does not waive drift checks. | gen | met — Node and Python require the exact generated ABI version, ops version and manifest digest at load. |
+| R118 | §7.2 | Unconsumed package/catalogue metadata changes need not change consumed type hash; only explicit future stdio hello offers minor projection. | gen | gap — [G-h](rfc-0039-implementation.md#registered-gaps): No per-consumed-business-type hashes exist; metadata independence is not testable yet. |
+| R119 | §7.3 | Generate JSON Schema 2020-12 from manifest with stable resolving $id/type-ID refs and disjoint oneOf discriminators. | schema, controls | gap — [G-d](rfc-0039-implementation.md#registered-gaps): Control schemas resolve; business schemas and all business discriminators are incomplete. |
+| R120 | §7.3 | Controls set additionalProperties:false; explicitly open providerOptions/metadata/JSON values; never globally strip private provider data. | schema, controls | met |
+| R121 | §7.3 | Provide schemas and positive/negative vectors for requests/results/events/end/errors, all handles/options missing/null, integer ranges, base64 bytes, time strings and modalities. | schema, controls | gap — [G-d/G-i](rfc-0039-implementation.md#registered-gaps): Control vectors and representative business tests exist; complete result/event/modality vectors do not. |
+| R122 | §7.3 | Schema validation does not replace live-handle, capability, state-machine or reentrancy runtime validation; duplicate request-ID checks belong to future request transport. | matrix | met |
+| R123 | §7.3 | Unknown business unions fail explicitly rather than decode to empty content; unknown-error projections preserve raw values without executing unknown behavior. | unknown, schema | gap — [G-d/G-i](rfc-0039-implementation.md#registered-gaps): Shared unknown errors survive; no common unknown-error class or complete language-wide strict business-union evidence is supplied. |
+| R124 | §7.3 | Different major, unsupported type capability or changed meaning of the same op must fail compatibility tests. | unknown, schema | gap — [G-h](rfc-0039-implementation.md#registered-gaps): ABI/ops mismatch tests exist; unsupported business-type capability checks cannot run without metadata. |
+| R125 | §7.3 | Future negotiated old minor sends exactly that control schema; missing requiredOps fails. | unknown, schema | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): Negotiated old-minor stdio projection is deferred. |
+| R126 | §9 | Expose Provider, Registry, typed models, Operation/stream, Abort, devtools and structured errors; typed and raw JSON layers behave identically. | inventory | gap — [G-d/G-i](rfc-0039-implementation.md#registered-gaps): Current resources expose the ops; complete raw/typed equivalence for every business DTO is not established. |
+| R127 | §9.1 | Generate aimux.h/op constants/opaque error and ownership comments; C++ examples use RAII for owned strings/errors/handles with no exception crossing ABI. | gen, exports | met |
+| R128 | §9.1 | Named provider/model convenience APIs implement the new contract; old aimux_openai_new-style symbols disappear and exact export allowlist is published. | gen, exports | met |
+| R129 | §9.1 | Run C11/C++ compile/link/runtime, every error free, NULL output sentinels, invalid UTF-8, oversized length, callback lifetime, drop races, full wrong-kind matrix and ASan/LSan; distinguish cross-compile from executed targets. | abi, callback | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Native tests exist; all-platform runtime/ASan/LSan and accepted live callback coverage are incomplete. |
+| R130 | §9.2 | Keep cgo; explicit Close and runtime.KeepAlive guard native resources; context cancellation aborts; cgo.Handle stores only callback context and no retained Go pointers in Rust. | goclose | met |
+| R131 | §9.2 | Use bounded Go channel, producer as only closer, Err readable only after close, and cancellation-select on full-queue callback send. | go | met |
+| R132 | §9.2 | Generated Go DTOs preserve missing/null and uint64 decimal strings; errors.As exposes typed errors with full envelope. | gowire | gap — [G-d/G-i](rfc-0039-implementation.md#registered-gaps): Representative Go codecs exist; generated full DTO coverage and all optional/null distinctions remain incomplete. |
+| R133 | §9.2 | Exercise race detector, concurrent Close/Generate, cancellation before start/full queue/terminal race, unread Cancel, zero cgo handles, child-drop composite and all-modality typed round trips. | go, goclose | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Race/fixture/native tests exist; the all-modality real-service and platform matrix is incomplete. |
+| R134 | §9.3 | Generate JNA declarations once; retain Java 8 final classes/constructors/accessors rather than records; document any removed redundant business DTO Builders as breaking. | java | gap — [G-d](rfc-0039-implementation.md#registered-gaps): Portable Java declarations and Java 8 classes exist; JNA declarations are handwritten, not generated by the manifest generator. |
+| R135 | §9.3 | Use AutoCloseable with sync methods and explicit Executor Future; Future.cancel triggers Abort; callback context stays strongly referenced through native return. | javafuture | met |
+| R136 | §9.3 | Never wait for close write lock in callback holding model read lock; retain admitted-call references and separate close from cancellation. | javaclose | met |
+| R137 | §9.3 | Test supported JDK matrix, JNA 32/64 signatures, exception subtypes, UTF-8, Future.cancel, slow/throwing consumers, repeated close, Java 8 compile and early native-version mismatch. | java, javacallback | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Portable signatures and local tests exist; the supported JDK/32-bit runtime matrix is incomplete. |
+| R138 | §9.4 | Kotlin depends on same-version Java artifact; remove duplicate JNA/loader; keep exhaustive sealed AimuxException mapped from Java envelope without another field decoder. | kotlin | met |
+| R139 | §9.4 | Coroutines/Flow use IO dispatcher and bounded channel; collector cancellation aborts; no unbounded callbackFlow buffer. | kotlin | met |
+| R140 | §9.4 | Kotlin DTOs derive from the same manifest, never a second wire authority; Gradle/CI explicitly wires Java public types to Kotlin sealed projections. | kotlin | gap — [G-d](rfc-0039-implementation.md#registered-gaps): Kotlin reuses Java DTOs and sealed projections, but complete manifest-driven DTO generation is absent. |
+| R141 | §9.4 | Verify actual Java artifact resolution, sealed when, Flow.take(1)/cancel/errors, off-UI execution, provider/model interchange and matching error subtypes/unknown fallback. | kotlin | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Source-build interop tests exist; published artifact resolution and every platform are not verified. |
+| R142 | §9.5 | Use UInt64 wrappers with explicit close; blocking C calls run on background executor; AsyncSequence has real bounded backpressure. | swift | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Background Swift bounded implementation exists; full execution evidence is incomplete. |
+| R143 | §9.5 | Iterator termination or Task cancellation aborts; Unmanaged context releases exactly once after last callback; error conversion cannot throw across callback. | swiftcancel | gap — [G-i](rfc-0039-implementation.md#registered-gaps): BoundedStream uses iterator cancel and lease cleanup; Swift cancellation/context tests exist, but platform execution remains incomplete. |
+| R144 | §9.5 | Sendable claims require synchronization and close/admission race control; unchecked annotation alone is insufficient. | swiftclose | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Swift synchronization and race tests exist; platform execution remains incomplete. |
+| R145 | §9.5 | Test main-actor heartbeat, early for-await exit, full-queue cancel, concurrent close, context release counts, iOS simulator link, macOS vectors and unknown error preservation. | swift, swiftcancel | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Swift tests do not establish simulator linkage or all platform execution. |
+| R146 | §9.6 | Derive Dart FFI declarations from new header; keep platform loader/iOS DynamicLibrary.process; verify loaded version and manifest. | dart | met |
+| R147 | §9.6 | Blocking native work uses background isolate; callbacks obey Dart thread/isolate rules, never arbitrary Rust threads calling main-isolate callbacks; controlled bridge uses credit. | dartcredit | met |
+| R148 | §9.6 | NativeFinalizer uses separate nonblocking void(void*) trampoline/token, never casts uint64 drop to pointer ABI; explicit close detaches to prevent double release. | dartfinalizer | met |
+| R149 | §9.6 | Test UI heartbeat, stream pause/resume, credit-exhausted cancel, finalizer/close races, Android ABIs and iOS static force-link; replace old nm symbol expectation with required new symbols rather than deleting gate. | dart | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Dart bridge/runtime tests exist; Android ABI/iOS force-link installation is unverified and Windows streaming is unsupported. |
+| R150 | §9.7 | Keep napi-rs async Promise and AsyncIterator/ReadableStream; call shared typed dispatch without blocking C adapter; poll futures only in documented Tokio context. | node | met |
+| R151 | §9.7 | Wire AbortSignal, iterator.return, reader.cancel and environment shutdown to Abort; isolate realm-local handles and JS object lifetimes. | noderealm | met |
+| R152 | §9.7 | Existing result TSFN/Promise transport may remain, but expose no JS fetch/model/token/telemetry injection or deferred host callback capabilities. | node | met |
+| R153 | §9.7 | Test event-loop timer, slow/aborted/unconsumed streams, realm crossing, shutdown without hang, complete error properties, raw/typed consistency and provider/trace/replay vectors matching C. | node, noderealm | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Native lifecycle tests expect trace middleware creation to succeed; successful execution of every socket-dependent scenario and the complete shared vector set is not established here. |
+| R154 | §9.8 | Keep thin PyO3; extract owned parameters then release GIL for every potentially blocking generate, I/O construction, discovery, poll, flush and join; hold GIL only for Python-object access. | python | met |
+| R155 | §9.8 | Synchronous iterator has bounded Rust channel; close/context exit/cancel abort; StopIteration only for successful exhaustion; terminal error raises correct AimuxError subtype. | pythonstream | met |
+| R156 | §9.8 | No arbitrary Python callable fetch/credential/model or new asyncio callback bridge; retained async surface uses Python execution bridge and never labels blocking iterator async generator. | pythonwire | met |
+| R157 | §9.8 | Keep native PyO3 wheel packaging without ctypes library discovery or dual wheel scheme. | python | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): The PyO3 packaging path remains; an installed-wheel build/install/offline smoke is not established here. |
+| R158 | §9.8 | Test GIL heartbeat for all blocking routes, full-queue iterator.close, KeyboardInterrupt/explicit cancel, GC leaks, cause/Retry history, installed-wheel offline smoke and all-modalities typed round trip. | python, pythonstream | gap — [G-d/G-e/G-i](rfc-0039-implementation.md#registered-gaps): Local GIL/queue tests exist; installed wheel, Pydantic and exhaustive modality/platform evidence are incomplete. |
+| R159 | §10.1 | Keep RFC-0042 canonical types/wire/errors, RFC-0040 descriptors/settings/auth slots and RFC-0041 recording/replay ownership; this RFC owns op/control/lifecycle/bridges. | gen, types | gap — [G-b/G-d/G-f](rfc-0039-implementation.md#registered-gaps): Layer ownership is retained; the full descriptor/recording/type specification is not complete. |
+| R160 | §10.1 | One manifest drives dispatch registration, header, language ops/types/factories, schema, reference docs and vectors; handwritten loaders/bridges are allowed, handwritten provider behavior/field tables/per-provider constructor lists are not. | gen, types | gap — [G-d](rfc-0039-implementation.md#registered-gaps): The manifest generates headers/constants/control schemas, not all DTOs/factories/reference docs/vectors. |
+| R161 | §10.1 | Provider tool-call input remains V4 raw String while core tool input is parsed JSON; never reintroduce untagged ToolInput to merge them. | base64 | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Raw/parsed tool input separation remains in core; the cited byte test is not a complete tool-input conformance gate. |
+| R162 | §10.1 | EndFrame is transport control, separate from RFC-0042 business stream event types; no fifth StreamPart type system. | stream | met |
+| R163 | §10.2 | aimux-codegen --check regenerates in temporary directory and compares complete output sets; missing/stale/differing/format/digest/ref/doc-table drift fails; no divergent build.rs generation. | gencheck | gap — [G-d](rfc-0039-implementation.md#registered-gaps): Complete managed-output drift is tested; docs/facades/business vectors are not generated outputs. |
+| R164 | §10.2 | Generate op × kind × error-state matrix: allowed reaches correct probe handler; rejected never invokes provider; include 0/unknown/dropped/other runtime/exhausted. | matrix, exhaust | met |
+| R165 | §10.2 | Each DTO vector goes Rust encode → eight-language decode/encode → Rust decode; ignore object-key order only; preserve array order/precision/missing/null/metadata/bytes and unknown raw values where permitted. | gowire, schema | gap — [G-d/G-i](rfc-0039-implementation.md#registered-gaps): Representative round trips exist; no exhaustive eight-language corpus is executed. |
+| R166 | §10.2 | Dispatch and every binding share semantic records for accepted, preflight failure, finish, recoverable/terminal error, cancel/late cancel, reader close, duplicate finish, serialization failure and full queue. | stream | gap — [G-i](rfc-0039-implementation.md#registered-gaps): All native shared vectors run; the external binding-driver hook remains ignored and full adapter execution is incomplete. |
+| R167 | §10.2 | Compare export allowlist and generated header both ways; old constructors/payload getters/header references must scan to zero. | exports, retired | met |
+| R168 | §10.2 | Node/Python Rust dependency trees never reintroduce retired provider entry points. | exports, retired | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Retired files are checked, but this test does not audit both adapters full dependency trees. |
+| R169 | §10.2 | Common gates and every language-specific suite, Rust workspace tests/clippy/rustdoc, contract tests, binding jobs and packaging smoke use the same integrated SHA; language-only CI is insufficient. | stream, gencheck | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): CI definitions are not same-source all-platform build/test/package/install results. |
+| R170 | §10.2 | Keep byte-level cassette gates and existing fixtures; new/re-recorded recording data follows RFC-0041; historic inputs are explicit incompatibility negatives/assets, never fake old-format success. | recordingschema | gap — [G-b](rfc-0039-implementation.md#registered-gaps): Readers accept schemas 1 and 2; schema 3 and removal of old-schema reading remain the final planned step under RFC-0041. |
+| R171 | §10.2 | RFC-0038 owns performance/size/FFI/Node/Python overhead and RSS thresholds; this RFC supplies workloads/lifecycle assertions, not competing thresholds. | stream, gencheck | gap — [D5](rfc-0039-implementation.md#registered-differences-from-rfc-0039): RFC-0038 owns thresholds; measurements/reports for freeze are not supplied. |
+| R172 | §10.2 | Required suites include ops_matrix, handle_lifecycle, stream_terminal, error_envelope_golden, manifest_contract and every language vector suite; never mark an unrun platform as passed. | stream, gencheck | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Required suite sources exist; unrun platform results are not passes. |
+| R173 | §11.1 | Architecture acceptance requires resolved numbering/status/supersession, roadmap and architecture conflicts, with old coexistence dependencies revoked or rewritten. | exports, gencheck | gap — [G-e](rfc-0039-implementation.md#registered-gaps): Acceptance/supersession decisions are not proved by a runtime unit test. |
+| R174 | §11.1 | Schema readiness requires one authority for RFC-0042 DTOs, RFC-0040 descriptors and op table with generatable manifest/schema/vectors. | exports, gencheck | gap — [G-d/G-f](rfc-0039-implementation.md#registered-gaps): Canonical Rust types and op descriptors exist; the complete generated descriptor/type closure does not. |
+| R175 | §11.1 | Consumer migration requires full provider/runtime/devtools/C/eight-binding/CLI/Web/replay dependency closure, successful builds and zero old direct paths. | exports, gencheck | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Consumer source migration is not an all-platform build/install result; the obsolete Node benchmark package has been removed. |
+| R176 | §11.1 | Behavior verification requires same-SHA behavior and performance evidence for errors/terminal/cancel/backpressure/ownership/all-modalities/devtools; known failures have fixes, never hidden skips. | exports, gencheck | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Complete same-source behavior/performance evidence is absent. |
+| R177 | §11.1 | Final cutover removes old exports/headers/getters/constructors/old-only tests atomically with replacement coverage, symbol diff, installed-package smoke and asset manifest. | exports, gencheck | gap — [G-e/G-i/G-k](rfc-0039-implementation.md#registered-gaps): Export deletion is tested; installed assets, complete replacement coverage and offline mock-model migration remain incomplete. |
+| R178 | §11.1 | Release packaging builds all packages/binaries from one SHA with breaking guide and per-asset checksums/ABI/ops/type/manifest identity. | exports, gencheck | gap — [G-e/G-h](rfc-0039-implementation.md#registered-gaps): No complete published asset manifest with verified type identity/install results is supplied. |
+| R179 | §11.1 | Schema, consumer, behavior and cutover changes may be separate integration commits, never per-language compatibility releases; merge/replay parallel mainline changes and rerun all gates before publication. | exports, gencheck | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): No final publication/rebase gate record is supplied. |
+| R180 | §11.2 | Maintain coverage ledger for every old public capability → new op/type/facade/test; deleting provider symbols cannot delete trace/session/recording capabilities. | exports, gencheck | gap — [G-d/G-i/G-k](rfc-0039-implementation.md#registered-gaps): The ledger maps all old declarations but explicitly records partial equivalence and offline replay gaps. |
+| R181 | §11.2 | Maintain automated deletion ledger for old symbols/headers/imports/dependency edges; name replacement test before deleting old-only test; line-count reduction is not acceptance. | exports, gencheck | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Symbol/file deletion tests exist; exhaustive old-only-test equivalence and dependency-edge deletion are not proved. |
+| R182 | §11.2 | Release matrix records build/test/package/install separately for every supported OS/arch/library/package, including C/C++, Swift modulemap, Flutter iOS force-link, JNA native, Go linking, Node prebuild and Python wheel. | exports, gencheck | gap — [G-e](rfc-0039-implementation.md#registered-gaps): Build/test/package/install results are incomplete for the full release matrix. |
+| R183 | §11.2 | Every asset carries identical source SHA, ABI/ops/type revision, recording schema and manifest digest; Kotlin pins same-series Java; reject accidental old native loads. | exports, gencheck | gap — [G-e/G-h](rfc-0039-implementation.md#registered-gaps): Kotlin pins Java; all asset/type-revision identity and install evidence are incomplete. |
+| R184 | §11.2 | Regression evidence contains shared vectors, wrong-kind tables, terminal/full-queue cancel, GIL/event-loop/UI heartbeats, resource counts and RFC-0038 reports. | exports, gencheck | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Narrow local tests do not provide the full same-source platform/performance bundle. |
+| R185 | §11.2 | Breaking guide states removed one-shot factories/settings/aliases/old wire/recording readers, new provider→model examples and upgraded calls; do not add compatibility adapter or data migrator. | recordingschema | gap — [G-b](rfc-0039-implementation.md#registered-gaps): The guide states schema-2 writing and schema-1/2 reading; schema 3 and removal of old-schema reading remain the final planned step under RFC-0041. |
+| R186 | §11.2 | Never declare cutover complete while a required language is unmigrated, a supported platform is build-only, or an asset is unverified; support reduction needs separate accepted product decision, never automatic skip. | exports | gap — [G-e](rfc-0039-implementation.md#registered-gaps): No complete release/cutover acceptance is claimed. |
+| R187 | §11.3 | Before merge, fix or withdraw entire failed integration branch; mainline stays old version with no temporary half-switch aliases. | exports | gap — [G-e](rfc-0039-implementation.md#registered-gaps): No branch withdrawal/recovery rehearsal evidence is supplied. |
+| R188 | §11.3 | After release failure, pause rollout and withdraw/mark bad assets under repository policy; users can pin previous complete release. | exports | gap — [G-e](rfc-0039-implementation.md#registered-gaps): Pinning previous complete assets is documented; publisher withdrawal/incident evidence is absent. |
+| R189 | §11.3 | New bindings never auto-load old ABI and never silently read new recordings as old format. | exports | gap — [G-b/G-e](rfc-0039-implementation.md#registered-gaps): Old ABI mismatches are rejected; retained recording compatibility and full platform installs remain gaps. |
+| R190 | §11.3 | Release notes explicitly warn rollback may not read new-version data, require keeping originals and promise no automatic conversion. | exports | gap — [G-e](rfc-0039-implementation.md#registered-gaps): Rollback data preservation is documented; actual release notes/assets are not certified here. |
+| R191 | §11.3 | Repair release rebuilds complete assets from new all-green SHA; no same-name platform binary substitution with different source/manifest; unretractable package versions stay traceable with a new fix version. | exports | gap — [G-e](rfc-0039-implementation.md#registered-gaps): No complete repair-release asset identity evidence is supplied. |
+| R192 | §11.4 | stdio, raw-file binary entry and native passthrough are separate future capabilities and do not block current cleanup switch. | inventory | gap — [D10](rfc-0039-implementation.md#registered-differences-from-rfc-0039): The deferred capabilities are not implemented; native inventory tests only prove current names. |
+| R193 | §11.4 | Before future stdio approval: finish native cutover, confirm scope/CLI/process boundary, pass §8 fuzz/protocol/credit/cancel/EOF/shutdown/FFI vectors, establish RFC-0038 baselines and publish truthful implemented-capability table. | inventory | gap — [D10/G-e](rfc-0039-implementation.md#registered-gaps): Stdio acceptance and protocol/performance evidence are deferred. |
+| R194 | §11.4 | Until stdio acceptance passes, docs/manifest never claim stdio is supported; schema or candidate protocol text is not an implemented entry. | inventory | met |
+| R195 | §11.5 | Before 1.0, obtain separate signoff on every freeze criterion below; elapsed stability alone is insufficient. | inventory, exports | gap — [G-e](rfc-0039-implementation.md#registered-gaps): No 1.0 per-criterion signoff is supplied. |
+| R196 | §11.5 | Freeze requires ops-v1 golden semantics for op/kind/ownership/thread/reentrancy/error code/cancel/terminal/backpressure/version rules. | inventory, exports | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Local golden semantics are not full candidate freeze approval. |
+| R197 | §11.5 | Freeze requires ABI-v1 header/exports/calling-convention/loader-mismatch tests and installed verification on every publicly supported platform. | inventory, exports | gap — [G-e](rfc-0039-implementation.md#registered-gaps): Every public platform still needs ABI install verification. |
+| R198 | §11.5 | Freeze registers RFC-0042 V4 schema/type revision in manifest; never silently replace V4/V5 business shapes via ops minor; recording schema is independent with documented upgrade impact. | inventory, exports | gap — [G-d/G-h](rfc-0039-implementation.md#registered-gaps): Complete V4 type revision/hash metadata is absent. |
+| R199 | §11.5 | If 1.0 promises stdio, its acceptance checks must pass first; otherwise record accepted reduced 1.0 scope before release; schema files alone cannot prove stdio support. | inventory, exports | gap — [D10/G-e](rfc-0039-implementation.md#registered-gaps): No accepted stdio/reduced-1.0 release scope is certified. |
+| R200 | §11.5 | L0/L1 stable boundaries come from RFC-0040/#200 decisions; do not freeze unapproved passthrough or host injection. | inventory, exports | gap — [G-f/G-e](rfc-0039-implementation.md#registered-gaps): No full stable-boundary freeze approval is supplied. |
+| R201 | §11.5 | Native cutover must already be atomically complete; no shadow old exports, compatibility aliases or dual generator chains. | inventory, exports | gap — [G-d/G-e/G-k](rfc-0039-implementation.md#registered-gaps): Export deletion alone is not complete cutover; business generation and capability gaps remain. |
+| R202 | §11.5 | Freeze candidate has stable #95 errors/runtime/recording/replay and all language contracts on same candidate; RFC-0038 defines performance green-cycle/statistics criteria. | inventory, exports | gap — [G-e/G-i](rfc-0039-implementation.md#registered-gaps): Same-candidate language/performance stability evidence is incomplete. |
+| R203 | §11.5 | Public English binding docs accurately describe retry/billing side effects, drop versus abort, noninterruptible callbacks, unknown outcomes and incompatible-data rollback. | inventory, exports | gap — [G-i](rfc-0039-implementation.md#registered-gaps): This guide covers the limitations; a complete public-doc/language execution audit is still absent. |
+
+## How to close gap rows
+
+Run the named suites on the candidate source, record fixture versus actual
+native-library execution, and retain failures/skips as gaps. G-d/G-h need real
+business schemas, type revisions and loader checks; they cannot be closed by
+renaming type IDs. G-e/G-i need separate build/test/package/install records for
+each supported OS/architecture/package, plus the RFC-0038 reports. Stdio needs
+its separate transport implementation and tests. G-k needs an exposed offline
+mock Language generation path with replacement tests, or an accepted explicit
+capability removal; replay.live is not an equivalent offline path.

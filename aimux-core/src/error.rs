@@ -8,6 +8,54 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+/// Projects response retry headers to milliseconds using a caller-supplied clock.
+///
+/// A numeric `retry-after-ms` takes precedence, even when negative or out of
+/// range. An absent or malformed millisecond value falls back to
+/// `retry-after` seconds, then an HTTP date. Only finite, non-negative delays
+/// fitting in `u64` are returned; fractional milliseconds are truncated.
+#[must_use]
+pub fn retry_after_ms_from_headers(
+    headers: &HashMap<String, String>,
+    now: SystemTime,
+) -> Option<u64> {
+    fn header<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
+        headers
+            .get(name)
+            .or_else(|| {
+                headers
+                    .iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, value)| value)
+            })
+            .map(|value| value.trim())
+    }
+
+    fn milliseconds(value: f64) -> Option<u64> {
+        // u64::MAX rounds up to 2^64 as f64, so the upper bound is exclusive.
+        if value.is_finite() && (0.0..u64::MAX as f64).contains(&value) {
+            Some(value.trunc() as u64)
+        } else {
+            None
+        }
+    }
+
+    if let Some(value) =
+        header(headers, "retry-after-ms").and_then(|value| value.parse::<f64>().ok())
+    {
+        return milliseconds(value);
+    }
+
+    let value = header(headers, "retry-after")?;
+    if let Ok(seconds) = value.parse::<f64>() {
+        return milliseconds(seconds * 1_000.0);
+    }
+
+    let date = httpdate::parse_http_date(value).ok()?;
+    let delay = date.duration_since(now).ok()?;
+    u64::try_from(delay.as_millis()).ok()
+}
+
 /// What a failed API call observed — the field set of the AI SDK's
 /// `APICallError` (`statusCode` / `responseBody`), which this project's error
 /// taxonomy mirrors (docs/internal/vercel-research/07-kernel-infrastructure.md).
@@ -672,37 +720,8 @@ impl AiMuxError {
             return None;
         };
         let headers = detail.response_headers.as_ref()?;
-        // Rust's float parser accepts `inf`, `Infinity` and `NaN`. A
-        // non-finite value is no hint: `as i64` would saturate it to
-        // `i64::MAX`, and upstream never uses it either (it fails the
-        // `ms < 60000 || ms < backoff` window).
-        headers
-            .get("retry-after-ms")
-            .and_then(|value| value.parse::<f64>().ok())
-            .filter(|value| value.is_finite())
-            .map(|value| value as i64)
-            .or_else(|| {
-                headers.get("retry-after").and_then(|value| {
-                    value
-                        .parse::<f64>()
-                        .ok()
-                        .map(|seconds| seconds * 1_000.0)
-                        .filter(|milliseconds| milliseconds.is_finite())
-                        .map(|milliseconds| milliseconds as i64)
-                        .or_else(|| {
-                            httpdate::parse_http_date(value).ok().map(|date| {
-                                match date.duration_since(SystemTime::now()) {
-                                    Ok(duration) => duration.as_millis() as i64,
-                                    Err(error) => -(error.duration().as_millis() as i64),
-                                }
-                            })
-                        })
-                })
-            })
-            // Upstream's `0 <= ms` check: a hint in the past is no hint. It
-            // also keeps the value clear of the C ABI's -1 = absent sentinel
-            // (`aimux_error_retry_ms`).
-            .filter(|milliseconds| *milliseconds >= 0)
+        retry_after_ms_from_headers(headers, SystemTime::now())
+            .and_then(|ms| i64::try_from(ms).ok())
     }
 
     /// Returns the HTTP status code carried by this error, if any.

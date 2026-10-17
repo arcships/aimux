@@ -20,6 +20,13 @@ pub enum LanguageModelOperation {
 /// The supplied callbacks invoke either operation using the transformed parameters.
 #[async_trait]
 pub trait LanguageModelMiddleware: Send + Sync {
+    /// Optional construction-time decorator for middleware that must retain the
+    /// model, such as tracing. Ordinary parameter and operation hooks then wrap
+    /// this decorated model.
+    fn wrap_model(&self, _model: Arc<dyn LanguageModel>) -> Option<Arc<dyn LanguageModel>> {
+        None
+    }
+
     fn override_provider(&self, _model: &dyn LanguageModel) -> Option<String> {
         None
     }
@@ -83,6 +90,7 @@ pub fn wrap_language_model(
     provider_id: Option<&str>,
 ) -> Arc<dyn LanguageModel> {
     middleware.iter().rev().fold(model, |model, middleware| {
+        let model = middleware.wrap_model(model.clone()).unwrap_or(model);
         let provider = provider_id
             .map(str::to_string)
             .or_else(|| middleware.override_provider(model.as_ref()))

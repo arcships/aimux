@@ -143,9 +143,6 @@ macro_rules! __optional_model {
     };
 }
 
-// Registry-backed provider construction: the embedded `provider_registry.json`
-// is parsed once into `preset` descriptors and used by the by-name entry points.
-pub mod provider;
 pub mod replay;
 pub use preset::{AuthMode, PresetDescriptor, PresetEntry, PresetSettings};
 pub use replay::{rebuild_decision_provider, rebuild_provider};

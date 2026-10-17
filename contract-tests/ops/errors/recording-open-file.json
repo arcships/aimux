@@ -1,0 +1,10 @@
+{
+  "kind": "recording",
+  "code": 101,
+  "message": "failed to open recording file recordings/session.jsonl: permission denied",
+  "error": {
+    "name": "OpenFile",
+    "path": "recordings/session.jsonl",
+    "source": "permission denied"
+  }
+}

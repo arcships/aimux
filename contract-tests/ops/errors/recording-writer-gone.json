@@ -1,0 +1,8 @@
+{
+  "kind": "recording",
+  "code": 103,
+  "message": "recording writer thread unavailable",
+  "error": {
+    "name": "WriterGone"
+  }
+}

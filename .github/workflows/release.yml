@@ -98,6 +98,17 @@ jobs:
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish aimux-ops
+        run: |
+          sleep 30
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if curl -sf -A "aimux-ci" "https://crates.io/api/v1/crates/aimux-ops/${VERSION}" > /dev/null 2>&1; then
+            echo "aimux-ops@${VERSION} already published, skipping"
+          else
+            cargo publish -p aimux-ops
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish aimux-ffi
         run: |
           sleep 30
@@ -334,6 +345,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging
+          cp aimux-ffi/include/aimux.h staging/aimux.h
           case "${{ matrix.target }}" in
             *linux*) cp target/${{ matrix.target }}/release/libaimux_ffi.so staging/${{ matrix.artifact }} ;;
             *darwin*) cp target/${{ matrix.target }}/release/libaimux_ffi.dylib staging/${{ matrix.artifact }} ;;
@@ -343,7 +355,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: staging/${{ matrix.artifact }}
+          path: |
+            staging/${{ matrix.artifact }}
+            staging/aimux.h
 
   # ── aimux-web console + CLI: self-contained binaries with the embedded
   #    frontend, shipped on the GitHub Release so users download one file and

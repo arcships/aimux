@@ -500,7 +500,8 @@ mod tests {
 
         let nan_then_seconds =
             api_error_with_headers(503, &[("retry-after-ms", "NaN"), ("retry-after", "1")]);
-        assert_eq!(retry_header_delay(&nan_then_seconds, 2_000), Some(1_000));
+        // A parsed non-finite preferred value blocks fallback (RFC-0039 §6.2).
+        assert_eq!(retry_header_delay(&nan_then_seconds, 2_000), None);
     }
 
     #[tokio::test]

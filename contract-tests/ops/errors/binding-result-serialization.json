@@ -1,0 +1,9 @@
+{
+  "kind": "binding",
+  "code": 205,
+  "message": "could not serialize result: invalid result",
+  "error": {
+    "name": "ResultSerialization",
+    "message": "invalid result"
+  }
+}

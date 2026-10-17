@@ -13,7 +13,9 @@ dart:ffi.
   s.author           = { 'aimux contributors' => 'ericted8810@gmail.com' }
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
+  s.preserve_paths   = '../native/aimux_dart.c'
   s.swift_version    = '5.0'
+  s.static_framework = true
   s.dependency       'Flutter'
   s.platform         = :ios, '12.0'
 
@@ -57,6 +59,12 @@ dart:ffi.
   s.user_target_xcconfig = {
     'OTHER_LDFLAGS' => [
       '-force_load', '$(PODS_XCFRAMEWORKS_BUILD_DIR)/aimux/aimux_ffi.framework/aimux_ffi',
+      '-Wl,-u,_aimux_dart_finalize', '-Wl,-u,_aimux_dart_token_new',
+      '-Wl,-u,_aimux_dart_token_dispose', '-Wl,-u,_aimux_dart_bridge_new',
+      '-Wl,-u,_aimux_dart_bridge_event', '-Wl,-u,_aimux_dart_bridge_ack',
+      '-Wl,-u,_aimux_dart_bridge_cancel', '-Wl,-u,_aimux_dart_bridge_pending',
+      '-Wl,-u,_aimux_dart_bridge_failure', '-Wl,-u,_aimux_dart_bridge_free',
+      '-Wl,-u,_aimux_dart_frame_free',
     ],
   }
 

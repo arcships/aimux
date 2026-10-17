@@ -1,187 +1,68 @@
-// typed_model.dart — typed wrapper around the raw dart:ffi `Model`.
-//
-// Eliminates the JSON/Map boundary at the FFI edge: inputs and outputs are
-// typed classes (see `types.dart`). The raw `Model` API in `aimux.dart` is
-// left unchanged — this layer only (de)serializes at the boundary, so any
-// existing caller using `Model.generateText` / `Model.streamText` keeps
-// working byte-for-byte.
+import 'generated/ops.dart' as ops;
+import 'aimux.dart';
+import 'types.dart';
 
-import 'dart:async';
+/// Typed results over the shared ops DTOs. Request maps follow the manifest's
+/// request schema; no provider field tables are duplicated in this facade.
+final class TypedModel {
+  final Aimux client;
+  final OpsHandle handle;
+  TypedModel(this.client, this.handle);
 
-import 'package:aimux/aimux.dart';
-import 'package:aimux/tool_call_repair.dart';
-import 'package:aimux/types.dart';
+  Future<GenerateTextResult> generateText(Map<String, dynamic> params) async =>
+      GenerateTextResult.fromJson(
+        await client.call(ops.OP_TEXT_GENERATE, handle: handle, params: params)
+            as Map<String, dynamic>,
+      );
 
-/// A typed facade over [Model].
-///
-/// Wraps the raw `Map<String, dynamic>`-based API with typed classes:
-/// [GenerateTextOptions] in, [GenerateTextResult] out, [StreamPart]s out of
-/// `streamText`. Construct with a [Model] (e.g. `Model.openai(...)`); call
-/// [close] to release the native handle.
-///
-/// Example:
-/// ```dart
-/// final model = Model.openai(apiKey, 'gpt-4o', baseUrl: baseUrl);
-/// final typed = TypedModel(model);
-/// try {
-///   final result = typed.generateText('Hello', GenerateTextOptions(temperature: 0.7));
-///   print(result.text);
-/// } finally {
-///   typed.close();
-/// }
-/// ```
-class TypedModel {
-  final Model _raw;
+  Future<GenerateObjectResult> generateObject(
+    Map<String, dynamic> params,
+  ) async =>
+      GenerateObjectResult.fromJson(
+        await client.call(ops.OP_TEXT_GENERATE_OBJECT, handle: handle, params: params)
+            as Map<String, dynamic>,
+      );
 
-  TypedModel(this._raw);
+  Future<GenerateTextResult> consumeStreamText(
+    Map<String, dynamic> params,
+  ) async =>
+      GenerateTextResult.fromJson(
+        await client.call(ops.OP_TEXT_CONSUME, handle: handle, params: params)
+            as Map<String, dynamic>,
+      );
 
-  /// Generate text from a string [prompt].
-  ///
-  /// [options] are serialized and passed to the underlying FFI call. Returns
-  /// a typed [GenerateTextResult]. Throws if the provider returns an error.
-  GenerateTextResult generateText(
-    String prompt, [
-    GenerateTextOptions? options,
-  ]) {
-    final result = _raw.generateText(prompt, options?.toJson());
-    return GenerateTextResult.fromJson(
-        repairResultToolCalls(result, prompt, options));
-  }
+  Future<ChatCompletion> generateTextAsOpenAI(
+    Map<String, dynamic> params,
+  ) async =>
+      ChatCompletion.fromJson(
+        await client.call(ops.OP_TEXT_GENERATE_OPEN_AI, handle: handle, params: params)
+            as Map<String, dynamic>,
+      );
 
-  /// Generate text from a list of typed [ModelMessage]s (multi-turn).
-  ///
-  /// Each message is serialized with [ModelMessage.toJson] and forwarded as a
-  /// multi-message prompt (the same shape `Model.generateText` accepts).
-  GenerateTextResult generateTextMessages(
-    List<ModelMessage> messages, [
-    GenerateTextOptions? options,
-  ]) {
-    final prompt = messages.map((m) => m.toJson()).toList();
-    final result = _raw.generateText(prompt, options?.toJson());
-    return GenerateTextResult.fromJson(
-        repairResultToolCalls(result, prompt, options));
-  }
+  Stream<StreamPart> streamText(Map<String, dynamic> params) =>
+      _events(ops.OP_TEXT_STREAM, params).map(StreamPart.fromJson);
 
-  // ── generateObject (M12, RFC-0016) ──────────────────────────────────────
+  Stream<ChatCompletionChunk> streamTextAsOpenAI(Map<String, dynamic> params) =>
+      _events(ops.OP_TEXT_STREAM_OPEN_AI, params).map(ChatCompletionChunk.fromJson);
 
-  /// Generate a structured JSON object from a string [prompt] (M12).
-  ///
-  /// Same signature as [generateText]; returns a typed
-  /// [GenerateObjectResult]. Pass `output: {'type': 'object', 'schema': ...}` via
-  /// [options] to describe the object; the model's text must parse as JSON
-  /// and match the schema.
-  GenerateObjectResult generateObject(
-    String prompt, [
-    GenerateTextOptions? options,
-  ]) {
-    final result = _raw.generateObject(prompt, options?.toJson());
-    return GenerateObjectResult.fromJson(
-        repairResultToolCalls(result, prompt, options));
-  }
-
-  /// Generate a structured JSON object from a list of typed [ModelMessage]s
-  /// (M12).
-  GenerateObjectResult generateObjectMessages(
-    List<ModelMessage> messages, [
-    GenerateTextOptions? options,
-  ]) {
-    final prompt = messages.map((m) => m.toJson()).toList();
-    final result = _raw.generateObject(prompt, options?.toJson());
-    return GenerateObjectResult.fromJson(
-        repairResultToolCalls(result, prompt, options));
-  }
-
-  // ── consumeStreamText (M11, RFC-0016) ───────────────────────────────────
-
-  /// Consume a stream to completion from a string [prompt] and return the
-  /// aggregated result (M11). Synchronous (blocks until the stream finishes).
-  GenerateTextResult consumeStreamText(
-    String prompt, [
-    GenerateTextOptions? options,
-  ]) {
-    final result = _raw.consumeStreamText(prompt, options?.toJson());
-    return GenerateTextResult.fromJson(
-        repairResultToolCalls(result, prompt, options));
-  }
-
-  /// Consume a stream to completion from a list of typed [ModelMessage]s
-  /// and return the aggregated result (M11).
-  GenerateTextResult consumeStreamTextMessages(
-    List<ModelMessage> messages, [
-    GenerateTextOptions? options,
-  ]) {
-    final prompt = messages.map((m) => m.toJson()).toList();
-    final result = _raw.consumeStreamText(prompt, options?.toJson());
-    return GenerateTextResult.fromJson(
-        repairResultToolCalls(result, prompt, options));
-  }
-
-  /// Stream text, yielding typed [StreamPart]s.
-  ///
-  /// [prompt] may be a `String` or a `List<Map<String, dynamic>>` of messages,
-  /// matching the raw `Model.streamText` contract. The stream blocks the
-  /// calling isolate until completion (see `aimux.dart` for FFI semantics).
-  Stream<StreamPart> streamText(
-    Object prompt, [
-    GenerateTextOptions? options,
-  ]) {
-    return repairStreamToolCalls(
-            _raw.streamText(prompt, options?.toJson()), prompt, options)
-        .map(StreamPart.fromJson);
-  }
-
-  // ── OpenAI-compatible output (RFC-0026) ─────────────────────────────────
-
-  /// Generate text (non-streaming) with OpenAI Chat Completions output.
-  ///
-  /// Returns a typed [ChatCompletion]. Throws if the provider returns an error.
-  ChatCompletion generateTextAsOpenAI(
-    String prompt, [
-    GenerateTextOptions? options,
-  ]) {
-    return _generateTextAsOpenAI(prompt, options);
-  }
-
-  /// Generate text from a list of typed [ModelMessage]s with OpenAI Chat
-  /// Completions output.
-  ChatCompletion generateTextAsOpenAIMessages(
-    List<ModelMessage> messages, [
-    GenerateTextOptions? options,
-  ]) {
-    final prompt = messages.map((m) => m.toJson()).toList();
-    return _generateTextAsOpenAI(prompt, options);
-  }
-
-  /// A [ChatCompletion] has no invalid marker to repair from, so with a
-  /// [GenerateTextOptions.repairToolCall] the native result is generated,
-  /// repaired, then converted — its tool calls carry the repaired arguments.
-  ChatCompletion _generateTextAsOpenAI(
-      Object prompt, GenerateTextOptions? options) {
-    if (options?.repairToolCall == null) {
-      return ChatCompletion.fromJson(
-          _raw.generateTextAsOpenAI(prompt, options?.toJson()));
+  Stream<Map<String, dynamic>> _events(
+    String op,
+    Map<String, dynamic> params,
+  ) async* {
+    await for (final frame in client.stream(
+      op,
+      handle: handle,
+      params: params,
+    )) {
+      if (frame is EventFrame) yield frame.event as Map<String, dynamic>;
+      if (frame is EndFrame) {
+        if (frame.error != null) throw frame.error!;
+        if (frame.outcome == 'cancelled') {
+          throw StateError('Operation cancelled');
+        }
+      }
     }
-    final result = repairResultToolCalls(
-        _raw.generateText(prompt, options!.toJson()), prompt, options);
-    return ChatCompletion.fromJson(_raw.generateTextResultAsOpenAI(result));
   }
 
-  /// Stream text with OpenAI Chat Completions output, yielding typed
-  /// [ChatCompletionChunk]s (RFC-0026).
-  ///
-  /// [prompt] may be a `String` or a `List<Map<String, dynamic>>` of messages.
-  /// Stream options (`include_usage`, `include_reasoning`) are passed via
-  /// `options.providerOptions` → `openai.stream_options` on the wire.
-  Stream<ChatCompletionChunk> streamTextAsOpenAI(
-    Object prompt, [
-    GenerateTextOptions? options,
-  ]) {
-    return _raw
-        .streamTextAsOpenAI(prompt, options?.toJson())
-        .map(ChatCompletionChunk.fromJson);
-  }
-
-  /// Release the native handle. Delegates to the wrapped [Model]; safe to
-  /// call multiple times.
-  void close() => _raw.close();
+  Future<void> close() => handle.close();
 }

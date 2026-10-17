@@ -20,9 +20,9 @@
 4. 八种接口为 C、Go、Java、Kotlin、Swift、Flutter/Dart、Node、Python；C++ 示例属于 C ABI 的 RAII 用法，不计作第九套实现。
 5. C、Go、Java、Kotlin、Swift、Flutter 走同步 C ABI；Node 保留 napi-rs、Python 保留 PyO3，直接调用共享异步 dispatch，禁止经同步 C ABI 嵌套 `block_on`。
 6. provider/model/fetch/token/telemetry 的任意宿主控制流回调在**所有八种接口**后置。结果流的搬运 callback、取消通知和 RFC-0035 已有宿主侧修复能力仍在范围内。
-7. D8 是切换前提，不是最后删除手写类型之后的补救。descriptor → manifest → codegen 是唯一生成链，JSON Schema 是其产物，不能再养一条 ts-rs 或手写 Schema 真相链。
+7. D8（业务 DTO 与语言类型生成）在本次 ops/ABI 切换之后按 RFC-0042 交付，不是切换前提。切换时 descriptor → manifest → codegen 负责控制对象 Schema、头文件及操作常量；业务类型暂由现有 ts-rs / `scripts/gen_ts_types.py` 链生成，并保留其漂移门禁。D8 完成时业务 Schema 与语言 DTO 收束到同源生成链，同时删除过渡 ts-rs 链及其门禁；不长期维护两份业务类型权威。
 8. 当前切换只交付已有能力的清理、V4 对齐和缺陷修复。stdio 服务、新的一次性二进制上传接口、任意 native passthrough、新模态均需单独通过后续范围门禁。
-9. 一次性替换整个依赖闭包；不发布旧/新 ABI 并存的 minor，不添加 deprecated alias、配置归一化 shim 或旧录制读取路径。
+9. 一次性替换整个依赖闭包；不发布旧/新 ABI 并存的 minor，不添加 deprecated alias 或配置归一化 shim。schema-2 录制读写作为明确的临时顺序例外保留到本系列最后一个 PR，届时迁至 schema 3 并移除 schema-2 及更早格式的读取（§7.1）。
 
 ### 0.2 精确替代清单
 
@@ -38,7 +38,9 @@
 | #166 D1、D2–D7 逐语言独立发布 | amended | 可以分工和内部评审，发布必须来自同一全绿集成 SHA |
 | #166 D5 先做旧头文件 ffigen 过渡版 | superseded-pending-#200 | 直接生成新头文件对应声明，不花一个发布周期维护旧 ABI 声明 |
 | #166 D7 ctypes 原型 → PyO3 fallback | superseded-pending-#200 | 选定薄 PyO3；消除 GIL 阻塞与重复解析，不引入第二套 ctypes wheel/线程方案 |
-| #166 D8 serde/ts-rs → Schema → 类型、“最后一项” | superseded-pending-#200 | RFC-0042 的规范类型/Wire DTO + descriptor → manifest → codegen；Schema 与语言代码同批生成 |
+| #166 D8 serde/ts-rs → Schema → 类型、“最后一项” | superseded-pending-#200 | RFC-0042 的规范类型/Wire DTO + descriptor → manifest → codegen；业务 Schema 与语言 DTO 在切换后同批交付，此前 ts-rs 为过渡链（§0.1.7） |
+| RFC-0039 §3.2 `replay.capabilities` 直接返回内建能力句柄 | amended | 按 RFC-0041 的传输回放实施边界后置；本次注册为 Future，返回 UnsupportedFunctionality，待 Fetch/WebSocket/Download 回放引擎交付后启用 |
+| RFC-0039 §3.2 `credential.create` 直接构造 resolver | amended | 按 RFC-0041 的回放与凭据治理边界后置；本次注册为 Future，返回 UnsupportedFunctionality，不以空 resolver 或导出秘密代替未实现的构造能力 |
 | RFC-0036 §4/§9、ROADMAP 0.8“FFI 与 stdio 同时实现” | amended | 一套协议保留；当前结构切换先完成 FFI/原生绑定。stdio 为后续独立能力里程碑，不混入 #200 清理范围 |
 | ROADMAP“瘦身不改变对外 API” | 保留在纯性能工作；收窄适用范围 | RFC-0038 不能以瘦身之名删 API；本 RFC 与 #200 是明确声明的 breaking 结构替换 |
 | RFC-0036 §3/§9“L2 独立版本化、不随 1.0 冻结” | amended-pending-#200 | 采用 V4 四层数据模型；ops/ABI 与录制 schema 分别管理；V4 类型兼容性归 ops 版本/能力协商，type revision 只记入 manifest；不新增独立 data_format_version 或保留旧 L2 投影实现 |
@@ -119,6 +121,8 @@ resultOwnership, requestBytePolicy, retryOwner, sourceSymbolInventory
 
 `Operation` 有 `subkind`、`state` 和 `capabilities`；当前外部可创建的双向 Operation 为实时转写。未来不能因为 kind 相同而向文本流写音频。Trace middleware 与 trace store 分开，聚合 session 字符串与实时转写 Operation 也分开。
 
+`provider.custom` 的 `default_method` 元数据存放于进程级 Weak 侧表：以规范 `Arc<dyn Provider>` 的对象身份匹配，不增加强引用；插入时清理已失效条目。句柄表仍持有规范 provider，不创建第二份 provider 实现或配置表。
+
 ### 3.2 规范合法矩阵
 
 下表列出**全部允许组合**。除 `handle.drop` 的显式规则外，任何未列出的 op × kind 组合都返回 `InvalidHandle`，并携带 expected/actual；没有通配 fallback。每行列出多 op 时，生成器必须展开为独立条目和测试。各模态缩写只在本表使用。
@@ -159,7 +163,7 @@ resultOwnership, requestBytePolicy, retryOwner, sourceSymbolInventory
 | `abort.create` | G | 无 | call → Abort |
 | `abort.signal` | Abort | 无；可跨线程、幂等 | call → 空结果 |
 | `transport.create` | G | kind=fetch/ws/download，仅内建实现/已存在设置 | call → 相应 typed 能力 |
-| `credential.create` | G | 仅 RFC-0040 已有内建 resolver | call → CredentialResolver；不导出秘密 |
+| `credential.create` | G | 仅 Rust 内建 resolver；按 RFC-0041 后置（§0.2） | call；本次 Future → UnsupportedFunctionality；不导出秘密 |
 | `middleware.create` | G | 内建能力；trace variant 需 TraceStore | call → Middleware |
 | `trace.create` | G | 容量、审计模式 | call → TraceStore |
 | `trace.aggregate`, `trace.sessionChain`, `trace.sessionTrajectory`, `trace.export`, `trace.clear` | TraceStore | filters/sessionId 是数据，不是句柄 | call → 各自查询/清理结果 |
@@ -168,14 +172,14 @@ resultOwnership, requestBytePolicy, retryOwner, sourceSymbolInventory
 | `sessionStore.create` | G | 明确 infer 开关 | call → SessionStore |
 | `sessionStore.attach`, `sessionStore.list`, `sessionStore.calls` | SessionStore | sessionId 为字符串 | call → 结果；未知 session 保留各查询既有语义 |
 | `replay.create` | G | RFC-0041 schema 与规则 | call → ReplaySession |
-| `replay.capabilities` | ReplaySession | 无 | call → 内建 Fetch/WS/Download 等能力句柄 |
+| `replay.capabilities` | ReplaySession | 按 RFC-0041 后置（§0.2） | call；本次 Future → UnsupportedFunctionality；后续返回内建 Fetch/WS/Download 等能力句柄 |
 | `replay.inspect`, `replay.dryRun` | ReplaySession | 无副作用 | call → 验证/计划 |
 | `replay.live` | ReplaySession | 明确 Registry/Model 目标及当前凭证环境 | call → operation 结果；禁止恢复旧配置 |
 | `catalogue.fetch` | G | 已有 source 规则与下载守卫 | call → catalogue DTO |
 | `toolRepair.context`, `toolRepair.apply`, `toolRepair.applyResult` | G | 纯 DTO，无宿主 callback 句柄 | call → repair DTO/结果 |
 | `output.toOpenAI` | Language | metadata selector 明确；不猜 openai namespace | call → 输出 DTO |
 | `auth.codexRefresh` | G | 既有 refresh 输入；不记录 token、不自动重试 | call → token 结果；不得进入通用日志 |
-| `handle.drop` | 所有非零 kind；0/未知值也可 | 无 | 幂等；先移除 registry，再取消/回收 |
+| `handle.drop` | 所有非零 kind；0/未知值也可 | 无 | 幂等；先移除 registry，再取消/回收；foreign owner 的句柄成功但无效果 |
 
 这里的 provider/transport/devtools 生命周期 op 是 #200 对现有行为的显式对象化，不授权本期实现 descriptor 中尚未具备的 skills、Evaluation、Batch、SpeechTranslation 等能力。方法列在 descriptor 中但不属于 current capability 集时，返回 `UnsupportedFunctionality`，不能返回伪造的成功空值。
 
@@ -191,6 +195,8 @@ Rust runtime 的字符串模型入口先通过显式 registry 解析成模型再
 - Runtime 能力注入在构造时获得强引用；resolver 的关闭或 provider 重建规则由其真实生命周期定义，不以悬空整数替代。
 - Operation 单一 reader，允许另一个线程 push 和一个线程 cancel；第二个 reader 返回 `ConcurrentConsumer`，不隐式分流。inputDone 与 push 通过 admission 序号线性化：关闭前已接纳的 push 完成，关闭后拒绝。
 - wrapper 的 Close/Dispose 幂等且原子取走句柄；finalizer 是防漏手段，不是 flush 或正常终结协议。
+
+`handle.drop` 对其他 owner 的句柄返回成功且不修改资源，与 0、未知和已释放 ID 的幂等结果一致；这样既不泄露句柄是否存在或其类型，也不会允许跨 owner 回收。
 
 ## 4. C ABI：所有权和执行边界
 
@@ -272,6 +278,8 @@ Abort 是一次性、可共享、幂等的取消信号。operation 持有其 clo
 
 当前切换默认预算：音频输入最多 64 项且最多 8 MiB；输出 data 队列最多 256 项且最多 8 MiB；单个事件/音频块最大 1 MiB；先达到任何限制即背压。Node/Python 可保留更小的 64 项桥接队列，但总字节上限与终结规则一致。允许显式降低限额，不允许“无限”配置。
 
+C ABI 的同步 `aimux_operation_push` 使用非等待准入：队列满时在复制输入前立即返回 ResourceLimit；调用方待容量释放后重试。Rust 内部异步 `Operation::push` 可以等待容量，不能把该等待行为带入同步 C 入口。
+
 这些是协议资源限额，不是性能成果；数值须由 RFC-0038 压测核定才能进入稳定冻结。超大单项在分配前返回 ResourceLimit；禁止通过 item count 为 256 宣称大对象内存已受限。
 
 流队列 full 时停止向上游拉取，不丢 delta、不覆盖最老事件、不预先收集全流。abort/drop 通路不依赖获取队列容量；terminal 独立槽确保可读消费者最终看到真实结果。消费者不再读取且显式关闭时可放弃未交付事件，状态必须是 cancelled/consumerClosed。
@@ -333,10 +341,14 @@ Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现�
 |---|---|---|
 | `abiVersion` | C 符号、布局、调用约定、所有权 | major 不同立即拒绝加载；minor 只追加，不能改变已有布局 |
 | `opsVersion` | 信封、op 语义、handle kind、流终结、V4 类型兼容性与控制规则 | `major.minor`；major 必须相同，选择双方最高公共 minor；每版本明确支持的 type revision/能力 |
-| `manifestRevision` / `manifestDigest` | 本次 op/type/package/capability 实例、schema/type revision | 修订标识 + canonical JSON SHA-256；不是独立握手协议版本；digest 不同可继续按 ops/requiredOps/类型能力协商，不伪称二进制相同 |
-| `recordingSchema` | 录制格式 | 由 RFC-0041 定义；本期只支持新格式，不加载旧录制；它不是 live ops 握手的附加版本 |
+| `manifestRevision` / `digest` | 本次 op/type/package/capability 实例、schema/type revision | 修订标识 + canonical JSON SHA-256；不是独立握手协议版本；digest 不同可继续按 ops/requiredOps/类型能力协商，不伪称二进制相同 |
+| `recordingSchema` | 录制格式 | 由 RFC-0041 定义；schema-2 读写保留至本系列最后一个 PR，届时切换 schema 3 并移除 schema-2 读取；它不是 live ops 握手的附加版本 |
 
 RFC-0042 的 schema/type revision 与固定 SDK 基线记录在 manifest，由 ops 兼容矩阵解释；不额外引入 dataFormatVersion/data_format_version 握手。冻结的是明示版本，不是把某一 SDK npm patch 号当永久 ABI。V4 新 variant 是否为 additive 必须由数据规范和兼容测试决定；不能因为 JSON 能解析就认为有语义兼容。
+
+本次切换保留现有 schema-2 写入以及 schema-1/schema-2 读取，作为系列内过渡，不视为长期兼容承诺。系列最后一个 PR 必须完成 schema-3 迁移并删除 schema-2（及更早 schema）读取路径；不能在本次切换提前删除，也不能在最后一个 PR 后继续保留。
+
+manifest JSON 的 `digest` 为 canonical manifest 的 SHA-256，计算时排除 `digest` 字段自身；生成常量继续命名为 `MANIFEST_DIGEST`。
 
 ### 7.2 握手
 
@@ -477,6 +489,8 @@ RFC-0042 拥有四层类型定义、Wire DTO、type IDs、错误 variants、null
 
 这些输入在同一 manifest 汇总并一次生成：Rust dispatch registration、C header、各语言 op 常量与类型、provider 工厂外观、JSON Schema、文档参考和 contract vectors。语言 loader、executor、finalizer、stream pump、错误投影外观可以手写；provider 行为、wire 字段表和 per-provider 构造列表不能手写。
 
+这是 D8 完成后的完整生成目标。按 §0.1.7 的实施顺序，ops/ABI 切换先交付控制对象 Schema、头文件及操作常量，业务 DTO 暂由 ts-rs 过渡链提供；不能把完整目标倒置为本次切换前提。
+
 provider 输出的 tool-call input 是 V4 原文 String，core 工具输入是解析后的 JSON；不得在此重新引入 `ToolInput` 无标签联合混淆两层。stream 事件类型归 RFC-0042；本 RFC EndFrame 是传输控制类型，不成为第五套业务 StreamPart。
 
 ### 10.2 可执行门禁
@@ -547,7 +561,7 @@ stdio、原始文件二进制入口及 RFC-0040 的 native passthrough 分别立
 - V4 DTO 的 schema/type revision 由 RFC-0042 登记在 manifest，类型兼容性由 ops 版本/能力协商承载；后续 V4/V5 对齐不借 ops minor 偷换既有业务数据形态。录制 schema 独立，升级影响明确。
 - 若 1.0 对外承诺 stdio，则 S 门禁必须先完成；若尚未完成，修改 1.0 支持范围的决策须先入库，不可借主线已存在 schema 文件声称入口完成。
 - L0/L1 的具体稳定边界由 RFC-0040 与 #200 决策登记；本 RFC 不冻结尚未批准的 passthrough 或宿主能力注入。
-- C4 已在原子切换时完成；没有旧 ABI 影子出口、兼容 alias 或生成器双轨。
+- C4 已在原子切换时完成，没有旧 ABI 影子出口或兼容 alias；切换后交付的 D8 也已完成并删除 ts-rs 过渡链，没有生成器双轨。
 - #95 错误体系、请求运行时、recording/replay 完整性与全部语言 contract tests 在同一候选版本稳定；性能门禁连续绿的测量周期和统计准则由 RFC-0038 给出。
 - 重试与收费副作用、drop/abort 差异、callback 不可强制终止、未知结果、数据不兼容回退等限制在公开英文 binding 文档中准确可见。
 

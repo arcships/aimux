@@ -1,0 +1,8 @@
+{
+  "kind": "protocol",
+  "code": 303,
+  "message": "operation already has a consumer",
+  "error": {
+    "name": "ConcurrentConsumer"
+  }
+}

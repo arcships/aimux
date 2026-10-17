@@ -1,0 +1,4674 @@
+{
+  "schemaVersion": 1,
+  "name": "full-queue-cancel",
+  "description": "Fill all 256 output slots before cancelling; cancellation does not need a slot and draining retains all admitted data plus one cancelled end.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "repeatEvent",
+      "count": 256,
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "hello 世界 👋"
+      }
+    },
+    {
+      "action": "wait",
+      "gate": "continue"
+    },
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "startProducer"
+    },
+    {
+      "action": "waitForQueueFull"
+    },
+    {
+      "action": "cancel"
+    },
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "1",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "2",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "3",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "4",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "5",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "6",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "7",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "8",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "9",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "10",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "11",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "12",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "13",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "14",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "15",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "16",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "17",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "18",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "19",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "20",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "21",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "22",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "23",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "24",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "25",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "26",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "27",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "28",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "29",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "30",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "31",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "32",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "33",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "34",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "35",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "36",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "37",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "38",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "39",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "40",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "41",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "42",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "43",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "44",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "45",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "46",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "47",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "48",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "49",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "50",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "51",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "52",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "53",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "54",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "55",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "56",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "57",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "58",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "59",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "60",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "61",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "62",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "63",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "64",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "65",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "66",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "67",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "68",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "69",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "70",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "71",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "72",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "73",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "74",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "75",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "76",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "77",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "78",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "79",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "80",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "81",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "82",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "83",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "84",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "85",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "86",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "87",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "88",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "89",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "90",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "91",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "92",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "93",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "94",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "95",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "96",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "97",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "98",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "99",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "100",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "101",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "102",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "103",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "104",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "105",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "106",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "107",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "108",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "109",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "110",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "111",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "112",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "113",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "114",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "115",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "116",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "117",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "118",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "119",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "120",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "121",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "122",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "123",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "124",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "125",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "126",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "127",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "128",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "129",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "130",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "131",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "132",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "133",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "134",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "135",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "136",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "137",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "138",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "139",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "140",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "141",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "142",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "143",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "144",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "145",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "146",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "147",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "148",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "149",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "150",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "151",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "152",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "153",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "154",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "155",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "156",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "157",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "158",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "159",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "160",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "161",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "162",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "163",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "164",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "165",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "166",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "167",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "168",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "169",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "170",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "171",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "172",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "173",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "174",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "175",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "176",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "177",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "178",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "179",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "180",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "181",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "182",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "183",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "184",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "185",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "186",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "187",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "188",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "189",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "190",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "191",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "192",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "193",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "194",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "195",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "196",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "197",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "198",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "199",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "200",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "201",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "202",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "203",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "204",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "205",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "206",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "207",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "208",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "209",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "210",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "211",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "212",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "213",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "214",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "215",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "216",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "217",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "218",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "219",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "220",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "221",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "222",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "223",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "224",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "225",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "226",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "227",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "228",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "229",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "230",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "231",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "232",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "233",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "234",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "235",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "236",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "237",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "238",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "239",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "240",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "241",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "242",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "243",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "244",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "245",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "246",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "247",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "248",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "249",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "250",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "251",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "252",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "253",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "254",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "255",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "256",
+        "outcome": "cancelled"
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "1",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "2",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "3",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "4",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "5",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "6",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "7",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "8",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "9",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "10",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "11",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "12",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "13",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "14",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "15",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "16",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "17",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "18",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "19",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "20",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "21",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "22",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "23",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "24",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "25",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "26",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "27",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "28",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "29",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "30",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "31",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "32",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "33",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "34",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "35",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "36",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "37",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "38",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "39",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "40",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "41",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "42",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "43",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "44",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "45",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "46",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "47",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "48",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "49",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "50",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "51",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "52",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "53",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "54",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "55",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "56",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "57",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "58",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "59",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "60",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "61",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "62",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "63",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "64",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "65",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "66",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "67",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "68",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "69",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "70",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "71",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "72",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "73",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "74",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "75",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "76",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "77",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "78",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "79",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "80",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "81",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "82",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "83",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "84",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "85",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "86",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "87",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "88",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "89",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "90",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "91",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "92",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "93",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "94",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "95",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "96",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "97",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "98",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "99",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "100",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "101",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "102",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "103",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "104",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "105",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "106",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "107",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "108",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "109",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "110",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "111",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "112",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "113",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "114",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "115",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "116",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "117",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "118",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "119",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "120",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "121",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "122",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "123",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "124",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "125",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "126",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "127",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "128",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "129",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "130",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "131",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "132",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "133",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "134",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "135",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "136",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "137",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "138",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "139",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "140",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "141",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "142",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "143",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "144",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "145",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "146",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "147",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "148",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "149",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "150",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "151",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "152",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "153",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "154",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "155",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "156",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "157",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "158",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "159",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "160",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "161",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "162",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "163",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "164",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "165",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "166",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "167",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "168",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "169",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "170",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "171",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "172",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "173",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "174",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "175",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "176",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "177",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "178",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "179",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "180",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "181",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "182",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "183",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "184",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "185",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "186",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "187",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "188",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "189",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "190",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "191",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "192",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "193",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "194",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "195",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "196",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "197",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "198",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "199",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "200",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "201",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "202",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "203",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "204",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "205",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "206",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "207",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "208",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "209",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "210",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "211",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "212",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "213",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "214",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "215",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "216",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "217",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "218",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "219",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "220",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "221",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "222",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "223",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "224",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "225",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "226",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "227",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "228",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "229",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "230",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "231",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "232",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "233",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "234",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "235",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "236",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "237",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "238",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "239",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "240",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "241",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "242",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "243",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "244",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "245",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "246",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "247",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "248",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "249",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "250",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "251",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "252",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "253",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "254",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "event",
+        "seq": "255",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "256",
+        "outcome": "cancelled"
+      }
+    ],
+    "abortObserved": true,
+    "queueFullObserved": true,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 256
+  }
+}

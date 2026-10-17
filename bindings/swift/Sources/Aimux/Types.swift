@@ -1,22 +1,5 @@
-// Types.swift — typed Codable wrapper layer over the aimux-ffi C ABI.
-//
-// The raw API in `Aimux.swift` exchanges JSON strings across the Swift↔C
-// boundary (`generateText(prompt:options:) -> String`, `streamText` yields
-// JSON-string parts). This file adds a thin, *typed* layer on top: inputs and
-// outputs are `Codable` Swift types decoding and encoding exactly the JSON of
-// `bindings/node/src/types/*.ts` (the ts-rs types generated from the Rust
-// serde definitions, which equal the AI SDK JSON). The raw API is left
-// untouched; the typed methods live in a `Model` extension and delegate to it.
-//
-// Wire conventions mirrored here:
-//   • field names are camelCase, so structs synthesize their `Codable`
-//   • optional fields are absent, never `null`
-//   • unions are internally tagged: `type` (kebab-case values); `Source` uses
-//     `sourceType`, `Role`-keyed messages use `role`
-//   • `ToolChoice` is mixed: "auto"|"none"|"required" or {"type":"tool","toolName":…}
-//   • `ModelPrompt` / `MessageContent` / `FileBytes` are untagged (string | array)
+// Codable values for the canonical AI SDK wire contract.
 
-import CAimuxFFI
 import Foundation
 
 // MARK: - JSONValue (arbitrary JSON, for `input`/`output`/`raw`/`providerMetadata`/…)
@@ -1413,40 +1396,6 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var includeRawChunks: Bool?
     public var sessionId: String?
 
-    /// One-shot host-side repair for tool calls the model got wrong
-    /// (RFC-0035), mirroring the AI SDK's `repairToolCall`.
-    ///
-    /// Runs after generation, on every tool call the engine marked invalid, in
-    /// document order and at most once per call. Return a corrected
-    /// ``RawToolCall`` (it is re-validated: still invalid means the original
-    /// call stays invalid, carrying the new parse or validation error, not a
-    /// `ToolCallRepair` error), `nil` to leave the
-    /// call untouched with its original error, or throw to fail the repair
-    /// with the thrown error's message as cause. A call made without a tool set
-    /// is never repaired and the function is not invoked for it.
-    ///
-    /// The function runs outside any native call, so it may itself call back
-    /// into aimux — asking a model to fix the arguments is the usual reason to
-    /// set it. It is host-side only and never appears in the options JSON.
-    ///
-    /// Applies to `generateText`, `generateObject`, `consumeStreamText`,
-    /// `streamText` and `generateTextAsOpenAI` (which repairs the native result
-    /// before converting it). `streamTextAsOpenAI` does not reflect repair: its
-    /// argument deltas are the provider's text, as in the AI SDK.
-    ///
-    /// While streaming, the stream waits for the function, and an abort does
-    /// not take effect until it returns. If a repair fails at the boundary
-    /// (not in the function — a throw is a `ToolCallRepair` error on the
-    /// call), `onError` is told and the stream continues without that part.
-    public var repairToolCall: RepairToolCall? {
-        get { repairToolCallBox?.run }
-        set { repairToolCallBox = newValue.map(RepairToolCallBox.init(run:)) }
-    }
-
-    /// Not in `CodingKeys`, so it needs its own default for the synthesized
-    /// `init(from:)` — and stays out of the options JSON in both directions.
-    var repairToolCallBox: RepairToolCallBox? = nil
-
     enum CodingKeys: String, CodingKey {
         case maxOutputTokens, temperature, stopSequences, topP, topK, presencePenalty
         case frequencyPenalty, output, seed, tools, toolChoice, headers
@@ -1464,8 +1413,7 @@ public struct GenerateTextOptions: Codable, Equatable {
                 maxRetries: UInt32? = nil,
                 timeout: TimeoutConfiguration? = nil,
                 includeRawChunks: Bool? = nil,
-                sessionId: String? = nil,
-                repairToolCall: RepairToolCall? = nil) {
+                sessionId: String? = nil) {
         self.maxOutputTokens = maxOutputTokens; self.temperature = temperature
         self.stopSequences = stopSequences; self.topP = topP; self.topK = topK
         self.presencePenalty = presencePenalty; self.frequencyPenalty = frequencyPenalty
@@ -1475,7 +1423,6 @@ public struct GenerateTextOptions: Codable, Equatable {
         self.maxRetries = maxRetries; self.timeout = timeout
         self.includeRawChunks = includeRawChunks
         self.sessionId = sessionId
-        self.repairToolCallBox = repairToolCall.map(RepairToolCallBox.init(run:))
     }
 }
 
@@ -1871,226 +1818,5 @@ public struct CompletionTokensDetails: Codable, Equatable {
 
     public init(reasoningTokens: UInt32? = nil) {
         self.reasoningTokens = reasoningTokens
-    }
-}
-
-// MARK: - Typed wrapper methods (extra layer over the raw C-ABI API)
-
-public extension Model {
-
-    /// Generate text (non-streaming) with typed inputs/outputs.
-    ///
-    /// - Parameters:
-    ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
-    ///     (`.messages`), serialized to the JSON shape the FFI expects.
-    ///   - options: Optional `GenerateTextOptions`.
-    /// - Returns: A decoded `GenerateTextResult`.
-    func generateText(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil
-    ) throws -> GenerateTextResult {
-        let promptJson = try AimuxCodable.jsonString(for: prompt)
-        let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
-        let resultJson = try repairedResultJson(
-            generateText(prompt: promptJson, options: optsJson),
-            promptJson: promptJson, optsJson: optsJson, options: options
-        )
-        return try JSONDecoder().decode(GenerateTextResult.self, from: Data(resultJson.utf8))
-    }
-
-    /// Generate a structured JSON object with typed inputs/outputs (M12, RFC-0016).
-    ///
-    /// Same signature as the typed `generateText`; returns a decoded
-    /// `GenerateObjectResult`. Pass `output: {"type": "object", "schema": ...}` via
-    /// `options` to describe the object; the model's text must parse as JSON
-    /// and match the schema.
-    ///
-    /// - Parameters:
-    ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
-    ///     (`.messages`), serialized to the JSON shape the FFI expects.
-    ///   - options: Optional `GenerateTextOptions`.
-    /// - Returns: A decoded `GenerateObjectResult`.
-    func generateObject(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil
-    ) throws -> GenerateObjectResult {
-        let promptJson = try AimuxCodable.jsonString(for: prompt)
-        let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
-        let resultJson = try repairedResultJson(
-            generateObject(prompt: promptJson, options: optsJson),
-            promptJson: promptJson, optsJson: optsJson, options: options
-        )
-        return try JSONDecoder().decode(GenerateObjectResult.self, from: Data(resultJson.utf8))
-    }
-
-    /// Consume a stream to completion and return the aggregated typed result
-    /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
-    ///
-    /// - Parameters:
-    ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
-    ///     (`.messages`), serialized to the JSON shape the FFI expects.
-    ///   - options: Optional `GenerateTextOptions`.
-    /// - Returns: A decoded `GenerateTextResult`.
-    func consumeStreamText(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil
-    ) throws -> GenerateTextResult {
-        let promptJson = try AimuxCodable.jsonString(for: prompt)
-        let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
-        let resultJson = try repairedResultJson(
-            consumeStreamText(prompt: promptJson, options: optsJson),
-            promptJson: promptJson, optsJson: optsJson, options: options
-        )
-        return try JSONDecoder().decode(GenerateTextResult.self, from: Data(resultJson.utf8))
-    }
-
-    /// Stream text with typed `TextStreamPart`s.
-    ///
-    /// Each raw JSON-string part is decoded into a `TextStreamPart` before being
-    /// passed to `onPart`. A part that fails to decode is reported via
-    /// `onError` (the stream otherwise continues until done/error).
-    func streamText(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil,
-        onPart: @escaping (TextStreamPart) -> Void,
-        onDone: @escaping () -> Void,
-        onError: @escaping (any Error) -> Void
-    ) {
-        let promptJson: String
-        let optsJson: String?
-        do {
-            promptJson = try AimuxCodable.jsonString(for: prompt)
-            optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
-        } catch {
-            onError(error) // EncodingError from JSONEncoder
-            return
-        }
-        streamText(prompt: promptJson, options: optsJson,
-                   onPart: { json in
-                       do {
-                           // An invalid tool-call part is replaced by its
-                           // repaired form; every other part — argument deltas
-                           // above all — passes through untouched.
-                           let partJson = try repairedStreamPartJson(
-                               json, promptJson: promptJson, optsJson: optsJson, options: options
-                           )
-                           try onPart(JSONDecoder().decode(TextStreamPart.self, from: Data(partJson.utf8)))
-                       } catch {
-                           onError(error) // DecodingError from JSONDecoder, AimuxError from repair
-                       }
-                   },
-                   onDone: onDone,
-                   onError: onError)
-    }
-
-    /// Stream text as an `AsyncSequence` of typed `TextStreamPart`s.
-    ///
-    /// The stream finishes on normal completion and throws `AimuxError`
-    /// (AiMuxError failure, C codes preserved via `fromC`) or the native
-    /// `EncodingError` / `DecodingError` when typed (de)serialization fails.
-    func streamTextAsync(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil
-    ) -> AsyncThrowingStream<TextStreamPart, Error> {
-        AsyncThrowingStream { continuation in
-            self.streamText(
-                prompt: prompt, options: options,
-                onPart: { continuation.yield($0) },
-                onDone: { continuation.finish() },
-                onError: { continuation.finish(throwing: $0) }
-            )
-        }
-    }
-
-    // MARK: OpenAI-compatible output (RFC-0026)
-
-    /// Generate text (non-streaming) with OpenAI Chat Completions output.
-    ///
-    /// - Parameters:
-    ///   - prompt: A `ModelPrompt` — a plain string (`.text`) or a message list
-    ///     (`.messages`), serialized to the JSON shape the FFI expects.
-    ///   - options: Optional `GenerateTextOptions`.
-    /// - Returns: A decoded `ChatCompletion`.
-    func generateTextAsOpenAI(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil
-    ) throws -> ChatCompletion {
-        let promptJson = try AimuxCodable.jsonString(for: prompt)
-        let optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
-        let completionJson: String
-        if options?.repairToolCall == nil {
-            completionJson = try generateTextAsOpenAI(prompt: promptJson, options: optsJson)
-        } else {
-            // A ChatCompletion has no invalid marker: repair the native result,
-            // then convert it.
-            let resultJson = try repairedResultJson(
-                generateText(prompt: promptJson, options: optsJson),
-                promptJson: promptJson, optsJson: optsJson, options: options
-            )
-            completionJson = try generateTextResultAsOpenAI(resultJson)
-        }
-        return try JSONDecoder().decode(ChatCompletion.self, from: Data(completionJson.utf8))
-    }
-
-    /// Stream text with OpenAI Chat Completions output, yielding typed
-    /// `ChatCompletionChunk`s.
-    ///
-    /// Each raw JSON-string chunk is decoded into a `ChatCompletionChunk`
-    /// before being passed to `onPart`. A chunk that fails to decode is
-    /// reported via `onError` (the stream otherwise continues until
-    /// done/error). Stream options (`include_usage`, `include_reasoning`) are
-    /// passed via `options.providerOptions.openai.stream_options`.
-    func streamTextAsOpenAI(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil,
-        onPart: @escaping (ChatCompletionChunk) -> Void,
-        onDone: @escaping () -> Void,
-        onError: @escaping (any Error) -> Void
-    ) {
-        let promptJson: String
-        let optsJson: String?
-        do {
-            promptJson = try AimuxCodable.jsonString(for: prompt)
-            optsJson = try options.map { try AimuxCodable.jsonString(for: $0) }
-        } catch {
-            onError(error) // EncodingError from JSONEncoder
-            return
-        }
-        streamTextAsOpenAI(prompt: promptJson, options: optsJson,
-                           onPart: { json in
-                               do {
-                                   try onPart(JSONDecoder().decode(ChatCompletionChunk.self, from: Data(json.utf8)))
-                               } catch {
-                                   onError(error) // DecodingError from JSONDecoder
-                               }
-                           },
-                           onDone: onDone,
-                           onError: onError)
-    }
-
-    /// Stream text with OpenAI Chat Completions output as an `AsyncSequence`
-    /// of typed `ChatCompletionChunk`s (RFC-0026).
-    func streamTextAsOpenAIAsync(
-        prompt: ModelPrompt,
-        options: GenerateTextOptions? = nil
-    ) -> AsyncThrowingStream<ChatCompletionChunk, Error> {
-        AsyncThrowingStream { continuation in
-            self.streamTextAsOpenAI(
-                prompt: prompt, options: options,
-                onPart: { continuation.yield($0) },
-                onDone: { continuation.finish() },
-                onError: { continuation.finish(throwing: $0) }
-            )
-        }
-    }
-}
-
-/// JSON (de)serialization helpers shared by the typed wrapper.
-fileprivate enum AimuxCodable {
-    /// Encode an `Encodable` value to a JSON string (the wire is camelCase, so
-    /// the default key strategy applies).
-    static func jsonString<T: Encodable>(for value: T) throws -> String {
-        let data = try JSONEncoder().encode(value)
-        return String(data: data, encoding: .utf8) ?? ""
     }
 }

@@ -540,6 +540,11 @@ pub enum RecordingError {
 
 /// 录制器 trait。
 pub trait Recorder: Send + Sync {
+    /// Optional backend inspection for Rust adapters; custom recorders may opt out.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        None
+    }
+
     /// 录制输入侧 + 配置侧最小信息(层 A 入口调用)。
     fn record_input(&self, call_id: &str, options: &CallOptions, provider: &str, model_id: &str);
     /// Custom recorders can opt into decision input capture. Built-in recorders
@@ -724,8 +729,26 @@ impl<S: Stream + Unpin> Stream for ScopedStream<S> {
 
 /// 注册/替换/关闭全局录制器。传 None 关闭。
 pub fn init_recording(recorder: Option<Arc<dyn Recorder>>) {
-    if let Ok(mut g) = RECORDER.write() {
-        *g = recorder;
+    let previous = match RECORDER.write() {
+        Ok(mut current) => std::mem::replace(&mut *current, recorder),
+        Err(_) => None,
+    };
+    // A recorder's final Arc can join its writer; release the state lock first.
+    drop(previous);
+}
+
+/// Detach only the matching active recorder, returning it for cleanup outside the lock.
+/// Existing call snapshots retain their strong references.
+#[must_use]
+pub fn detach_recording_if(expected: &Arc<dyn Recorder>) -> Option<Arc<dyn Recorder>> {
+    let mut current = RECORDER.write().ok()?;
+    if current
+        .as_ref()
+        .is_some_and(|active| Arc::ptr_eq(active, expected))
+    {
+        current.take()
+    } else {
+        None
     }
 }
 
@@ -951,10 +974,10 @@ impl JsonlRecorder {
         })
     }
 
-    /// 在 `dir` 下创建录制器并启动 writer 线程(兼容入口:FFI `aimux_init_recording`
-    /// 及绑定均以 infallible `new` 调用,A9 要求保持兼容)。内部委托 [`JsonlRecorder::try_new`],
-    /// 失败时降级为无 writer 的 no-op recorder(`tx = None`,事件静默丢弃),
-    /// 行为等价于原先 `create_dir_all().ok()` + writer 打开文件失败早退。
+    /// Create a recorder in `dir` and start its writer thread.
+    /// Delegates to [`JsonlRecorder::try_new`]; on failure this infallible Rust
+    /// constructor returns a disabled recorder that silently discards events.
+    /// The ops `recorder.create` path uses `try_new` and reports initialization errors.
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         let dir = dir.into();
         Self::try_new(dir.clone()).unwrap_or_else(|_| Self::disabled(dir))
@@ -3597,5 +3620,53 @@ mod tests {
         rec.flush();
         assert!(rec.inconsistent_call_ids().contains(&"c".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn replacing_a_stalled_recorder_releases_the_state_lock_before_cleanup() {
+        struct StalledRecorder {
+            entered: std::sync::mpsc::Sender<bool>,
+            resume: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+        impl Recorder for StalledRecorder {
+            fn record_input(&self, _: &str, _: &CallOptions, _: &str, _: &str) {}
+            fn record_provider(&self, _: &str, _: &ProviderRecord) {}
+            fn record_exchange(&self, _: &str, _: &HttpExchange) {}
+            fn record_exchange_update(
+                &self,
+                _: &str,
+                _: u32,
+                _: u32,
+                _: &ResponseRecord,
+                _: Option<String>,
+            ) {
+            }
+            fn record_outcome(&self, _: &str, _: &OutcomeRecord) {}
+            fn flush(&self) {}
+        }
+        impl Drop for StalledRecorder {
+            fn drop(&mut self) {
+                let _ = self.entered.send(RECORDER.try_read().is_ok());
+                let _ = self
+                    .resume
+                    .get_mut()
+                    .unwrap()
+                    .recv_timeout(std::time::Duration::from_secs(3));
+            }
+        }
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        init_recording(Some(Arc::new(StalledRecorder {
+            entered: entered_tx,
+            resume: std::sync::Mutex::new(resume_rx),
+        })));
+        let replacement = std::thread::spawn(|| init_recording(None));
+        let unlocked_in_drop = entered_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        let concurrent_snapshot_unlocked = RECORDER.try_read().is_ok();
+        resume_tx.send(()).unwrap();
+        replacement.join().unwrap();
+        assert!(unlocked_in_drop);
+        assert!(concurrent_snapshot_unlocked);
     }
 }

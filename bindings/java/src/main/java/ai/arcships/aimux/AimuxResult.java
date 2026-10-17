@@ -1,195 +1,96 @@
 package ai.arcships.aimux;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.jna.Pointer;
-import com.sun.jna.ptr.LongByReference;
 import com.sun.jna.ptr.PointerByReference;
+import java.io.IOException;
+import java.util.Objects;
 
-/**
- * Package-private helpers for FFI result extraction and error decoding.
- *
- * <p>Every fallible C call returns an {@code aimux_error_t *} ({@code null}
- * = success, result in the out-parameter). Its code identifies an AiMuxError
- * (1–20), RecordingError (100–105), or a failure detected by the C ABI
- * (200–206). The last range collapses to {@link IllegalStateException}
- * ({@code "aimux ffi: "} + message); Java does not expose seven additional
- * exception types. Each helper frees the pointer exactly once. User-triggerable
- * C ABI failures are caught before the C call: {@link #requireJson} for
- * raw JSON ({@link IllegalArgumentException}), local closed-guards for
- * use-after-close ({@link IllegalStateException}).
- */
 final class AimuxResult {
-    private static final int FFI_FIRST = 200;
-    private static final int FFI_LAST = 206;
-
     private AimuxResult() {}
 
-    /**
-     * Validate an optional caller-supplied raw JSON string before it crosses
-     * the C ABI, so malformed input fails as
-     * {@link IllegalArgumentException} naming the parameter. {@code null} and
-     * {@code ""} pass (the C layer treats both as defaults for opts/config).
-     */
-    static void requireJson(String value, String name) {
-        if (value == null || value.isEmpty()) {
-            return;
-        }
-        checkJson(value, name);
-    }
-
-    /**
-     * Validate a required raw JSON string: {@code null} →
-     * {@link NullPointerException}, blank → {@link IllegalArgumentException},
-     * otherwise as {@link #requireJson}.
-     */
-    static void requireJsonNonNull(String value, String name) {
-        java.util.Objects.requireNonNull(value, name);
-        if (value.trim().isEmpty()) {
-            throw new IllegalArgumentException(name + ": invalid JSON: empty");
-        }
-        checkJson(value, name);
-    }
-
-    private static void checkJson(String value, String name) {
+    static JsonNode parse(String value) {
+        Objects.requireNonNull(value, "JSON");
         try {
-            Types.AimuxJson.MAPPER.reader()
-                .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                .readTree(value);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalArgumentException(name + ": invalid JSON: " + e.getOriginalMessage(), e);
+            JsonNode node = Types.AimuxJson.MAPPER.reader()
+                .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(value);
+            if (node == null || node.isMissingNode()) throw new IllegalArgumentException("Empty JSON");
+            return node;
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Invalid JSON", e);
         }
     }
 
-    private static String prefix(String context) {
-        return (context == null || context.isEmpty()) ? "" : context + ": ";
+    static String params(String json) {
+        if (!parse(json).isObject()) throw new IllegalArgumentException("params must be a JSON object");
+        return json;
     }
 
-    /**
-     * Decode an error from a call that may return {@code AiMuxError}: 1–20 →
-     * {@link AimuxException}; 200–206 → {@link IllegalStateException}.
-     * Frees {@code e}.
-     */
-    static RuntimeException expectAimuxError(Pointer e, String context) {
-        String prefix = prefix(context);
-        if (e == null) {
-            throw new IllegalStateException(prefix + "missing aimux error");
-        }
-        AimuxFFI ffi = AimuxFFI.INSTANCE;
+    static String takeString(AimuxFFI ffi, Pointer pointer) {
+        if (pointer == null) return null;
+        try { return pointer.getString(0, "UTF-8"); }
+        finally { ffi.aimux_free_string(pointer); }
+    }
+
+    static JsonNode result(AimuxFFI ffi, Pointer error, PointerByReference out) {
         try {
-            int code = ffi.aimux_error_code(e);
-            if (isFfiCode(code)) {
-                return ffiError(e, prefix);
-            }
-            // Code 4 is retired; Retry is 14, tool errors are 15..17, and a missing
-            // API key / setting are 19 / 20.
-            if (code < AimuxException.AIMUX_E_OTHER
-                    || code > AimuxException.AIMUX_E_LOAD_SETTING
-                    || code == 4) {
-                return codeMismatch(code, prefix, "AiMuxError");
-            }
-            return AimuxException.fromC(e, prefix);
+            check(ffi, error);
+            Pointer pointer = out.getValue();
+            out.setValue(null);
+            String json = takeString(ffi, pointer);
+            if (json == null) throw new IllegalStateException("Native success has no JSON result");
+            return parse(json);
         } finally {
-            ffi.aimux_error_free(e);
+            if (out.getValue() != null) ffi.aimux_free_string(out.getValue());
         }
     }
 
-    /**
-     * Decode an error from a recording call: 100–105 →
-     * {@link RecordingException}; 200–206 → {@link IllegalStateException}.
-     * Frees {@code e}.
-     */
-    static RuntimeException expectRecordingError(Pointer e, String context) {
-        String prefix = prefix(context);
-        if (e == null) {
-            throw new IllegalStateException(prefix + "missing recording error");
-        }
-        AimuxFFI ffi = AimuxFFI.INSTANCE;
+    static void check(AimuxFFI ffi, Pointer error) {
+        if (error == null) return;
         try {
-            int code = ffi.aimux_error_code(e);
-            if (isFfiCode(code)) {
-                return ffiError(e, prefix);
+            int code = ffi.aimux_error_code(error);
+            JsonNode envelope = parse(takeString(ffi, ffi.aimux_error_json(error)));
+            if (envelope.path("code").asInt() != code) {
+                throw new IllegalStateException("Native error code/envelope mismatch");
             }
-            if (!RecordingErrorCode.isCCode(code)) {
-                return codeMismatch(code, prefix, "RecordingError");
-            }
-            return RecordingException.fromC(e, prefix);
-        } finally {
-            ffi.aimux_error_free(e);
+            throw decode(envelope);
+        } finally { ffi.aimux_error_free(error); }
+    }
+
+    static NativeException decode(JsonNode envelope) {
+        if (!envelope.path("code").isInt() || !envelope.path("message").isTextual()
+            || !envelope.path("error").path("name").isTextual()) {
+            throw new IllegalStateException("Malformed native error envelope");
+        }
+        switch (envelope.path("kind").asText()) {
+            case "aimux": return AimuxException.decode(envelope);
+            case "recording": return RecordingException.decode(envelope);
+            case "binding": return BindingException.decode(envelope);
+            case "protocol": return ProtocolException.decode(envelope);
+            default: throw new IllegalStateException("Unknown native error kind");
         }
     }
 
-    /**
-     * Decode an error from a call that only exposes C ABI failures:
-     * message → {@link IllegalStateException}. Deletes {@code e}.
-     */
-    static RuntimeException expectFfiError(Pointer e, String context) {
-        String prefix = prefix(context);
-        if (e == null) {
-            throw new IllegalStateException(prefix + "missing aimux error");
-        }
-        try {
-            int code = AimuxFFI.INSTANCE.aimux_error_code(e);
-            if (!isFfiCode(code)) {
-                return codeMismatch(code, prefix, "C ABI failure");
-            }
-            return ffiError(e, prefix);
-        } finally {
-            AimuxFFI.INSTANCE.aimux_error_free(e);
-        }
+    static BindingException.CallbackFailure callbackFailure(Throwable cause) {
+        ObjectNode envelope = Types.AimuxJson.MAPPER.createObjectNode();
+        envelope.put("kind", "binding");
+        envelope.put("code", 206);
+        envelope.put("message", "Stream consumer failed");
+        envelope.putObject("error").put("name", "CallbackFailure");
+        BindingException.CallbackFailure failure = new BindingException.CallbackFailure(envelope);
+        failure.initCause(cause);
+        return failure;
     }
 
-    private static boolean isFfiCode(int code) {
-        return code >= FFI_FIRST && code <= FFI_LAST;
-    }
-
-    private static IllegalStateException codeMismatch(int code, String prefix, String expected) {
-        return new IllegalStateException(prefix + "aimux ffi: expected " + expected + " code, got " + code);
-    }
-
-    /** Read the returned error's message; does not free. */
-    private static IllegalStateException ffiError(Pointer e, String prefix) {
-        String msg = takeString(AimuxFFI.INSTANCE.aimux_error_message(e));
-        if (msg == null || msg.isEmpty()) {
-            msg = "C ABI failure";
+    static long handle(JsonNode value) {
+        // Handles are decimal strings, never JSON numbers (including values above 2^53).
+        JsonNode id = value.isObject() ? value.path("handle") : value;
+        if (!id.isTextual() || !id.textValue().matches("[1-9][0-9]*")) {
+            throw new IllegalStateException("Expected a nonzero decimal handle string");
         }
-        return new IllegalStateException(prefix + "aimux ffi: " + msg);
-    }
-
-    /** Copy an owned C string and free it; {@code null} stays {@code null}. */
-    static String takeString(Pointer p) {
-        if (p == null) {
-            return null;
-        }
-        try {
-            return p.getString(0, "UTF-8");
-        } finally {
-            AimuxFFI.INSTANCE.aimux_free_string(p);
-        }
-    }
-
-    /**
-     * Accept a constructor result: {@code e == null} → the handle written to
-     * {@code out}; otherwise throw {@link #expectAimuxError}.
-     */
-    static long extractHandle(Pointer e, LongByReference out, String context) {
-        if (e != null) {
-            throw expectAimuxError(e, context);
-        }
-        return out.getValue();
-    }
-
-    /**
-     * Accept a JSON-result call: {@code e == null} → the caller-owned UTF-8
-     * string written to {@code out} (freed here); otherwise throw
-     * {@link #expectAimuxError}.
-     */
-    static String extractString(Pointer e, PointerByReference out, String context) {
-        if (e != null) {
-            throw expectAimuxError(e, context);
-        }
-        String s = takeString(out.getValue());
-        if (s == null) {
-            throw new IllegalStateException(prefix(context) + "aimux ffi: success with NULL result");
-        }
-        return s;
+        try { return Long.parseUnsignedLong(id.textValue()); }
+        catch (NumberFormatException e) { throw new IllegalStateException("Handle exceeds uint64", e); }
     }
 }

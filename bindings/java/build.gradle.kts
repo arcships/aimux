@@ -16,6 +16,8 @@ java {
     targetCompatibility = JavaVersion.VERSION_1_8
 }
 
+sourceSets["main"].java.srcDir("generated")
+
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     // JDK 8's javac has no --release flag; only set it on JDK 9+ so the
@@ -23,21 +25,19 @@ tasks.withType<JavaCompile>().configureEach {
     if (JavaVersion.current().isJava9Compatible) {
         options.release.set(8)
     }
-    // Compiler enforces Java 8 syntax: no var/record/switch expressions, etc.
 }
 
 dependencies {
     implementation("net.java.dev.jna:jna:5.14.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+    testImplementation("org.junit.platform:junit-platform-launcher:1.10.0")
     testImplementation("org.assertj:assertj-core:3.26.0")
     testImplementation("org.json:json:20240303")
 }
 
 tasks.test {
     useJUnitPlatform()
-    // Point JNA at the freshly built native library (cargo build --release -p aimux-ffi),
-    // or at AIMUX_FFI_LIB_DIR when set (e.g. a debug build or a shared target dir).
     systemProperty(
         "jna.library.path",
         System.getenv("AIMUX_FFI_LIB_DIR") ?: projectDir.resolve("../../target/release").canonicalPath
@@ -63,17 +63,8 @@ val javadocJar by tasks.registering(Jar::class) {
     from(tasks.named("javadoc"))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Maven Central (Sonatype OSSRH) publishing.
-//
-// Secrets are NEVER stored in the repo. They are read from Gradle project
-// properties — set either as `ORG_GRADLE_PROJECT_<name>` environment variables
-// or `-P<name>=...` system properties:
-//   signingKey / signingPassword   ASCII-armored GPG private key + passphrase
-//   ossrhUsername / ossrhPassword  Sonatype (s01.oss.sonatype.org) credentials
-// When the keys are absent, signing/publishing configuration stays inert, so
-// local builds and `gradle test` are unaffected.
-// ─────────────────────────────────────────────────────────────────────────────
+// Supply publishing and signing credentials as Gradle properties via
+// ORG_GRADLE_PROJECT_<name> or -P<name>=<value>.
 
 val ossrhUsername = findProperty("ossrhUsername") as String?
 val ossrhPassword = findProperty("ossrhPassword") as String?
@@ -151,4 +142,23 @@ signing {
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications["mavenJava"])
     }
+}
+
+// Deterministic JNA contract tests use a test-only C implementation of the frozen ABI.
+val nativeFixture = layout.buildDirectory.file("native/${System.mapLibraryName("aimux_abi_fixture")}")
+val compileNativeFixture by tasks.registering(Exec::class) {
+    inputs.file("src/test/native/abi_fixture.c")
+    inputs.file("../../aimux-ffi/include/aimux.h")
+    outputs.file(nativeFixture)
+    doFirst {
+        nativeFixture.get().asFile.parentFile.mkdirs()
+        val sharedFlag = if (System.getProperty("os.name").startsWith("Mac")) "-dynamiclib" else "-shared"
+        commandLine("cc", "-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Wall", "-Wextra", "-Werror",
+            sharedFlag, "-fPIC", "-I../../aimux-ffi/include", "src/test/native/abi_fixture.c", "-o", nativeFixture.get().asFile.absolutePath)
+    }
+}
+
+tasks.test {
+    dependsOn(compileNativeFixture)
+    systemProperty("aimux.testLibrary", nativeFixture.get().asFile.absolutePath)
 }

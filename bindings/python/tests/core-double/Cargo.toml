@@ -1,0 +1,10 @@
+# Test-only minimal core surface. The runner copies the REAL AbortSignal source.
+[package]
+name = "aimux-core"
+version = "0.0.0"
+edition = "2024"
+[dependencies]
+tokio-util = { version = "0.7", features = ["rt"] }
+serde = "1"
+serde_json = "1"
+[workspace]

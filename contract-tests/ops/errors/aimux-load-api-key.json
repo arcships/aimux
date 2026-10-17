@@ -1,0 +1,10 @@
+{
+  "kind": "aimux",
+  "code": 19,
+  "message": "No API key found for OpenAI. Please provide it via the `api_key` parameter or set the `OPENAI_API_KEY` environment variable.",
+  "error": {
+    "name": "AI_LoadAPIKeyError",
+    "envVar": "OPENAI_API_KEY",
+    "description": "OpenAI"
+  }
+}

@@ -1,1756 +1,422 @@
-//! aimux-node: Node.js binding (napi-rs v3, native path).
-//!
-//! This is the **flagship binding** — directly uses aimux-providers, bypassing
-//! aimux-ffi. napi-rs maps Rust async to JS Promise/AsyncIterator, giving
-//! native-TS-quality DX.
-//!
-//! Design:
-//! - Provider model instances live as JS objects backed by Rust `Arc<dyn LanguageModel>`.
-//! - `generateText` returns a Promise<string> (JSON-serialized GenerateTextResult).
-//! - `streamText` returns an AsyncGenerator yielding StreamPart JSON strings.
-//! - The TS wrapper layer (index.ts) parses JSON into typed objects.
-
-mod decision;
+//! Async napi adapter for aimux-ops. No C ABI or blocking runtime is used.
+//! Futures run on napi-rs's Tokio runtime; JS values never cross into those futures.
+mod bridge;
 mod error;
-mod multimodal;
-pub use decision::*;
-pub use multimodal::*;
 
-use std::future::Future;
-use std::sync::Arc;
+#[cfg(feature = "contract-tests")]
+#[path = "../__test__/native_scenarios.rs"]
+mod native_scenarios;
 
-use crate::error::{
-    AiMuxBindingError, AimuxResult, BindingError, MResult, StreamItem, parse_wire_json,
-    serialize_result,
-};
-use aimux_core::AiMuxError;
-#[allow(deprecated)]
-use aimux_core::generate::generate_object;
-use aimux_core::generate::{
-    GenerateTextOptions, GenerateTextResult, generate_text, generate_text_as_openai,
-    generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
-};
-use aimux_core::language_model::LanguageModel;
-use aimux_core::message::ModelPrompt;
-use aimux_core::openai_output::OpenAiStreamOptions;
-use aimux_core::parse_tool_call::{ToolCallRepairReply, tool_call_repair_inputs};
-use aimux_core::tool::ToolCall;
-use aimux_providers::provider as providers;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
+use std::time::SystemTime;
+
+use aimux_core::AbortSignal;
+use aimux_ops::dispatch::{self, Ctx};
+use aimux_ops::envelope::{ErrorEnvelope, OpsError, ProtocolError};
+use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner, allocate};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use serde_json::Value;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Model — a provider model instance accessible from JS.
-// ─────────────────────────────────────────────────────────────────────────────
+pub use bridge::FrameIterator;
+use error::{WireResult, envelope};
 
-#[napi]
-pub struct Model {
-    inner: Arc<dyn LanguageModel>,
-    /// Probe store — `Some` only for traced models (RFC-0015).
-    trace_store: Option<Arc<aimux_core::trace::RingTraceStore>>,
+#[derive(Default)]
+struct Resources {
+    closed: bool,
+    active: HashMap<u64, Weak<AbortSignal>>,
+    // Operations must keep the context cancellation signal until handle.drop.
+    operations: HashMap<u64, Arc<AbortSignal>>,
 }
 
-/// A bridge from a JS `AbortSignal` to the core's runtime cancellation.
-///
-/// napi's own `AbortSignal` is not `Send` (it holds `Rc`), so it cannot be a
-/// parameter of an async napi method. This class is created synchronously
-/// (registering the abort callback on the JS thread) and then passed to
-/// `generateText` / `streamText` — it only holds an `Arc` and is `Send`.
-///
-/// ```ts
-/// const bridge = signal ? new AbortBridge(signal) : undefined
-/// await model.generateText(prompt, options, bridge)
-/// ```
-#[napi]
-pub struct AbortBridge {
-    signal: Arc<aimux_core::AbortSignal>,
+struct Realm {
+    owner: Owner,
+    next_request: AtomicU64,
+    resources: Mutex<Resources>,
 }
 
-#[napi]
-impl AbortBridge {
-    #[napi(constructor, ts_args_type = "signal: AbortSignal")]
-    pub fn new(env: napi::Env, signal: napi::bindgen_prelude::Object<'_>) -> napi::Result<Self> {
-        use napi::bindgen_prelude::FromNapiValue;
+impl Realm {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Resources> {
+        self.resources
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
-        // napi's on_abort only observes future events. Read the original JS
-        // state before conversion so a previously aborted signal cancels too.
-        let already_aborted = signal.get::<bool>("aborted")?.unwrap_or(false);
-        // SAFETY: signal belongs to this callback's environment and remains
-        // live during conversion; napi validates and registers its own payload.
-        let signal = unsafe {
-            napi::bindgen_prelude::AbortSignal::from_napi_value(env.raw(), signal.raw())?
-        };
-        let core = aimux_core::AbortSignal::new();
-        let watcher = core.clone();
-        signal.on_abort(move || watcher.abort());
-        if already_aborted {
-            core.abort();
+    fn context(&self, signal: &AbortSignal) -> Ctx {
+        Ctx {
+            owner: self.owner,
+            abort: Some(signal.clone()),
+            now: SystemTime::now,
         }
-        Ok(Self {
-            signal: Arc::new(core),
+    }
+
+    fn request(
+        self: &Arc<Self>,
+        signal: Arc<AbortSignal>,
+    ) -> std::result::Result<Request, ErrorEnvelope> {
+        let mut resources = self.lock();
+        if resources.closed {
+            return Err(invalid_state("Node environment is closed"));
+        }
+        let id = allocate(&self.next_request).map_err(envelope)?;
+        resources.active.insert(id, Arc::downgrade(&signal));
+        Ok(Request {
+            realm: self.clone(),
+            id,
+            signal,
         })
     }
 
-    /// Returns `true` once the underlying JS signal has been aborted.
+    fn remember(&self, result: &Value, signal: &Arc<AbortSignal>) {
+        let registry = HandleRegistry::global();
+        let mut resources = self.lock();
+        if resources.closed {
+            // A call that finished after cleanup may have created handles.
+            drop(resources);
+            signal.abort();
+            registry.release_owner(self.owner);
+            return;
+        }
+        // An operation keeps its start call's cancellation signal until handle.drop.
+        // Only a bare handle-id result can name one; model JSON is never scanned.
+        let operation = result
+            .as_str()
+            .and_then(|id| id.parse().ok())
+            .filter(|&id| registry.get(self.owner, id, &[HandleKind::Operation]).is_ok());
+        if let Some(HandleId(id)) = operation {
+            resources.operations.insert(id, signal.clone());
+        }
+    }
+
+    fn cleanup(&self) {
+        let (active, operations) = {
+            let mut resources = self.lock();
+            resources.closed = true;
+            (
+                std::mem::take(&mut resources.active),
+                std::mem::take(&mut resources.operations),
+            )
+        };
+        for signal in active.into_values().filter_map(|signal| signal.upgrade()) {
+            signal.abort();
+        }
+        for signal in operations.into_values() {
+            signal.abort();
+        }
+        // Release also covers handles returned by raw dispatch calls.
+        HandleRegistry::global().release_owner(self.owner);
+    }
+}
+
+struct Request {
+    realm: Arc<Realm>,
+    id: u64,
+    signal: Arc<AbortSignal>,
+}
+
+impl Drop for Request {
+    fn drop(&mut self) {
+        self.realm.lock().active.remove(&self.id);
+    }
+}
+
+fn invalid_state(message: &str) -> ErrorEnvelope {
+    envelope(OpsError::Protocol(ProtocolError::InvalidState(
+        message.to_owned(),
+    )))
+}
+
+fn handle(value: &str) -> std::result::Result<HandleId, ErrorEnvelope> {
+    value
+        .parse()
+        .map_err(|message| envelope(OpsError::Protocol(ProtocolError::InvalidParams(message))))
+}
+
+/// All Runtime instances in one napi Env share one unforgeable Owner::Node.
+#[napi]
+pub struct Runtime {
+    realm: Arc<Realm>,
+}
+
+#[napi]
+impl Runtime {
+    #[napi(constructor)]
+    pub fn new(env: Env) -> napi::Result<Self> {
+        if let Some(realm) = env.get_instance_data::<Arc<Realm>>()? {
+            return Ok(Self {
+                realm: realm.clone(),
+            });
+        }
+        let owner = Owner::new_node().map_err(|error| {
+            error::throwable(&env, envelope(error)).unwrap_or_else(|error| error)
+        })?;
+        let realm = Arc::new(Realm {
+            owner,
+            next_request: AtomicU64::new(1),
+            resources: Mutex::default(),
+        });
+        // napi registers its runtime cleanup during module initialization. Node
+        // runs Env hooks in reverse registration order, so release_owner runs
+        // here before napi shuts its runtime down (and before JS finalizers).
+        env.add_env_cleanup_hook(realm.clone(), |realm| realm.cleanup())?;
+        env.set_instance_data(realm.clone(), (), |_| {})?;
+        Ok(Self { realm })
+    }
+
+    /// Nonblocking release for explicit disposal and JS finalization.
     #[napi]
+    pub fn drop_handle(&self, id: String) -> WireResult<()> {
+        WireResult((|| {
+            let id = handle(&id)?;
+            let entry = HandleRegistry::global().remove(self.realm.owner, id);
+            let signal = self.realm.lock().operations.remove(&id.0);
+            if let Some(signal) = signal {
+                signal.abort();
+            }
+            if let Some(Entry::Operation(operation)) = entry {
+                operation.consumer_close();
+            }
+            Ok(())
+        })())
+    }
+
+    #[napi]
+    pub fn manifest_json(&self) -> WireResult<String> {
+        WireResult(error::serialize(&aimux_ops::manifest::manifest()))
+    }
+
+    #[napi]
+    pub fn manifest_digest(&self) -> String {
+        aimux_ops::manifest::manifest_digest()
+    }
+
+    #[napi(ts_return_type = "Promise<string>")]
+    pub async fn call(
+        &self,
+        id: String,
+        op: String,
+        params_json: String,
+        abort: Option<&Abort>,
+    ) -> WireResult<String> {
+        WireResult(
+            async {
+                let id = handle(&id)?;
+                let params = error::parse("params", &params_json)?;
+                let signal = self.signal(abort)?;
+                let request = self.realm.request(signal.clone())?;
+                #[cfg(feature = "contract-tests")]
+                if op == "test.operation" {
+                    return error::serialize(&native_scenarios::operation(self.realm.owner).await);
+                }
+                #[cfg(feature = "contract-tests")]
+                if op == "test.teardown" {
+                    let realm = Realm {
+                        owner: Owner::new_node().map_err(envelope)?,
+                        next_request: AtomicU64::new(1),
+                        resources: Mutex::default(),
+                    };
+                    let id = native_scenarios::operation(realm.owner).await;
+                    realm.cleanup();
+                    let runtime_alive = tokio::spawn(async { true }).await.unwrap();
+                    return error::serialize(&serde_json::json!({
+                        "released": native_scenarios::released(realm.owner, id),
+                        "runtimeAlive": runtime_alive,
+                    }));
+                }
+                #[cfg(feature = "contract-tests")]
+                if op == "test.scenario" {
+                    return error::serialize(
+                        &native_scenarios::replay(params, self.realm.owner).await,
+                    );
+                }
+                let result = dispatch::call(self.realm.context(&signal), id, &op, params)
+                    .await
+                    .map_err(envelope)?;
+                self.realm.remember(&result, &signal);
+                if op == dispatch::HANDLE_DROP {
+                    let mut resources = self.realm.lock();
+                    if let Some(signal) = resources.operations.remove(&id.0) {
+                        signal.abort();
+                    }
+                }
+                drop(request);
+                error::serialize(&result)
+            }
+            .await,
+        )
+    }
+
+    /// Copy the caller's buffer on the JS thread before returning the Promise.
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn operation_push<'env>(
+        &self,
+        env: &'env Env,
+        id: String,
+        data: Uint8Array,
+    ) -> napi::Result<PromiseRaw<'env, WireResult<()>>> {
+        let prepared = (|| {
+            if data.len() > 1024 * 1024 {
+                return Err(envelope(OpsError::Protocol(ProtocolError::ResourceLimit(
+                    "audio chunk exceeds 1 MiB".into(),
+                ))));
+            }
+            dispatch::operation_push(
+                &self.realm.context(&AbortSignal::new()),
+                handle(&id)?,
+                &data,
+            )
+            .map_err(envelope)
+        })();
+        env.spawn_future(async move { Ok(WireResult(prepared)) })
+    }
+
+    #[napi(ts_return_type = "Promise<FrameIterator>")]
+    pub async fn stream(
+        &self,
+        id: String,
+        op: String,
+        params_json: String,
+        abort: Option<&Abort>,
+    ) -> WireResult<FrameIterator> {
+        WireResult(
+            async {
+                let id = handle(&id)?;
+                let params = error::parse("params", &params_json)?;
+                let signal = self.signal(abort)?;
+                let request = self.realm.request(signal.clone())?;
+                // Validation occurs before an iterator is returned, never as a fabricated first event.
+                let stream = dispatch::stream(self.realm.context(&signal), id, &op, params)
+                    .map_err(envelope)?;
+                Ok(bridge::start(stream, request))
+            }
+            .await,
+        )
+    }
+}
+
+impl Runtime {
+    fn signal(
+        &self,
+        abort: Option<&Abort>,
+    ) -> std::result::Result<Arc<AbortSignal>, ErrorEnvelope> {
+        match abort {
+            Some(abort) => {
+                HandleRegistry::global()
+                    .get(
+                        self.realm.owner,
+                        HandleId(abort.id.load(Ordering::Acquire)),
+                        &[HandleKind::Abort],
+                    )
+                    .map_err(envelope)?;
+                Ok(abort.signal.clone())
+            }
+            None => Ok(Arc::new(AbortSignal::new())),
+        }
+    }
+}
+
+/// An Abort handle; dropping it releases the handle without signalling shared work.
+#[napi]
+pub struct Abort {
+    id: AtomicU64,
+    realm: Arc<Realm>,
+    signal: Arc<AbortSignal>,
+}
+
+#[napi]
+impl Abort {
+    #[napi(constructor, ts_args_type = "runtime: Runtime, signal?: AbortSignal")]
+    pub fn new(env: Env, runtime: &Runtime, signal: Option<Object<'_>>) -> napi::Result<Self> {
+        let core = Arc::new(AbortSignal::new());
+        if let Some(signal) = signal {
+            let already_aborted = signal.get::<bool>("aborted")?.unwrap_or(false);
+            // SAFETY: conversion stays on the JS thread; napi owns callback registration.
+            let signal = unsafe {
+                napi::bindgen_prelude::AbortSignal::from_napi_value(env.raw(), signal.raw())?
+            };
+            let watcher = core.clone();
+            signal.on_abort(move || watcher.abort());
+            if already_aborted {
+                core.abort();
+            }
+        }
+        let id = HandleRegistry::global()
+            .insert(runtime.realm.owner, Entry::Abort(core.clone()))
+            .map_err(|error| {
+                error::throwable(&env, envelope(error)).unwrap_or_else(|error| error)
+            })?;
+        Ok(Self {
+            id: AtomicU64::new(id.0),
+            realm: runtime.realm.clone(),
+            signal: core,
+        })
+    }
+
+    #[napi(getter)]
+    pub fn handle(&self) -> String {
+        self.id.load(Ordering::Acquire).to_string()
+    }
+    #[napi]
+    pub fn signal(&self) {
+        if self.id.load(Ordering::Acquire) != 0 {
+            self.signal.abort();
+        }
+    }
+    #[napi]
+    pub fn close(&self) {
+        let id = self.id.swap(0, Ordering::AcqRel);
+        if id != 0 {
+            drop(HandleRegistry::global().remove(self.realm.owner, HandleId(id)));
+        }
+    }
+    #[napi(getter)]
     pub fn aborted(&self) -> bool {
         self.signal.is_aborted()
     }
 }
 
-impl AbortBridge {
-    fn core_signal(&self) -> aimux_core::AbortSignal {
-        (*self.signal).clone()
+impl Drop for Abort {
+    fn drop(&mut self) {
+        self.close();
     }
-}
-
-#[napi]
-impl Model {
-    /// Wrap this model in a cache-probe layer (RFC-0015). The returned
-    /// model records fingerprints/verdicts on every call and exposes the
-    /// `traceAggregate` / `traceSessionChain` / `traceExportJsonl` /
-    /// `traceClear` queries.
-    #[napi]
-    pub fn trace(&self) -> Model {
-        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
-        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone());
-        Model {
-            inner: Arc::new(layer),
-            trace_store: Some(store),
-        }
-    }
-
-    /// Wrap this model in a cache-probe layer with the built-in rules
-    /// auditor (RFC-0015 §4). `strict` = strict mode (self-hosted single
-    /// instance); `false` = shared mode (safe default).
-    #[napi]
-    pub fn trace_audited(&self, strict: bool) -> Model {
-        let store = Arc::new(aimux_core::trace::RingTraceStore::new());
-        let layer = aimux_core::trace::TraceLayer::new(self.inner.clone(), store.clone())
-            .with_rules_auditor(strict);
-        Model {
-            inner: Arc::new(layer),
-            trace_store: Some(store),
-        }
-    }
-
-    /// Aggregated probe statistics (RFC-0015 §5.3), filtered by a JSON
-    /// `TraceFilter` (optional). Returns a JSON `TraceStats[]` string.
-    #[napi]
-    pub fn trace_aggregate(&self, filter_json: Option<String>) -> AimuxResult<String> {
-        AimuxResult((|| -> crate::error::MResult<String> {
-            let Some(store) = &self.trace_store else {
-                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
-                    "model is not traced; call trace() first".into(),
-                )));
-            };
-            let filter = match filter_json {
-                Some(f) => parse_wire_json("filter", &f)?,
-                None => Default::default(),
-            };
-            serialize_result(&store.aggregate(&filter))
-        })())
-    }
-
-    /// One session's chain view (RFC-0015 §5.3). Returns a JSON
-    /// `SessionChainView` string or an error when the session is unknown.
-    #[napi]
-    pub fn trace_session_chain(&self, session_id: String) -> AimuxResult<String> {
-        AimuxResult((|| -> crate::error::MResult<String> {
-            let Some(store) = &self.trace_store else {
-                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
-                    "model is not traced; call trace() first".into(),
-                )));
-            };
-            let view = store.session_chain(&session_id).ok_or_else(|| {
-                AiMuxBindingError::from(&AiMuxError::InvalidArgument("unknown session".into()))
-            })?;
-            serialize_result(&view)
-        })())
-    }
-
-    /// One session's per-step cache-hit trajectory (RFC-0024 §4.3). Returns
-    /// a JSON array of `SessionStepStat` (empty when the session is unknown
-    /// or the model is not traced).
-    #[napi]
-    pub fn trace_session_trajectory(&self, session_id: String) -> AimuxResult<String> {
-        AimuxResult((|| -> crate::error::MResult<String> {
-            let Some(store) = &self.trace_store else {
-                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
-                    "model is not traced; call trace() first".into(),
-                )));
-            };
-            let stats = store.session_cache_trajectory(&session_id);
-            serialize_result(&stats)
-        })())
-    }
-
-    /// Export all probe records as JSONL (one `TraceRecord` per line).
-    #[napi]
-    pub fn trace_export_jsonl(&self) -> AimuxResult<String> {
-        AimuxResult((|| -> crate::error::MResult<String> {
-            let Some(store) = &self.trace_store else {
-                return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
-                    "model is not traced; call trace() first".into(),
-                )));
-            };
-            let mut buf = Vec::new();
-            store
-                .export_jsonl(&mut buf)
-                .map_err(|e| BindingError::ResultSerialization {
-                    message: format!("export: {e}"),
-                })?;
-            String::from_utf8(buf).map_err(|e| {
-                BindingError::ResultSerialization {
-                    message: format!("utf8: {e}"),
-                }
-                .into()
-            })
-        })())
-    }
-
-    /// Clear all probe records of this traced model.
-    #[napi]
-    pub fn trace_clear(&self) {
-        if let Some(store) = &self.trace_store {
-            store.clear();
-        }
-    }
-
-    /// Generate text (non-streaming).
-    ///
-    /// `prompt` — a JSON string: bare prompt (`"text"` or `[{...}]`) or `{"prompt": ...}`.
-    /// `options` — optional JSON-serialized `GenerateTextOptions`.
-    /// `bridge` — optional `AbortBridge` (wrap a JS `AbortSignal` in one);
-    /// aborting the signal cancels the call.
-    /// Returns a JSON-serialized `GenerateTextResult`.
-    #[napi(ts_return_type = "Promise<string>")]
-    pub async fn generate_text(
-        &self,
-        prompt: String,
-        options: Option<String>,
-        bridge: Option<&AbortBridge>,
-    ) -> AimuxResult<String> {
-        AimuxResult({
-            let __r: crate::error::MResult<String> = async {
-                let parsed_prompt = parse_prompt(&prompt)?;
-                let mut opts = parse_opts(options.as_deref())?;
-                opts.abort_signal = bridge.map(|b| b.core_signal());
-
-                let result = generate_text(&*self.inner, parsed_prompt, opts)
-                    .await
-                    .map_err(|e| AiMuxBindingError::from(&e))?;
-
-                serialize_result(&result)
-            }
-            .await;
-            __r
-        })
-    }
-
-    /// Generate a structured JSON object from the model (M12, RFC-0016).
-    ///
-    /// Same signature as [`Model::generate_text`]; returns a JSON-serialized
-    /// `GenerateObjectResult` (core's deprecated `generate_object` wrapper).
-    /// Pass `output: { "type": "object", "schema": ... }`
-    /// via `options` to describe the value; the model's text must parse and
-    /// match the schema.
-    #[napi(ts_return_type = "Promise<string>")]
-    #[allow(deprecated)]
-    pub async fn generate_object(
-        &self,
-        prompt: String,
-        options: Option<String>,
-        bridge: Option<&AbortBridge>,
-    ) -> AimuxResult<String> {
-        AimuxResult({
-            let __r: crate::error::MResult<String> = async {
-                let parsed_prompt = parse_prompt(&prompt)?;
-                let mut opts = parse_opts(options.as_deref())?;
-                opts.abort_signal = bridge.map(|b| b.core_signal());
-
-                let result = generate_object(&*self.inner, parsed_prompt, opts)
-                    .await
-                    .map_err(|e| AiMuxBindingError::from(&e))?;
-
-                serialize_result(&result)
-            }
-            .await;
-            __r
-        })
-    }
-
-    /// Consume a stream to completion and return the aggregated result
-    /// (M11, RFC-0016).
-    ///
-    /// Drives `streamText` to completion and returns a JSON-serialized
-    /// `GenerateTextResult`, the same result `generateText` returns.
-    #[napi(ts_return_type = "Promise<string>")]
-    pub async fn consume_stream_text(
-        &self,
-        prompt: String,
-        options: Option<String>,
-        bridge: Option<&AbortBridge>,
-    ) -> AimuxResult<String> {
-        AimuxResult({
-            let __r: crate::error::MResult<String> = async {
-                let parsed_prompt = parse_prompt(&prompt)?;
-                let mut opts = parse_opts(options.as_deref())?;
-                opts.abort_signal = bridge.map(|b| b.core_signal());
-
-                let stream_result = stream_text(&*self.inner, parsed_prompt, opts)
-                    .await
-                    .map_err(|e| AiMuxBindingError::from(&e))?;
-                let aggregated = stream_result
-                    .consume()
-                    .await
-                    .map_err(|e| AiMuxBindingError::from(&e))?;
-
-                serialize_result(&aggregated)
-            }
-            .await;
-            __r
-        })
-    }
-
-    /// Stream text from the model.
-    ///
-    /// Returns an `AsyncGenerator<string>` yielding `TextStreamPart` JSON
-    /// strings. Use `for await (const part of model.streamText(...))` to
-    /// consume.
-    #[napi(ts_return_type = "Promise<AsyncGenerator<string>>")]
-    pub async fn stream_text(
-        &self,
-        prompt: String,
-        options: Option<String>,
-        bridge: Option<&AbortBridge>,
-    ) -> AimuxResult<StreamTextGenerator> {
-        AimuxResult({
-            let __r: crate::error::MResult<StreamTextGenerator> = async {
-                let model = self.inner.clone();
-                // Extract the core signal on the napi thread; it is `Send` and can
-                // move into the spawned task.
-                let abort_signal = bridge.map(|b| b.core_signal());
-
-                let (tx, rx) = tokio::sync::mpsc::channel::<
-                    std::result::Result<String, AiMuxBindingError>,
-                >(64);
-
-                // Spawn the stream-driving task immediately on napi's tokio runtime.
-                napi::tokio::spawn(async move {
-                    let prompt = match parse_prompt(&prompt) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            let _ = tx.send(Err(e)).await;
-                            return;
-                        }
-                    };
-                    let mut opts = match parse_opts(options.as_deref()) {
-                        Ok(o) => o,
-                        Err(e) => {
-                            let _ = tx.send(Err(e)).await;
-                            return;
-                        }
-                    };
-                    opts.abort_signal = abort_signal;
-
-                    match stream_text(&*model, prompt, opts).await {
-                        Ok(stream_result) => {
-                            use futures::StreamExt;
-                            let mut stream = stream_result.stream;
-                            while let Some(item) = stream.next().await {
-                                match item {
-                                    Ok(part) => {
-                                        // Not serializable → end the stream with the binding's
-                                        // ResultSerialization, never a silent "{}".
-                                        let json = match serde_json::to_string(&part) {
-                                            Ok(j) => j,
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(Err(AiMuxBindingError::from(
-                                                        BindingError::ResultSerialization {
-                                                            message: format!("stream part: {e}"),
-                                                        },
-                                                    )))
-                                                    .await;
-                                                break;
-                                            }
-                                        };
-                                        if tx.send(Ok(json)).await.is_err() {
-                                            break; // receiver dropped (JS stopped iterating)
-                                        }
-                                    }
-                                    Err(e) if e.is_recoverable_stream_error() => {
-                                        // Core keeps the stream alive across a malformed
-                                        // frame; deliver it as a StreamPart::Error data item
-                                        // and keep pumping.
-                                        match serde_json::to_string(
-                                            &aimux_core::stream_part::TextStreamPart::Error {
-                                                error: e,
-                                            },
-                                        ) {
-                                            Ok(json) => {
-                                                if tx.send(Ok(json)).await.is_err() {
-                                                    break;
-                                                }
-                                            }
-                                            Err(_) => break,
-                                        }
-                                    }
-                                    Err(e) => {
-                                        let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
-                        }
-                    }
-                });
-
-                Ok(StreamTextGenerator {
-                    rx: std::sync::Arc::new(tokio::sync::Mutex::new(Some(rx))),
-                })
-            }
-            .await;
-            __r
-        })
-    }
-
-    /// Generate text and return an OpenAI Chat Completion (non-streaming).
-    ///
-    /// Returns a JSON-serialized `ChatCompletion`. Works with any provider.
-    #[napi(ts_return_type = "Promise<string>")]
-    pub async fn generate_text_as_openai(
-        &self,
-        prompt: String,
-        options: Option<String>,
-        bridge: Option<&AbortBridge>,
-    ) -> AimuxResult<String> {
-        AimuxResult({
-            let __r: crate::error::MResult<String> = async {
-                let parsed_prompt = parse_prompt(&prompt)?;
-                let mut opts = parse_opts(options.as_deref())?;
-                opts.abort_signal = bridge.map(|b| b.core_signal());
-
-                let result = generate_text_as_openai(&*self.inner, parsed_prompt, opts)
-                    .await
-                    .map_err(|e| AiMuxBindingError::from(&e))?;
-
-                serialize_result(&result)
-            }
-            .await;
-            __r
-        })
-    }
-
-    /// Convert a serialized `GenerateTextResult` into a serialized
-    /// `ChatCompletion` — the conversion half of `generateTextAsOpenai`.
-    ///
-    /// For repairing on the host (RFC-0035): patch the native result, then
-    /// convert it, so the completion's tool calls are the repaired ones. This
-    /// model only supplies the fallback model id.
-    #[napi]
-    pub fn generate_text_result_as_openai(&self, result_json: String) -> AimuxResult<String> {
-        AimuxResult((|| -> crate::error::MResult<String> {
-            let result: GenerateTextResult = parse_wire_json("result_json", &result_json)?;
-            serialize_result(&generate_text_result_to_chat_completion(
-                &result,
-                self.inner.model_id(),
-            ))
-        })())
-    }
-
-    /// Stream text as OpenAI Chat Completion chunks.
-    ///
-    /// Returns an `AsyncGenerator<string>` yielding `ChatCompletionChunk` JSON
-    /// strings. Works with any provider.
-    #[napi(ts_return_type = "Promise<AsyncGenerator<string>>")]
-    pub async fn stream_text_as_openai(
-        &self,
-        prompt: String,
-        options: Option<String>,
-        bridge: Option<&AbortBridge>,
-    ) -> AimuxResult<StreamTextGenerator> {
-        AimuxResult({
-            let __r: crate::error::MResult<StreamTextGenerator> = async {
-                let model = self.inner.clone();
-                let abort_signal = bridge.map(|b| b.core_signal());
-
-                let (tx, rx) = tokio::sync::mpsc::channel::<
-                    std::result::Result<String, AiMuxBindingError>,
-                >(64);
-
-                napi::tokio::spawn(async move {
-                    let prompt = match parse_prompt(&prompt) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            let _ = tx.send(Err(e)).await;
-                            return;
-                        }
-                    };
-                    let mut opts = match parse_opts(options.as_deref()) {
-                        Ok(o) => o,
-                        Err(e) => {
-                            let _ = tx.send(Err(e)).await;
-                            return;
-                        }
-                    };
-
-                    // Extract OpenAI stream options from providerOptions.openai.stream_options.
-                    let stream_options = opts
-                        .provider_options
-                        .as_ref()
-                        .and_then(|po| po.get("openai"))
-                        .and_then(|o| o.get("stream_options"))
-                        .cloned()
-                        .map(|v| OpenAiStreamOptions {
-                            include_usage: v
-                                .get("include_usage")
-                                .and_then(|b| b.as_bool())
-                                .unwrap_or(true),
-                            include_reasoning: v
-                                .get("include_reasoning")
-                                .and_then(|b| b.as_bool())
-                                .unwrap_or(true),
-                        })
-                        .unwrap_or_default();
-
-                    opts.abort_signal = abort_signal;
-
-                    match stream_text_as_openai(&*model, prompt, opts, stream_options).await {
-                        Ok(stream_result) => {
-                            use futures::StreamExt;
-                            let mut stream = stream_result.stream;
-                            while let Some(item) = stream.next().await {
-                                match item {
-                                    Ok(chunk) => {
-                                        // Not serializable → end the stream with the binding's
-                                        // ResultSerialization, never a silent "{}".
-                                        let json = match serde_json::to_string(&chunk) {
-                                            Ok(j) => j,
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(Err(AiMuxBindingError::from(
-                                                        BindingError::ResultSerialization {
-                                                            message: format!("stream chunk: {e}"),
-                                                        },
-                                                    )))
-                                                    .await;
-                                                break;
-                                            }
-                                        };
-                                        if tx.send(Ok(json)).await.is_err() {
-                                            break;
-                                        }
-                                    }
-                                    Err(e) if e.is_recoverable_stream_error() => {
-                                        // Consumers type this path as ChatCompletionChunk;
-                                        // the error cannot ride it — skip and keep pumping
-                                        // (full fidelity lives on the StreamPart path).
-                                    }
-                                    Err(e) => {
-                                        let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Err(AiMuxBindingError::from(&e))).await;
-                        }
-                    }
-                });
-
-                Ok(StreamTextGenerator {
-                    rx: std::sync::Arc::new(tokio::sync::Mutex::new(Some(rx))),
-                })
-            }
-            .await;
-            __r
-        })
-    }
-}
-
-/// AsyncGenerator that yields StreamPart JSON strings.
-///
-/// The stream is started eagerly in `stream_text()` — a tokio task drives
-/// the Rust Stream and sends each chunk through a channel. `next()` simply
-/// receives from the channel.
-#[napi(async_iterator)]
-pub struct StreamTextGenerator {
-    rx: SharedStreamReceiver,
-}
-
-/// The channel end `next()` drains; `None` once the stream is exhausted.
-type SharedStreamReceiver = std::sync::Arc<
-    tokio::sync::Mutex<
-        Option<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
-    >,
->;
-
-#[napi]
-impl AsyncGenerator for StreamTextGenerator {
-    type Yield = StreamItem;
-    type Next = ();
-    type Return = ();
-
-    fn next(
-        &mut self,
-        _value: Option<Self::Next>,
-    ) -> impl Future<Output = Result<Option<Self::Yield>>> + Send + 'static {
-        // Clone the Arc so the async block owns it (no borrow of self).
-        let rx = self.rx.clone();
-        async move {
-            let mut guard = rx.lock().await;
-            match guard.as_mut() {
-                Some(rx) => {
-                    match rx.recv().await {
-                        Some(Ok(json)) => Ok(Some(StreamItem::json(json))),
-                        // Converting Failure to a napi value (JS thread, Env
-                        // present) rejects `next()` with a structured error.
-                        Some(Err(m)) => Ok(Some(StreamItem::failure(m))),
-                        None => Ok(None), // stream finished
-                    }
-                }
-                None => Ok(None), // already exhausted
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Provider constructors — factory functions exposed to JS.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Optional provider configuration accepted by factory functions.
-///
-/// Passed as the 3rd argument to `openai()` / `anthropic()` / `deepseek()`.
-/// For backward compatibility a bare string is still accepted (treated as
-/// `baseUrl`). See RFC-0017.
-#[napi(object)]
-pub struct ProviderConfig {
-    /// Base URL for API calls (e.g. a relay/proxy endpoint).
-    pub base_url: Option<String>,
-    /// Extra HTTP headers merged into every request, as a JSON object string
-    /// (e.g. `'{"X-Custom":"value"}'`).
-    pub headers: Option<String>,
-    /// OpenAI organization ID (sent via `OpenAI-Organization` header).
-    pub organization: Option<String>,
-    /// OpenAI project ID (sent via `OpenAI-Project` header).
-    pub project: Option<String>,
-    /// Values of a preset's template parameters, named as the registry
-    /// declares them (e.g. `{ account_id: '…' }`), for providers created by
-    /// name (`provider()` / `createProvider()`). Only parameters the preset
-    /// declares are accepted.
-    pub params: Option<std::collections::HashMap<String, String>>,
-    /// Rejected with `InvalidArgumentError`: retry is a per-call setting
-    /// (`maxRetries` in the call options). The field exists only so passing it
-    /// is reported instead of ignored.
-    pub max_retries: Option<u32>,
-    /// Rejected with `InvalidArgumentError`: request-body overrides were
-    /// removed. The field exists only so passing it is reported instead of
-    /// ignored.
-    pub body_overrides: Option<String>,
-}
-
-impl ProviderConfig {
-    /// Fail on the two removed keys instead of dropping them silently.
-    fn reject_removed_keys(&self) -> MResult<()> {
-        providers::reject_removed_provider_options(
-            self.max_retries.is_some(),
-            self.body_overrides.is_some(),
-        )
-        .map_err(|e| AiMuxBindingError::from(&e))
-    }
-}
-
-/// What the native constructors take from their 3rd argument (a base URL
-/// string, or a [`ProviderConfig`]). Every native constructor goes through
-/// here, so `maxRetries` / `bodyOverrides` are rejected for all of them and
-/// none of them drops a key silently.
-struct NativeConfig {
-    base_url: Option<String>,
-    headers: Option<aimux_provider_utils::HeaderMapOpt>,
-    /// OpenAI only (`OpenAI-Organization` / `OpenAI-Project`).
-    organization: Option<String>,
-    project: Option<String>,
-}
-
-fn native_config(config: Option<Either<String, ProviderConfig>>) -> MResult<NativeConfig> {
-    let mut native = NativeConfig {
-        base_url: None,
-        headers: None,
-        organization: None,
-        project: None,
-    };
-    match config {
-        None => {}
-        Some(Either::A(url)) => native.base_url = Some(url),
-        Some(Either::B(cfg)) => {
-            cfg.reject_removed_keys()?;
-            native.base_url = cfg.base_url;
-            if let Some(json_str) = &cfg.headers {
-                let h: std::collections::HashMap<String, String> =
-                    parse_wire_json("config.headers", json_str)?;
-                native.headers = Some(h.into_iter().map(|(k, v)| (k, Some(v))).collect());
-            }
-            native.organization = cfg.organization;
-            native.project = cfg.project;
-        }
-    }
-    Ok(native)
-}
-
-/// OpenAI provider settings for an explicit key handed over by the host, with
-/// an optional base URL. The key is an explicit value (`""` included), so it
-/// never falls back to `OPENAI_API_KEY`.
-fn openai_settings(
-    api_key: String,
-    base_url: Option<String>,
-) -> aimux_providers::openai::OpenAIProviderSettings {
-    aimux_providers::openai::OpenAIProviderSettings {
-        api_key: Some(api_key),
-        base_url,
-        ..Default::default()
-    }
-}
-
-/// 初始化全局日志（RFC-0014）。幂等：多次调用无副作用；宿主已自建
-/// subscriber 时 no-op。级别：off|error|warn|info|debug|trace（空串回退
-/// warn）。`AIMUX_LOG` / `AIMUX_LOG_LEVEL` 环境变量优先级更高。
-/// 日志输出到 stderr。
-#[napi]
-pub fn init_logging(level: String) {
-    let level = if level.trim().is_empty() {
-        "warn".to_string()
-    } else {
-        level
-    };
-    aimux_providers::init_logging(&level);
-}
-
-/// Register the global session store (RFC-0024). Replaces any previous one.
-/// Until called, calls are not grouped and the session query functions return
-/// empty results.
-#[napi]
-pub fn init_session_store() {
-    aimux_core::session::init_session_store(std::sync::Arc::new(
-        aimux_core::session::SessionStore::new(),
-    ));
-}
-
-/// Enable/disable the global session inferer (RFC-0024, opt-in, off by
-/// default). Explicit `sessionId` values always win regardless of this.
-#[napi]
-pub fn init_session_infer(enabled: bool) {
-    aimux_core::session::init_session_infer(enabled);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// External provider config (RFC-0020)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Register external OpenAI-compatible providers from a JSON config string
-/// (RFC-0020). Entries override same-named built-ins or add new ones.
-///
-/// `configJson` shape: `{ "providers": [ { "name": "...", "base_url": "...", ... } ] }`.
-/// Malformed JSON text throws a plain `Error` (napi `InvalidArg`); a
-/// well-formed document the registry rejects (bad base_url scheme, empty
-/// name, unsupported protocol, wrong shape) throws `InvalidArgumentError`.
-#[napi]
-pub fn register_providers(config_json: String) -> error::AimuxResult<()> {
-    AimuxResult((|| -> error::MResult<()> {
-        // Malformed text is the binding's finding; the registry reports a
-        // schema mismatch as `JsonParse`, which is core's InvalidArgument
-        // here (the text already parsed) — JsonParse is for provider responses.
-        let _: serde_json::Value = parse_wire_json("config_json", &config_json)?;
-        providers::load_providers_from_json(&config_json).map_err(|e| match e {
-            AiMuxError::JsonParse(m) => crate::error::AiMuxBindingError::from(
-                &AiMuxError::InvalidArgument(format!("config_json: {m}")),
-            ),
-            e => crate::error::AiMuxBindingError::from(&e),
-        })
-    })())
-}
-
-/// Replace the default transport with one routed by this proxy configuration
-/// (M6, RFC-0016). Requests started afterwards use it; calling it again
-/// replaces the previous configuration.
-///
-/// `configJson` shape: `{ "http_url": "...", "https_url": "...", "all_url":
-/// "...", "no_proxy": "..." }` (all fields optional; omitting all is equivalent
-/// to relying on the `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`
-/// env vars).
-///
-/// Throws on invalid JSON.
-#[napi]
-pub fn init_proxy(config_json: String) -> error::AimuxResult<()> {
-    AimuxResult((|| -> error::MResult<()> {
-        let config: aimux_provider_utils::ProxyConfig =
-            parse_wire_json("config_json", &config_json)?;
-        // Replaces the default transport for later requests (see
-        // `aimux_init_proxy`).
-        aimux_provider_utils::set_default_transport(aimux_provider_utils::ReqwestFetch::new(
-            config,
-        ));
-        Ok(())
-    })())
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Recording + mock replay (RFC-0023)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// 启动录制(RFC-0023 P1/P2):把完整 `Recording` 写 JSONL 到 `{dir}/recordings.jsonl`
-/// (目录自动创建)。录制 **opt-in**;再次调用(不同 dir)替换 recorder。
-/// Throws `RecordingError` (`code` = `Init` / `OpenFile` / `Spawn`) when the
-/// recorder cannot be set up; the previous recorder, if any, stays in place.
-#[napi]
-pub fn init_recording(dir: String) -> AimuxResult<()> {
-    AimuxResult(
-        aimux_core::recording::JsonlRecorder::try_new(dir)
-            .map(|rec| {
-                aimux_core::recording::init_recording(Some(std::sync::Arc::new(rec)));
-            })
-            .map_err(AiMuxBindingError::from),
-    )
-}
-
-/// 启动内存有界录制(RFC-0023 P6):`RingRecorder`,FIFO 淘汰,丢弃计数可查。
-///
-/// `cap` 可省略:省略时使用库默认容量(等价于 FFI `aimux_init_recording_ring_default()`;
-/// 本绑定直接依赖 aimux-core 而非 aimux-ffi,故调用等价 core API `RingRecorder::default()`)。
-/// 显式传 `cap == 0` 抛错(与其余语言一致),`cap > 0` 启动指定容量的有界 ring。
-#[napi]
-pub fn init_recording_ring(cap: Option<u32>) -> error::AimuxResult<()> {
-    let result: error::MResult<()> = match cap {
-        // 省略 cap:库默认容量(镜像 FFI default 变体)。
-        None => {
-            aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-                aimux_core::recording::RingRecorder::default(),
-            )));
-            Ok(())
-        }
-        // 显式 cap == 0:拒绝(与 Kotlin/Java/Python 一致)。
-        Some(0) => Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
-            "initRecordingRing: cap must be > 0".into(),
-        ))),
-        // 显式 cap > 0:指定容量的有界 ring。
-        Some(c) => {
-            aimux_core::recording::init_recording(Some(std::sync::Arc::new(
-                aimux_core::recording::RingRecorder::with_capacity(c as usize),
-            )));
-            Ok(())
-        }
-    };
-    result.into()
-}
-
-/// 停止录制:全局 recorder = None(新调用不再录制)。
-#[napi]
-pub fn recording_stop() {
-    aimux_core::recording::init_recording(None);
-}
-
-/// 刷盘全局 recorder(阻塞至 JSONL 落盘;ring 模式为 no-op)。
-#[napi]
-pub fn recording_flush() {
-    if let Some(rec) = aimux_core::recording::recorder() {
-        rec.flush();
-    }
-}
-
-/// Flush the global recorder and **report write failures**: throws
-/// `RecordingError` (`code` = `WriterGone` / `FlushTimeout` / `Write`) when the
-/// data could not be confirmed on disk. `RecordingError` is its own class,
-/// not an `AimuxError`. Resolves normally when nothing is recording. The
-/// legacy `recordingFlush` stays and never reports.
-#[napi]
-pub fn recording_try_flush() -> AimuxResult<()> {
-    let Some(rec) = aimux_core::recording::recorder() else {
-        return AimuxResult(Ok(()));
-    };
-    AimuxResult(rec.try_flush().map_err(AiMuxBindingError::from))
-}
-
-/// 从录制 JSONL 创建 mock 回放模型(RFC-0023 P3):按输入匹配录制响应,
-/// **不发真实 API**。返回的 `Model` 可用于 `generateText` / `streamText`。
-#[napi]
-pub fn mock_replay(recordings_jsonl: String) -> AimuxResult<Model> {
-    AimuxResult((|| -> crate::error::MResult<Model> {
-        let mut recordings: Vec<aimux_core::recording::Recording> = Vec::new();
-        for (idx, line) in recordings_jsonl.lines().enumerate() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            // Same split as parse_wire_json, with the line number in whichever
-            // message actually reaches JS (binding errors render from `binding`,
-            // not `message`).
-            let rec: aimux_core::recording::Recording =
-                serde_json::from_str(line).map_err(|e| {
-                    let message = format!("recordings line {}: {e}", idx + 1);
-                    match e.classify() {
-                        serde_json::error::Category::Data => {
-                            AiMuxBindingError::from(&AiMuxError::InvalidArgument(message))
-                        }
-                        _ => BindingError::InvalidWireJson {
-                            argument: "recordings_jsonl",
-                            message,
-                        }
-                        .into(),
-                    }
-                })?;
-            recordings.push(rec);
-        }
-        if recordings.is_empty() {
-            return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
-                "no recordings".into(),
-            )));
-        }
-        let model = aimux_core::replay::MockReplayModel::new(
-            recordings[0].provider.provider.clone(),
-            recordings[0].provider.model_id.clone(),
-            recordings,
-        );
-        Ok(Model {
-            inner: std::sync::Arc::new(model),
-            trace_store: None,
-        })
-    })())
-}
-
-#[napi]
-pub fn router(models: Vec<&Model>, config_json: Option<String>) -> AimuxResult<Model> {
-    AimuxResult((|| -> crate::error::MResult<Model> {
-        if models.is_empty() {
-            return Err(AiMuxBindingError::from(&AiMuxError::InvalidArgument(
-                "router: models must be non-empty".into(),
-            )));
-        }
-        let children: Vec<Arc<dyn LanguageModel>> =
-            models.iter().map(|m| m.inner.clone()).collect();
-        let cfg: RouterFfiConfig = match config_json.as_deref() {
-            Some(json) => parse_wire_json("config_json", json)?,
-            None => RouterFfiConfig::default(),
-        };
-        let router: Box<dyn aimux_core::router::Router> = match cfg.router.as_deref() {
-            Some("weighted") => {
-                let weights = cfg.weights.unwrap_or_else(|| vec![1.0; children.len()]);
-                Box::new(aimux_core::router::WeightedRouter::new(weights))
-            }
-            _ => Box::new(aimux_core::router::RuleRouter),
-        };
-        let fallback = if cfg.fallback.as_deref() == Some("none") {
-            aimux_core::router::FallbackPolicy::None
-        } else {
-            aimux_core::router::FallbackPolicy::OnError
-        };
-        let router_cfg = aimux_core::router::RouterConfig {
-            provider_name: cfg.provider_name.unwrap_or_else(|| "router".into()),
-            model_id: cfg.model_id.unwrap_or_else(|| "router".into()),
-        };
-        let model = aimux_core::router::RouterModel::new(children, router, fallback, router_cfg);
-        Ok(Model {
-            inner: Arc::new(model),
-            trace_store: None,
-        })
-    })())
-}
-
-#[napi]
-pub fn moa(
-    references: Vec<&Model>,
-    aggregator: &Model,
-    config_json: Option<String>,
-) -> AimuxResult<Model> {
-    AimuxResult((|| -> crate::error::MResult<Model> {
-        let refs: Vec<Arc<dyn LanguageModel>> =
-            references.iter().map(|m| m.inner.clone()).collect();
-        let cfg: aimux_core::moa::MoaConfig = match config_json.as_deref() {
-            Some(json) => parse_wire_json("config_json", json)?,
-            None => aimux_core::moa::MoaConfig::default(),
-        };
-        let model = aimux_core::moa::MoaModel::new(refs, aggregator.inner.clone(), cfg);
-        Ok(Model {
-            inner: Arc::new(model),
-            trace_store: None,
-        })
-    })())
-}
-
-/// Router config, the C ABI's shape: camelCase, all fields optional,
-/// unknown keys rejected.
-#[derive(Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RouterFfiConfig {
-    router: Option<String>,
-    weights: Option<Vec<f64>>,
-    fallback: Option<String>,
-    provider_name: Option<String>,
-    model_id: Option<String>,
-}
-
-/// Query: all calls of a session (RFC-0024), as a JSON-serialized
-/// `SessionCall[]` (ordered by step). Empty array if the session is unknown
-/// or no store is registered.
-#[napi]
-pub fn session_calls(session_id: String) -> AimuxResult<String> {
-    AimuxResult(serialize_result(&aimux_core::session::session_calls(
-        &session_id,
-    )))
-}
-
-/// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
-#[napi]
-pub fn list_sessions() -> AimuxResult<String> {
-    AimuxResult(serialize_result(&aimux_core::session::list_sessions()))
-}
-
-/// Create an OpenAI model instance.
-#[napi]
-pub async fn openai(
-    api_key: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::openai::create_openai;
-
-            let mut settings = openai_settings(api_key, None);
-            let native = native_config(config)?;
-            settings.base_url = native.base_url;
-            settings.headers = native.headers;
-            settings.organization = native.organization;
-            settings.project = native.project;
-            let provider = create_openai(settings).map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: provider
-                    .language_model(&model_id)
-                    .map_err(|e| AiMuxBindingError::from(&e))?,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create an Anthropic model instance.
-#[napi]
-pub async fn anthropic(
-    api_key: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
-
-            let mut settings = AnthropicProviderSettings {
-                api_key: Some(api_key),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            settings.base_url = native.base_url;
-            settings.headers = native.headers;
-            let provider = create_anthropic(settings).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create a DeepSeek model instance (registry-backed since RFC-0017 phase 4).
-#[napi]
-pub async fn deepseek(
-    api_key: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            let options = provider_options_from_config(config)?;
-            let model = providers::provider("deepseek", Some(api_key), &model_id, options)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create a Google Gemini language model instance.
-///
-/// Google speaks the native `generateContent` protocol (not OpenAI-compatible),
-/// so it is **not** registry-backed — `provider("google", ...)` fails with
-/// `NoSuchProvider`. This factory is the only entry point.
-#[napi]
-pub async fn google(
-    api_key: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::google::{GoogleProviderSettings, create_google};
-
-            let mut settings = GoogleProviderSettings {
-                api_key: Some(api_key),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            settings.base_url = native.base_url;
-            settings.headers = native.headers;
-            let provider = create_google(settings).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create a Cohere language model instance.
-#[napi]
-pub async fn cohere(
-    api_key: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::cohere::{CohereProviderSettings, create_cohere};
-
-            let mut cfg = CohereProviderSettings {
-                api_key: Some(api_key),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            cfg.base_url = native.base_url;
-            cfg.headers = native.headers;
-            let provider = create_cohere(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create a Mistral language model instance.
-#[napi]
-pub async fn mistral(
-    api_key: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::mistral::{MistralProviderSettings, create_mistral};
-
-            let mut cfg = MistralProviderSettings {
-                api_key: Some(api_key),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            cfg.base_url = native.base_url;
-            cfg.headers = native.headers;
-            let provider = create_mistral(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create an xAI language model instance.
-#[napi]
-pub async fn xai(
-    api_key: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::xai::{XAIProviderSettings, create_xai};
-
-            let mut cfg = XAIProviderSettings {
-                api_key: Some(api_key),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            cfg.base_url = native.base_url;
-            cfg.headers = native.headers;
-            let provider = create_xai(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create a Bedrock language model instance (AWS SigV4 credentials).
-#[napi]
-pub async fn bedrock(
-    access_key_id: String,
-    secret_access_key: String,
-    region: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
-
-            let mut settings = AmazonBedrockProviderSettings {
-                credential_provider: Some(aimux_provider_utils::Resolvable::Value(
-                    aimux_provider_utils::AwsCredentials {
-                        access_key_id,
-                        secret_access_key,
-                        session_token: None,
-                        region: region.clone(),
-                    },
-                )),
-                region: Some(region),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            settings.base_url = native.base_url;
-            settings.headers = native.headers;
-            let provider =
-                create_amazon_bedrock(settings).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create a Vertex AI language model instance (GCP bearer token).
-#[napi]
-pub async fn vertex(
-    access_token: String,
-    project: String,
-    location: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::vertex::{VertexProviderSettings, create_google_vertex};
-
-            let mut settings = VertexProviderSettings {
-                access_token: Some(aimux_provider_utils::Resolvable::Value(access_token)),
-                project: Some(project),
-                location: Some(location),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            settings.base_url = native.base_url;
-            settings.headers = native.headers.map(aimux_provider_utils::Resolvable::Value);
-            let provider =
-                create_google_vertex(settings).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create an Anthropic-on-AWS language model instance (API key + region).
-#[napi]
-pub async fn anthropic_aws(
-    api_key: String,
-    region: String,
-    model_id: String,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::anthropic_aws::{
-                AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws,
-            };
-
-            let mut settings = AnthropicAwsProviderSettings {
-                region: Some(region),
-                auth: Some(AnthropicAwsAuth::ApiKey(
-                    aimux_provider_utils::Resolvable::Value(api_key),
-                )),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            settings.base_url = native.base_url;
-            settings.headers = native.headers;
-            let provider =
-                create_anthropic_aws(settings).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&model_id)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create an Azure OpenAI language model instance (API key + resource name).
-///
-/// The deployment name is passed as `model_id`; `api_version` is optional.
-#[napi]
-pub async fn azure(
-    api_key: String,
-    resource_name: String,
-    deployment: String,
-    api_version: Option<String>,
-    config: Option<Either<String, ProviderConfig>>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            use aimux_core::provider::Provider;
-            use aimux_providers::azure::{AzureOpenAIProviderSettings, create_azure};
-
-            let mut cfg = AzureOpenAIProviderSettings {
-                api_key: Some(aimux_provider_utils::Resolvable::Value(api_key)),
-                ..Default::default()
-            };
-            let native = native_config(config)?;
-            cfg.base_url = native.base_url;
-            cfg.headers = native.headers;
-            // A dated `api_version` belongs to the deployment URL form.
-            if let Some(version) = api_version
-                && !version.is_empty()
-            {
-                cfg.api_version = Some(version);
-                cfg.use_deployment_based_urls = true;
-            }
-            if !resource_name.is_empty() {
-                cfg.resource_name = Some(resource_name);
-            }
-            let provider = create_azure(cfg).map_err(|e| AiMuxBindingError::from(&e))?;
-            let model = provider
-                .language_model(&deployment)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Create a language model from the built-in registry by provider name
-/// (RFC-0017 phase 4). `api_key` may be empty/null to read the provider's env
-/// var from the registry entry.
-#[napi]
-pub async fn provider(
-    name: String,
-    api_key: Option<String>,
-    model_id: String,
-    config: Option<ProviderConfig>,
-) -> AimuxResult<Model> {
-    AimuxResult({
-        let __r: crate::error::MResult<Model> = async {
-            let options = match config {
-                Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
-                None => None,
-            };
-            let model = providers::provider(&name, api_key, &model_id, options)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(Model {
-                inner: model,
-                trace_store: None,
-            })
-        }
-        .await;
-        __r
-    })
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Provider handles (RFC-0027) — createProvider / listModels / model
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A provider handle — created by `createProvider`, supports `listModels()`
-/// (runtime discovery) and `model()` (build a model from a discovered id).
-///
-/// ```ts
-/// const p = await createProvider('deepseek', apiKey)
-/// const models = await p.listModels()
-/// const model = await p.model(models[0].id)
-/// const result = await generateText(model, 'Hello')
-/// ```
-#[napi]
-pub struct ProviderHandle {
-    inner: Arc<dyn aimux_core::provider::Provider>,
-}
-
-#[napi]
-impl ProviderHandle {
-    /// Build a native decision model with this provider's existing config.
-    #[napi]
-    pub async fn decision_model(&self, model_id: String) -> AimuxResult<DecisionModel> {
-        AimuxResult(
-            self.inner
-                .decision_model(&model_id)
-                .unwrap_or_else(|| {
-                    Err(aimux_core::AiMuxError::no_such_model(
-                        &model_id,
-                        "decisionModel",
-                    ))
-                })
-                .map(|model| DecisionModel { inner: model })
-                .map_err(|error| AiMuxBindingError::from(&error)),
-        )
-    }
-
-    /// List models available on this provider (runtime discovery via the
-    /// provider's `/models` endpoint). Returns a JSON array of sparse
-    /// `RuntimeModel` (id / owned_by / created) — **no community enrichment**.
-    /// To supplement with model specs (context length, capabilities, reasoning),
-    /// call `getModelSpecs` separately and merge in the host (RFC-0027).
-    #[napi]
-    pub async fn list_models(&self) -> AimuxResult<String> {
-        AimuxResult({
-            let __r: crate::error::MResult<String> = async {
-                let models = self
-                    .inner
-                    .discovery()
-                    .ok_or_else(|| {
-                        AiMuxBindingError::from(AiMuxError::UnsupportedFunctionality(
-                            "provider does not support listing models".into(),
-                        ))
-                    })?
-                    .list_models()
-                    .await
-                    .map_err(|e| AiMuxBindingError::from(&e))?;
-                serialize_result(&models)
-            }
-            .await;
-            __r
-        })
-    }
-
-    /// Build a language model from a discovered model id. Returns a `Model`
-    /// usable with `generateText` / `streamText`.
-    #[napi]
-    pub async fn model(&self, model_id: String) -> AimuxResult<Model> {
-        AimuxResult({
-            let __r: crate::error::MResult<Model> = async {
-                let m = self
-                    .inner
-                    .language_model(&model_id)
-                    .map_err(|e| AiMuxBindingError::from(&e))?;
-                Ok(Model {
-                    inner: m,
-                    // A model built from a provider handle starts untraced; enable
-                    // probing via `Model::trace()` (same as Python binding).
-                    trace_store: None,
-                })
-            }
-            .await;
-            __r
-        })
-    }
-}
-
-/// Create a **provider handle** (RFC-0027) for a registry-backed provider.
-///
-/// Unlike `provider()` (which binds to a single model_id), this returns a
-/// `ProviderHandle` that supports `listModels()` and `model()`.
-///
-/// `api_key` may be empty/null to read the provider's env var from the
-/// registry entry.
-#[napi]
-pub async fn create_provider(
-    name: String,
-    api_key: Option<String>,
-    config: Option<ProviderConfig>,
-) -> AimuxResult<ProviderHandle> {
-    AimuxResult({
-        let __r: crate::error::MResult<ProviderHandle> = async {
-            let options = match config {
-                Some(cfg) => provider_options_from_config(Some(Either::B(cfg)))?,
-                None => None,
-            };
-            let inner = providers::provider_handle(&name, api_key, options)
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            Ok(ProviderHandle { inner })
-        }
-        .await;
-        __r
-    })
-}
-
-/// Fetch the community model catalogue (anya2a). Returns a JSON-serialized
-/// `Catalogue` (provider → model_id → ModelSpec). Thin fetch — no caching.
-/// `source_url` may be null for the default endpoint.
-#[napi]
-pub async fn get_model_specs(source_url: Option<String>) -> AimuxResult<String> {
-    AimuxResult({
-        let __r: crate::error::MResult<String> = async {
-            let cat = aimux_providers::get_model_specs(source_url.as_deref())
-                .await
-                .map_err(|e| AiMuxBindingError::from(&e))?;
-            serialize_result(&cat)
-        }
-        .await;
-        __r
-    })
-}
-
-/// Build `ProviderOptions` from a Node `ProviderConfig` (3rd factory arg).
-fn provider_options_from_config(
-    config: Option<Either<String, ProviderConfig>>,
-) -> MResult<Option<providers::ProviderOptions>> {
-    let opts = match config {
-        None => None,
-        Some(Either::A(url)) => Some(providers::ProviderOptions {
-            base_url: Some(url),
-            ..Default::default()
-        }),
-        Some(Either::B(cfg)) => {
-            cfg.reject_removed_keys()?;
-            let mut o = providers::ProviderOptions::default();
-            if let Some(url) = cfg.base_url {
-                o.base_url = Some(url);
-            }
-            if let Some(ref json_str) = cfg.headers {
-                o.headers = Some(parse_wire_json("config.headers", json_str)?);
-            }
-            if let Some(org) = cfg.organization {
-                o.organization = Some(org);
-            }
-            if let Some(proj) = cfg.project {
-                o.project = Some(proj);
-            }
-            o.params = cfg.params;
-            Some(o)
-        }
-    };
-    Ok(opts)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn parse_prompt(json: &str) -> MResult<ModelPrompt> {
-    let value: serde_json::Value = parse_wire_json("prompt_json", json)?;
-    let inner = match &value {
-        serde_json::Value::Object(obj) if obj.len() == 1 && obj.contains_key("prompt") => {
-            obj.get("prompt").expect("checked by guard")
-        }
-        _ => &value,
-    };
-    serde_json::from_value(inner.clone())
-        // Well-formed JSON of the wrong shape: core validation, not a binding
-        // transport failure.
-        .map_err(|e| {
-            AiMuxBindingError::from(&AiMuxError::InvalidArgument(format!("invalid prompt: {e}")))
-        })
-}
-
-fn parse_opts(json: Option<&str>) -> MResult<GenerateTextOptions> {
-    match json {
-        None => Ok(GenerateTextOptions::default()),
-        Some(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() || trimmed == "null" {
-                return Ok(GenerateTextOptions::default());
-            }
-            parse_wire_json("opts_json", s)
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Host-side tool-call repair (RFC-0035)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Build the repair argument for one invalid tool call.
-///
-/// `toolCallJson` is a `GenerateTextResult.toolCalls` entry with
-/// `invalid: true`. `prompt` and `optsJson` are **the same two strings the
-/// call was generated with** (`generateText` / `streamText`); messages,
-/// instructions, and the tool set are derived from them here, so no caller
-/// repeats that derivation.
-///
-/// Returns `{toolCall, error, inputSchema, tools, messages, instructions}`
-/// — the AI SDK `repairToolCall` argument, with `toolCall.input` the
-/// provider's raw argument text — or the JSON literal `"null"` when the
-/// options carried no tools: as in the AI SDK, a call made without a tool set
-/// is never repaired, and the caller skips it. `"null"` is a success.
-///
-/// Pure and synchronous: no model, no network. Throws `InvalidArgumentError`
-/// when the call is not an invalid one.
-#[napi]
-pub fn tool_call_repair_context(
-    tool_call_json: String,
-    prompt: String,
-    opts_json: Option<String>,
-) -> AimuxResult<String> {
-    AimuxResult((|| -> crate::error::MResult<String> {
-        let tool_call: ToolCall = parse_wire_json("tool_call_json", &tool_call_json)?;
-        let prompt = parse_prompt(&prompt)?;
-        let opts = parse_opts(opts_json.as_deref())?;
-        let (messages, instructions, tools) = tool_call_repair_inputs(prompt, &opts);
-        let context = aimux_core::parse_tool_call::tool_call_repair_context(
-            &tool_call,
-            tools,
-            &messages,
-            instructions,
-        )
-        .map_err(|e| AiMuxBindingError::from(&e))?;
-        serialize_result(&context)
-    })())
-}
-
-/// Resolve one invalid tool call against a host's repair reply.
-///
-/// `optsJson` is the same string the call was generated with; the tool set
-/// comes from it. `replyJson` is `{"type":"repaired","toolCall":{…}}`,
-/// `{"type":"unchanged"}`, or `{"type":"failed","message":"…"}`. Returns the
-/// resulting `ToolCall` JSON, tagged `"type": "tool-call"` — valid, or
-/// invalid carrying a nested `ToolCallRepairError`.
-///
-/// Options carrying no tools throw `InvalidArgumentError`: such a call is not
-/// repairable, and `toolCallRepairContext` already said so by returning
-/// `"null"`.
-#[napi]
-pub fn apply_tool_call_repair(
-    tool_call_json: String,
-    opts_json: Option<String>,
-    reply_json: String,
-) -> AimuxResult<String> {
-    AimuxResult((|| -> crate::error::MResult<String> {
-        let tool_call: ToolCall = parse_wire_json("tool_call_json", &tool_call_json)?;
-        let opts = parse_opts(opts_json.as_deref())?;
-        let reply: ToolCallRepairReply = parse_wire_json("reply_json", &reply_json)?;
-        let repaired = aimux_core::parse_tool_call::apply_tool_call_repair(
-            &tool_call,
-            opts.tools.as_deref(),
-            reply,
-        )
-        .map_err(|e| AiMuxBindingError::from(&e))?;
-        serialize_result(&aimux_core::wire::Tagged(&repaired))
-    })())
-}
-
-/// Apply a repair reply to a serialized `GenerateTextResult`: the call is
-/// repaired in the result's steps (content, approval requests and response
-/// messages) and the derived `toolCalls`, `content` and `responseMessages`
-/// are written from them. `optsJson` is the same string the call was
-/// generated with.
-///
-/// The OpenAI-shaped result has no equivalent: it carries no `invalid` /
-/// `error`, so repair is driven from the native result, which
-/// `Model.generateTextResultAsOpenai` then converts.
-#[napi]
-pub fn apply_tool_call_repair_to_result(
-    result_json: String,
-    opts_json: Option<String>,
-    tool_call_id: String,
-    reply_json: String,
-) -> AimuxResult<String> {
-    AimuxResult((|| -> crate::error::MResult<String> {
-        let result: serde_json::Value = parse_wire_json("result_json", &result_json)?;
-        let opts = parse_opts(opts_json.as_deref())?;
-        let reply: ToolCallRepairReply = parse_wire_json("reply_json", &reply_json)?;
-        let patched = aimux_core::parse_tool_call::apply_tool_call_repair_to_result(
-            &result,
-            opts.tools.as_deref(),
-            &tool_call_id,
-            reply,
-        )
-        .map_err(|e| AiMuxBindingError::from(&e))?;
-        serialize_result(&patched)
-    })())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::RouterFfiConfig;
-
-    /// The router config is the C ABI's: camelCase, unknown keys rejected,
-    /// so the same JSON names the router in every binding.
+    use super::*;
     #[test]
-    fn router_config_is_camel_case_and_strict() {
-        let cfg: RouterFfiConfig = serde_json::from_str(
-            r#"{"router":"weighted","weights":[1.0],"fallback":"none","providerName":"r","modelId":"m"}"#,
-        )
-        .unwrap();
-        assert_eq!(cfg.router.as_deref(), Some("weighted"));
-        assert_eq!(cfg.provider_name.as_deref(), Some("r"));
-        assert_eq!(cfg.model_id.as_deref(), Some("m"));
-        let error = serde_json::from_str::<RouterFfiConfig>(r#"{"provider_name":"r"}"#)
-            .err()
-            .expect("a snake_case key is rejected");
-        assert!(
-            error.to_string().contains("unknown field `provider_name`"),
-            "{error}"
+    fn handles_preserve_all_u64_bits_and_follow_the_handle_id_rule() {
+        assert_eq!(
+            handle("18446744073709551615").ok().map(|id| id.0),
+            Some(u64::MAX)
         );
+        assert_eq!(handle("01").ok().map(|id| id.0), Some(1));
+        for id in ["", "-1", "+1", "1.0", "18446744073709551616"] {
+            assert!(handle(id).is_err(), "{id}");
+        }
+    }
+
+    #[cfg(feature = "contract-tests")]
+    #[tokio::test]
+    async fn remember_keeps_operation_signals_and_releases_results_after_cleanup() {
+        let realm = Realm {
+            owner: Owner::new_node().unwrap(),
+            next_request: AtomicU64::new(1),
+            resources: Mutex::default(),
+        };
+        let started = Arc::new(AbortSignal::new());
+        let id = native_scenarios::operation(realm.owner).await;
+        realm.remember(&Value::String(id.0.to_string()), &started);
+        assert!(realm.lock().operations.contains_key(&id.0));
+        realm.cleanup();
+        assert!(started.is_aborted());
+
+        let late = native_scenarios::operation(realm.owner).await;
+        let finishing = Arc::new(AbortSignal::new());
+        realm.remember(&serde_json::json!({ "handle": late.0.to_string() }), &finishing);
+        assert!(native_scenarios::released(realm.owner, late));
+        assert!(finishing.is_aborted());
     }
 }

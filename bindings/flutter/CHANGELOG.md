@@ -1,5 +1,12 @@
 ## Unreleased
 
+- Switch to the versioned ops C ABI with manifest validation.
+- Run blocking native work in isolates and bridge streams with bounded credit/ack.
+- Add correct allocated-token NativeFinalizer cleanup and asynchronous explicit close.
+- Preserve complete error envelopes and expose operation push/poll primitives.
+- Remove the unversioned ABI, per-provider constructors and synchronous facades.
+  DecisionModel now uses the shared Decision ops.
+
 - Breaking: the typed layer and the maps `Model` returns follow the AI SDK
   JSON of the Rust core: camelCase fields, `type`-tagged unions with
   kebab-case values (`text-delta`, `tool-call`, ...), optional fields absent

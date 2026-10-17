@@ -1,0 +1,13 @@
+{
+  "kind": "binding",
+  "code": 203,
+  "message": "invalid or expired handle: expected [Language, Embedding], actual Some(Provider)",
+  "error": {
+    "name": "InvalidHandle",
+    "expected": [
+      "Language",
+      "Embedding"
+    ],
+    "actual": "Provider"
+  }
+}

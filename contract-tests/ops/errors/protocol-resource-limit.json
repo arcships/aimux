@@ -1,0 +1,9 @@
+{
+  "kind": "protocol",
+  "code": 305,
+  "message": "resource limit: input queue full",
+  "error": {
+    "name": "ResourceLimit",
+    "message": "input queue full"
+  }
+}

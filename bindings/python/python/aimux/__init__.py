@@ -1,499 +1,185 @@
-"""aimux — Unified LLM service layer for Python (Rust core, 325 providers).
+"""Python ownership and JSON adapters for RFC-0039 operations.
 
-This wrapper layer parses JSON strings from the native layer into Python dicts,
-providing a Pythonic API surface.
+Operation names and DTOs are defined by the shared runtime manifest. All calls
+are synchronous; use the caller's executor when integrating with asyncio.
 """
-
-import base64
 import json
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
+import weakref
 
-from . import _repair
-
+from . import ops
 from .aimux import (
-    AimuxError,
-    APICallError,
-    RetryError,
-    JSONParseError,
-    InvalidResponseDataError,
-    NoOutputGeneratedError,
-    NoSuchToolError,
-    InvalidToolInputError,
-    ToolCallRepairError,
-    InvalidArgumentError,
-    InvalidPromptError,
-    LoadAPIKeyError,
-    LoadSettingError,
-    TokenExpiredError,
-    UnsupportedFunctionalityError,
-    NoSuchModelError,
-    NoSuchProviderError,
-    APITimeoutError,
-    RequestAbortedError,
-    OtherError,
-    RecordingError,
-    Model,
-    StreamIterator,
-    openai,
-    anthropic,
-    deepseek,
-    google,
-    cohere,
-    mistral,
-    xai,
-    bedrock,
-    vertex,
-    anthropic_aws,
-    azure,
-    provider as _native_provider,
-    create_provider as _native_create_provider,
-    get_model_specs as _native_get_model_specs,
-    tool_call_repair_context,
-    apply_tool_call_repair,
-    apply_tool_call_repair_to_result,
-    ProviderHandle,
-    init_session_store,
-    init_session_infer,
-    session_calls as _session_calls_json,
-    list_sessions as _list_sessions_json,
-    init_recording,
-    init_recording_ring,
-    recording_stop,
-    recording_flush,
-    recording_try_flush,
-    mock_replay,
-    register_providers,
-    init_proxy,
-    router,
-    moa,
-    start_transcription_session,
-    TranscriptionSession,
-    EmbeddingModel,
-    SpeechModel,
-    ImageModel,
-    TranscriptionModel,
-    RerankingModel,
-    VideoModel,
-    SearchModel,
-    Files,
-    openai_embedding,
-    openai_speech,
-    openai_image,
-    openai_transcription,
-    openai_files,
-    cohere_embedding,
-    cohere_reranking,
-    google_embedding,
-    google_image,
-    google_video,
-    tavily_search,
-    DecisionModel,
-    jev_decision,
+    ABI_VERSION, OPS_VERSION, EXPECTED_ABI_VERSION, EXPECTED_OPS_VERSION,
+    EXPECTED_MANIFEST_DIGEST, Abort, Client as _NativeClient, StreamIterator,
+    manifest_digest, manifest_json,
 )
+from ._errors import *
+from ._errors import __all__ as _error_names, from_envelope as _from_envelope
 
-__all__ = [
-    "AimuxError",
-    "APICallError",
-    "RetryError",
-    "JSONParseError",
-    "InvalidResponseDataError",
-    "NoOutputGeneratedError",
-    "NoSuchToolError",
-    "InvalidToolInputError",
-    "ToolCallRepairError",
-    "InvalidArgumentError",
-    "InvalidPromptError",
-    "LoadAPIKeyError",
-    "LoadSettingError",
-    "TokenExpiredError",
-    "UnsupportedFunctionalityError",
-    "NoSuchModelError",
-    "NoSuchProviderError",
-    "APITimeoutError",
-    "RequestAbortedError",
-    "OtherError",
-    "RecordingError",
-    "Model",
-    "openai",
-    "anthropic",
-    "deepseek",
-    "google",
-    "cohere",
-    "mistral",
-    "xai",
-    "bedrock",
-    "vertex",
-    "anthropic_aws",
-    "azure",
-    "provider",
-    "create_provider",
-    "get_model_specs",
-    "tool_call_repair_context",
-    "apply_tool_call_repair",
-    "apply_tool_call_repair_to_result",
-    "ProviderHandle",
-    "init_session_store",
-    "init_session_infer",
-    "session_calls",
-    "list_sessions",
-    "init_recording",
-    "init_recording_ring",
-    "recording_stop",
-    "recording_flush",
-    "recording_try_flush",
-    "mock_replay",
-    "register_providers",
-    "init_proxy",
-    "router",
-    "moa",
-    "start_transcription_session",
-    "TranscriptionSession",
-    "EmbeddingModel",
-    "SpeechModel",
-    "ImageModel",
-    "TranscriptionModel",
-    "RerankingModel",
-    "VideoModel",
-    "SearchModel",
-    "Files",
-    "openai_embedding",
-    "openai_speech",
-    "openai_image",
-    "openai_transcription",
-    "openai_files",
-    "cohere_embedding",
-    "cohere_reranking",
-    "google_embedding",
-    "google_image",
-    "google_video",
-    "tavily_search",
-    "DecisionModel",
-    "jev_decision",
-    "describe_decision_model",
-    "decide",
-    "RepairToolCall",
-    "generate_text",
-    "generate_object",
-    "consume_stream_text",
-    "stream_text",
-    "generate_text_as_openai",
-    "stream_text_as_openai",
+
+def verify_contract(expected_digest=EXPECTED_MANIFEST_DIGEST):
+    """Check runtime version and, when supplied, the consumer's pinned digest."""
+    description = json.loads(manifest_json())
+    if ABI_VERSION != EXPECTED_ABI_VERSION or OPS_VERSION != EXPECTED_OPS_VERSION:
+        raise ImportError("aimux ABI/ops version differs from the Python binding")
+    if description["abiVersion"] != ABI_VERSION or description["opsVersion"] != OPS_VERSION:
+        raise ImportError("aimux manifest version differs from the native module")
+    if expected_digest is not None and manifest_digest() != expected_digest:
+        raise ImportError("aimux manifest digest differs from the consumer's pinned contract")
+    return description
+
+
+manifest = verify_contract()
+
+
+def _wire(value):
+    if isinstance(value, Handle):
+        return value.id
+    if isinstance(value, dict):
+        return {key: _wire(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_wire(item) for item in value]
+    return value
+
+
+def _encode(params):
+    try:
+        return json.dumps(_wire({} if params is None else params), allow_nan=False)
+    except (TypeError, ValueError, RecursionError) as error:
+        raise _from_envelope({
+            "kind": "binding", "code": 202, "message": str(error),
+            "error": {"name": "InvalidWireJson", "argument": "params", "message": str(error)},
+        }) from error
+
+
+def _text(value, argument):
+    if not isinstance(value, str):
+        raise _from_envelope({
+            "kind": "binding", "code": 202, "message": argument + " must be a string",
+            "error": {"name": "InvalidWireJson", "argument": argument, "message": "expected string"},
+        })
+    try:
+        value.encode("utf-8")
+    except UnicodeError as error:
+        raise _from_envelope({
+            "kind": "binding", "code": 201, "message": str(error),
+            "error": {"name": "InvalidUtf8", "argument": argument},
+        }) from error
+    return value
+
+
+def _abort(value):
+    if value is not None and not isinstance(value, Abort):
+        raise _from_envelope({
+            "kind": "binding", "code": 202, "message": "abort must be an Abort object",
+            "error": {"name": "InvalidWireJson", "argument": "abort", "message": "expected Abort"},
+        })
+    return value
+
+
+class Client:
+    """An interpreter-scoped client; no host callbacks or retry policy."""
+
+    def __init__(self):
+        self._native = _NativeClient()
+
+    def call(self, op, params=None, *, handle="0", abort=None):
+        return json.loads(self._native.call(
+            _text(_wire(handle), "handle"), _text(op, "op"), _encode(params), _abort(abort),
+        ))
+
+    def stream(self, op, params=None, *, handle, abort=None):
+        return EventStream(self._native.stream(
+            _text(_wire(handle), "handle"), _text(op, "op"), _encode(params), _abort(abort),
+        ))
+
+    def operation_push(self, handle, data):
+        """Admit one raw audio chunk; a full queue raises ResourceLimit."""
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise _from_envelope({
+                "kind": "binding", "code": 202, "message": "data must be bytes-like",
+                "error": {"name": "InvalidWireJson", "argument": "data", "message": "expected bytes"},
+            })
+        size = data.nbytes if isinstance(data, memoryview) else len(data)
+        if size > 1024 * 1024:
+            raise _from_envelope({
+                "kind": "protocol", "code": 305, "message": "audio chunk exceeds 1 MiB",
+                "error": {"name": "ResourceLimit", "message": "audio chunk exceeds 1 MiB"},
+            })
+        self._native.operation_push(_text(_wire(handle), "handle"), bytes(data))
+
+    def adopt(self, handle):
+        """Take responsibility for a returned decimal-string handle."""
+        return Handle(self, handle)
+
+
+def _release(client, handle):
+    try:
+        client._native.drop_later(handle)
+    except Exception:
+        # GC is best effort. Explicit close propagates teardown errors.
+        pass
+
+
+class Handle:
+    """Own one runtime handle. Use close or a context manager for teardown."""
+
+    def __init__(self, client, handle):
+        if not isinstance(handle, str) or not handle.isascii() or not handle.isdecimal() or not 0 < int(handle) < (1 << 64):
+            raise ValueError("owned handles must be nonzero decimal strings")
+        self.client = client
+        self.id = handle
+        self._release = weakref.finalize(self, _release, client, handle)
+
+    def call(self, op, params=None, *, abort=None):
+        return self.client.call(op, params, handle=self.id, abort=abort)
+
+    def stream(self, op, params=None, *, abort=None):
+        return self.client.stream(op, params, handle=self.id, abort=abort)
+
+    def push(self, data):
+        self.client.operation_push(self.id, data)
+
+    def close(self):
+        if self._release.alive:
+            self.client.call(ops.OP_HANDLE_DROP, handle=self.id)
+            self._release.detach()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+class EventStream:
+    """Iterator over event frames. Terminal failures raise typed exceptions."""
+
+    def __init__(self, native):
+        self._native = native
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return json.loads(next(self._native))
+
+    def close(self):
+        self._native.close()
+
+    def cancel(self):
+        self._native.cancel()
+
+    def join(self):
+        self._native.join()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+__all__ = _error_names + [
+    "ABI_VERSION", "OPS_VERSION", "EXPECTED_MANIFEST_DIGEST", "Abort", "Client", "Handle", "EventStream",
+    "StreamIterator", "manifest", "manifest_json", "manifest_digest", "verify_contract",
 ]
-
-
-def describe_decision_model(model: DecisionModel) -> Dict[str, Any]:
-    """The model's DecisionModelV4 properties (specificationVersion, provider,
-    modelId, supportedQuestionTypes), without HTTP."""
-    return json.loads(model.describe())
-
-
-def decide(model: DecisionModel, state: Any, questions: Dict[str, Dict[str, Any]],
-           **options: Any) -> Dict[str, Any]:
-    """Answer typed questions, keyed by ID, over one shared state.
-
-    The keyword options are the ``DecideOptions`` JSON keys, camelCase as
-    the AI SDK's: ``maxRetries``, ``timeout`` (``{"totalMs": ...}``),
-    ``headers``, ``providerOptions``. The result is the ``DecideResult`` dict
-    (``answers``, ``usage`` with ``inputTokens`` / ``outputTokens`` /
-    ``totalTokens``, an unknown count absent, ``warnings``, ``rounding``,
-    ``providerMetadata``, ``response``). Boolean answers are P(true). A
-    provider's ``images[].data`` is a base64 string, the AI SDK's JSON for
-    bytes; ``bytes`` are encoded here.
-    """
-    provider_options = options.get('providerOptions')
-    if isinstance(provider_options, dict):
-        options['providerOptions'] = {
-            name: _base64_images(value) for name, value in provider_options.items()
-        }
-    payload = dict(options, state=state, questions=questions)
-    return json.loads(model.decide(json.dumps(payload)))
-
-
-def _base64_images(options: Any) -> Any:
-    if not isinstance(options, dict) or not isinstance(options.get('images'), list):
-        return options
-    return dict(options, images=[_base64_image(image) for image in options['images']])
-
-
-def _base64_image(image: Any) -> Any:
-    data = image.get('data') if isinstance(image, dict) else None
-    if isinstance(data, (bytes, bytearray, memoryview)):
-        return dict(image, data=base64.b64encode(bytes(data)).decode('ascii'))
-    return image
-
-
-def session_calls(session_id: str) -> List[Dict[str, Any]]:
-    """All calls of a session, ordered by step (RFC-0024).
-
-    Empty list if the session is unknown or no store is registered
-    (``init_session_store()`` must be called first).
-    """
-    return json.loads(_session_calls_json(session_id))
-
-
-def list_sessions() -> List[Dict[str, Any]]:
-    """All known sessions (RFC-0024)."""
-    return json.loads(_list_sessions_json())
-
-
-def provider(
-    name: str,
-    api_key: Optional[str],
-    model_id: str,
-    base_url: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None,
-) -> Model:
-    """Create a language model from the built-in registry by provider name.
-
-    Args:
-        name: Registry provider name (e.g. "deepseek", "groq").
-        api_key: API key; None reads the provider's env var.
-        model_id: Model ID.
-        base_url: Base-URL override (wins over config["base_url"]).
-        config: Full ProviderOptions dict — base_url / headers / organization /
-            project / params (a preset's template parameters, e.g.
-            ``{"account_id": "..."}``). ``max_retries`` (a call-level option) and
-            ``body_overrides`` are rejected with ``InvalidArgumentError``.
-    """
-    config_json = json.dumps(config) if config is not None else None
-    return _native_provider(name, api_key, model_id, base_url, config_json)
-
-
-def create_provider(
-    name: str,
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None,
-) -> ProviderHandle:
-    """Create a provider handle for model discovery (RFC-0027).
-
-    Unlike ``provider()`` (which binds to a single model_id), this returns a
-    ``ProviderHandle`` that supports ``list_models()`` and ``model()``.
-
-    Args:
-        name: Registry provider name (e.g. "deepseek", "groq").
-        api_key: API key; None reads the provider's env var.
-        base_url: Base-URL override (wins over config["base_url"]).
-        config: Full ProviderOptions dict — base_url / headers / organization /
-            project / params (a preset's template parameters, e.g.
-            ``{"account_id": "..."}``). ``max_retries`` (a call-level option) and
-            ``body_overrides`` are rejected with ``InvalidArgumentError``.
-    """
-    config_json = json.dumps(config) if config is not None else None
-    return _native_create_provider(name, api_key, base_url, config_json)
-
-
-def get_model_specs(source_url: Optional[str] = None) -> Dict[str, Any]:
-    """Fetch the community model catalogue (anya2a). Returns a dict representing
-    the Catalogue (provider -> model_id -> ModelSpec). Thin fetch — no caching.
-
-    Args:
-        source_url: Optional URL override (default = anya2a endpoint).
-    """
-    return json.loads(_native_get_model_specs(source_url))
-
-
-def _prompt_to_json(prompt: Union[str, List[Dict[str, Any]]]) -> str:
-    """Convert a prompt to the JSON string expected by the native layer."""
-    if isinstance(prompt, str):
-        return json.dumps(prompt)
-    return json.dumps({"prompt": prompt})
-
-
-#: The ``options["repairToolCall"]`` function (RFC-0035), the equivalent of
-#: the AI SDK ``repairToolCall``.
-#:
-#: It is called once per tool call that came back ``invalid``, with the repair
-#: context ``{toolCall, error, inputSchema, tools, messages, instructions}``
-#: — ``toolCall["input"]`` being the provider's raw argument text. Return a
-#: replacement raw tool call (same shape, ``input`` a string) to re-validate,
-#: or ``None`` to leave the call invalid. Raising marks the repair failed: the
-#: call keeps its original error with the exception message as the cause.
-#:
-#: It runs outside the native call, so it may itself call back into aimux (for
-#: example ask a model to rewrite the arguments). Calls made without ``tools``
-#: are never repaired. ``generate_text_as_openai`` repairs the native result
-#: before converting it; ``stream_text_as_openai`` does not reflect repair
-#: (its tool-argument deltas are the provider's text, as in the AI SDK).
-RepairToolCall = Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
-
-
-def _opts_to_json(options: Optional[Dict[str, Any]]) -> Optional[str]:
-    """Convert options dict to JSON string.
-
-    ``repairToolCall`` is a Python callable and stays on this side of the
-    boundary; everything else is passed through to the native layer.
-    """
-    if options is None:
-        return None
-    return json.dumps({k: v for k, v in options.items() if k != "repairToolCall"})
-
-
-def _repair_fn(options: Optional[Dict[str, Any]]) -> Optional[_repair.RepairAdapter]:
-    fn = options.get("repairToolCall") if options else None
-    if fn is None:
-        return None
-    return lambda context: _repair.run_hook(fn, context)
-
-
-def generate_text(
-    model: Model,
-    prompt: Union[str, List[Dict[str, Any]]],
-    options: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Generate text (non-streaming). Returns a dict result.
-
-    Args:
-        model: A model instance from openai(), anthropic(), etc.
-        prompt: A string or a list of message dicts.
-        options: Optional generation options.
-
-    Returns:
-        The ``GenerateTextResult`` dict: text, content, toolCalls,
-        finishReason, usage, warnings, steps, responseMessages, … and
-        ``output`` when ``options["output"]`` was parsed.
-    """
-    prompt_json = _prompt_to_json(prompt)
-    opts_json = _opts_to_json(options)
-    result_json = model.generate_text(prompt_json, opts_json)
-    repair = _repair_fn(options)
-    if repair is not None:
-        result_json = _repair.repair_result(result_json, prompt_json, opts_json, repair)
-    return json.loads(result_json)
-
-
-def generate_object(
-    model: Model,
-    prompt: Union[str, List[Dict[str, Any]]],
-    options: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Generate a structured JSON object from the model (M12, RFC-0016).
-
-    Same signature as ``generate_text``; core's deprecated
-    ``generate_object`` wrapper. Pass ``output: {"type": "object", "schema": ...}``
-    via options to describe the value; the model's text must parse and match
-    the schema.
-
-    Args:
-        model: A model instance from openai(), anthropic(), etc.
-        prompt: A string or a list of message dicts.
-        options: Optional generation options (incl. output).
-
-    Returns:
-        Dict with keys: object, reasoning, finishReason, usage, warnings,
-        request, response, providerMetadata.
-    """
-    prompt_json = _prompt_to_json(prompt)
-    opts_json = _opts_to_json(options)
-    result_json = model.generate_object(prompt_json, opts_json)
-    repair = _repair_fn(options)
-    if repair is not None:
-        result_json = _repair.repair_result(result_json, prompt_json, opts_json, repair)
-    return json.loads(result_json)
-
-
-def consume_stream_text(
-    model: Model,
-    prompt: Union[str, List[Dict[str, Any]]],
-    options: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Consume a stream to completion and return the aggregated result
-    (M11, RFC-0016).
-
-    Drives ``stream_text`` to completion and returns the
-    ``GenerateTextResult`` dict, the same result ``generate_text`` returns.
-
-    Args:
-        model: A model instance from openai(), anthropic(), etc.
-        prompt: A string or a list of message dicts.
-        options: Optional generation options.
-
-    Returns:
-        The ``GenerateTextResult`` dict of the consumed stream.
-    """
-    prompt_json = _prompt_to_json(prompt)
-    opts_json = _opts_to_json(options)
-    result_json = model.consume_stream_text(prompt_json, opts_json)
-    repair = _repair_fn(options)
-    if repair is not None:
-        result_json = _repair.repair_result(result_json, prompt_json, opts_json, repair)
-    return json.loads(result_json)
-
-
-def stream_text(
-    model: Model,
-    prompt: Union[str, List[Dict[str, Any]]],
-    options: Optional[Dict[str, Any]] = None,
-):
-    """Stream text from a model. Yields TextStreamPart dicts (tagged by
-    ``type``): ``start``, then per step ``start-step`` … ``finish-step``,
-    then ``finish``.
-
-    Usage:
-        for part in stream_text(model, "Write a haiku about Rust."):
-            if part["type"] == "text-delta":
-                print(part["text"], end="")
-    """
-    prompt_json = _prompt_to_json(prompt)
-    opts_json = _opts_to_json(options)
-    iterator = model.stream_text(prompt_json, opts_json)
-    repair = _repair_fn(options)
-    for part_json in iterator:
-        if repair is not None:
-            part_json = _repair.repair_stream_part(
-                part_json, prompt_json, opts_json, repair
-            )
-        yield json.loads(part_json)
-
-
-def generate_text_as_openai(
-    model: Model,
-    prompt: Union[str, List[Dict[str, Any]]],
-    options: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Generate text (non-streaming) and return an OpenAI Chat Completion dict.
-
-    Same as generate_text, but the result is an OpenAI ``chat.completion``
-    object (id, object, choices, usage, …). Works with any provider.
-
-    Args:
-        model: A model instance from openai(), anthropic(), etc.
-        prompt: A string or a list of message dicts.
-        options: Optional generation options.
-
-    Returns:
-        Dict with OpenAI Chat Completion keys: id, object, created, model,
-        choices, usage, system_fingerprint.
-    """
-    prompt_json = _prompt_to_json(prompt)
-    opts_json = _opts_to_json(options)
-    return json.loads(
-        _repair.generate_openai_with_repair(model, prompt_json, opts_json, _repair_fn(options))
-    )
-
-
-def stream_text_as_openai(
-    model: Model,
-    prompt: Union[str, List[Dict[str, Any]]],
-    options: Optional[Dict[str, Any]] = None,
-):
-    """Stream text as OpenAI Chat Completion chunk dicts.
-
-    Same as stream_text, but each yielded item is an OpenAI
-    ``chat.completion.chunk`` object. Works with any provider.
-
-    Stream options (include_usage, include_reasoning) are read from
-    options["providerOptions"]["openai"]["stream_options"] (both default True).
-
-    Usage:
-        for chunk in stream_text_as_openai(model, "Write a haiku."):
-            if chunk.get("choices"):
-                delta = chunk["choices"][0].get("delta", {})
-                if "content" in delta:
-                    print(delta["content"], end="")
-    """
-    prompt_json = _prompt_to_json(prompt)
-    opts_json = _opts_to_json(options)
-    iterator = model.stream_text_as_openai(prompt_json, opts_json)
-    for chunk_json in iterator:
-        yield json.loads(chunk_json)

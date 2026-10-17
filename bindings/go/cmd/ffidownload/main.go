@@ -1,6 +1,5 @@
-// Command ffidownload downloads the prebuilt libaimux_ffi.a for the current
-// platform from the GitHub Release assets and places it where the cgo
-// LDFLAGS expect it (<module>/target/release/libaimux_ffi.a).
+// Command ffidownload downloads the matching native archive and generated
+// header from one GitHub Release into the paths expected by cgo.
 //
 // Invoked automatically by `go generate ./...` — pure standard library so it
 // works on Linux / macOS / Windows without bash or curl.
@@ -44,7 +43,10 @@ func main() {
 		version = "latest"
 	}
 	asset := "libaimux_ffi-" + triple + ".a"
-	url := fmt.Sprintf("https://github.com/arcships/aimux/releases/%s/download/%s", version, asset)
+	releaseURL := "https://github.com/arcships/aimux/releases/latest/download/"
+	if version != "latest" {
+		releaseURL = "https://github.com/arcships/aimux/releases/download/" + version + "/"
+	}
 
 	// go generate runs with cwd = the package directory; the cgo LDFLAGS use
 	// ${SRCDIR}/../../target/release, so write exactly there (works both in
@@ -57,28 +59,48 @@ func main() {
 	dest := filepath.Join(destDir, "libaimux_ffi.a")
 
 	fmt.Printf("ffidownload: downloading %s (%s)\n", asset, version)
+	if err := download(releaseURL+"aimux.h", filepath.Join(cwd, "..", "..", "aimux-ffi", "include", "aimux.h")); err != nil {
+		fatal(err)
+	}
+	if err := download(releaseURL+asset, dest); err != nil {
+		fatal(err)
+	}
+}
+
+func download(url, dest string) error {
 	resp, err := http.Get(url)
 	if err != nil {
-		fatal(fmt.Errorf("download failed: %w", err))
+		return fmt.Errorf("download failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		fatal(fmt.Errorf("download failed: HTTP %d for %s", resp.StatusCode, url))
+		return fmt.Errorf("download failed: HTTP %d for %s", resp.StatusCode, url)
 	}
 
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		fatal(err)
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
 	}
-	f, err := os.Create(dest)
+	f, err := os.CreateTemp(filepath.Dir(dest), ".aimux-download-*")
 	if err != nil {
-		fatal(err)
+		return err
 	}
 	defer f.Close()
+	defer os.Remove(f.Name())
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		fatal(err)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(f.Name(), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), dest); err != nil {
+		return err
 	}
 	fmt.Printf("ffidownload: wrote %s\n", dest)
+	return nil
 }
 
 func fatal(err error) {

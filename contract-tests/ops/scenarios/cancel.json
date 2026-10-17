@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "name": "cancel",
+  "description": "Cancel interrupts a pending source after delivered data; resumed next observes exactly one cancelled end.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "event",
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "hello 世界 👋"
+      }
+    },
+    {
+      "action": "wait",
+      "gate": "continue"
+    },
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "read",
+      "count": 1
+    },
+    {
+      "action": "waitForSourceGate",
+      "gate": "continue"
+    },
+    {
+      "action": "cancel"
+    },
+    {
+      "action": "cancel"
+    },
+    {
+      "action": "drain"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "cancelled"
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "cancelled"
+      }
+    ],
+    "abortObserved": true,
+    "queueFullObserved": false,
+    "consumerClosed": false,
+    "sourceStarted": true,
+    "sourceEventsPolled": 1
+  }
+}

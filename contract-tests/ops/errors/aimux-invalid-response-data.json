@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 3,
+  "message": "invalid response data: eof",
+  "error": {
+    "name": "AI_InvalidResponseDataError",
+    "message": "eof"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "kind": "aimux",
+  "code": 16,
+  "message": "Invalid input for tool weather: JSON parsing failed",
+  "error": {
+    "name": "AI_InvalidToolInputError",
+    "toolName": "weather",
+    "toolInput": "{",
+    "cause": "JSON parsing failed"
+  }
+}

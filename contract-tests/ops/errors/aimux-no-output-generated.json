@@ -1,0 +1,9 @@
+{
+  "kind": "aimux",
+  "code": 18,
+  "message": "No output generated.",
+  "error": {
+    "name": "AI_NoOutputGeneratedError",
+    "message": "No output generated."
+  }
+}

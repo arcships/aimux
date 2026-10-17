@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "name": "reader-close",
+  "description": "Iterator close aborts native work; native cleanup receives its end but the closed consumer receives no more frames.",
+  "boundary": "eventStream",
+  "queueLimits": {
+    "items": 256,
+    "bytes": 8388608,
+    "maxEventBytes": 1048576
+  },
+  "script": [
+    {
+      "action": "event",
+      "event": {
+        "type": "text-delta",
+        "id": "text-0",
+        "text": "hello 世界 👋"
+      }
+    },
+    {
+      "action": "wait",
+      "gate": "continue"
+    },
+    {
+      "action": "eof"
+    }
+  ],
+  "controls": [
+    {
+      "action": "read",
+      "count": 1
+    },
+    {
+      "action": "waitForSourceGate",
+      "gate": "continue"
+    },
+    {
+      "action": "closeReader"
+    },
+    {
+      "action": "drainNative"
+    }
+  ],
+  "expected": {
+    "accepted": true,
+    "preflightError": null,
+    "frames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      },
+      {
+        "type": "end",
+        "seq": "1",
+        "outcome": "cancelled"
+      }
+    ],
+    "consumerFrames": [
+      {
+        "type": "event",
+        "seq": "0",
+        "event": {
+          "type": "text-delta",
+          "id": "text-0",
+          "text": "hello 世界 👋"
+        }
+      }
+    ],
+    "abortObserved": true,
+    "queueFullObserved": false,
+    "consumerClosed": true,
+    "sourceStarted": true,
+    "sourceEventsPolled": 1
+  }
+}

@@ -1,27 +1,15 @@
-// Example: stream text with OpenAI
-//
-// Run: OPENAI_API_KEY=sk-... node --experimental-strip-types examples/stream-text.ts
+import { Client, LanguageModel } from '../src/index.ts'
 
-import { openai, streamText } from '../src/index.ts'
-
-async function main() {
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    console.error('Please set OPENAI_API_KEY')
-    process.exit(1)
+const client = new Client()
+const provider = await client.provider({ package: 'openai', settings: { apiKey: process.env.OPENAI_API_KEY } })
+const model = await provider.model('gpt-4o-mini', 'languageModel')
+try {
+  if (!(model instanceof LanguageModel)) throw new Error('Expected a language model')
+  for await (const frame of await model.stream('Write a short poem.')) {
+    if (frame.type === 'event' && frame.event.type === 'text-delta') process.stdout.write(frame.event.text)
+    if (frame.type === 'end' && frame.error) console.error(frame.error)
   }
-
-  const model = await openai(apiKey, 'gpt-4o-mini')
-
-  console.log('Streaming:\n')
-  for await (const part of streamText(model, 'Write a haiku about Rust.')) {
-    // TextStreamPart is a tagged union — check the type field
-    if (part.type === 'text-delta') {
-      process.stdout.write(part.text)
-    } else if (part.type === 'finish') {
-      console.log(`\n\n[done: ${part.finishReason}]`)
-    }
-  }
+} finally {
+  await model.close()
+  await provider.close()
 }
-
-main().catch(console.error)

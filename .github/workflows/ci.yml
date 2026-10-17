@@ -18,10 +18,12 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Node and Python replay the shared vectors from this checkout.
+  AIMUX_CONTRACT_VECTORS: ${{ github.workspace }}/contract-tests/ops
   # Test-only jobs do not ship binaries: skip single-threaded fat LTO and -Oz
   # size optimization. ffi-build uploads release artifacts and restores
   # Cargo.toml's release profile in its job env.
-  # opt-level 1, not 0: aimux_stream_text drives the whole stream future on
+  # opt-level 1, not 0: aimux_stream drives the whole stream future on
   # the caller's thread, and at opt-level 0 that needs more than the 512 KB
   # stack of a Swift cooperative thread (SIGBUS in the async Swift tests).
   # Measured for one stream through the C ABI: ~530 KB at 0, ~110 KB at 1,
@@ -212,6 +214,8 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -224,6 +228,8 @@ jobs:
         run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+      - name: Ops contract tests (matrix, lifecycle, streams, envelopes, manifest)
+        run: cargo test -p aimux-ops
       - name: Test workspace
         run: cargo test --workspace
 
@@ -241,6 +247,8 @@ jobs:
         settings: ${{ fromJSON(needs.changes.outputs.node-legs) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
@@ -310,7 +318,7 @@ jobs:
       - name: Rust unit tests
         if: matrix.settings.test && runner.os == 'Linux'
         run: cargo test --lib --manifest-path bindings/node/Cargo.toml
-      - name: Test
+      - name: Test Node binding and shared contract vectors
         if: matrix.settings.test
         working-directory: bindings/node
         run: npm test
@@ -343,6 +351,8 @@ jobs:
     if: fromJSON(needs.changes.outputs.run)['python-binding']
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -365,7 +375,7 @@ jobs:
         run: |
           maturin build --release
           pip install --force-reinstall target/wheels/*.whl
-      - name: Test
+      - name: Test Python binding and shared contract vectors
         working-directory: bindings/python
         run: |
           pip install pytest pydantic
@@ -387,6 +397,8 @@ jobs:
         include: ${{ fromJSON(needs.changes.outputs.ffi-legs) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -395,13 +407,20 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Build cdylib
         run: cargo build -p aimux-ffi --release --target ${{ matrix.target }}
+      - name: C11 and C++17 ABI contract tests
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          AIMUX_C_LIB_DIR: ${{ github.workspace }}/target/${{ matrix.target }}/release
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/${{ matrix.target }}/release
+        run: bash scripts/test-c-abi.sh
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ffi-${{ matrix.target }}
           path: |
             target/${{ matrix.target }}/release/${{ matrix.artifact }}
-            aimux-ffi/aimux-ffi.h
+            aimux-ffi/include/aimux.h
       # The Go binding links against the library this build produced. On
       # Linux the cgo LDFLAGS force the static archive; on macOS ld64 picks
       # the .dylib next to it (see bindings/go/aimux.go). macOS is covered
@@ -426,6 +445,43 @@ jobs:
           export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/release"
           go test -race ./...
 
+  ffi-sanitizers:
+    name: C ABI (ASan + LSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ffi-test"
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Build FFI library
+        run: cargo rustc -p aimux-ffi --release --crate-type cdylib
+      - name: Run C11 and C++17 ABI tests with ASan and LSan
+        env:
+          CC: clang
+          CXX: clang++
+          AIMUX_C_LIB_DIR: ${{ github.workspace }}/target/release
+        run: bash scripts/test-c-abi.sh --asan-lsan
+
+  ffi-linux-arm:
+    name: aimux-ffi (aarch64-unknown-linux-gnu)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Build Linux ARM64 FFI library
+        run: cargo build -p aimux-ffi --release --target aarch64-unknown-linux-gnu
+
   # ── Java + Kotlin bindings: one FFI build, every JDK in turn ─────────────
   # Gradle 8.14.3 runs on JDK 8+; the Java build script only sets --release on
   # JDK 9+, so JDK 8 compiles with plain source/target compatibility. The
@@ -439,6 +495,8 @@ jobs:
       LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -497,6 +555,8 @@ jobs:
     if: fromJSON(needs.changes.outputs.run)['flutter-binding']
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -528,10 +588,18 @@ jobs:
       - name: Get dependencies
         working-directory: bindings/flutter
         run: flutter pub get
-      - name: Test
+      - name: Build the ABI test fixtures and the Dart bridge
+        working-directory: bindings/flutter
+        run: |
+          python3 tool/build_test_fixture.py
+          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared -pthread native/aimux_dart.c \
+            -o .dart_tool/native/libaimux_dart.so
+      - name: Test Flutter binding
         working-directory: bindings/flutter
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+          AIMUX_NATIVE_LIBRARY: ${{ github.workspace }}/target/release/libaimux_ffi.so
+          AIMUX_DART_BRIDGE: ${{ github.workspace }}/bindings/flutter/.dart_tool/native/libaimux_dart.so
         run: flutter test
       - name: Analyze
         working-directory: bindings/flutter
@@ -557,6 +625,8 @@ jobs:
         include: ${{ fromJSON(needs.changes.outputs.example-legs) }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.targets }}
@@ -610,21 +680,7 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           flutter build ios --debug --no-codesign --simulator
-          # Debug builds link the app code into Runner.debug.dylib; the
-          # Runner stub carries no symbols — scan every executable in the app.
-          FOUND=""
-          while IFS= read -r f; do
-            if nm -g "$f" 2>/dev/null | grep -q 'aimux_openai_new'; then
-              echo "FOUND aimux_openai_new in: $f"
-              FOUND=yes
-            fi
-          done < <(find build/ios/iphonesimulator/Runner.app -type f -perm -111 2>/dev/null)
-          if [ -n "$FOUND" ]; then
-            echo 'OK: aimux symbols present'
-          else
-            echo 'FAIL: aimux_openai_new missing from all app binaries'
-            exit 1
-          fi
+          bash ../tool/check_symbols.sh build/ios/iphonesimulator/Runner.app
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
@@ -650,6 +706,8 @@ jobs:
     if: fromJSON(needs.changes.outputs.run)['contract-tests']
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - name: Providers doc generator drift (docs/api/providers.md must match generator output)
         run: python3 scripts/gen_providers_doc.py --check
       - name: Provider boundaries (no call-level reads or provider-name branches in providers, removed names stay removed)
@@ -658,6 +716,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Ops manifest and generated artifact drift
+        run: cargo run -p aimux-codegen -- --check
       - name: ts-rs export drift (checked-in types must match generator output)
         run: python3 scripts/gen_ts_types.py --check
       # The AI SDK pin tooling: VERSIONS.json format and integrity rules, and
@@ -677,6 +737,8 @@ jobs:
     if: fromJSON(needs.changes.outputs.run)['swift-contract-tests']
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

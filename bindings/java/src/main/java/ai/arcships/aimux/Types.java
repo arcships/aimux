@@ -2,7 +2,6 @@ package ai.arcships.aimux;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -29,22 +28,13 @@ import com.fasterxml.jackson.databind.node.TextNode;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Supplier;
 
 /**
- * aimux — typed data classes mirroring the Kotlin binding in
- * `bindings/kotlin` (which in turn mirrors the ts-rs output in
- * `bindings/node/src/types`).
- *
- * Field names are camelCase in Java and on the wire (the AI SDK JSON), so
- * {@link JsonProperty} only pins them. The raw JSON boundary is handled by
- * {@link TypedModel} — callers of this layer never parse JSON by hand.
+ * Typed data classes for the aimux wire format. Field names are camelCase
+ * in Java and on the wire.
  *
  * These types are intentionally lenient on decode (unknown keys ignored, every
  * field has a default) so that future provider/engine additions do not break
@@ -52,18 +42,6 @@ import java.util.function.Supplier;
  */
 public final class Types {
     private Types() {}
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Shared ObjectMapper.
-    //
-    //  - FAIL_ON_UNKNOWN_PROPERTIES disabled : tolerate forward-compatible fields.
-    //  - NON_NULL inclusion                   : omit null fields on encode so
-    //                                           GenerateTextOptions only carries
-    //                                           fields the caller actually set.
-    //  - FIELD visibility ANY                 : read/write fields directly; the
-    //                                           package-private @JsonCreator ctor
-    //                                           handles instantiation.
-    // ─────────────────────────────────────────────────────────────────────────────
 
     /**
      * Check the {@code type} tag of a value that always carries one (a
@@ -79,29 +57,13 @@ public final class Types {
     public static final class AimuxJson {
         private AimuxJson() {}
 
-        public static final ObjectMapper MAPPER = createMapper();
+        public static final ObjectMapper MAPPER = configure(new ObjectMapper(), true);
 
         /**
-         * Inner mapper used by the `type`-tagged polymorphic serializers
-         * ({@link ContentPartSerializer}, {@link StreamPartSerializer},
-         * {@link GenerateContentSerializer}) to serialize the concrete variant
-         * as a plain POJO. It deliberately does NOT register those four
-         * polymorphic serializers, so {@code valueToTree} on a concrete subtype
-         * (e.g. {@code StreamPart.TextDelta}) uses default field serialization
-         * instead of re-entering the polymorphic serializer — which would
-         * otherwise infinite-recurse ({@code StackOverflowError}). Non-recursing
-         * serializers that concrete variants may transitively contain
-         * ({@link ToolChoice}, {@link FileBytes}, {@link GeneratedFileData}) are kept.
+         * Serializes concrete variants without re-entering their polymorphic
+         * serializers. Non-recursing serializers remain registered.
          */
-        public static final ObjectMapper INNER_MAPPER = createInnerMapper();
-
-        private static ObjectMapper createMapper() {
-            return configure(new ObjectMapper(), true);
-        }
-
-        private static ObjectMapper createInnerMapper() {
-            return configure(new ObjectMapper(), false);
-        }
+        public static final ObjectMapper INNER_MAPPER = configure(new ObjectMapper(), false);
 
         private static ObjectMapper configure(ObjectMapper m, boolean polymorphic) {
             m.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -1926,8 +1888,8 @@ public final class Types {
 
     /**
      * A tool call as the provider emitted it: {@code input} is the raw argument
-     * TEXT, not the parsed object. This is what a {@link ToolCallRepair}
-     * inspects and what it returns as the replacement. Its JSON carries
+     * TEXT, not the parsed object. {@link ToolCallRepairs} inspects this data
+     * and validates replacements. Its JSON carries
      * {@code "type": "tool-call"}, as the AI SDK's {@code LanguageModelV4ToolCall}.
      */
     public static class RawToolCall {
@@ -1989,7 +1951,7 @@ public final class Types {
     }
 
     /**
-     * The argument handed to a {@link ToolCallRepair} — the aimux equivalent of
+     * The context returned by {@link ToolCallRepairs} — the aimux equivalent of
      * the AI SDK {@code repairToolCall} context. Built by the library from the
      * invalid call plus the prompt and options the call was generated with, so
      * {@link #getMessages()} is the conversation the model actually saw.
@@ -2042,9 +2004,6 @@ public final class Types {
         @JsonProperty("includeRawChunks") private Boolean includeRawChunks;
         @JsonProperty("timeout") private TimeoutConfiguration timeout;
         @JsonProperty("sessionId") private String sessionId;
-        // Host-side only (RFC-0035): a function cannot cross the C ABI, and the
-        // native layer must never see this key.
-        @JsonIgnore private ToolCallRepair repairToolCall;
 
         @JsonCreator
         GenerateTextOptions() {}
@@ -2097,29 +2056,6 @@ public final class Types {
         public TimeoutConfiguration getTimeout() { return timeout; }
         public String getSessionId() { return sessionId; }
 
-        /**
-         * Host-side one-shot repair for invalid tool calls (RFC-0035), the
-         * aimux equivalent of the AI SDK {@code repairToolCall}.
-         *
-         * <p>Applies to {@link TypedModel} calls only and is never serialized
-         * into the options JSON. {@code generateTextAsOpenAI} repairs the
-         * native result before converting it; {@code streamTextAsOpenAI} does
-         * not reflect repair (its tool-argument deltas are the provider's
-         * text, as in the AI SDK).
-         *
-         * <p>If a repair fails at the boundary while streaming (not in the
-         * hook — a throwing hook is a {@code ToolCallRepair} error on the
-         * call), {@code onError} is told and the unrepaired part is still
-         * delivered. The stream waits for the hook, without a timeout.
-         *
-         * <p>A stream hook may call back into the model being streamed, but
-         * only from the thread it is invoked on: that thread borrows the
-         * stream's read hold on the model, while extra threads the hook starts
-         * itself do not and would deadlock against a concurrent
-         * {@link Model#close()}.
-         */
-        public ToolCallRepair getRepairToolCall() { return repairToolCall; }
-
         public static Builder builder() { return new Builder(); }
 
         public static class Builder {
@@ -2142,7 +2078,6 @@ public final class Types {
             private Boolean includeRawChunks;
             private TimeoutConfiguration timeout;
             private String sessionId;
-            private ToolCallRepair repairToolCall;
 
             public Builder maxOutputTokens(Long v) { this.maxOutputTokens = v; return this; }
             public Builder temperature(Double v) { this.temperature = v; return this; }
@@ -2163,17 +2098,12 @@ public final class Types {
             public Builder includeRawChunks(Boolean v) { this.includeRawChunks = v; return this; }
             public Builder timeout(TimeoutConfiguration v) { this.timeout = v; return this; }
             public Builder sessionId(String v) { this.sessionId = v; return this; }
-            /** See {@link GenerateTextOptions#getRepairToolCall()} (RFC-0035). */
-            public Builder repairToolCall(ToolCallRepair v) { this.repairToolCall = v; return this; }
 
             public GenerateTextOptions build() {
                 GenerateTextOptions options = new GenerateTextOptions(maxOutputTokens, temperature,
                     stopSequences, topP, topK, presencePenalty, frequencyPenalty, output, seed,
                     tools, toolChoice, headers, providerOptions, reasoning, instructions,
                     maxRetries, includeRawChunks, timeout, sessionId);
-                // Set outside the constructor: the hook is host-side state, not
-                // part of the serialized option set.
-                options.repairToolCall = repairToolCall;
                 return options;
             }
         }
@@ -3782,7 +3712,7 @@ public final class Types {
     //
     // `StreamPart` is tagged on `type` (`{"type":"text-delta",...}`,
     // `{"type":"tool-call",...}`, ...). It mirrors the TextStreamPart that
-    // `aimux_stream_text` yields. Unrecognized variants fall back to StreamPart.Unknown for
+    // `text.stream` yields in event frames. Unrecognized variants fall back to StreamPart.Unknown for
     // forward compatibility.
     // ─────────────────────────────────────────────────────────────────────────────
 

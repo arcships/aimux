@@ -1,0 +1,10 @@
+{
+  "kind": "aimux",
+  "code": 9,
+  "message": "no such model: gpt-9",
+  "error": {
+    "name": "AI_NoSuchModelError",
+    "modelId": "gpt-9",
+    "modelType": "languageModel"
+  }
+}

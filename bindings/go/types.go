@@ -4,9 +4,8 @@
 // fields). The generated TypeScript types in bindings/node/src/types are the
 // exact shape.
 //
-// The raw JSON boundary is handled by Model.GenerateText / Model.StreamText —
-// this layer only provides typed parsing so callers don't manually dig through
-// JSON. Decoding is lenient (unknown keys ignored) so future engine additions
+// Call, CallInto and Handle.Stream carry the canonical operation JSON.
+// These types provide typed parsing for operation results. Decoding is lenient (unknown keys ignored) so future engine additions
 // don't break existing clients.
 
 package aimux
@@ -16,8 +15,6 @@ import (
 	"encoding/json"
 	"fmt"
 )
-
-// ── Enums (string-backed on the wire) ──────────────────────────────────────
 
 type Role string
 
@@ -65,18 +62,12 @@ func ToolChoiceRequired() ToolChoice { return json.RawMessage(`"required"`) }
 // ToolChoiceTool builds a ToolChoice selecting a specific tool.
 // Uses json.Marshal with a struct to ensure correct field order and escaping.
 func ToolChoiceTool(name string) ToolChoice {
-	b, err := json.Marshal(struct {
+	b, _ := json.Marshal(struct {
 		Type     string `json:"type"`
 		ToolName string `json:"toolName"`
 	}{Type: "tool", ToolName: name})
-	if err != nil {
-		// Should not happen for a string — fall back to a safe literal.
-		return json.RawMessage(`{"type":"tool","toolName":""}`)
-	}
 	return json.RawMessage(b)
 }
-
-// ── Core types ───────────────────────────────────────────────────────────────
 
 // Source is a URL or document source. Exactly one variant is populated.
 // Its JSON is the AI SDK's Source, tagged {"type":"source","sourceType":...}
@@ -230,8 +221,7 @@ func (c ToolCall) MarshalJSON() ([]byte, error) {
 	}{"tool-call", plain(c)})
 }
 
-// UnmarshalJSON reads a call; a "type" field, when present, must be
-// "tool-call".
+// UnmarshalJSON reads a call with the canonical "type":"tool-call" tag.
 func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	type plain ToolCall
 	var tagged struct {
@@ -248,11 +238,10 @@ func (c *ToolCall) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// checkTypeTag accepts a missing "type" field (JSON written before aimux
-// wrote the tag) or one equal to want.
+// checkTypeTag requires the canonical discriminator for tagged wire values.
 func checkTypeTag(raw json.RawMessage, want string) error {
 	if len(raw) == 0 {
-		return nil
+		return fmt.Errorf("aimux: missing type discriminator %q", want)
 	}
 	var tag string
 	if err := json.Unmarshal(raw, &tag); err != nil || tag != want {
@@ -426,7 +415,7 @@ type GenerateObjectResult struct {
 	ProviderMetadata json.RawMessage        `json:"providerMetadata,omitempty"`
 }
 
-// ParseGenerateTextResult parses the JSON string returned by Model.GenerateText
+// ParseGenerateTextResult parses the JSON string returned by text.generate
 // into a typed GenerateTextResult.
 func ParseGenerateTextResult(jsonStr string) (*GenerateTextResult, error) {
 	var r GenerateTextResult
@@ -437,7 +426,7 @@ func ParseGenerateTextResult(jsonStr string) (*GenerateTextResult, error) {
 }
 
 // ParseGenerateObjectResult parses the JSON string returned by
-// Model.GenerateObject into a typed GenerateObjectResult.
+// text.generateObject into a typed GenerateObjectResult.
 func ParseGenerateObjectResult(jsonStr string) (*GenerateObjectResult, error) {
 	var r GenerateObjectResult
 	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
@@ -445,8 +434,6 @@ func ParseGenerateObjectResult(jsonStr string) (*GenerateObjectResult, error) {
 	}
 	return &r, nil
 }
-
-// ── ModelMessage (for multi-role prompts) ─────────────────────────────────────
 
 // ModelMessage is a single message in a conversation.
 // Content is `any` so it can be a plain string (common case) or a slice of
@@ -469,8 +456,6 @@ func MarshalMessages(msgs []ModelMessage) (string, error) {
 	}
 	return string(b), nil
 }
-
-// ── GenerateTextOptions (for typed options building) ──────────────────────────
 
 // GenerateTextOptions is the typed options for text generation.
 // TimeoutConfiguration sets per-call timeouts.
@@ -507,15 +492,6 @@ type GenerateTextOptions struct {
 	Timeout          *TimeoutConfiguration `json:"timeout,omitempty"`
 	IncludeRawChunks *bool                 `json:"includeRawChunks,omitempty"`
 	SessionID        *string               `json:"sessionId,omitempty"`
-	// RepairToolCall repairs tool calls the model got wrong (RFC-0035). It
-	// runs in Go, after generation, on every call the engine marked invalid —
-	// never serialized into the options sent to the engine.
-	//
-	// It applies to Generate, GenerateObj, ConsumeStream and Stream, and to
-	// GenerateAsOpenAI, which repairs the native result before converting it.
-	// StreamAsOpenAI does not reflect repair: its tool-argument deltas are the
-	// provider's text, forwarded as they arrive (as in the AI SDK).
-	RepairToolCall RepairToolCallFunc `json:"-"`
 }
 
 type FunctionToolInputExample struct {
@@ -554,8 +530,6 @@ func MarshalOptions(opts *GenerateTextOptions) (string, error) {
 	}
 	return string(b), nil
 }
-
-// ── StreamPart parsing ─────────────────────────────────────────────────────
 
 // StreamPart is a parsed stream part. The wire format is an object tagged by
 // its "type" key (e.g. {"type":"text-delta","id":"...","text":"..."}).
@@ -608,8 +582,6 @@ type FinishPayload struct {
 	RawFinishReason *string             `json:"rawFinishReason,omitempty"`
 	TotalUsage      LanguageModelUsage  `json:"totalUsage"`
 }
-
-// ── Cache probing (RFC-0015) wire types ─────────────────────────────────────
 
 // TraceFilter filters aggregate queries (RFC-0015 §5.3).
 type TraceFilter struct {
@@ -696,8 +668,6 @@ type PrefixBreak struct {
 	Kind          string `json:"kind"`
 }
 
-// ── OpenAI Chat Completions output (RFC-0026) ──────────────────────────────
-//
 // Mirrors aimux_core::openai_output. JSON tags match the serde wire format:
 // Rust `#[serde(skip_serializing_if = "Option::is_none")]` → Go `omitempty`;
 // Rust `#[serde(rename = "type")]` → Go `json:"type"`. Fields without
@@ -805,7 +775,7 @@ type ChatCompletionChunk struct {
 	Usage   *ChatCompletionUsage        `json:"usage,omitempty"`
 }
 
-// ParseChatCompletion parses the JSON string returned by Model.GenerateTextAsOpenAI
+// ParseChatCompletion parses the JSON string returned by text.generateOpenAI
 // into a typed ChatCompletion.
 func ParseChatCompletion(jsonStr string) (*ChatCompletion, error) {
 	var r ChatCompletion

@@ -1,0 +1,9 @@
+{
+  "kind": "protocol",
+  "code": 301,
+  "message": "invalid params: expected object",
+  "error": {
+    "name": "InvalidParams",
+    "message": "expected object"
+  }
+}

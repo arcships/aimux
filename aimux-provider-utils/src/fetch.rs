@@ -212,36 +212,77 @@ impl fmt::Debug for dyn Fetch {
 /// A shareable transport, as carried by provider settings and requests.
 pub type FetchFunction = Arc<dyn Fetch>;
 
-static DEFAULT_TRANSPORT: OnceLock<RwLock<Arc<ReqwestFetch>>> = OnceLock::new();
-
-fn default_transport_slot() -> &'static RwLock<Arc<ReqwestFetch>> {
-    DEFAULT_TRANSPORT.get_or_init(|| RwLock::new(Arc::new(ReqwestFetch::default())))
+struct DefaultTransport {
+    transport: Arc<ReqwestFetch>,
+    frozen: bool,
+    configured: bool,
 }
 
-/// The process default transport, read at request time by every exchange
-/// whose provider has no `fetch`.
+static DEFAULT_TRANSPORT: OnceLock<RwLock<DefaultTransport>> = OnceLock::new();
+
+fn default_transport_slot() -> &'static RwLock<DefaultTransport> {
+    DEFAULT_TRANSPORT.get_or_init(|| {
+        RwLock::new(DefaultTransport {
+            transport: Arc::new(ReqwestFetch::default()),
+            frozen: false,
+            configured: false,
+        })
+    })
+}
+
+/// The process default transport, acquired at request time. Acquisition freezes
+/// startup proxy configuration for HTTP, WebSocket and guarded downloads alike.
 #[must_use]
 pub fn default_fetch() -> FetchFunction {
     default_transport()
 }
 
-/// The process default transport as its concrete type: the built-in
-/// WebSocket connector and the download hops share its proxy settings.
 pub(crate) fn default_transport() -> Arc<ReqwestFetch> {
-    default_transport_slot()
-        .read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+    let mut slot = default_transport_slot()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    slot.frozen = true;
+    slot.transport.clone()
 }
 
-/// Replace the process default transport. Requests started afterwards by
-/// providers without their own `fetch`, built-in WebSocket connects and
-/// validated download hops use it; requests in flight keep theirs. A
-/// provider given `fetch` is unaffected.
+/// Explicit native replacement of the process default transport. In-flight
+/// requests retain their transport; startup configuration stays frozen once used.
 pub fn set_default_transport(transport: ReqwestFetch) {
-    *default_transport_slot()
+    let mut slot = default_transport_slot()
         .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::new(transport);
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    slot.transport = Arc::new(transport);
+    slot.configured = true;
+}
+
+/// Configure the startup proxy; repeating the active configuration is idempotent.
+/// # Errors
+/// Returns an error if a different configuration is requested after acquisition.
+pub fn configure_startup_proxy(config: ProxyConfig) -> Result<(), StartupProxyFrozen> {
+    let mut slot = default_transport_slot()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if slot.transport.proxy() != &config {
+        if slot.frozen {
+            return Err(StartupProxyFrozen);
+        }
+        slot.transport = Arc::new(ReqwestFetch::new(config));
+    }
+    slot.configured = true;
+    Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("startup proxy is frozen")]
+pub struct StartupProxyFrozen;
+
+/// Inspect startup state without acquiring or freezing the transport.
+#[must_use]
+pub fn startup_proxy_state() -> (bool, bool) {
+    let slot = default_transport_slot()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    (slot.configured, slot.frozen)
 }
 
 /// The real network leaf: reqwest over rustls, routed by its own

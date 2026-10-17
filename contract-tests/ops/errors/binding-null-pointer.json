@@ -1,0 +1,9 @@
+{
+  "kind": "binding",
+  "code": 200,
+  "message": "params_json: must not be NULL",
+  "error": {
+    "name": "NullPointer",
+    "argument": "params_json"
+  }
+}
