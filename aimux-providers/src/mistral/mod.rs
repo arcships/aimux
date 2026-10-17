@@ -15,6 +15,8 @@
 pub mod convert;
 pub mod embedding;
 mod model;
+#[cfg(test)]
+pub(crate) use model::chat_test_stream;
 pub(crate) mod options;
 mod speech;
 mod transcription;

@@ -712,6 +712,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer merged into the first call.
 - `SigV4Fetch::with_clock` takes a plain function (`fn() -> DateTime<Utc>`)
   instead of a closure.
+- Gains `Transformer`, `TransformStreamController` and `pipe_through`, the
+  Rust form of the WHATWG `TransformStream` the AI SDK models build `doStream`
+  with (`start` / `transform` / `flush`; `enqueue`, `enqueue_error`, `error`,
+  `terminate`). `pipe_through` returns `PipeThrough`, a `Stream` that calls
+  `start` immediately and the transformer's other methods as it is polled;
+  `TransformStreamController::new`, `drain` and `is_closed` let a test drive
+  a transformer without a stream.
+- `StreamingToolCallTracker`, `StreamingToolCallDelta`, `TypeValidation` and
+  `TrackerError` are removed. The tool-call matching they ported from
+  `@ai-sdk/provider-utils` 5.0.55 is now part of the OpenAI-style chat
+  streams in `aimux-providers` (OpenAI, OpenAI-compatible, DeepSeek, Groq,
+  Mistral), which emit the same parts as before.
 
 **Rust (aimux-providers)**
 
@@ -741,6 +753,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PresetDescriptor` gains a crate-private field (the row's usage converter),
   so code outside the crate can no longer build one with a struct literal;
   descriptors come from the registry JSON.
+- Every language-model `doStream` (OpenAI chat and Responses, OpenAI-compatible
+  chat and completion, Groq, DeepSeek, Mistral, Anthropic, Bedrock, Cohere,
+  Google, Vertex, xAI, Hugging Face, Open Responses) is a named stream struct
+  driven by `pipe_through`; emitted parts are unchanged, and a stream still
+  stops reading the body at an Anthropic `message_stop` or a
+  Google/Vertex/xAI/Hugging Face error event.
 
 **Rust (provider factory, RFC-0036)**
 

@@ -14,10 +14,11 @@ use aimux_core::result::{GenerateContent, GenerateResult};
 use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
-    Warning,
+    FinishReason, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage, Warning,
 };
-use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
 use super::config::CompatModelConfig;
 use super::convert::{parse_finish_reason, to_camel_case};
@@ -422,10 +423,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
             .finish_reason
             .as_deref()
             .map(parse_finish_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+            .unwrap_or(FINISH_OTHER);
         Ok(GenerateResult {
             content: if self.native() || !choice.text.is_empty() {
                 vec![GenerateContent::Text {
@@ -472,9 +470,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
         .await?;
         let mut events = response.value;
         let response_headers = response.response_headers;
-        let stream_response_headers = response_headers.clone();
         let native = self.native();
-        let raw_chunks = options.include_raw_chunks == Some(true);
         let mut buffered = Vec::new();
         if native {
             while let Some(event) = events.next().await {
@@ -508,62 +504,132 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
                 }
             }
         }
-        let stream_body = body.clone();
         let compat_name = match &self.config {
             CompletionConfig::Compatible(config) => Some(config.provider_options_name().to_owned()),
             CompletionConfig::Native(_) => None,
         };
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings });
-            let mut events = futures::stream::iter(buffered).chain(events);
-            let mut started = false;
-            let mut finish_reason = FinishReason { unified: FinishReasonUnified::Other, raw: None };
-            let mut final_usage = None;
-            let mut logprobs = None;
-            while let Some(event) = events.next().await {
-                let event = match event {
-                    Ok(event) => event,
-                    Err(error) => { finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None }; yield Ok(StreamPart::Error { error }); continue; }
-                };
-                if raw_chunks { yield Ok(StreamPart::Raw { raw_value: event.clone() }); }
-                if let Some(error) = event.get("error") {
-                    finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None };
-                    // @ai-sdk/openai maps the frame to a status
-                    // (openai-completion-language-model.ts:305-313);
-                    // @ai-sdk/openai-compatible passes it on as it is
-                    // (openai-compatible-completion-language-model.ts:320-325).
-                    let error = match &compat_name {
-                        None => crate::openai::openai_stream_error(error, &error_url, stream_body.clone(), response_headers.clone()),
-                        Some(name) => super::chat::stream_error(name, error, &error_url, stream_body.clone(), response_headers.clone()),
-                    };
-                    yield Ok(StreamPart::Error { error });
-                    continue;
-                }
-                let parsed: CompletionResponse = match parse_response(event, native, true) {
-                    Ok(parsed) => parsed,
-                    Err(error) => { finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None }; yield Ok(StreamPart::Error { error }); continue; }
-                };
-                if !started {
-                    started = true;
-                    yield Ok(StreamPart::ResponseMetadata(metadata(&parsed)));
-                    yield Ok(StreamPart::TextStart { id: "0".into(), provider_metadata: None });
-                }
-                if parsed.usage.is_some() { final_usage = parsed.usage; }
-                if let Some(choice) = parsed.choices.into_iter().next() {
-                    if let Some(reason) = choice.finish_reason { finish_reason = parse_finish_reason(&reason); }
-                    if native && choice.logprobs.is_some() { logprobs = choice.logprobs; }
-                    if !native || !choice.text.is_empty() { yield Ok(StreamPart::TextDelta { id: "0".into(), delta: choice.text, provider_metadata: None }); }
-                }
-            }
-            if started { yield Ok(StreamPart::TextEnd { id: "0".into(), provider_metadata: None }); }
-            yield Ok(StreamPart::Finish { finish_reason, usage: usage(final_usage, native), provider_metadata: native.then(|| provider_namespace("openai", match logprobs { Some(logprobs) => json!({ "logprobs": logprobs }), None => json!({}) }).expect("provider metadata must be an object")) });
-        };
+        let stream = pipe_through(
+            futures::stream::iter(buffered).chain(events),
+            OpenAICompatibleCompletionStream {
+                ctx: StreamContext::new(options, warnings, error_url, &body, &response_headers),
+                native,
+                compat_name,
+                ..OpenAICompatibleCompletionStream::default()
+            },
+        );
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(RequestInfo { body: Some(body) }),
             response: Some(StreamResponseInfo {
-                headers: Some(stream_response_headers),
+                headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of `OpenAICompatibleCompletionLanguageModel.doStream`
+/// (and of `OpenAICompletionLanguageModel.doStream` when native).
+#[derive(Default)]
+struct OpenAICompatibleCompletionStream {
+    ctx: StreamContext,
+    native: bool,
+    /// The provider options name of a compatible provider; `None` for the
+    /// native OpenAI completion model.
+    compat_name: Option<String>,
+    started: bool,
+    /// `other` until a chunk says otherwise.
+    finish_reason: Option<FinishReason>,
+    usage: Option<Map<String, Value>>,
+    logprobs: Option<Value>,
+}
+
+impl OpenAICompatibleCompletionStream {
+    fn report_error(&mut self, error: AiMuxError, controller: &mut Controller) {
+        self.finish_reason = Some(FINISH_ERROR);
+        controller.enqueue(StreamPart::Error { error });
+    }
+}
+
+impl Transformer for OpenAICompatibleCompletionStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
+    }
+
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        let event = match event {
+            Ok(event) => event,
+            Err(error) => return self.report_error(error, controller),
+        };
+        self.ctx.raw(&event, controller);
+        if let Some(error) = event.get("error") {
+            // @ai-sdk/openai maps the frame to a status
+            // (openai-completion-language-model.ts:305-313);
+            // @ai-sdk/openai-compatible passes it on as it is
+            // (openai-compatible-completion-language-model.ts:320-325).
+            let error = match &self.compat_name {
+                None => crate::openai::openai_stream_error(
+                    error,
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
+                ),
+                Some(name) => super::chat::stream_error(
+                    name,
+                    error,
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
+                ),
+            };
+            return self.report_error(error, controller);
+        }
+        let parsed: CompletionResponse = match parse_response(event, self.native, true) {
+            Ok(parsed) => parsed,
+            Err(error) => return self.report_error(error, controller),
+        };
+        if !self.started {
+            self.started = true;
+            controller.enqueue(StreamPart::ResponseMetadata(metadata(&parsed)));
+            controller.text_start("0");
+        }
+        if parsed.usage.is_some() {
+            self.usage = parsed.usage;
+        }
+        if let Some(choice) = parsed.choices.into_iter().next() {
+            if let Some(reason) = choice.finish_reason {
+                self.finish_reason = Some(parse_finish_reason(&reason));
+            }
+            if self.native && choice.logprobs.is_some() {
+                self.logprobs = choice.logprobs;
+            }
+            if !self.native || !choice.text.is_empty() {
+                controller.text_delta("0", choice.text);
+            }
+        }
+    }
+
+    fn flush(self, controller: &mut Controller) {
+        if self.started {
+            controller.text_end("0");
+        }
+        let native = self.native;
+        let logprobs = self.logprobs;
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.finish_reason.unwrap_or(FINISH_OTHER),
+            usage: usage(self.usage, native),
+            provider_metadata: native.then(|| {
+                provider_namespace(
+                    "openai",
+                    match logprobs {
+                        Some(logprobs) => json!({ "logprobs": logprobs }),
+                        None => json!({}),
+                    },
+                )
+                .expect("provider metadata must be an object")
+            }),
+        });
     }
 }

@@ -20,6 +20,9 @@ use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use aimux_provider_utils::{Transformer, pipe_through};
+
+use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -533,572 +536,14 @@ impl LanguageModel for XaiResponsesModel {
                 response_headers.clone(),
             ));
         }
-        let stream_error_url = endpoint;
-        let stream_request_body = body.clone();
-        let stream_response_headers = response_headers.clone();
-        let include_raw_chunks = options.include_raw_chunks == Some(true);
-
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let mut final_usage: Option<Usage> = None;
-            let mut final_finish_reason: FinishReason = FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            };
-            let mut cost_in_usd_ticks: Option<u64> = None;
-            let mut service_tier: Option<String> = None;
-            let mut prompt_cache_key: Option<String> = None;
-            let mut safety_identifier: Option<String> = None;
-            let mut has_function_call = false;
-            let mut is_first_chunk = true;
-
-            // Track content blocks.
-            let mut content_blocks: Vec<String> = Vec::new();
-            let mut seen_tool_calls: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let mut active_reasoning: HashMap<String, ()> = HashMap::new();
-
-            // Track ongoing function calls by output_index.
-            let mut ongoing_tool_calls: HashMap<u64, (String, String)> = HashMap::new(); // output_index -> (tool_call_id, tool_name)
-
-            let mut event_iter = futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-            while let Some(event) = event_iter.next().await {
-                match event {
-                    Ok(parsed) => {
-                        if include_raw_chunks {
-                            yield Ok(StreamPart::Raw { raw_value: parsed.clone() });
-                        }
-                        let event_type = types::event_type(&parsed);
-
-                        // ── response.created / response.in_progress ──
-                        if event_type == "response.created" || event_type == "response.in_progress" {
-                            if is_first_chunk {
-                                is_first_chunk = false;
-                                let response = parsed.get("response").cloned().unwrap_or(Value::Null);
-                                let id = response.get("id").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
-                                let model = response.get("model").and_then(|v| v.as_str()).map(std::string::ToString::to_string);
-                                let created_at = response.get("created_at").and_then(serde_json::Value::as_u64);
-                                let timestamp = created_at.and_then(|c| {
-                                    aimux_core::Timestamp::from_unix_seconds(c as f64)
-                                });
-                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata { id, timestamp, model_id: model }));
-                            }
-                            continue;
-                        }
-
-                        // ── reasoning_summary_part.added ──
-                        if event_type == "response.reasoning_summary_part.added" {
-                            let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("reasoning-{item_id}");
-                            if !active_reasoning.contains_key(item_id) {
-                                active_reasoning.insert(item_id.to_string(), ());
-                                yield Ok(StreamPart::ReasoningStart {
-                                    id: block_id,
-                                    provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
-                                });
-                            }
-                            continue;
-                        }
-
-                        // ── reasoning_summary_text.delta ──
-                        if event_type == "response.reasoning_summary_text.delta" {
-                            let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
-                            let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("reasoning-{item_id}");
-                            yield Ok(StreamPart::ReasoningDelta {
-                                id: block_id,
-                                delta: delta.to_string(),
-                                provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
-                            });
-                            continue;
-                        }
-
-                        // ── reasoning_summary_text.done ──
-                        if event_type == "response.reasoning_summary_text.done" {
-                            continue;
-                        }
-
-                        // ── reasoning_text.delta ──
-                        if event_type == "response.reasoning_text.delta" {
-                            let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
-                            let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("reasoning-{item_id}");
-                            if !active_reasoning.contains_key(item_id) {
-                                active_reasoning.insert(item_id.to_string(), ());
-                                yield Ok(StreamPart::ReasoningStart {
-                                    id: block_id.clone(),
-                                    provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
-                                });
-                            }
-                            yield Ok(StreamPart::ReasoningDelta {
-                                id: block_id,
-                                delta: delta.to_string(),
-                                provider_metadata: Some(crate::xai::options::xai_metadata(json!({ "itemId": item_id }))),
-                            });
-                            continue;
-                        }
-
-                        // ── reasoning_text.done ──
-                        if event_type == "response.reasoning_text.done" {
-                            continue;
-                        }
-
-                        // ── output_text.delta ──
-                        if event_type == "response.output_text.delta" {
-                            let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
-                            let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                            let block_id = format!("text-{item_id}");
-                            if !content_blocks.contains(&block_id) {
-                                content_blocks.push(block_id.clone());
-                                yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});
-                            }
-                            yield Ok(StreamPart::TextDelta {
-                                id: block_id,
-                                delta: delta.to_string(),
-                                provider_metadata: None,
-                            });
-                            continue;
-                        }
-
-                        // ── output_text.done ──
-                        if event_type == "response.output_text.done" {
-                            if let Some(annotations) = parsed.get("annotations").and_then(|v| v.as_array()) {
-                                for ann in annotations {
-                                    if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
-                                        let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                                        let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                        yield Ok(StreamPart::Source(Source::Url {
-                                            id: generate_source_id(),
-                                            url: url.to_string(),
-                                            title: Some(title),
-                                            provider_metadata: None,
-                                        }));
-                                    }
-                                }
-                            }
-                            continue;
-                        }
-
-                        // ── output_text.annotation.added ──
-                        if event_type == "response.output_text.annotation.added" {
-                            let annotation = parsed.get("annotation").cloned().unwrap_or(Value::Null);
-                            if annotation.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
-                                let url = annotation.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                                let title = annotation.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                yield Ok(StreamPart::Source(Source::Url {
-                                    id: generate_source_id(),
-                                    url: url.to_string(),
-                                    title: Some(title),
-                                    provider_metadata: None,
-                                }));
-                            }
-                            continue;
-                        }
-
-                        // ── response.done / response.completed / response.incomplete ──
-                        if event_type == "response.done"
-                            || event_type == "response.completed"
-                            || event_type == "response.incomplete"
-                        {
-                            let response = parsed.get("response").cloned().unwrap_or(Value::Null);
-                            if let Some(usage) = response.get("usage")
-                                && let Ok(u) = serde_json::from_value::<types::XaiResponsesUsage>(usage.clone()) {
-                                    let mut converted = convert_xai_responses_usage(&u);
-                                    converted.raw = usage.as_object().cloned();
-                                    final_usage = Some(converted);
-                                    cost_in_usd_ticks = u.cost_in_usd_ticks;
-                                }
-
-                            service_tier = response.get("service_tier").and_then(Value::as_str).map(str::to_string);
-                            prompt_cache_key = response.get("prompt_cache_key").and_then(Value::as_str).map(str::to_string);
-                            safety_identifier = response.get("safety_identifier").and_then(Value::as_str).map(str::to_string);
-
-                            if event_type == "response.incomplete" {
-                                let reason = response
-                                    .get("incomplete_details")
-                                    .and_then(|d| d.get("reason"))
-                                    .and_then(|v| v.as_str());
-                                final_finish_reason = FinishReason {
-                                    unified: reason
-                                        .map(map_xai_responses_finish_reason)
-                                        .unwrap_or(FinishReasonUnified::Other),
-                                    raw: reason.map(std::string::ToString::to_string).or(Some("incomplete".to_string())),
-                                };
-                            } else if let Some(status) = response.get("status").and_then(|v| v.as_str()) {
-                                final_finish_reason = FinishReason {
-                                    unified: if has_function_call {
-                                        FinishReasonUnified::ToolCalls
-                                    } else {
-                                        map_xai_responses_finish_reason(status)
-                                    },
-                                    raw: Some(status.to_string()),
-                                };
-                            }
-                            continue;
-                        }
-
-                        // ── response.failed ──
-                        if event_type == "response.failed" {
-                            let response = parsed.get("response").cloned().unwrap_or(Value::Null);
-                            let reason = response
-                                .get("incomplete_details")
-                                .and_then(|d| d.get("reason"))
-                                .and_then(|v| v.as_str());
-                            final_finish_reason = FinishReason {
-                                unified: reason
-                                    .map(map_xai_responses_finish_reason)
-                                    .unwrap_or(FinishReasonUnified::Error),
-                                raw: reason.map(std::string::ToString::to_string).or(Some("error".to_string())),
-                            };
-                            if let Some(usage) = response.get("usage")
-                                && let Ok(u) = serde_json::from_value::<types::XaiResponsesUsage>(usage.clone()) {
-                                    let mut converted = convert_xai_responses_usage(&u);
-                                    converted.raw = usage.as_object().cloned();
-                                    final_usage = Some(converted);
-                                }
-                            if response.get("error").is_some_and(|error| !error.is_null()) {
-                                yield Ok(StreamPart::Error {
-                                    error: super::xai_stream_error(
-                                        &parsed,
-                                        &stream_error_url,
-                                        stream_request_body.clone(),
-                                        stream_response_headers.clone(),
-                                    ),
-                                });
-                            }
-                            continue;
-                        }
-
-                        // ── error event ──
-                        if event_type == "error" {
-                            yield Ok(StreamPart::Error {
-                                error: super::xai_stream_error(
-                                    &parsed,
-                                    &stream_error_url,
-                                    stream_request_body.clone(),
-                                    stream_response_headers.clone(),
-                                ),
-                            });
-                            final_finish_reason = FinishReason {
-                                unified: FinishReasonUnified::Error,
-                                raw: Some("error".to_string()),
-                            };
-                            break;
-                        }
-
-                        // ── custom_tool_call_input.delta / .done ──
-                        if event_type == "response.custom_tool_call_input.delta"
-                            || event_type == "response.custom_tool_call_input.done"
-                        {
-                            continue;
-                        }
-
-                        // ── function_call_arguments.delta ──
-                        if event_type == "response.function_call_arguments.delta" {
-                            let output_index = parsed.get("output_index").and_then(serde_json::Value::as_u64).unwrap_or(0);
-                            let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
-                            if let Some((tool_call_id, _)) = ongoing_tool_calls.get(&output_index) {
-                                yield Ok(StreamPart::ToolInputDelta {
-                                    id: tool_call_id.clone(),
-                                    delta: delta.to_string(),
-                                    provider_metadata: None,
-                                });
-                            }
-                            continue;
-                        }
-
-                        // ── function_call_arguments.done ──
-                        if event_type == "response.function_call_arguments.done" {
-                            continue;
-                        }
-
-                        // ── output_item.added / output_item.done ──
-                        if event_type == "response.output_item.added"
-                            || event_type == "response.output_item.done"
-                            || matches!(event_type,
-                                "response.image_generation_call.in_progress"
-                                | "response.image_generation_call.generating"
-                                | "response.image_generation_call.completed")
-                        {
-                            let item = if event_type.starts_with("response.image_generation_call.") {
-                                json!({ "type": "image_generation_call", "id": parsed.get("item_id") })
-                            } else {
-                                parsed.get("item").cloned().unwrap_or(Value::Null)
-                            };
-                            let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                            let output_index = parsed.get("output_index").and_then(serde_json::Value::as_u64).unwrap_or(0);
-
-                            // ── reasoning item ──
-                            if item_type == "reasoning" {
-                                if event_type == "response.output_item.done" {
-                                    let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                    let block_id = format!("reasoning-{part_id}");
-                                    let encrypted = item.get("encrypted_content").and_then(|v| v.as_str()).filter(|v| !v.is_empty());
-
-                                    if !active_reasoning.contains_key(part_id) {
-                                        active_reasoning.insert(part_id.to_string(), ());
-                                        yield Ok(StreamPart::ReasoningStart {
-                                            id: block_id.clone(),
-                                            provider_metadata: Some(crate::xai::options::xai_metadata(if part_id.is_empty() { json!({}) } else { json!({ "itemId": part_id }) })),
-                                        });
-                                    }
-
-                                    let mut meta = json!({});
-                                    if !part_id.is_empty() {
-                                        meta["itemId"] = json!(part_id);
-                                    }
-                                    if let Some(ec) = encrypted {
-                                        meta["reasoningEncryptedContent"] = json!(ec);
-                                    }
-                                    yield Ok(StreamPart::ReasoningEnd {
-                                        id: block_id,
-                                        provider_metadata: Some(crate::xai::options::xai_metadata(json!(meta))),
-                                    });
-                                    active_reasoning.remove(part_id);
-                                }
-                                continue;
-                            }
-
-                            // ── file_search_call item ──
-                            if item_type == "file_search_call" || item_type == "image_generation_call" {
-                                let tool_name = resolve_tool_name(item_type, None, &provider_tool_names);
-                                let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                let input = if item_type == "image_generation_call" { "{}" } else { "" };
-
-                                if !seen_tool_calls.contains(part_id) {
-                                    seen_tool_calls.insert(part_id.to_string());
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: part_id.to_string(),
-                                        tool_name: tool_name.clone(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-                                    yield Ok(StreamPart::ToolInputDelta {
-                                        id: part_id.to_string(),
-                                        delta: input.to_string(),
-                                        provider_metadata: None,
-                                    });
-                                    yield Ok(StreamPart::ToolInputEnd {
-                                        id: part_id.to_string(),
-                                        provider_metadata: None,
-                                    });
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: part_id.to_string(),
-                                        tool_name: tool_name.clone(),
-                                        input: input.to_string(),
-                                        provider_executed: Some(true),
-                                        dynamic: None,
-                                        provider_metadata: None,
-                                    }));
-                                }
-
-                                if event_type == "response.output_item.done" {
-                                    if item_type == "image_generation_call" {
-                                        yield Ok(StreamPart::ToolResult(image_generation_result(&item, tool_name)));
-                                        continue;
-                                    }
-                                    let queries = item.get("queries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                                    let results = item.get("results").and_then(|v| v.as_array()).map(|arr| {
-                                        json!(arr.iter().map(|r| json!({
-                                            "fileId": r.get("file_id").cloned().unwrap_or(Value::Null),
-                                            "filename": r.get("filename").cloned().unwrap_or(Value::Null),
-                                            "score": r.get("score").cloned().unwrap_or(Value::Null),
-                                            "text": r.get("text").cloned().unwrap_or(Value::Null),
-                                        })).collect::<Vec<_>>())
-                                    }).unwrap_or(Value::Null);
-                                    yield Ok(StreamPart::ToolResult(ToolResult {
-                                        tool_call_id: part_id.to_string(),
-                                        tool_name,
-                                        result: json!({ "queries": queries, "results": results }),
-                                        is_error: None,
-                                        preliminary: None,
-                                        dynamic: None,
-                                        provider_metadata: None,
-                                    }));
-                                }
-                                continue;
-                            }
-
-                            // ── Server-side tool calls ──
-                            if matches!(
-                                item_type,
-                                "web_search_call" | "x_search_call" | "code_interpreter_call"
-                                    | "code_execution_call" | "view_image_call" | "view_x_video_call"
-                                    | "custom_tool_call" | "mcp_call"
-                            ) {
-                                let item_name = item.get("name").and_then(|v| v.as_str());
-                                let tool_name = resolve_tool_name(item_type, item_name, &provider_tool_names);
-                                let tool_input = get_tool_input(item_type, &item);
-                                let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-
-                                let should_emit = if item_type == "custom_tool_call" {
-                                    event_type == "response.output_item.done"
-                                } else {
-                                    !seen_tool_calls.contains(part_id)
-                                };
-
-                                if should_emit && !seen_tool_calls.contains(part_id) {
-                                    seen_tool_calls.insert(part_id.to_string());
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: part_id.to_string(),
-                                        tool_name: tool_name.clone(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-                                    yield Ok(StreamPart::ToolInputDelta {
-                                        id: part_id.to_string(),
-                                        delta: tool_input.clone(),
-                                        provider_metadata: None,
-                                    });
-                                    yield Ok(StreamPart::ToolInputEnd {
-                                        id: part_id.to_string(),
-                                        provider_metadata: None,
-                                    });
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: part_id.to_string(),
-                                        tool_name: tool_name.clone(),
-                                        input: tool_input,
-                                        provider_executed: Some(true),
-                                        dynamic: None,
-                                        provider_metadata: None,
-                                    }));
-                                }
-
-                                if event_type == "response.output_item.done" {
-                                    yield Ok(StreamPart::ToolResult(ToolResult {
-                                        tool_call_id: part_id.to_string(),
-                                        tool_name,
-                                        result: if item_type == "web_search_call" {
-                                            map_web_search_action(item.get("action").unwrap_or(&Value::Null))
-                                        } else {
-                                            json!({})
-                                        },
-                                        is_error: None,
-                                        preliminary: None,
-                                        dynamic: None,
-                                        provider_metadata: None,
-                                    }));
-                                }
-                                continue;
-                            }
-
-                            // ── message item ──
-                            if item_type == "message" {
-                                let content_parts = item
-                                    .get("content")
-                                    .and_then(|v| v.as_array())
-                                    .cloned()
-                                    .unwrap_or_default();
-                                for cp in &content_parts {
-                                    if let Some(text) = cp.get("text").and_then(|v| v.as_str())
-                                        && !text.is_empty() {
-                                            let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                            let block_id = format!("text-{part_id}");
-                                            if !content_blocks.contains(&block_id) {
-                                                content_blocks.push(block_id.clone());
-                                                yield Ok(StreamPart::TextStart { id: block_id.clone(), provider_metadata: None});
-                                                yield Ok(StreamPart::TextDelta {
-                                                    id: block_id,
-                                                    delta: text.to_string(),
-                                                    provider_metadata: None,
-                                                });
-                                            }
-                                        }
-                                    if let Some(annotations) = cp.get("annotations").and_then(|v| v.as_array()) {
-                                        for ann in annotations {
-                                            if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
-                                                let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                                                let title = ann.get("title").and_then(|v| v.as_str()).unwrap_or(url).to_string();
-                                                yield Ok(StreamPart::Source(Source::Url {
-                                                    id: generate_source_id(),
-                                                    url: url.to_string(),
-                                                    title: Some(title),
-                                                    provider_metadata: None,
-                                                }));
-                                            }
-                                        }
-                                    }
-                                }
-                                continue;
-                            }
-
-                            // ── function_call item ──
-                            if item_type == "function_call" {
-                                let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
-                                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
-
-                                if event_type == "response.output_item.added" {
-                                    ongoing_tool_calls.insert(output_index, (call_id.to_string(), name.to_string()));
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id: call_id.to_string(),
-                                        tool_name: name.to_string(),
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
-                                } else {
-                                    // output_item.done
-                                    has_function_call = true;
-                                    ongoing_tool_calls.remove(&output_index);
-                                    let arguments = item.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
-                                    yield Ok(StreamPart::ToolInputEnd {
-                                        id: call_id.to_string(),
-                                        provider_metadata: None,
-                                    });
-                                    let input = arguments.to_string();
-                                    yield Ok(StreamPart::ToolCall(RawToolCall {
-                                        tool_call_id: call_id.to_string(),
-                                        tool_name: name.to_string(),
-                                        input,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        provider_metadata: None,
-                                    }));
-                                }
-                                continue;
-                            }
-                        }
-
-                        // All other event types (web_search_call.in_progress, etc.) are ignored.
-                    }
-                    Err(error) => {
-                        if error.is_recoverable_stream_error() {
-                            if include_raw_chunks {
-                                yield Ok(StreamPart::Raw { raw_value: Value::Null });
-                            }
-                            yield Ok(StreamPart::Error { error });
-                        } else {
-                            yield Err(error);
-                            return;
-                        }
-                    }
-                }
-            }
-
-            // Close any remaining open text blocks.
-            for block_id in &content_blocks {
-                yield Ok(StreamPart::TextEnd { id: block_id.clone(), provider_metadata: None});
-            }
-
-            // Final part: Finish.
-            let provider_meta = response_provider_metadata(
-                cost_in_usd_ticks,
-                service_tier.as_deref(),
-                prompt_cache_key.as_deref(),
-                safety_identifier.as_deref(),
-            );
-
-            yield Ok(StreamPart::Finish {
-                finish_reason: final_finish_reason,
-                usage: final_usage.unwrap_or_else(zero_usage),
-                provider_metadata: provider_meta,
-            });
-        };
+        let stream = pipe_through(
+            futures::stream::iter(first_event).chain(sse_stream),
+            XaiResponsesStream {
+                ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
+                provider_tool_names,
+                ..XaiResponsesStream::default()
+            },
+        );
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -1107,5 +552,669 @@ impl LanguageModel for XaiResponsesModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of the xAI Responses `doStream`.
+#[derive(Default)]
+struct XaiResponsesStream {
+    ctx: StreamContext,
+    provider_tool_names: HashMap<String, String>,
+    final_usage: Option<Usage>,
+    /// `other` until the response says otherwise.
+    final_finish_reason: Option<FinishReason>,
+    cost_in_usd_ticks: Option<u64>,
+    service_tier: Option<String>,
+    prompt_cache_key: Option<String>,
+    safety_identifier: Option<String>,
+    has_function_call: bool,
+    metadata_emitted: bool,
+    /// Open text blocks.
+    content_blocks: Vec<String>,
+    seen_tool_calls: std::collections::HashSet<String>,
+    active_reasoning: HashMap<String, ()>,
+    /// Ongoing function calls: output_index -> (tool_call_id, tool_name).
+    ongoing_tool_calls: HashMap<u64, (String, String)>,
+    /// Set by an `error` event: later chunks are ignored, the stream still
+    /// finishes.
+    finished: bool,
+}
+
+impl Transformer for XaiResponsesStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
+    }
+
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        self.transform_event(event, controller);
+        if self.finished {
+            // An error event ends the response: the rest of the body is not
+            // read and the stream finishes now.
+            self.finish(controller);
+            controller.terminate();
+        }
+    }
+
+    fn flush(mut self, controller: &mut Controller) {
+        self.finish(controller);
+    }
+}
+
+impl XaiResponsesStream {
+    /// Handle one parsed SSE event.
+    fn transform_event(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        let Self {
+            ctx:
+                StreamContext {
+                    include_raw_chunks,
+                    url: ref stream_error_url,
+                    request_body: ref stream_request_body,
+                    response_headers: ref stream_response_headers,
+                    ..
+                },
+            ref provider_tool_names,
+            ref mut final_usage,
+            ref mut final_finish_reason,
+            ref mut cost_in_usd_ticks,
+            ref mut service_tier,
+            ref mut prompt_cache_key,
+            ref mut safety_identifier,
+            ref mut has_function_call,
+            ref mut metadata_emitted,
+            ref mut content_blocks,
+            ref mut seen_tool_calls,
+            ref mut active_reasoning,
+            ref mut ongoing_tool_calls,
+            ref mut finished,
+            ..
+        } = *self;
+        match event {
+            Ok(parsed) => {
+                if include_raw_chunks {
+                    controller.enqueue(StreamPart::Raw {
+                        raw_value: parsed.clone(),
+                    });
+                }
+                let event_type = types::event_type(&parsed);
+
+                // ── response.created / response.in_progress ──
+                if event_type == "response.created" || event_type == "response.in_progress" {
+                    if !*metadata_emitted {
+                        *metadata_emitted = true;
+                        let response = parsed.get("response").cloned().unwrap_or(Value::Null);
+                        let id = response
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .map(std::string::ToString::to_string);
+                        let model = response
+                            .get("model")
+                            .and_then(|v| v.as_str())
+                            .map(std::string::ToString::to_string);
+                        let created_at = response
+                            .get("created_at")
+                            .and_then(serde_json::Value::as_u64);
+                        let timestamp = created_at
+                            .and_then(|c| aimux_core::Timestamp::from_unix_seconds(c as f64));
+                        controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+                            id,
+                            timestamp,
+                            model_id: model,
+                        }));
+                    }
+                    return;
+                }
+
+                // ── reasoning_summary_part.added ──
+                if event_type == "response.reasoning_summary_part.added" {
+                    let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let block_id = format!("reasoning-{item_id}");
+                    if !active_reasoning.contains_key(item_id) {
+                        active_reasoning.insert(item_id.to_string(), ());
+                        controller.enqueue(StreamPart::ReasoningStart {
+                            id: block_id,
+                            provider_metadata: Some(crate::xai::options::xai_metadata(
+                                json!({ "itemId": item_id }),
+                            )),
+                        });
+                    }
+                    return;
+                }
+
+                // ── reasoning_summary_text.delta ──
+                if event_type == "response.reasoning_summary_text.delta" {
+                    let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+                    let block_id = format!("reasoning-{item_id}");
+                    controller.enqueue(StreamPart::ReasoningDelta {
+                        id: block_id,
+                        delta: delta.to_string(),
+                        provider_metadata: Some(crate::xai::options::xai_metadata(
+                            json!({ "itemId": item_id }),
+                        )),
+                    });
+                    return;
+                }
+
+                // ── reasoning_summary_text.done ──
+                if event_type == "response.reasoning_summary_text.done" {
+                    return;
+                }
+
+                // ── reasoning_text.delta ──
+                if event_type == "response.reasoning_text.delta" {
+                    let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+                    let block_id = format!("reasoning-{item_id}");
+                    if !active_reasoning.contains_key(item_id) {
+                        active_reasoning.insert(item_id.to_string(), ());
+                        controller.enqueue(StreamPart::ReasoningStart {
+                            id: block_id.clone(),
+                            provider_metadata: Some(crate::xai::options::xai_metadata(
+                                json!({ "itemId": item_id }),
+                            )),
+                        });
+                    }
+                    controller.enqueue(StreamPart::ReasoningDelta {
+                        id: block_id,
+                        delta: delta.to_string(),
+                        provider_metadata: Some(crate::xai::options::xai_metadata(
+                            json!({ "itemId": item_id }),
+                        )),
+                    });
+                    return;
+                }
+
+                // ── reasoning_text.done ──
+                if event_type == "response.reasoning_text.done" {
+                    return;
+                }
+
+                // ── output_text.delta ──
+                if event_type == "response.output_text.delta" {
+                    let item_id = parsed.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+                    let block_id = format!("text-{item_id}");
+                    if !content_blocks.contains(&block_id) {
+                        content_blocks.push(block_id.clone());
+                        controller.text_start(block_id.clone());
+                    }
+                    controller.text_delta(block_id, delta.to_string());
+                    return;
+                }
+
+                // ── output_text.done ──
+                if event_type == "response.output_text.done" {
+                    if let Some(annotations) = parsed.get("annotations").and_then(|v| v.as_array())
+                    {
+                        for ann in annotations {
+                            if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
+                                let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                                let title = ann
+                                    .get("title")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or(url)
+                                    .to_string();
+                                controller.enqueue(StreamPart::Source(Source::Url {
+                                    id: generate_source_id(),
+                                    url: url.to_string(),
+                                    title: Some(title),
+                                    provider_metadata: None,
+                                }));
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // ── output_text.annotation.added ──
+                if event_type == "response.output_text.annotation.added" {
+                    let annotation = parsed.get("annotation").cloned().unwrap_or(Value::Null);
+                    if annotation.get("type").and_then(|v| v.as_str()) == Some("url_citation") {
+                        let url = annotation.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let title = annotation
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(url)
+                            .to_string();
+                        controller.enqueue(StreamPart::Source(Source::Url {
+                            id: generate_source_id(),
+                            url: url.to_string(),
+                            title: Some(title),
+                            provider_metadata: None,
+                        }));
+                    }
+                    return;
+                }
+
+                // ── response.done / response.completed / response.incomplete ──
+                if event_type == "response.done"
+                    || event_type == "response.completed"
+                    || event_type == "response.incomplete"
+                {
+                    let response = parsed.get("response").cloned().unwrap_or(Value::Null);
+                    if let Some(usage) = response.get("usage")
+                        && let Ok(u) =
+                            serde_json::from_value::<types::XaiResponsesUsage>(usage.clone())
+                    {
+                        let mut converted = convert_xai_responses_usage(&u);
+                        converted.raw = usage.as_object().cloned();
+                        *final_usage = Some(converted);
+                        *cost_in_usd_ticks = u.cost_in_usd_ticks;
+                    }
+
+                    *service_tier = response
+                        .get("service_tier")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    *prompt_cache_key = response
+                        .get("prompt_cache_key")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    *safety_identifier = response
+                        .get("safety_identifier")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+
+                    if event_type == "response.incomplete" {
+                        let reason = response
+                            .get("incomplete_details")
+                            .and_then(|d| d.get("reason"))
+                            .and_then(|v| v.as_str());
+                        *final_finish_reason = Some(FinishReason {
+                            unified: reason
+                                .map(map_xai_responses_finish_reason)
+                                .unwrap_or(FinishReasonUnified::Other),
+                            raw: reason
+                                .map(std::string::ToString::to_string)
+                                .or(Some("incomplete".to_string())),
+                        });
+                    } else if let Some(status) = response.get("status").and_then(|v| v.as_str()) {
+                        *final_finish_reason = Some(FinishReason {
+                            unified: if *has_function_call {
+                                FinishReasonUnified::ToolCalls
+                            } else {
+                                map_xai_responses_finish_reason(status)
+                            },
+                            raw: Some(status.to_string()),
+                        });
+                    }
+                    return;
+                }
+
+                // ── response.failed ──
+                if event_type == "response.failed" {
+                    let response = parsed.get("response").cloned().unwrap_or(Value::Null);
+                    let reason = response
+                        .get("incomplete_details")
+                        .and_then(|d| d.get("reason"))
+                        .and_then(|v| v.as_str());
+                    *final_finish_reason = Some(FinishReason {
+                        unified: reason
+                            .map(map_xai_responses_finish_reason)
+                            .unwrap_or(FinishReasonUnified::Error),
+                        raw: reason
+                            .map(std::string::ToString::to_string)
+                            .or(Some("error".to_string())),
+                    });
+                    if let Some(usage) = response.get("usage")
+                        && let Ok(u) =
+                            serde_json::from_value::<types::XaiResponsesUsage>(usage.clone())
+                    {
+                        let mut converted = convert_xai_responses_usage(&u);
+                        converted.raw = usage.as_object().cloned();
+                        *final_usage = Some(converted);
+                    }
+                    if response.get("error").is_some_and(|error| !error.is_null()) {
+                        controller.enqueue(StreamPart::Error {
+                            error: super::xai_stream_error(
+                                &parsed,
+                                stream_error_url,
+                                stream_request_body.clone(),
+                                stream_response_headers.clone(),
+                            ),
+                        });
+                    }
+                    return;
+                }
+
+                // ── error event ──
+                if event_type == "error" {
+                    controller.enqueue(StreamPart::Error {
+                        error: super::xai_stream_error(
+                            &parsed,
+                            stream_error_url,
+                            stream_request_body.clone(),
+                            stream_response_headers.clone(),
+                        ),
+                    });
+                    *final_finish_reason = Some(FinishReason {
+                        unified: FinishReasonUnified::Error,
+                        raw: Some("error".to_string()),
+                    });
+                    *finished = true;
+                    return;
+                }
+
+                // ── custom_tool_call_input.delta / .done ──
+                if event_type == "response.custom_tool_call_input.delta"
+                    || event_type == "response.custom_tool_call_input.done"
+                {
+                    return;
+                }
+
+                // ── function_call_arguments.delta ──
+                if event_type == "response.function_call_arguments.delta" {
+                    let output_index = parsed
+                        .get("output_index")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0);
+                    let delta = parsed.get("delta").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Some((tool_call_id, _)) = ongoing_tool_calls.get(&output_index) {
+                        controller.tool_input_delta(tool_call_id.clone(), delta.to_string());
+                    }
+                    return;
+                }
+
+                // ── function_call_arguments.done ──
+                if event_type == "response.function_call_arguments.done" {
+                    return;
+                }
+
+                // ── output_item.added / output_item.done ──
+                if event_type == "response.output_item.added"
+                    || event_type == "response.output_item.done"
+                    || matches!(
+                        event_type,
+                        "response.image_generation_call.in_progress"
+                            | "response.image_generation_call.generating"
+                            | "response.image_generation_call.completed"
+                    )
+                {
+                    let item = if event_type.starts_with("response.image_generation_call.") {
+                        json!({ "type": "image_generation_call", "id": parsed.get("item_id") })
+                    } else {
+                        parsed.get("item").cloned().unwrap_or(Value::Null)
+                    };
+                    let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let output_index = parsed
+                        .get("output_index")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0);
+
+                    // ── reasoning item ──
+                    if item_type == "reasoning" {
+                        if event_type == "response.output_item.done" {
+                            let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                            let block_id = format!("reasoning-{part_id}");
+                            let encrypted = item
+                                .get("encrypted_content")
+                                .and_then(|v| v.as_str())
+                                .filter(|v| !v.is_empty());
+
+                            if !active_reasoning.contains_key(part_id) {
+                                active_reasoning.insert(part_id.to_string(), ());
+                                controller.enqueue(StreamPart::ReasoningStart {
+                                    id: block_id.clone(),
+                                    provider_metadata: Some(crate::xai::options::xai_metadata(
+                                        if part_id.is_empty() {
+                                            json!({})
+                                        } else {
+                                            json!({ "itemId": part_id })
+                                        },
+                                    )),
+                                });
+                            }
+
+                            let mut meta = json!({});
+                            if !part_id.is_empty() {
+                                meta["itemId"] = json!(part_id);
+                            }
+                            if let Some(ec) = encrypted {
+                                meta["reasoningEncryptedContent"] = json!(ec);
+                            }
+                            controller.enqueue(StreamPart::ReasoningEnd {
+                                id: block_id,
+                                provider_metadata: Some(crate::xai::options::xai_metadata(json!(
+                                    meta
+                                ))),
+                            });
+                            active_reasoning.remove(part_id);
+                        }
+                        return;
+                    }
+
+                    // ── file_search_call item ──
+                    if item_type == "file_search_call" || item_type == "image_generation_call" {
+                        let tool_name = resolve_tool_name(item_type, None, provider_tool_names);
+                        let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let input = if item_type == "image_generation_call" {
+                            "{}"
+                        } else {
+                            ""
+                        };
+
+                        if !seen_tool_calls.contains(part_id) {
+                            seen_tool_calls.insert(part_id.to_string());
+                            controller.tool_input_start(part_id.to_string(), tool_name.clone());
+                            controller.tool_input_delta(part_id.to_string(), input.to_string());
+                            controller.tool_input_end(part_id.to_string());
+                            controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                                tool_call_id: part_id.to_string(),
+                                tool_name: tool_name.clone(),
+                                input: input.to_string(),
+                                provider_executed: Some(true),
+                                dynamic: None,
+                                provider_metadata: None,
+                            }));
+                        }
+
+                        if event_type == "response.output_item.done" {
+                            if item_type == "image_generation_call" {
+                                controller.enqueue(StreamPart::ToolResult(
+                                    image_generation_result(&item, tool_name),
+                                ));
+                                return;
+                            }
+                            let queries = item
+                                .get("queries")
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            let results = item.get("results").and_then(|v| v.as_array()).map(|arr| {
+                                        json!(arr.iter().map(|r| json!({
+                                            "fileId": r.get("file_id").cloned().unwrap_or(Value::Null),
+                                            "filename": r.get("filename").cloned().unwrap_or(Value::Null),
+                                            "score": r.get("score").cloned().unwrap_or(Value::Null),
+                                            "text": r.get("text").cloned().unwrap_or(Value::Null),
+                                        })).collect::<Vec<_>>())
+                                    }).unwrap_or(Value::Null);
+                            controller.enqueue(StreamPart::ToolResult(ToolResult {
+                                tool_call_id: part_id.to_string(),
+                                tool_name,
+                                result: json!({ "queries": queries, "results": results }),
+                                is_error: None,
+                                preliminary: None,
+                                dynamic: None,
+                                provider_metadata: None,
+                            }));
+                        }
+                        return;
+                    }
+
+                    // ── Server-side tool calls ──
+                    if matches!(
+                        item_type,
+                        "web_search_call"
+                            | "x_search_call"
+                            | "code_interpreter_call"
+                            | "code_execution_call"
+                            | "view_image_call"
+                            | "view_x_video_call"
+                            | "custom_tool_call"
+                            | "mcp_call"
+                    ) {
+                        let item_name = item.get("name").and_then(|v| v.as_str());
+                        let tool_name =
+                            resolve_tool_name(item_type, item_name, provider_tool_names);
+                        let tool_input = get_tool_input(item_type, &item);
+                        let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+
+                        let should_emit = if item_type == "custom_tool_call" {
+                            event_type == "response.output_item.done"
+                        } else {
+                            !seen_tool_calls.contains(part_id)
+                        };
+
+                        if should_emit && !seen_tool_calls.contains(part_id) {
+                            seen_tool_calls.insert(part_id.to_string());
+                            controller.tool_input_start(part_id.to_string(), tool_name.clone());
+                            controller.tool_input_delta(part_id.to_string(), tool_input.clone());
+                            controller.tool_input_end(part_id.to_string());
+                            controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                                tool_call_id: part_id.to_string(),
+                                tool_name: tool_name.clone(),
+                                input: tool_input,
+                                provider_executed: Some(true),
+                                dynamic: None,
+                                provider_metadata: None,
+                            }));
+                        }
+
+                        if event_type == "response.output_item.done" {
+                            controller.enqueue(StreamPart::ToolResult(ToolResult {
+                                tool_call_id: part_id.to_string(),
+                                tool_name,
+                                result: if item_type == "web_search_call" {
+                                    map_web_search_action(
+                                        item.get("action").unwrap_or(&Value::Null),
+                                    )
+                                } else {
+                                    json!({})
+                                },
+                                is_error: None,
+                                preliminary: None,
+                                dynamic: None,
+                                provider_metadata: None,
+                            }));
+                        }
+                        return;
+                    }
+
+                    // ── message item ──
+                    if item_type == "message" {
+                        let content_parts = item
+                            .get("content")
+                            .and_then(|v| v.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        for cp in &content_parts {
+                            if let Some(text) = cp.get("text").and_then(|v| v.as_str())
+                                && !text.is_empty()
+                            {
+                                let part_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                let block_id = format!("text-{part_id}");
+                                if !content_blocks.contains(&block_id) {
+                                    content_blocks.push(block_id.clone());
+                                    controller.text_start(block_id.clone());
+                                    controller.text_delta(block_id, text.to_string());
+                                }
+                            }
+                            if let Some(annotations) =
+                                cp.get("annotations").and_then(|v| v.as_array())
+                            {
+                                for ann in annotations {
+                                    if ann.get("type").and_then(|v| v.as_str())
+                                        == Some("url_citation")
+                                    {
+                                        let url =
+                                            ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                                        let title = ann
+                                            .get("title")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or(url)
+                                            .to_string();
+                                        controller.enqueue(StreamPart::Source(Source::Url {
+                                            id: generate_source_id(),
+                                            url: url.to_string(),
+                                            title: Some(title),
+                                            provider_metadata: None,
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
+
+                    // ── function_call item ──
+                    if item_type == "function_call" {
+                        let call_id = item.get("call_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+
+                        if event_type == "response.output_item.added" {
+                            ongoing_tool_calls
+                                .insert(output_index, (call_id.to_string(), name.to_string()));
+                            controller.tool_input_start(call_id.to_string(), name.to_string());
+                        } else {
+                            // output_item.done
+                            *has_function_call = true;
+                            ongoing_tool_calls.remove(&output_index);
+                            let arguments =
+                                item.get("arguments").and_then(|v| v.as_str()).unwrap_or("");
+                            controller.tool_input_end(call_id.to_string());
+                            let input = arguments.to_string();
+                            controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                                tool_call_id: call_id.to_string(),
+                                tool_name: name.to_string(),
+                                input,
+                                provider_executed: None,
+                                dynamic: None,
+                                provider_metadata: None,
+                            }));
+                        }
+                    }
+                }
+
+                // All other event types (web_search_call.in_progress, etc.) are ignored.
+            }
+            Err(error) => {
+                if error.is_recoverable_stream_error() {
+                    if include_raw_chunks {
+                        controller.enqueue(StreamPart::Raw {
+                            raw_value: Value::Null,
+                        });
+                    }
+                    controller.enqueue(StreamPart::Error { error });
+                } else {
+                    controller.error(error);
+                }
+            }
+        }
+    }
+
+    /// Close the open text blocks and emit `Finish`: at the end of the
+    /// body, or right after an error event.
+    fn finish(&mut self, controller: &mut Controller) {
+        // Close any remaining open text blocks.
+        for block_id in std::mem::take(&mut self.content_blocks) {
+            controller.text_end(block_id);
+        }
+
+        // Final part: Finish.
+        let provider_meta = response_provider_metadata(
+            self.cost_in_usd_ticks,
+            self.service_tier.as_deref(),
+            self.prompt_cache_key.as_deref(),
+            self.safety_identifier.as_deref(),
+        );
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.final_finish_reason.clone().unwrap_or(FINISH_OTHER),
+            usage: self.final_usage.take().unwrap_or_else(zero_usage),
+            provider_metadata: provider_meta,
+        });
     }
 }

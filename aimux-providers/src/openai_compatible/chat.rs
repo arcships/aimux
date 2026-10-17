@@ -8,23 +8,25 @@ use aimux_core::tool::RawToolCall;
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
-use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage,
+use aimux_core::shared::{
+    RequestInfo, ResponseInfo, SharedProviderMetadata, StreamResponseInfo, provider_namespace,
 };
-use aimux_provider_utils::{StreamingToolCallDelta, StreamingToolCallTracker, generate_id};
+use aimux_core::stream_part::StreamPart;
+use aimux_core::types::{FinishReason, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage};
+use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
-use super::config::CompatModelConfig;
+use super::config::{ChatSettings, CompatModelConfig, StreamMetadataExtractor};
 use super::convert::{ChatBodySpec, RequestBodyResult, build_request_body, parse_finish_reason};
 use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
+use crate::stream::{
+    ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+};
 
 /// An OpenAI-compatible chat model. Holds no HTTP client: the request helpers
 /// of `aimux-provider-utils` use the injected or process-default transport.
@@ -271,10 +273,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
             .finish_reason
             .as_deref()
             .map(parse_finish_reason)
-            .unwrap_or(FinishReason {
-                unified: FinishReasonUnified::Other,
-                raw: None,
-            });
+            .unwrap_or(FINISH_OTHER);
 
         let chat = &self.config.chat;
         let usage = chat.convert_usage(raw.get("usage"));
@@ -336,301 +335,21 @@ impl LanguageModel for OpenAICompatibleChatModel {
         )
         .await?;
         let response_headers = resp.response_headers;
-        let mut sse_stream = resp.value;
+        let sse_stream = resp.value;
 
-        let chat = self.config.chat.clone();
-        let mut metadata_extractor = chat
-            .metadata_extractor
-            .as_ref()
-            .map(|extractor| extractor.create_stream_extractor());
-        let emit_raw_chunks = options.include_raw_chunks == Some(true);
-        let stream_error_url = endpoint;
-        let stream_error_body = body.clone();
-        let stream_response_headers = response_headers.clone();
-
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let text_id = "txt-0";
-            let mut text_started = false;
-            let reasoning_id = "reasoning-0".to_string();
-            let mut reasoning_started = false;
-            let mut final_usage_raw = None;
-            let mut final_usage_parsed: Option<UsageResponse> = None;
-            let mut final_finish_reason: Option<FinishReason> = None;
-            let mut response_metadata_emitted = false;
-
-            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(generate_id);
-            let mut tool_parts = Vec::new();
-            let signature_metadata = |extra: Option<&Value>| {
-                thought_signature(extra).map(|signature| {
-                    provider_namespace(&metadata_key, json!({ "thoughtSignature": signature }))
-                        .expect("provider metadata must be an object")
-                })
-            };
-
-            // Some compatible servers send the first delta of a call without
-            // `function.name`; buffer by index until the name is known.
-            let mut pending: HashMap<usize, PendingToolCall> = HashMap::new();
-            let mut forwarded: HashSet<usize> = HashSet::new();
-
-            while let Some(event) = sse_stream.next().await {
-                match event {
-                    Ok(parsed) => {
-                        if emit_raw_chunks {
-                            yield Ok(StreamPart::Raw { raw_value: parsed.clone() });
-                        }
-                        if let Some(extractor) = metadata_extractor.as_mut() {
-                            extractor.process_chunk(&parsed);
-                        }
-                        if let Some(error) = parsed.get("error") {
-                            yield Ok(StreamPart::Error {
-                                error: stream_error(
-                                    &metadata_key,
-                                    error,
-                                    &stream_error_url,
-                                    stream_error_body.clone(),
-                                    stream_response_headers.clone(),
-                                ),
-                            });
-                            final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
-                            continue;
-                        }
-
-                        let chunk_usage_raw: Option<Value> = match &chat.stream_usage_key {
-                            Some(key) => parsed.get(key).and_then(|v| v.get("usage")).cloned(),
-                            None => parsed.get("usage").cloned(),
-                        }
-                        .filter(|usage| !usage.is_null());
-
-                        let chunk: StreamChunk = match serde_json::from_value(parsed) {
-                            Ok(chunk) => chunk,
-                            Err(e) => {
-                                final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
-                                yield Ok(StreamPart::Error { error: e.into() });
-                                continue;
-                            }
-                        };
-
-                        if !response_metadata_emitted
-                            && (chunk.id.as_ref().is_some_and(|id| !id.is_empty())
-                                || chunk.model.as_ref().is_some_and(|model| !model.is_empty())
-                                || chunk.created.is_some_and(|created| created != 0))
-                        {
-                            response_metadata_emitted = true;
-                            yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                                id: chunk.id.clone(),
-                                timestamp: chunk
-                                    .created
-                                    .filter(|created| *created != 0)
-                                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-                                model_id: chunk.model.clone(),
-                            }));
-                        }
-
-                        if let Some(raw_usage) = &chunk_usage_raw {
-                            final_usage_raw = Some(raw_usage.clone());
-                            final_usage_parsed = serde_json::from_value(raw_usage.clone()).ok();
-                        }
-
-                        for choice in chunk.choices.into_iter().take(1) {
-                            let reasoning_delta = choice
-                                .delta
-                                .reasoning_content
-                                .clone()
-                                .or_else(|| choice.delta.reasoning.clone());
-                            let mut delta_content = Vec::new();
-                            if let Some(text) = reasoning_delta.filter(|text| !text.is_empty()) {
-                                delta_content.push(GenerateContent::Reasoning(ReasoningOutput {
-                                    text,
-                                    provider_metadata: None,
-                                }));
-                            }
-                            delta_content.extend(content_parts(choice.delta.content.as_ref()));
-                            for part in delta_content {
-                                match part {
-                                    GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
-                                        if text_started {
-                                            yield Ok(StreamPart::TextEnd { id: text_id.to_string(), provider_metadata: None });
-                                            text_started = false;
-                                        }
-                                        if !reasoning_started {
-                                            reasoning_started = true;
-                                            yield Ok(StreamPart::ReasoningStart { id: reasoning_id.clone(), provider_metadata: None });
-                                        }
-                                        yield Ok(StreamPart::ReasoningDelta { id: reasoning_id.clone(), delta: text, provider_metadata: None });
-                                    }
-                                    GenerateContent::Text { text, .. } => {
-                                        if reasoning_started {
-                                            yield Ok(StreamPart::ReasoningEnd { id: reasoning_id.clone(), provider_metadata: None });
-                                            reasoning_started = false;
-                                        }
-                                        if !text_started {
-                                            text_started = true;
-                                            yield Ok(StreamPart::TextStart { id: text_id.to_string(), provider_metadata: None });
-                                        }
-                                        yield Ok(StreamPart::TextDelta { id: text_id.to_string(), delta: text, provider_metadata: None });
-                                    }
-                                    _ => unreachable!(),
-                                }
-                            }
-
-                            if let Some(deltas) = choice.delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
-                                if reasoning_started {
-                                    yield Ok(StreamPart::ReasoningEnd {
-                                        id: reasoning_id.clone(),
-                                        provider_metadata: None,
-                                    });
-                                    reasoning_started = false;
-                                }
-                                for dtc in &deltas {
-                                    let function = dtc.function.as_ref();
-                                    let name = function
-                                        .and_then(|f| f.name.as_deref())
-                                        .filter(|n| !n.trim().is_empty());
-                                    let arguments = function.and_then(|f| f.arguments.as_deref());
-                                    let buffered;
-                                    let delta = match dtc.index {
-                                        Some(index) if !forwarded.contains(&index) => {
-                                            let entry = pending.entry(index).or_default();
-                                            if entry.id.is_none() {
-                                                entry.id.clone_from(&dtc.id);
-                                            }
-                                            if entry.extra.is_null()
-                                                && let Some(extra) = &dtc.extra_content
-                                            {
-                                                entry.extra = extra.clone();
-                                            }
-                                            if let Some(arguments) = arguments {
-                                                entry.arguments.push_str(arguments);
-                                            }
-                                            let Some(name) = name else { continue };
-                                            buffered = pending.remove(&index).unwrap_or_default();
-                                            forwarded.insert(index);
-                                            StreamingToolCallDelta {
-                                                index: Some(index),
-                                                id: buffered.id.as_deref(),
-                                                name: Some(name),
-                                                arguments: Some(&buffered.arguments),
-                                                provider_metadata: signature_metadata(Some(&buffered.extra)),
-                                                ..Default::default()
-                                            }
-                                        }
-                                        _ => StreamingToolCallDelta {
-                                            index: dtc.index,
-                                            id: dtc.id.as_deref(),
-                                            name: function.and_then(|f| f.name.as_deref()),
-                                            arguments,
-                                            provider_metadata: signature_metadata(dtc.extra_content.as_ref()),
-                                            ..Default::default()
-                                        },
-                                    };
-                                    if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
-                                        yield Err(error.into());
-                                        return;
-                                    }
-                                    for part in tool_parts.drain(..) {
-                                        yield Ok(part);
-                                    }
-                                }
-                            }
-
-                            if let Some(annotations) = choice.delta.annotations {
-                                for (i, annotation) in annotations.iter().enumerate() {
-                                    if annotation.get("type").and_then(Value::as_str)
-                                        == Some("url_citation")
-                                        && let Some(citation) = annotation.get("url_citation")
-                                    {
-                                        yield Ok(StreamPart::Source(Source::Url {
-                                            id: format!("annotation-{i}"),
-                                            url: citation
-                                                .get("url")
-                                                .and_then(Value::as_str)
-                                                .unwrap_or_default()
-                                                .to_string(),
-                                            title: citation
-                                                .get("title")
-                                                .and_then(Value::as_str)
-                                                .map(str::to_string),
-                                            provider_metadata: None,
-                                        }));
-                                    }
-                                }
-                            }
-
-                            if let Some(reason) = choice.finish_reason {
-                                final_finish_reason = Some(parse_finish_reason(&reason));
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        final_finish_reason = Some(FinishReason { unified: FinishReasonUnified::Error, raw: None });
-                        yield Ok(StreamPart::Error { error });
-                    }
-                }
-            }
-
-            if reasoning_started {
-                yield Ok(StreamPart::ReasoningEnd {
-                    id: reasoning_id.clone(),
-                    provider_metadata: None,
-                });
-            }
-            if text_started {
-                yield Ok(StreamPart::TextEnd {
-                    id: text_id.to_string(),
-                    provider_metadata: None,
-                });
-            }
-            for (index, entry) in pending {
-                let delta = StreamingToolCallDelta {
-                    index: Some(index),
-                    id: entry.id.as_deref(),
-                    arguments: Some(&entry.arguments),
-                    provider_metadata: signature_metadata(Some(&entry.extra)),
-                    ..Default::default()
-                };
-                if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
-                    yield Err(error.into());
-                    return;
-                }
-                for part in tool_parts.drain(..) {
-                    yield Ok(part);
-                }
-            }
-            // A parsable argument buffer can still be a prefix of a longer
-            // input: finalize only when the stream flushes.
-            tool_calls.finish(&mut tool_parts);
-            for part in tool_parts.drain(..) {
-                yield Ok(part);
-            }
-
-            let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
-            metadata.insert(metadata_key.clone(), Map::new());
-            if let Some(extractor) = &metadata_extractor
-                && let Some(extra) = extractor.build_metadata()
-            {
-                for (key, value) in extra {
-                    metadata.insert(key, value);
-                }
-            }
-
-            prediction_tokens(final_usage_parsed.as_ref(), metadata.entry(metadata_key).or_default());
-
-            if final_finish_reason.is_none() {
-                yield Ok(StreamPart::Error {
-                    error: AiMuxError::InvalidResponseData("Response stream ended without a finish reason.".to_string()),
-                });
-            }
-            yield Ok(StreamPart::Finish {
-                finish_reason: final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }),
-                usage: chat.convert_usage(final_usage_raw.as_ref()),
-                provider_metadata: Some(metadata),
-            });
+        let transformer = OpenAICompatibleChatStream {
+            ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
+            metadata_key,
+            metadata_extractor: self
+                .config
+                .chat
+                .metadata_extractor
+                .as_ref()
+                .map(|extractor| extractor.create_stream_extractor()),
+            chat: self.config.chat.clone(),
+            ..OpenAICompatibleChatStream::default()
         };
+        let stream = pipe_through(sse_stream, transformer);
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -639,6 +358,302 @@ impl LanguageModel for OpenAICompatibleChatModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+const TEXT_ID: &str = "txt-0";
+const REASONING_ID: &str = "reasoning-0";
+
+/// The `TransformStream` of [`OpenAICompatibleChatModel::do_stream`]: turns
+/// the parsed SSE events into stream parts.
+#[derive(Default)]
+struct OpenAICompatibleChatStream {
+    ctx: StreamContext,
+    metadata_key: String,
+    /// The chat settings: usage accounting and the streaming usage key.
+    chat: ChatSettings,
+    /// The caller's extractor, fed every parsed chunk.
+    metadata_extractor: Option<Box<dyn StreamMetadataExtractor>>,
+
+    text_started: bool,
+    reasoning_started: bool,
+    final_usage_raw: Option<Value>,
+    final_usage_parsed: Option<UsageResponse>,
+    final_finish_reason: Option<FinishReason>,
+    response_metadata_emitted: bool,
+    tool_calls: ChatToolCalls,
+    /// Some compatible servers send the first delta of a call without
+    /// `function.name`; buffer by index until the name is known.
+    pending: HashMap<usize, PendingToolCall>,
+    forwarded: HashSet<usize>,
+}
+
+/// A chat stream with an empty request context and tool-call ids from
+/// `generate_id`, for tests that drive it chunk by chunk.
+/// `metadata_key` is the provider options key.
+#[cfg(test)]
+pub(crate) fn chat_test_stream(
+    metadata_key: &str,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
+    OpenAICompatibleChatStream {
+        metadata_key: metadata_key.to_string(),
+        tool_calls: ChatToolCalls::new(generate_id),
+        ..OpenAICompatibleChatStream::default()
+    }
+}
+
+impl OpenAICompatibleChatStream {
+    fn signature_metadata(&self, extra: Option<&Value>) -> Option<SharedProviderMetadata> {
+        thought_signature(extra).map(|signature| {
+            provider_namespace(&self.metadata_key, json!({ "thoughtSignature": signature }))
+                .expect("provider metadata must be an object")
+        })
+    }
+}
+
+impl Transformer for OpenAICompatibleChatStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
+    }
+
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        let parsed = match event {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                self.final_finish_reason = Some(FINISH_ERROR);
+                controller.enqueue(StreamPart::Error { error });
+                return;
+            }
+        };
+        self.ctx.raw(&parsed, controller);
+        if let Some(extractor) = self.metadata_extractor.as_mut() {
+            extractor.process_chunk(&parsed);
+        }
+        if let Some(error) = parsed.get("error") {
+            controller.enqueue(StreamPart::Error {
+                error: stream_error(
+                    &self.metadata_key,
+                    error,
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
+                ),
+            });
+            self.final_finish_reason = Some(FINISH_ERROR);
+            return;
+        }
+
+        let chunk_usage_raw: Option<Value> = match &self.chat.stream_usage_key {
+            Some(key) => parsed.get(key).and_then(|v| v.get("usage")).cloned(),
+            None => parsed.get("usage").cloned(),
+        }
+        .filter(|usage| !usage.is_null());
+
+        let chunk: StreamChunk = match serde_json::from_value(parsed) {
+            Ok(chunk) => chunk,
+            Err(e) => {
+                self.final_finish_reason = Some(FINISH_ERROR);
+                controller.enqueue(StreamPart::Error { error: e.into() });
+                return;
+            }
+        };
+
+        if !self.response_metadata_emitted
+            && (chunk.id.as_ref().is_some_and(|id| !id.is_empty())
+                || chunk.model.as_ref().is_some_and(|model| !model.is_empty())
+                || chunk.created.is_some_and(|created| created != 0))
+        {
+            self.response_metadata_emitted = true;
+            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+                id: chunk.id.clone(),
+                timestamp: chunk
+                    .created
+                    .filter(|created| *created != 0)
+                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
+                model_id: chunk.model.clone(),
+            }));
+        }
+
+        if let Some(raw_usage) = &chunk_usage_raw {
+            self.final_usage_raw = Some(raw_usage.clone());
+            self.final_usage_parsed = serde_json::from_value(raw_usage.clone()).ok();
+        }
+
+        for choice in chunk.choices.into_iter().take(1) {
+            let reasoning_delta = choice
+                .delta
+                .reasoning_content
+                .clone()
+                .or_else(|| choice.delta.reasoning.clone());
+            let mut delta_content = Vec::new();
+            if let Some(text) = reasoning_delta.filter(|text| !text.is_empty()) {
+                delta_content.push(GenerateContent::Reasoning(ReasoningOutput {
+                    text,
+                    provider_metadata: None,
+                }));
+            }
+            delta_content.extend(content_parts(choice.delta.content.as_ref()));
+            for part in delta_content {
+                match part {
+                    GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
+                        if self.text_started {
+                            controller.text_end(TEXT_ID);
+                            self.text_started = false;
+                        }
+                        if !self.reasoning_started {
+                            self.reasoning_started = true;
+                            controller.reasoning_start(REASONING_ID);
+                        }
+                        controller.reasoning_delta(REASONING_ID, text);
+                    }
+                    GenerateContent::Text { text, .. } => {
+                        if self.reasoning_started {
+                            controller.reasoning_end(REASONING_ID);
+                            self.reasoning_started = false;
+                        }
+                        if !self.text_started {
+                            self.text_started = true;
+                            controller.text_start(TEXT_ID);
+                        }
+                        controller.text_delta(TEXT_ID, text);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
+            if let Some(deltas) = choice.delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
+                if self.reasoning_started {
+                    controller.reasoning_end(REASONING_ID);
+                    self.reasoning_started = false;
+                }
+                for dtc in &deltas {
+                    let function = dtc.function.as_ref();
+                    let name = function
+                        .and_then(|f| f.name.as_deref())
+                        .filter(|n| !n.trim().is_empty());
+                    let arguments = function.and_then(|f| f.arguments.as_deref());
+                    let buffered;
+                    let delta = match dtc.index {
+                        Some(index) if !self.forwarded.contains(&index) => {
+                            let entry = self.pending.entry(index).or_default();
+                            if entry.id.is_none() {
+                                entry.id.clone_from(&dtc.id);
+                            }
+                            if entry.extra.is_null()
+                                && let Some(extra) = &dtc.extra_content
+                            {
+                                entry.extra = extra.clone();
+                            }
+                            if let Some(arguments) = arguments {
+                                entry.arguments.push_str(arguments);
+                            }
+                            let Some(name) = name else { continue };
+                            buffered = self.pending.remove(&index).unwrap_or_default();
+                            self.forwarded.insert(index);
+                            ToolCallDelta {
+                                index: Some(index),
+                                id: buffered.id.as_deref(),
+                                name: Some(name),
+                                arguments: Some(&buffered.arguments),
+                                provider_metadata: self.signature_metadata(Some(&buffered.extra)),
+                                ..ToolCallDelta::default()
+                            }
+                        }
+                        _ => ToolCallDelta {
+                            index: dtc.index,
+                            id: dtc.id.as_deref(),
+                            name: function.and_then(|f| f.name.as_deref()),
+                            arguments,
+                            provider_metadata: self.signature_metadata(dtc.extra_content.as_ref()),
+                            ..ToolCallDelta::default()
+                        },
+                    };
+                    if !self.tool_calls.delta(delta, controller) {
+                        return;
+                    }
+                }
+            }
+
+            if let Some(annotations) = choice.delta.annotations {
+                for (i, annotation) in annotations.iter().enumerate() {
+                    if annotation.get("type").and_then(Value::as_str) == Some("url_citation")
+                        && let Some(citation) = annotation.get("url_citation")
+                    {
+                        controller.enqueue(StreamPart::Source(Source::Url {
+                            id: format!("annotation-{i}"),
+                            url: citation
+                                .get("url")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_string(),
+                            title: citation
+                                .get("title")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                            provider_metadata: None,
+                        }));
+                    }
+                }
+            }
+
+            if let Some(reason) = choice.finish_reason {
+                self.final_finish_reason = Some(parse_finish_reason(&reason));
+            }
+        }
+    }
+
+    fn flush(mut self, controller: &mut Controller) {
+        if self.reasoning_started {
+            controller.reasoning_end(REASONING_ID);
+        }
+        if self.text_started {
+            controller.text_end(TEXT_ID);
+        }
+        for (index, entry) in std::mem::take(&mut self.pending) {
+            let delta = ToolCallDelta {
+                index: Some(index),
+                id: entry.id.as_deref(),
+                arguments: Some(&entry.arguments),
+                provider_metadata: self.signature_metadata(Some(&entry.extra)),
+                ..ToolCallDelta::default()
+            };
+            if !self.tool_calls.delta(delta, controller) {
+                return;
+            }
+        }
+        self.tool_calls.finish(controller);
+
+        let mut metadata = aimux_core::shared::SharedProviderMetadata::new();
+        metadata.insert(self.metadata_key.clone(), Map::new());
+        if let Some(extractor) = &self.metadata_extractor
+            && let Some(extra) = extractor.build_metadata()
+        {
+            for (key, value) in extra {
+                metadata.insert(key, value);
+            }
+        }
+
+        prediction_tokens(
+            self.final_usage_parsed.as_ref(),
+            metadata.entry(self.metadata_key).or_default(),
+        );
+
+        if self.final_finish_reason.is_none() {
+            controller.enqueue(StreamPart::Error {
+                error: AiMuxError::InvalidResponseData(
+                    "Response stream ended without a finish reason.".to_string(),
+                ),
+            });
+        }
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.final_finish_reason.unwrap_or(FINISH_ERROR),
+            usage: self.chat.convert_usage(self.final_usage_raw.as_ref()),
+            provider_metadata: Some(metadata),
+        });
     }
 }
 

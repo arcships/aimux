@@ -4,7 +4,6 @@ use aimux_core::tool::RawToolCall;
 use std::collections::{BTreeMap, HashMap};
 
 use async_trait::async_trait;
-use futures::StreamExt;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -13,10 +12,8 @@ use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
-};
-use aimux_provider_utils::{StreamingToolCallDelta, StreamingToolCallTracker, generate_id};
+use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Warning};
+use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
 use super::convert::convert_to_deepseek_chat_messages;
 use super::finish_reason::map_deepseek_finish_reason;
@@ -26,6 +23,9 @@ use super::prepare_tools::prepare_tools;
 use super::types::{ChatChunk, ChatResponse};
 use super::usage::convert_deepseek_usage;
 use crate::shared::EndpointConfig;
+use crate::stream::{
+    ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
+};
 
 /// What a DeepSeek chat model needs to talk to the API (`DeepSeekChatConfig`).
 pub(crate) struct DeepSeekChatConfig {
@@ -496,272 +496,15 @@ impl LanguageModel for DeepSeekChatLanguageModel {
         )
         .await?;
         let response_headers = resp.response_headers;
-        let sse_stream = resp.value;
 
-        let provider_options_name = self.provider_options_name().to_string();
-        let emit_raw_chunks = options.include_raw_chunks == Some(true);
-        let stream_error_body = body.clone();
-        let stream_response_headers = response_headers.clone();
-
-        let stream = async_stream::stream! {
-            yield Ok(StreamPart::StreamStart { warnings });
-
-            let mut tool_calls = StreamingToolCallTracker::new().with_generate_id(generate_id);
-            let mut tool_parts = Vec::new();
-            let mut finish_reason = FinishReason { unified: FinishReasonUnified::Other, raw: None };
-            let mut usage: Option<Value> = None;
-            let mut system_fingerprint: Option<String> = None;
-            let mut is_first_chunk = true;
-            let mut is_active_reasoning = false;
-            let mut is_active_text = false;
-            let mut response_object: Option<String> = None;
-            let mut choice_index: Option<u32> = None;
-            let mut message_role: Option<String> = None;
-            let mut tool_call_types: BTreeMap<usize, String> = BTreeMap::new();
-            let mut content_logprobs: Vec<Value> = Vec::new();
-            let mut reasoning_logprobs: Vec<Value> = Vec::new();
-
-            let mut events = sse_stream;
-            while let Some(event) = events.next().await {
-                let parsed = match event {
-                    Ok(parsed) => parsed,
-                    Err(error) => {
-                        let recoverable = error.is_recoverable_stream_error();
-                        yield Err(error);
-                        if !recoverable {
-                            return;
-                        }
-                        continue;
-                    }
-                };
-
-                // Emit the raw chunk if requested (before anything else).
-                if emit_raw_chunks {
-                    yield Ok(StreamPart::Raw { raw_value: parsed.clone() });
-                }
-
-                // handle error chunks:
-                if parsed.get("error").is_some() {
-                    finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None };
-                    yield Ok(StreamPart::Error {
-                        error: deepseek_stream_error(
-                            &parsed,
-                            &endpoint,
-                            stream_error_body.clone(),
-                            stream_response_headers.clone(),
-                        ),
-                    });
-                    continue;
-                }
-
-                // handle failed chunk validation:
-                let chunk: ChatChunk = match serde_json::from_value(parsed) {
-                    Ok(chunk) => chunk,
-                    Err(error) => {
-                        finish_reason = FinishReason { unified: FinishReasonUnified::Error, raw: None };
-                        yield Ok(StreamPart::Error { error: error.into() });
-                        continue;
-                    }
-                };
-
-                if is_first_chunk {
-                    is_first_chunk = false;
-                    yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                        id: chunk.id.clone(),
-                        timestamp: timestamp(chunk.created),
-                        model_id: chunk.model.clone(),
-                    }));
-                }
-
-                if let Some(chunk_usage) = chunk.usage.filter(|usage| !usage.is_null()) {
-                    usage = Some(chunk_usage);
-                }
-
-                if chunk.object.is_some() {
-                    response_object = chunk.object;
-                }
-
-                // The fingerprint is repeated on stream chunks; keep the
-                // latest non-null value in case it changes during the response.
-                if chunk.system_fingerprint.is_some() {
-                    system_fingerprint = chunk.system_fingerprint;
-                }
-
-                let Some(choice) = chunk.choices.into_iter().next() else {
-                    continue;
-                };
-
-                if choice.index.is_some() {
-                    choice_index = choice.index;
-                }
-
-                if let Some(reason) = choice.finish_reason {
-                    finish_reason = FinishReason {
-                        unified: map_deepseek_finish_reason(Some(&reason)),
-                        raw: Some(reason),
-                    };
-                }
-
-                if let Some(logprobs) = &choice.logprobs {
-                    for (key, sink) in [
-                        ("content", &mut content_logprobs),
-                        ("reasoning_content", &mut reasoning_logprobs),
-                    ] {
-                        if let Some(entries) = logprobs.get(key).and_then(Value::as_array) {
-                            sink.extend(entries.iter().cloned());
-                        }
-                    }
-                }
-
-                let Some(delta) = choice.delta else {
-                    continue;
-                };
-
-                if delta.role.is_some() {
-                    message_role = delta.role;
-                }
-
-                // enqueue reasoning before text deltas:
-                if let Some(reasoning) = delta
-                    .reasoning_content
-                    .filter(|reasoning| !reasoning.is_empty())
-                {
-                    if !is_active_reasoning {
-                        yield Ok(StreamPart::ReasoningStart {
-                            id: "reasoning-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_reasoning = true;
-                    }
-                    yield Ok(StreamPart::ReasoningDelta {
-                        id: "reasoning-0".to_string(),
-                        delta: reasoning,
-                        provider_metadata: None,
-                    });
-                }
-
-                if let Some(text) = delta.content.filter(|text| !text.is_empty()) {
-                    if !is_active_text {
-                        yield Ok(StreamPart::TextStart {
-                            id: "txt-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_text = true;
-                    }
-
-                    // end reasoning when text starts:
-                    if is_active_reasoning {
-                        yield Ok(StreamPart::ReasoningEnd {
-                            id: "reasoning-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_reasoning = false;
-                    }
-
-                    yield Ok(StreamPart::TextDelta {
-                        id: "txt-0".to_string(),
-                        delta: text,
-                        provider_metadata: None,
-                    });
-                }
-
-                if let Some(deltas) = delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
-                    // end reasoning when tool calls start:
-                    if is_active_reasoning {
-                        yield Ok(StreamPart::ReasoningEnd {
-                            id: "reasoning-0".to_string(),
-                            provider_metadata: None,
-                        });
-                        is_active_reasoning = false;
-                    }
-
-                    for tool_call in &deltas {
-                        if let Some(kind) = &tool_call.r#type {
-                            tool_call_types.insert(tool_call.index, kind.clone());
-                        }
-                        let delta = StreamingToolCallDelta {
-                            index: Some(tool_call.index),
-                            id: tool_call.id.as_deref(),
-                            r#type: tool_call.r#type.as_deref(),
-                            name: tool_call.function.name.as_deref(),
-                            arguments: tool_call.function.arguments.as_deref(),
-                            provider_metadata: None,
-                        };
-                        if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
-                            yield Err(error.into());
-                            return;
-                        }
-                        for part in tool_parts.drain(..) {
-                            yield Ok(part);
-                        }
-                    }
-                }
-            }
-
-            if is_active_reasoning {
-                yield Ok(StreamPart::ReasoningEnd {
-                    id: "reasoning-0".to_string(),
-                    provider_metadata: None,
-                });
-            }
-            if is_active_text {
-                yield Ok(StreamPart::TextEnd {
-                    id: "txt-0".to_string(),
-                    provider_metadata: None,
-                });
-            }
-            tool_calls.finish(&mut tool_parts);
-            for part in tool_parts.drain(..) {
-                yield Ok(part);
-            }
-
-            let mut metadata = Map::new();
-            for (key, name) in [
-                ("prompt_cache_hit_tokens", "promptCacheHitTokens"),
-                ("prompt_cache_miss_tokens", "promptCacheMissTokens"),
-            ] {
-                if let Some(value) = usage
-                    .as_ref()
-                    .and_then(|usage| usage.get(key))
-                    .filter(|value| !value.is_null())
-                {
-                    metadata.insert(name.into(), value.clone());
-                }
-            }
-            if let Some(object) = response_object {
-                metadata.insert("responseObject".into(), json!(object));
-            }
-            if let Some(index) = choice_index {
-                metadata.insert("choiceIndex".into(), json!(index));
-            }
-            if let Some(role) = message_role {
-                metadata.insert("messageRole".into(), json!(role));
-            }
-            if !tool_call_types.is_empty() {
-                metadata.insert(
-                    "toolCallTypes".into(),
-                    json!(tool_call_types.into_values().collect::<Vec<_>>()),
-                );
-            }
-            let mut logprobs = Map::new();
-            if !content_logprobs.is_empty() {
-                logprobs.insert("content".into(), Value::Array(content_logprobs));
-            }
-            if !reasoning_logprobs.is_empty() {
-                logprobs.insert("reasoning_content".into(), Value::Array(reasoning_logprobs));
-            }
-            if !logprobs.is_empty() {
-                metadata.insert("logprobs".into(), Value::Object(logprobs));
-            }
-            if let Some(system_fingerprint) = system_fingerprint {
-                metadata.insert("systemFingerprint".into(), json!(system_fingerprint));
-            }
-            yield Ok(StreamPart::Finish {
-                finish_reason,
-                usage: convert_deepseek_usage(usage.as_ref()),
-                provider_metadata: Some(provider_namespace(&provider_options_name, Value::Object(metadata)).expect("metadata payload is an object")),
-            });
-        };
+        let stream = pipe_through(
+            resp.value,
+            DeepSeekChatStream {
+                ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
+                provider_options_name: self.provider_options_name().to_string(),
+                ..DeepSeekChatStream::default()
+            },
+        );
 
         Ok(StreamResult {
             stream: Box::pin(stream),
@@ -770,5 +513,251 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 headers: Some(response_headers),
             }),
         })
+    }
+}
+
+/// The `TransformStream` of `DeepSeekChatLanguageModel.doStream`.
+#[derive(Default)]
+struct DeepSeekChatStream {
+    ctx: StreamContext,
+    provider_options_name: String,
+    tool_calls: ChatToolCalls,
+    /// `other` until a chunk says otherwise.
+    finish_reason: Option<FinishReason>,
+    usage: Option<Value>,
+    system_fingerprint: Option<String>,
+    metadata_emitted: bool,
+    is_active_reasoning: bool,
+    is_active_text: bool,
+    response_object: Option<String>,
+    choice_index: Option<u32>,
+    message_role: Option<String>,
+    tool_call_types: BTreeMap<usize, String>,
+    content_logprobs: Vec<Value>,
+    reasoning_logprobs: Vec<Value>,
+}
+
+impl DeepSeekChatStream {
+    fn end_active_reasoning(&mut self, controller: &mut Controller) {
+        if self.is_active_reasoning {
+            controller.reasoning_end("reasoning-0");
+            self.is_active_reasoning = false;
+        }
+    }
+}
+
+impl Transformer for DeepSeekChatStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
+    }
+
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        let parsed = match event {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                if error.is_recoverable_stream_error() {
+                    controller.enqueue_error(error);
+                } else {
+                    controller.error(error);
+                }
+                return;
+            }
+        };
+
+        // Emit the raw chunk if requested (before anything else).
+        self.ctx.raw(&parsed, controller);
+
+        // handle error chunks:
+        if parsed.get("error").is_some() {
+            self.finish_reason = Some(FINISH_ERROR);
+            controller.enqueue(StreamPart::Error {
+                error: deepseek_stream_error(
+                    &parsed,
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
+                ),
+            });
+            return;
+        }
+
+        // handle failed chunk validation:
+        let chunk: ChatChunk = match serde_json::from_value(parsed) {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                self.finish_reason = Some(FINISH_ERROR);
+                controller.enqueue(StreamPart::Error {
+                    error: error.into(),
+                });
+                return;
+            }
+        };
+
+        if !self.metadata_emitted {
+            self.metadata_emitted = true;
+            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+                id: chunk.id.clone(),
+                timestamp: timestamp(chunk.created),
+                model_id: chunk.model.clone(),
+            }));
+        }
+
+        if let Some(chunk_usage) = chunk.usage.filter(|usage| !usage.is_null()) {
+            self.usage = Some(chunk_usage);
+        }
+
+        if chunk.object.is_some() {
+            self.response_object = chunk.object;
+        }
+
+        // The fingerprint is repeated on stream chunks; keep the
+        // latest non-null value in case it changes during the response.
+        if chunk.system_fingerprint.is_some() {
+            self.system_fingerprint = chunk.system_fingerprint;
+        }
+
+        let Some(choice) = chunk.choices.into_iter().next() else {
+            return;
+        };
+
+        if choice.index.is_some() {
+            self.choice_index = choice.index;
+        }
+
+        if let Some(reason) = choice.finish_reason {
+            self.finish_reason = Some(FinishReason {
+                unified: map_deepseek_finish_reason(Some(&reason)),
+                raw: Some(reason),
+            });
+        }
+
+        if let Some(logprobs) = &choice.logprobs {
+            for (key, sink) in [
+                ("content", &mut self.content_logprobs),
+                ("reasoning_content", &mut self.reasoning_logprobs),
+            ] {
+                if let Some(entries) = logprobs.get(key).and_then(Value::as_array) {
+                    sink.extend(entries.iter().cloned());
+                }
+            }
+        }
+
+        let Some(delta) = choice.delta else {
+            return;
+        };
+
+        if delta.role.is_some() {
+            self.message_role = delta.role;
+        }
+
+        // enqueue reasoning before text deltas:
+        if let Some(reasoning) = delta
+            .reasoning_content
+            .filter(|reasoning| !reasoning.is_empty())
+        {
+            if !self.is_active_reasoning {
+                controller.reasoning_start("reasoning-0");
+                self.is_active_reasoning = true;
+            }
+            controller.reasoning_delta("reasoning-0", reasoning);
+        }
+
+        if let Some(text) = delta.content.filter(|text| !text.is_empty()) {
+            if !self.is_active_text {
+                controller.text_start("txt-0");
+                self.is_active_text = true;
+            }
+
+            // end reasoning when text starts:
+            self.end_active_reasoning(controller);
+
+            controller.text_delta("txt-0", text);
+        }
+
+        if let Some(deltas) = delta.tool_calls.filter(|deltas| !deltas.is_empty()) {
+            // end reasoning when tool calls start:
+            self.end_active_reasoning(controller);
+
+            for tool_call in &deltas {
+                if let Some(kind) = &tool_call.r#type {
+                    self.tool_call_types.insert(tool_call.index, kind.clone());
+                }
+                let delta = ToolCallDelta {
+                    index: Some(tool_call.index),
+                    id: tool_call.id.as_deref(),
+                    name: tool_call.function.name.as_deref(),
+                    arguments: tool_call.function.arguments.as_deref(),
+                    ..ToolCallDelta::default()
+                };
+                if !self.tool_calls.delta(delta, controller) {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn flush(mut self, controller: &mut Controller) {
+        self.end_active_reasoning(controller);
+        if self.is_active_text {
+            controller.text_end("txt-0");
+        }
+        self.tool_calls.finish(controller);
+
+        let mut metadata = Map::new();
+        for (key, name) in [
+            ("prompt_cache_hit_tokens", "promptCacheHitTokens"),
+            ("prompt_cache_miss_tokens", "promptCacheMissTokens"),
+        ] {
+            if let Some(value) = self
+                .usage
+                .as_ref()
+                .and_then(|usage| usage.get(key))
+                .filter(|value| !value.is_null())
+            {
+                metadata.insert(name.into(), value.clone());
+            }
+        }
+        if let Some(object) = self.response_object {
+            metadata.insert("responseObject".into(), json!(object));
+        }
+        if let Some(index) = self.choice_index {
+            metadata.insert("choiceIndex".into(), json!(index));
+        }
+        if let Some(role) = self.message_role {
+            metadata.insert("messageRole".into(), json!(role));
+        }
+        if !self.tool_call_types.is_empty() {
+            metadata.insert(
+                "toolCallTypes".into(),
+                json!(self.tool_call_types.into_values().collect::<Vec<_>>()),
+            );
+        }
+        let mut logprobs = Map::new();
+        if !self.content_logprobs.is_empty() {
+            logprobs.insert("content".into(), Value::Array(self.content_logprobs));
+        }
+        if !self.reasoning_logprobs.is_empty() {
+            logprobs.insert(
+                "reasoning_content".into(),
+                Value::Array(self.reasoning_logprobs),
+            );
+        }
+        if !logprobs.is_empty() {
+            metadata.insert("logprobs".into(), Value::Object(logprobs));
+        }
+        if let Some(system_fingerprint) = self.system_fingerprint {
+            metadata.insert("systemFingerprint".into(), json!(system_fingerprint));
+        }
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: self.finish_reason.unwrap_or(FINISH_OTHER),
+            usage: convert_deepseek_usage(self.usage.as_ref()),
+            provider_metadata: Some(
+                provider_namespace(&self.provider_options_name, Value::Object(metadata))
+                    .expect("metadata payload is an object"),
+            ),
+        });
     }
 }

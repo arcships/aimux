@@ -8,6 +8,7 @@
 //! the conversion + streaming logic while supplying their own URL and auth.
 
 use aimux_core::tool::RawToolCall;
+
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
@@ -18,10 +19,12 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{FinishReason, ResponseMetadata, Usage};
 
-use aimux_provider_utils::{
-    HttpRequest, StreamingToolCallDelta, StreamingToolCallTracker, TypeValidation, generate_id,
+use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
+
+use crate::stream::{
+    ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
 };
 
 use super::config::{OpenAIModelConfig, TransformRequestBody};
@@ -316,10 +319,7 @@ pub(crate) async fn execute_generate(
         .finish_reason
         .as_deref()
         .map(parse_finish_reason)
-        .unwrap_or(FinishReason {
-            unified: FinishReasonUnified::Other,
-            raw: None,
-        });
+        .unwrap_or(FINISH_OTHER);
 
     let usage = data.usage.as_ref().map_or_else(Usage::default, |usage| {
         convert_usage(usage, response_value.get("usage"))
@@ -423,303 +423,13 @@ pub(crate) async fn execute_stream(
         ));
     }
 
-    // M2 (RFC-0016): capture whether raw chunks should be emitted — the
-    // borrowed `options` cannot be moved into the generator.
-    let emit_raw_chunks = options.include_raw_chunks == Some(true);
-    let stream_error_url = endpoint;
-    let stream_error_body = body.clone();
-    let stream_response_headers = response_headers.clone();
-
-    let stream = async_stream::stream! {
-        // First part: StreamStart.
-        yield Ok(StreamPart::StreamStart { warnings });
-
-        let text_id = 0usize;
-        let mut text_started = false;
-        let reasoning_id = "reasoning-0".to_string();
-        let mut reasoning_started = false;
-        let mut final_usage = Usage::default();
-        let mut final_usage_raw: Option<UsageResponse> = None;
-        let mut final_finish_reason: Option<FinishReason> = None;
-        let mut response_metadata_emitted = false;
-        let mut final_logprobs: Option<Value> = None;
-
-        // Streamed tool calls, correlated by wire id, index and function name
-        // (the AI SDK's StreamingToolCallTracker) and finalized on flush.
-        // Same options as `@ai-sdk/openai`'s chat model.
-        let mut tool_calls = StreamingToolCallTracker::new()
-            .with_generate_id(generate_id)
-            .with_type_validation(TypeValidation::IfPresent);
-        let mut tool_parts = Vec::new();
-
-        // Process the first event (already peeked) then the rest.
-        let mut event_iter =
-            futures::stream::iter(first_event.into_iter()).chain(sse_stream);
-
-        let mut stream_errored = false;
-
-        while let Some(event) = event_iter.next().await {
-            match event {
-                Ok(parsed) => {
-
-                    // M2 (RFC-0016): emit the raw provider chunk for debugging
-                    // before it is consumed below. JSON payloads only — the
-                    // "[DONE]" sentinel is skipped by the early break above.
-                    if emit_raw_chunks {
-                        yield Ok(StreamPart::Raw {
-                            raw_value: parsed.clone(),
-                        });
-                    }
-
-                    // Check for mid-stream error.
-                    if let Some(err_obj) = parsed.get("error") {
-                        yield Ok(StreamPart::Error {
-                            error: super::openai_stream_error(
-                                err_obj,
-                                &stream_error_url,
-                                stream_error_body.clone(),
-                                stream_response_headers.clone(),
-                            ),
-                        });
-                        stream_errored = true;
-                        continue;
-                    }
-
-                    // The chunk's top-level `usage`, taken from the raw JSON before
-                    // the chunk is consumed below. `chunk_usage_raw` keeps the
-                    // provider's original object for `Usage.raw` (M10).
-                    let chunk_usage_raw: Option<Value> = parsed.get("usage").cloned();
-                    let chunk_usage: Option<UsageResponse> = chunk_usage_raw
-                        .as_ref()
-                        .and_then(|u| serde_json::from_value(u.clone()).ok());
-
-                    // Parse as StreamChunk.
-                    let chunk: StreamChunk = match serde_json::from_value(parsed) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            stream_errored = true;
-                            yield Ok(StreamPart::Error { error: e.into() });
-                            continue;
-                        }
-                    };
-
-                    // Emit ResponseMetadata from the first valid chunk.
-                    if !response_metadata_emitted
-                        && (chunk.id.as_ref().is_some_and(|id| !id.is_empty()) || chunk.model.as_ref().is_some_and(|model| !model.is_empty()) || chunk.created.is_some_and(|created| created != 0))
-                    {
-                        response_metadata_emitted = true;
-                        yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
-                            id: chunk.id.clone(),
-                            timestamp: chunk
-                                .created
-                                .filter(|created| *created != 0)
-                                .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-                            model_id: chunk.model.clone(),
-                        }));
-                    }
-
-                    // Update usage from the chunk that carries it.
-                    if let Some(usage) = &chunk_usage {
-                        final_usage = convert_usage(usage, chunk_usage_raw.as_ref());
-                        final_usage_raw = Some(usage.clone());
-                    }
-
-                    // Process choices.
-                    for choice in chunk.choices {
-                        // The last chunk that carries logprobs sets them.
-                        if let Some(content) = choice.logprobs.as_ref().and_then(logprobs_content) {
-                            final_logprobs = Some(content);
-                        }
-
-                        // Reasoning delta: prefer reasoning_content over reasoning.
-                        let reasoning_delta = choice
-                            .delta
-                            .reasoning_content
-                            .clone()
-                            .or_else(|| choice.delta.reasoning.clone());
-                        if let Some(reasoning) = reasoning_delta
-                            && !reasoning.is_empty()
-                        {
-                            if !reasoning_started {
-                                reasoning_started = true;
-                                yield Ok(StreamPart::ReasoningStart {
-                                    id: reasoning_id.clone(),
-                provider_metadata: None,
-            });
-                            }
-                            yield Ok(StreamPart::ReasoningDelta {
-                                id: reasoning_id.clone(),
-                                delta: reasoning,
-                provider_metadata: None,
-            });
-                        }
-
-                        // Text delta.
-                        if let Some(content) = choice.delta.content {
-                            // End active reasoning block before text starts.
-                            if reasoning_started {
-                                yield Ok(StreamPart::ReasoningEnd {
-                                    id: reasoning_id.clone(),
-                provider_metadata: None,
-            });
-                                reasoning_started = false;
-                            }
-                            if !text_started {
-                                text_started = true;
-                                yield Ok(StreamPart::TextStart {
-                                    id: format!("{text_id}"),
-                                    provider_metadata: None,
-                                });
-                            }
-                            yield Ok(StreamPart::TextDelta {
-                                id: format!("{text_id}"),
-                                delta: content,
-                                provider_metadata: None,
-                            });
-                        }
-
-                        // Tool-call deltas.
-                        if let Some(tool_call_deltas) = choice.delta.tool_calls {
-                            // End active reasoning block before tool calls start.
-                            if reasoning_started {
-                                yield Ok(StreamPart::ReasoningEnd {
-                                    id: reasoning_id.clone(),
-                provider_metadata: None,
-            });
-                                reasoning_started = false;
-                            }
-                            for dtc in &tool_call_deltas {
-                                let function = dtc.function.as_ref();
-                                let delta = StreamingToolCallDelta {
-                                    index: Some(dtc.index),
-                                    id: dtc.id.as_deref(),
-                                    r#type: dtc.r#type.as_deref(),
-                                    name: function.and_then(|f| f.name.as_deref()),
-                                    arguments: function.and_then(|f| f.arguments.as_deref()),
-                                    provider_metadata: None,
-                                };
-                                // A malformed delta (new call without a
-                                // function name, or a non-`function` type)
-                                // is invalid response data, as in the AI SDK;
-                                // the stream ends.
-                                if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
-                                    yield Err(error.into());
-                                    return;
-                                }
-                                for part in tool_parts.drain(..) {
-                                    yield Ok(part);
-                                }
-                            }
-                        }
-
-                        // Annotations / citations (URL citations → Source).
-                        if let Some(annotations) = choice.delta.annotations {
-                            for (i, ann) in annotations.iter().enumerate() {
-                                if ann.get("type").and_then(|v| v.as_str())
-                                    == Some("url_citation")
-                                    && let Some(uc) = ann.get("url_citation")
-                                {
-                                    yield Ok(StreamPart::Source(Source::Url {
-                                        id: format!("annotation-{i}"),
-                                        url: uc
-                                            .get("url")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or_default()
-                                            .to_string(),
-                                        title: uc
-                                            .get("title")
-                                            .and_then(|v| v.as_str())
-                                            .map(std::string::ToString::to_string),
-                                        provider_metadata: None,
-                                    }));
-                                }
-                            }
-                        }
-
-                        // Finish reason.
-                        if let Some(reason) = choice.finish_reason {
-                            // Close any open reasoning segment.
-                            if reasoning_started {
-                                yield Ok(StreamPart::ReasoningEnd {
-                                    id: reasoning_id.clone(),
-                provider_metadata: None,
-            });
-                                reasoning_started = false;
-                            }
-
-                            stream_errored = false;
-                            final_finish_reason = Some(parse_finish_reason(&reason));
-                        }
-                    }
-                }
-                Err(error) => {
-                    let recoverable = error.is_recoverable_stream_error();
-                    stream_errored = true;
-                    yield Ok(StreamPart::Error { error });
-                    if !recoverable {
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Close any remaining open reasoning segment.
-        if reasoning_started {
-            yield Ok(StreamPart::ReasoningEnd {
-                id: reasoning_id.clone(),
-                provider_metadata: None,
-            });
-        }
-
-        // Close any remaining open text segment.
-        if text_started {
-            yield Ok(StreamPart::TextEnd {
-                id: format!("{text_id}"),
-                provider_metadata: None,
-            });
-        }
-
-        // A parsable argument buffer can still be a prefix of a longer input:
-        // like the AI SDK's tracker, finalize only when the stream flushes.
-        tool_calls.finish(&mut tool_parts);
-        for part in tool_parts.drain(..) {
-            yield Ok(part);
-        }
-
-        // Build provider metadata for the Finish part.
-        let mut pm_openai = serde_json::json!({});
-        if let Some(ref logprobs) = final_logprobs {
-            pm_openai["logprobs"] = json!(logprobs);
-        }
-        // Prediction tokens from raw usage.
-        if let Some(ref raw_usage) = final_usage_raw
-            && let Some(ref details) = raw_usage.completion_tokens_details {
-                if let Some(apt) = details.accepted_prediction_tokens {
-                    pm_openai["acceptedPredictionTokens"] = json!(apt);
-                }
-                if let Some(rpt) = details.rejected_prediction_tokens {
-                    pm_openai["rejectedPredictionTokens"] = json!(rpt);
-                }
-            }
-        let provider_metadata = provider_namespace("openai", pm_openai).expect("provider metadata must be an object");
-
-        // Final part: Finish.
-        yield Ok(StreamPart::Finish {
-            finish_reason: if stream_errored {
-                FinishReason {
-                    unified: FinishReasonUnified::Error,
-                    raw: None,
-                }
-            } else {
-                final_finish_reason.unwrap_or(FinishReason {
-                    unified: FinishReasonUnified::Other,
-                    raw: None,
-                })
-            },
-            usage: final_usage,
-            provider_metadata: Some(provider_metadata),
-        });
+    let transformer = OpenAIChatStream {
+        ctx: StreamContext::new(options, warnings, endpoint, &body, &response_headers),
+        ..OpenAIChatStream::default()
     };
+    // Process the first event (already peeked) then the rest.
+    let events = futures::stream::iter(first_event).chain(sse_stream);
+    let stream = pipe_through(events, transformer);
 
     Ok(StreamResult {
         stream: Box::pin(stream),
@@ -728,6 +438,253 @@ pub(crate) async fn execute_stream(
             headers: Some(response_headers),
         }),
     })
+}
+
+const TEXT_ID: &str = "0";
+const REASONING_ID: &str = "reasoning-0";
+
+/// The `TransformStream` of the Chat Completions stream ([`execute_stream`]):
+/// turns the parsed SSE events into stream parts.
+#[derive(Default)]
+struct OpenAIChatStream {
+    ctx: StreamContext,
+    /// Finalized on flush.
+    tool_calls: ChatToolCalls,
+    text_started: bool,
+    reasoning_started: bool,
+    final_usage: Usage,
+    final_usage_raw: Option<UsageResponse>,
+    final_finish_reason: Option<FinishReason>,
+    response_metadata_emitted: bool,
+    final_logprobs: Option<Value>,
+    stream_errored: bool,
+}
+
+/// A chat stream with an empty request context and tool-call ids from
+/// `generate_id`, for tests that drive it chunk by chunk.
+#[cfg(test)]
+pub(crate) fn chat_test_stream(
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
+) -> impl Transformer<Input = Result<Value, AiMuxError>, Output = StreamPart> {
+    OpenAIChatStream {
+        tool_calls: ChatToolCalls::new(generate_id),
+        ..OpenAIChatStream::default()
+    }
+}
+
+impl OpenAIChatStream {
+    fn end_reasoning(&mut self, controller: &mut Controller) {
+        if self.reasoning_started {
+            controller.reasoning_end(REASONING_ID);
+            self.reasoning_started = false;
+        }
+    }
+}
+
+impl Transformer for OpenAIChatStream {
+    type Input = Result<Value, AiMuxError>;
+    type Output = StreamPart;
+
+    fn start(&mut self, controller: &mut Controller) {
+        self.ctx.start(controller);
+    }
+
+    fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        let parsed = match event {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                let recoverable = error.is_recoverable_stream_error();
+                self.stream_errored = true;
+                controller.enqueue(StreamPart::Error { error });
+                if !recoverable {
+                    controller.terminate();
+                }
+                return;
+            }
+        };
+
+        // M2 (RFC-0016): emit the raw provider chunk for debugging before it
+        // is consumed below.
+        self.ctx.raw(&parsed, controller);
+
+        // Check for mid-stream error.
+        if let Some(err_obj) = parsed.get("error") {
+            controller.enqueue(StreamPart::Error {
+                error: super::openai_stream_error(
+                    err_obj,
+                    &self.ctx.url,
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
+                ),
+            });
+            self.stream_errored = true;
+            return;
+        }
+
+        // The chunk's top-level `usage`, taken from the raw JSON before the
+        // chunk is consumed below. `chunk_usage_raw` keeps the provider's
+        // original object for `Usage.raw` (M10).
+        let chunk_usage_raw: Option<Value> = parsed.get("usage").cloned();
+        let chunk_usage: Option<UsageResponse> = chunk_usage_raw
+            .as_ref()
+            .and_then(|u| serde_json::from_value(u.clone()).ok());
+
+        let chunk: StreamChunk = match serde_json::from_value(parsed) {
+            Ok(c) => c,
+            Err(e) => {
+                self.stream_errored = true;
+                controller.enqueue(StreamPart::Error { error: e.into() });
+                return;
+            }
+        };
+
+        // Emit ResponseMetadata from the first valid chunk.
+        if !self.response_metadata_emitted
+            && (chunk.id.as_ref().is_some_and(|id| !id.is_empty())
+                || chunk.model.as_ref().is_some_and(|model| !model.is_empty())
+                || chunk.created.is_some_and(|created| created != 0))
+        {
+            self.response_metadata_emitted = true;
+            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+                id: chunk.id.clone(),
+                timestamp: chunk
+                    .created
+                    .filter(|created| *created != 0)
+                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
+                model_id: chunk.model.clone(),
+            }));
+        }
+
+        // Update usage from the chunk that carries it.
+        if let Some(usage) = &chunk_usage {
+            self.final_usage = convert_usage(usage, chunk_usage_raw.as_ref());
+            self.final_usage_raw = Some(usage.clone());
+        }
+
+        for choice in chunk.choices {
+            // The last chunk that carries logprobs sets them.
+            if let Some(content) = choice.logprobs.as_ref().and_then(logprobs_content) {
+                self.final_logprobs = Some(content);
+            }
+
+            // Reasoning delta: prefer reasoning_content over reasoning.
+            let reasoning_delta = choice
+                .delta
+                .reasoning_content
+                .clone()
+                .or_else(|| choice.delta.reasoning.clone());
+            if let Some(reasoning) = reasoning_delta
+                && !reasoning.is_empty()
+            {
+                if !self.reasoning_started {
+                    self.reasoning_started = true;
+                    controller.reasoning_start(REASONING_ID);
+                }
+                controller.reasoning_delta(REASONING_ID, reasoning);
+            }
+
+            // Text delta; an active reasoning block ends before text starts.
+            if let Some(content) = choice.delta.content {
+                self.end_reasoning(controller);
+                if !self.text_started {
+                    self.text_started = true;
+                    controller.text_start(TEXT_ID);
+                }
+                controller.text_delta(TEXT_ID, content);
+            }
+
+            // Tool-call deltas; an active reasoning block ends first.
+            if let Some(tool_call_deltas) = choice.delta.tool_calls {
+                self.end_reasoning(controller);
+                for dtc in &tool_call_deltas {
+                    let function = dtc.function.as_ref();
+                    let delta = ToolCallDelta {
+                        index: Some(dtc.index),
+                        id: dtc.id.as_deref(),
+                        name: function.and_then(|f| f.name.as_deref()),
+                        arguments: function.and_then(|f| f.arguments.as_deref()),
+                        // `type` is optional, but must be 'function' when present.
+                        invalid_type: dtc.r#type.as_deref().is_some_and(|t| t != "function"),
+                        provider_metadata: None,
+                    };
+                    // A malformed delta (new call without a function name, or
+                    // a non-`function` type) is invalid response data, as in
+                    // the AI SDK; the stream ends.
+                    if !self.tool_calls.delta(delta, controller) {
+                        return;
+                    }
+                }
+            }
+
+            // Annotations / citations (URL citations → Source).
+            if let Some(annotations) = choice.delta.annotations {
+                for (i, ann) in annotations.iter().enumerate() {
+                    if ann.get("type").and_then(|v| v.as_str()) == Some("url_citation")
+                        && let Some(uc) = ann.get("url_citation")
+                    {
+                        controller.enqueue(StreamPart::Source(Source::Url {
+                            id: format!("annotation-{i}"),
+                            url: uc
+                                .get("url")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                            title: uc
+                                .get("title")
+                                .and_then(|v| v.as_str())
+                                .map(std::string::ToString::to_string),
+                            provider_metadata: None,
+                        }));
+                    }
+                }
+            }
+
+            // Finish reason; closes any open reasoning segment.
+            if let Some(reason) = choice.finish_reason {
+                self.end_reasoning(controller);
+                self.stream_errored = false;
+                self.final_finish_reason = Some(parse_finish_reason(&reason));
+            }
+        }
+    }
+
+    fn flush(mut self, controller: &mut Controller) {
+        // Close any remaining open reasoning and text segments.
+        self.end_reasoning(controller);
+        if self.text_started {
+            controller.text_end(TEXT_ID);
+        }
+
+        self.tool_calls.finish(controller);
+
+        // Provider metadata for the Finish part: logprobs + prediction tokens.
+        let mut pm_openai = serde_json::json!({});
+        if let Some(ref logprobs) = self.final_logprobs {
+            pm_openai["logprobs"] = json!(logprobs);
+        }
+        if let Some(ref raw_usage) = self.final_usage_raw
+            && let Some(ref details) = raw_usage.completion_tokens_details
+        {
+            if let Some(apt) = details.accepted_prediction_tokens {
+                pm_openai["acceptedPredictionTokens"] = json!(apt);
+            }
+            if let Some(rpt) = details.rejected_prediction_tokens {
+                pm_openai["rejectedPredictionTokens"] = json!(rpt);
+            }
+        }
+        let provider_metadata =
+            provider_namespace("openai", pm_openai).expect("provider metadata must be an object");
+
+        controller.enqueue(StreamPart::Finish {
+            finish_reason: if self.stream_errored {
+                FINISH_ERROR
+            } else {
+                self.final_finish_reason.unwrap_or(FINISH_OTHER)
+            },
+            usage: self.final_usage,
+            provider_metadata: Some(provider_metadata),
+        });
+    }
 }
 
 // ── Model listing (RFC-0027) ─────────────────────────────────────────────────
@@ -781,4 +738,122 @@ pub(crate) async fn list_models_once(
             created: m.created,
         })
         .collect())
+}
+
+/// The Chat Completions stream driven chunk by chunk.
+#[cfg(test)]
+mod stream_tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::stream::testing::run;
+
+    fn delta(delta: Value) -> Result<Value, AiMuxError> {
+        Ok(json!({ "choices": [{ "delta": delta }] }))
+    }
+
+    fn tool_calls(tool_calls: Value) -> Result<Value, AiMuxError> {
+        delta(json!({ "tool_calls": tool_calls }))
+    }
+
+    #[test]
+    fn interleaved_tool_calls_stream_as_they_arrive_and_end_on_flush_in_index_order() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                tool_calls(json!([{
+                    "index": 1, "id": "call_b", "type": "function",
+                    "function": { "name": "time", "arguments": "{" }
+                }])),
+                tool_calls(json!([{
+                    "index": 0, "id": "call_a", "type": "function",
+                    "function": { "name": "weather", "arguments": "{\"city\":" }
+                }])),
+                tool_calls(json!([
+                    { "index": 1, "function": { "arguments": "}" } },
+                    { "index": 0, "function": { "arguments": "\"Paris\"}" } }
+                ])),
+                Ok(json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }] })),
+            ],
+        );
+        assert_eq!(
+            parts,
+            [
+                "stream-start",
+                "tool-input-start call_b time",
+                "tool-input-delta call_b {",
+                "tool-input-start call_a weather",
+                "tool-input-delta call_a {\"city\":",
+                "tool-input-delta call_b }",
+                "tool-input-delta call_a \"Paris\"}",
+                "tool-input-end call_a",
+                "tool-call call_a weather {\"city\":\"Paris\"}",
+                "tool-input-end call_b",
+                "tool-call call_b time {}",
+                "finish ToolCalls",
+            ]
+        );
+    }
+
+    #[test]
+    fn an_error_frame_is_an_error_part_and_the_stream_finishes_with_error() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                delta(json!({ "content": "Hi" })),
+                Ok(json!({ "error": { "message": "overloaded", "type": "server_error" } })),
+            ],
+        );
+        assert_eq!(parts.len(), 6, "{parts:?}");
+        assert_eq!(
+            parts[..3],
+            ["stream-start", "text-start 0", "text-delta 0 Hi"]
+        );
+        assert!(parts[3].starts_with("error ") && parts[3].contains("overloaded"));
+        assert_eq!(parts[4..], ["text-end 0", "finish Error"]);
+    }
+
+    #[test]
+    fn flush_closes_open_blocks_and_finishes_with_other_without_a_finish_reason() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                delta(json!({ "reasoning_content": "Hmm" })),
+                delta(json!({ "content": "Hi" })),
+            ],
+        );
+        assert_eq!(
+            parts,
+            [
+                "stream-start",
+                "reasoning-start reasoning-0",
+                "reasoning-delta reasoning-0 Hmm",
+                "reasoning-end reasoning-0",
+                "text-start 0",
+                "text-delta 0 Hi",
+                "text-end 0",
+                "finish Other",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tool_call_of_another_type_ends_the_stream_without_flush() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                tool_calls(json!([{
+                    "index": 0, "id": "call_a", "type": "custom",
+                    "function": { "name": "weather", "arguments": "{}" }
+                }])),
+                delta(json!({ "content": "ignored" })),
+            ],
+        );
+        assert_eq!(parts.len(), 2, "{parts:?}");
+        assert_eq!(parts[0], "stream-start");
+        assert!(
+            parts[1].starts_with("err ") && parts[1].contains("Expected 'function' type."),
+            "{parts:?}"
+        );
+    }
 }

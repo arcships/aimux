@@ -115,7 +115,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 | B 轨 protocol registry = L1 协议层(RFC-0032,B1 "protocol 列 + `from_resolved`",B2–B8 "17 个 LanguageModel → ~7 个协议、33 个 wrapper 退役") | 保留方向,形式调整 | "协议"对应本文 §3.3 / §4.1 的模型实现家族(OpenAI chat / Responses、Anthropic Messages、Google、compat 等);registry preset 由内嵌的 registry 在运行时解析成 descriptor 表,按名字创建并复用 compat 实现(D12),不为每一行生成 Rust 源码,wrapper 退役由此完成。RFC-0032 的 registry 列保留为 descriptor 的数据来源;`from_resolved` 式构造由 `create_xxx` 工厂替代;C2 "FFI 构造器转发 shim"不再需要(§6 一次切换) |
 | #174 Auth L1(registry `auth` schema + `apply_auth()`)、#175 Auth L2(Credential 解析序 + CredentialStore + TokenRefresher) | 调整 | 鉴权按 D11 在各厂商包内以 headers 闭包 / fetch 装饰器 / Rust 内建 credential resolver 实现(§3.3、§4.1),registry `auth` 列作为 preset descriptor 数据保留,`apply_auth()` 即生成 headers 闭包。CredentialStore / TokenRefresher 涉及宿主回调与有状态刷新,与 Q4 一并后置;RFC-0018 的无状态刷新边界保留(§4.1 Codex 行) |
 | #167 transport-level replay("mock 挂 HTTP 层跑真协议代码";`ProviderRecord` = registry 行 + protocol)、#179 replay 子命令 | 保留,机制按本文 | 即 D4 / D5 的 `replay_fetch` / `replay_web_socket`(§4.3):录制与回放共用 provider-utils 的 leaf 边界,真实 provider 编码器与解析器参与回放。"`ProviderRecord` = registry 行 + protocol"撤销:录制 schema 3 不保存可重建的 ProviderRecord,live replay 由宿主 registry 与 operation 目标引用驱动(D24、§4.4)。#179 子命令保留在 tools |
-| #185 "删 `StreamingToolCallTracker`(纯删)→ `ToolInput{Raw,Parsed}`" | 调整 | tracker 不删,改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils,由 OpenAI chat 流驱动(#204);对齐基线是 provider-utils 5.0.55,含该版新增的 `hasEmptyArguments` 修复(同一流里新 id、同名、首片段参数为空的并行调用不再被并入前一个调用;`streaming-tool-call-tracker.ts:140-141, 275-285`);`ToolInput` 的 Raw / Parsed 区分由第二部分的四层消息协议承担(V4 tool-call `input` 为原文 String,core 层 `parse_tool_call` 产出解析值) |
+| #185 "删 `StreamingToolCallTracker`(纯删)→ `ToolInput{Raw,Parsed}`" | 调整 | 公共 tracker 删除(RFC-0042 T2);关联逻辑对齐 `@ai-sdk/provider-utils` 的 tracker,作为 OpenAI chat 一族流内部的工具调用表(`aimux-providers/src/stream/` 的 `ChatToolCalls`,crate 内部),不再是独立类型;对齐基线是 provider-utils 5.0.55,含该版新增的 `hasEmptyArguments` 修复(同一流里新 id、同名、首片段参数为空的并行调用不再被并入前一个调用;`streaming-tool-call-tracker.ts:140-141, 275-285`);`ToolInput` 的 Raw / Parsed 区分由第二部分的四层消息协议承担(V4 tool-call `input` 为原文 String,core 层 `parse_tool_call` 产出解析值) |
 | A2–A5 机械清理、E1 内部清理与文档重组、#170 / #171 registry 维护、#180 / #181 小项、S1 / S2 / S3 / P 门禁 | 保留,不受影响 | 与本文无依赖;A2(#203)独立于本文推进。体积与性能门禁按 [RFC-0043](../rfc/0043-size-performance-budgets.md)(#208);迁移各层的 PR 描述列出产物改前改后的体积(2026-10-15 修订) |
 | 0.9 能力矩阵 | 保留,不属于本文,迁移之后做 | 排期见 [ROADMAP](../ROADMAP.md) §6.1(2026-10-13 修订) |
 | "瘦身不改变对外 API"(ROADMAP §3 / §6.1) | 保留 | 该约束限定体积工作;本文的 API 替换是独立的设计决定,不以瘦身为由 |
@@ -1118,6 +1118,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 尚未对齐 | 流中途重试 | 上游 `streamText` 有 `streamRetries`（不设时不重试；设为 n 时流中途的 provider error 最多重新调用模型 n 次，`onError` 也可请求重试，见 ai 7.0.127 `A/generate-text/stream-text.ts:374`、`:1948-1953`、`:2495-2665`）。aimux 待实现，现状与不设时相同：流返回后不重试（RFC-0031 §8.3；§9.1 已知差距） |
 | 产品选择 | 首块超时的起点 | 上游在 provider 响应流开始时才开始计 chunk 超时（`A/generate-text/stream-text.ts:2228-2243`、`:2671`）；aimux 的 provider 在 `do_stream` 内预读首个 SSE 事件，所以 `first_chunk_ms` 在 operation 开始时计时，覆盖请求建立。保留这一差异：provider 等到首个 SSE 事件才从 `do_stream` 返回，若计时推迟到响应流开始，返回 200 之后一直不发数据的流就没有时间上限（RFC-0031 §8.1、§8.3；§9.1 已知差距） |
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
+| 结构差异 | 流式工具调用累积 | 上游 `@ai-sdk/provider-utils` 把 tracker 作为独立模块导出；aimux 没有 tracker 类型，OpenAI chat 一族（openai、openai-compatible、DeepSeek、Groq、Mistral）的流 Transformer 以 crate 内部的 `ChatToolCalls` 字段保存进行中的调用，各厂商的类型规则作为数据传入（RFC-0042 T2、§4）。关联行为等于 provider-utils 5.0.55 基线：上游 tracker 的测试用例改为驱动真实的 chat 流（`aimux-providers/src/stream/chat_tool_calls_tests.rs`） |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
 | 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
 | 上游对齐 | Decision | `DecisionModelV4` 与 `decide`；aimux 扩展进 `providerOptions` / `providerMetadata`，无能力结构；不支持决策的 provider 返回 `None`；deprecated evaluation 别名不移植（§3.1） |
@@ -2760,7 +2761,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 | `GenerateTextResult.raw` 及可独立修改的 metadata 镜像 | 从规范公共结果移除；原始 provider 信息放诊断/recording |
 | `ResponseMessageBuilder` 同时聚合 reasoning 与回放 | 替换为 content accumulator + `to_response_messages` |
 | 手写跨语言外部标签编解码和消息镜像 | 全部改为生成 |
-| `aimux-stream::ToolCallStreamPart` | 删除；tracker 移入 aimux-provider-utils 后直接输出规范 stream part（#204），`aimux-stream` 只做 SSE 解码，不引入任何协议类型 |
+| `aimux-stream::ToolCallStreamPart` | 删除；公共 tracker 一并删除，OpenAI chat 一族的流在内部累积工具调用并直接输出规范 stream part（RFC-0042 §4），`aimux-stream` 只做 SSE 解码，不引入任何协议类型 |
 
 ---
 
@@ -2794,5 +2795,5 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 
 **两项结论（与 §0.5 一致）：**
 
-1. **不新建 `aimux-protocol` crate。** 无运行时依赖的协议类型由第一部分的 `aimux-provider`（V4 类型）与 `aimux-provider-utils`（用户层 `ModelMessage`）承担，按 AI SDK 的包归属放置；core、provider 实现、tracker 和绑定生成都依赖这两个 crate，不复制公共类型。
+1. **不新建 `aimux-protocol` crate。** 无运行时依赖的协议类型由第一部分的 `aimux-provider`（V4 类型）与 `aimux-provider-utils`（用户层 `ModelMessage`）承担，按 AI SDK 的包归属放置；core、provider 实现和绑定生成都依赖这两个 crate，不复制公共类型。
 2. **统一 JSON 适配规范采纳：** base64 字节、ISO 日期、缺失属性省略、JSON null 保留、结构化原生错误；其余字段、判别标签和层间语义直接按本文头部锁定的 AI SDK 基线实施。

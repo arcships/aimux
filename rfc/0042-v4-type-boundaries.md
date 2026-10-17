@@ -27,7 +27,7 @@ PR #200 第一部分及 §0.5 优先于其第二部分的未消解建议：
 | 编号 | 提案 | 接受的后果 |
 |---|---|---|
 | T1 | 不在公共 wire 引入 `ToolInput::Raw/Parsed`；用不同层 DTO 的 `String` 与 JSON value 区分 | #185 的具体实现方案改写，保留消除混层的目标 |
-| T2 | 彻底删除通用 tracker（`aimux-stream` 公共 tracker、第二套 `ToolCallStreamPart` 及任何公共累积器）；累积状态是 provider-utils 内 OpenAI-chat 一族共用流处理的内部实现，不对绑定公开 | 接受 #204 的归属方向，不接受保留公共 tracker 或“整套累积算法纯删除即完成”；见 §4 |
+| T2 | 彻底删除通用 tracker（`aimux-stream` 公共 tracker、第二套 `ToolCallStreamPart` 及任何公共累积器）；累积状态是 provider 层（`aimux-providers/src/stream/` 的 crate 内部 `ChatToolCalls`）OpenAI-chat 一族共用流处理的内部实现，是各 chat 流 Transformer 的字段，不对绑定公开 | 接受 #204 的归属方向，不接受保留公共 tracker 或“整套累积算法纯删除即完成”；见 §4 |
 | T3 | 关联语义等于登记基线上游 tracker（`@ai-sdk/provider-utils`，基线至少 5.0.55）的 correlation 行为：归不了属的增量直接丢弃，不报错、不终止流；只有新调用缺 name 才报 `InvalidResponseData` | 与 #204 `861f26e` 的报错终止方案不同；差分用例取自上游该文件的测试；上游修复（如 5.0.55 的并行调用合并修复，#228/#250）随基线升级 |
 | T4 | 非法调用保留原文的结构化错误证据贯穿所有 wire/repair 路径 | 不通过 stringify(parsed input) 恢复原文 |
 | T5 | D8 以 PR #200 的统一 manifest 为入口，并为自定义 serde 提供显式 codec 描述 | 禁止各语言另维护字段表、独立 schema 或第二条 TS 生成链 |
@@ -108,7 +108,7 @@ core 的一个入口执行工具查找、严格 JSON 解析、原有安全校验
 
 ### 4.1 边界
 
-`aimux-stream` 只做通用字节/行/SSE/NDJSON 解码，不认识工具、工具 schema 或 V4 内容。OpenAI-chat 风格的工具增量累积状态是 provider-utils 内 OpenAI-chat 一族共用流处理的内部实现，不作为公共 tracker 对外导出；不能把所有协议强行转成 OpenAI index。Anthropic block id、Responses item id 等由各协议按原生终结信号转换成 V4 事件。
+`aimux-stream` 只做通用字节/行/SSE/NDJSON 解码，不认识工具、工具 schema 或 V4 内容。OpenAI-chat 风格的工具增量累积状态是 provider 层内 OpenAI-chat 一族共用流处理的内部实现（`aimux-providers/src/stream/` 的 crate 内部 `ChatToolCalls`，作为各 chat 流 Transformer 的字段，每个请求一份），不作为公共 tracker 对外导出；上游把 tracker 放在 `@ai-sdk/provider-utils` 的独立模块，aimux 放在流内部，关联行为与基线一致（登记于 `docs/aisdk-architecture-alignment.md` §5）；不能把所有协议强行转成 OpenAI index。Anthropic block id、Responses item id 等由各协议按原生终结信号转换成 V4 事件。
 
 累积器输出唯一的 `LanguageModelV4StreamPart`，不保留 `ToolCallStreamPart` 镜像。内部状态是每个请求的临时状态，不是跨 ABI operation session，不对绑定公开控制句柄。
 
