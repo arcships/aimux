@@ -1,12 +1,14 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.ErrorEnvelope;
+
 import com.fasterxml.jackson.databind.JsonNode;
 
 /** Protocol domain errors from the RFC-0039 envelope. */
 public abstract class ProtocolException extends NativeException {
-    ProtocolException(JsonNode envelope) { super(envelope); }
-    static ProtocolException decode(JsonNode envelope) {
-        switch (envelope.path("error").path("name").asText()) {
+    ProtocolException(ErrorEnvelope envelope) { super(envelope); }
+    static ProtocolException decode(ErrorEnvelope envelope) {
+        switch (envelope.getError().path("name").asText()) {
             case "InvalidOp": return new InvalidOp(envelope);
             case "InvalidParams": return new InvalidParams(envelope);
             case "UnsupportedOpsVersion": return new UnsupportedOpsVersion(envelope);
@@ -19,28 +21,28 @@ public abstract class ProtocolException extends NativeException {
     }
 
     public static final class InvalidOp extends ProtocolException {
-        InvalidOp(JsonNode envelope) { super(envelope); }
+        InvalidOp(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidParams extends ProtocolException {
-        InvalidParams(JsonNode envelope) { super(envelope); }
+        InvalidParams(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class UnsupportedOpsVersion extends ProtocolException {
-        UnsupportedOpsVersion(JsonNode envelope) { super(envelope); }
+        UnsupportedOpsVersion(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ConcurrentConsumer extends ProtocolException {
-        ConcurrentConsumer(JsonNode envelope) { super(envelope); }
+        ConcurrentConsumer(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidState extends ProtocolException {
-        InvalidState(JsonNode envelope) { super(envelope); }
+        InvalidState(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ResourceLimit extends ProtocolException {
-        ResourceLimit(JsonNode envelope) { super(envelope); }
+        ResourceLimit(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class HandleExhausted extends ProtocolException {
-        HandleExhausted(JsonNode envelope) { super(envelope); }
+        HandleExhausted(ErrorEnvelope envelope) { super(envelope); }
     }
     /** An unrecognized variant, retaining its complete envelope. */
     public static final class Unknown extends ProtocolException {
-        Unknown(JsonNode envelope) { super(envelope); }
+        Unknown(ErrorEnvelope envelope) { super(envelope); }
     }
 }

@@ -109,7 +109,8 @@ Registered gaps:
   language/Decision replay. Provider WebSocket/credential settings unsupported by
   its native factory also fail explicitly.
 - **G-d:** canonical business schemas and language DTO generation belong to
-  RFC-0042. `scripts/gen_ts_types.py` remains until its full outputs are covered.
+  RFC-0042. `cargo run -p aimux-codegen` writes the language DTOs from the
+  embedded type schemas.
 - **G-e:** release ordering/header packaging does not establish installation of
   every published asset on every platform.
 

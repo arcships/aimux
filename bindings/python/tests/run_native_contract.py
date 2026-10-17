@@ -62,7 +62,7 @@ with tempfile.TemporaryDirectory(prefix="aimux-python-contract-") as folder:
         raise RuntimeError('expected exactly one native library, got %r' % libraries)
     package = copied / 'python/aimux'
     shutil.copyfile(libraries[0], package / 'aimux.abi3.so')
-    env['PYTHONPATH'] = str(copied / 'python')
+    env['PYTHONPATH'] = os.pathsep.join([str(copied / 'python'), os.environ.get('PYTHONPATH', '')])
     env['AIMUX_OPS_DOUBLE'] = '1'
     env.pop('AIMUX_REAL_OPS', None)
     env.pop('AIMUX_HTTP_TESTS', None)

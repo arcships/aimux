@@ -294,14 +294,13 @@ Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现�
 {
   "kind": "aimux",
   "code": 11,
-  "message": "API call failed",
-  "error": {"type": "api-call", "message": "rate limited", "statusCode": 429},
-  "retryable": true,
+  "message": "API call error: HTTP 429: slow down",
+  "error": {"name": "AI_APICallError", "statusCode": 429, "message": "slow down", "isRetryable": true},
   "retryAfterMs": 1500
 }
 ```
 
-示例仅展示投影字段；`error` 完整联合定义归 RFC-0042。JSON 字段采用 camelCase；旧讨论中的 `retry_after_ms` 表示派生概念，新 wire 只有 `retryAfterMs`，不同时提供 snake_case alias。
+示例仅展示投影字段（完整样本见 `contract-tests/ops/errors/aimux-api-call.json`）；`error` 以 `name` 区分变体，可否重试由 payload 自身的 `isRetryable` 表达，信封没有顶层 `retryable`。`error` 完整联合定义归 RFC-0042。JSON 字段采用 camelCase；旧讨论中的 `retry_after_ms` 表示派生概念，新 wire 只有 `retryAfterMs`，不同时提供 snake_case alias。
 
 - `kind=aimux|recording|binding|protocol`，每种都有 discriminator 明确的 payload。Node/Python 也用 binding 域表达参数/序列化错误，不伪装 provider API 失败。
 - 保留既有有意义的错误码区间与 golden 含义：AiMux 1–17、Recording 100–105、桥接 200–206。新增类型由 manifest 分配未占用值，禁止重用历史 code=4 等保留槽；ops 协议错误使用独立登记区间。
@@ -315,7 +314,7 @@ Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现�
 1. 在错误首次跨共享 dispatch 边界时记录一次可注入时钟 `now`；相同 error 的各 adapter 共用该投影。
 2. 仅对 ApiCall payload 使用其规范 response headers；先尝试 `retry-after-ms` 数值，再尝试 `retry-after` 秒值，再尝试 HTTP-date 减 now。
 3. 接受有限且非负的数值；毫秒向零截断，checked 范围；NaN、Infinity、超界、过去日期不产生 hint，不把无效值钳成一个巨大有效延迟。负 ms 优先项按上游语义判定无 hint，golden 固定规则，不由语言另定。
-4. Retry 聚合错误保留每次尝试的错误和 hint；顶层 retryable=false、无顶层 hint，除非未来规范显式改变。不能偷偷从最后一次错误复制一个 hint，诱导宿主重试整个已经耗尽预算的操作。
+4. Retry 聚合错误保留每次尝试的错误和 hint；外层 `AI_RetryError` 不带 `isRetryable`，信封也没有顶层 `retryAfterMs`，除非未来规范显式改变。不能偷偷从最后一次错误复制一个 hint，诱导宿主重试整个已经耗尽预算的操作。
 5. hint 是服务端建议，不构成自动重试授权；超时/Abort 不重试。操作层仍检查剩余预算、重试次数、是否已产生语义数据、是否可能重复提交收费任务。
 
 现实现有 `retry_after_hint()` 可作行为基线，但其浮点/溢出边界须在重构的统一 helper 内规范化；不得复制八个解析器。测试用固定时钟覆盖 ms、秒小数、HTTP-date、过去日期、大小写规范化、无 header、错误格式、零、极大值、Retry nesting。

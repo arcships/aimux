@@ -166,7 +166,7 @@ try {
 }
 ```
 
-The ts-rs wire type `AiMuxError` is only for payload unions inside
+The generated wire type `AiMuxError` is only for payload unions inside
 `TextStreamPart`, not for throws.
 
 ## Text Generation
@@ -501,7 +501,7 @@ The `@arcships/aimux` package has two layers:
 | Layer | Source | Boundary |
 |------|------|------|
 | **Native (napi-rs)** | `@arcships/aimux/raw` — `bindings/node/src/native.ts` over the generated native loader | JSON strings in / JSON strings out |
-| **Typed wrapper** | `@arcships/aimux` — `bindings/node/src/index.ts` | Typed objects (ts-rs types, re-exported from the package root) |
+| **Typed wrapper** | `@arcships/aimux` — `bindings/node/src/index.ts` | Typed objects (generated types, re-exported from the package root) |
 
 ### Native classes and methods
 
@@ -525,8 +525,8 @@ below.
 
 ## Types
 
-Type declarations are ts-rs generated from the Rust core into
-`bindings/node/src/types/*.ts` (single source of truth — the wrapper re-exports
+Type declarations are generated from the Rust core into
+`bindings/node/src/generated/types.ts` (single source of truth — the wrapper re-exports
 them, not a local copy):
 
 ```typescript
@@ -540,7 +540,7 @@ import type {
 ```
 
 ```typescript
-// bindings/node/src/types/GenerateTextResult.ts (ts-rs generated, abridged)
+// bindings/node/src/generated/types.ts (generated, abridged)
 export type GenerateTextResult = {
   content: Array<ContentPart>             // the content parts (the core ContentPart)
   text: string                            // the final step's text

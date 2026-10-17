@@ -2,7 +2,9 @@ import 'package:aimux/errors.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('error envelope preserves unknown names, fields and domain', () {
+  test(
+      'error envelope preserves opaque payload and domain and ignores unknown keys',
+      () {
     final json = <String, dynamic>{
       'kind': 'protocol',
       'code': 399,
@@ -14,7 +16,7 @@ void main() {
       'futureField': true,
     };
     final error = OpsException.fromJson(json);
-    expect(error.toJson(), json);
+    expect(error.toJson(), Map.of(json)..remove('futureField'));
     expect(error.retryAfterMs, isNull);
     expect(error.kind, 'protocol');
   });
@@ -31,22 +33,23 @@ void main() {
         'responseHeaders': {'retry-after': '2.5'},
       },
     });
-    expect(error.error['isRetryable'], isTrue);
+    expect((error.error as Map)['isRetryable'], isTrue);
     expect(error.retryAfterMs, 2500);
-    expect(error.error['statusCode'], 429);
+    expect((error.error as Map)['statusCode'], 429);
     expect(error.toJson().containsKey('retryable'), isFalse);
   });
   test('malformed envelope is rejected', () {
-    expect(() => OpsException.fromJson({'code': 11}), throwsFormatException);
+    expect(() => OpsException.fromJson({'kind': 'aimux', 'code': 11}),
+        throwsA(isA<TypeError>()));
     expect(
       () => OpsException.fromJson({
         'kind': 'binding',
         'code': 203,
         'message': 'bad',
         'error': {},
-        'retryAfterMs': -1,
+        'retryAfterMs': 'invalid',
       }),
-      throwsFormatException,
+      throwsA(isA<TypeError>()),
     );
   });
 }

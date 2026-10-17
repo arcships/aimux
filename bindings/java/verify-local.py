@@ -8,6 +8,7 @@ This fallback avoids Gradle's lock-listener socket when local sandbox networking
 from pathlib import Path
 import os
 import platform
+import shutil
 import subprocess
 import sys
 
@@ -15,6 +16,7 @@ root = Path(__file__).resolve().parent
 classpath = Path(sys.argv[1]).read_text().strip()
 out = root / 'build' / 'verify'
 for directory in ('main', 'test', 'native'):
+    shutil.rmtree(out / directory, ignore_errors=True)
     (out / directory).mkdir(parents=True, exist_ok=True)
 fixture = out / 'native' / ('libaimux_abi_fixture.dylib' if platform.system() == 'Darwin' else 'libaimux_abi_fixture.so')
 shared = '-dynamiclib' if platform.system() == 'Darwin' else '-shared'

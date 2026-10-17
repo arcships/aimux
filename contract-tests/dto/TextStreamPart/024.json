@@ -1,0 +1,14 @@
+{
+  "type": "tool-approval-request",
+  "approvalId": "a",
+  "toolCall": {
+    "type": "tool-call",
+    "toolCallId": "c1",
+    "toolName": "w",
+    "input": {
+      "a": 1
+    },
+    "invalid": true
+  },
+  "reason": "r"
+}

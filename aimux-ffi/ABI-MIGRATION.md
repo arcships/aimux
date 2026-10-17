@@ -5,7 +5,7 @@ names are reimplemented solely in `src/abi.rs`; 126 retired names are absent.
 The final ABI exports 14 primitives, including `aimux_handle_finalizer`.
 
 The table below maps every removed symbol to its replacement and covering test.
-Business DTO generation remains in `scripts/gen_ts_types.py`; recording schema
+Business DTO generation is `cargo run -p aimux-codegen`; recording schema
 migration is separate. Decision coverage is provided by `decision.decide` /
 `decision.capabilities`.
 

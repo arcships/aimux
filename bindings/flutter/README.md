@@ -30,8 +30,8 @@ control functions are nonblocking and may run on the caller isolate.
 // `model` is an adopted Language handle; params follows text.stream's schema.
 final subscription = client.stream('text.stream', handle: model, params: params)
     .listen((frame) {
-  if (frame is EventFrame) print(frame.event);
-  if (frame is EndFrame) print('${frame.outcome}: ${frame.error}');
+  if (frame is StreamFrameEvent) print(frame.event);
+  if (frame is StreamFrameEnd) print('${frame.outcome}: ${frame.error}');
 });
 // Pausing withholds native credit; cancelling signals abort even while paused.
 subscription.pause();
@@ -52,7 +52,7 @@ return and the final queued notification have completed. Single-subscription
 streams start only on listen.
 
 A rejected start is a stream error with no frames. After acceptance, raw streams
-expose the explicit `EndFrame` (success/error/cancelled); an error in that terminal
+expose the explicit `StreamFrameEnd` (success/error/cancelled); an error in that terminal
 is not thrown a second time. `TypedModel` projects events into existing typed
 results and throws the terminal error once. Recoverable error *events* stay data.
 Host `onData` handlers run under Dart's normal Stream/Zone error rules. Internal
@@ -74,6 +74,13 @@ the same Future. Forgotten handles use a native `void(void*)` token trampoline:
 it queues cleanup to a native reaper thread, without running Dart or blocking
 on native drop in the GC callback. Finalization is a leak safeguard; it does not
 flush a recorder or complete an operation normally.
+
+DTOs are generated from the Rust manifest into `lib/src/generated/types.dart`.
+Import `package:aimux/types.dart` for immutable classes, enums and union variants.
+`Field<T>` keeps an absent field distinct from an explicit JSON null. Numeric
+uint64 fields use `BigInt`; `dtoJsonDecode` and `dtoJsonEncode` preserve those
+numbers in native calls and opaque JSON. Handle and sequence codecs stay strings.
+Unknown union tags raise `FormatException` with the type and tag.
 
 ## Native packaging
 
