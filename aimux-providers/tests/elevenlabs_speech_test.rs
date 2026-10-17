@@ -9,6 +9,8 @@
 //! Note: the TS test mounts at `https://api.elevenlabs.io/v1/text-to-speech/*`.
 //! The Rust mock server uses a wildcard path matcher to capture any voice id.
 
+use std::collections::HashMap;
+
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
