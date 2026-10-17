@@ -3019,8 +3019,11 @@ pub extern "C" fn aimux_provider_decision_model(
             .into());
         };
         let model_id = str_arg(model_id, "model_id")?;
-        let model = provider.provider.decision_model(&model_id)?;
-        Ok(intern_handle(HandleEntry::Decision(Arc::from(model))))
+        let model = provider
+            .provider
+            .decision_model(&model_id)
+            .unwrap_or_else(|| Err(AiMuxError::no_such_model(&model_id, "decisionModel")))?;
+        Ok(intern_handle(HandleEntry::Decision(model)))
     })
 }
 
@@ -3061,12 +3064,16 @@ pub extern "C" fn aimux_jev_decision_new_with_probability_source(
         if let Some(source) = opt_str_arg(probability_source, "probability_source")? {
             config.probability_source = source.parse()?;
         }
-        let model = aimux_providers::JevProvider::new(config).decision_model(&model_id)?;
-        Ok(intern_handle(HandleEntry::Decision(Arc::from(model))))
+        let model = aimux_providers::JevProvider::new(config)
+            .decision_model(&model_id)
+            .unwrap_or_else(|| Err(AiMuxError::no_such_model(&model_id, "decisionModel")))?;
+        Ok(intern_handle(HandleEntry::Decision(model)))
     })
 }
 
-/// Query native capabilities without a network call. Writes DecisionCapabilities JSON.
+/// Describe the model without a network call. Writes JSON
+/// `{specification_version, provider, model_id, supported_question_types}`,
+/// the `DecisionModelV4` properties.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_decision_capabilities(
     handle: u64,
@@ -3079,11 +3086,18 @@ pub extern "C" fn aimux_decision_capabilities(
             }
             .into());
         };
-        Ok(serde_json::to_string(&model.capabilities()).map_err(AiMuxError::from)?)
+        let description = serde_json::json!({
+            "specification_version": model.specification_version(),
+            "provider": model.provider(),
+            "model_id": model.model_id(),
+            "supported_question_types": model.supported_question_types(),
+        });
+        Ok(description.to_string())
     })
 }
 
-/// Execute a typed decision. Writes DecisionResult JSON.
+/// Execute a typed decision. `opts_json` is `DecideOptions` JSON; writes
+/// `DecideResult` JSON.
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_decide(
     handle: u64,
@@ -3108,7 +3122,7 @@ pub extern "C" fn aimux_decide_with_abort(
             }
             .into());
         };
-        let mut opts: aimux_core::decision_model::DecisionCallOptions =
+        let mut opts: aimux_core::decision_model::DecideOptions =
             parse_json_arg(opts_json, "opts_json")?;
         if abort_handle != 0 {
             opts.abort_signal = Some(abort_of(abort_handle)?);
@@ -4786,77 +4800,83 @@ mod tests {
         ) -> Result<aimux_core::transcription_model::TranscriptionResult, AiMuxError> {
             unimplemented!()
         }
-        async fn do_stream(
+        fn do_stream(
             &self,
             options: aimux_core::transcription_model::TranscriptionStreamOptions,
-        ) -> Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>
-        {
-            use aimux_core::transcription_model::{
-                AudioChunk, TranscriptionStreamPart, TranscriptionStreamResult,
-            };
-            use futures::StreamExt;
-            let mut audio = options.audio;
-            let abort = options.abort_signal.clone();
-            let stream = async_stream::stream! {
-                yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
-                let mut text = String::new();
-                loop {
-                    let aborted = async {
-                        match &abort {
-                            Some(s) => s.cancelled().await,
-                            None => std::future::pending().await,
-                        }
-                    };
-                    tokio::select! {
-                        _ = aborted => {
-                            yield Err(AiMuxError::Aborted("request aborted".into()));
-                            break;
-                        }
-                        chunk = audio.next() => match chunk {
-                            Some(AudioChunk::Binary(b)) => {
-                                let s = format!("{} ", b.len());
-                                text.push_str(&s);
-                                yield Ok(TranscriptionStreamPart::TranscriptDelta {
-                                    id: None,
-                                    delta: s,
-                                    provider_metadata: None,
-                                });
+        ) -> Option<
+            futures::future::BoxFuture<
+                '_,
+                Result<aimux_core::transcription_model::TranscriptionStreamResult, AiMuxError>,
+            >,
+        > {
+            Some(Box::pin(async move {
+                use aimux_core::transcription_model::{
+                    AudioChunk, TranscriptionStreamPart, TranscriptionStreamResult,
+                };
+                use futures::StreamExt;
+                let mut audio = options.audio;
+                let abort = options.abort_signal.clone();
+                let stream = async_stream::stream! {
+                    yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
+                    let mut text = String::new();
+                    loop {
+                        let aborted = async {
+                            match &abort {
+                                Some(s) => s.cancelled().await,
+                                None => std::future::pending().await,
                             }
-                            Some(AudioChunk::Base64(s)) => {
-                                text.push_str(&s);
-                                yield Ok(TranscriptionStreamPart::TranscriptDelta {
-                                    id: None,
-                                    delta: s,
-                                    provider_metadata: None,
-                                });
-                            }
-                            None => {
-                                yield Ok(TranscriptionStreamPart::TranscriptFinal {
-                                    id: None,
-                                    text: text.clone(),
-                                    start_second: None,
-                                    end_second: None,
-                                    channel_index: None,
-                                    provider_metadata: None,
-                                });
-                                yield Ok(TranscriptionStreamPart::Finish {
-                                    text,
-                                    segments: vec![],
-                                    language: None,
-                                    duration_in_seconds: None,
-                                    provider_metadata: None,
-                                });
+                        };
+                        tokio::select! {
+                            _ = aborted => {
+                                yield Err(AiMuxError::Aborted("request aborted".into()));
                                 break;
                             }
-                        },
+                            chunk = audio.next() => match chunk {
+                                Some(AudioChunk::Binary(b)) => {
+                                    let s = format!("{} ", b.len());
+                                    text.push_str(&s);
+                                    yield Ok(TranscriptionStreamPart::TranscriptDelta {
+                                        id: None,
+                                        delta: s,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                Some(AudioChunk::Base64(s)) => {
+                                    text.push_str(&s);
+                                    yield Ok(TranscriptionStreamPart::TranscriptDelta {
+                                        id: None,
+                                        delta: s,
+                                        provider_metadata: None,
+                                    });
+                                }
+                                None => {
+                                    yield Ok(TranscriptionStreamPart::TranscriptFinal {
+                                        id: None,
+                                        text: text.clone(),
+                                        start_second: None,
+                                        end_second: None,
+                                        channel_index: None,
+                                        provider_metadata: None,
+                                    });
+                                    yield Ok(TranscriptionStreamPart::Finish {
+                                        text,
+                                        segments: vec![],
+                                        language: None,
+                                        duration_in_seconds: None,
+                                        provider_metadata: None,
+                                    });
+                                    break;
+                                }
+                            },
+                        }
                     }
-                }
-            };
-            Ok(TranscriptionStreamResult {
-                stream: Box::pin(stream),
-                request: None,
-                response: None,
-            })
+                };
+                Ok(TranscriptionStreamResult {
+                    stream: Box::pin(stream),
+                    request: None,
+                    response: None,
+                })
+            }))
         }
     }
 

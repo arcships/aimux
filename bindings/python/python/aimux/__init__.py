@@ -168,7 +168,7 @@ __all__ = [
     "tavily_search",
     "DecisionModel",
     "jev_decision",
-    "decision_capabilities",
+    "describe_decision_model",
     "decide",
     "RepairToolCall",
     "generate_text",
@@ -180,14 +180,20 @@ __all__ = [
 ]
 
 
-def decision_capabilities(model: DecisionModel) -> Dict[str, Any]:
-    """Query question support, limits and rounding precision without HTTP."""
-    return json.loads(model.capabilities())
+def describe_decision_model(model: DecisionModel) -> Dict[str, Any]:
+    """The model's DecisionModelV4 properties (specification_version, provider,
+    model_id, supported_question_types), without HTTP."""
+    return json.loads(model.describe())
 
 
-def decide(model: DecisionModel, state: Any, questions: List[Dict[str, Any]],
+def decide(model: DecisionModel, state: Any, questions: Dict[str, Dict[str, Any]],
            **options: Any) -> Dict[str, Any]:
-    """Answer typed questions over shared state; Boolean returns P(true)."""
+    """Answer typed questions, keyed by ID, over one shared state.
+
+    Options are those of ``DecideOptions`` (max_retries, timeout, headers,
+    provider_options); the result is ``DecideResult``. Boolean answers are
+    P(true).
+    """
     payload = dict(options, state=state, questions=questions)
     return json.loads(model.decide(json.dumps(payload)))
 

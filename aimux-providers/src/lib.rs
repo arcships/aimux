@@ -230,11 +230,12 @@ pub use cohere::{
 };
 pub use google::{
     GoogleEmbeddingModel, GoogleFiles, GoogleImageModel, GoogleImageSettings, GoogleModel,
-    GoogleProvider, GoogleProviderSettings, GoogleVideoModel, create_google, google,
+    GoogleProvider, GoogleProviderSettings, GoogleSpeechModel, GoogleTranscriptionModel,
+    GoogleVideoModel, create_google, google,
 };
 pub use mistral::{
-    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings, create_mistral,
-    mistral,
+    MistralEmbeddingModel, MistralModel, MistralProvider, MistralProviderSettings,
+    MistralSpeechModel, MistralTranscriptionModel, create_mistral, mistral,
 };
 pub use openai::{
     OpenAIDecisionModel, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIProvider,
@@ -260,7 +261,10 @@ pub use codex::{
     CodexMode, CodexModel, CodexProvider, CodexProviderSettings, CodexTokens, codex, codex_refresh,
     codex_refresh_at, create_codex,
 };
-pub use xai::{XAIProvider, XAIProviderSettings, XaiResponsesModel, create_xai, xai};
+pub use xai::{
+    XAIProvider, XAIProviderSettings, XaiResponsesModel, XaiSpeechModel, XaiTranscriptionModel,
+    XaiVideoModel, create_xai, xai,
+};
 
 pub use cartesia::{
     CartesiaProvider, CartesiaProviderSettings, CartesiaSpeechModel, CartesiaTranscriptionModel,
@@ -398,5 +402,6 @@ pub use you_com::{
 
 mod decision_scoring;
 mod decision_support;
+pub use decision_support::DecisionProbabilitySource;
 mod runtime_decision;
 mod systemone;

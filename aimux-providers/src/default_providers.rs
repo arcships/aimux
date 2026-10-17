@@ -163,6 +163,7 @@ pub fn create_provider(
                 Some(_) => return unsupported("resolvable api_key"),
             };
             Ok(Arc::new(crate::$module::$create(
+                #[allow(clippy::needless_update)]
                 crate::$module::$settings {
                     api_key,
                     base_url,
@@ -223,7 +224,9 @@ pub fn create_provider(
             )
         }
         "voyage" => package!(voyage, create_voyage, VoyageProviderSettings),
-        "xai" => package_with_string_key!(xai, create_xai, XAIProviderSettings),
+        "xai" => {
+            package_with_string_key!(xai, create_xai, XAIProviderSettings, Default::default())
+        }
         "assemblyai" => package_without_transform!(
             assemblyai,
             create_assemblyai,

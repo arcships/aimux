@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use aimux_core::Provider;
-use aimux_core::decision_model::{DecisionCallOptions, DecisionModel as DecisionModelTrait};
+use aimux_core::decision_model::{DecideOptions, DecisionModel as DecisionModelTrait};
 use pyo3::prelude::*;
 
 use crate::error::{serialize_result, to_py_err, wire_json};
@@ -13,12 +13,20 @@ pub struct DecisionModel {
 
 #[pymethods]
 impl DecisionModel {
-    pub fn capabilities(&self) -> PyResult<String> {
-        serialize_result(&self.inner.capabilities())
+    /// The DecisionModelV4 properties as JSON: `specification_version`,
+    /// `provider`, `model_id`, `supported_question_types`.
+    pub fn describe(&self) -> PyResult<String> {
+        serialize_result(&serde_json::json!({
+            "specification_version": self.inner.specification_version(),
+            "provider": self.inner.provider(),
+            "model_id": self.inner.model_id(),
+            "supported_question_types": self.inner.supported_question_types(),
+        }))
     }
 
+    /// `opts_json` is `DecideOptions` JSON; returns `DecideResult` JSON.
     pub fn decide(&self, py: Python<'_>, opts_json: &str) -> PyResult<String> {
-        let options: DecisionCallOptions = wire_json("opts_json", opts_json)?;
+        let options: DecideOptions = wire_json("opts_json", opts_json)?;
         let result = py
             .allow_threads(|| {
                 crate::runtime().block_on(aimux_core::decision_model::decide(
@@ -49,8 +57,12 @@ pub fn jev_decision(
     }
     let model = aimux_providers::JevProvider::new(config)
         .decision_model(model_id)
+        .unwrap_or_else(|| {
+            Err(aimux_core::AiMuxError::no_such_model(
+                model_id,
+                "decisionModel",
+            ))
+        })
         .map_err(|error| to_py_err(&error))?;
-    Ok(DecisionModel {
-        inner: Arc::from(model),
-    })
+    Ok(DecisionModel { inner: model })
 }

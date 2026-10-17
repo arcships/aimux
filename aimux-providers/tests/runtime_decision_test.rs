@@ -10,7 +10,9 @@ use aimux_core::decision_model::*;
 use aimux_core::recording::{self, RingRecorder};
 use aimux_core::replay::{MockDecisionReplayModel, replay_decision_with_model};
 use aimux_core::{AbortSignal, AiMuxError, Provider};
-use aimux_providers::{JevConfig, JevProvider, PresetSettings, create_provider};
+use aimux_providers::{
+    DecisionProbabilitySource, JevConfig, JevProvider, PresetSettings, create_provider,
+};
 use serde_json::{Value, json};
 use serial_test::serial;
 use wiremock::matchers::{body_json, header, method, path};
@@ -28,8 +30,16 @@ fn object(value: Value) -> serde_json::Map<String, Value> {
 fn fixture() -> Value {
     serde_json::from_str(include_str!("fixtures/runtime_decisions.json")).unwrap()
 }
-fn options() -> DecisionCallOptions {
+fn options() -> DecideOptions {
     serde_json::from_value(fixture()["options"].clone()).unwrap()
+}
+/// `provider_metadata.<provider>.probability_source`.
+fn source(result: &DecideResult, provider: &str) -> DecisionProbabilitySource {
+    result.provider_metadata.as_ref().unwrap()[provider]["probability_source"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap()
 }
 fn runtime(provider: &str, api_key: Option<&str>, base_url: String) -> Arc<dyn Provider> {
     create_provider(
@@ -42,7 +52,7 @@ fn runtime(provider: &str, api_key: Option<&str>, base_url: String) -> Arc<dyn P
     )
     .unwrap()
 }
-fn model(provider: &str, server: &MockServer) -> Box<dyn DecisionModel> {
+fn model(provider: &str, server: &MockServer) -> Arc<dyn DecisionModel> {
     runtime(
         provider,
         Some("runtime-secret"),
@@ -54,12 +64,13 @@ fn model(provider: &str, server: &MockServer) -> Box<dyn DecisionModel> {
         "served-decision"
     })
     .unwrap()
+    .unwrap()
 }
 /// Rebuild from the caller's registry, which names the provider as recorded.
 fn rebuild(
     record: &aimux_core::recording::ProviderRecord,
     provider: Arc<dyn Provider>,
-) -> Result<Box<dyn DecisionModel>, AiMuxError> {
+) -> Result<Arc<dyn DecisionModel>, AiMuxError> {
     let registry = aimux_core::create_provider_registry(
         std::collections::BTreeMap::from([(record.provider_id.clone(), provider)]),
         Default::default(),
@@ -76,9 +87,9 @@ impl Drop for Stop {
 async fn replay(
     provider: &str,
     server: &MockServer,
-    request: DecisionCallOptions,
+    request: DecideOptions,
     count: usize,
-) -> DecisionResult {
+) -> DecideResult {
     let model = model(provider, server);
     let recorder = Arc::new(RingRecorder::new());
     recording::init_recording(Some(recorder.clone()));
@@ -97,11 +108,11 @@ async fn replay(
     let offline =
         MockDecisionReplayModel::new(provider, model.model_id(), recordings.clone()).unwrap();
     let replayed = decide(&offline, request).await.unwrap();
-    assert_eq!(replayed.probability_source, result.probability_source);
     assert_eq!(
         serde_json::to_value(&replayed.answers).unwrap(),
         serde_json::to_value(&result.answers).unwrap()
     );
+    assert_eq!(replayed.provider_metadata, result.provider_metadata);
     let server = MockServer::start().await;
     common::replay::mount_recording(&server, &recordings[0]).await;
     let rebuilt = rebuild(
@@ -112,7 +123,7 @@ async fn replay(
     let again = replay_decision_with_model(&recordings[0], rebuilt.as_ref())
         .await
         .unwrap();
-    assert_eq!(again.probability_source, result.probability_source);
+    assert_eq!(again.provider_metadata, result.provider_metadata);
     assert_eq!(
         serde_json::to_value(again.answers).unwrap(),
         serde_json::to_value(&result.answers).unwrap()
@@ -153,9 +164,10 @@ async fn official_systemone_providers_record_and_replay_their_own_routes() {
             .mount(&server)
             .await;
         let result = replay(provider, &server, options(), 1).await;
-        assert_eq!(result.provider, provider);
-        assert_eq!(result.usage.unwrap().input_tokens.total, Some(20));
-        assert_eq!(result.response.unwrap().body.unwrap(), response);
+        assert_eq!(source(&result, provider), DecisionProbabilitySource::Native);
+        assert_eq!(result.usage.input_tokens, Some(20));
+        assert_eq!(result.response.model_id.as_deref(), Some("served-decision"));
+        assert_eq!(result.response.body.unwrap(), response);
     }
 }
 
@@ -166,7 +178,7 @@ async fn media_is_native_per_runtime_and_recorded_for_replay() {
         "../../contract-tests/fixtures/decision-openai-full.json"
     ))
     .unwrap();
-    let mut image = full["options"]["images"][0].clone();
+    let mut image = full["options"]["provider_options"]["openai"]["images"][0].clone();
     image.as_object_mut().unwrap().remove("detail");
     for provider in [
         "ollama",
@@ -178,9 +190,12 @@ async fn media_is_native_per_runtime_and_recorded_for_replay() {
     ] {
         let server = MockServer::start().await;
         let mut request = options();
-        request.images = vec![serde_json::from_value(image.clone()).unwrap()];
+        request.provider_options = Some(SharedProviderOptions::from([(
+            provider.into(),
+            object(json!({"images": [image.clone()]})),
+        )]));
         let mut expected = fixture()["request"].clone();
-        let encoded = image["data"]["Base64"].as_str().unwrap();
+        let encoded = image["data"].as_str().unwrap();
         let data_url = format!("data:image/png;base64,{encoded}");
         expected["images"] = match provider {
             "ollama" => json!([encoded]),
@@ -200,9 +215,12 @@ async fn media_is_native_per_runtime_and_recorded_for_replay() {
     }
 }
 
+/// A decision answers every question (`ai@7.0.128
+/// src/decide/validate-decision.ts:197-202`): a question vLLM skipped fails
+/// the call; Laya's abstention keeps its prediction and is answer metadata.
 #[tokio::test]
 #[serial]
-async fn conditional_skips_and_abstention_do_not_become_false_answers() {
+async fn conditional_skips_fail_and_abstention_is_answer_metadata() {
     for provider in ["vllm", "laya"] {
         let server = MockServer::start().await;
         let mut request = options();
@@ -234,11 +252,31 @@ async fn conditional_skips_and_abstention_do_not_become_false_answers() {
             .respond_with(ResponseTemplate::new(200).set_body_json(response))
             .mount(&server)
             .await;
-        let result = replay(provider, &server, request, 1).await;
-        assert!(matches!(
-            (&result.answers["severity"], provider),
-            (DecisionAnswer::Skipped, "vllm") | (DecisionAnswer::Abstention, "laya")
-        ));
+        if provider == "vllm" {
+            let AiMuxError::ApiCall(error) = decide(model(provider, &server).as_ref(), request)
+                .await
+                .unwrap_err()
+            else {
+                panic!("expected HTTP context");
+            };
+            assert_eq!(error.status_code, Some(200));
+            assert!(
+                error.message.contains("vllm skipped question \"severity\""),
+                "{}",
+                error.message
+            );
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        } else {
+            let result = replay(provider, &server, request, 1).await;
+            assert!(matches!(
+                result.answers["severity"],
+                DecisionAnswer::Score { .. }
+            ));
+            assert_eq!(
+                result.provider_metadata.unwrap()["laya"]["answers"]["severity"]["abstention"],
+                "abstained"
+            );
+        }
     }
 }
 
@@ -264,17 +302,20 @@ async fn sglang_native_decisions_keeps_label_mass_separate_from_confidence() {
         .await;
     let result = replay("sglang", &server, request, 1).await;
     assert_eq!(
-        result.probability_source,
+        source(&result, "sglang"),
         DecisionProbabilitySource::LogitScoring
     );
+    // Label mass is not confidence: no per-answer metadata.
+    assert!(
+        result.provider_metadata.as_ref().unwrap()["sglang"]
+            .get("answers")
+            .is_none()
+    );
     assert!(matches!(
-        result.answers["team"],
-        DecisionAnswer::Choice {
-            confidence: None,
-            ..
-        }
+        &result.answers["team"],
+        DecisionAnswer::Choice { choice, .. } if choice == "support"
     ));
-    assert_eq!(result.response.unwrap().body.unwrap(), response);
+    assert_eq!(result.response.body.unwrap(), response);
     let wire: Value = server.received_requests().await.unwrap()[0]
         .body_json()
         .unwrap();
@@ -304,31 +345,24 @@ async fn sglang_systemone_reports_the_actual_readout_source_through_replay() {
             .respond_with(ResponseTemplate::new(200).set_body_json(&response))
             .mount(&server)
             .await;
-        assert_eq!(
-            model("sglang", &server).capabilities().probability_source,
-            DecisionProbabilitySource::LogitScoring
-        );
         let result = replay("sglang", &server, options(), 1).await;
         assert_eq!(
-            result.probability_source,
+            source(&result, "sglang"),
             if label_mass.is_some() {
                 DecisionProbabilitySource::LogitScoring
             } else {
                 DecisionProbabilitySource::Native
             }
         );
-        assert_eq!(result.response.unwrap().body.unwrap(), response);
-        let DecisionAnswer::Choice { confidence, .. } = &result.answers["team"] else {
-            panic!("expected choice");
-        };
         assert_eq!(
-            *confidence,
-            response["answers"]["team"]["confidence"].as_f64()
+            result.provider_metadata.as_ref().unwrap()["sglang"]["answers"]["team"]["confidence"],
+            response["answers"]["team"]["confidence"]
         );
+        assert_eq!(result.response.body.unwrap(), response);
     }
 }
 
-fn scoring_options(provider: &str) -> DecisionCallOptions {
+fn scoring_options(provider: &str) -> DecideOptions {
     let mut request = options();
     request.provider_options = Some(SharedProviderOptions::from([(
         provider.into(),
@@ -369,20 +403,15 @@ async fn explicit_scoring_preserves_every_exchange_usage_and_replays() {
         .await;
         assert!(matches!(
             result.answers["severity"],
-            DecisionAnswer::Score {
-                expected_value: 1.5,
-                confidence: None,
-                ..
-            }
+            DecisionAnswer::Score { score, .. } if score == 1.5
         ));
         assert_eq!(
-            result.probability_source,
+            source(&result, provider),
             DecisionProbabilitySource::LogitScoring
         );
         if provider == "vllm" {
-            let usage = result.usage.unwrap();
-            assert_eq!(usage.input_tokens.total, Some(14));
-            assert_eq!(usage.output_tokens.total, Some(7));
+            assert_eq!(result.usage.input_tokens, Some(14));
+            assert_eq!(result.usage.output_tokens, Some(7));
         }
     }
 }
@@ -451,16 +480,18 @@ async fn decision_conversion_errors_use_transport_redaction_without_changing_wir
                 )))
                 .decision_model("served-decision")
                 .unwrap()
+                .unwrap()
             } else {
                 model(provider, &server)
             };
             let mut request = options();
-            request.state = json!({
+            request.state = serde_json::from_value(json!({
                 "api_key":"request-secret",
                 "nested":[{"accessToken":"nested-secret","Authorization":"auth-secret"}],
                 "large":"x".repeat(5000),
                 "message":"route this ticket"
-            });
+            }))
+            .unwrap();
             let error = decide(model.as_ref(), request.clone()).await.unwrap_err();
             let AiMuxError::ApiCall(error) = error else {
                 panic!("expected contextual API error");
@@ -495,7 +526,7 @@ async fn decision_conversion_errors_use_transport_redaction_without_changing_wir
             let calls = server.received_requests().await.unwrap();
             assert_eq!(calls.len(), 1);
             let wire: Value = calls[0].body_json().unwrap();
-            assert_eq!(wire["state"], request.state);
+            assert_eq!(wire["state"], serde_json::to_value(&request.state).unwrap());
             if provider == "jev" {
                 assert_eq!(calls[0].url.query(), Some("api_key=query-secret"));
             }
@@ -601,7 +632,7 @@ async fn retry_and_cancellation_use_shared_transport() {
 fn local_presets_record_identity_and_rebuild_from_the_registry() {
     for provider in ["ollama", "llamacpp", "localai", "laya", "sglang", "vllm"] {
         let handle = runtime(provider, None, "http://127.0.0.1:1/v1".into());
-        let model = handle.decision_model("served-alias").unwrap();
+        let model = handle.decision_model("served-alias").unwrap().unwrap();
         assert_eq!(model.provider(), provider);
         let record =
             aimux_core::recording::ProviderRecord::from_model(model.provider(), model.model_id());
@@ -618,10 +649,12 @@ fn local_presets_record_identity_and_rebuild_from_the_registry() {
             .is_err()
         );
     }
-    assert!(matches!(
-        runtime("deepseek", Some("key"), "http://127.0.0.1:1/v1".into()).decision_model("any"),
-        Err(AiMuxError::UnsupportedFunctionality(_))
-    ));
+    // ai@7.0.128 src/decide/decision-provider.ts:7-11: not offered.
+    assert!(
+        runtime("deepseek", Some("key"), "http://127.0.0.1:1/v1".into())
+            .decision_model("any")
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -638,6 +671,7 @@ async fn local_runtime_key_is_read_from_its_optional_variable() {
     unsafe { std::env::remove_var("VLLM_API_KEY") };
     let model = runtime("vllm", None, base_url.clone())
         .decision_model("served-decision")
+        .unwrap()
         .unwrap();
     decide(model.as_ref(), options()).await.unwrap();
     // SAFETY: as above.
@@ -724,4 +758,78 @@ async fn runtime_errors_preserve_native_message_code_and_status() {
             assert_eq!(error.provider_code.as_deref(), Some("1234"));
         }
     }
+}
+
+/// Each runtime's criteria, question and image limits are checked before
+/// any request (they were the model's capabilities before
+/// `DecisionModelV4`, which has none).
+#[tokio::test]
+#[serial]
+async fn runtime_limits_are_checked_before_http() {
+    let server = MockServer::start().await;
+    let image = json!({"data": "iVBORw0KGgo=", "media_type": "image/png"});
+    let with_images = |provider: &str, count: usize| {
+        let mut request = options();
+        request.provider_options = Some(SharedProviderOptions::from([(
+            provider.into(),
+            object(json!({"images": vec![image.clone(); count]})),
+        )]));
+        request
+    };
+    let with_choices = |count: usize| {
+        let mut request = options();
+        if let Some(DecisionQuestion::Choice { criteria, .. }) = request.questions.get_mut("team") {
+            *criteria = (0..count).map(|i| (format!("team{i}"), None)).collect();
+        }
+        request
+    };
+    let with_levels = |count: usize| {
+        let mut request = options();
+        if let Some(DecisionQuestion::Score { criteria, .. }) =
+            request.questions.get_mut("severity")
+        {
+            *criteria = (0..count)
+                .map(|i| Some(format!("level{i}").into()))
+                .collect();
+        }
+        request
+    };
+    let mut many_questions = options();
+    for i in 0..62 {
+        many_questions.questions.insert(
+            format!("extra{i}"),
+            DecisionQuestion::Boolean {
+                instructions: "Urgent?".into(),
+                criteria: None,
+            },
+        );
+    }
+    for (provider, request, unsupported) in [
+        ("laya", with_images("laya", 1), true),
+        ("localai", with_images("localai", 9), false),
+        ("cloudflare", with_images("cloudflare", 5), false),
+        ("ollama", many_questions.clone(), false),
+        ("cloudflare", many_questions, false),
+        ("ollama", with_choices(1), false),
+        ("laya", with_choices(101), false),
+        ("cloudflare", with_choices(256), false),
+        ("laya", with_levels(33), false),
+        ("llamacpp", with_levels(11), false),
+    ] {
+        let error = decide(model(provider, &server).as_ref(), request)
+            .await
+            .unwrap_err();
+        if unsupported {
+            assert!(
+                matches!(error, AiMuxError::UnsupportedFunctionality(_)),
+                "{error:?}"
+            );
+        } else {
+            assert!(
+                matches!(error, AiMuxError::InvalidArgument(_)),
+                "{provider}: {error:?}"
+            );
+        }
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
 }

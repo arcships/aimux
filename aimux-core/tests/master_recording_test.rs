@@ -13,10 +13,13 @@
 //!   `aimux-providers/tests/fixtures/jev_systemone_live.jsonl` (two live Jev
 //!   decisions, 2026-10-06), copied byte for byte.
 
+use aimux_core::decision_model::{DecideOptions, decide};
 use aimux_core::error::AiMuxError;
 use aimux_core::generate::{GenerateTextOptions, generate_text};
 use aimux_core::recording::{OutcomeStatus, RECORDING_SCHEMA, Recording, RecordingOperation};
-use aimux_core::replay::{MockDecisionReplayModel, MockReplayModel, replay_with_model};
+use aimux_core::replay::{
+    MockDecisionReplayModel, MockReplayModel, replay_decision_with_model, replay_with_model,
+};
 
 const LANGUAGE: &str = include_str!("fixtures/master_language_recordings.jsonl");
 const DECISION: &str = include_str!("fixtures/master_decision_recordings.jsonl");
@@ -130,11 +133,11 @@ async fn what_cannot_be_replayed_fails_at_replay_time() {
     assert!(err.to_string().contains("aimux 0.5 or earlier"), "{err}");
 }
 
-/// Master's decision recordings load; offline decision replay needs the
-/// capabilities this version records under `input`, which master keeps in
-/// the ignored `provider.profile`, and says so.
-#[test]
-fn master_decision_recordings_load_and_explain_what_replay_lacks() {
+/// Master's decision recordings load. Their options and results use the
+/// pre-V4 decision shapes, so replaying them fails at replay time and says
+/// they were written by aimux 0.5 or earlier.
+#[tokio::test]
+async fn master_decision_recordings_load_and_explain_at_replay() {
     let recordings = parse(DECISION);
     assert_eq!(recordings.len(), 2);
     for rec in &recordings {
@@ -142,13 +145,28 @@ fn master_decision_recordings_load_and_explain_what_replay_lacks() {
         assert_eq!(rec.input.operation, RecordingOperation::Decision);
         assert_eq!(rec.provider.provider_id, "");
         assert_eq!(rec.provider.provider, "jev");
-        assert!(rec.input.decision_capabilities.is_none());
         assert!(rec.outcome.decision_result.is_some());
         assert_eq!(rec.exchanges[0].response.as_ref().unwrap().status, 200);
     }
 
-    let err = MockDecisionReplayModel::new("jev", "jev-latest", recordings)
-        .err()
-        .unwrap();
-    assert!(err.to_string().contains("provider.profile"), "{err}");
+    let mock = MockDecisionReplayModel::new("jev", "jev-latest", recordings.clone()).unwrap();
+    let err = replay_decision_with_model(&recordings[0], &mock)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
+    assert!(err.to_string().contains("aimux 0.5 or earlier"), "{err}");
+
+    // The same call in this version's shape (the V4 Jev fixture) finds no
+    // master recording to match, and the error says why.
+    let v4: Recording = serde_json::from_str(
+        include_str!("../../aimux-providers/tests/fixtures/jev_systemone_live.jsonl")
+            .lines()
+            .next()
+            .unwrap(),
+    )
+    .unwrap();
+    let options: DecideOptions = serde_json::from_value(v4.input.options).unwrap();
+    let err = decide(&mock, options).await.unwrap_err();
+    assert!(err.to_string().contains("2 recording(s)"), "{err}");
+    assert!(err.to_string().contains("aimux 0.5 or earlier"), "{err}");
 }

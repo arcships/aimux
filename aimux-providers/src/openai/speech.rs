@@ -77,6 +77,7 @@ impl SpeechModel for OpenAISpeechModel {
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
             warnings,
+            usage: None,
             request: Some(SpeechRequest { body: Some(body) }),
             response: SpeechResponse {
                 timestamp: Some(timestamp),

@@ -56,8 +56,8 @@
     "integrity": "sha512-IAz1xv8zot4KLGa8kN7UfAA6H5+ARzAgAKLsoKxHPBzZuOc2E3ohaELg0x/JR9HVTbMbiftb0dPyCb8cT2KBRg=="
   },
   "@ai-sdk/provider": {
-    "version": "4.0.21",
-    "integrity": "sha512-UpbC9C1oht8dhfKPbVXSLRZS3DI8uk8n5v2uMjBPNIYGsC2kL045ywq7D8Hh9KgnH9rP5W/GxQdYtWScRouqlA=="
+    "version": "4.0.22",
+    "integrity": "sha512-1Jtmn36VNMOBo9CMUQrPqsR744qtqRloEiXpWCYS8ffPlhS2CrSNmoho5lPjp3R7EnkzBsGI6p51TA7fQJQZdA=="
   },
   "@ai-sdk/provider-utils": {
     "version": "5.0.55",

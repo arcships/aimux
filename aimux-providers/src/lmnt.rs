@@ -220,6 +220,7 @@ impl SpeechModel for LMNTSpeechModel {
         Ok(SpeechResult {
             audio: AudioData::Binary(audio_bytes),
             warnings,
+            usage: None,
             request: Some(SpeechRequest {
                 body: Some(Value::Object(body)),
             }),

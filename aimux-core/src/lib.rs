@@ -20,6 +20,7 @@
 mod abort_signal;
 pub mod composite;
 pub mod content;
+pub mod custom_provider;
 pub mod decision_model;
 mod decision_replay;
 pub mod download;
@@ -78,10 +79,9 @@ pub mod prelude {
         ToolResultPart, UserContentPart,
     };
     pub use crate::decision_model::{
-        DecisionAnswer, DecisionBooleanCriteria, DecisionCallOptions, DecisionCapabilities,
-        DecisionDescription, DecisionImage, DecisionModel, DecisionOption,
-        DecisionProbabilitySource, DecisionQuestion, DecisionResponse, DecisionResult,
-        DecisionRounding, DecisionScoreLevel, DecisionState, DecisionValue, decide,
+        DecideOptions, DecideResult, DecideUsage, DecisionAnswer, DecisionBooleanCriteria,
+        DecisionCallOptions, DecisionInput, DecisionModel, DecisionQuestion, DecisionQuestionType,
+        DecisionQuestions, DecisionResult, DecisionRounding, DecisionUsage, decide,
     };
     pub use crate::embedding_model::{
         EmbeddingCallOptions, EmbeddingModel, EmbeddingResult, embed,
@@ -175,6 +175,7 @@ pub mod prelude {
 
 // Root-level re-exports for convenience.
 pub use abort_signal::AbortSignal;
+pub use custom_provider::{CustomProvider, CustomProviderOptions, custom_provider};
 pub use decision_model::DecisionModel;
 pub use embedding_model::EmbeddingModel;
 pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason, ToolChoiceViolationError};

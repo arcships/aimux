@@ -33,7 +33,12 @@ export declare class AbortBridge {
 }
 
 export declare class DecisionModel {
-  capabilities(): AimuxResult<string>
+  /**
+   * The DecisionModelV4 properties as JSON: `specification_version`,
+   * `provider`, `model_id`, `supported_question_types`.
+   */
+  describe(): AimuxResult<string>
+  /** `opts_json` is `DecideOptions` JSON; resolves to `DecideResult` JSON. */
   decide(optsJson: string, bridge?: AbortBridge | undefined | null): Promise<string>
 }
 

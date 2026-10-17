@@ -92,7 +92,10 @@ impl Provider for WrappedProvider {
         self.provider.skills()
     }
 
-    fn decision_model(&self, id: &str) -> Result<Box<dyn crate::DecisionModel>, AiMuxError> {
+    fn decision_model(
+        &self,
+        id: &str,
+    ) -> Option<Result<Arc<dyn crate::DecisionModel>, AiMuxError>> {
         self.provider.decision_model(id)
     }
 

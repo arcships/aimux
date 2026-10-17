@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::decision_model::DecisionModel;
 use crate::embedding_model::EmbeddingModel;
 use crate::error::AiMuxError;
 use crate::files_model::Files;
@@ -181,6 +182,19 @@ impl ProviderRegistry {
     pub fn reranking_model(&self, id: &str) -> Result<Arc<dyn RerankingModel>, AiMuxError> {
         let (provider, model_id) = self.resolve(id, "rerankingModel")?;
         offered(provider.reranking_model(model_id), id, "rerankingModel")
+    }
+
+    /// The experimental decision model for a combined id
+    /// (`ai@7.0.128 src/registry/provider-registry.ts:447-461`). A provider
+    /// that offers none is [`AiMuxError::NoSuchModel`] with model type
+    /// `"decisionModel"`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::language_model`].
+    pub fn decision_model(&self, id: &str) -> Result<Arc<dyn DecisionModel>, AiMuxError> {
+        let (provider, model_id) = self.resolve(id, "decisionModel")?;
+        offered(provider.decision_model(model_id), id, "decisionModel")
     }
 
     /// The video model for a combined id. A provider that offers none is

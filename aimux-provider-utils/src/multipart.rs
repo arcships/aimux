@@ -125,12 +125,21 @@ impl Default for MultipartForm {
 }
 
 /// Convert a media type (e.g. `"audio/wav"`) to a file extension (e.g. `"wav"`).
+///
+/// The AI SDK's `mediaTypeToExtension`: the lower-cased subtype, with the few
+/// subtypes whose extension differs mapped (`mpeg` to `mp3`, `mp4` to `m4a`).
 #[must_use]
 pub fn media_type_to_extension(media_type: &str) -> String {
-    media_type
-        .strip_prefix("audio/")
-        .unwrap_or(media_type)
-        .to_string()
+    let media_type = media_type.to_lowercase();
+    let subtype = media_type.split('/').nth(1).unwrap_or_default();
+    match subtype {
+        "mpeg" => "mp3",
+        "x-wav" => "wav",
+        "opus" => "ogg",
+        "mp4" | "x-m4a" => "m4a",
+        other => other,
+    }
+    .to_string()
 }
 
 /// Validate a string interpolated into a multipart MIME header.

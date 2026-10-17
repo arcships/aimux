@@ -113,8 +113,8 @@ fn run_dry(rec: &Recording) -> Result<()> {
         println!(
             "  decision: {} question(s)",
             rec.input.options["questions"]
-                .as_array()
-                .map_or(0, Vec::len)
+                .as_object()
+                .map_or(0, serde_json::Map::len)
         );
     }
     println!("  prompt: {} message(s)", rec.input.prompt.len());
@@ -154,8 +154,8 @@ fn run_replay(
                 "--prompt applies to language recordings; decision replay preserves state/questions"
             );
         }
-        let model: Box<dyn aimux_core::DecisionModel> = if mock {
-            Box::new(aimux_core::replay::MockDecisionReplayModel::new(
+        let model: std::sync::Arc<dyn aimux_core::DecisionModel> = if mock {
+            std::sync::Arc::new(aimux_core::replay::MockDecisionReplayModel::new(
                 &rec.provider.provider,
                 &rec.provider.model_id,
                 vec![rec.clone()],
@@ -178,8 +178,12 @@ fn run_replay(
         println!(
             "[{}] {} / {} → {}",
             rec.call_id,
-            result.provider,
-            result.model,
+            model.provider(),
+            result
+                .response
+                .model_id
+                .as_deref()
+                .unwrap_or(model.model_id()),
             serde_json::to_string(&result.answers)?
         );
         return Ok(());
@@ -269,7 +273,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use aimux_core::Provider;
-    use aimux_core::decision_model::{DecisionCallOptions, decide};
+    use aimux_core::decision_model::{DecideOptions, decide};
     use aimux_core::recording::{self, RecordingOperation, RingRecorder};
     use aimux_providers::{OpenAIProviderSettings, create_openai};
     use serde_json::Value;
@@ -366,9 +370,9 @@ mod tests {
         })
         .unwrap()
         .decision_model("gpt-6-luna")
+        .expect("OpenAI provides decision models")
         .unwrap();
-        let options: DecisionCallOptions =
-            serde_json::from_value(fixture["options"].clone()).unwrap();
+        let options: DecideOptions = serde_json::from_value(fixture["options"].clone()).unwrap();
         Runtime::new()
             .unwrap()
             .block_on(decide(model.as_ref(), options))
@@ -401,7 +405,7 @@ mod tests {
                 .provider("ollama")
                 .unwrap()
                 .decision_model("m")
-                .is_ok()
+                .is_some_and(|model| model.is_ok())
         );
         let registry = replay_registry("jev", Some("k")).unwrap();
         assert!(
@@ -409,7 +413,7 @@ mod tests {
                 .provider("jev")
                 .unwrap()
                 .decision_model("m")
-                .is_ok()
+                .is_some_and(|model| model.is_ok())
         );
         let record = aimux_core::recording::ProviderRecord::new("no-such", "no-such", "m");
         let registry = replay_registry("no-such", None).unwrap();

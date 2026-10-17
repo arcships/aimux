@@ -201,6 +201,7 @@ async fn stream_realtime_happy_path() {
     );
     let result = model
         .do_stream(options)
+        .expect("the OpenAI transcription model streams")
         .await
         .expect("do_stream should connect");
     let parts = collect(result).await;
@@ -249,7 +250,11 @@ async fn stream_request_carries_session_update() {
     let model = realtime_model(&server.base_url());
 
     let options = stream_options(vec![AudioChunk::Binary(vec![1])], None);
-    let result = model.do_stream(options).await.unwrap();
+    let result = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .unwrap();
     let body = result
         .request
         .as_ref()
@@ -320,7 +325,11 @@ async fn stream_audio_chunks_are_base64() {
         ],
         None,
     );
-    let result = model.do_stream(options).await.unwrap();
+    let result = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .unwrap();
     let parts = collect(result).await;
     // StreamStart + final + finish (no deltas in this server script).
     assert_eq!(parts.len(), 3, "parts: {parts:?}");
@@ -348,7 +357,11 @@ async fn stream_abort_mid_session() {
     let model = realtime_model(&format!("http://127.0.0.1:{port}"));
     let options = stream_options(vec![AudioChunk::Binary(vec![1])], Some(abort_clone));
 
-    let result = model.do_stream(options).await.unwrap();
+    let result = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .unwrap();
     // Abort shortly after the stream starts.
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -370,6 +383,7 @@ async fn stream_rejects_non_realtime_models() {
     let model = provider.transcription("whisper-1");
     let err = model
         .do_stream(stream_options(vec![], None))
+        .expect("the OpenAI transcription model streams")
         .await
         .unwrap_err();
     match err {
@@ -390,6 +404,7 @@ async fn stream_connect_failure_errors() {
 
     let err = model
         .do_stream(stream_options(vec![AudioChunk::Binary(vec![1])], None))
+        .expect("the OpenAI transcription model streams")
         .await
         .unwrap_err();
     match &err {
@@ -432,6 +447,7 @@ async fn stream_abort_during_connect() {
             vec![AudioChunk::Binary(vec![1])],
             Some(abort_clone),
         ))
+        .expect("the OpenAI transcription model streams")
         .await
         .unwrap_err();
     // Abort semantics exactly: distinct from timeout and from IO failure.
@@ -478,7 +494,11 @@ async fn stream_connect_timeout_fires() {
             chunk_ms: None,
         }),
     };
-    let err = model.do_stream(options).await.unwrap_err();
+    let err = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .unwrap_err();
     match &err {
         AiMuxError::Timeout(msg) => {
             assert_eq!(
@@ -532,7 +552,11 @@ async fn stream_first_chunk_timeout_fires() {
             chunk_ms: None,
         }),
     };
-    let result = model.do_stream(options).await.unwrap();
+    let result = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .unwrap();
     let parts = collect(result).await;
     let timed_out = parts
         .iter()
@@ -567,6 +591,7 @@ async fn stream_server_error_event_propagates() {
     let model = realtime_model(&format!("http://127.0.0.1:{port}"));
     let result = model
         .do_stream(stream_options(vec![AudioChunk::Binary(vec![1])], None))
+        .expect("the OpenAI transcription model streams")
         .await
         .unwrap();
     let parts = collect(result).await;
@@ -622,6 +647,7 @@ async fn stream_peer_close_before_completion() {
     let model = realtime_model(&format!("http://127.0.0.1:{port}"));
     let result = model
         .do_stream(stream_options(vec![AudioChunk::Binary(vec![1])], None))
+        .expect("the OpenAI transcription model streams")
         .await
         .unwrap();
     let parts = collect(result).await;
@@ -685,7 +711,11 @@ async fn stream_chunk_idle_timeout_fires() {
             chunk_ms: Some(400),
         }),
     };
-    let result = model.do_stream(options).await.unwrap();
+    let result = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .unwrap();
     let parts = collect(result).await;
 
     assert_eq!(parts.len(), 2, "parts: {parts:?}");
@@ -748,7 +778,11 @@ async fn stream_total_timeout_fires() {
             chunk_ms: Some(300),
         }),
     };
-    let result = model.do_stream(options).await.unwrap();
+    let result = model
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .unwrap();
     let parts = collect(result).await;
 
     // StreamStart + several deltas (alive stream) + the terminal total error.

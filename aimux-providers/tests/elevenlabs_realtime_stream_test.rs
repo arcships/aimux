@@ -225,6 +225,7 @@ async fn stream_realtime_happy_path() {
             ],
             None,
         ))
+        .expect("the model has do_stream")
         .await
         .expect("do_stream should connect");
     let parts = collect(result).await;
@@ -296,6 +297,7 @@ async fn stream_empty_audio_commits_empty_chunk() {
     let model = realtime_model(&base_url, "scribe_v2_realtime");
     let result = model
         .do_stream(stream_options(vec![], None))
+        .expect("the model has do_stream")
         .await
         .expect("connect");
     let parts = collect(result).await;
@@ -340,6 +342,7 @@ async fn stream_error_classification() {
         let model = realtime_model(&base_url, "scribe_v2_realtime");
         let result = model
             .do_stream(stream_options(vec![AudioChunk::Binary(vec![1])], None))
+            .expect("the model has do_stream")
             .await
             .unwrap();
         let parts = collect(result).await;
@@ -389,7 +392,11 @@ async fn stream_silent_server_finishes_via_settle_window() {
         step_ms: None,
         total_ms: Some(5_000),
     });
-    let result = model.do_stream(options).await.unwrap();
+    let result = model
+        .do_stream(options)
+        .expect("the model has do_stream")
+        .await
+        .unwrap();
     let parts = collect(result).await;
     match parts.last() {
         Some(Ok(TranscriptionStreamPart::Finish { text, .. })) => {
@@ -420,6 +427,7 @@ async fn stream_abort_mid_session() {
             vec![AudioChunk::Binary(vec![1])],
             Some(abort.clone()),
         ))
+        .expect("the model has do_stream")
         .await
         .unwrap();
 
@@ -458,6 +466,7 @@ async fn stream_model_gating_is_symmetric() {
     let batch = realtime_model("http://127.0.0.1:1", "scribe_v1");
     let error = batch
         .do_stream(stream_options(vec![], None))
+        .expect("the model has do_stream")
         .await
         .unwrap_err();
     assert!(
@@ -476,7 +485,11 @@ async fn stream_rejects_non_pcm_formats() {
         format_type: "audio/mpeg".to_string(),
         rate: None,
     };
-    let error = model.do_stream(options).await.unwrap_err();
+    let error = model
+        .do_stream(options)
+        .expect("the model has do_stream")
+        .await
+        .unwrap_err();
     assert!(
         matches!(error, AiMuxError::UnsupportedFunctionality(ref e) if e.to_string().contains("audio/mpeg")),
         "got {error:?}"

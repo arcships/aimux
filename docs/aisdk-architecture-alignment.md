@@ -85,7 +85,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 - **推荐**:接受;异步 C ABI(versioned vtable + completion)另立 RFC。
 - **决定**:本文定位为**清理与对齐,不新增 feature**。宿主回调(自定义 fetch / model / token / telemetry 跨语言注入)属于新 feature,与 RFC-0035 否决 #186(函数指针回调)、#191(有状态会话)时的考量相同,整体后置。据此,第一部分 §6.4 中 Node(TSFN)与 Python(GIL 回调)的宿主 fetch / model / telemetry 桥接也一并后置;本期各绑定只使用 Rust 内建能力句柄。
 
-**范围原则**:凡是 aimux 现在不具备、需要新增对外能力的项目(宿主回调、多步引擎、工具执行、审批运行时、Evaluation / Realtime / SpeechTranslation / Batch 等),均不在本文范围;本文只做结构清理、行为对齐与已发现缺陷的修复。
+**范围原则**:凡是 aimux 现在不具备、需要新增对外能力的项目(宿主回调、多步引擎、工具执行、审批运行时、Realtime / SpeechTranslation / Batch 等),均不在本文范围;已有的 Decision API 按上游 `DecisionModelV4` 对齐(§3.1);本文只做结构清理、行为对齐与已发现缺陷的修复。
 
 ### 0.5 两部分之间的衔接约定
 
@@ -394,7 +394,13 @@ fn do_stream<'a>(
 }
 ```
 
-本地 `AI:@ai-sdk/provider/src/provider/v4/provider-v4.ts:13`（ProviderV4）没有 `evaluationModel`。Evaluation、Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
+没有该方法的模型（如 Groq、Mistral）返回 `None`，`stream_transcribe` 在任何 I/O 之前报 `UnsupportedFunctionality`，文案同上游 `The {provider} model "{modelId}" does not support streaming transcription.`（`ai@7.0.127 src/transcribe/stream-transcribe.ts:125-138`；方法可选见 `@ai-sdk/provider@4.0.22 src/transcription-model/v4/transcription-model-v4.ts:44-46`）。有该方法的模型返回 `Some`，不能流式的模型 ID 等失败由返回的 future 报告，同上游各厂商 `doStream` 内的检查。
+
+语音结果 `SpeechResult.usage: Option<JsonObject>` 同上游 `SpeechModelV4Result.usage?: JSONObject`（`@ai-sdk/provider@4.0.22 src/speech-model/v4/speech-model-v4-result.ts:23-27`），按厂商原样保存用量，不归一化为 token 计数。Google 在响应带 `usageMetadata` 时原样传出（`@ai-sdk/google@4.0.87 src/google-speech-model.ts:356-358`），未报告或为 `null` 时为 `None`；其他厂商不报告用量。speech 结束事件上的 usage（`ai@7.0.127 src/generate-speech/generate-speech.ts:245`）属于 telemetry 接入，尚未完成。
+
+决策模型即上游 `DecisionModelV4`（`@ai-sdk/provider@4.0.22 src/decision-model/v4/decision-model-v4.ts:6-16`）：`DecisionModel` 只有 `specification_version`、`provider`、`model_id`、`supported_question_types` 与 `do_decide`，call options、题目、答案与结果的形态同 `decision-model-v4-call-options.ts:7-14`、`decision-model-v4-result.ts:7-56`。`decide` 同 `ai@7.0.128 src/decide/decide.ts:76-185`：校验输入，I/O 前拒绝不支持的题型（`DecisionUnsupportedQuestionTypeError` 的文案），按 `maxRetries`（缺省 2）重试，重试后用 `validate-decision.ts` 的规则校验答案，补全 usage 合计与 response 时间、模型。ProviderV4（`provider-v4.ts:13`）没有决策方法，上游 registry 通过扩展读取 `decisionModel ?? evaluationModel`（`ai@7.0.128 src/registry/provider-registry.ts:447-461`）；aimux 的 `Provider::decision_model` 是可选方法，缺省 `None`，registry 与 custom provider 报 `NoSuchModel`（`decisionModel`）。上游 deprecated 的 `evaluationModel`、`doEvaluate` 等别名不移植（D31）。aimux 已有的扩展不另设结构：图片、typed choice value、运行时协议放在 `provider_options`，概率来源、confidence、弃答与 latency 放在 `provider_metadata`；模型不带能力结构，录制也不存能力快照。OpenAI 原生 Decisions、TypeSafe 与本地运行时是 aimux 扩展；上游 OpenAI、Google、Anthropic 的 `evaluationModel` 用语言模型结构化输出（`@ai-sdk/provider-utils@5.0.55 src/decision-language-model.ts`），aimux 对应 `DecisionLanguageModel`：`google:`、`anthropic:` 的 `decision_model` 即此适配器（`"{name}.evaluation"`），`openai:` 的 `decision_model` 走原生 Decisions，适配器另由 `OpenAIProvider::evaluation` 提供。
+
+Realtime、SpeechTranslation、Batch 的具体能力不在本文交付范围；不注册空实现，不宣称已支持。
 
 ### 3.2 provider-utils：传输、设置与诊断
 
@@ -607,7 +613,7 @@ registry 默认用 `:` 分隔，在第一个分隔符处分割；model ID 的剩
 
 完整注册条目的 wrap 同时包装命名方法返回的模型，并保留 discovery、files 与 tools。仅包装 `Arc<dyn Provider>` 时只承诺标准能力。
 
-`custom_provider` 支持标准模态映射、files/skills 和 fallback。自定义命名方法必须显式登记；不能默默穿透到不相关的 fallback 模型。
+`custom_provider` 支持标准模态映射、files/skills 和 fallback。discovery 扩展按上游 files/skills 的方式转发（`ai@7.0.127 src/registry/custom-provider.ts:268-283`）：先用配置的 `discovery`，否则用 fallback provider 的 `discovery()`。自定义命名方法必须显式登记；不能默默穿透到不相关的 fallback 模型。
 
 **下载：**
 
@@ -678,7 +684,7 @@ LM 的 start/end 是逻辑调用事件，retry 内的 attempt spans 与传输事
 
 Telemetry 保留当前采用范围的生命周期回调、object callbacks、embed/rerank callbacks、`execute_language_model_call`、`execute_tool`。callback 通过并发 future 集合通知，等待完成并吞掉通知错误；执行 wrapper 的错误仍影响执行结果。
 
-不实现 `onStepFinish` 的 deprecated 转发。Evaluation 若以后纳入范围，必须同时加入模型解析、操作、四个 evaluation callbacks 和 tracing，而不是本期仅列出一个永远不产生的事件。
+不实现 `onStepFinish` 的 deprecated 转发。`decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`）随本节的 op / attempt 事件一起接通（§9.1 已知差距），不先列出永远不产生的事件。
 
 对象生成跟随上游（2026-10-13 修订）：上游 `generateObject` / `streamObject` 已标 `@deprecated`，改用 `generateText` / `streamText` 的 `output` 设置（ai 7.0.127 `A/generate-object/generate-object.ts:120`、`A/generate-object/stream-object.ts:190`）。aimux 的 `generate_object` 是 `generate_text` 加 `output` 的 deprecated 包装，走同一个 generate operation span、retry 内的 `LanguageModelCall` attempt span 和 scope，不另设 `GenerateObject` / `StreamObject` span；没有 `stream_object`，流式对象输出用 `stream_text` 的 `output`。原先的“对象生成采用 aimux 扩展”（独立 span、scope 与 object callback）撤销。
 
@@ -1114,7 +1120,8 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
 | 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
-| 本期范围外 | Evaluation/Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
+| 上游对齐 | Decision | `DecisionModelV4` 与 `decide`；aimux 扩展进 `provider_options` / `provider_metadata`，无能力结构；不支持决策的 provider 返回 `None`；deprecated evaluation 别名不移植（§3.1） |
+| 本期范围外 | Realtime/SpeechTranslation/Batch 等完整链路 | 不注册虚假能力；后续需完整接通操作与观测 |
 | ABI 范围外 | C 宿主异步 fetch/model/headers/telemetry | 由独立异步 ABI 设计处理；本期提供 Rust 内建句柄 |
 | 上游对齐 | `specification_version` | `Provider` 与各模型 trait 保留 `specification_version()`，默认返回 `"v4"`，与上游 `ProviderV4` 及各模型 V4 接口的 `specificationVersion: 'v4'` 一致 |
 | 语言适配 | `Provider.name()` | `Provider` 不带 `name()`（D-c）：注册名归持有 registry 的一方，身份由模型自己的 `provider()`（`"{name}.{method}"`）承担 |
@@ -1506,6 +1513,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省），回放不了的部分在回放时报错说明。
 - OpenAI 兼容输出的流带回上游的 id 与 model（RFC-0026）；这是回归，不是新功能。
 - Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
+- `decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`），随 Telemetry 一起做（§3.5）。
 - AWS SigV4 fetch（Bedrock、Anthropic-AWS）也给 GET 请求签名，即 `list_models`；上游只签带 body 的 POST（`amazon-bedrock-sigv4-fetch.ts:57-62`、`anthropic-aws-fetch.ts:57-62`）。模型列表是 aimux 独有的接口，不签名就调不通，所以保留这一差异，不再修改（§3.3）。
 
 ### 9.2 必须通过的构建检查
@@ -1586,7 +1594,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 | 意见 | 驳回范围及理由 |
 |---|---|
 | F6：应改成“47 个 model 类实现 WORKFLOW_SERIALIZE” | **数量修正仍不准确。**本地非测试 `src/*.ts` 中，48 个文件引用该符号；排除 `index.ts` 再导出和 `serialize-model-options.ts` 文档示例，实际有 **46** 个 `static [WORKFLOW_SERIALIZE]` 实现声明。正文不再依赖该数量论证 |
-| 事实核验未覆盖项：ProviderV4 缺 evaluationModel | **“ProviderV4 成员缺失”不成立。**本地 ProviderV4 无该成员；registry 实现确实通过扩展读取 evaluationModel。可以讨论是否纳入产品范围，不能把它认定为必选 V4 方法遗漏 |
+| 事实核验未覆盖项：ProviderV4 缺 evaluationModel | **“ProviderV4 成员缺失”不成立。**本地 ProviderV4 无该成员；registry 实现确实通过扩展读取 evaluationModel。可以讨论是否纳入产品范围，不能把它认定为必选 V4 方法遗漏（2026-10-13：Decision 已按 `DecisionModelV4` 对齐，`Provider::decision_model` 为可选方法，见 §3.1） |
 | F3 修复理由：UAF 和 double free 都会变成 InvalidHandle | **对重复 drop 的描述不成立。**现有读取已失效句柄会失败；`drop_handle()` 对不存在 ID 的 remove 是无操作。§6 保留明确的幂等释放，不声称现状会为重复 drop 返回错误 |
 | C5：当前能力是“任意 registry provider” | **术语过度。**当前 `aimux_provider_handle_new` 对 registry-backed preset 构造的是 provider 句柄，并非新设计的多 provider registry 对象。不过新稿确实必须补齐 registry 下 discovery 的可达性，缺陷判断接受 |
 | C6：catalogue 使用 package ID 与拒绝 endpoint 反解互相矛盾 | **逻辑矛盾判断不成立，来源缺口成立。**包元数据和可寻址身份可以独立存在。由宿主显式提供元数据即可（§7.2），无需新增 provider 字符串反查机制 |

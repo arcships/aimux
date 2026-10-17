@@ -11,6 +11,7 @@
 
 mod aisdk_pins;
 pub mod api_key;
+pub mod decision_language_model;
 pub mod download_blob;
 pub mod extract_response_headers;
 pub mod fetch;
@@ -37,6 +38,7 @@ pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, PinnedFetch, ProxyConfig,
