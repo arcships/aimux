@@ -1213,6 +1213,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registers the pre-evaluated `inputSchema` and Swift's delayed abort as
   differences from upstream.
 
+### Changed
+
+- Tool-call repair is a trait. New `RepairToolCall`
+  (`aimux_core::parse_tool_call`, also in the prelude) with one async method,
+  `repair(&self, ToolCallRepairContext) -> Result<Option<RawToolCall>, AiMuxError>`;
+  every matching closure implements it. `ToolCallRepair` holds an
+  `Arc<dyn RepairToolCall>`: `ToolCallRepair::new(closure)` is unchanged and
+  `ToolCallRepair::from(hook)` takes any implementation. Repair behaviour,
+  error variants, JSON, the C ABI and the bindings are unchanged.
+
 ## [0.5.0] - 2026-09-27
 
 **Breaking release.** 13 PRs since 0.3.0: the cross-language error model
