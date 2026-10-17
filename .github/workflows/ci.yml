@@ -50,8 +50,8 @@ jobs:
   #   inside ffi-build, Java and Kotlin share one job.
   # - Anything else (the Rust crates, tools, scripts, contract fixtures,
   #   Cargo manifests, workflows): every job.
-  # Contract tests run for any code change: they check generated files that
-  # live in every binding.
+  # Generator drift checks run for any code change: they check generated
+  # files that live in every binding.
   #
   # Where it runs, on a pull request: the Rust code is platform-neutral
   # (rustls, no platform cfg outside tools/), so jobs run on Linux, and the
@@ -60,7 +60,7 @@ jobs:
   # manifest (dependencies), a build script, line-ending rules
   # (.gitattributes), the toolchain or the workflows.
   # Shared Rust changes still get one Windows leg (Node x64 tests); Swift
-  # contract tests are macOS-only and run whenever they are needed: they
+  # tests are macOS-only and run whenever they are needed: they
   # drive the C ABI from async Swift, which caught a stack overflow no Linux
   # job hit.
   #
@@ -158,7 +158,7 @@ jobs:
       # except the Windows x64 Node test leg, which also runs whenever the
       # shared Rust code changed: it is the only job that runs that code on
       # Windows, where I/O errors and refused connections behave differently
-      # (Swift contract tests cover macOS).
+      # (Swift tests cover macOS).
       - id: legs
         env:
           PLATFORMS: ${{ steps.diff.outputs.platforms }}
@@ -632,9 +632,9 @@ jobs:
           path: ${{ steps.flutter-key.outputs.CACHE-PATH }}
           key: ${{ steps.flutter-key.outputs.CACHE-KEY }}
 
-  # ── Contract tests: shared JSON fixtures (catches cross-language type drift) ──
+  # Generated files must match their generators.
   contract-tests:
-    name: Contract tests
+    name: Generator drift checks
     runs-on: ubuntu-latest
     needs: changes
     if: fromJSON(needs.changes.outputs.run)['contract-tests']
@@ -646,29 +646,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Run Rust contract tests
-        run: cargo test --test contract_test -p aimux-core
       - name: ts-rs export drift (checked-in types must match generator output)
         run: python3 scripts/gen_ts_types.py --check
-      - name: Build Node binding
-        working-directory: bindings/node
-        run: |
-          npm ci
-          npx napi build --platform
-      - name: Run Node contract tests
-        working-directory: contract-tests
-        run: |
-          node --experimental-strip-types run-node.ts
+      # The AI SDK pin tooling: VERSIONS.json format and integrity rules, and
+      # fetch-aisdk.sh against a registry served on 127.0.0.1 (no network).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers)
+        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs
 
-  # ── Swift contract tests: the eighth binding joins the shared fixtures ─────
-  # Needs macOS (XCTest) and the FFI cdylib, which the Swift package links via
-  # the CAimuxFFI system module. The Dart side needs no job here: flutter-binding
-  # already runs `flutter test`, which picks up bindings/flutter/test/contract_test.dart.
+  # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
+  # links via the CAimuxFFI system module.
   swift-contract-tests:
-    name: Swift contract tests
+    name: Swift tests
     runs-on: macos-latest
     needs: changes
     if: fromJSON(needs.changes.outputs.run)['swift-contract-tests']
@@ -680,7 +671,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Build the FFI library the Swift package links against
         run: cargo build -p aimux-ffi --release
-      - name: Run Swift contract tests
+      - name: Run Swift tests
         working-directory: bindings/swift
         env:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/release

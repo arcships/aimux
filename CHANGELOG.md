@@ -48,6 +48,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer rewrites tracked TypeScript types. `scripts/gen_ts_types.py`
   enables exports and rejects ungated export attributes with `--check`.
 
+### Removed
+
+- The cross-language contract fixtures are retired (#249):
+  `contract-tests/fixtures/wire-format.json` (a record of Rust's own serde
+  output, not of the AI SDK), `tool-call-repair.json`, the Node runner
+  `contract-tests/run-node.ts`, `aimux-core/tests/contract_test.rs` and the
+  bindings' contract and repair tests are deleted. Wire behaviour is pinned
+  instead by fixtures recorded from the pinned AI SDK packages under
+  `fixtures/aisdk/` (versions and sha512 integrity in
+  `fixtures/aisdk/VERSIONS.json`, fetched by `scripts/fetch-aisdk.sh`) and by
+  tests ported from upstream. The two decision fixtures stay in
+  `contract-tests/fixtures/`.
+
+### RFCs
+
+- `docs/aisdk-architecture-alignment.md`: the V4 migration now lands on
+  master layer by layer, each layer CI-green with all its consumers updated,
+  instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
+  §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
+  migration come last; until then the existing C constructors keep their
+  signatures and call the new factories, and ts-rs stays as the interim
+  generator. No release is cut from master until every layer is merged;
+  fixes for released versions ship from a maintenance branch. `ROADMAP.md`
+  defers the ops protocol schema and L0 passthrough and no longer fixes C1
+  at nine exports.
+
 ## [0.5.0] - 2026-09-27
 
 **Breaking release.** 13 PRs since 0.3.0: the cross-language error model
