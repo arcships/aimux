@@ -7,6 +7,8 @@
 > **Related**: [RFC-0009](0009-request-resilience.md) request resilience(retry/timeout,本 RFC 的 abortSignal/timeout 缺口与之相关),[RFC-0014](0014-logging.md) 统一日志体系(可观测性缺口依赖本 RFC 的 span 树)
 > **后续变更**: 2026-10-11 删除共享契约 fixture `contract-tests/fixtures/wire-format.json` 及各绑定的契约测试(#249);§7.3 ④"契约测试同步"与 §7.6 R8(`timeout_configuration_values` fixture)已不再适用,新增字段改由从固定版本 AI SDK 录制的 fixture 与移植的上游测试对齐,版本见 [fixtures/aisdk/VERSIONS.json](../fixtures/aisdk/VERSIONS.json)。
 >
+> **后续变更**: 2026-10-16(#252)`CallOptions` 不再有 `max_retries`、`timeout`、`session_id`。三者是操作设置:调用方在 `GenerateTextOptions` 上传入,`generate_text` / `stream_text` 把它们放进 `OperationSettings`,模型调用期间下层用 `OperationSettings::current()` 读取。AI SDK 同样把 `maxRetries`、`timeout` 放在 `generateText` 的请求选项上,`LanguageModelV4CallOptions` 里没有它们。录制仍把三者写在 `InputRecord.options` 的原键名下,录制格式不变。§7 实施状态里 H2、H3 两行记录的是 0.1.3 / 0.1.6 当时的落点。
+>
 > **Request-pipeline sections are superseded by
 > [RFC-0031](../docs/ai-sdk-request-pipeline.md)**: retry/timeout ownership moved
 > to Core, provider-utils now exposes one-exchange API helpers plus response
