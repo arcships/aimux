@@ -67,7 +67,7 @@ fn has_text(content: &[GenerateContent]) -> bool {
 fn has_tool_call(content: &[GenerateContent]) -> bool {
     content
         .iter()
-        .any(|c| matches!(c, GenerateContent::ToolCall { .. }))
+        .any(|c| matches!(c, GenerateContent::ToolCall(_)))
 }
 
 fn has_reasoning(content: &[GenerateContent]) -> bool {
@@ -89,9 +89,7 @@ fn has_finish(parts: &[StreamPart]) -> bool {
 
 #[allow(dead_code)]
 fn has_tool_call_part(parts: &[StreamPart]) -> bool {
-    parts
-        .iter()
-        .any(|p| matches!(p, StreamPart::ToolCall { .. }))
+    parts.iter().any(|p| matches!(p, StreamPart::ToolCall(_)))
 }
 
 /// True when an error signals the request never matched a cassette — i.e. a

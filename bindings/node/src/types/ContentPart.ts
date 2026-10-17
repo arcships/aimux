@@ -28,12 +28,6 @@ input: JsonValue,
  */
 provider_executed?: boolean | null, 
 /**
- * Provider-assigned thought signature (e.g. Google Gemini
- * `thoughtSignature`). Must be echoed back verbatim on the follow-up
- * turn when the tool result is sent.
- */
-thought_signature?: string | null, 
-/**
  * Provider-specific options for this part (e.g.
  * `anthropic.cacheControl`).
  */

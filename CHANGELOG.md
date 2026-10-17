@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Tool-call and tool-result types are unified, one per protocol layer
+  (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
+  argument text) in `GenerateContent::ToolCall(..)` and
+  `StreamPart::ToolCall(..)`, and `tool::ToolResult` in the `ToolResult`
+  variants; these variants are newtype variants now. `StreamPart` is generic
+  over the tool-call type: a provider's `do_stream` yields `StreamPart`
+  (= `StreamPart<RawToolCall>`), `stream_text` and everything after it yield
+  `TextStreamPart` (= `StreamPart<ToolCall>`, parsed input with `invalid` /
+  `error`). `RawToolCall` moved from `parse_tool_call` to `tool`. Wire format:
+  enum variants keep their JSON shape; a provider-layer `StreamPart::ToolCall`
+  has a string `input` and no `invalid` / `error`; a
+  `GenerateContent::ToolCall` with a non-string `input` no longer
+  deserializes; the standalone `tool::ToolResult` gains a required
+  `tool_name` and optional `dynamic` / `provider_metadata`.
+
+- A repaired tool call that still fails to parse or validate is reported as
+  the AI SDK reports it: the original call stays invalid and carries the
+  replacement's own `InvalidToolInput` / `NoSuchTool` error, no longer wrapped
+  in `ToolCallRepair` (only a failing repair function is wrapped). This holds
+  for the `repair_tool_call` closure and for a host's `repaired` reply in every
+  binding.
+
+- `CallOptions.tool_choice` is the V4 object union
+  `LanguageModelV4ToolChoice` (`{"type":"auto"}`, `{"type":"none"}`,
+  `{"type":"required"}`, `{"type":"tool","toolName":..}`); the user-level
+  `ToolChoice` (`"auto"` | `"none"` | `"required"` | `{type:"tool",toolName}`)
+  stays on `GenerateTextOptions`. `prepare_tool_choice` converts one into the
+  other as the AI SDK's `prepareToolChoice` does, and `generate_text` /
+  `stream_text` now send `{"type":"auto"}` when no choice is given, with or
+  without tools (providers still drop it when there are no tools, except
+  open-responses, which sends it as upstream does). Provider authors match
+  on `LanguageModelV4ToolChoice`. Recordings store the object form, so an
+  `ExactMatcher` no longer matches recordings made before this change.
+
+- `ProviderTool.id` is a `types::NamespacedKind`, the V4
+  `${string}.${string}` identifier: an id without a `.` (for example
+  `"web_search"` instead of `"openai.web_search"`) no longer deserializes,
+  and `NamespacedKind::new` / `parse` check it when built in Rust. The JSON
+  is still a plain string.
+
+- A provider-executed `tool::ToolResult` whose `result` is `null` no longer
+  deserializes: the V4 `result` is `NonNullable<JSONValue>`.
+
 - Removed the generated `ProviderName` type in every binding (Rust enum, TS
   const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
   `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
@@ -41,6 +84,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `NdjsonStream` / `NdjsonError`: nothing in the workspace used them
   and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
   the unused direct `serde` dependency is dropped.
+- `StreamingToolCallTracker`, `ToolCallStreamPart` and `TrackerError` are no
+  longer exported from `aimux-stream`; nothing in the workspace used them and
+  the AI SDK keeps the tracker in `@ai-sdk/provider-utils`, next to the
+  provider code that drives it. See `aimux-provider-utils` below.
+
+**Rust (aimux-provider-utils)**
+
+- Gains `StreamingToolCallTracker` (plus `StreamingToolCallDelta`,
+  `TypeValidation` and `TrackerError`), a port of the current
+  `@ai-sdk/provider-utils` tracker, exported from the crate root only: the
+  `streaming_tool_call_tracker` and `streaming_tool_call_argument_state`
+  modules are private, and the argument state is internal, as upstream
+  exports only the tracker from its index. The previous `aimux-stream` version was
+  a port of an older, index-only tracker. Deltas are correlated by wire
+  `id`, `index` and function name (ambiguous deltas are dropped), ids are
+  de-duplicated with `-N` suffixes, generated ids come from the new
+  `generate_id` (upstream's default `generateId`; `tool-call` only when a
+  generator returns a blank id), blank function names are ignored, and
+  `finish` orders calls by index only when every call has one. It emits
+  `aimux_core::StreamPart` tool-input parts directly (`ToolInputStart` /
+  `ToolInputDelta` / `ToolInputEnd` / `ToolCall`); there is no separate
+  `ToolCallStreamPart` event type. `StreamingToolCallDelta` borrows from the
+  provider's wire type and flattens upstream's `function` object;
+  `process` and `finish` append to a caller-owned `Vec<StreamPart>`, and
+  `finish` consumes the tracker. The upstream `extractMetadata` /
+  `buildToolCallProviderMetadata` hooks are replaced by
+  `StreamingToolCallDelta::provider_metadata`, read from the delta that
+  starts a call. `TrackerError` converts into
+  `AiMuxError::InvalidResponseData`.
+- The tracker follows `@ai-sdk/provider-utils` 5.0.55 (pinned in
+  `fixtures/aisdk/VERSIONS.json`): a named delta with an unseen id and empty
+  arguments continues an incomplete matching call, but starts a new call
+  once that call's structured arguments are complete; a continuation without
+  labels goes to the only matching call whose structured arguments are not
+  complete. Parallel same-name calls whose ids are missing or reused are no
+  longer merged into the first call.
+
+**Rust (aimux-providers)**
+
+- The OpenAI chat-completions stream (`openai/model.rs`, which serves every
+  registry-backed provider) correlates `tool_calls` deltas with the tracker
+  instead of by `index` alone: deltas are matched by wire id, index and
+  function name; a continuation without an id follows its call; indices
+  reused across parallel calls stay distinct; ambiguous deltas are dropped;
+  a call whose delta carries no id gets a generated id, as upstream, instead
+  of an empty string; a new call without a function name ends the stream with
+  `InvalidResponseData` (previously it started a call with an empty name).
+  `DeltaToolCall.index` is now `Option<usize>`.
 
 ### Fixed
 

@@ -145,38 +145,27 @@ impl ResponseMessageBuilder {
             tool_name: call.tool_name.clone(),
             input: response_tool_call_input(&call.input, call.invalid),
             provider_executed: call.provider_executed,
-            thought_signature: call.thought_signature.clone(),
             provider_options: call.provider_metadata.clone(),
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn tool_result(
-        &mut self,
-        tool_call_id: String,
-        tool_name: String,
-        result: Value,
-        is_error: Option<bool>,
-        preliminary: Option<bool>,
-        dynamic: Option<bool>,
-        provider_options: Option<Value>,
-    ) {
+    pub fn tool_result(&mut self, result: crate::tool::ToolResult) {
         // Preliminary server-tool results are transient stream updates. The
         // provider contract requires a later final result, and only that
         // final value belongs in the replay transcript for the next turn.
-        if preliminary == Some(true) {
+        if result.preliminary == Some(true) {
             return;
         }
         self.flush_text();
         self.flush_reasoning();
         self.parts.push(ContentPart::ToolResult {
-            tool_call_id,
-            tool_name: Some(tool_name),
-            result,
-            is_error,
-            preliminary,
-            dynamic,
-            provider_options,
+            tool_call_id: result.tool_call_id,
+            tool_name: Some(result.tool_name),
+            result: result.result,
+            is_error: result.is_error,
+            preliminary: result.preliminary,
+            dynamic: result.dynamic,
+            provider_options: result.provider_metadata,
         });
     }
 

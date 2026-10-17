@@ -1904,7 +1904,7 @@ fn apply_anthropic_tools(
             .map(|t| match t {
                 Tool::Function(ft) => AnthropicTool::Function(ft.clone()),
                 Tool::Provider(pt) => AnthropicTool::Provider {
-                    id: pt.id.clone(),
+                    id: pt.id.to_string(),
                     name: pt.name.clone(),
                     args: pt.args.clone(),
                 },
@@ -1919,7 +1919,7 @@ fn apply_anthropic_tools(
         } else {
             None
         },
-        Some(&options.tool_choice),
+        options.tool_choice.as_ref(),
         disable_parallel_tool_use,
         caps.supports_structured_output,
         caps.supports_structured_output,

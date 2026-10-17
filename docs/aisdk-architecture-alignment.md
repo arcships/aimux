@@ -115,7 +115,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 | B 轨 protocol registry = L1 协议层(RFC-0032,B1 "protocol 列 + `from_resolved`",B2–B8 "17 个 LanguageModel → ~7 个协议、33 个 wrapper 退役") | 保留方向,形式调整 | "协议"对应本文 §3.3 / §4.1 的模型实现家族(OpenAI chat / Responses、Anthropic Messages、Google、compat 等);251 个 registry preset 由 descriptor 生成独立厂商工厂并复用 compat 实现(D12、D20),wrapper 退役由此完成。RFC-0032 的 registry 列保留为 descriptor 的数据来源;`from_resolved` 式构造由 `create_xxx` 工厂替代;C2 "FFI 构造器转发 shim"不再需要(§6 一次切换) |
 | #174 Auth L1(registry `auth` schema + `apply_auth()`)、#175 Auth L2(Credential 解析序 + CredentialStore + TokenRefresher) | 调整 | 鉴权按 D11 在各厂商包内以 headers 闭包 / fetch 装饰器 / Rust 内建 credential resolver 实现(§3.3、§4.1),registry `auth` 列作为 preset descriptor 数据保留,`apply_auth()` 即生成 headers 闭包。CredentialStore / TokenRefresher 涉及宿主回调与有状态刷新,与 Q4 一并后置;RFC-0018 的无状态刷新边界保留(§4.1 Codex 行) |
 | #167 transport-level replay("mock 挂 HTTP 层跑真协议代码";`ProviderRecord` = registry 行 + protocol)、#179 replay 子命令 | 保留,机制按本文 | 即 D4 / D5 的 `replay_fetch` / `replay_web_socket`(§4.3):录制与回放共用 provider-utils 的 leaf 边界,真实 provider 编码器与解析器参与回放。"`ProviderRecord` = registry 行 + protocol"撤销:录制 schema 3 不保存可重建的 ProviderRecord,live replay 由宿主 registry 与 operation 目标引用驱动(D24、§4.4)。#179 子命令保留在 tools |
-| #185 "删 `StreamingToolCallTracker`(纯删)→ `ToolInput{Raw,Parsed}`" | 调整 | tracker 不删,改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils,由 OpenAI chat 流驱动(#204);`ToolInput` 的 Raw / Parsed 区分由第二部分的四层消息协议承担(V4 tool-call `input` 为原文 String,core 层 `parse_tool_call` 产出解析值) |
+| #185 "删 `StreamingToolCallTracker`(纯删)→ `ToolInput{Raw,Parsed}`" | 调整 | tracker 不删,改为对齐 `@ai-sdk/provider-utils` 并移入 aimux-provider-utils,由 OpenAI chat 流驱动(#204);对齐基线是 provider-utils 5.0.55,含该版新增的 `hasEmptyArguments` 修复(同一流里新 id、同名、首片段参数为空的并行调用不再被并入前一个调用;`streaming-tool-call-tracker.ts:140-141, 275-285`);`ToolInput` 的 Raw / Parsed 区分由第二部分的四层消息协议承担(V4 tool-call `input` 为原文 String,core 层 `parse_tool_call` 产出解析值) |
 | A2–A5 机械清理、E1 内部清理与文档重组、#170 / #171 registry 维护、#180 / #181 小项、S1 / S2 / S3 / P 门禁 | 保留,不受影响 | 与本文无依赖;A2(#203)独立于本文推进。体积与性能门禁按 [RFC-0043](../rfc/0043-size-performance-budgets.md)(#208);迁移各层的 PR 描述列出产物改前改后的体积(2026-10-15 修订) |
 | 0.9 能力矩阵 | 保留,不属于本文,迁移之后做 | 排期见 [ROADMAP](../ROADMAP.md) §6.1(2026-10-13 修订) |
 | "瘦身不改变对外 API"(ROADMAP §3 / §6.1) | 保留 | 该约束限定体积工作;本文的 API 替换是独立的设计决定,不以瘦身为由 |
@@ -2264,8 +2264,8 @@ core ToolCall 的 input 是解析后的值；provider raw input String 在解析
 |---|---|
 | StaticToolCall | `toolCallId, toolName, input, providerExecuted?, providerMetadata?, toolMetadata?, title?, dynamic?:false, invalid?:false`；无 error |
 | DynamicToolCall | 同上，`dynamic:true, invalid?:bool, error?` |
-| TypedToolResult | `toolCallId, toolName, input, output, providerExecuted?, providerMetadata?, toolMetadata?, dynamic, preliminary?, title?` |
-| TypedToolError | `toolCallId, toolName, input, error, providerExecuted?, providerMetadata?, toolMetadata?, dynamic, title?` |
+| TypedToolResult | `toolCallId, toolName, input, output, providerExecuted?, providerMetadata?, toolMetadata?, dynamic?:false`（static）/ `dynamic:true`（dynamic）`, preliminary?, title?` |
+| TypedToolError | `toolCallId, toolName, input, error, providerExecuted?, providerMetadata?, toolMetadata?, dynamic?:false`（static）/ `dynamic:true`（dynamic）`, title?` |
 | ToolApprovalRequestOutput | `approvalId, toolCall: TypedToolCall, reason?, isAutomatic?, signature?` |
 | ToolApprovalResponseOutput | `approvalId, toolCall: TypedToolCall, approved, reason?, providerExecuted?` |
 | ToolOutputDenied | `toolCallId, toolName, providerExecuted?, dynamic?:false` |
@@ -2274,7 +2274,7 @@ core ToolCall 的 input 是解析后的值；provider raw input String 在解析
 
 core 自己可以用 `ParseOutcome::Invalid { error, ... }` 保证解析失败一定携带错误，但不能把这个内部不变量误称为 SDK DynamicToolCall 的静态类型要求。
 
-provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
+provider deferred tool result 可能没有本轮可关联的调用输入，SDK 会设置 `input: undefined`，见 `A/generate-text/convert-language-model-content.ts:87`。只有对应工具是 provider 工具且声明了 `supportsDeferredResults` 时才允许这种结果，否则报 “Tool call … not found”（同文件 `:96-103`）。wire 必须能表示这种缺失，不能凭空填 `{}` 或 null。
 
 GeneratedFile 使用一个数据来源：
 
@@ -2553,8 +2553,7 @@ responseMessages 是 `AssistantModelMessage | ToolModelMessage` 的子集联合�
   "type": "tool-call",
   "toolCallId": "call_1",
   "toolName": "weather",
-  "input": {"city": "Shanghai"},
-  "dynamic": false
+  "input": {"city": "Shanghai"}
 }
 ```
 

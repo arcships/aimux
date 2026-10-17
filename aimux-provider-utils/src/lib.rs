@@ -3,12 +3,14 @@
 //! Shared utilities for provider implementations.
 //!
 //! Provides one-exchange HTTP helpers, response handlers, API key loading,
-//! header management, and URL utilities — the Rust equivalents of
+//! header management, URL utilities and the streamed tool-call tracker for
+//! the OpenAI chat-completions wire format — the Rust equivalents of
 //! `@ai-sdk/provider-utils`. Operation retry and timeout live in `aimux-core`.
 
 pub mod api_key;
 mod download_guard;
 pub mod extract_response_headers;
+pub mod generate_id;
 pub mod get_from_api;
 pub mod handle_fetch_error;
 pub mod headers;
@@ -19,6 +21,8 @@ pub mod post_to_api;
 pub mod read_response_with_size_limit;
 pub mod response_handler;
 pub mod retry;
+mod streaming_tool_call_argument_state;
+mod streaming_tool_call_tracker;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
 /// `ws` feature is enabled.
@@ -27,6 +31,7 @@ pub mod ws;
 
 pub use api_key::load_api_key;
 pub use download_guard::same_origin;
+pub use generate_id::generate_id;
 pub use get_from_api::get_from_api;
 pub use headers::with_user_agent_suffix;
 pub use http::{
@@ -43,4 +48,9 @@ pub use response_handler::{
     invalid_response_api_call, stream_error_api_call,
 };
 pub use retry::RetryConfig;
+// As `@ai-sdk/provider-utils` (`index.ts:115-119`): the tracker is exported
+// from the crate root, its argument state stays internal.
+pub use streaming_tool_call_tracker::{
+    StreamingToolCallDelta, StreamingToolCallTracker, TrackerError, TypeValidation,
+};
 pub use url::{validate_base_url, without_trailing_slash, without_trailing_slash_opt};

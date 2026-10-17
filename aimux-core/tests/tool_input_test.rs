@@ -8,10 +8,12 @@ use aimux_core::generate::{
 use aimux_core::language_model::LanguageModel;
 use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::options::CallOptions;
-use aimux_core::parse_tool_call::{RawToolCall, ToolCallRepair, parse_tool_call};
+use aimux_core::parse_tool_call::{
+    ToolCallRepair, ToolCallRepairReply, apply_tool_call_repair, parse_tool_call,
+};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::{FunctionTool, Tool};
+use aimux_core::tool::{FunctionTool, RawToolCall, Tool, ToolCall};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -28,7 +30,6 @@ fn raw(name: &str, input: &str) -> RawToolCall {
         input: input.into(),
         provider_executed: None,
         dynamic: None,
-        thought_signature: None,
         provider_metadata: None,
     }
 }
@@ -43,6 +44,24 @@ async fn parses_and_validates_exact_json() {
     assert_eq!(call.dynamic, None);
     assert_eq!(call.invalid, None);
     assert!(call.error.is_none());
+}
+
+/// A static call has no `dynamic` key at all (`ai@7.0.127
+/// src/generate-text/parse-tool-call.ts:279-288`), as in the core output
+/// example of the alignment doc.
+#[tokio::test]
+async fn a_static_call_serializes_without_dynamic() {
+    let call = parse_tool_call(
+        raw("weather", r#"{"city":"Shanghai"}"#),
+        Some(&[weather_tool()]),
+        None,
+        &[],
+        None,
+    )
+    .await;
+    let wire = serde_json::to_value(&call).unwrap();
+    assert_eq!(wire["input"], json!({ "city": "Shanghai" }));
+    assert!(wire.get("dynamic").is_none(), "{wire}");
 }
 
 #[tokio::test]
@@ -149,6 +168,52 @@ async fn unknown_tool_is_an_invalid_dynamic_call_with_available_tools() {
     ));
 }
 
+/// The input of an invalid call is back-filled with the same prototype-safe
+/// parse as the main path: `ai@7.0.127 parse-tool-call.ts:115-117` uses
+/// `safeParseJSON`, whose `secureJsonParse` rejects a `__proto__` key or a
+/// `constructor.prototype` anywhere in the value
+/// (`@ai-sdk/provider-utils@5.0.53 secure-json-parse.ts:49-67`), so such text
+/// stays the verbatim string.
+#[tokio::test]
+async fn invalid_call_input_is_not_back_filled_with_forbidden_prototype_keys() {
+    for text in [
+        r#"{"city":"Tokyo","__proto__":{"polluted":true}}"#,
+        r#"{"city":"Tokyo","days":[{"constructor":{"prototype":{"polluted":true}}}]}"#,
+    ] {
+        // A known tool: the main path rejects the text.
+        let call = parse_tool_call(
+            raw("weather", text),
+            Some(&[weather_tool()]),
+            None,
+            &[],
+            None,
+        )
+        .await;
+        assert_eq!(call.invalid, Some(true), "{text}");
+        assert!(
+            matches!(call.error, Some(AiMuxError::InvalidToolInput { .. })),
+            "{text}"
+        );
+        assert_eq!(call.input, json!(text), "{text}");
+
+        // An unknown tool: invalid for another reason, but the back-fill
+        // still refuses the value.
+        let call = parse_tool_call(
+            raw("forecast", text),
+            Some(&[weather_tool()]),
+            None,
+            &[],
+            None,
+        )
+        .await;
+        assert!(
+            matches!(call.error, Some(AiMuxError::NoSuchTool { .. })),
+            "{text}"
+        );
+        assert_eq!(call.input, json!(text), "{text}");
+    }
+}
+
 #[tokio::test]
 async fn repair_runs_once_and_the_replacement_is_fully_revalidated() {
     let calls = Arc::new(AtomicUsize::new(0));
@@ -205,13 +270,41 @@ async fn an_invalid_repair_is_not_repaired_again() {
     .await;
 
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+    // The invalid call is built from the original call (ai@7.0.127
+    // parse-tool-call.ts:112-133) and carries the repaired call's own
+    // validation error, not wrapped: only a failing repair function is
+    // wrapped in ToolCallRepairError (:90-96, :103-110).
     assert_eq!(call.input, json!("{"));
     assert_eq!(call.invalid, Some(true));
     assert!(matches!(
         call.error,
-        Some(AiMuxError::ToolCallRepair { original_error, cause })
-            if matches!(*original_error, AiMuxError::InvalidToolInput { ref tool_input, .. } if tool_input == "{")
-                && matches!(*cause, AiMuxError::InvalidToolInput { ref tool_input, .. } if tool_input == r#"{"city":7}"#)
+        Some(AiMuxError::InvalidToolInput { ref tool_input, .. }) if tool_input == r#"{"city":7}"#
+    ));
+}
+
+/// The host-reply path shares the post-repair contract: a `repaired` reply
+/// that still fails validation leaves the original call invalid with the
+/// reply's own error, not a `ToolCallRepair` error (ai@7.0.127
+/// parse-tool-call.ts:103-133).
+#[tokio::test]
+async fn a_repaired_reply_that_fails_validation_is_not_wrapped() {
+    let tools = [weather_tool()];
+    let invalid = parse_tool_call(raw("weather", "{"), Some(&tools), None, &[], None).await;
+
+    let call = apply_tool_call_repair(
+        &invalid,
+        Some(&tools),
+        ToolCallRepairReply::Repaired {
+            tool_call: raw("weather", r#"{"city":7}"#),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(call.input, json!("{"));
+    assert_eq!(call.invalid, Some(true));
+    assert!(matches!(
+        call.error,
+        Some(AiMuxError::InvalidToolInput { ref tool_input, .. }) if tool_input == r#"{"city":7}"#
     ));
 }
 
@@ -345,15 +438,14 @@ impl LanguageModel for RawToolModel {
 
     async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         Ok(GenerateResult {
-            content: vec![GenerateContent::ToolCall {
+            content: vec![GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: "call-1".into(),
                 tool_name: self.tool_name.into(),
                 input: self.input.to_string(),
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
-            }],
+            })],
             finish_reason: FinishReason {
                 unified: FinishReasonUnified::ToolCalls,
                 raw: Some("tool_calls".into()),
@@ -398,17 +490,14 @@ impl LanguageModel for RawToolModel {
             ]);
         }
         parts.extend([
-            Ok(StreamPart::ToolCall {
+            Ok(StreamPart::ToolCall(RawToolCall {
                 tool_call_id: "call-1".into(),
                 tool_name: self.tool_name.into(),
-                input: json!(self.input),
+                input: self.input.to_string(),
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
-                invalid: None,
-                error: None,
                 provider_metadata: None,
-            }),
+            })),
             Ok(StreamPart::Finish {
                 finish_reason: FinishReason {
                     unified: FinishReasonUnified::ToolCalls,
@@ -444,8 +533,8 @@ async fn generate_text_parses_provider_raw_input_at_the_core_boundary() {
     assert_eq!(result.tool_calls[0].invalid, None);
     assert!(matches!(
         &result.raw.content[0],
-        GenerateContent::ToolCall { input, .. }
-            if input == &json!(r#"{"city":"Singapore"}"#)
+        GenerateContent::ToolCall(RawToolCall { input, .. })
+            if input == r#"{"city":"Singapore"}"#
     ));
 }
 
@@ -464,7 +553,7 @@ async fn stream_text_parses_provider_raw_input_at_the_core_boundary() {
     .unwrap();
 
     while let Some(part) = result.stream.next().await {
-        if let StreamPart::ToolCall { input, invalid, .. } = part.unwrap() {
+        if let StreamPart::ToolCall(ToolCall { input, invalid, .. }) = part.unwrap() {
             assert_eq!(input, json!({ "city": "Singapore" }));
             assert_eq!(invalid, None);
             return;

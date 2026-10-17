@@ -2,15 +2,19 @@
 import type { JsonValue } from "./serde_json/JsonValue";
 
 /**
- * The result of executing a tool call, to be sent back to the model.
+ * A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
+ * web search), carried next to the [`RawToolCall`] it answers.
  */
 export type ToolResult = { 
 /**
- * Must match the corresponding `ToolCall::tool_call_id`.
+ * Must match the corresponding call's `tool_call_id`.
  */
-tool_call_id: string, 
+tool_call_id: string, tool_name: string, 
 /**
- * The tool's output (usually a JSON-serializable value or plain text).
+ * The tool's output: any JSON value but `null`, as the V4
+ * `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
+ * src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
+ * result does not deserialize.
  */
 result: JsonValue, 
 /**
@@ -20,4 +24,12 @@ is_error?: boolean | null,
 /**
  * Whether the result is preliminary (replaces prior, e.g. image previews).
  */
-preliminary?: boolean | null, };
+preliminary?: boolean | null, 
+/**
+ * Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+ */
+dynamic?: boolean | null, 
+/**
+ * Additional provider-specific metadata for the tool result.
+ */
+provider_metadata?: JsonValue | null, };

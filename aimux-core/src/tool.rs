@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::types::ProviderMetadata;
+use crate::types::{NamespacedKind, ProviderMetadata};
 
 /// A tool definition passed to the model in `CallOptions.tools`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -31,7 +31,14 @@ pub struct FunctionTool {
     /// Example inputs for the tool (V4 `inputExamples`), used by some providers
     /// to emit `input_examples` in the request body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input_examples: Option<Vec<Value>>,
+    pub input_examples: Option<Vec<FunctionToolInputExample>>,
+}
+
+/// An example input for a function tool.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "ts-export", ts(export))]
+pub struct FunctionToolInputExample {
+    pub input: Map<String, Value>,
 }
 
 impl FunctionTool {
@@ -65,7 +72,9 @@ impl FunctionTool {
 }
 
 /// A provider-defined tool (e.g. `anthropic.web_search_20250305`,
-/// `google.googleSearch`). Mirrors the V4 `LanguageModelV4ProviderTool`.
+/// `google.googleSearch`). Mirrors the V4 `LanguageModelV4ProviderTool`
+/// (`@ai-sdk/provider@4.0.21
+/// src/language-model/v4/language-model-v4-provider-tool.ts:8-28`).
 ///
 /// Provider tools are specific to a certain provider. The input and output
 /// schemas are defined by the provider, and some are executed on the provider's
@@ -74,12 +83,12 @@ impl FunctionTool {
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ProviderTool {
     /// The ID of the tool, following the format `<provider-id>.<unique-tool-name>`.
-    pub id: String,
+    pub id: NamespacedKind,
     /// The name of the tool, unique within this model call.
     pub name: String,
     /// The arguments for configuring the tool. Must match the expected
     /// arguments defined by the provider for this tool.
-    pub args: Value,
+    pub args: Map<String, Value>,
 }
 
 /// A tool that can be either a user-defined function tool or a
@@ -101,6 +110,24 @@ impl From<FunctionTool> for Tool {
     }
 }
 
+/// Provider-facing tool call before Core parses and validates its input.
+///
+/// The wire shape matches [`ToolCall`] field for field, except that `input`
+/// is the provider's raw argument *text* rather than a parsed value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "ts-export", ts(export))]
+pub struct RawToolCall {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub input: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_executed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<ProviderMetadata>,
+}
+
 /// A tool call requested by the model.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
@@ -118,12 +145,6 @@ pub struct ToolCall {
     /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
-    /// Provider-assigned thought signature (e.g. Google Gemini
-    /// `thoughtSignature`). Must be echoed back verbatim on the follow-up turn
-    /// when the tool result is sent; thinking models reject the request
-    /// otherwise.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thought_signature: Option<String>,
     /// Additional provider-specific metadata associated with this call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
@@ -136,13 +157,19 @@ pub struct ToolCall {
     pub error: Option<AiMuxError>,
 }
 
-/// The result of executing a tool call, to be sent back to the model.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+/// A tool result produced by a provider-executed tool (e.g. xAI `file_search`,
+/// web search), carried next to the [`RawToolCall`] it answers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolResult {
-    /// Must match the corresponding `ToolCall::tool_call_id`.
+    /// Must match the corresponding call's `tool_call_id`.
     pub tool_call_id: String,
-    /// The tool's output (usually a JSON-serializable value or plain text).
+    pub tool_name: String,
+    /// The tool's output: any JSON value but `null`, as the V4
+    /// `result: NonNullable<JSONValue>` (`@ai-sdk/provider@4.0.21
+    /// src/language-model/v4/language-model-v4-tool-result.ts:23`); a `null`
+    /// result does not deserialize.
+    #[serde(deserialize_with = "non_null_json")]
     pub result: Value,
     /// Whether the result is an error or error message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -150,14 +177,37 @@ pub struct ToolResult {
     /// Whether the result is preliminary (replaces prior, e.g. image previews).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preliminary: Option<bool>,
+    /// Whether the tool is dynamic (defined at runtime, e.g. MCP tools).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+    /// Additional provider-specific metadata for the tool result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<ProviderMetadata>,
 }
 
-/// How the model should choose tools.
+/// A JSON value other than `null` (`NonNullable<JSONValue>`).
+fn non_null_json<'de, D>(deserializer: D) -> Result<Value, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match Value::deserialize(deserializer)? {
+        Value::Null => Err(serde::de::Error::custom(
+            "a tool result's `result` must not be null",
+        )),
+        value => Ok(value),
+    }
+}
+
+/// How the model should choose tools, as the caller gives it
+/// (`GenerateTextOptions.tool_choice`).
 ///
-/// Wire format aligns with Vercel AI SDK `toolChoice`:
+/// The AI SDK's user-level `ToolChoice`
+/// (`ai@7.0.127 src/types/language-model.ts:102-106`):
 /// `"auto" | "none" | "required" | { "type": "tool", "toolName": "..." }`.
 /// This is a mixed tagged/untagged shape (unit variants as bare strings,
 /// `Tool` variant as a tagged object), so serde is implemented by hand.
+/// [`prepare_tool_choice`] turns it into the [`LanguageModelV4ToolChoice`]
+/// a model call carries.
 #[derive(Debug, Clone, Default, PartialEq, TS)]
 #[ts(type = "\"auto\" | \"none\" | \"required\" | { type: \"tool\"; toolName: string }")]
 #[cfg_attr(feature = "ts-export", ts(export))]
@@ -234,5 +284,42 @@ impl<'de> Deserialize<'de> for ToolChoice {
                 Ok(ToolChoice::Tool { tool_name })
             }
         }
+    }
+}
+
+/// How a model call should choose tools: the V4 `LanguageModelV4ToolChoice`
+/// (`@ai-sdk/provider@4.0.21
+/// src/language-model/v4/language-model-v4-tool-choice.ts:1-5`), carried by
+/// [`CallOptions::tool_choice`](crate::options::CallOptions::tool_choice).
+///
+/// Always an object tagged by `type`, unlike the user-level [`ToolChoice`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+#[cfg_attr(feature = "ts-export", ts(export))]
+pub enum LanguageModelV4ToolChoice {
+    /// The model decides whether to call a tool.
+    Auto,
+    /// The model must not call a tool.
+    None,
+    /// The model must call one of the available tools.
+    Required,
+    /// The model must call the named tool.
+    Tool {
+        #[serde(rename = "toolName")]
+        tool_name: String,
+    },
+}
+
+/// The AI SDK's `prepareToolChoice`
+/// (`ai@7.0.127 src/prompt/prepare-tool-choice.ts:4-15`): no choice is
+/// `{type:"auto"}`, a string becomes `{type:<string>}`, and a tool choice
+/// keeps its `toolName`.
+#[must_use]
+pub fn prepare_tool_choice(tool_choice: Option<ToolChoice>) -> LanguageModelV4ToolChoice {
+    match tool_choice {
+        None | Some(ToolChoice::Auto) => LanguageModelV4ToolChoice::Auto,
+        Some(ToolChoice::None) => LanguageModelV4ToolChoice::None,
+        Some(ToolChoice::Required) => LanguageModelV4ToolChoice::Required,
+        Some(ToolChoice::Tool { tool_name }) => LanguageModelV4ToolChoice::Tool { tool_name },
     }
 }

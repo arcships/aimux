@@ -1,0 +1,19 @@
+{
+  "source": "tool-argument vectors from RFC-0042 §3.2 (fork PR #14), keeping only the rows whose result equals ai@7.0.127 src/generate-text/parse-tool-call.ts: a provider-executed dynamic call without a tool set is parsed by parseProviderExecutedDynamicToolCall (:199-224) with safeParseJSON (@ai-sdk/provider-utils@5.0.55 src/parse-json.ts:89, secure-json-parse.ts; unchanged since 5.0.53); a failure becomes an invalid call whose input is the verbatim text (:112-133)",
+  "notes": {
+    "providerInput": "the provider's argument text, verbatim; must survive RawToolCall Rust->JSON->Rust byte for byte",
+    "expect.input": "the parsed value as JSON.parse gives it, compared with JSON semantics (numbers by value) after ToolCall Rust->JSON->Rust",
+    "duplicateKeys": "JSON.parse keeps the last value of a repeated key: {\"a\":2}",
+    "dropped": "the RFC-0042 row expecting empty text to be invalid is not here: upstream parses blank text as {} (parse-tool-call.ts:202-205)"
+  },
+  "vectors": [
+    {"row": 1, "providerInput": "\"Tokyo\"", "expect": {"valid": true, "input": "Tokyo"}},
+    {"row": 2, "providerInput": "\"{\\\"x\\\":1}\"", "expect": {"valid": true, "input": "{\"x\":1}"}},
+    {"row": 3, "providerInput": "123", "expect": {"valid": true, "input": 123}},
+    {"row": 3, "providerInput": "true", "expect": {"valid": true, "input": true}},
+    {"row": 3, "providerInput": "null", "expect": {"valid": true, "input": null}},
+    {"row": 4, "providerInput": "{\"a\":1,\"a\":2}", "expect": {"valid": true, "input": {"a": 2}}},
+    {"row": 5, "providerInput": " 1e2 ", "expect": {"valid": true, "input": 100}},
+    {"row": 6, "providerInput": "{\"a\":", "expect": {"valid": false}}
+  ]
+}

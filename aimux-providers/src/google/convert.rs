@@ -21,7 +21,7 @@
 use aimux_core::content::ContentPart;
 use aimux_core::language_model_message::LanguageModelPrompt;
 use aimux_core::message::Role;
-use aimux_core::options::{CallOptions, ResponseFormat, ToolChoice};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::result::GenerateContent;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
@@ -100,9 +100,8 @@ fn read_provider_options(
 ///   as a string (JSON-stringified for non-string outputs, matching the TS
 ///   `output.type === 'json'` path).
 ///
-/// Thought signatures: `ContentPart::ToolCall.thought_signature` is echoed
-/// back as a `thoughtSignature` sibling of the `functionCall` part (required
-/// by Gemini thinking models on follow-up turns).
+/// Thought signatures from per-part provider options are echoed as a
+/// `thoughtSignature` sibling of the `functionCall` part.
 #[must_use]
 pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt {
     convert_to_google_messages_for_namespace(prompt, ProviderMetadataNamespace::Google)
@@ -261,7 +260,6 @@ fn convert_assistant_parts(
                 tool_call_id,
                 tool_name,
                 input,
-                thought_signature,
                 provider_options,
                 ..
             } => {
@@ -272,11 +270,9 @@ fn convert_assistant_parts(
                 let server_tool_type = google_options
                     .and_then(|options| options.get("serverToolType"))
                     .and_then(|value| value.as_str());
-                let signature = thought_signature.as_deref().or_else(|| {
-                    google_options
-                        .and_then(|options| options.get("thoughtSignature"))
-                        .and_then(|value| value.as_str())
-                });
+                let signature = google_options
+                    .and_then(|options| options.get("thoughtSignature"))
+                    .and_then(|value| value.as_str());
 
                 let mut part_value = if let (Some(server_id), Some(server_type)) =
                     (server_tool_call_id, server_tool_type)
@@ -421,7 +417,10 @@ pub struct PreparedTools {
 /// tools (`google_search`, `code_execution`, …) are out of scope for the Rust
 /// port — only `FunctionTool`s are supported.
 #[must_use]
-pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice) -> PreparedTools {
+pub fn prepare_tools(
+    tools: &Option<Vec<FunctionTool>>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
+) -> PreparedTools {
     // Coerce empty arrays to None (matches TS `tools?.length ? tools : undefined`).
     let non_empty = tools.as_ref().filter(|&t| !t.is_empty());
 
@@ -454,22 +453,25 @@ pub fn prepare_tools(tools: &Option<Vec<FunctionTool>>, tool_choice: &ToolChoice
     ]);
 
     let tool_config = match tool_choice {
-        ToolChoice::Auto => {
+        None => has_strict.then(|| json!({ "functionCallingConfig": { "mode": "VALIDATED" } })),
+        Some(LanguageModelV4ToolChoice::Auto) => {
             if has_strict {
                 Some(json!({ "functionCallingConfig": { "mode": "VALIDATED" } }))
             } else {
                 Some(json!({ "functionCallingConfig": { "mode": "AUTO" } }))
             }
         }
-        ToolChoice::None => Some(json!({ "functionCallingConfig": { "mode": "NONE" } })),
-        ToolChoice::Required => {
+        Some(LanguageModelV4ToolChoice::None) => {
+            Some(json!({ "functionCallingConfig": { "mode": "NONE" } }))
+        }
+        Some(LanguageModelV4ToolChoice::Required) => {
             if has_strict {
                 Some(json!({ "functionCallingConfig": { "mode": "VALIDATED" } }))
             } else {
                 Some(json!({ "functionCallingConfig": { "mode": "ANY" } }))
             }
         }
-        ToolChoice::Tool { tool_name } => {
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
             if has_strict {
                 Some(json!({
                     "functionCallingConfig": {
@@ -612,7 +614,7 @@ pub struct PreparedToolsWithWarnings {
 #[must_use]
 pub fn prepare_all_tools(
     tools: &Option<Vec<Tool>>,
-    tool_choice: &ToolChoice,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
     model_id: &str,
 ) -> PreparedToolsWithWarnings {
     let caps = get_google_model_capabilities(model_id);
@@ -656,23 +658,23 @@ pub fn prepare_all_tools(
 
             let mut combined_config = Map::new();
             let fc = match tool_choice {
-                ToolChoice::None => {
+                Some(LanguageModelV4ToolChoice::None) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("NONE"));
                     m
                 }
-                ToolChoice::Required => {
+                Some(LanguageModelV4ToolChoice::Required) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m
                 }
-                ToolChoice::Tool { tool_name } => {
+                Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("ANY"));
                     m.insert("allowedFunctionNames".to_string(), json!([tool_name]));
                     m
                 }
-                ToolChoice::Auto => {
+                None | Some(LanguageModelV4ToolChoice::Auto) => {
                     let mut m = Map::new();
                     m.insert("mode".to_string(), json!("VALIDATED"));
                     m
@@ -1099,7 +1101,7 @@ fn build_request_body_with_warnings_for_namespace(
         );
     }
 
-    let prepared = prepare_all_tools(&options.tools, &options.tool_choice, model_id);
+    let prepared = prepare_all_tools(&options.tools, options.tool_choice.as_ref(), model_id);
     if let Some(tools) = prepared.tools {
         body.insert("tools".to_string(), Value::Array(tools));
     }
@@ -1322,7 +1324,6 @@ mod tests {
                 tool_name: "runCode".to_string(),
                 input: json!({ "language": "PYTHON", "code": "print(2)" }),
                 provider_executed: Some(true),
-                thought_signature: None,
                 provider_options: Some(code_metadata("googleVertex", call_id)),
             },
             ContentPart::ToolResult {
@@ -1364,7 +1365,6 @@ mod tests {
             tool_name: "weather".to_string(),
             input: json!({}),
             provider_executed: None,
-            thought_signature: None,
             provider_options: Some(json!({
                 "googleVertex": { "thoughtSignature": "google-vertex" },
                 "vertex": { "thoughtSignature": "vertex" },
@@ -1392,7 +1392,6 @@ mod tests {
             tool_name: "weather".to_string(),
             input: json!({}),
             provider_executed: None,
-            thought_signature: None,
             provider_options: Some(json!({
                 "google": { "thoughtSignature": "gateway-signature" },
             })),

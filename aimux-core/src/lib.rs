@@ -94,11 +94,12 @@ pub mod prelude {
         ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
     };
-    pub use crate::options::{CallOptions, ResponseFormat, ToolChoice};
+    pub use crate::options::{
+        CallOptions, LanguageModelV4ToolChoice, ResponseFormat, ToolChoice, prepare_tool_choice,
+    };
     pub use crate::parse_tool_call::{
-        RawToolCall, ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply,
-        apply_tool_call_repair, apply_tool_call_repair_to_result, tool_call_repair_context,
-        tool_call_repair_inputs,
+        ToolCallRepair, ToolCallRepairContext, ToolCallRepairReply, apply_tool_call_repair,
+        apply_tool_call_repair_to_result, tool_call_repair_context, tool_call_repair_inputs,
     };
     pub use crate::provider::Provider;
     pub use crate::reranking_model::{
@@ -120,8 +121,11 @@ pub mod prelude {
         SharedProviderOptions, SharedProviderReference, Size,
     };
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
-    pub use crate::stream_part::StreamPart;
-    pub use crate::tool::{FunctionTool, ProviderTool, Tool, ToolCall, ToolResult};
+    pub use crate::stream_part::{StreamPart, TextStreamPart};
+    pub use crate::tool::{
+        FunctionTool, FunctionToolInputExample, ProviderTool, RawToolCall, Tool, ToolCall,
+        ToolResult,
+    };
     pub use crate::transcription_model::{
         AudioChunk, InputAudioFormat, TranscriptionCallOptions, TranscriptionModel,
         TranscriptionResult, TranscriptionStreamOptions, TranscriptionStreamPart,

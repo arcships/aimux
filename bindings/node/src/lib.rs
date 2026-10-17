@@ -20,7 +20,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::error::{
-    AimuxResult, BindingError, AiMuxBindingError, MResult, StreamItem, parse_wire_json,
+    AiMuxBindingError, AimuxResult, BindingError, MResult, StreamItem, parse_wire_json,
     serialize_result,
 };
 use aimux_core::AiMuxError;
@@ -327,8 +327,9 @@ impl Model {
                 // move into the spawned task.
                 let abort_signal = bridge.map(|b| b.core_signal());
 
-                let (tx, rx) =
-                    tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxBindingError>>(64);
+                let (tx, rx) = tokio::sync::mpsc::channel::<
+                    std::result::Result<String, AiMuxBindingError>,
+                >(64);
 
                 // Spawn the stream-driving task immediately on napi's tokio runtime.
                 napi::tokio::spawn(async move {
@@ -379,7 +380,9 @@ impl Model {
                                         // frame; deliver it as a StreamPart::Error data item
                                         // and keep pumping.
                                         match serde_json::to_string(
-                                            &aimux_core::stream_part::StreamPart::Error { error: e },
+                                            &aimux_core::stream_part::TextStreamPart::Error {
+                                                error: e,
+                                            },
                                         ) {
                                             Ok(json) => {
                                                 if tx.send(Ok(json)).await.is_err() {
@@ -471,8 +474,9 @@ impl Model {
                 let model = self.inner.clone();
                 let abort_signal = bridge.map(|b| b.core_signal());
 
-                let (tx, rx) =
-                    tokio::sync::mpsc::channel::<std::result::Result<String, AiMuxBindingError>>(64);
+                let (tx, rx) = tokio::sync::mpsc::channel::<
+                    std::result::Result<String, AiMuxBindingError>,
+                >(64);
 
                 napi::tokio::spawn(async move {
                     let prompt = match parse_prompt(&prompt) {
@@ -565,6 +569,8 @@ impl Model {
     }
 }
 
+type StreamReceiver = tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>;
+
 /// AsyncGenerator that yields StreamPart JSON strings.
 ///
 /// The stream is started eagerly in `stream_text()` — a tokio task drives
@@ -572,11 +578,7 @@ impl Model {
 /// receives from the channel.
 #[napi(async_iterator)]
 pub struct StreamTextGenerator {
-    rx: std::sync::Arc<
-        tokio::sync::Mutex<
-            Option<tokio::sync::mpsc::Receiver<std::result::Result<String, AiMuxBindingError>>>,
-        >,
-    >,
+    rx: std::sync::Arc<tokio::sync::Mutex<Option<StreamReceiver>>>,
 }
 
 #[napi]
@@ -945,19 +947,19 @@ struct RouterFfiConfig {
 /// or no store is registered.
 #[napi]
 pub fn session_calls(session_id: String) -> AimuxResult<String> {
-    AimuxResult((|| -> crate::error::MResult<String> {
+    AimuxResult({
         let calls = aimux_core::session::session_calls(&session_id);
         serialize_result(&calls)
-    })())
+    })
 }
 
 /// Query: all known sessions (RFC-0024), as a JSON-serialized `SessionView[]`.
 #[napi]
 pub fn list_sessions() -> AimuxResult<String> {
-    AimuxResult((|| -> crate::error::MResult<String> {
+    AimuxResult({
         let views = aimux_core::session::list_sessions();
         serialize_result(&views)
-    })())
+    })
 }
 
 /// Create an OpenAI model instance.
@@ -1377,10 +1379,10 @@ pub async fn azure(
                 }
                 None => {}
             }
-            if let Some(version) = api_version {
-                if !version.is_empty() {
-                    cfg = cfg.with_api_version(version);
-                }
+            if let Some(version) = api_version
+                && !version.is_empty()
+            {
+                cfg = cfg.with_api_version(version);
             }
             if !resource_name.is_empty() {
                 cfg = cfg.with_resource_name(resource_name);

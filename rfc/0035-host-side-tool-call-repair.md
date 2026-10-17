@@ -68,6 +68,8 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 
 `error` 直接取自调用自身的 `error` 字段,不重新推导。**这是宿主必须持有非法 `ToolCall` 原件的原因**,也是唯一的信息损失点:非法调用的 `dynamic` 一律被置为 `Some(true)`,原值不可恢复。对本流程无影响(原始 error 是读出来的,不是重算的)。
 
+`input_schema` 是预先求值的值。上游 `inputSchema` 是按 toolName 求值的函数(ai 7.0.127 `generate-text/tool-call-repair-function.ts:31`),aimux 只传当前调用那个工具的 schema,属有意差异。
+
 ### 3.2 宿主答复(`ToolCallRepairReply`)
 
 内部 tag、snake_case、`deny_unknown_fields`:
@@ -82,11 +84,11 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 
 | reply | 闭包等价物 | 结果 |
 |---|---|---|
-| `repaired` | `Ok(Some(call))` | 重新解析+校验;通过则有效调用,不通过则 `ToolCallRepair { original_error, cause }` |
+| `repaired` | `Ok(Some(call))` | 重新解析+校验;通过则有效调用,不通过则为非法调用:error 是这次解析的 `InvalidToolInput` / `NoSuchTool`(不包装),id、name、input 取原始调用 |
 | `unchanged` | `Ok(None)` | 保留原始 error 的非法调用 |
 | `failed` | `Err(e)` | `ToolCallRepair { original_error, cause: Other(message) }` |
 
-`failed` 的 `cause` 只能是 `Other`:宿主语言的异常在这一侧没有类型对应物。 `message` 是宿主语言对该异常的常规文本表示:Node 复刻 AI SDK 的 `getErrorMessage`(字符串原样,`Error` 取 `toString()`,其余 JSON 序列化),其他语言用各自惯用的 message 访问器,Dart 没有通用访问器则用 `toString()`。控制流与 AI SDK `parseToolCall` 逐条一致:无工具集不进修复;抛错包成 `ToolCallRepair`;返回空保留原错误;修复结果重新校验,再失败也包成 `ToolCallRepair`。
+`failed` 的 `cause` 只能是 `Other`:宿主语言的异常在这一侧没有类型对应物。 `message` 是宿主语言对该异常的常规文本表示:Node 复刻 AI SDK 的 `getErrorMessage`(字符串原样,`Error` 取 `toString()`,其余 JSON 序列化),其他语言用各自惯用的 message 访问器,Dart 没有通用访问器则用 `toString()`。控制流与 AI SDK `parseToolCall` 逐条一致:无工具集不进修复;抛错包成 `ToolCallRepair`;返回空保留原错误;修复结果重新校验,再失败时不包装,按上面 `repaired` 一行返回非法调用(ai 7.0.127 `generate-text/parse-tool-call.ts:90-96` 只包装修复函数抛出的错,`:103-110` 的再解析失败由 `:112-133` 按原始调用返回)。
 
 ### 3.3 结果补丁(`apply_tool_call_repair_to_result`)
 
@@ -124,6 +126,6 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 
 - **钩子抛错不是流错误**:它是 `failed` 答复,core 把调用标成 `ToolCallRepair` 错误,照常作为数据投递。
 - **边界失败**(解不开 context、FFI 拒绝答复这类绑定或 core 自身的 bug)在流中各绑定行为不同,均为既定行为:Java / Kotlin 先调 `onError` 再投递未修复的原 part;Swift 调 `onError` 后流继续,但不投递这个 part;Python / Go / Node / Dart 终止流。没有任何绑定会静默丢弃这个调用。
-- **流等待钩子,不设超时**(与 AI SDK 一致):钩子挂起,流就挂起。Swift 在钩子运行期间 abort 不生效,钩子返回后才生效。
+- **流等待钩子,不设超时**(与 AI SDK 一致):钩子挂起,流就挂起。Swift 在钩子运行期间 abort 不生效,钩子返回后才生效。这是与上游的差异:上游让修复函数与 abortSignal 竞争,abort 立即生效(ai 7.0.127 `generate-text/parse-tool-call.ts:73-89`、`:137-173`)。
 - **JVM**:钩子运行在借用了流读锁的工作线程上(daemon),可以回调同一个 Model;但在钩子里对正在流式输出的同一个 Model 调 `close()` 会死锁,与在流回调里调 `close()` 相同。
 - **Swift / JVM 的线程跳转**必须是真正的新线程:GCD 的 `sync` 在可能时就地执行 block,会把钩子留在受重入保护的回调线程上(`AIMUX_E_FFI_REENTRANT_CALL`)。

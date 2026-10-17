@@ -16,7 +16,7 @@ use serde::Deserialize;
 use crate::composite::{ChildModel, add_usage, build_aggregator_prompt, extract_text};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
-use crate::options::{CallOptions, ToolChoice};
+use crate::options::CallOptions;
 use crate::result::{GenerateResult, StreamResult};
 use crate::retry;
 use crate::stream_part::StreamPart;
@@ -98,12 +98,12 @@ impl MoaModel {
 
     /// Build reference call options from the user's options. When
     /// `strip_reference_tools` is set, `tools` is cleared and `tool_choice` is
-    /// reset to `Auto` so references don't carry tool schemas.
+    /// cleared so references don't carry tool schemas.
     fn reference_options(&self, options: &CallOptions) -> CallOptions {
         let mut o = options.clone();
         if self.config.strip_reference_tools {
             o.tools = None;
-            o.tool_choice = ToolChoice::Auto;
+            o.tool_choice = None;
         }
         o
     }
@@ -313,8 +313,10 @@ mod tests {
     use crate::content::ContentPart;
     use crate::language_model_message::LanguageModelPromptMessage;
     use crate::message::Role;
+    use crate::options::LanguageModelV4ToolChoice;
     use crate::result::GenerateContent;
     use crate::stream_part::StreamPart;
+    use crate::tool::RawToolCall;
     use crate::types::{FinishReason, FinishReasonUnified, TokenUsage};
     use async_trait::async_trait;
     use futures::stream;
@@ -633,14 +635,14 @@ mod tests {
         let opts = CallOptions {
             prompt: vec![],
             tools: Some(vec![]),
-            tool_choice: ToolChoice::Required,
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..Default::default()
         };
         let ref_opts = moa.reference_options(&opts);
         assert!(ref_opts.tools.is_none());
-        assert_eq!(ref_opts.tool_choice, ToolChoice::Auto);
+        assert_eq!(ref_opts.tool_choice, None);
         // The original options are untouched (clone, not mutate).
-        assert_eq!(opts.tool_choice, ToolChoice::Required);
+        assert_eq!(opts.tool_choice, Some(LanguageModelV4ToolChoice::Required));
     }
 
     #[tokio::test]
@@ -870,12 +872,15 @@ mod tests {
         let opts = CallOptions {
             prompt: vec![],
             tools: Some(vec![]),
-            tool_choice: ToolChoice::Required,
+            tool_choice: Some(LanguageModelV4ToolChoice::Required),
             ..Default::default()
         };
         let ref_opts = moa.reference_options(&opts);
         assert_eq!(ref_opts.tools.as_ref().map(std::vec::Vec::len), Some(0));
-        assert_eq!(ref_opts.tool_choice, ToolChoice::Required);
+        assert_eq!(
+            ref_opts.tool_choice,
+            Some(LanguageModelV4ToolChoice::Required)
+        );
     }
 
     #[tokio::test]
@@ -912,17 +917,14 @@ mod tests {
                     delta: "answer".into(),
                     provider_metadata: None,
                 }),
-                Ok(StreamPart::ToolCall {
+                Ok(StreamPart::ToolCall(RawToolCall {
                     tool_call_id: "tc1".into(),
                     tool_name: "search".into(),
-                    input: serde_json::json!({"q": "rust"}),
+                    input: r#"{"q":"rust"}"#.into(),
                     provider_executed: None,
                     dynamic: None,
-                    thought_signature: None,
-                    invalid: None,
-                    error: None,
                     provider_metadata: None,
-                }),
+                })),
                 Ok(StreamPart::Source {
                     id: "s1".into(),
                     source_type: "url".into(),
@@ -960,9 +962,10 @@ mod tests {
         let mut saw_source = false;
         for part in parts {
             match part.unwrap() {
-                StreamPart::ToolCall { tool_name, .. } => {
+                StreamPart::ToolCall(call) => {
                     saw_tool_call = true;
-                    assert_eq!(tool_name, "search");
+                    assert_eq!(call.tool_name, "search");
+                    assert_eq!(call.input, r#"{"q":"rust"}"#);
                 }
                 StreamPart::Source { id, .. } => {
                     saw_source = true;

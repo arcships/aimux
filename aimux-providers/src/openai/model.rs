@@ -7,6 +7,7 @@
 //! speak the OpenAI chat-completions wire format (notably Azure OpenAI) reuse
 //! the conversion + streaming logic while supplying their own URL and auth.
 
+use aimux_core::tool::RawToolCall;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -20,7 +21,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
-use aimux_provider_utils::HttpRequest;
+use aimux_provider_utils::{HttpRequest, StreamingToolCallDelta, StreamingToolCallTracker};
 
 use super::OpenAIConfig;
 use super::convert::{RequestBodyResult, build_request_body_with_warnings, parse_finish_reason};
@@ -176,15 +177,6 @@ fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     }
 }
 
-// ── Tool-call accumulator (streaming) ────────────────────────────────────────
-
-/// Accumulates a streamed tool call's id, name, and argument fragments.
-struct ToolCallAccumulator {
-    id: String,
-    name: String,
-    arguments: String,
-}
-
 #[async_trait]
 impl LanguageModel for OpenAIModel {
     /// Provider identity for recording/routing. Uses `config.provider` (the
@@ -326,15 +318,14 @@ pub async fn execute_generate(
     if let Some(tool_calls) = choice.message.tool_calls {
         for tc in tool_calls {
             let input = tc.function.arguments;
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id: tc.id,
                 tool_name: tc.function.name,
                 input,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
-            });
+            }));
         }
     }
     // Parse annotations (URL citations) → Source content items.
@@ -491,9 +482,10 @@ pub async fn execute_stream(
         let mut response_metadata_emitted = false;
         let mut final_logprobs: Option<Value> = None;
 
-        // Tool-call accumulators keyed by OpenAI's `index` field.
-        let mut tool_calls: HashMap<usize, ToolCallAccumulator> = HashMap::new();
-        let mut tool_call_order: Vec<usize> = Vec::new();
+        // Streamed tool calls, correlated by wire id, index and function name
+        // (the AI SDK's StreamingToolCallTracker) and finalized on flush.
+        let mut tool_calls = StreamingToolCallTracker::new();
+        let mut tool_parts = Vec::new();
 
         // Process the first event (already peeked) then the rest.
         let mut event_iter =
@@ -642,50 +634,25 @@ pub async fn execute_stream(
             });
                                 reasoning_started = false;
                             }
-                            for dtc in tool_call_deltas {
-                                let idx = dtc.index;
-                                let func = dtc.function.unwrap_or_default();
-
-                                // New tool call: has id and/or name.
-                                let is_new = !tool_calls.contains_key(&idx);
-                                if is_new {
-                                    let id = dtc.id.unwrap_or_default();
-                                    let name = func.name.unwrap_or_default();
-                                    tool_calls.insert(
-                                        idx,
-                                        ToolCallAccumulator {
-                                            id: id.clone(),
-                                            name: name.clone(),
-                                            arguments: String::new(),
-                                        },
-                                    );
-                                    tool_call_order.push(idx);
-                                    yield Ok(StreamPart::ToolInputStart {
-                                        id,
-                                        tool_name: name,
-                                        provider_executed: None,
-                                        dynamic: None,
-                                        title: None,
-                                        provider_metadata: None,
-                                    });
+                            for dtc in &tool_call_deltas {
+                                let function = dtc.function.as_ref();
+                                let delta = StreamingToolCallDelta {
+                                    index: dtc.index,
+                                    id: dtc.id.as_deref(),
+                                    name: function.and_then(|f| f.name.as_deref()),
+                                    arguments: function.and_then(|f| f.arguments.as_deref()),
+                                    ..Default::default()
+                                };
+                                // A malformed delta (new call without a
+                                // function name) is invalid response data,
+                                // as in the AI SDK; the stream ends.
+                                if let Err(error) = tool_calls.process(delta, &mut tool_parts) {
+                                    yield Err(error.into());
+                                    return;
                                 }
-
-                                // Argument delta.
-                                // For new tool calls, skip the delta when
-                                // arguments are empty (matches TS — the
-                                // initial `""` is not emitted). For
-                                // continuation chunks, always emit (even
-                                // empty, matching TS).
-                                if let Some(args) = func.arguments
-                                    && (!is_new || !args.is_empty())
-                                        && let Some(acc) = tool_calls.get_mut(&idx) {
-                                            acc.arguments.push_str(&args);
-                                            yield Ok(StreamPart::ToolInputDelta {
-                                                id: acc.id.clone(),
-                                                delta: args,
-                                                provider_metadata: None,
-                                            });
-                                        }
+                                for part in tool_parts.drain(..) {
+                                    yield Ok(part);
+                                }
                             }
                         }
 
@@ -763,27 +730,11 @@ pub async fn execute_stream(
             });
         }
 
-        // A parsable argument buffer can still be a prefix of a longer input.
-        // Match AI SDK's tracker by finalizing only when the stream flushes.
-        for &idx in &tool_call_order {
-            if let Some(acc) = tool_calls.get(&idx) {
-                yield Ok(StreamPart::ToolInputEnd {
-                    id: acc.id.clone(),
-                    provider_metadata: None,
-                });
-                let input = Value::String(acc.arguments.clone());
-                yield Ok(StreamPart::ToolCall {
-                    tool_call_id: acc.id.clone(),
-                    tool_name: acc.name.clone(),
-                    input,
-                    provider_executed: None,
-                    dynamic: None,
-                    thought_signature: None,
-                    invalid: None,
-                    error: None,
-                    provider_metadata: None,
-                });
-            }
+        // A parsable argument buffer can still be a prefix of a longer input:
+        // like the AI SDK's tracker, finalize only when the stream flushes.
+        tool_calls.finish(&mut tool_parts);
+        for part in tool_parts.drain(..) {
+            yield Ok(part);
         }
 
         // Build provider metadata for the Finish part.

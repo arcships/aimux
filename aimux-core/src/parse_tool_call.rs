@@ -14,28 +14,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
-use crate::tool::{Tool, ToolCall};
-use crate::types::ProviderMetadata;
-
-/// Provider-facing tool call before Core parses and validates its input.
-///
-/// The wire shape matches [`ToolCall`] field for field, except that `input`
-/// is the provider's raw argument *text* rather than a parsed value.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
-pub struct RawToolCall {
-    pub tool_call_id: String,
-    pub tool_name: String,
-    pub input: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_executed: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dynamic: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thought_signature: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_metadata: Option<ProviderMetadata>,
-}
+use crate::tool::{RawToolCall, Tool, ToolCall};
 
 /// Context supplied to a one-shot tool-call repair callback.
 #[derive(Debug, Clone)]
@@ -134,13 +113,13 @@ pub async fn parse_tool_call(
             })
         };
         return match parsed {
-            Ok(input) => valid_tool_call(tool_call, input, Some(true)),
+            Ok(input) => parsed_tool_call(tool_call, input, Some(true)),
             Err(error) => invalid_tool_call(tool_call, error),
         };
     };
 
     match parse_and_validate_tool_call(&tool_call, tools) {
-        Ok((input, dynamic)) => valid_tool_call(tool_call, input, dynamic),
+        Ok((input, dynamic)) => parsed_tool_call(tool_call, input, dynamic),
         Err(original_error) => {
             let Some(repair_tool_call) = repair_tool_call else {
                 return invalid_tool_call(tool_call, original_error);
@@ -173,6 +152,11 @@ enum RepairOutcome {
 }
 
 /// The AI SDK `parseToolCall` post-repair contract, shared by both paths.
+///
+/// Only a failing repair is wrapped in [`AiMuxError::ToolCallRepair`]
+/// (`ai@7.0.127 parse-tool-call.ts:90-96`). A repaired call that fails to
+/// parse or validate yields an invalid call built from the original call,
+/// carrying the repaired call's own error unwrapped (`:103-110`, `:112-133`).
 fn apply_repair_outcome(
     tool_call: RawToolCall,
     original_error: AiMuxError,
@@ -181,8 +165,8 @@ fn apply_repair_outcome(
 ) -> ToolCall {
     let cause = match outcome {
         RepairOutcome::Repaired(repaired) => match parse_and_validate_tool_call(&repaired, tools) {
-            Ok((input, dynamic)) => return valid_tool_call(repaired, input, dynamic),
-            Err(repaired_error) => repaired_error,
+            Ok((input, dynamic)) => return parsed_tool_call(repaired, input, dynamic),
+            Err(repaired_error) => return invalid_tool_call(tool_call, repaired_error),
         },
         RepairOutcome::Unchanged => return invalid_tool_call(tool_call, original_error),
         RepairOutcome::Failed(repair_error) => repair_error,
@@ -298,24 +282,13 @@ fn contains_forbidden_prototype(value: &Value) -> bool {
     }
 }
 
-/// Recover the provider's raw argument text: string inputs pass through
-/// verbatim (possibly malformed JSON awaiting parse/repair); anything already
-/// structured re-serializes.
-pub(crate) fn raw_tool_input(input: &Value) -> String {
-    match input {
-        Value::String(input) => input.clone(),
-        input => serde_json::to_string(input).expect("serializing serde_json::Value cannot fail"),
-    }
-}
-
-fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
+fn parsed_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) -> ToolCall {
     ToolCall {
         tool_call_id: tool_call.tool_call_id,
         tool_name: tool_call.tool_name,
         input,
         provider_executed: tool_call.provider_executed,
         dynamic,
-        thought_signature: tool_call.thought_signature,
         provider_metadata: tool_call.provider_metadata,
         invalid: None,
         error: None,
@@ -324,24 +297,27 @@ fn valid_tool_call(tool_call: RawToolCall, input: Value, dynamic: Option<bool>) 
 
 fn invalid_tool_call(tool_call: RawToolCall, error: AiMuxError) -> ToolCall {
     // Best effort, for every failure including `NoSuchTool`, exactly as the
-    // AI SDK's `parseToolCall` catch-all does: the parsed value when the text
-    // is valid JSON, the verbatim text otherwise. Callers replaying an
-    // invalid call rely on this — `response_messages` only carries a
-    // structured input into the next turn's transcript, so an unknown tool
-    // called with perfectly good arguments must still parse here.
-    let input = serde_json::from_str(&tool_call.input)
-        .unwrap_or_else(|_| Value::String(tool_call.input.clone()));
+    // AI SDK's `parseToolCall` catch-all does (`parse-tool-call.ts:115-117`,
+    // `safeParseJSON`): the parsed value when the text is valid JSON without
+    // forbidden prototype keys, the verbatim text otherwise. Callers
+    // replaying an invalid call rely on this — `response_messages` only
+    // carries a structured input into the next turn's transcript, so an
+    // unknown tool called with perfectly good arguments must still parse
+    // here.
+    let input = back_filled_input(&tool_call.input);
     ToolCall {
-        tool_call_id: tool_call.tool_call_id,
-        tool_name: tool_call.tool_name,
-        input,
-        provider_executed: tool_call.provider_executed,
-        dynamic: Some(true),
-        thought_signature: tool_call.thought_signature,
-        provider_metadata: tool_call.provider_metadata,
         invalid: Some(true),
         error: Some(error),
+        ..parsed_tool_call(tool_call, input, Some(true))
     }
+}
+
+/// The `input` an invalid call carries for its argument text.
+fn back_filled_input(text: &str) -> Value {
+    serde_json::from_str(text)
+        .ok()
+        .filter(|value| !contains_forbidden_prototype(value))
+        .unwrap_or_else(|| Value::String(text.to_owned()))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -382,14 +358,25 @@ impl From<ToolCallRepairReply> for RepairOutcome {
     }
 }
 
-/// The provider's verbatim argument text, when the error kept it.
-pub(crate) fn raw_tool_call_text(error: &AiMuxError) -> Option<String> {
-    match error {
-        AiMuxError::InvalidToolInput { tool_input, .. } => Some(tool_input.clone()),
-        AiMuxError::NoSuchTool { tool_input, .. } => tool_input.clone(),
-        AiMuxError::ToolCallRepair { original_error, .. } => raw_tool_call_text(original_error),
-        _ => None,
+/// The provider's verbatim argument text of an invalid call, when its error
+/// kept it.
+///
+/// The error of a call whose repair was rejected by validation holds the
+/// replacement's text, not the original's (it is reported unwrapped, as
+/// upstream), so the error's text counts only when it back-fills to the
+/// call's own `input`.
+pub(crate) fn original_tool_call_text(input: &Value, error: &AiMuxError) -> Option<String> {
+    fn error_text(error: &AiMuxError) -> Option<&str> {
+        match error {
+            AiMuxError::InvalidToolInput { tool_input, .. } => Some(tool_input),
+            AiMuxError::NoSuchTool { tool_input, .. } => tool_input.as_deref(),
+            AiMuxError::ToolCallRepair { original_error, .. } => error_text(original_error),
+            _ => None,
+        }
     }
+    error_text(error)
+        .filter(|text| back_filled_input(text) == *input)
+        .map(str::to_owned)
 }
 
 /// Reconstruct the provider-facing call an invalid [`ToolCall`] was built
@@ -400,8 +387,8 @@ pub(crate) fn raw_tool_call_text(error: &AiMuxError) -> Option<String> {
 /// and that loses the JSON string quoting of a bare literal (`"Tokyo"` would
 /// come back as `Tokyo`), duplicate keys, number spelling and whitespace, all
 /// of which matter when a host re-submits the text unchanged under a new tool
-/// name. Only errors from before the text was recorded fall back to
-/// [`raw_tool_input`].
+/// name. Errors without the original text (from before the text was
+/// recorded, or the error of a rejected repair) fall back to `input`.
 ///
 /// `dynamic` is not recovered: an invalid call always reports `Some(true)`.
 /// That only matters for re-deriving the original error, which is read off the
@@ -423,10 +410,16 @@ fn raw_from_invalid(tool_call: &ToolCall) -> Result<(RawToolCall, AiMuxError), A
         RawToolCall {
             tool_call_id: tool_call.tool_call_id.clone(),
             tool_name: tool_call.tool_name.clone(),
-            input: raw_tool_call_text(&error).unwrap_or_else(|| raw_tool_input(&tool_call.input)),
+            // An invalid call keeps unparsable argument text as a JSON string
+            // (see `invalid_tool_call`); that text is the raw input.
+            input: original_tool_call_text(&tool_call.input, &error).unwrap_or_else(|| {
+                match &tool_call.input {
+                    Value::String(text) => text.clone(),
+                    input => input.to_string(),
+                }
+            }),
             provider_executed: tool_call.provider_executed,
             dynamic: tool_call.dynamic,
-            thought_signature: tool_call.thought_signature.clone(),
             provider_metadata: tool_call.provider_metadata.clone(),
         },
         error,

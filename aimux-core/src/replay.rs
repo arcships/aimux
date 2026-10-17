@@ -20,10 +20,11 @@ use crate::generate::{GenerateTextOptions, GenerateTextResult, generate_text};
 use crate::language_model::LanguageModel;
 use crate::language_model_message::LanguageModelPrompt;
 use crate::message::{MessageContent, ModelMessage, ModelPrompt};
-use crate::options::{CallOptions, ToolChoice};
+use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
+use crate::tool::{LanguageModelV4ToolChoice, RawToolCall, ToolChoice};
 use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 pub use crate::decision_replay::{MockDecisionReplayModel, replay_decision_with_model};
@@ -111,8 +112,7 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     })
 }
 
-/// 从录制侧提取同样的规范键(向后兼容:缺失 Option 字段按 null,缺失
-/// `tool_choice` 按 `ToolChoice::default()`=Auto,与 `CallOptions` 缺省一致)。
+/// 从录制侧提取同样的规范键(缺失 Option 字段按 null)。
 fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
     let o = &rec.input.options;
     serde_json::json!({
@@ -122,10 +122,7 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
         "seed": o.get("seed").cloned().unwrap_or_default(),
         "response_format": o.get("response_format").cloned().unwrap_or_default(),
         "tools": o.get("tools").cloned().unwrap_or_default(),
-        "tool_choice": o
-            .get("tool_choice")
-            .cloned()
-            .unwrap_or_else(|| serde_json::to_value(ToolChoice::default()).unwrap_or_default()),
+        "tool_choice": o.get("tool_choice").cloned().unwrap_or_default(),
         "headers": o.get("headers").cloned().unwrap_or_default(),
         "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
         "body_overrides": o.get("body_overrides").cloned().unwrap_or_default(),
@@ -601,15 +598,14 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
             let input = args_str.to_string();
-            content.push(GenerateContent::ToolCall {
+            content.push(GenerateContent::ToolCall(RawToolCall {
                 tool_call_id,
                 tool_name,
                 input,
                 provider_executed: None,
                 dynamic: None,
-                thought_signature: None,
                 provider_metadata: None,
-            });
+            }));
         }
     }
 
@@ -632,13 +628,6 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         request_body: None,
         response_headers: None,
     })
-}
-
-/// 流式 tool_call 累加器(按 OpenAI `index` 稳定累积)。
-struct ToolCallAccumulator {
-    id: String,
-    name: String,
-    arguments: String,
 }
 
 /// 重建流式结果:OpenAI SSE body → `StreamPart`(镜像 openai provider 状态机)。
@@ -671,7 +660,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
     let mut final_usage = Usage::default();
     let mut final_finish: Option<FinishReason> = None;
     // tool_call 按 OpenAI `index` 稳定累积;`tool_order` 保插入顺序(确定性 emit)。
-    let mut tool_calls: std::collections::HashMap<usize, ToolCallAccumulator> =
+    let mut tool_calls: std::collections::HashMap<usize, RawToolCall> =
         std::collections::HashMap::new();
     let mut tool_order: Vec<usize> = Vec::new();
     let mut saw_openai = false;
@@ -791,10 +780,13 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                                 .to_string();
                             tool_calls.insert(
                                 idx,
-                                ToolCallAccumulator {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    arguments: String::new(),
+                                RawToolCall {
+                                    tool_call_id: id.clone(),
+                                    tool_name: name.clone(),
+                                    input: String::new(),
+                                    provider_executed: None,
+                                    dynamic: None,
+                                    provider_metadata: None,
                                 },
                             );
                             tool_order.push(idx);
@@ -813,9 +805,9 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                             && (!is_new || !args.is_empty())
                             && let Some(acc) = tool_calls.get_mut(&idx)
                         {
-                            acc.arguments.push_str(args);
+                            acc.input.push_str(args);
                             parts.push(Ok(StreamPart::ToolInputDelta {
-                                id: acc.id.clone(),
+                                id: acc.tool_call_id.clone(),
                                 delta: args.to_string(),
                                 provider_metadata: None,
                             }));
@@ -861,22 +853,12 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
         }));
     }
     for &i in &tool_order {
-        if let Some(acc) = tool_calls.get(&i) {
+        if let Some(acc) = tool_calls.remove(&i) {
             parts.push(Ok(StreamPart::ToolInputEnd {
-                id: acc.id.clone(),
+                id: acc.tool_call_id.clone(),
                 provider_metadata: None,
             }));
-            parts.push(Ok(StreamPart::ToolCall {
-                tool_call_id: acc.id.clone(),
-                tool_name: acc.name.clone(),
-                input: serde_json::Value::String(acc.arguments.clone()),
-                provider_executed: None,
-                dynamic: None,
-                thought_signature: None,
-                invalid: None,
-                error: None,
-                provider_metadata: None,
-            }));
+            parts.push(Ok(StreamPart::ToolCall(acc)));
         }
     }
 
@@ -987,6 +969,17 @@ fn model_prompt_from_lm(prompt: &LanguageModelPrompt) -> ModelPrompt {
     )
 }
 
+/// The recorded V4 tool choice as the user-level choice that
+/// [`prepare_tool_choice`](crate::tool::prepare_tool_choice) maps back to it.
+fn user_tool_choice(choice: LanguageModelV4ToolChoice) -> ToolChoice {
+    match choice {
+        LanguageModelV4ToolChoice::Auto => ToolChoice::Auto,
+        LanguageModelV4ToolChoice::None => ToolChoice::None,
+        LanguageModelV4ToolChoice::Required => ToolChoice::Required,
+        LanguageModelV4ToolChoice::Tool { tool_name } => ToolChoice::Tool { tool_name },
+    }
+}
+
 /// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。
 ///
 /// `instructions` 已烘焙进 prompt(system 消息),重建时置 None;
@@ -1003,11 +996,7 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         response_format: o.response_format,
         seed: o.seed,
         tools: o.tools,
-        tool_choice: if o.tool_choice == crate::tool::ToolChoice::Auto {
-            None
-        } else {
-            Some(o.tool_choice)
-        },
+        tool_choice: o.tool_choice.map(user_tool_choice),
         headers: o.headers,
         provider_options: o.provider_options,
         reasoning: o.reasoning,
@@ -1078,7 +1067,11 @@ mod tests {
             input: InputRecord {
                 operation: Default::default(),
                 prompt: input_prompt,
-                options: serde_json::json!({ "temperature": 0.7 }),
+                // A recorded call always carries the prepared tool choice.
+                options: serde_json::json!({
+                    "temperature": 0.7,
+                    "tool_choice": { "type": "auto" },
+                }),
             },
             provider: ProviderRecord {
                 provider: "openai".into(),
@@ -1626,18 +1619,18 @@ mod tests {
                 .unwrap()
         });
         assert_eq!(result.content.len(), 1);
-        let Some(GenerateContent::ToolCall {
+        let Some(GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
             tool_name,
             input,
             ..
-        }) = result.content.first()
+        })) = result.content.first()
         else {
             panic!("expected ToolCall, got {:?}", result.content);
         };
         assert_eq!(tool_call_id, "call_abc");
         assert_eq!(tool_name, "get_weather");
-        assert_eq!(input, &serde_json::json!(r#"{"city":"SF"}"#));
+        assert_eq!(input, r#"{"city":"SF"}"#);
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
     }
 
@@ -1671,10 +1664,11 @@ mod tests {
                 .await
                 .unwrap()
         });
-        let Some(GenerateContent::ToolCall { input, .. }) = result.content.first() else {
+        let Some(GenerateContent::ToolCall(RawToolCall { input, .. })) = result.content.first()
+        else {
             panic!("expected ToolCall");
         };
-        assert_eq!(input, &serde_json::json!("not-json{"));
+        assert_eq!(input, "not-json{");
     }
 
     #[test]
@@ -1739,19 +1733,19 @@ mod tests {
         let calls: Vec<_> = parts
             .iter()
             .filter_map(|p| match p {
-                StreamPart::ToolCall {
+                StreamPart::ToolCall(RawToolCall {
                     tool_call_id,
                     tool_name,
                     input,
                     ..
-                } => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+                }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
                 _ => None,
             })
             .collect();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "call_1");
         assert_eq!(calls[0].1, "get_weather");
-        assert_eq!(calls[0].2, serde_json::json!(r#"{"city":"SF"}"#));
+        assert_eq!(calls[0].2, r#"{"city":"SF"}"#);
         // finish_reason tool_calls。
         assert!(parts.iter().any(|p| matches!(
             p,
