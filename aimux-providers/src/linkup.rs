@@ -24,9 +24,9 @@ use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
 use aimux_core::shared::SharedProviderOptions;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 /// Fixed model ID for the Linkup search model.
 /// Failed-response handler of the Linkup endpoint: `message`, and `type`
@@ -140,7 +140,7 @@ pub fn create_linkup(settings: LinkupProviderSettings) -> Result<LinkupProvider,
     Ok(LinkupProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Linkup"),
             Vec::new(),
             settings.headers,
@@ -165,7 +165,7 @@ pub fn linkup() -> &'static LinkupProvider {
 pub struct LinkupProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

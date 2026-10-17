@@ -28,12 +28,10 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, HeadersFn, HttpBody, Resolvable, validate_base_url,
-};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HttpBody, Resolvable, validate_base_url};
 
 use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, TransformRequestBody, credential_headers,
+    AuthScheme, Credential, EndpointConfig, ProviderHeaders, TransformRequestBody,
 };
 
 pub(crate) mod options;
@@ -159,7 +157,7 @@ pub fn create_elevenlabs(
     Ok(ElevenLabsProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "ElevenLabs"),
             AuthScheme::Header("xi-api-key"),
             Vec::new(),
@@ -191,7 +189,7 @@ pub fn elevenlabs() -> &'static ElevenLabsProvider {
 pub struct ElevenLabsProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
     #[cfg(feature = "realtime")]

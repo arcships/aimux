@@ -35,6 +35,7 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::decision_model::DecisionModel;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
@@ -44,12 +45,12 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    DecisionLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+    DecisionLanguageModel, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
-use crate::shared::{AuthScheme, Credential, credential_headers};
+use crate::shared::{AuthScheme, Credential};
 
-use config::{AnthropicModelConfig, AnthropicModelHooks};
+use config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
 
 pub(crate) fn anthropic_failed_response_handler()
 -> aimux_provider_utils::ResponseHandler<AiMuxError> {
@@ -201,13 +202,13 @@ pub fn create_anthropic(
     Ok(AnthropicProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            credential_headers(
-                credential,
-                scheme,
-                vec![("anthropic-version".to_string(), API_VERSION.to_string())],
-                settings.headers,
-            ),
+        headers: ProviderHeaders::new(
+            credential,
+            scheme,
+            vec![("anthropic-version".to_string(), API_VERSION.to_string())],
+            settings.headers,
+        )
+        .with_user_agent(
             crate::shared::aisdk_pins::ANTHROPIC.name,
             crate::shared::aisdk_pins::ANTHROPIC.version,
         ),
@@ -238,7 +239,7 @@ pub struct AnthropicProvider {
     /// The normalized base URL, or the error of an invalid
     /// `ANTHROPIC_BASE_URL`, which every request reports.
     base_url: Result<String, AiMuxError>,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     supported_urls: SupportedUrls,
     generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
@@ -248,11 +249,9 @@ impl AnthropicProvider {
     /// The model configuration reporting `provider` as its identity.
     fn model_config(&self, provider: String) -> AnthropicModelConfig {
         let base_url = self.base_url.clone().unwrap_or_default();
-        let base = base_url.clone();
         AnthropicModelConfig {
             provider,
-            url: Arc::new(move |path| format!("{base}{path}")),
-            headers: self.headers.clone(),
+            headers: self.headers.clone().into(),
             fetch: self.fetch.clone(),
             supported_urls: self.supported_urls.clone(),
             transform_request_body: None,
@@ -261,12 +260,10 @@ impl AnthropicProvider {
             hooks: AnthropicModelHooks::default(),
             // Every request resolves its configuration first; an invalid
             // `ANTHROPIC_BASE_URL` fails it there.
-            resolve: self.base_url.as_ref().err().map(|error| {
-                let error = error.clone();
-                let resolve: config::ResolveFn =
-                    Arc::new(move || Box::pin(std::future::ready(Err(error.clone()))));
-                resolve
-            }),
+            endpoint: match &self.base_url {
+                Ok(_) => AnthropicEndpoint::Fixed,
+                Err(error) => AnthropicEndpoint::Invalid(error.clone()),
+            },
         }
     }
 

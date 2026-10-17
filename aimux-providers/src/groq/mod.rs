@@ -42,9 +42,9 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.groq.com/openai/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "GROQ_API_KEY";
@@ -95,16 +95,16 @@ pub fn create_groq(settings: GroqProviderSettings) -> Result<GroqProvider, AiMux
     Ok(GroqProvider {
         name: DEFAULT_NAME.to_string(),
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            provider_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "Groq",
-                ),
-                Vec::new(),
-                settings.headers,
+        headers: ProviderHeaders::bearer(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "Groq",
             ),
+            Vec::new(),
+            settings.headers,
+        )
+        .with_user_agent(
             crate::shared::aisdk_pins::GROQ.name,
             crate::shared::aisdk_pins::GROQ.version,
         ),
@@ -130,7 +130,7 @@ pub fn groq() -> &'static GroqProvider {
 pub struct GroqProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

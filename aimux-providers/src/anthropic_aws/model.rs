@@ -19,8 +19,7 @@ use async_trait::async_trait;
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
-    HeadersFn, Resolvable, SigV4Fetch, SigV4Signing, combine_headers, load_optional_setting,
-    load_setting,
+    Resolvable, SigV4Fetch, SigV4Signing, combine_headers, load_optional_setting, load_setting,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
@@ -45,7 +44,7 @@ const SESSION_TOKEN_ENV_VAR: &str = "AWS_SESSION_TOKEN";
 
 /// Where the region, the workspace id and the credentials of a request come
 /// from.
-pub(super) struct Auth {
+pub(crate) struct Auth {
     pub(super) region: Option<String>,
     pub(super) workspace_id: Option<String>,
     pub(super) auth: Option<AnthropicAwsAuth>,
@@ -70,7 +69,7 @@ impl Auth {
 
     /// The region of the default base URL: a single DNS label
     /// (anthropic-aws-provider.ts:212-227).
-    pub(super) fn host_region(&self) -> Result<String, AiMuxError> {
+    pub(crate) fn host_region(&self) -> Result<String, AiMuxError> {
         let region = self.region()?;
         if !is_valid_hostname_part(&region) {
             return Err(AiMuxError::InvalidArgument(
@@ -156,25 +155,11 @@ pub(super) fn authenticated(
     auth: std::sync::Arc<Auth>,
     user_headers: Option<HeaderMapOpt>,
     inner: FetchFunction,
-) -> (HeadersFn, FetchFunction) {
-    let header_auth = auth.clone();
-    let headers: HeadersFn = Resolvable::from_async_fn(move || {
-        let auth = header_auth.clone();
-        let user = user_headers.clone().unwrap_or_default();
-        async move {
-            let mut fixed = HeaderMapOpt::new();
-            fixed.insert("anthropic-version".into(), Some(API_VERSION.into()));
-            fixed.insert("anthropic-workspace-id".into(), Some(auth.workspace_id()?));
-            let mut key = HeaderMapOpt::new();
-            match auth.api_key().await? {
-                Some(api_key) => {
-                    key.insert("x-api-key".into(), Some(api_key));
-                }
-                None => auth.preflight()?,
-            }
-            Ok(combine_headers(&[&fixed, &user, &key]))
-        }
-    });
+) -> (AwsHeaders, FetchFunction) {
+    let headers = AwsHeaders {
+        auth: auth.clone(),
+        user: user_headers,
+    };
     let credentials_auth = auth;
     let fetch: FetchFunction = std::sync::Arc::new(AnthropicAwsFetch {
         // aws4fetch, like anthropic-aws-fetch.ts:73-83.
@@ -190,6 +175,34 @@ pub(super) fn authenticated(
         inner,
     });
     (headers, fetch)
+}
+
+/// The provider headers of Claude Platform on AWS, resolved on every
+/// request: `anthropic-version`, the workspace id, the caller's headers and,
+/// on the API-key path, `x-api-key` last, as anthropic-aws-fetch.ts:132-134
+/// combines it.
+#[derive(Clone)]
+pub(crate) struct AwsHeaders {
+    auth: std::sync::Arc<Auth>,
+    user: Option<HeaderMapOpt>,
+}
+
+impl AwsHeaders {
+    pub(crate) async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
+        let auth = &self.auth;
+        let user = self.user.clone().unwrap_or_default();
+        let mut fixed = HeaderMapOpt::new();
+        fixed.insert("anthropic-version".into(), Some(API_VERSION.into()));
+        fixed.insert("anthropic-workspace-id".into(), Some(auth.workspace_id()?));
+        let mut key = HeaderMapOpt::new();
+        match auth.api_key().await? {
+            Some(api_key) => {
+                key.insert("x-api-key".into(), Some(api_key));
+            }
+            None => auth.preflight()?,
+        }
+        Ok(combine_headers(&[&fixed, &user, &key]))
+    }
 }
 
 /// Adds the transport's user-agent part, then signs the request unless it

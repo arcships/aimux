@@ -19,6 +19,8 @@
 
 mod model;
 
+pub(crate) use model::{Auth, AwsHeaders};
+
 pub use model::AnthropicAwsModel;
 
 use std::sync::{Arc, OnceLock};
@@ -32,12 +34,13 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, default_fetch,
-    validate_base_url,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, default_fetch, validate_base_url,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicModelConfig, AnthropicModelHooks};
+use crate::anthropic::config::{
+    AnthropicEndpoint, AnthropicHeaders, AnthropicModelConfig, AnthropicModelHooks,
+};
 use crate::anthropic::options::{CANONICAL, options_name_of};
 
 pub use crate::shared::TransformRequestBody;
@@ -193,7 +196,7 @@ pub struct AnthropicAwsProvider {
     auth: Arc<model::Auth>,
     /// The explicit base URL; `None` builds the regional one per request.
     base_url: Option<String>,
-    headers: HeadersFn,
+    headers: AwsHeaders,
     fetch: FetchFunction,
     transform_request_body: Option<TransformRequestBody>,
 }
@@ -201,18 +204,16 @@ pub struct AnthropicAwsProvider {
 impl AnthropicAwsProvider {
     /// The configuration of requests against `base_url`.
     fn config_for(&self, base_url: String) -> AnthropicModelConfig {
-        let base = base_url.clone();
         AnthropicModelConfig {
             provider: self.name.clone(),
-            url: Arc::new(move |path| format!("{base}{path}")),
-            headers: self.headers.clone(),
+            headers: AnthropicHeaders::Aws(self.headers.clone()),
             fetch: Some(self.fetch.clone()),
             supported_urls: SupportedUrls::default(),
             transform_request_body: self.transform_request_body.clone(),
             base_url,
             provider_options_name: self.provider_options_name.clone(),
             hooks: AnthropicModelHooks::default(),
-            resolve: None,
+            endpoint: AnthropicEndpoint::Fixed,
         }
     }
 
@@ -223,25 +224,10 @@ impl AnthropicAwsProvider {
         if let Some(base_url) = &self.base_url {
             return self.config_for(base_url.clone());
         }
-        let mut config = self.config_for(String::new());
-        let template = self.config_for(String::new());
-        let auth = self.auth.clone();
-        config.resolve = Some(Arc::new(move || {
-            let template = template.clone();
-            let base_url = auth
-                .host_region()
-                .map(|region| format!("https://aws-external-anthropic.{region}.api.aws/v1"));
-            Box::pin(async move {
-                let base_url = base_url?;
-                let base = base_url.clone();
-                Ok(AnthropicModelConfig {
-                    url: Arc::new(move |path| format!("{base}{path}")),
-                    base_url,
-                    ..template
-                })
-            })
-        }));
-        config
+        AnthropicModelConfig {
+            endpoint: AnthropicEndpoint::AwsRegional(self.auth.clone()),
+            ..self.config_for(String::new())
+        }
     }
 
     /// A Messages model; `provider()` is the provider name

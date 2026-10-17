@@ -23,9 +23,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
 };
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{AuthScheme, Credential, EndpointConfig, credential_headers};
+use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
 
 /// Fixed model id for the You.com search model.
 /// Failed-response handler of the You.com endpoint: `message`, and `type`
@@ -119,7 +119,7 @@ pub fn create_you_com(settings: YouComProviderSettings) -> Result<YouComProvider
     Ok(YouComProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: credential_headers(
+        headers: ProviderHeaders::new(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "You.com"),
             AuthScheme::Header("X-API-Key"),
             Vec::new(),
@@ -145,7 +145,7 @@ pub fn you_com() -> &'static YouComProvider {
 pub struct YouComProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
 }
 

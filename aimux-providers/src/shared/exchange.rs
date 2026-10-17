@@ -11,17 +11,18 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
+use async_trait::async_trait;
+use base64::Engine as _;
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
     ExchangeContext, FetchFunction, HeaderMapOpt, HeadersFn, HttpRequest, combine_headers,
-    normalize_headers,
+    load_setting, normalize_headers, validate_base_url,
 };
 
-use super::TransformRequestBody;
+use super::{Credential, ProviderHeaders, TransformRequestBody};
 
 /// What one request is addressed to: the base URL and the provider headers,
 /// both resolved for this request.
@@ -30,12 +31,159 @@ pub(crate) struct Endpoint {
     pub(crate) headers: HeaderMapOpt,
 }
 
-/// Resolves the endpoint of one request.
-pub(crate) type EndpointFn =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<Endpoint, AiMuxError>> + Send + Sync>;
+/// Where the base URL of a request comes from.
+#[derive(Clone, Debug)]
+pub(crate) enum BaseUrl {
+    /// Fixed when the provider is created.
+    Fixed(String),
+    /// Read from the environment variable on every request and validated; an
+    /// unset variable fails that request with `AiMuxError::LoadSetting`
+    /// (a self-hosted instance).
+    Env {
+        var: &'static str,
+        description: &'static str,
+    },
+}
 
-/// The URL patterns a model fetches itself, for a model id.
-pub(crate) type SupportedUrlsFn = Arc<dyn Fn(&str) -> SupportedUrls + Send + Sync>;
+impl BaseUrl {
+    fn resolve(&self) -> Result<String, AiMuxError> {
+        match self {
+            Self::Fixed(url) => Ok(url.clone()),
+            Self::Env { var, description } => {
+                validate_base_url(&load_setting(None, var, description)?)
+            }
+        }
+    }
+}
+
+/// Where the provider headers of a request come from.
+#[derive(Clone, Debug)]
+pub(crate) enum EndpointHeaders {
+    /// Credential, fixed and user headers (the common case).
+    Provider(ProviderHeaders),
+    /// `Authorization: Basic base64(login:password)`, both parts resolved for
+    /// every request, then the user's headers.
+    Basic {
+        login: Credential,
+        password: Credential,
+        user: Option<HeaderMapOpt>,
+    },
+    /// The provider headers, then the user's headers as the caller gave them
+    /// (a value or a producer called per request), then the user-agent
+    /// suffix when one is set (the AI SDK's `withUserAgentSuffix`).
+    WithUserHeaders {
+        provider: ProviderHeaders,
+        user: Option<HeadersFn>,
+        user_agent_suffix: Option<std::sync::Arc<str>>,
+    },
+}
+
+impl From<ProviderHeaders> for EndpointHeaders {
+    fn from(headers: ProviderHeaders) -> Self {
+        Self::Provider(headers)
+    }
+}
+
+impl EndpointHeaders {
+    async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
+        match self {
+            Self::Provider(headers) => headers.resolve().await,
+            Self::Basic {
+                login,
+                password,
+                user,
+            } => {
+                let login = login.secret().await?.unwrap_or_default();
+                let password = password.secret().await?.unwrap_or_default();
+                let encoded = base64::engine::general_purpose::STANDARD
+                    .encode(format!("{login}:{password}").as_bytes());
+                let mut layer = HeaderMapOpt::new();
+                layer.insert(
+                    "Authorization".to_string(),
+                    Some(format!("Basic {encoded}")),
+                );
+                Ok(match user {
+                    Some(user) => combine_headers(&[&layer, user]),
+                    None => layer,
+                })
+            }
+            Self::WithUserHeaders {
+                provider,
+                user,
+                user_agent_suffix,
+            } => {
+                let layer = provider.resolve().await?;
+                let combined = match user {
+                    Some(user) => combine_headers(&[&layer, &user.resolve().await?]),
+                    None => layer,
+                };
+                let Some(suffix) = user_agent_suffix else {
+                    return Ok(combined);
+                };
+                let mut headers = normalize_headers(combined).into_iter().collect();
+                aimux_provider_utils::with_user_agent_suffix(&mut headers, suffix);
+                Ok(headers
+                    .into_iter()
+                    .map(|(name, value)| (name, Some(value)))
+                    .collect())
+            }
+        }
+    }
+}
+
+/// Where the endpoint (base URL and provider headers) of a request comes
+/// from, resolved in [`EndpointConfig::endpoint`] when a request is made.
+///
+/// Most providers use [`HttpEndpoint`]. A package whose mode, credential and
+/// region decide the URL and the headers together (Vertex AI, Bedrock,
+/// Polly) implements it on its own plain-data struct.
+#[async_trait]
+pub(crate) trait ResolveEndpoint: Send + Sync {
+    /// The base URL and provider headers of one request.
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError>;
+}
+
+/// A base URL and headers, each resolved on its own.
+pub(crate) struct HttpEndpoint {
+    pub(crate) base_url: BaseUrl,
+    pub(crate) headers: EndpointHeaders,
+}
+
+#[async_trait]
+impl ResolveEndpoint for HttpEndpoint {
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+        Ok(Endpoint {
+            base_url: self.base_url.resolve()?,
+            headers: self.headers.resolve().await?,
+        })
+    }
+}
+
+/// The URL patterns a model fetches itself.
+#[derive(Clone, Debug, Default)]
+pub(crate) enum SupportedUrlsSource {
+    /// No patterns: the caller downloads every URL.
+    #[default]
+    None,
+    /// The same patterns for every model.
+    Fixed(SupportedUrls),
+    /// Patterns that depend on the base URL and the model id (the Gemini
+    /// API's).
+    ByModel {
+        base_url: String,
+        resolve: fn(&str, Option<&str>) -> SupportedUrls,
+    },
+}
+
+impl SupportedUrlsSource {
+    fn for_model(&self, model_id: &str) -> SupportedUrls {
+        match self {
+            Self::None => SupportedUrls::default(),
+            Self::Fixed(urls) => urls.clone(),
+            Self::ByModel { base_url, resolve } => resolve(base_url, Some(model_id)),
+        }
+    }
+}
 
 /// What a model needs to talk to the API. Built by the provider that owns the
 /// model.
@@ -44,12 +192,12 @@ pub(crate) struct EndpointConfig {
     /// The identity the model reports from `provider()`.
     pub(crate) provider: String,
     /// Base URL and provider headers, resolved on every request.
-    pub(crate) endpoint: EndpointFn,
+    pub(crate) endpoint: Arc<dyn ResolveEndpoint>,
     /// Transport; `None` uses the process default, resolved per request.
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself, by model id. Empty: the caller
     /// downloads them.
-    pub(crate) supported_urls: SupportedUrlsFn,
+    pub(crate) supported_urls: SupportedUrlsSource,
     /// Provider-level request-body rewrite.
     pub(crate) transform_request_body: Option<TransformRequestBody>,
 }
@@ -60,49 +208,65 @@ impl EndpointConfig {
     pub(crate) fn fixed(
         provider: String,
         base_url: String,
-        headers: HeadersFn,
+        headers: impl Into<EndpointHeaders>,
         fetch: Option<FetchFunction>,
         transform_request_body: Option<TransformRequestBody>,
     ) -> Self {
-        Self {
+        Self::new(
             provider,
-            endpoint: Arc::new(move || {
-                let base_url = base_url.clone();
-                let headers = headers.clone();
-                Box::pin(async move {
-                    Ok(Endpoint {
-                        base_url,
-                        headers: headers.resolve().await?,
-                    })
-                })
-            }),
+            HttpEndpoint {
+                base_url: BaseUrl::Fixed(base_url),
+                headers: headers.into(),
+            },
             fetch,
-            supported_urls: Arc::new(|_| SupportedUrls::default()),
-            transform_request_body,
-        }
+        )
+        .with_transform_request_body(transform_request_body)
     }
 
-    /// A config whose base URL is itself resolved on every request (a
-    /// self-hosted instance named by an environment variable).
-    pub(crate) fn dynamic(
+    /// A config whose endpoint comes from `endpoint`.
+    pub(crate) fn new(
         provider: String,
-        endpoint: EndpointFn,
+        endpoint: impl ResolveEndpoint + 'static,
         fetch: Option<FetchFunction>,
     ) -> Self {
         Self {
             provider,
-            endpoint,
+            endpoint: Arc::new(endpoint),
             fetch,
-            supported_urls: Arc::new(|_| SupportedUrls::default()),
+            supported_urls: SupportedUrlsSource::None,
             transform_request_body: None,
         }
     }
 
     /// The same config with the URLs the model fetches itself.
     #[must_use]
-    pub(crate) fn with_supported_urls(mut self, urls: SupportedUrlsFn) -> Self {
+    pub(crate) fn with_supported_urls(mut self, urls: SupportedUrlsSource) -> Self {
         self.supported_urls = urls;
         self
+    }
+
+    /// The same config with a provider-level request-body rewrite.
+    #[must_use]
+    pub(crate) fn with_transform_request_body(
+        mut self,
+        transform_request_body: Option<TransformRequestBody>,
+    ) -> Self {
+        self.transform_request_body = transform_request_body;
+        self
+    }
+
+    /// The URL patterns `model_id` fetches itself.
+    pub(crate) fn supported_urls(&self, model_id: &str) -> SupportedUrls {
+        self.supported_urls.for_model(model_id)
+    }
+
+    /// The base URL and provider headers of one request.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of the credential, header or setting lookup.
+    pub(crate) async fn endpoint(&self) -> Result<Endpoint, AiMuxError> {
+        self.endpoint.resolve().await
     }
 
     /// Resolve the endpoint and layer the per-call headers over the provider
@@ -117,7 +281,7 @@ impl EndpointConfig {
         &self,
         call_headers: Option<&HashMap<String, String>>,
     ) -> Result<Exchange, AiMuxError> {
-        let endpoint = (self.endpoint)().await?;
+        let endpoint = self.endpoint().await?;
         let call: HeaderMapOpt = call_headers
             .map(|headers| {
                 headers

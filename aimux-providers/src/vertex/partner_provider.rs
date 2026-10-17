@@ -26,7 +26,7 @@ use aimux_provider_utils::{
     load_setting, validate_base_url,
 };
 
-use crate::openai_compatible::config::BaseUrl;
+use crate::openai_compatible::config::{BaseUrl, ResolveBaseUrl, ResolveFetchHeaders};
 use crate::openai_compatible::{
     OpenAICompatibleChatModel, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
 };
@@ -82,13 +82,77 @@ impl std::fmt::Debug for VertexPartnerProviderSettings {
     }
 }
 
+/// The base URL of a partner sub-provider with no explicit `base_url`, built
+/// from the project and location read when a request is made.
+#[derive(Clone, Debug)]
+struct PartnerBaseUrl {
+    project: Option<String>,
+    location: Option<String>,
+    /// MaaS picks the location's host (google-vertex-maas-provider.ts:91-106);
+    /// xAI always calls the global host (google-vertex-xai-provider.ts:159-164).
+    regional_host: bool,
+}
+
+impl ResolveBaseUrl for PartnerBaseUrl {
+    /// The base URL of one request.
+    ///
+    /// # Errors
+    ///
+    /// `AiMuxError::LoadSetting` when no project is set.
+    fn resolve(&self) -> Result<String, AiMuxError> {
+        let project = load_setting(self.project.as_deref(), PROJECT_ENV_VAR, "project")?;
+        let location = load_optional_setting(self.location.as_deref(), LOCATION_ENV_VAR)
+            .unwrap_or_else(|| "global".to_string());
+        let host = if self.regional_host {
+            location_host(&location)
+        } else {
+            "aiplatform.googleapis.com".to_string()
+        };
+        Ok(format!(
+            "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi"
+        ))
+    }
+}
+
+/// The headers the Node wrapper's fetch adds over the request's own: the
+/// provider headers, then `Authorization` with the Google OAuth token. The
+/// Node wrapper passes no headers to `createOpenAICompatible` and spreads the
+/// resolved headers, then `Authorization`, over the request's headers in its
+/// fetch, so they win over the per-call headers, and a `user-agent` among
+/// them replaces the whole header (google-vertex-maas-provider-node.ts:34-58,
+/// google-vertex-xai-provider-node.ts:33-55).
+#[derive(Clone)]
+struct PartnerHeaders {
+    auth: Arc<GoogleAuth>,
+    user: Option<HeadersFn>,
+}
+
+#[async_trait::async_trait]
+impl ResolveFetchHeaders for PartnerHeaders {
+    /// The headers of one request.
+    ///
+    /// # Errors
+    ///
+    /// The token or the caller's header producer error.
+    async fn resolve(&self) -> Result<HeaderMapOpt, AiMuxError> {
+        let token = self.auth.access_token().await?;
+        let user = match &self.user {
+            Some(headers) => headers.resolve().await?,
+            None => HeaderMapOpt::new(),
+        };
+        let mut bearer = HeaderMapOpt::new();
+        bearer.insert("Authorization".to_string(), Some(format!("Bearer {token}")));
+        Ok(combine_headers(&[&user, &bearer]))
+    }
+}
+
 /// The parts every partner sub-provider shares: the base URL source and the
 /// headers the Node wrapper's fetch adds over the request's own (the
 /// provider headers, then `Authorization`).
 fn partner_parts(
     settings: &VertexPartnerProviderSettings,
     regional_host: bool,
-) -> Result<(BaseUrl, HeadersFn), AiMuxError> {
+) -> Result<(BaseUrl, Arc<dyn ResolveFetchHeaders>), AiMuxError> {
     let explicit = settings
         .base_url
         .as_deref()
@@ -96,25 +160,11 @@ fn partner_parts(
         .filter(|url| !url.is_empty());
     let base_url = match explicit {
         Some(url) => BaseUrl::Fixed(validate_base_url(url)?),
-        None => {
-            let project = settings.project.clone();
-            let location = settings.location.clone();
-            BaseUrl::Lazy(Arc::new(move || {
-                let project = load_setting(project.as_deref(), PROJECT_ENV_VAR, "project")?;
-                let location = load_optional_setting(location.as_deref(), LOCATION_ENV_VAR)
-                    .unwrap_or_else(|| "global".to_string());
-                // MaaS picks the location's host (google-vertex-maas-provider.ts:91-106);
-                // xAI always calls the global host (google-vertex-xai-provider.ts:159-164).
-                let host = if regional_host {
-                    location_host(&location)
-                } else {
-                    "aiplatform.googleapis.com".to_string()
-                };
-                Ok(format!(
-                    "https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi"
-                ))
-            }))
-        }
+        None => BaseUrl::Dynamic(Arc::new(PartnerBaseUrl {
+            project: settings.project.clone(),
+            location: settings.location.clone(),
+            regional_host,
+        })),
     };
 
     let mut auth_options = settings.google_auth_options.clone().unwrap_or_default();
@@ -124,27 +174,9 @@ fn partner_parts(
             ..Default::default()
         };
     }
-    let auth = Arc::new(GoogleAuth::new(auth_options, settings.fetch.clone()));
-    let user_headers = settings.headers.clone();
-    // The Node wrapper passes no headers to `createOpenAICompatible` and
-    // spreads the resolved headers, then `Authorization`, over the request's
-    // headers in its fetch, so they win over the per-call headers, and a
-    // `user-agent` among them replaces the whole header
-    // (google-vertex-maas-provider-node.ts:34-58,
-    // google-vertex-xai-provider-node.ts:33-55).
-    let headers = Resolvable::from_async_fn(move || {
-        let auth = auth.clone();
-        let user_headers = user_headers.clone();
-        async move {
-            let token = auth.access_token().await?;
-            let user = match user_headers {
-                Some(headers) => headers.resolve().await?,
-                None => HeaderMapOpt::new(),
-            };
-            let mut bearer = HeaderMapOpt::new();
-            bearer.insert("Authorization".to_string(), Some(format!("Bearer {token}")));
-            Ok(combine_headers(&[&user, &bearer]))
-        }
+    let headers: Arc<dyn ResolveFetchHeaders> = Arc::new(PartnerHeaders {
+        auth: Arc::new(GoogleAuth::new(auth_options, settings.fetch.clone())),
+        user: settings.headers.clone(),
     });
     Ok((base_url, headers))
 }
@@ -188,7 +220,12 @@ pub fn create_google_vertex_maas(
             ..Default::default()
         },
         base_url,
-        Resolvable::Value(HeaderMapOpt::new()),
+        crate::shared::ProviderHeaders::new(
+            crate::shared::Credential::None,
+            crate::shared::AuthScheme::Bearer,
+            Vec::new(),
+            None,
+        ),
         Some(fetch_headers),
         crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )
@@ -275,7 +312,12 @@ pub fn create_google_vertex_xai(
             ..Default::default()
         },
         base_url,
-        Resolvable::Value(HeaderMapOpt::new()),
+        crate::shared::ProviderHeaders::new(
+            crate::shared::Credential::None,
+            crate::shared::AuthScheme::Bearer,
+            Vec::new(),
+            None,
+        ),
         Some(fetch_headers),
         crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )?;

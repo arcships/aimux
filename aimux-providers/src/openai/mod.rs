@@ -42,6 +42,7 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 use serde_json::Value;
 
+use crate::shared::ProviderHeaders;
 use aimux_core::decision_model::DecisionModel;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
@@ -53,10 +54,10 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{
-    DecisionLanguageModel, FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url,
+    DecisionLanguageModel, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
-use crate::shared::{Credential, provider_headers};
+use crate::shared::Credential;
 
 use config::OpenAIModelConfig;
 
@@ -260,22 +261,22 @@ pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider,
     Ok(OpenAIProvider {
         name,
         base_url,
-        headers: aimux_provider_utils::headers::with_user_agent_suffix_fn(
-            provider_headers(
-                Credential::explicit_or_env(
-                    settings.api_key.map(Resolvable::Value),
-                    API_KEY_ENV_VAR,
-                    "OpenAI",
-                ),
-                [
-                    ("OpenAI-Organization", settings.organization),
-                    ("OpenAI-Project", settings.project),
-                ]
-                .into_iter()
-                .filter_map(|(name, value)| value.map(|value| (name.to_string(), value)))
-                .collect(),
-                settings.headers,
+        headers: ProviderHeaders::bearer(
+            Credential::explicit_or_env(
+                settings.api_key.map(Resolvable::Value),
+                API_KEY_ENV_VAR,
+                "OpenAI",
             ),
+            [
+                ("OpenAI-Organization", settings.organization),
+                ("OpenAI-Project", settings.project),
+            ]
+            .into_iter()
+            .filter_map(|(name, value)| value.map(|value| (name.to_string(), value)))
+            .collect(),
+            settings.headers,
+        )
+        .with_user_agent(
             crate::shared::aisdk_pins::OPENAI.name,
             crate::shared::aisdk_pins::OPENAI.version,
         ),
@@ -307,7 +308,7 @@ pub struct OpenAIProvider {
     /// The validated base URL, or the error of an invalid `OPENAI_BASE_URL`,
     /// which every request reports.
     base_url: Result<String, AiMuxError>,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
@@ -329,8 +330,7 @@ impl OpenAIProvider {
             config.responses.file_id_prefixes = vec!["file-"];
         }
         if let Err(error) = &self.base_url {
-            let error = error.clone();
-            config.url = Arc::new(move |_| Err(error.clone()));
+            config.url = config::OpenAIUrl::Invalid(error.clone());
         }
         config
     }

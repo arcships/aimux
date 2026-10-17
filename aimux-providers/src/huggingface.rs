@@ -35,10 +35,10 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, validate_base_url};
+use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::openai::config::OpenAIModelConfig;
-use crate::shared::{Credential, EndpointConfig, provider_headers};
+use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "HUGGINGFACE_API_KEY";
@@ -113,7 +113,7 @@ pub fn create_huggingface(
     Ok(HuggingFaceProvider {
         name: settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string()),
         base_url,
-        headers: provider_headers(
+        headers: ProviderHeaders::bearer(
             Credential::explicit_or_env(settings.api_key, API_KEY_ENV_VAR, "Hugging Face"),
             Vec::new(),
             settings.headers,
@@ -142,7 +142,7 @@ pub fn huggingface() -> &'static HuggingFaceProvider {
 pub struct HuggingFaceProvider {
     name: String,
     base_url: String,
-    headers: HeadersFn,
+    headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     transform_request_body: Option<TransformRequestBody>,
 }
