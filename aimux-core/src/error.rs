@@ -29,7 +29,7 @@ use ts_rs::TS;
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ApiCallError {
     /// Sanitized request URL. Required for every API-derived failure.
     pub url: String,
@@ -93,7 +93,7 @@ impl ApiCallError {
 /// Why the retry wrapper stopped retrying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum RetryErrorReason {
     /// Every permitted retry attempt failed with a retryable error.
     MaxRetriesExceeded,
@@ -103,7 +103,7 @@ pub enum RetryErrorReason {
 
 /// Complete error history for a retried model operation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RetryError {
     pub reason: RetryErrorReason,
     pub errors: Vec<AiMuxError>,
@@ -164,7 +164,7 @@ impl std::fmt::Display for ApiCallError {
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AiMuxError {
     #[error("API call error: {0}")]
     ApiCall(Box<ApiCallError>),

@@ -6,7 +6,7 @@ use ts_rs::TS;
 
 /// Unified finish reason (why the model stopped generating).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FinishReason {
     /// The unified reason.
     pub unified: FinishReasonUnified,
@@ -17,7 +17,7 @@ pub struct FinishReason {
 /// Unified finish reason enum (aligned with V4 `LanguageModelV4FinishReason`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FinishReasonUnified {
     Stop,
     Length,
@@ -29,7 +29,7 @@ pub enum FinishReasonUnified {
 
 /// Token usage statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Usage {
     pub input_tokens: TokenUsage,
     pub output_tokens: TokenUsage,
@@ -40,7 +40,7 @@ pub struct Usage {
 
 /// Token usage detail (with cache breakdown).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TokenUsage {
     /// Total tokens.
     pub total: Option<u32>,
@@ -68,7 +68,7 @@ pub struct TokenUsage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningEffort {
     /// Provider default — no explicit reasoning config sent.
     #[default]
@@ -131,7 +131,7 @@ impl std::str::FromStr for ReasoningEffort {
 
 /// A warning issued by the provider (e.g. unsupported parameter).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Warning {
     /// A feature is not supported by this provider.
     Unsupported {
@@ -151,7 +151,7 @@ pub enum Warning {
 
 /// Metadata about the API response.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseMetadata {
     pub id: Option<String>,
     pub timestamp: Option<String>,

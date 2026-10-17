@@ -9,7 +9,7 @@ use ts_rs::TS;
 /// Shared between `ModelMessage` (user-facing) and `LanguageModelPrompt` (provider-facing).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(export)]
+#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ContentPart {
     /// A text segment.
     Text {

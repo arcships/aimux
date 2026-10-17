@@ -476,6 +476,8 @@ Replay 页对同一 `Recording` 重发真实 API 后,新旧两条 `Recording` **
 
 生成的 d.ts 输出到 `tools/aimux-web/web/src/types/`(复用 `bindings/node` 的 ts-rs 导出管线方式,`TS_RS_EXPORT_DIR` 指向 web 目录)。
 
+> **后续变更**: 2026-10-15(#247)core 类型不再拷贝到 `tools/aimux-web/web/src/types/`:web 经 `@aimux/types/*` 直接导入 `bindings/node/src/types/` 的唯一生成输出;只有 web 自己的 wire 类型(`tools/aimux-web/src/wire.rs`,`ts-export` feature 门控)生成到 `tools/aimux-web/web/src/types/generated/`。两处都由 `python3 scripts/gen_ts_types.py` 先导出到临时目录再同步,`--check` 只比较不写;`TS_RS_EXPORT_DIR` 不再指向 web 目录。CI 的 web 类型检查(`npm run typecheck`)保证每条 import 都能解析。
+
 ### 9.2 复用的 core 能力(不改 core)
 
 | 能力 | 复用点 |

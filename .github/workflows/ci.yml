@@ -42,7 +42,9 @@ jobs:
   # - Documentation only (top-level Markdown, docs/, rfc/, assets/): nothing.
   #   docs/api/providers.md is generated and checked, so it counts as code.
   # - Only inside bindings/<name>/: that binding's jobs. The Rust workspace
-  #   does not read the bindings, so nothing else can break.
+  #   does not read the bindings, so nothing else can break. bindings/node/
+  #   also runs the web console typecheck: the generated types it imports
+  #   live there.
   # - aimux-ffi/: the Rust jobs and every binding that links the C ABI. Node
   #   and Python link the Rust crates directly, not the C ABI. Go is tested
   #   inside ffi-build, Java and Kotlin share one job.
@@ -145,6 +147,7 @@ jobs:
             $(job flutter-binding aimux-ffi bindings/flutter)
             $(job flutter-example-build aimux-ffi bindings/flutter)
             $(job swift-contract-tests aimux-ffi bindings/swift)
+            $(job web-typecheck bindings/node)
             \"contract-tests\": $code}"
           run=$(jq -c . <<< "$run")
           printf 'code=%s\nshared=%s\nplatforms=%s\nrun=%s\n' \
@@ -684,6 +687,26 @@ jobs:
         run: |
           swift test -Xlinker -L${{ github.workspace }}/target/release
 
+  # ── Web console typecheck: every @aimux/types import must still resolve ──
+  # The console imports the ts-rs types from bindings/node/src/types. The
+  # generator check above only compares files; this type-checks every import,
+  # so a renamed or removed Rust type fails here (RFC-0036 §13.1 A4).
+  web-typecheck:
+    name: Web console typecheck
+    runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['web-typecheck']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Type-check the web console (vue-tsc --noEmit)
+        working-directory: tools/aimux-web/web
+        run: |
+          npm ci
+          npm run typecheck
+
   # The one check to require in branch protection. It runs whatever happened
   # above: a job may be skipped only because "changes" decided it is not
   # needed; any other skip, failure or cancellation fails it. A new job goes
@@ -703,6 +726,7 @@ jobs:
       - flutter-example-build
       - contract-tests
       - swift-contract-tests
+      - web-typecheck
     runs-on: ubuntu-latest
     steps:
       - env:

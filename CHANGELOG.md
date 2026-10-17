@@ -42,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the AI SDK has no counterpart. `tokio` is now a dev-dependency only and
   the unused direct `serde` dependency is dropped.
 
+### Fixed
+
+- Gated aimux-core's ts-rs exports behind `ts-export`, so plain `cargo test`
+  no longer rewrites tracked TypeScript types. `scripts/gen_ts_types.py`
+  enables exports and rejects ungated export attributes with `--check`.
+
 ## [0.5.0] - 2026-09-27
 
 **Breaking release.** 13 PRs since 0.3.0: the cross-language error model
