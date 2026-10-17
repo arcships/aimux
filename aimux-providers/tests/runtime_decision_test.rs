@@ -1,5 +1,5 @@
 //! Synthetic contracts from official implementations, never presented as live recordings.
-use std::collections::HashMap;
+use aimux_core::shared::SharedProviderOptions;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -17,6 +17,13 @@ use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 mod common;
+
+fn object(value: Value) -> serde_json::Map<String, Value> {
+    value
+        .as_object()
+        .cloned()
+        .expect("provider options must be an object")
+}
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("fixtures/runtime_decisions.json")).unwrap()
@@ -182,9 +189,11 @@ async fn conditional_skips_and_abstention_do_not_become_false_answers() {
         let mut response = fixture()["response"].clone();
         let mut expected = fixture()["request"].clone();
         if provider == "vllm" {
-            request.provider_options = Some(HashMap::from([(
+            request.provider_options = Some(SharedProviderOptions::from([(
                 "vllm".into(),
-                json!({"samples":"auto","steps":4,"questions":{"severity":{"ask_if":{"team":["billing"]}}}}),
+                object(
+                    json!({"samples":"auto","steps":4,"questions":{"severity":{"ask_if":{"team":["billing"]}}}}),
+                ),
             )]));
             expected["samples"] = json!("auto");
             expected["steps"] = json!(4);
@@ -192,9 +201,9 @@ async fn conditional_skips_and_abstention_do_not_become_false_answers() {
             response["answers"]["severity"] = Value::Null;
             response["diagnostics"] = json!({"skipped":{"severity":{"because":"team","was":"support","wanted":["billing"]}}});
         } else {
-            request.provider_options = Some(HashMap::from([(
+            request.provider_options = Some(SharedProviderOptions::from([(
                 "laya".into(),
-                json!({"min_confidence":0.8,"lang":"en"}),
+                object(json!({"min_confidence":0.8,"lang":"en"})),
             )]));
             expected["min_confidence"] = json!(0.8);
             expected["lang"] = json!("en");
@@ -218,9 +227,11 @@ async fn conditional_skips_and_abstention_do_not_become_false_answers() {
 async fn sglang_native_decisions_keeps_label_mass_separate_from_confidence() {
     let server = MockServer::start().await;
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         "sglang".into(),
-        json!({"protocol":"decisions","temperature":0.7,"return_prompt_token_ids":true,"prompt_format_version":1}),
+        object(
+            json!({"protocol":"decisions","temperature":0.7,"return_prompt_token_ids":true,"prompt_format_version":1}),
+        ),
     )]));
     let response = json!({"object":"decisions","model":"served-decision","prompt_format_version":1,"answers":{
         "urgent":{"type":"yes_no","probabilities":{"yes":0.75,"no":0.25},"label_mass":0.1},
@@ -299,13 +310,15 @@ async fn sglang_systemone_reports_the_actual_readout_source_through_replay() {
 
 fn scoring_options(provider: &str) -> DecisionCallOptions {
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         provider.into(),
-        json!({"protocol":if provider=="sglang" {"score"} else {"generative_scoring"},"model_revision":"weights-commit","tokenizer_revision":"tokenizer-commit","prompt_format_version":"test-v1","encoded":{
-            "urgent":{"prompt_token_ids":[11,12],"label_token_ids":[1,2]},
-            "team":{"prompt_token_ids":[21,22],"label_token_ids":[3,4]},
-            "severity":{"prompt_token_ids":[31,32],"label_token_ids":[5,6,7]}
-        }}),
+        object(
+            json!({"protocol":if provider=="sglang" {"score"} else {"generative_scoring"},"model_revision":"weights-commit","tokenizer_revision":"tokenizer-commit","prompt_format_version":"test-v1","encoded":{
+                "urgent":{"prompt_token_ids":[11,12],"label_token_ids":[1,2]},
+                "team":{"prompt_token_ids":[21,22],"label_token_ids":[3,4]},
+                "severity":{"prompt_token_ids":[31,32],"label_token_ids":[5,6,7]}
+            }}),
+        ),
     )]));
     request
 }
@@ -498,9 +511,9 @@ async fn unsupported_fields_and_bad_encodings_fail_before_http() {
         }
     }
     let mut request = options();
-    request.provider_options = Some(HashMap::from([(
+    request.provider_options = Some(SharedProviderOptions::from([(
         "ollama".into(),
-        json!({"temperature":0.7}),
+        object(json!({"temperature":0.7})),
     )]));
     assert!(
         decide(model("ollama", &server).as_ref(), request)
@@ -508,7 +521,10 @@ async fn unsupported_fields_and_bad_encodings_fail_before_http() {
             .is_err()
     );
     let mut request = options();
-    request.provider_options = Some(HashMap::from([("vllm".into(), json!({"ask":["urgent"]}))]));
+    request.provider_options = Some(SharedProviderOptions::from([(
+        "vllm".into(),
+        object(json!({"ask":["urgent"]})),
+    )]));
     assert!(
         decide(model("vllm", &server).as_ref(), request)
             .await

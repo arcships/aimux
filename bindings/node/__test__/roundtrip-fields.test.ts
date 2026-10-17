@@ -69,7 +69,7 @@ test('roundtrip: anthropic echoes prompt reasoning signature and surfaces respon
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: 'pondering', signature: 'sig-prompt-1' },
+          { type: 'reasoning', text: 'pondering', provider_options: { anthropic: { signature: 'sig-prompt-1' } } },
           { type: 'text', text: 'answer' },
         ],
       },

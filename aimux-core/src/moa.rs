@@ -13,7 +13,9 @@ use async_trait::async_trait;
 use futures::{StreamExt, future::join_all};
 use serde::Deserialize;
 
-use crate::composite::{ChildModel, add_usage, build_aggregator_prompt, extract_text};
+use crate::composite::{
+    ChildModel, add_usage, build_aggregator_prompt, extract_text, step_options,
+};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::options::CallOptions;
@@ -122,8 +124,10 @@ impl MoaModel {
         }
         let ref_opts = self.reference_options(options);
         let results = join_all(self.references.iter().enumerate().map(|(i, m)| {
-            let child_opts =
-                ref_opts.for_step(format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()));
+            let child_opts = step_options(
+                &ref_opts,
+                format!("moa.ref[{i}]:{}/{}", m.provider(), m.model_id()),
+            );
             async move {
                 let retries = retry::prepare_retries(
                     child_opts.max_retries,
@@ -151,8 +155,8 @@ impl MoaModel {
                     usage = add_usage(usage, &res.usage);
                     let mid = res
                         .response
-                        .model_id
-                        .clone()
+                        .as_ref()
+                        .and_then(|response| response.model_id.clone())
                         .unwrap_or_else(|| format!("ref-{i}"));
                     texts.push((mid, extract_text(&res.content)));
                 }
@@ -211,11 +215,14 @@ impl LanguageModel for MoaModel {
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );
-        let agg_opts = agg_opts.for_step(format!(
-            "moa.aggregator:{}/{}",
-            self.aggregator.provider(),
-            self.aggregator.model_id()
-        ));
+        let agg_opts = step_options(
+            &agg_opts,
+            format!(
+                "moa.aggregator:{}/{}",
+                self.aggregator.provider(),
+                self.aggregator.model_id()
+            ),
+        );
         let mut agg = retries
             .retry(|| {
                 if let Some(context) = &agg_opts.recording_context {
@@ -253,11 +260,14 @@ impl LanguageModel for MoaModel {
             self.aggregator.retry_config(),
             agg_opts.abort_signal.clone(),
         );
-        let agg_opts = agg_opts.for_step(format!(
-            "moa.aggregator:{}/{}",
-            self.aggregator.provider(),
-            self.aggregator.model_id()
-        ));
+        let agg_opts = step_options(
+            &agg_opts,
+            format!(
+                "moa.aggregator:{}/{}",
+                self.aggregator.provider(),
+                self.aggregator.model_id()
+            ),
+        );
         let agg = retries
             .retry(|| {
                 if let Some(context) = &agg_opts.recording_context {
@@ -301,8 +311,8 @@ impl LanguageModel for MoaModel {
         // cache probing (RFC-0015 fingerprinting).
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: None,
-            response_headers: None,
+            request: None,
+            response: None,
         })
     }
 }
@@ -310,14 +320,13 @@ impl LanguageModel for MoaModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::ContentPart;
-    use crate::language_model_message::LanguageModelPromptMessage;
-    use crate::message::Role;
+    use crate::language_model_message::{LanguageModelMessage, TextPart, UserPart};
     use crate::options::LanguageModelV4ToolChoice;
     use crate::result::GenerateContent;
+    use crate::result::{GenerateResponse, Source};
     use crate::stream_part::StreamPart;
     use crate::tool::RawToolCall;
-    use crate::types::{FinishReason, FinishReasonUnified, TokenUsage};
+    use crate::types::{FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage};
     use async_trait::async_trait;
     use futures::stream;
     use std::sync::Arc;
@@ -362,12 +371,11 @@ mod tests {
                 usage: self.usage.clone(),
                 warnings: vec![],
                 provider_metadata: None,
-                response: crate::types::ResponseMetadata {
+                response: Some(GenerateResponse {
                     model_id: Some(self.name.into()),
                     ..Default::default()
-                },
-                request_body: None,
-                response_headers: None,
+                }),
+                request: None,
             })
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -396,8 +404,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -443,11 +451,11 @@ mod tests {
             text: text.into(),
             fail,
             usage: Usage {
-                input_tokens: TokenUsage {
+                input_tokens: InputTokenUsage {
                     total: Some(total),
                     ..Default::default()
                 },
-                output_tokens: TokenUsage {
+                output_tokens: OutputTokenUsage {
                     total: Some(total),
                     ..Default::default()
                 },
@@ -460,11 +468,7 @@ mod tests {
 
     fn opts_with_prompt() -> CallOptions {
         CallOptions {
-            prompt: vec![LanguageModelPromptMessage {
-                role: Role::User,
-                content: vec![ContentPart::text("What is Rust?")],
-                provider_options: None,
-            }],
+            prompt: vec![LanguageModelMessage::user_text("What is Rust?")],
             ..Default::default()
         }
     }
@@ -649,18 +653,17 @@ mod tests {
     async fn no_references_does_not_inject_empty_heading() {
         // S4 regression guard: with 0 references the aggregator prompt is the
         // original prompt verbatim — no "# Reference model responses" heading.
-        let prompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("hello")],
-            provider_options: None,
-        }];
+        let prompt = vec![LanguageModelMessage::user_text("hello")];
         let built = build_aggregator_prompt(&prompt, None, &[]);
         // Still just the single original message; nothing appended.
         assert_eq!(built.len(), 1);
         // Heading must NOT appear.
-        assert!(!built[0].content.iter().any(|p| matches!(
+        let LanguageModelMessage::User { content, .. } = &built[0] else {
+            panic!("expected the original user message");
+        };
+        assert!(!content.iter().any(|p| matches!(
             p,
-            ContentPart::Text { text, .. } if text.contains("Reference model responses")
+            UserPart::Text(TextPart { text, .. }) if text.contains("Reference model responses")
         )));
     }
 
@@ -698,8 +701,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -771,8 +774,8 @@ mod tests {
                         provider_metadata: None,
                     }),
                 ])),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -818,17 +821,16 @@ mod tests {
             text: text.into(),
             fail: false,
             usage: Usage {
-                input_tokens: TokenUsage {
+                input_tokens: InputTokenUsage {
                     total: Some(total),
                     cache_read: Some(cache_read),
                     cache_write: Some(cache_write),
                     ..Default::default()
                 },
-                output_tokens: TokenUsage {
+                output_tokens: OutputTokenUsage {
                     total: Some(total),
                     text: Some(text_tokens),
                     reasoning: Some(reasoning_tokens),
-                    ..Default::default()
                 },
                 raw: None,
             },
@@ -925,13 +927,12 @@ mod tests {
                     dynamic: None,
                     provider_metadata: None,
                 })),
-                Ok(StreamPart::Source {
+                Ok(StreamPart::Source(Source::Url {
                     id: "s1".into(),
-                    source_type: "url".into(),
-                    url: Some("https://example.com".into()),
+                    url: "https://example.com".into(),
                     title: Some("Ex".into()),
                     provider_metadata: None,
-                }),
+                })),
                 Ok(StreamPart::Finish {
                     finish_reason: FinishReason {
                         unified: FinishReasonUnified::Stop,
@@ -943,8 +944,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -967,7 +968,7 @@ mod tests {
                     assert_eq!(call.tool_name, "search");
                     assert_eq!(call.input, r#"{"q":"rust"}"#);
                 }
-                StreamPart::Source { id, .. } => {
+                StreamPart::Source(Source::Url { id, .. }) => {
                     saw_source = true;
                     assert_eq!(id, "s1");
                 }

@@ -18,16 +18,18 @@
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
+use std::hash::{BuildHasher, RandomState};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
 
 use aimux_core::AbortSignal;
 use aimux_core::error::AiMuxError;
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::Warning;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{ProviderMetadata, Warning};
 use aimux_provider_utils::{HttpBody, HttpRequest};
 use serde_json::{Value, json};
 
@@ -125,16 +127,19 @@ fn str_field(v: &Value, key: &str) -> Option<String> {
     v.get(key).and_then(|x| x.as_str()).map(str::to_string)
 }
 
-/// Process-wide counter backing [`generate_source_id`].
-static SOURCE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Unique id for a `Source` derived from a web-search result. Upstream calls
-/// `this.generateId()` at the same points.
-fn generate_source_id() -> String {
-    format!(
-        "anthropic-source-{}",
-        SOURCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
+/// Generate a non-cryptographic, 16-character alphanumeric ID, like `generateId`.
+#[must_use]
+pub(crate) fn generate_id() -> String {
+    const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let random = RandomState::new();
+    (0..16)
+        .map(|index| {
+            let value = random.hash_one((counter, index));
+            char::from(ALPHABET[(value % ALPHABET.len() as u64) as usize])
+        })
+        .collect()
 }
 
 /// `web_search_result` → the camel-cased shape upstream exposes (:1243-1249).
@@ -347,7 +352,9 @@ pub(crate) fn initial_tool_input(input: &Value) -> String {
     }
 }
 
-pub(crate) fn tool_call_caller_metadata(caller: Option<&ToolCallCaller>) -> Option<Value> {
+pub(crate) fn tool_call_caller_metadata(
+    caller: Option<&ToolCallCaller>,
+) -> Option<ProviderMetadata> {
     let caller = match caller? {
         ToolCallCaller::CodeExecution20250825 { tool_id } => json!({
             "type": "code_execution_20250825",
@@ -359,7 +366,10 @@ pub(crate) fn tool_call_caller_metadata(caller: Option<&ToolCallCaller>) -> Opti
         }),
         ToolCallCaller::Direct => json!({ "type": "direct" }),
     };
-    Some(json!({ "anthropic": { "caller": caller } }))
+    Some(
+        provider_namespace("anthropic", json!({ "caller": caller }))
+            .expect("provider metadata must be an object"),
+    )
 }
 
 fn is_tool_search_provider_name(name: &str) -> bool {
@@ -398,6 +408,7 @@ pub(crate) fn stream_parts_for_result_block(
     names: &ToolNameMapping,
     mcp_tool_calls: &HashMap<String, (String, String)>,
     server_tool_calls: &HashMap<String, String>,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<StreamPart> {
     let tool_result =
         |tool_name: String, (result, is_error): (Value, Option<bool>), tool_use_id: &str| {
@@ -442,16 +453,21 @@ pub(crate) fn stream_parts_for_result_block(
                 ),
                 tool_use_id,
             )];
-            parts.extend(results.iter().map(|result| StreamPart::Source {
-                id: generate_source_id(),
-                source_type: "url".to_string(),
-                url: str_field(result, "url"),
-                title: str_field(result, "title"),
-                provider_metadata: Some(json!({
-                    "anthropic": {
-                        "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
-                    }
-                })),
+            parts.extend(results.iter().map(|result| {
+                StreamPart::Source(Source::Url {
+                    id: generate_id(),
+                    url: str_field(result, "url").unwrap_or_default(),
+                    title: str_field(result, "title"),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            "anthropic",
+                            json!({
+                                "pageAge": result.get("page_age").cloned().unwrap_or(Value::Null),
+                            }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
+                })
             }));
             parts
         }
@@ -518,9 +534,11 @@ pub(crate) fn stream_parts_for_result_block(
                 preliminary: None,
                 dynamic: Some(true),
                 provider_metadata: call.map(|(_, server)| {
-                    json!({
-                        "anthropic": { "type": "mcp-tool-use", "serverName": server }
-                    })
+                    provider_namespace(
+                        "anthropic",
+                        json!({ "type": "mcp-tool-use", "serverName": server }),
+                    )
+                    .expect("provider metadata must be an object")
                 }),
             })]
         }
@@ -540,6 +558,7 @@ pub(crate) fn stream_parts_for_result_block(
 pub(crate) fn parse_anthropic_content(
     blocks: &[ContentBlock],
     names: &ToolNameMapping,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Vec<GenerateContent> {
     let mut content = Vec::new();
     // Result blocks inherit information from their matching calls. Index the
@@ -590,12 +609,13 @@ pub(crate) fn parse_anthropic_content(
                 thinking,
                 signature,
             } => {
-                content.push(GenerateContent::Reasoning {
+                content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: thinking.clone(),
-                    provider_metadata: Some(json!({
-                        "anthropic": { "signature": signature }
-                    })),
-                });
+                    provider_metadata: Some(
+                        provider_namespace("anthropic", json!({ "signature": signature }))
+                            .expect("provider metadata must be an object"),
+                    ),
+                }));
             }
             // Provider-executed (server-side) tool calls are surfaced as tool
             // calls so they round-trip on follow-up turns.
@@ -625,19 +645,24 @@ pub(crate) fn parse_anthropic_content(
                     input: input.to_string(),
                     provider_executed: Some(true),
                     dynamic: Some(true),
-                    provider_metadata: Some(json!({
-                        "anthropic": { "type": "mcp-tool-use", "serverName": server_name }
-                    })),
+                    provider_metadata: Some(
+                        provider_namespace(
+                            "anthropic",
+                            json!({ "type": "mcp-tool-use", "serverName": server_name }),
+                        )
+                        .expect("provider metadata must be an object"),
+                    ),
                 }));
             }
             // Redacted thinking — upstream emits as reasoning with redactedData
             ContentBlock::RedactedThinking { data } => {
-                content.push(GenerateContent::Reasoning {
+                content.push(GenerateContent::Reasoning(ReasoningOutput {
                     text: String::new(),
-                    provider_metadata: Some(json!({
-                        "anthropic": { "redactedData": data }
-                    })),
-                });
+                    provider_metadata: Some(
+                        provider_namespace("anthropic", json!({ "redactedData": data }))
+                            .expect("provider metadata must be an object"),
+                    ),
+                }));
             }
             // ── Server-tool result blocks → GenerateContent::ToolResult ──
             // Payload shapes mirror the TS `doGenerate` switch one-for-one
@@ -666,18 +691,21 @@ pub(crate) fn parse_anthropic_content(
                         // Each result also becomes a `Source` — that is how the
                         // URLs and titles reach `result.sources`.
                         for result in results {
-                            content.push(GenerateContent::Source {
-                                id: generate_source_id(),
-                                source_type: "url".to_string(),
-                                url: str_field(result, "url"),
+                            content.push(GenerateContent::Source(Source::Url {
+                                id: generate_id(),
+                                url: str_field(result, "url").unwrap_or_default(),
                                 title: str_field(result, "title"),
-                                provider_metadata: Some(json!({
-                                    "anthropic": {
-                                        "pageAge": result.get("page_age").cloned()
-                                            .unwrap_or(Value::Null),
-                                    }
-                                })),
-                            });
+                                provider_metadata: Some(
+                                    provider_namespace(
+                                        "anthropic",
+                                        json!({
+                                            "pageAge": result.get("page_age").cloned()
+                                                .unwrap_or(Value::Null),
+                                        }),
+                                    )
+                                    .expect("provider metadata must be an object"),
+                                ),
+                            }));
                         }
                     }
                     None => content.push(GenerateContent::ToolResult(ToolResult {
@@ -797,9 +825,11 @@ pub(crate) fn parse_anthropic_content(
                     preliminary: None,
                     dynamic: Some(true),
                     provider_metadata: call.map(|(_, server)| {
-                        json!({
-                            "anthropic": { "type": "mcp-tool-use", "serverName": server }
-                        })
+                        provider_namespace(
+                            "anthropic",
+                            json!({ "type": "mcp-tool-use", "serverName": server }),
+                        )
+                        .expect("provider metadata must be an object")
                     }),
                 }));
             }
@@ -826,6 +856,7 @@ pub(crate) async fn anthropic_generate_core(
     abort_signal: Option<AbortSignal>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: &ToolNameMapping,
+    generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Result<GenerateResult, AiMuxError> {
     let (request, request_body) = build_anthropic_request(
         endpoint,
@@ -843,9 +874,10 @@ pub(crate) async fn anthropic_generate_core(
     )
     .await?;
 
+    let response_body = resp.raw_value;
     let data: AnthropicResponse = resp.value;
 
-    let content = parse_anthropic_content(&data.content, tool_names);
+    let content = parse_anthropic_content(&data.content, tool_names, generate_id);
 
     let finish_reason = data
         .stop_reason
@@ -867,13 +899,16 @@ pub(crate) async fn anthropic_generate_core(
         usage,
         warnings,
         provider_metadata: None,
-        response: ResponseMetadata {
-            id: Some(data.id),
-            timestamp: None,
-            model_id: Some(data.model),
-        },
-        request_body: Some(body),
-        response_headers: None,
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::result::GenerateResponse {
+            body: response_body,
+            headers: None,
+            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                id: Some(data.id),
+                timestamp: None,
+                model_id: Some(data.model),
+            })
+        }),
     })
 }
 
@@ -895,7 +930,7 @@ enum BlockState {
         dynamic: Option<bool>,
         provider_tool_name: Option<String>,
         provider_tool_input_type: Option<String>,
-        provider_metadata: Option<Value>,
+        provider_metadata: Option<ProviderMetadata>,
         first_delta: bool,
     },
     Thinking {
@@ -924,6 +959,7 @@ pub(crate) async fn anthropic_stream_core(
     abort_signal: Option<AbortSignal>,
     recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: ToolNameMapping,
+    generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
     let (request, request_body) = build_anthropic_request(
         endpoint,
@@ -988,11 +1024,11 @@ pub(crate) async fn anthropic_stream_core(
                                 final_usage = super::usage::usage_from_anthropic(usage);
                             }
                             if !response_meta_emitted {
-                                yield Ok(StreamPart::ResponseMetadata {
+                                yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                     id: Some(message.id.clone()),
                                     timestamp: None,
                                     model_id: Some(message.model.clone()),
-                                });
+                                }));
                                 response_meta_emitted = true;
                             }
                         }
@@ -1093,12 +1129,10 @@ pub(crate) async fn anthropic_stream_core(
                                         input: input.to_string(),
                                         provider_executed: Some(true),
                                         dynamic: Some(true),
-                                        provider_metadata: Some(json!({
-                                            "anthropic": {
-                                                "type": "mcp-tool-use",
-                                                "serverName": server_name,
-                                            }
-                                        })),
+                                        provider_metadata: Some(provider_namespace("anthropic", json!({
+                                            "type": "mcp-tool-use",
+                                            "serverName": server_name,
+                                        })).expect("provider metadata must be an object")),
                                     }));
                                 }
                                 // Redacted thinking — emit as ReasoningStart.
@@ -1106,9 +1140,7 @@ pub(crate) async fn anthropic_stream_core(
                                     let id = index.to_string();
                                     yield Ok(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(json!({
-                                            "anthropic": { "redactedData": data }
-                                        })),
+                                        provider_metadata: Some(provider_namespace("anthropic", json!({ "redactedData": data })).expect("provider metadata must be an object")),
                                     });
                                     blocks.insert(
                                         index,
@@ -1129,6 +1161,7 @@ pub(crate) async fn anthropic_stream_core(
                                         &tool_names,
                                         &mcp_tool_calls,
                                         &server_tool_calls,
+                                        generate_id.as_ref(),
                                     ) {
                                         yield Ok(part);
                                     }
@@ -1273,7 +1306,7 @@ pub(crate) async fn anthropic_stream_core(
                                         yield Ok(StreamPart::ReasoningEnd {
                                             id: index.to_string(),
                                             provider_metadata: signature.map(|s| {
-                                                json!({ "anthropic": { "signature": s } })
+                                                provider_namespace("anthropic", json!({ "signature": s })).expect("provider metadata must be an object")
                                             }),
                                         });
                                     }
@@ -1325,11 +1358,10 @@ pub(crate) async fn anthropic_stream_core(
                                 let text_tokens = reasoning_tokens
                                     .zip(output_total)
                                     .map(|(r, t)| t.saturating_sub(r));
-                                final_usage.output_tokens = TokenUsage {
+                                final_usage.output_tokens = aimux_core::types::OutputTokenUsage {
                                     total: output_total,
                                     text: text_tokens,
                                     reasoning: reasoning_tokens,
-                                    ..Default::default()
                                 };
                             }
                         }
@@ -1391,7 +1423,9 @@ pub(crate) async fn anthropic_stream_core(
 
     Ok(StreamResult {
         stream: Box::pin(stream),
-        request_body: Some(body),
-        response_headers: Some(response_headers),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+        response: Some(aimux_core::result::StreamResponse {
+            headers: Some(response_headers),
+        }),
     })
 }

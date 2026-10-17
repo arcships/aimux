@@ -16,10 +16,13 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use crate::error::AiMuxError;
-use crate::generate::{GenerateTextOptions, GenerateTextResult, generate_text};
+use crate::generate::{
+    GenerateTextOptions, GenerateTextResult, generate_text_from_language_model_prompt,
+};
 use crate::language_model::LanguageModel;
-use crate::language_model_message::LanguageModelPrompt;
-use crate::message::{MessageContent, ModelMessage, ModelPrompt};
+use crate::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, UserPart,
+};
 use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
@@ -249,10 +252,42 @@ impl ReplayMatcher for ScoreMatcher {
 }
 
 /// 消息的首个文本内容(非文本消息回退到序列化)。
-fn message_text(m: &crate::language_model_message::LanguageModelPromptMessage) -> String {
-    match m.content.first() {
-        Some(crate::content::ContentPart::Text { text, .. }) => text.clone(),
-        _ => serde_json::to_string(&m.content).unwrap_or_default(),
+fn message_text(m: &LanguageModelMessage) -> String {
+    match m {
+        LanguageModelMessage::System { content, .. } => content.clone(),
+        LanguageModelMessage::User { content, .. } => match content.first() {
+            Some(UserPart::Text(part)) => part.text.clone(),
+            _ => serde_json::to_string(content).unwrap_or_default(),
+        },
+        LanguageModelMessage::Assistant { content, .. } => match content.first() {
+            Some(AssistantPart::Text(part)) => part.text.clone(),
+            _ => serde_json::to_string(content).unwrap_or_default(),
+        },
+        LanguageModelMessage::Tool { content, .. } => {
+            serde_json::to_string(content).unwrap_or_default()
+        }
+    }
+}
+
+fn same_message_content(a: &LanguageModelMessage, b: &LanguageModelMessage) -> bool {
+    match (a, b) {
+        (
+            LanguageModelMessage::System { content: a, .. },
+            LanguageModelMessage::System { content: b, .. },
+        ) => a == b,
+        (
+            LanguageModelMessage::User { content: a, .. },
+            LanguageModelMessage::User { content: b, .. },
+        ) => a == b,
+        (
+            LanguageModelMessage::Assistant { content: a, .. },
+            LanguageModelMessage::Assistant { content: b, .. },
+        ) => a == b,
+        (
+            LanguageModelMessage::Tool { content: a, .. },
+            LanguageModelMessage::Tool { content: b, .. },
+        ) => a == b,
+        _ => false,
     }
 }
 
@@ -268,7 +303,7 @@ fn match_score(options: &CallOptions, rec: &Recording) -> u64 {
         .prompt
         .iter()
         .zip(rec.input.prompt.iter())
-        .take_while(|(a, b)| a.role == b.role && a.content == b.content)
+        .take_while(|(a, b)| same_message_content(a, b))
         .count();
     // 字符级 LCP:第一个不同消息(或双方最后一个消息),在文本内容上计算
     // (避免 JSON 结构前缀的伪匹配)。任一 prompt 为空时无消息可比,LCP=0
@@ -343,7 +378,7 @@ impl ReplayMatcher for PrefixMatcher {
                 .prompt
                 .iter()
                 .zip(r.input.prompt.iter())
-                .take_while(|(a, b)| a.role == b.role && a.content == b.content)
+                .take_while(|(a, b)| same_message_content(a, b))
                 .count();
             if common < r.input.prompt.len() {
                 continue; // 录制未被输入完整包含,不命中。
@@ -516,7 +551,7 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
     let prompt_details = &u["prompt_tokens_details"];
     let completion_details = &u["completion_tokens_details"];
     Ok(Usage {
-        input_tokens: crate::types::TokenUsage {
+        input_tokens: crate::types::InputTokenUsage {
             total: u32_from_json(&u["prompt_tokens"], "prompt_tokens")?,
             no_cache: None,
             cache_read: u32_from_json(
@@ -524,21 +559,16 @@ fn parse_usage(v: &serde_json::Value) -> Result<Usage, AiMuxError> {
                 "prompt_tokens_details.cached_tokens",
             )?,
             cache_write: None,
-            text: None,
-            reasoning: None,
         },
-        output_tokens: crate::types::TokenUsage {
+        output_tokens: crate::types::OutputTokenUsage {
             total: u32_from_json(&u["completion_tokens"], "completion_tokens")?,
-            no_cache: None,
-            cache_read: None,
-            cache_write: None,
             text: None,
             reasoning: u32_from_json(
                 &completion_details["reasoning_tokens"],
                 "completion_tokens_details.reasoning_tokens",
             )?,
         },
-        raw: Some(u.clone()),
+        raw: u.as_object().cloned(),
     })
 }
 
@@ -620,13 +650,15 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
         usage: parse_usage(&v)?,
         warnings: Vec::new(),
         provider_metadata: None,
-        response: ResponseMetadata {
-            id: v["id"].as_str().map(std::string::ToString::to_string),
-            timestamp: None,
-            model_id: v["model"].as_str().map(std::string::ToString::to_string),
-        },
-        request_body: None,
-        response_headers: None,
+        response: Some(
+            ResponseMetadata {
+                id: v["id"].as_str().map(std::string::ToString::to_string),
+                timestamp: None,
+                model_id: v["model"].as_str().map(std::string::ToString::to_string),
+            }
+            .into(),
+        ),
+        request: None,
     })
 }
 
@@ -686,11 +718,11 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
                 || v.get("model").and_then(|x| x.as_str()).is_some())
         {
             response_meta_emitted = true;
-            parts.push(Ok(StreamPart::ResponseMetadata {
+            parts.push(Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                 id: v["id"].as_str().map(std::string::ToString::to_string),
                 timestamp: None,
                 model_id: v["model"].as_str().map(std::string::ToString::to_string),
-            }));
+            })));
         }
 
         // usage(含 usage-only 末帧 choices:[]+usage)→ 累积到 Finish.usage。
@@ -880,8 +912,8 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
 
     Ok(StreamResult {
         stream: Box::pin(futures::stream::iter(parts)),
-        request_body: None,
-        response_headers: None,
+        request: None,
+        response: None,
     })
 }
 
@@ -918,8 +950,8 @@ pub struct ReplayOverrides {
 /// # Errors
 ///
 /// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
-/// deserialized, and propagates any error from the re-sent `generate_text`
-/// call.
+/// deserialized, `AiMuxError::InvalidPrompt` for inline text file data without
+/// a user-facing representation, and propagates errors from `generate_text`.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,
@@ -947,26 +979,11 @@ pub async fn replay_with_model(
         }
     }
 
-    // 3. 转回用户侧类型,经 generate_text 重发。
-    let prompt = model_prompt_from_lm(&call_options.prompt);
+    // Recorded options already contain the complete provider-facing prompt.
+    // Repair callbacks are runtime-only and are not restored from recordings.
+    let prompt = std::mem::take(&mut call_options.prompt);
     let options = generate_options_from_call_options(call_options);
-    generate_text(model, prompt, options).await
-}
-
-/// `LanguageModelPrompt`(provider 侧)→ `ModelPrompt`(用户侧)。
-///
-/// 逐消息 `provider_options` 丢弃(用户侧无对应字段;语义不丢,仅 cacheControl
-/// 之类的 provider 提示不参与重放)。
-fn model_prompt_from_lm(prompt: &LanguageModelPrompt) -> ModelPrompt {
-    ModelPrompt::Messages(
-        prompt
-            .iter()
-            .map(|m| ModelMessage {
-                role: m.role,
-                content: MessageContent::Parts(m.content.clone()),
-            })
-            .collect(),
-    )
+    generate_text_from_language_model_prompt(model, prompt, Vec::new(), options).await
 }
 
 /// The recorded V4 tool choice as the user-level choice that
@@ -1023,14 +1040,7 @@ mod tests {
     use futures::StreamExt;
 
     fn sample_options(text: &str, temperature: Option<f64>) -> CallOptions {
-        let prompt = vec![crate::language_model_message::LanguageModelPromptMessage {
-            role: crate::message::Role::User,
-            content: vec![crate::content::ContentPart::Text {
-                text: text.to_string(),
-                provider_options: None,
-            }],
-            provider_options: None,
-        }];
+        let prompt = vec![LanguageModelMessage::user_text(text.to_string())];
         GenerateTextOptions {
             temperature,
             ..Default::default()
@@ -1041,14 +1051,7 @@ mod tests {
     /// 构造 OpenAI 格式录制。
     fn openai_recording(trace_id: &str, prompt_text: &str, reply: &str, finish: &str) -> Recording {
         let input_prompt: crate::language_model_message::LanguageModelPrompt =
-            vec![crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: prompt_text.to_string(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            }];
+            vec![LanguageModelMessage::user_text(prompt_text.to_string())];
         let body = serde_json::json!({
             "id": "chatcmpl-mock",
             "object": "chat.completion",
@@ -1214,39 +1217,6 @@ mod tests {
     }
 
     #[test]
-    fn exact_matcher_different_provider_options_misses() {
-        // A8:provider_options 纳入规范键——非脱敏值不同 → miss。
-        let mut rec = openai_recording("t1", "ping", "pong", "stop");
-        let mut call = sample_options("ping", Some(0.7));
-        call.provider_options = Some(
-            [("openai".into(), serde_json::json!({ "foo": 1 }))]
-                .into_iter()
-                .collect(),
-        );
-        rec.input.options = serde_json::to_value(&call).unwrap();
-        let recs = [rec];
-        let matcher = ExactMatcher::new("openai", "gpt-4o");
-
-        // foo 值不同 → miss。
-        let mut req = sample_options("ping", Some(0.7));
-        req.provider_options = Some(
-            [("openai".into(), serde_json::json!({ "foo": 2 }))]
-                .into_iter()
-                .collect(),
-        );
-        assert!(matcher.r#match(&req, &recs).is_err());
-
-        // 完全一致 → hit(对照)。
-        let mut req2 = sample_options("ping", Some(0.7));
-        req2.provider_options = Some(
-            [("openai".into(), serde_json::json!({ "foo": 1 }))]
-                .into_iter()
-                .collect(),
-        );
-        assert!(matcher.r#match(&req2, &recs).is_ok());
-    }
-
-    #[test]
     fn exact_matcher_redacted_values_match_any() {
         // A8:录制侧 headers 经 redact_json 脱敏(authorization→"[REDACTED]");
         // 脱敏值视为通配,匹配任意显式请求值。
@@ -1386,22 +1356,8 @@ mod tests {
         let matcher = PrefixMatcher::new("openai", "gpt-4o");
         // 输入两条消息 ["hello", "world"]:rec 是消息级前缀 → 命中。
         let prompt = vec![
-            crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: "hello".into(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            },
-            crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: "world".into(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            },
+            LanguageModelMessage::user_text("hello"),
+            LanguageModelMessage::user_text("world"),
         ];
         let opts = GenerateTextOptions::default().into_call_options(prompt);
         let recs = [rec.clone()];
@@ -1409,16 +1365,8 @@ mod tests {
         assert_eq!(hit.call_id, "t1");
 
         // 首消息不同 → 不命中(整条消息级前缀,非字符级)。
-        let opts2 = GenerateTextOptions::default().into_call_options(vec![
-            crate::language_model_message::LanguageModelPromptMessage {
-                role: crate::message::Role::User,
-                content: vec![crate::content::ContentPart::Text {
-                    text: "hi".into(),
-                    provider_options: None,
-                }],
-                provider_options: None,
-            },
-        ]);
+        let opts2 = GenerateTextOptions::default()
+            .into_call_options(vec![LanguageModelMessage::user_text("hi")]);
         assert!(matcher.r#match(&opts2, &[rec]).is_err());
     }
 
@@ -1427,14 +1375,7 @@ mod tests {
         // 多消息录制:rec-a = ["hello"],rec-b = ["hello", "world"]。
         let mut rec_a = openai_recording("ta", "hello", "a", "stop");
         let mut rec_b = openai_recording("tb", "hello world", "b", "stop");
-        let mk = |text: &str| crate::language_model_message::LanguageModelPromptMessage {
-            role: crate::message::Role::User,
-            content: vec![crate::content::ContentPart::Text {
-                text: text.into(),
-                provider_options: None,
-            }],
-            provider_options: None,
-        };
+        let mk = |text: &str| LanguageModelMessage::user_text(text);
         rec_a.input.prompt = vec![mk("hello")];
         rec_b.input.prompt = vec![mk("hello"), mk("world")];
 
@@ -1481,7 +1422,13 @@ mod tests {
         assert_eq!(text, "pong");
         assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
         assert_eq!(result.usage.input_tokens.total, Some(5));
-        assert_eq!(result.response.model_id.as_deref(), Some("gpt-4o"));
+        assert_eq!(
+            result
+                .response
+                .as_ref()
+                .and_then(|response| response.model_id.as_deref()),
+            Some("gpt-4o")
+        );
     }
 
     #[test]
@@ -1707,7 +1654,7 @@ mod tests {
         // 首帧 id/model → ResponseMetadata。
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::ResponseMetadata { id, model_id, .. }
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. })
                 if id.as_deref() == Some("chatcmpl-1") && model_id.as_deref() == Some("gpt-4o")
         )));
         // ToolInputStart。
@@ -1786,7 +1733,7 @@ mod tests {
         });
         assert!(parts.iter().any(|p| matches!(
             p,
-            StreamPart::ResponseMetadata { id, model_id, .. }
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. })
                 if id.as_deref() == Some("chatcmpl-2") && model_id.as_deref() == Some("gpt-4o")
         )));
         let deltas: Vec<String> = parts
@@ -1856,7 +1803,13 @@ mod tests {
         };
         assert_eq!(text, "pong");
         // 证明取的是第 1 次(id=chatcmpl-ok),而非失败的 exchange[0](id=chatcmpl-mock)。
-        assert_eq!(result.response.id.as_deref(), Some("chatcmpl-ok"));
+        assert_eq!(
+            result
+                .response
+                .as_ref()
+                .and_then(|response| response.id.as_deref()),
+            Some("chatcmpl-ok")
+        );
     }
 
     #[test]
@@ -1891,38 +1844,63 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── P4 请求回放 ─────────────────────────────────────────────────────
+    #[test]
+    fn exact_matcher_different_provider_options_misses() {
+        // A8: provider_options are part of the canonical key — a different
+        // non-redacted value misses.
+        let openai = |foo: i64| -> crate::shared::SharedProviderOptions {
+            [(
+                "openai".to_string(),
+                serde_json::json!({ "foo": foo })
+                    .as_object()
+                    .cloned()
+                    .unwrap(),
+            )]
+            .into_iter()
+            .collect()
+        };
+        let mut rec = openai_recording("t1", "ping", "pong", "stop");
+        let mut call = sample_options("ping", Some(0.7));
+        call.provider_options = Some(openai(1));
+        rec.input.options = serde_json::to_value(&call).unwrap();
+        let recs = [rec];
+        let matcher = ExactMatcher::new("openai", "gpt-4o");
 
-    /// 测试用 echo model:把收到的 prompt 文本原样回显。
-    #[derive(Clone)]
-    struct EchoModel {
-        provider: &'static str,
-        model_id: &'static str,
+        // A different foo → miss.
+        let mut req = sample_options("ping", Some(0.7));
+        req.provider_options = Some(openai(2));
+        assert!(matcher.r#match(&req, &recs).is_err());
+
+        // Identical → hit (control).
+        let mut req2 = sample_options("ping", Some(0.7));
+        req2.provider_options = Some(openai(1));
+        assert!(matcher.r#match(&req2, &recs).is_ok());
     }
 
-    impl EchoModel {
-        fn new() -> Self {
-            Self {
-                provider: "openai",
-                model_id: "gpt-4o",
-            }
-        }
-    }
+    // ── P4 request replay ───────────────────────────────────────────────────
+
+    /// Echo model: answers with the text of its user messages.
+    struct EchoModel;
 
     #[async_trait]
     impl LanguageModel for EchoModel {
         fn provider(&self) -> &str {
-            self.provider
+            "openai"
         }
+
         fn model_id(&self) -> &str {
-            self.model_id
+            "gpt-4o"
         }
+
         async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
             let text = options
                 .prompt
                 .iter()
-                .filter_map(|m| match m.content.first() {
-                    Some(crate::content::ContentPart::Text { text, .. }) => Some(text.clone()),
+                .filter_map(|message| match message {
+                    LanguageModelMessage::User { content, .. } => match content.first() {
+                        Some(UserPart::Text(part)) => Some(part.text.clone()),
+                        _ => None,
+                    },
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -1939,18 +1917,18 @@ mod tests {
                 usage: Usage::default(),
                 warnings: vec![],
                 provider_metadata: None,
-                response: ResponseMetadata::default(),
-                request_body: None,
-                response_headers: None,
+                response: None,
+                request: None,
             })
         }
+
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
             unreachable!("not used in tests")
         }
     }
 
-    /// 构造带 options 的录制(temperature/max_output_tokens 有值)。
-    /// options 用真实 CallOptions 序列化(与录制路径一致,全字段 round-trip)。
+    /// A recording whose options carry temperature and max_output_tokens,
+    /// serialized from real CallOptions (as the recording path does).
     fn optioned_recording(prompt_text: &str) -> Recording {
         let mut rec = openai_recording("t1", prompt_text, "pong", "stop");
         let mut call = sample_options(prompt_text, Some(0.7));
@@ -1962,32 +1940,22 @@ mod tests {
     #[test]
     fn replay_with_model_rebuilds_input_and_resends() {
         let rec = optioned_recording("hello");
-        let model = EchoModel::new();
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(async { replay_with_model(&rec, &model, None).await.unwrap() });
+        let result =
+            rt.block_on(async { replay_with_model(&rec, &EchoModel, None).await.unwrap() });
         assert_eq!(result.text, "hello");
     }
 
     #[test]
     fn replay_with_model_applies_overrides() {
         let rec = optioned_recording("hello");
-        let model = EchoModel::new();
         let overrides = ReplayOverrides {
-            prompt: Some(vec![
-                crate::language_model_message::LanguageModelPromptMessage {
-                    role: crate::message::Role::User,
-                    content: vec![crate::content::ContentPart::Text {
-                        text: "overridden".into(),
-                        provider_options: None,
-                    }],
-                    provider_options: None,
-                },
-            ]),
+            prompt: Some(vec![LanguageModelMessage::user_text("overridden")]),
             ..Default::default()
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(async {
-            replay_with_model(&rec, &model, Some(&overrides))
+            replay_with_model(&rec, &EchoModel, Some(&overrides))
                 .await
                 .unwrap()
         });
@@ -1998,9 +1966,9 @@ mod tests {
     fn replay_with_model_bad_input_options_errors() {
         let mut rec = openai_recording("t1", "hello", "pong", "stop");
         rec.input.options = serde_json::json!({ "not": "call-options" });
-        let model = EchoModel::new();
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let err = rt.block_on(async { replay_with_model(&rec, &model, None).await.unwrap_err() });
+        let err =
+            rt.block_on(async { replay_with_model(&rec, &EchoModel, None).await.unwrap_err() });
         assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
     }
 }

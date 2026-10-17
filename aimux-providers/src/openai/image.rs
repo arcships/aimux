@@ -18,7 +18,7 @@ use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult, ImageUsage,
 };
-use aimux_core::shared::{SharedProviderMetadata, Warning};
+use aimux_core::shared::{SharedProviderMetadata, SharedProviderOptions, Warning};
 
 use aimux_provider_utils::{HttpBody, HttpRequest};
 
@@ -231,7 +231,7 @@ struct GenerationOptions {
 
 /// Parse generation provider options from the `"openai"` key.
 fn parse_generation_provider_options(
-    provider_options: &HashMap<String, Value>,
+    provider_options: &SharedProviderOptions,
 ) -> GenerationOptions {
     let openai = provider_options.get("openai");
     GenerationOptions {
@@ -256,7 +256,7 @@ struct EditOptions {
 }
 
 /// Parse edit provider options from the `"openai"` key.
-fn parse_edit_provider_options(provider_options: &HashMap<String, Value>) -> EditOptions {
+fn parse_edit_provider_options(provider_options: &SharedProviderOptions) -> EditOptions {
     let openai = provider_options.get("openai");
     EditOptions {
         quality: openai.and_then(|o| o.get("quality")).cloned(),
@@ -547,7 +547,7 @@ fn distribute_token_details(details: Option<&Value>, index: usize, total: usize)
 /// `outputFormat`, and distributed token details. Fields with null/absent
 /// values are omitted (matching JSON serialization of TS `undefined`).
 fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
-    let mut metadata = HashMap::new();
+    let mut metadata = aimux_core::shared::NamespaceMap::new();
 
     let data = response.get("data").and_then(|d| d.as_array());
     let created = response.get("created").and_then(serde_json::Value::as_u64);
@@ -600,6 +600,6 @@ fn extract_provider_metadata(response: &Value) -> SharedProviderMetadata {
 
     let mut openai_meta = Map::new();
     openai_meta.insert("images".to_string(), json!(images));
-    metadata.insert("openai".to_string(), Value::Object(openai_meta));
+    metadata.insert("openai".to_string(), openai_meta);
     metadata
 }

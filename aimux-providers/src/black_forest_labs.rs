@@ -286,7 +286,7 @@ impl ImageModel for BlackForestLabsImageModel {
         }
 
         // Forward BFL provider options
-        if let Some(bfl) = bfl_opts.and_then(|v| v.as_object()) {
+        if let Some(bfl) = bfl_opts {
             let map: &[(&str, &str)] = &[
                 ("steps", "steps"),
                 ("guidance", "guidance"),
@@ -495,7 +495,7 @@ impl ImageModel for BlackForestLabsImageModel {
         let download_headers: HashMap<String, String> = HashMap::new();
 
         // Build provider metadata
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut bfl_meta = Map::new();
         let mut img_meta = Map::new();
         if let Some(s) = result_seed {
@@ -520,7 +520,7 @@ impl ImageModel for BlackForestLabsImageModel {
             img_meta.insert("outputMegapixels".into(), o.clone());
         }
         bfl_meta.insert("images".into(), json!([Value::Object(img_meta)]));
-        metadata.insert("blackForestLabs".into(), Value::Object(bfl_meta));
+        metadata.insert("blackForestLabs".into(), bfl_meta);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

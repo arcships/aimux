@@ -9,6 +9,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- The prompt a provider receives is modelled by role (`aimux-core`), as the AI
+  SDK's `LanguageModelV4Message`. `LanguageModelPrompt` is
+  `Vec<LanguageModelMessage>`: `System { content: String }`,
+  `User { content: Vec<UserPart> }`, `Assistant { content: Vec<AssistantPart> }`,
+  `Tool { content: Vec<ToolPart> }`. The parts are `TextPart`, `FilePart`,
+  `ReasoningPart`, `ToolCallPart`, `ToolResultPart`. A provider sees one file
+  part, `FilePart { data: FileData, media_type, filename }`; the five
+  user-facing file variants are folded into it by
+  `convert_to_language_model_prompt`, which now returns `Result` and rejects a
+  part its role does not allow. `LanguageModelPromptMessage` is removed.
+  Recordings store the new prompt JSON: a system message's `content` is a
+  string and every file input is a `file` part. In TypeScript the provider
+  `ToolResultPart` / `ToolResultOutput` are `LanguageModelToolResultPart` /
+  `LanguageModelToolResultOutput`; the plain names are the user-facing types.
+
+- The user-facing `ModelMessage` is a union by role, as the AI SDK's
+  (`aimux-core`): `System { content: String }`, `User { content: UserContent }`,
+  `Assistant { content: AssistantContent }`, `Tool { content: ToolContent }`,
+  each with message-level `provider_options`, which now reach the provider
+  prompt (they were dropped). Each role has its own part union:
+  `UserContentPart` (text, image and the file variants),
+  `AssistantContentPart` (text, custom, the file variants, reasoning,
+  reasoning file, tool call, tool result, tool approval request) and
+  `ToolContentPart` (tool result, tool approval response). `ContentPart`,
+  `MessageContent` and `Role` are removed; `ModelMessage::role()` returns the
+  role name. A tool result is `ToolResultPart { tool_call_id, tool_name,
+  output: ToolResultOutput, provider_options }`, the AI SDK's typed output
+  (`text`, `json`, `execution-denied`, `error-text`, `error-json`, `content`);
+  `preliminary` and `dynamic` are gone from it. A tool message can carry a
+  `tool_approval_response { approval_id, approved, reason, provider_executed }`,
+  which reaches the provider only for a provider-executed tool, as upstream;
+  a tool message left empty is dropped. Wire format: the role and part tags
+  are unchanged; a tool result still reads the earlier `result` (or untyped
+  `output`) value with `is_error` and writes `text` / `json` / error outputs
+  that way, while `output` holding an AI SDK output object is read as typed;
+  a part its role does not allow (an `image` in an assistant message, a
+  non-text system message, a string or text part in a tool message) is now
+  rejected when the prompt is parsed instead of when it is converted.
+
+- Provider options and provider metadata have one typed shape, the AI SDK's
+  `Record<string, JSONObject>`: `SharedProviderOptions` and
+  `SharedProviderMetadata` (`ProviderMetadata` is an alias) are one type,
+  `NamespaceMap` = `IndexMap<String, JsonObject>`, namespace to JSON object.
+  Like the AI SDK's JS objects they keep insertion order: a value serializes
+  with its keys in the order it was built or parsed.
+  `SharedProviderReference` is `IndexMap<String, String>` for the same
+  reason. They replace `serde_json::Value`, `HashMap<String, Value>` and the
+  per-part `Option<Value>`. Every `provider_options` / `provider_metadata` field of
+  content parts, messages, call options, tools, results and stream parts uses
+  them. `{"namespace": {"key": value}}` serializes as before; a value that is
+  not namespace -> object (a number, string or array under a namespace, or a
+  non-object at the top) is rejected when deserialized. Build one with
+  `provider_namespace(ns, json!({..}))`.
+
+- `ContentPart::Reasoning` has no `signature` field any more, as the AI SDK's
+  `ReasoningPart` (`text` and `provider_options` only). A reasoning signature
+  travels in its provider's namespace (`provider_options.anthropic.signature`,
+  `provider_options.bedrock.signature`), which is where the providers already
+  read it; response messages no longer copy it to a top-level field. A
+  `signature` key in input JSON is ignored.
+
+- `convert_to_language_model_prompt` takes the called provider's id as a third
+  argument (`aimux-core`), the part of `LanguageModel::provider()` before the
+  first `.`, as the AI SDK passes it. A `content` tool output accepts the AI
+  SDK's deprecated items `file-data`, `file-url`, `file-id`,
+  `file-reference`, `image-data`, `image-url`, `image-file-id` and
+  `image-file-reference` (`ToolResultContentPart`; a `file_id` is a string or
+  a provider-to-id map, `ToolResultFileId`), and the conversion turns each
+  into a `file` part as upstream does: a `file-url` without a media type gets
+  one from the URL's extension, a URL keeps its given spelling as
+  `original_url` when normalizing changes it, and a string `file_id` becomes
+  a reference for the called provider (an error when there is none). These
+  items and a user `image` part log upstream's deprecation warning through
+  `tracing`.
+
+- `generate_text` and `stream_text` check the prompt and the response as the
+  AI SDK does (`aimux-core`). An empty message list is an `InvalidPrompt`
+  error (`messages must not be empty`). The prompt conversion combines
+  consecutive tool messages into one, merging the earlier message's
+  `provider_options` into its last part, and fails with the new
+  `AiMuxError::MissingToolResults { tool_call_ids }` when a tool call the
+  provider did not execute has no tool result or approval response before
+  the next user or system message or by the end of the prompt. A response
+  that breaks a `required` or `tool` tool choice fails `generate_text` with
+  the new `AiMuxError::ToolChoiceViolation(ToolChoiceViolationError {
+  tool_choice, finish_reason, provider, model_id, content })`; `stream_text`
+  ends with that error as an `Error` part followed by a `Finish` part whose
+  unified finish reason is `error`. Error codes: the C ABI reports
+  `MissingToolResults` as `AIMUX_E_INVALID_PROMPT` and `ToolChoiceViolation`
+  as `AIMUX_E_INVALID_RESPONSE_DATA`; Node and Python raise them as
+  `InvalidPromptError` and `InvalidResponseDataError`.
+
+- Text results carry the AI SDK's core `ContentPart` (`aimux-core`), eleven
+  kinds, instead of the provider's `GenerateContent`: `GenerateTextResult`
+  and `StreamTextResultAggregated` `content` is `Vec<ContentPart>`
+  (`TextContent` is removed; Node exports `ContentPart`, Python keeps the
+  `TextContent` model name). New kinds: `ToolError(TypedToolError)` and
+  `ToolApprovalResponse(ToolApprovalResponseOutput)`. A provider tool result
+  is `ToolResult(TypedToolResult { tool_call_id, tool_name, input, output,
+  provider_executed, provider_metadata, dynamic, preliminary })`, with the
+  input of the call it answers, or `ToolError(TypedToolError { .., error,
+  .. })` when the provider marks it as an error. A tool call that could not
+  be parsed is followed by a `ToolError` holding its error message, which
+  the response messages replay in a tool message as error text. Wire
+  format: `{"File": {"file": GeneratedFile, "provider_metadata": ..}}` (was
+  the bare `GeneratedFile`), `{"ToolResult": {.., "input", "output",
+  "provider_executed"}}` (was `result` / `is_error`), and the new
+  `ToolError` / `ToolApprovalResponse` tags. `GenerateContent` is no longer
+  generic.
+
+- The custom content `kind` is a `types::NamespacedKind` at every layer
+  (`AssistantContentPart::Custom`, the provider `CustomPart`,
+  `GenerateContent::Custom`, `ContentPart::Custom`, `StreamPart::Custom`),
+  the AI SDK's `${string}.${string}`: a kind without a `.` (for example
+  `"compaction"` instead of `"openai.compaction"`) no longer deserializes.
+  The JSON is still a plain string; the TypeScript type is `NamespacedKind`.
+
 - Tool-call and tool-result types are unified, one per protocol layer
   (`aimux-core`). A provider emits `tool::RawToolCall` (`input` is the raw
   argument text) in `GenerateContent::ToolCall(..)` and
@@ -23,6 +140,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GenerateContent::ToolCall` with a non-string `input` no longer
   deserializes; the standalone `tool::ToolResult` gains a required
   `tool_name` and optional `dynamic` / `provider_metadata`.
+- Source, generated-file and reasoning types are unified, one per concept
+  (`aimux-core`). `result::Source`, `result::GeneratedFile` and
+  `result::ReasoningOutput` are the payloads of `GenerateContent::{Source,
+  File, Reasoning}` and `StreamPart::{Source, File}` (newtype variants now) and
+  the elements of `sources`, `files` and `reasoning` on `GenerateTextResult`
+  and `StreamTextResultAggregated`; `StreamPart::ResponseMetadata` wraps
+  `types::ResponseMetadata`. `SourcePart`, `FilePart` and `ReasoningPart` are
+  removed (TypeScript: `Source`, `GeneratedFile`, `ReasoningOutput`). Wire
+  format: enum variants keep their JSON shape; the top-level `sources` /
+  `files` / `reasoning` arrays gain `provider_metadata` (so the reasoning
+  signature is no longer dropped), and a source's `url` / `title` serialize as
+  `null` when absent instead of being omitted.
 
 - A repaired tool call that still fails to parse or validate is reported as
   the AI SDK reports it: the original call stays invalid and carries the
@@ -42,6 +171,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   open-responses, which sends it as upstream does). Provider authors match
   on `LanguageModelV4ToolChoice`. Recordings store the object form, so an
   `ExactMatcher` no longer matches recordings made before this change.
+
+- `CallOptions.call_id` and `CallOptions::for_step` are removed
+  (`aimux-core`); the V4 call options have no call id. The recording
+  correlation id is `recording_context.call_id`, and `HttpRequest::new` takes
+  it from there. Provider code that built `HttpRequest { call_id:
+  options.call_id.clone(), .. }` uses `HttpRequest::new(url, headers,
+  options)`. The JSON is unchanged (both were internal and never serialized).
 
 - `ProviderTool.id` is a `types::NamespacedKind`, the V4
   `${string}.${string}` identifier: an id without a `.` (for example

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use aimux_core::AiMuxError;
 use aimux_core::decision_model::{DecisionCallOptions, DecisionImage};
-use aimux_core::shared::FileBytes;
+use aimux_core::shared::{FileBytes, SharedProviderMetadata};
 use aimux_provider_utils::HttpRequest;
 use base64::Engine;
 use serde_json::Value;
@@ -105,6 +105,17 @@ pub(crate) fn invalid(message: impl Into<String>) -> AiMuxError {
     AiMuxError::InvalidResponseData(message.into())
 }
 
+/// Provider metadata keeps the whole response object under the provider key.
+pub(crate) fn response_metadata(
+    provider: &str,
+    raw: &Value,
+) -> Result<SharedProviderMetadata, AiMuxError> {
+    let object = raw.as_object().cloned().ok_or_else(|| {
+        AiMuxError::InvalidResponseData(format!("{provider} response must be an object"))
+    })?;
+    Ok(SharedProviderMetadata::from([(provider.into(), object)]))
+}
+
 pub(crate) fn options(
     request: &DecisionCallOptions,
     provider: &str,
@@ -115,9 +126,6 @@ pub(crate) fn options(
         .and_then(|options| options.get(provider))
     {
         None => Ok(serde_json::Map::new()),
-        Some(Value::Object(options)) => Ok(options.clone()),
-        Some(_) => Err(AiMuxError::InvalidArgument(format!(
-            "{provider} decision options must be an object"
-        ))),
+        Some(options) => Ok(options.clone()),
     }
 }

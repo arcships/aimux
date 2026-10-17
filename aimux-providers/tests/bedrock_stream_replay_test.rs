@@ -24,10 +24,8 @@ use common::replay::mount_cassettes;
 use futures::StreamExt;
 use wiremock::MockServer;
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
 use aimux_providers::{BedrockProvider, BedrockProviderConfig};
@@ -38,11 +36,9 @@ use aimux_providers::{BedrockProvider, BedrockProviderConfig};
 const MODEL_ID: &str = "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 
 fn prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("What is the capital of France?")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text(
+        "What is the capital of France?",
+    )]
 }
 
 /// Decoded frames must reach the parser and come out as text plus a finish.

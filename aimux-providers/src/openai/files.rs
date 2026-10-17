@@ -8,11 +8,11 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
-use aimux_core::shared::FileBytes;
+use aimux_core::shared::{FileBytes, SharedProviderOptions};
 
 use aimux_provider_utils::{HttpBody, HttpRequest};
 
@@ -31,7 +31,7 @@ struct OpenAIFilesOptions {
 
 /// Parse provider options for the OpenAI files provider.
 fn parse_openai_files_options(
-    provider_options: Option<&HashMap<String, Value>>,
+    provider_options: Option<&SharedProviderOptions>,
 ) -> OpenAIFilesOptions {
     let mut opts = OpenAIFilesOptions::default();
     if let Some(po) = provider_options
@@ -211,7 +211,7 @@ impl Files for OpenAIFiles {
             metadata.insert("expiresAt".to_string(), json!(expires_at));
         }
 
-        let mut provider_ref = HashMap::new();
+        let mut provider_ref = aimux_core::shared::SharedProviderReference::new();
         provider_ref.insert("openai".to_string(), data.id);
 
         // Filename: prefer response filename, fall back to options filename.
@@ -221,9 +221,10 @@ impl Files for OpenAIFiles {
             provider_reference: provider_ref,
             media_type: Some(options.media_type.clone()),
             filename: result_filename,
-            provider_metadata: Some(
-                std::iter::once(("openai".to_string(), Value::Object(metadata))).collect(),
-            ),
+            provider_metadata: Some(aimux_core::shared::NamespaceMap::from([(
+                "openai".to_string(),
+                metadata,
+            )])),
             warnings: Vec::new(),
         })
     }

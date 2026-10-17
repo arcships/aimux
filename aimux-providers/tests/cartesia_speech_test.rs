@@ -289,15 +289,16 @@ async fn should_pass_provider_specific_options() {
     let mut options = speech_options("Hello, world!");
     options.voice = Some("test-voice-id".to_string());
 
-    let mut provider_options = HashMap::new();
+    let mut provider_options = aimux_core::shared::SharedProviderOptions::new();
     provider_options.insert(
         "cartesia".to_string(),
-        json!({
+        serde_json::from_value(json!({
             "container": "raw",
             "encoding": "pcm_s16le",
             "sampleRate": 16000,
             "speed": 0.8,
-        }),
+        }))
+        .unwrap(),
     );
     options.provider_options = Some(provider_options);
 
@@ -329,8 +330,11 @@ async fn should_ignore_encoding_for_mp3_output() {
     let mut options = speech_options("Hello, world!");
     options.voice = Some("test-voice-id".to_string());
 
-    let mut provider_options = HashMap::new();
-    provider_options.insert("cartesia".to_string(), json!({ "encoding": "pcm_s16le" }));
+    let mut provider_options = aimux_core::shared::SharedProviderOptions::new();
+    provider_options.insert(
+        "cartesia".to_string(),
+        serde_json::from_value(json!({ "encoding": "pcm_s16le" })).unwrap(),
+    );
     options.provider_options = Some(provider_options);
 
     let result = model.do_generate(&options).await.unwrap();

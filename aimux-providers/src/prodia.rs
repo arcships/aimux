@@ -307,10 +307,10 @@ impl ImageModel for ProdiaImageModel {
         let job_result = job_result.unwrap_or(Value::Null);
 
         // Build provider metadata
-        let mut metadata = HashMap::new();
+        let mut metadata = aimux_core::shared::NamespaceMap::new();
         let mut prodia_meta = Map::new();
         prodia_meta.insert("images".into(), json!([job_result]));
-        metadata.insert("prodia".into(), Value::Object(prodia_meta));
+        metadata.insert("prodia".into(), prodia_meta);
 
         Ok(ImageResult {
             images: ImageOutputs::Binary(vec![image_bytes]),

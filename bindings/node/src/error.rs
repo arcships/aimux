@@ -177,12 +177,18 @@ fn aimux_error_class_name(error: &AiMuxError) -> &'static str {
         AiMuxError::ApiCall(_) => "APICallError",
         AiMuxError::Retry(_) => "RetryError",
         AiMuxError::JsonParse(_) => "JSONParseError",
-        AiMuxError::InvalidResponseData(_) => "InvalidResponseDataError",
+        // No class of their own yet for the AI SDK's ToolChoiceViolationError
+        // and MissingToolResultsError (binding migration).
+        AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
+        | AiMuxError::ToolChoiceViolation(_) => "InvalidResponseDataError",
         AiMuxError::NoSuchTool { .. } => "NoSuchToolError",
         AiMuxError::InvalidToolInput { .. } => "InvalidToolInputError",
         AiMuxError::ToolCallRepair { .. } => "ToolCallRepairError",
         AiMuxError::InvalidArgument(_) => "InvalidArgumentError",
-        AiMuxError::InvalidPrompt(_) => "InvalidPromptError",
+        AiMuxError::InvalidPrompt(_) | AiMuxError::MissingToolResults { .. } => {
+            "InvalidPromptError"
+        }
         AiMuxError::TokenExpired(_) => "TokenExpiredError",
         AiMuxError::UnsupportedFunctionality(_) => "UnsupportedFunctionalityError",
         AiMuxError::NoSuchModel { .. } => "NoSuchModelError",

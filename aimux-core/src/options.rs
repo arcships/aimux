@@ -10,6 +10,7 @@ use ts_rs::TS;
 
 use crate::AbortSignal;
 use crate::language_model_message::LanguageModelPrompt;
+use crate::shared::SharedProviderOptions;
 pub use crate::tool::{
     FunctionTool, FunctionToolInputExample, LanguageModelV4ToolChoice, ProviderTool, Tool,
     ToolChoice, prepare_tool_choice,
@@ -32,10 +33,15 @@ pub enum ResponseFormat {
 
 /// Per-call timeout configuration.
 ///
-/// Aligned with V4 `LanguageModelV4CallOptions.timeout`
-/// (`TimeoutConfiguration`). All values are milliseconds; `None` disables the
-/// corresponding limit. A `total` timeout also covers retry backoff and the
-/// whole streamed response.
+/// The object form of the AI SDK's `TimeoutConfiguration`
+/// (`ai/src/prompt/request-options.ts:13-22`), a request option of
+/// `generateText` / `streamText` (`RequestOptions.timeout`, `:126`).
+/// `LanguageModelV4CallOptions` has no timeout. Aimux runs no tools, so
+/// upstream's `toolMs` / `tools` keys and the bare-number form of `totalMs`
+/// are absent.
+///
+/// All values are milliseconds; `None` disables the corresponding limit. A
+/// `total` timeout also covers retry backoff and the whole streamed response.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TimeoutConfiguration {
@@ -112,7 +118,7 @@ pub struct CallOptions {
     pub headers: Option<HashMap<String, String>>,
 
     /// Provider-specific options (keyed by provider name).
-    pub provider_options: Option<HashMap<String, Value>>,
+    pub provider_options: Option<SharedProviderOptions>,
 
     /// Top-level reasoning effort. Maps to OpenAI `reasoning_effort` and
     /// Anthropic `thinking` config.
@@ -148,11 +154,6 @@ pub struct CallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// RFC-0023 recording correlation id (internal; never serialized).
-    #[serde(skip)]
-    #[ts(skip)]
-    pub call_id: Option<String>,
-
     /// RFC-0023 recording context (R7 快照绑定;internal;never serialized)。
     /// 层 A 入口构造一次,provider 复制到 `HttpRequest`。None = 不录制。
     #[serde(skip)]
@@ -171,21 +172,6 @@ pub struct CallOptions {
 }
 
 impl CallOptions {
-    /// Clone these options for one composite child step (Router child, MoA
-    /// reference or aggregator): the recording context, when present, is
-    /// replaced by a child context labeled `step`, so the child's exchanges
-    /// and retry attempts are recorded as their own step instead of blending
-    /// into the parent operation's.
-    #[must_use]
-    pub fn for_step(&self, step: impl Into<String>) -> Self {
-        let mut child = self.clone();
-        child.recording_context = self
-            .recording_context
-            .as_ref()
-            .map(|context| context.child(step.into()));
-        child
-    }
-
     /// Create a `CallOptions` with the given prompt and all other fields set
     /// to `None`.
     ///
@@ -216,7 +202,6 @@ impl CallOptions {
             timeout: None,
             session_id: None,
             abort_signal: None,
-            call_id: None,
             recording_context: None,
             include_raw_chunks: None,
         }

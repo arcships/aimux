@@ -23,19 +23,19 @@ use base64::Engine;
 use futures::StreamExt;
 use serde_json::{Map, Value, json};
 
-use aimux_core::content::ContentPart;
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::LanguageModelPrompt;
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart, UserPart,
+};
 use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
-use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::provider_namespace;
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ResponseMetadata, TokenUsage, Usage, Warning,
-};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
 
 use aimux_provider_utils::HttpRequest;
 
@@ -196,6 +196,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
         )
         .await?;
 
+        let response_body = resp.raw_value;
         let response_headers = resp.response_headers;
 
         let response: Value = resp.value;
@@ -222,16 +223,20 @@ impl LanguageModel for HuggingFaceResponsesModel {
             finish_reason,
             usage,
             warnings: request.warnings,
-            provider_metadata: Some(json!({
-                "huggingface": { "responseId": response_id }
-            })),
-            response: ResponseMetadata {
-                id: response_id,
-                timestamp: format_timestamp(created_at),
-                model_id: model,
-            },
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            provider_metadata: Some(
+                provider_namespace("huggingface", json!({ "responseId": response_id }))
+                    .expect("provider metadata must be an object"),
+            ),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::GenerateResponse {
+                body: response_body,
+                headers: Some(response_headers),
+                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
+                    id: response_id,
+                    timestamp: format_timestamp(created_at),
+                    model_id: model,
+                })
+            }),
         })
     }
 
@@ -313,11 +318,11 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                         .get("model")
                                         .and_then(|v| v.as_str())
                                         .map(std::string::ToString::to_string);
-                                    yield Ok(StreamPart::ResponseMetadata {
+                                    yield Ok(StreamPart::ResponseMetadata(ResponseMetadata {
                                         id: response_id.clone(),
                                         timestamp: format_timestamp(created_at),
                                         model_id: model,
-                                    });
+                                    }));
                                 }
                             }
 
@@ -341,9 +346,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                     .to_string();
                                                 yield Ok(StreamPart::TextStart {
                                                     id: id.clone(),
-                                                    provider_metadata: Some(json!({
-                                                        "huggingface": { "itemId": id }
-                                                    })),
+                                                    provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id })).expect("provider metadata must be an object")),
                                                 });
                                             }
                                         }
@@ -375,9 +378,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
                                                 .to_string();
                                             yield Ok(StreamPart::ReasoningStart {
                                                 id: id.clone(),
-                                                provider_metadata: Some(json!({
-                                                    "huggingface": { "itemId": id }
-                                                })),
+                                                provider_metadata: Some(provider_namespace("huggingface", json!({ "itemId": id })).expect("provider metadata must be an object")),
                                             });
                                         }
                                         _ => {}
@@ -546,16 +547,16 @@ impl LanguageModel for HuggingFaceResponsesModel {
             yield Ok(StreamPart::Finish {
                 finish_reason,
                 usage,
-                provider_metadata: Some(json!({
-                    "huggingface": { "responseId": response_id }
-                })),
+                provider_metadata: Some(provider_namespace("huggingface", json!({ "responseId": response_id })).expect("provider metadata must be an object")),
             });
         };
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }
@@ -732,74 +733,59 @@ pub fn convert_to_huggingface_responses_messages(
     let mut warnings: Vec<Warning> = Vec::new();
 
     for msg in prompt {
-        match msg.role {
-            Role::System => {
-                // System content is a plain string (concatenation of text parts).
-                let content: String = msg
-                    .content
-                    .iter()
-                    .filter_map(|p| match p {
-                        ContentPart::Text { text, .. } => Some(text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
+        match msg {
+            LanguageModelMessage::System { content, .. } => {
                 messages.push(json!({ "role": "system", "content": content }));
             }
-
-            Role::User => {
+            LanguageModelMessage::User { content, .. } => {
                 let mut parts: Vec<Value> = Vec::new();
-                for part in &msg.content {
+                for part in content {
                     match part {
-                        ContentPart::Text { text, .. } => {
+                        UserPart::Text(TextPart { text, .. }) => {
                             parts.push(json!({ "type": "input_text", "text": text }));
                         }
-                        ContentPart::FileBase64 {
-                            data, media_type, ..
-                        } => {
-                            parts.push(convert_file_part_base64(media_type, data)?);
-                        }
-                        ContentPart::FileUrl {
-                            url, media_type, ..
-                        } => {
-                            parts.push(convert_file_part_url(media_type, url)?);
-                        }
-                        ContentPart::FileReference { .. } => {
-                            return Err(AiMuxError::UnsupportedFunctionality(
-                                "file parts with provider references".into(),
-                            ));
-                        }
-                        ContentPart::Image {
-                            image, media_type, ..
-                        } => {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(image);
-                            parts.push(convert_file_part_base64(media_type, &encoded)?);
-                        }
-                        ContentPart::File {
-                            data, media_type, ..
-                        } => {
-                            let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-                            parts.push(convert_file_part_base64(media_type, &encoded)?);
-                        }
-                        _ => {
-                            // Other part types (tool-call, tool-result, reasoning)
-                            // are not expected in user messages — skip.
+                        UserPart::File(file) => {
+                            parts.push(match &file.data {
+                                FileData::Data {
+                                    data: FileBytes::Binary(bytes),
+                                } => {
+                                    let encoded =
+                                        base64::engine::general_purpose::STANDARD.encode(bytes);
+                                    convert_file_part_base64(&file.media_type, &encoded)?
+                                }
+                                FileData::Data {
+                                    data: FileBytes::Base64(data),
+                                } => convert_file_part_base64(&file.media_type, data)?,
+                                FileData::Url { url, .. } => {
+                                    convert_file_part_url(&file.media_type, url)?
+                                }
+                                FileData::Reference { .. } => {
+                                    return Err(AiMuxError::UnsupportedFunctionality(
+                                        "file parts with provider references".into(),
+                                    ));
+                                }
+                                FileData::Text { .. } => {
+                                    return Err(AiMuxError::UnsupportedFunctionality(
+                                        "text file parts".into(),
+                                    ));
+                                }
+                            });
                         }
                     }
                 }
                 messages.push(json!({ "role": "user", "content": parts }));
             }
 
-            Role::Assistant => {
-                for part in &msg.content {
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
                     match part {
-                        ContentPart::Text { text, .. } => {
+                        AssistantPart::Text(TextPart { text, .. }) => {
                             messages.push(json!({
                                 "role": "assistant",
                                 "content": [{ "type": "output_text", "text": text }]
                             }));
                         }
-                        ContentPart::Reasoning { text, .. } => {
+                        AssistantPart::Reasoning(ReasoningPart { text, .. }) => {
                             messages.push(json!({
                                 "role": "assistant",
                                 "content": [{ "type": "output_text", "text": text }]
@@ -807,13 +793,13 @@ pub fn convert_to_huggingface_responses_messages(
                         }
                         // Tool calls and tool results are handled by the
                         // Responses API — skip (no warning, matching TS).
-                        ContentPart::ToolCall { .. } | ContentPart::ToolResult { .. } => {}
+                        AssistantPart::ToolCall(_) | AssistantPart::ToolResult(_) => {}
                         _ => {}
                     }
                 }
             }
 
-            Role::Tool => {
+            LanguageModelMessage::Tool { .. } => {
                 warnings.push(Warning::Unsupported {
                     feature: "tool messages".into(),
                     details: None,
@@ -1091,9 +1077,10 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: Some(json!({
-                            "huggingface": { "itemId": item_id }
-                        })),
+                        provider_metadata: Some(
+                            provider_namespace("huggingface", json!({ "itemId": item_id }))
+                                .expect("provider metadata must be an object"),
+                        ),
                     });
 
                     // Process annotations → source parts.
@@ -1101,13 +1088,12 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         for ann in annotations {
                             let url = ann.get("url").and_then(|v| v.as_str()).unwrap_or("");
                             let title = ann.get("title").and_then(|v| v.as_str());
-                            content.push(GenerateContent::Source {
+                            content.push(GenerateContent::Source(Source::Url {
                                 id: format!("id-{source_id_counter}"),
-                                source_type: "url".to_string(),
-                                url: Some(url.to_string()),
+                                url: url.to_string(),
                                 title: title.map(std::string::ToString::to_string),
                                 provider_metadata: None,
-                            });
+                            }));
                             source_id_counter += 1;
                         }
                     }
@@ -1122,12 +1108,13 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                 for cp in content_parts {
                     let text = cp.get("text").and_then(|v| v.as_str()).unwrap_or("");
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    content.push(GenerateContent::Reasoning {
+                    content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: text.to_string(),
-                        provider_metadata: Some(json!({
-                            "huggingface": { "itemId": item_id }
-                        })),
-                    });
+                        provider_metadata: Some(
+                            provider_namespace("huggingface", json!({ "itemId": item_id }))
+                                .expect("provider metadata must be an object"),
+                        ),
+                    }));
                 }
             }
 
@@ -1270,21 +1257,19 @@ fn convert_usage(usage: Option<&Value>) -> Usage {
         .unwrap_or(0) as u32;
 
     Usage {
-        input_tokens: TokenUsage {
+        input_tokens: aimux_core::types::InputTokenUsage {
             total: Some(input_tokens),
             no_cache: Some(input_tokens - cached_tokens),
             cache_read: Some(cached_tokens),
             cache_write: None,
-            ..Default::default()
         },
-        output_tokens: TokenUsage {
+        output_tokens: aimux_core::types::OutputTokenUsage {
             total: Some(output_tokens),
             text: Some(output_tokens - reasoning_tokens),
             reasoning: Some(reasoning_tokens),
-            ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: Some(u.clone()),
+        raw: u.as_object().cloned(),
     }
 }
 

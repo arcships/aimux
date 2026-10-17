@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
@@ -171,7 +171,7 @@ impl Files for AnthropicFiles {
             metadata.insert("downloadable".to_string(), json!(downloadable));
         }
 
-        let mut provider_ref = HashMap::new();
+        let mut provider_ref = aimux_core::shared::SharedProviderReference::new();
         provider_ref.insert("anthropic".to_string(), data.id);
 
         let result_media_type = data
@@ -184,9 +184,10 @@ impl Files for AnthropicFiles {
             provider_reference: provider_ref,
             media_type: Some(result_media_type),
             filename: result_filename,
-            provider_metadata: Some(
-                std::iter::once(("anthropic".to_string(), Value::Object(metadata))).collect(),
-            ),
+            provider_metadata: Some(aimux_core::shared::NamespaceMap::from([(
+                "anthropic".to_string(),
+                metadata,
+            )])),
             warnings: Vec::new(),
         })
     }

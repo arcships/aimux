@@ -301,7 +301,7 @@ impl ImageModel for LumaImageModel {
         }
 
         // Forward luma provider options (excluding non-request options)
-        if let Some(luma) = luma_opts.and_then(|v| v.as_object()) {
+        if let Some(luma) = luma_opts {
             for (k, v) in luma {
                 if matches!(
                     k.as_str(),

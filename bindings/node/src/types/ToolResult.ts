@@ -32,4 +32,4 @@ dynamic?: boolean | null,
 /**
  * Additional provider-specific metadata for the tool result.
  */
-provider_metadata?: JsonValue | null, };
+provider_metadata?: { [key in string]: { [key in string]: JsonValue } } | null, };

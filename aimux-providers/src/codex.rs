@@ -258,7 +258,7 @@ impl CodexModel {
         options: &CallOptions,
         stream: bool,
     ) -> Result<(Value, Vec<Warning>), AiMuxError> {
-        let mut result = build_responses_request_body(&self.model_id, options, stream);
+        let mut result = build_responses_request_body(&self.model_id, options, stream)?;
         if self.config.mode == CodexMode::Subscription {
             result.body["store"] = Value::Bool(false);
         }
@@ -391,14 +391,7 @@ impl CodexModel {
 
         let endpoint = self.endpoint();
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url: endpoint.clone(),
-                headers: build_header_list(&headers),
-                abort_signal: opts.abort_signal.clone(),
-                call_id: options.call_id.clone(),
-                recording_context: options.recording_context.clone(),
-                ..Default::default()
-            },
+            HttpRequest::new(endpoint.clone(), build_header_list(&headers), &opts),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
             crate::openai::openai_failed_response_handler(),
@@ -425,8 +418,10 @@ impl CodexModel {
 
         Ok(StreamResult {
             stream,
-            request_body: Some(body),
-            response_headers: Some(response_headers),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+            response: Some(aimux_core::result::StreamResponse {
+                headers: Some(response_headers),
+            }),
         })
     }
 }

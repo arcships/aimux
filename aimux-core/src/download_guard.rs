@@ -10,7 +10,7 @@
 
 use std::net::IpAddr;
 
-use aimux_core::error::AiMuxError;
+use crate::error::AiMuxError;
 
 /// Compare scheme, host, and effective port. Unparseable inputs are never
 /// same-origin. Public so providers can build credential allowlists on top
@@ -28,7 +28,8 @@ pub fn same_origin(url: &str, origin: &str) -> bool {
 /// Trust flows only within the trusted origin: the exemption applies to a
 /// redirect target only when the redirecting URL is itself on the trusted
 /// origin, so a foreign hop cannot launder a request into it.
-pub(crate) fn hop_trusted_origin<'a>(
+#[must_use]
+pub fn hop_trusted_origin<'a>(
     trusted_origin: Option<&'a str>,
     current_url: &str,
 ) -> Option<&'a str> {
@@ -37,7 +38,12 @@ pub(crate) fn hop_trusted_origin<'a>(
 
 /// The URL as an error message may show it: no query, no userinfo.
 fn without_query(parsed: &url::Url) -> String {
-    crate::http::sanitized_request_url(parsed.as_str())
+    let mut redacted = parsed.clone();
+    redacted.set_query(None);
+    // Both fail only for URLs that cannot carry userinfo at all.
+    let _ = redacted.set_username("");
+    let _ = redacted.set_password(None);
+    redacted.to_string()
 }
 
 /// Parse a host as `url::Url::host_str` yields it into an IP literal. The url
@@ -54,7 +60,7 @@ fn host_ip_literal(host: &str) -> Option<IpAddr> {
 ///
 /// Callers that resolve DNS afterwards rely on this having rejected every
 /// non-public literal, so keep this the single literal-check site.
-pub(crate) fn validate_download_url(url: &str) -> Result<url::Url, AiMuxError> {
+pub fn validate_download_url(url: &str) -> Result<url::Url, AiMuxError> {
     let parsed = url::Url::parse(url)
         .map_err(|error| AiMuxError::InvalidArgument(format!("invalid download URL: {error}")))?;
     if !matches!(parsed.scheme(), "http" | "https") {
@@ -92,7 +98,7 @@ pub(crate) fn validate_download_url(url: &str) -> Result<url::Url, AiMuxError> {
 /// A URL same-origin with `trusted_origin` (normally the configured
 /// `base_url`) is exempt and returns no addresses; self-hosted deployments
 /// legitimately serve assets from private space on their own origin.
-pub(crate) async fn validate_download_target(
+pub async fn validate_download_target(
     url: &str,
     trusted_origin: Option<&str>,
 ) -> Result<Vec<IpAddr>, AiMuxError> {
@@ -205,7 +211,7 @@ fn is_public_download_address(address: IpAddr) -> bool {
 /// request; they leak deployment topology or unlock metadata endpoints when
 /// forwarded to a provider-supplied host. Mirrors AI SDK's download header
 /// policy (auth headers survive; the redirect loop clears them cross-origin).
-pub(crate) fn sanitize_download_headers(headers: &mut Vec<(String, String)>) {
+pub fn sanitize_download_headers(headers: &mut Vec<(String, String)>) {
     const BLOCKED: &[&str] = &[
         "connection",
         "keep-alive",
@@ -236,7 +242,7 @@ pub(crate) fn sanitize_download_headers(headers: &mut Vec<(String, String)>) {
 }
 
 /// Drop caller headers except `User-Agent` when a redirect crosses origin.
-pub(crate) fn retain_user_agent(headers: &mut Vec<(String, String)>) {
+pub fn retain_user_agent(headers: &mut Vec<(String, String)>) {
     let user_agent = headers
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))

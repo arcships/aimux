@@ -35,12 +35,11 @@ use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::parse_tool_call::original_tool_call_text;
-use crate::result::GenerateContent;
-use crate::result::GenerateResult;
-use crate::shared::FileData;
+use crate::result::{GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source};
+use crate::shared::GeneratedFileData;
 use crate::stream_part::{StreamPart, TextStreamPart};
 use crate::tool::{ToolCall, ToolResult};
-use crate::types::{FinishReason, FinishReasonUnified, Usage};
+use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-streaming response types
@@ -238,7 +237,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
             GenerateContent::Text { text, .. } => {
                 content_text.push_str(text);
             }
-            GenerateContent::Reasoning { text, .. } => {
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
                 reasoning_text.push_str(text);
             }
             GenerateContent::ToolCall(call) => {
@@ -259,12 +258,12 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                     },
                 });
             }
-            GenerateContent::Source { url, title, .. } => {
+            GenerateContent::Source(Source::Url { url, title, .. }) => {
                 // Map to OpenAI url_citation annotation.
                 let mut ann = serde_json::json!({
                     "type": "url_citation",
                     "url_citation": {
-                        "url": url.clone().unwrap_or_default(),
+                        "url": url,
                     }
                 });
                 if let Some(t) = title {
@@ -272,21 +271,23 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 }
                 annotations.push(ann);
                 // Also append URL to content so non-annotation-aware clients see it.
-                if let Some(u) = url {
-                    if !content_text.is_empty() {
-                        content_text.push('\n');
-                    }
-                    content_text.push_str(u);
+                if !content_text.is_empty() {
+                    content_text.push('\n');
                 }
+                content_text.push_str(url);
             }
-            GenerateContent::File {
+            GenerateContent::File(GeneratedFile {
                 data, media_type, ..
-            } => {
+            }) => {
                 if !content_text.is_empty() {
                     content_text.push('\n');
                 }
                 content_text.push_str(&file_data_to_text(data, media_type));
             }
+            GenerateContent::Custom { .. }
+            | GenerateContent::Source(Source::Document { .. })
+            | GenerateContent::ReasoningFile(_)
+            | GenerateContent::ToolApprovalRequest(_) => {}
             GenerateContent::ToolResult(ToolResult {
                 tool_name,
                 result,
@@ -349,13 +350,13 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
     // id / model / created
     let id = result
         .response
-        .id
-        .clone()
+        .as_ref()
+        .and_then(|response| response.id.clone())
         .unwrap_or_else(|| format!("chatcmpl-{}", random_id()));
     let model = result
         .response
-        .model_id
-        .clone()
+        .as_ref()
+        .and_then(|response| response.model_id.clone())
         .unwrap_or_else(|| model.to_string());
     let created = now_unix();
 
@@ -551,7 +552,7 @@ impl StreamState {
                 }
             }
 
-            StreamPart::ResponseMetadata { id, model_id, .. } => {
+            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
                 if let Some(id) = id {
                     self.id = id.clone();
                 }
@@ -808,9 +809,9 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::File {
+            StreamPart::File(GeneratedFile {
                 data, media_type, ..
-            } => {
+            }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -828,11 +829,11 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::Source { url, .. } => {
+            StreamPart::Source(Source::Url { url, .. }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = url.clone().unwrap_or_default();
+                let text = url.clone();
                 if !text.is_empty() {
                     let mut chunk = self.base_chunk();
                     chunk.choices = vec![ChatCompletionChunkChoice {
@@ -867,7 +868,11 @@ impl StreamState {
                 }
             }
 
-            StreamPart::Raw { .. } => { /* ignore */ }
+            StreamPart::Raw { .. }
+            | StreamPart::Source(Source::Document { .. })
+            | StreamPart::Custom { .. }
+            | StreamPart::ReasoningFile(_)
+            | StreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
         }
 
         chunks
@@ -987,11 +992,11 @@ fn usage_to_openai(usage: &Usage) -> ChatCompletionUsage {
     }
 }
 
-/// Convert [`FileData`] to a text representation (degraded — placed in content).
-fn file_data_to_text(data: &FileData, media_type: &str) -> String {
+/// Convert [`GeneratedFileData`] to a text representation (degraded — placed in content).
+fn file_data_to_text(data: &GeneratedFileData, media_type: &str) -> String {
     match data {
-        FileData::Url { url } => url.clone(),
-        FileData::Data { data } => match data {
+        GeneratedFileData::Url { url, .. } => url.clone(),
+        GeneratedFileData::Data { data } => match data {
             crate::shared::FileBytes::Base64(b64) => {
                 format!("data:{media_type};base64,{b64}")
             }
@@ -1001,8 +1006,6 @@ fn file_data_to_text(data: &FileData, media_type: &str) -> String {
                 format!("data:{media_type};base64,{b64}")
             }
         },
-        FileData::Reference { reference } => serde_json::to_string(reference).unwrap_or_default(),
-        FileData::Text { text } => text.clone(),
     }
 }
 
@@ -1062,9 +1065,11 @@ fn random_id() -> String {
 mod tests {
     use super::*;
     use crate::result::GenerateResult;
+    use crate::result::{GenerateResponse, ReasoningOutput};
     use crate::tool::RawToolCall;
-    use crate::types::TokenUsage;
-    use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+    use crate::types::{
+        FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, Usage,
+    };
     use futures::StreamExt;
     use serde_json::json;
 
@@ -1078,13 +1083,14 @@ mod tests {
             usage: Usage::default(),
             warnings: vec![],
             provider_metadata: None,
-            response: ResponseMetadata {
+            response: Some(GenerateResponse {
                 id: Some("chatcmpl-test123".to_string()),
                 timestamp: None,
                 model_id: Some("gpt-4o".to_string()),
-            },
-            request_body: None,
-            response_headers: None,
+                headers: None,
+                body: None,
+            }),
+            request: None,
         }
     }
 
@@ -1310,10 +1316,10 @@ mod tests {
     #[test]
     fn test_reasoning_non_streaming() {
         let result = make_result(vec![
-            GenerateContent::Reasoning {
+            GenerateContent::Reasoning(ReasoningOutput {
                 text: "Thinking...".to_string(),
                 provider_metadata: None,
-            },
+            }),
             GenerateContent::Text {
                 text: "Answer".to_string(),
                 provider_metadata: None,
@@ -1334,13 +1340,13 @@ mod tests {
     #[test]
     fn test_usage_round_trip() {
         let usage = Usage {
-            input_tokens: TokenUsage {
+            input_tokens: InputTokenUsage {
                 total: Some(100),
                 cache_read: Some(30),
                 cache_write: Some(10),
                 ..Default::default()
             },
-            output_tokens: TokenUsage {
+            output_tokens: OutputTokenUsage {
                 total: Some(50),
                 reasoning: Some(20),
                 ..Default::default()
@@ -1741,11 +1747,11 @@ mod tests {
     #[tokio::test]
     async fn test_stream_usage_in_final_chunk() {
         let usage = Usage {
-            input_tokens: TokenUsage {
+            input_tokens: InputTokenUsage {
                 total: Some(42),
                 ..Default::default()
             },
-            output_tokens: TokenUsage {
+            output_tokens: OutputTokenUsage {
                 total: Some(10),
                 ..Default::default()
             },
@@ -1796,11 +1802,11 @@ mod tests {
                     raw: None,
                 },
                 usage: Usage {
-                    input_tokens: TokenUsage {
+                    input_tokens: InputTokenUsage {
                         total: Some(42),
                         ..Default::default()
                     },
-                    output_tokens: TokenUsage::default(),
+                    output_tokens: OutputTokenUsage::default(),
                     raw: None,
                 },
                 provider_metadata: None,

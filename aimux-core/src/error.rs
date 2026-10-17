@@ -178,6 +178,12 @@ pub enum AiMuxError {
     #[error("invalid response data: {0}")]
     InvalidResponseData(String),
 
+    #[error("Tool call \"{tool_call_id}\" not found for approval request \"{approval_id}\".")]
+    ToolCallNotFoundForApproval {
+        tool_call_id: String,
+        approval_id: String,
+    },
+
     /// A model requested a tool that was not present in the call's tool set.
     /// Message templates for the three tool variants match the AI SDK verbatim
     /// (`NoSuchToolError` / `InvalidToolInputError` / `ToolCallRepairError`):
@@ -214,6 +220,17 @@ pub enum AiMuxError {
 
     #[error("invalid prompt: {0}")]
     InvalidPrompt(String),
+
+    /// The prompt has tool calls without tool results (the AI SDK's
+    /// `MissingToolResultsError`, `ai` `error/missing-tool-result-error.ts`).
+    /// Message verbatim from upstream (`:15-20`).
+    #[error("{}", missing_tool_results_message(.tool_call_ids))]
+    MissingToolResults { tool_call_ids: Vec<String> },
+
+    /// The model response did not satisfy an enforced tool choice (the AI
+    /// SDK's `ToolChoiceViolationError`).
+    #[error("{0}")]
+    ToolChoiceViolation(Box<ToolChoiceViolationError>),
 
     /// The access token has expired (or was invalidated) and must be refreshed
     /// by the caller. RFC-0018 subscription mode: the library maps a 401 from
@@ -254,6 +271,47 @@ pub enum AiMuxError {
 
     #[error("{0}")]
     Other(String),
+}
+
+fn missing_tool_results_message(tool_call_ids: &[String]) -> String {
+    let many = tool_call_ids.len() > 1;
+    format!(
+        "Tool result{} missing for tool call{} {}.",
+        if many { "s are" } else { " is" },
+        if many { "s" } else { "" },
+        tool_call_ids.join(", ")
+    )
+}
+
+/// What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
+/// SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
+#[cfg_attr(feature = "ts-export", ts(export))]
+#[error("{}", tool_choice_violation_message(.tool_choice))]
+pub struct ToolChoiceViolationError {
+    /// The enforced tool choice (`required`, or `tool` with a name) that the
+    /// response did not satisfy.
+    pub tool_choice: crate::tool::LanguageModelV4ToolChoice,
+    /// Why the model finished.
+    pub finish_reason: crate::types::FinishReasonUnified,
+    /// The provider that returned the response.
+    pub provider: String,
+    /// The model that returned the response.
+    pub model_id: String,
+    /// The content the model returned, before tool-call parsing, so a tool
+    /// call returned as text or reasoning can be recovered.
+    pub content: Vec<crate::result::GenerateContent>,
+}
+
+/// Upstream's message (`tool-choice-violation-error.ts:56-58`).
+fn tool_choice_violation_message(tool_choice: &crate::tool::LanguageModelV4ToolChoice) -> String {
+    match tool_choice {
+        crate::tool::LanguageModelV4ToolChoice::Tool { tool_name } => {
+            format!("Model response did not contain a call to the required tool '{tool_name}'.")
+        }
+        _ => "Model response did not contain a tool call even though tool choice was required."
+            .to_owned(),
+    }
 }
 
 fn no_such_tool_availability(available_tools: &Option<Vec<String>>) -> String {

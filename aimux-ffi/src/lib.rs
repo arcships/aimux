@@ -469,12 +469,19 @@ fn aimux_error_code_of(err: &AiMuxError) -> i32 {
         AiMuxError::ApiCall { .. } => AIMUX_E_API_CALL,
         AiMuxError::Retry(_) => AIMUX_E_RETRY,
         AiMuxError::JsonParse(_) => AIMUX_E_JSON_PARSE,
-        AiMuxError::InvalidResponseData(_) => AIMUX_E_INVALID_RESPONSE_DATA,
+        // The AI SDK's MissingToolResultsError / ToolChoiceViolationError have
+        // no code of their own yet; they join the prompt / response-data
+        // codes until the new C ABI (as ToolCallNotFoundForApproval does).
+        AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
+        | AiMuxError::ToolChoiceViolation(_) => AIMUX_E_INVALID_RESPONSE_DATA,
         AiMuxError::NoSuchTool { .. } => AIMUX_E_NO_SUCH_TOOL,
         AiMuxError::InvalidToolInput { .. } => AIMUX_E_INVALID_TOOL_INPUT,
         AiMuxError::ToolCallRepair { .. } => AIMUX_E_TOOL_CALL_REPAIR,
         AiMuxError::InvalidArgument(_) => AIMUX_E_INVALID_ARGUMENT,
-        AiMuxError::InvalidPrompt(_) => AIMUX_E_INVALID_PROMPT,
+        AiMuxError::InvalidPrompt(_) | AiMuxError::MissingToolResults { .. } => {
+            AIMUX_E_INVALID_PROMPT
+        }
         AiMuxError::TokenExpired(_) => AIMUX_E_TOKEN_EXPIRED,
         AiMuxError::UnsupportedFunctionality(_) => AIMUX_E_UNSUPPORTED_FUNCTIONALITY,
         AiMuxError::NoSuchModel { .. } => AIMUX_E_NO_SUCH_MODEL,
@@ -2500,7 +2507,7 @@ pub extern "C" fn aimux_transcription_generate(
 #[derive(serde::Deserialize, Default)]
 struct TranscriptionSessionFfiOptions {
     input_audio_format: Option<aimux_core::transcription_model::InputAudioFormat>,
-    provider_options: Option<HashMap<String, serde_json::Value>>,
+    provider_options: Option<aimux_core::shared::SharedProviderOptions>,
     headers: Option<HashMap<String, String>>,
     include_raw_chunks: Option<bool>,
     timeout: Option<aimux_core::options::TimeoutConfiguration>,
@@ -4218,12 +4225,8 @@ mod tests {
                 usage: aimux_core::types::Usage::default(),
                 warnings: vec![],
                 provider_metadata: None,
-                response: aimux_core::types::ResponseMetadata {
-                    model_id: Some(self.model_id.into()),
-                    ..Default::default()
-                },
-                request_body: None,
-                response_headers: None,
+                response: None,
+                request: None,
             })
         }
         async fn do_stream(
@@ -4281,8 +4284,8 @@ mod tests {
                         provider_metadata: None,
                     }),
                 ])),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }
@@ -4410,22 +4413,6 @@ mod tests {
     }
 
     #[test]
-    fn router_new_rejects_empty_handles() {
-        // len == 0 (with or without a NULL array) is "no usable child", not a
-        // null pointer; a NULL array with len > 0 is.
-        let mut h = zero_err();
-        let e = aimux_router_new(std::ptr::null(), 0, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(
-            expect_ffi_error(e),
-            "invalid or expired router child handle"
-        );
-        let e = aimux_router_new(std::ptr::null(), 2, std::ptr::null(), &mut h);
-        assert_eq!(h, 0);
-        assert_eq!(expect_ffi_error(e), "handles: must not be NULL");
-    }
-
-    #[test]
     fn router_new_rejects_bad_json() {
         let handles = [mock_handle("mock", "m", "x")];
         let bad = std::ffi::CString::new("{not json").unwrap();
@@ -4479,24 +4466,6 @@ mod tests {
     }
 
     #[test]
-    fn drop_handle_ptr_releases_the_handle_its_address_names() {
-        let handle = mock_handle("mock", "finalized", "F");
-        let other = mock_handle("mock", "kept", "K");
-        assert!(get_handle(handle).is_some());
-
-        aimux_drop_handle_ptr(std::ptr::without_provenance_mut(handle as usize));
-        assert!(get_handle(handle).is_none());
-        assert!(
-            get_handle(other).is_some(),
-            "only the named handle is released"
-        );
-
-        // NULL is handle 0: a no-op, like aimux_drop_handle(0).
-        aimux_drop_handle_ptr(std::ptr::null_mut());
-        aimux_drop_handle(other);
-    }
-
-    #[test]
     fn composites_reject_any_dead_member_handle() {
         // A dead handle inside the array is a caller bug: reported, never
         // silently dropped (the composite would otherwise run with fewer
@@ -4544,11 +4513,40 @@ mod tests {
         assert!(h != 0, "moa with 0 references should succeed");
     }
 
-    // ── Transcription streaming sessions (RFC-0028 Phase 2) ──────────────
+    #[test]
+    fn router_new_rejects_empty_handles() {
+        // len == 0 (with or without a NULL array) is "no usable child", not a
+        // null pointer; a NULL array with len > 0 is.
+        let mut h = zero_err();
+        let e = aimux_router_new(std::ptr::null(), 0, std::ptr::null(), &mut h);
+        assert_eq!(h, 0);
+        assert_eq!(
+            expect_ffi_error(e),
+            "invalid or expired router child handle"
+        );
+        let e = aimux_router_new(std::ptr::null(), 2, std::ptr::null(), &mut h);
+        assert_eq!(h, 0);
+        assert_eq!(expect_ffi_error(e), "handles: must not be NULL");
+    }
 
-    /// A mock transcription model whose `do_stream` echoes: one delta per
-    /// received audio chunk, then final + finish after the audio ends.
-    /// Honors the abort signal.
+    #[test]
+    fn drop_handle_ptr_releases_the_handle_its_address_names() {
+        let handle = aimux_abort_signal_new();
+        let other = aimux_abort_signal_new();
+        assert!(get_handle(handle).is_some());
+
+        aimux_drop_handle_ptr(std::ptr::without_provenance_mut(handle as usize));
+        assert!(get_handle(handle).is_none());
+        assert!(
+            get_handle(other).is_some(),
+            "only the named handle is released"
+        );
+
+        // NULL is handle 0: a no-op, like aimux_drop_handle(0).
+        aimux_drop_handle_ptr(std::ptr::null_mut());
+        aimux_drop_handle(other);
+    }
+
     struct MockStreamingTranscriber;
 
     #[async_trait::async_trait]

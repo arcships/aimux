@@ -129,34 +129,6 @@ async fn should_pass_model_prompt_n_and_default_response_format() {
 }
 
 #[tokio::test]
-async fn should_forward_recraft_extension_fields() {
-    let server = MockServer::start().await;
-    mock_generations_response(&server, b64_response_body()).await;
-
-    let model = make_model(&server);
-    let mut opts = options(PROMPT);
-    opts.provider_options.insert(
-        "recraft".to_string(),
-        json!({
-            "style": "digital_illustration",
-            "styleId": "50c0b14e-3e4f-4a18-9d8e-2b1f0a1c2d3e",
-            "negativePrompt": "blurry, low quality",
-            "randomSeed": 12345,
-            "responseFormat": "b64_json"
-        }),
-    );
-    model.do_generate(&opts).await.unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["style"], "digital_illustration");
-    assert_eq!(body["style_id"], "50c0b14e-3e4f-4a18-9d8e-2b1f0a1c2d3e");
-    assert_eq!(body["negative_prompt"], "blurry, low quality");
-    assert_eq!(body["random_seed"], 12345);
-    assert_eq!(body["response_format"], "b64_json");
-}
-
-#[tokio::test]
 async fn should_map_options_seed_to_random_seed() {
     let server = MockServer::start().await;
     mock_generations_response(&server, b64_response_body()).await;

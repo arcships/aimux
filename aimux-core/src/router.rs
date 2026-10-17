@@ -9,7 +9,7 @@
 
 use async_trait::async_trait;
 
-use crate::composite::ChildModel;
+use crate::composite::{ChildModel, step_options};
 use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::LanguageModelPrompt;
@@ -182,7 +182,7 @@ impl RouterModel {
                 m.retry_config(),
                 options.abort_signal.clone(),
             );
-            let child_options = options.for_step(self.step_label(i));
+            let child_options = step_options(options, self.step_label(i));
             match retries
                 .retry(|| {
                     if let Some(context) = &child_options.recording_context {
@@ -247,7 +247,7 @@ impl LanguageModel for RouterModel {
             model.retry_config(),
             options.abort_signal.clone(),
         );
-        let child_options = options.for_step(self.step_label(idx));
+        let child_options = step_options(options, self.step_label(idx));
         match retries
             .retry(|| {
                 if let Some(context) = &child_options.recording_context {
@@ -277,7 +277,7 @@ impl LanguageModel for RouterModel {
             model.retry_config(),
             options.abort_signal.clone(),
         );
-        let child_options = options.for_step(self.step_label(idx));
+        let child_options = step_options(options, self.step_label(idx));
         // Only setup can be retried. The returned stream is passed through, so
         // failures after setup never invoke another child or duplicate output.
         retries
@@ -342,9 +342,8 @@ mod tests {
                 usage: Usage::default(),
                 warnings: vec![],
                 provider_metadata: None,
-                response: Default::default(),
-                request_body: None,
-                response_headers: None,
+                response: None,
+                request: None,
             })
         }
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
@@ -373,8 +372,8 @@ mod tests {
             ];
             Ok(StreamResult {
                 stream: Box::pin(stream::iter(parts)),
-                request_body: None,
-                response_headers: None,
+                request: None,
+                response: None,
             })
         }
     }

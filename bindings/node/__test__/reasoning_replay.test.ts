@@ -5,12 +5,12 @@
 // Issue 1: a `tool`-role message carrying `ContentPart[]` with a `tool_result`
 //   part built from the legacy `output` field was rejected by `ModelPrompt`
 //   deserialization ("data did not match any variant of untagged enum
-//   ModelPrompt"). The Rust `ContentPart::ToolResult.result` field now accepts
-//   `output` as a serde alias, so both shapes round-trip.
+//   ModelPrompt"). The Rust `ToolResultPart` reads `output` as well as the
+//   earlier `result` field, so both shapes round-trip.
 //
 // Issue 2: thinking models require prior assistant `reasoning_content` to be
 //   replayed on later turns. The OpenAI message converter now lifts
-//   `ContentPart::Reasoning` parts to a top-level `reasoning_content` string.
+//   assistant reasoning parts to a top-level `reasoning_content` string.
 //
 // These tests use a mock HTTP server (no real API) and assert the outbound
 // request body shape that the Rust engine produces.
@@ -117,20 +117,26 @@ test('issue 2: assistant reasoning + tool_call lifts reasoning to reasoning_cont
     const model = await openai('test-key', 'deepseek-v4-flash', url)
 
     // Reproduces the user's table row: assistant
-    // [{reasoning},{tool_call}] + tool string. The first turn produced a
+    // [{reasoning},{tool_call}] + tool result. The first turn produced a
     // reasoning_content + tool_call; the second turn must replay both.
+    // A tool message carries tool_result parts only (AI SDK `ToolModelMessage`).
     const messages = [
       { role: 'user', content: 'inspect the repo' },
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: 'I need to inspect files before answering.', signature: null },
+          { type: 'reasoning', text: 'I need to inspect files before answering.' },
           { type: 'tool_call', tool_call_id: 'call_1', tool_name: 'read_file', input: { path: 'README.md' } },
         ],
       },
       {
         role: 'tool',
-        content: 'contents of README.md',
+        content: [{
+          type: 'tool_result',
+          tool_call_id: 'call_1',
+          tool_name: 'read_file',
+          output: 'contents of README.md',
+        }],
       },
     ]
 
@@ -167,7 +173,7 @@ test('issue 2: assistant reasoning + text (no tool calls) emits reasoning_conten
       {
         role: 'assistant',
         content: [
-          { type: 'reasoning', text: '2 plus 2 equals 4.', signature: null },
+          { type: 'reasoning', text: '2 plus 2 equals 4.' },
           { type: 'text', text: '4' },
         ],
       },
@@ -197,6 +203,8 @@ test('issue 2: assistant without reasoning omits reasoning_content', async (t) =
   try {
     const model = await openai('test-key', 'deepseek-v4-flash', url)
 
+    // The tool call has its result: a prompt that leaves a tool call without
+    // one is a MissingToolResultsError (AI SDK `convertToLanguageModelPrompt`).
     const messages = [
       { role: 'user', content: 'hi' },
       {
@@ -206,6 +214,15 @@ test('issue 2: assistant without reasoning omits reasoning_content', async (t) =
           tool_call_id: 'call_1',
           tool_name: 'write_file',
           input: { path: '/tmp/x' },
+        }],
+      },
+      {
+        role: 'tool',
+        content: [{
+          type: 'tool_result',
+          tool_call_id: 'call_1',
+          tool_name: 'write_file',
+          output: 'Successfully wrote to /tmp/x',
         }],
       },
     ]

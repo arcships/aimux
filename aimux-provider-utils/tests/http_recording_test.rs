@@ -62,18 +62,12 @@ fn request(url: String, call_id: &str, recorder: Arc<dyn Recorder>) -> HttpReque
 }
 
 fn finish_call(recorder: &dyn Recorder, call_id: &str) {
-    use aimux_core::content::ContentPart;
-    use aimux_core::language_model_message::LanguageModelPromptMessage;
-    use aimux_core::message::Role;
+    use aimux_core::language_model_message::LanguageModelMessage;
     use aimux_core::options::CallOptions;
 
     recorder.record_input(
         call_id,
-        &CallOptions::new(vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::text("hi")],
-            ..Default::default()
-        }]),
+        &CallOptions::new(vec![LanguageModelMessage::user_text("hi")]),
         "openai",
         "gpt-test",
     );
@@ -335,4 +329,31 @@ async fn redirect_chain_is_recorded_as_one_logical_exchange() {
 
     recording::init_recording(None);
     let _ = std::fs::remove_dir_all(directory);
+}
+
+/// `LanguageModelV4CallOptions` has no call id (`@ai-sdk/provider@4.0.21`
+/// `src/language-model/v4/language-model-v4-call-options.ts:8-138`), so the
+/// recording correlation id lives only in the recording context, and an
+/// exchange built from the call options takes it from there.
+#[test]
+fn an_exchange_takes_the_call_id_from_the_recording_context() {
+    use aimux_core::language_model_message::LanguageModelMessage;
+    use aimux_core::options::CallOptions;
+    use aimux_core::recording::{RecordingContext, RingRecorder};
+
+    let mut options = CallOptions::new(vec![LanguageModelMessage::user_text("hi")]);
+    let unrecorded = HttpRequest::new("https://example.test", Vec::new(), &options);
+    assert_eq!(unrecorded.call_id, None);
+    assert!(unrecorded.recording_context.is_none());
+
+    options.recording_context = Some(RecordingContext::new(
+        "call-from-context",
+        Arc::new(RingRecorder::new()),
+    ));
+    let recorded = HttpRequest::new("https://example.test", Vec::new(), &options);
+    assert_eq!(recorded.call_id.as_deref(), Some("call-from-context"));
+    assert_eq!(
+        recorded.recording_context.map(|context| context.call_id),
+        Some("call-from-context".to_string())
+    );
 }

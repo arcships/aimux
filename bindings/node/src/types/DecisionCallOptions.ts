@@ -4,4 +4,4 @@ import type { DecisionQuestion } from "./DecisionQuestion";
 import type { TimeoutConfiguration } from "./TimeoutConfiguration";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type DecisionCallOptions = { state: JsonValue, images?: Array<DecisionImage>, questions: Array<DecisionQuestion>, max_retries?: number | null, timeout?: TimeoutConfiguration | null, provider_options?: { [key in string]: JsonValue } | null, headers?: { [key in string]: string } | null, };
+export type DecisionCallOptions = { state: JsonValue, images?: Array<DecisionImage>, questions: Array<DecisionQuestion>, max_retries?: number | null, timeout?: TimeoutConfiguration | null, provider_options?: { [key in string]: { [key in string]: JsonValue } } | null, headers?: { [key in string]: string } | null, };

@@ -684,7 +684,7 @@ Telemetry 保留当前采用范围的生命周期回调、object callbacks、emb
 - 对应 scope；
 - 现有 object callback 语义。
 
-非 LM 模态增加 `ModelCall { modality }` attempt span。不能把 SDK 的 operation 级 embed span描述为天然的逐 attempt span。
+非 LM 模态增加 `ModelCall { modality }` attempt span。不能把 SDK 的 operation 级 embed span描述为天然的逐 attempt span。（基线 ai 7.0.122 没有 speech / transcription 的 tracing；7.0.127 起上游增加了 generateSpeech / transcribe / streamTranscribe 的 tracing 类型与回调，见 `telemetry/tracing-channel.ts:12-14`，升级基线时重新核对哪些仍属 aimux 扩展。）
 
 **流结果所有权：**
 
@@ -1588,6 +1588,8 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 
 # 第二部分:core 消息协议统一设计
 
+> 范围说明:按 §0.4 Q1,本部分涉及工具执行、审批状态转换、多步聚合的转换规则只要求类型与 wire 就位,运行时不在本期范围(§5 登记为"尚未对齐的行为")。
+
 建议把消息协议拆成四层：**用户输入、provider 输入、provider 输出、core 输出**。每层只有一套明确契约，跨层通过显式转换连接；相同字段结构复用，语义不同的类型保留边界。当前最严重的问题正是边界消失：同一个工具调用类型既表示原始字符串又表示解析值，同一个内容联合同时承担用户消息和 provider prompt。
 
 本次仅阅读源码，没有修改仓库，也没有运行会生成文件的构建或测试。以下“确认”指静态源码确认；盘点中的 HTTP 400、模型拒绝等远端后果，未经实测的仍标为推断。
@@ -1672,7 +1674,7 @@ AI SDK 两者均为 `Record<string, JSONObject>`，不是任意 JSON，也不是
 - `S4/shared-v4-provider-metadata.ts:24`
 - `U/provider-options.ts:9`
 
-需要统一的是**外层 namespace → 内层 JSON object** 的结构。`ProviderOptions` 与 `ProviderMetadata` 仍应保留不同语义名称，转换时显式表达方向。
+需要统一的是**外层 namespace → 内层 JSON object** 的结构。`ProviderOptions` 与 `ProviderMetadata` 与上游一样是同一结构的两个类型别名（上游回放直接写 `providerOptions: part.providerMetadata`，`A/generate-text/to-response-messages.ts:52`），方向由字段名和转换函数表达，不另建 newtype。
 
 `conversions`：当前协议经过以下转换点。
 
@@ -1751,7 +1753,7 @@ AI SDK 两者均为 `Record<string, JSONObject>`，不是任意 JSON，也不是
 | tool-result：TR-3 | 类型及 Google 路径确认 | tool_name 可选，构造器填 None，Google 回退为 tool_call_id。`C/content.rs:129、176`、`P/google/convert.rs:391`。远端拒绝仍是推断 |
 | tool-definition：TOOLDEF-1 | 确认 | examples 为 `Vec<Value>`，Anthropic 用 `get("input").unwrap_or(...)` 猜测。`C/tool.rs:34`、`P/anthropic/prepare_tools.rs:304`；V4 要求 `{input: JSONObject}` |
 | tool-definition：TOOLDEF-2 | 确认，但应归类为混层 | 当前 ToolChoice 是正确的用户层形态，却被直接用于 V4 CallOptions。缺的是 `prepare_tool_choice` 和独立 V4 类型。`C/tool.rs:178`；`A/prompt/prepare-tool-choice.ts:4` |
-| tool-definition：TOOLDEF-3 | 静态确认 | core 无 ToolChoiceViolation 定义/检查；解析工具后直接收集。`C/generate.rs:659`。SDK 在 generate 和 stream 两条路径检查：`A/generate-text/generate-text.ts:1155`、`stream-language-model-call.ts:644` |
+| tool-definition：TOOLDEF-3 | 静态确认 | core 无 ToolChoiceViolation 定义/检查；解析工具后直接收集。`C/generate.rs:659`。SDK 在 generate 和 stream 两条路径检查：`A/generate-text/generate-text.ts:1169`、`stream-language-model-call.ts:656` |
 | reasoning：RSN-1 | 确认 | core 从固定 namespace 提升 signature；Google 优先使用该顶层字段。`C/response_messages.rs:31、130`、`P/google/convert.rs:247` |
 | reasoning：RSN-2 | 确认 | 顶层 ReasoningPart 只有 text，转换丢 metadata。`C/result.rs:137`、`C/response_messages.rs:127` |
 | reasoning：RSN-4 | 确认 | Google 明确把 thought 图片降级为普通 File。`P/google/model.rs:578、827`；core 无对应 reasoning-file 分支 |
@@ -1816,16 +1818,15 @@ flowchart TD
 ```rust
 pub type JsonValue = serde_json::Value;
 pub type JsonObject = serde_json::Map<String, JsonValue>;
-pub type NamespaceMap = BTreeMap<String, JsonObject>;
-pub type ProviderReference = BTreeMap<String, String>;
+// 保持插入顺序的 map：上游是 JS 对象，键按插入顺序保留
+// （`S4/shared-v4-provider-options.ts:24`、`S4/shared-v4-provider-reference.ts:20`）。
+// 落地为 `IndexMap`（`aimux-core/src/shared.rs`）。
+pub type NamespaceMap = IndexMap<String, JsonObject>;
+pub type ProviderReference = IndexMap<String, String>;
 
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ProviderOptions(pub NamespaceMap);
-
-#[derive(Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ProviderMetadata(pub NamespaceMap);
+// 与上游一样是同一结构的两个别名。
+pub type ProviderOptions = NamespaceMap;
+pub type ProviderMetadata = NamespaceMap;
 
 // 运行时持有 bytes；JSON 始终编码为 base64 字符串。
 #[derive(Serialize, Deserialize)]
@@ -1865,7 +1866,7 @@ provider options/metadata 的内部键完全透传，不执行 camelCase 改写�
 | assistant | String 或数组 | text、custom、file、reasoning、reasoning-file、tool-call、tool-result、tool-approval-request |
 | tool | 数组 | tool-result、tool-approval-response |
 
-四种消息都允许消息级 `providerOptions?`。依据是 `U/*-model-message.ts`，尤其 `assistant-model-message.ts:32` 和 `tool-model-message.ts:23`。
+四种消息都允许消息级 `providerOptions?`。依据是 `U/*-model-message.ts`，尤其 `assistant-model-message.ts:25` 和 `tool-model-message.ts:17`。
 
 ```rust
 #[derive(Serialize, Deserialize)]
@@ -1917,7 +1918,7 @@ pub enum AssistantContent {
 | part | 字段 |
 |---|---|
 | text | `text: String, providerOptions?` |
-| image | `image: DataContent \| URL \| ProviderReference, mediaType?, providerOptions?` |
+| image | `image: DataContent \| URL \| ProviderReference, mediaType?, providerOptions?`（上游已 `@deprecated`，改用 file，见 `U/types/content-part.ts:29`；仅作为输入接受） |
 | file | `data: FileData \| DataContent \| URL \| ProviderReference, mediaType, filename?, providerOptions?` |
 | reasoning | `text, providerOptions?` |
 | reasoning-file | `data: data/url 文件数据或 DataContent/URL, mediaType, providerOptions?` |
@@ -2065,7 +2066,7 @@ pub enum V4ToolResultOutput {
 
 最后这个 custom **没有 kind 字段**，不能与消息顶层 CustomPart 合并。
 
-用户层 `ModelToolResultOutput` 的外层结构相同，但 content 数组还包含当前 SDK 声明的 `file-data/file-url/file-id/file-reference/image-data/image-url/image-file-id/image-file-reference`。这些是当前上游输入面的组成部分，应由统一转换函数归一化，不能因为“不保留 aimux 兼容”而误删上游接口。
+用户层 `ModelToolResultOutput` 的外层结构相同，但 content 数组还包含当前 SDK 声明的 `file-data/file-url/file-id/file-reference/image-data/image-url/image-file-id/image-file-reference`。这些在上游都已标 `@deprecated`（`U/types/content-part.ts:361-517`，ai 侧 `prompt/convert-to-language-model-prompt.ts:41-42` 注明 file-id、image-file-id 在 v8 移除），但仍是当前上游输入面的组成部分：应由统一转换函数归一化后接受，aimux 自己不生成；不能因为“不保留 aimux 兼容”而误删上游接口。
 
 工具定义分成两套：
 
@@ -2483,7 +2484,7 @@ fn aggregate_steps(
 1. **prompt 标准化**：非空检查、role/content 校验、instructions 展开、system opt-in，以及 prompt/messages 互斥。
 2. **文件准备**：Image→File、data URL 解析、保留 originalUrl、依据模型 supportedUrls 决定是否下载、mediaType 检测、provider reference 解析。
 3. **工具消息整理**：合并相邻 tool 消息，并按上游规则把前一条消息的 options 下沉至最后一个 part；检查缺失工具结果，考虑审批和 providerExecuted。
-4. **工具调用解析**：只在 core parse/schema/repair；V4 raw input 不预解析、不猜测对象还是字符串。
+4. **工具调用解析**：只在 core parse/schema/repair；V4 raw input 不预解析、不猜测对象还是字符串。空字符串或只有空白的 input 按 `{}` 交给 schema 校验（同上游，`A/generate-text/parse-tool-call.ts:203-204`、`:254-255`）。
 5. **流聚合**：以 `(事件类别, block id)` 定位 text/reasoning block，保留首次出现顺序，并按上游规则合并 metadata；不能只维护一个当前 text/reasoning 缓冲。
 6. **工具结果关联**：按 toolCallId 关联 input；支持 deferred provider results；isError 映射为 core tool-error；preliminary 事件可交给流消费者，但不纳入最终持久内容。
 7. **完成校验**：generate 与 stream 共用 ToolChoiceViolation 检查。
@@ -2674,7 +2675,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 | optional/null | 缺失、null、false、0、空字符串、空数组、空对象分别测试 |
 | 二进制 | 空数据、0/255 字节、非 ASCII、原始 bytes/base64 同值 |
 | options/metadata | 双层对象约束、多个 namespace、深层任意 JSON、嵌套 null |
-| 工具调用 | 原始合法/非法 JSON、合法字符串参数、repair、static/dynamic、deferred result |
+| 工具调用 | 原始合法/非法 JSON、空或空白参数、合法字符串参数、repair、static/dynamic、deferred result |
 | 消息回放 | 生成图片、reasoning-file、signature-only reasoning、provider/server tools、审批拒绝 |
 | 流状态 | 交错 block id、metadata 增量、preliminary、finish-step/finish、abort/transport failure |
 | SDK 行为对照 | 相同 fixtures 比较本地 AI SDK 的标准化与 responseMessages 输出 |
@@ -2703,7 +2704,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 | `result::ReasoningPart/SourcePart/FilePart` | 删除有损镜像，改为规范 content 的投影 |
 | 三份 Source 字段 | 合并为一个 source payload/联合 |
 | `StreamPart::ResponseMetadata` 内联复制 | 复用统一 metadata payload |
-| `ProviderMetadata=Value`、各处 map/value options | 合并到共享 namespace map；输入/输出保留语义包装 |
+| `ProviderMetadata=Value`、各处 map/value options | 合并到共享 namespace map；输入/输出是同一结构的两个别名，与上游一致 |
 | 工厂 `ProviderOptions` | 按第一部分 §3.3 改为各包 `XxxProviderSettings`，避免与消息 options 混淆 |
 | 共用 `TokenUsage` | 拆 V4 input/output details；用户 Usage 另有显式映射 |
 | `StreamTextResultAggregated` | 删除，流完成走同一结果聚合模型 |

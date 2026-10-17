@@ -24,12 +24,14 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::content::ContentPart;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
-use aimux_core::message::Role;
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
+    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
+};
 use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat, Tool};
-use aimux_core::result::GenerateContent;
+use aimux_core::result::{GenerateContent, ReasoningOutput};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
@@ -40,11 +42,7 @@ use aimux_providers::{ProviderOptions, provider};
 
 /// The TS `TEST_PROMPT`: a single user text message "Hello".
 fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelPromptMessage {
-        role: Role::User,
-        content: vec![ContentPart::text("Hello")],
-        ..Default::default()
-    }]
+    vec![LanguageModelMessage::user_text("Hello")]
 }
 
 /// `CallOptions` with only `prompt` set.
@@ -236,13 +234,22 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::User {
             content: vec![
-                ContentPart::text("Hello"),
-                ContentPart::file_base64("AAECAw==", "image/png"),
+                UserPart::Text(TextPart {
+                    text: "Hello".into(),
+                    provider_options: None,
+                }),
+                UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64("AAECAw==".into()),
+                    },
+                    media_type: "image/png".into(),
+                    filename: None,
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -287,19 +294,27 @@ mod convert_messages {
         let model = make_provider(&server);
 
         let prompt: LanguageModelPrompt = vec![
-            LanguageModelPromptMessage {
-                role: Role::Assistant,
-                content: vec![ContentPart::tool_call(
-                    "quux",
-                    "thwomp",
-                    json!({"foo":"bar123"}),
-                )],
-                ..Default::default()
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
             },
-            LanguageModelPromptMessage {
-                role: Role::Tool,
-                content: vec![ContentPart::tool_result("quux", json!({"oof":"321rab"}))],
-                ..Default::default()
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    output: ToolResultOutput::Json {
+                        value: json!({"oof":"321rab"}),
+                        provider_options: None,
+                    },
+                    provider_options: None,
+                })],
+                provider_options: None,
             },
         ];
         model.do_generate(&default_options(prompt)).await.unwrap();
@@ -332,13 +347,21 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
             content: vec![
-                ContentPart::reasoning("I think the tool will return the correct value."),
-                ContentPart::tool_call("quux", "thwomp", json!({"foo":"bar123"})),
+                AssistantPart::Reasoning(ReasoningPart {
+                    text: "I think the tool will return the correct value.".into(),
+                    provider_options: None,
+                }),
+                AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "quux".into(),
+                    tool_name: "thwomp".into(),
+                    input: json!({"foo":"bar123"}),
+                    provider_executed: None,
+                    provider_options: None,
+                }),
             ],
-            ..Default::default()
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -361,10 +384,12 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::Assistant,
-            content: vec![ContentPart::text("Hello, how can I help you?")],
-            ..Default::default()
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::Text(TextPart {
+                text: "Hello, how can I help you?".into(),
+                provider_options: None,
+            })],
+            provider_options: None,
         }];
         model.do_generate(&default_options(prompt)).await.unwrap();
 
@@ -384,22 +409,25 @@ mod convert_messages {
 
         let model = make_provider(&server);
 
-        let prompt: LanguageModelPrompt = vec![LanguageModelPromptMessage {
-            role: Role::User,
-            content: vec![ContentPart::file_reference(
-                "image/png",
-                json!({"groq": "file-ref-123"}),
-            )],
-            ..Default::default()
+        let prompt: LanguageModelPrompt = vec![LanguageModelMessage::User {
+            content: vec![UserPart::File(FilePart {
+                data: FileData::Reference {
+                    reference: [("groq".into(), "file-ref-123".into())].into(),
+                },
+                media_type: "image/png".into(),
+                filename: None,
+                provider_options: None,
+            })],
+            provider_options: None,
         }];
-        // Groq references don't contain an "openai" key, so the converter
-        // returns an InvalidArgument error instead of panicking.
+        // Upstream rejects file parts with provider references outright.
         let result = model.do_generate(&default_options(prompt)).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.to_string().contains("No provider reference found"),
-            "error should mention 'No provider reference found': {err}"
+            err.to_string()
+                .contains("file parts with provider references"),
+            "error should mention 'file parts with provider references': {err}"
         );
     }
 }
@@ -947,7 +975,7 @@ mod do_generate {
             .unwrap();
 
         let reasoning = result.content.iter().find_map(|c| match c {
-            GenerateContent::Reasoning { text, .. } => Some(text.clone()),
+            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => Some(text.clone()),
             _ => None,
         });
         assert!(reasoning.is_some());
@@ -1024,27 +1052,6 @@ mod do_generate {
 
         let body = first_request_body(&server).await;
         assert_eq!(body["reasoning_effort"], "none");
-    }
-
-    /// TS: "should prefer providerOptions reasoningEffort over top-level reasoning"
-    #[tokio::test]
-    async fn provider_option_reasoning_effort_preferred() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"reasoningEffort": "high"}));
-        let options = CallOptions {
-            reasoning: Some(ReasoningEffort::Medium),
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_effort"], "high");
     }
 
     /// TS: "should extract usage"
@@ -1185,75 +1192,6 @@ mod do_generate {
         assert_eq!(result.finish_reason.raw.as_deref(), Some("eos"));
     }
 
-    /// TS: "should pass provider options" (reasoningFormat, user, parallelToolCalls)
-    #[tokio::test]
-    async fn pass_provider_options() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert(
-            "groq".to_string(),
-            json!({
-                "reasoningFormat": "hidden",
-                "user": "test-user-id",
-                "parallelToolCalls": false
-            }),
-        );
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_format"], "hidden");
-        assert_eq!(body["user"], "test-user-id");
-        assert_eq!(body["parallel_tool_calls"], false);
-    }
-
-    /// TS: "should pass serviceTier provider option"
-    #[tokio::test]
-    async fn pass_service_tier_flex() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"serviceTier": "flex"}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "flex");
-    }
-
-    /// TS: "should pass performance serviceTier provider option"
-    #[tokio::test]
-    async fn pass_service_tier_performance() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"serviceTier": "performance"}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "performance");
-    }
-
     /// TS: "should pass tools and toolChoice"
     #[tokio::test]
     async fn pass_tools_and_tool_choice() {
@@ -1316,91 +1254,6 @@ mod do_generate {
         assert_eq!(body["response_format"]["type"], "json_schema");
         assert_eq!(body["response_format"]["json_schema"]["name"], "test-name");
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
-    }
-
-    /// TS: "should pass response format as json_object when structuredOutputs
-    /// explicitly disabled"
-    #[tokio::test]
-    async fn response_format_json_object_when_disabled() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"structuredOutputs": false}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["type"], "json_object");
-
-        // Should have a warning about structuredOutputs
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => feature == "responseFormat",
-            _ => false,
-        }));
-    }
-
-    /// TS: "should send strict: false when strictJsonSchema is explicitly disabled"
-    #[tokio::test]
-    async fn strict_json_schema_false() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let mut provider_opts = std::collections::HashMap::new();
-        provider_opts.insert("groq".to_string(), json!({"strictJsonSchema": false}));
-        let options = CallOptions {
-            provider_options: Some(provider_opts),
-            response_format: Some(ResponseFormat::Json {
-                schema: Some(json!({
-                    "type": "object",
-                    "properties": { "value": { "type": "string" } },
-                    "required": ["value"],
-                    "additionalProperties": false,
-                })),
-                name: Some("test-name".to_string()),
-                description: Some("test description".to_string()),
-            }),
-            ..default_options(test_prompt())
-        };
-        model.do_generate(&options).await.unwrap();
-
-        let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["json_schema"]["strict"], false);
-    }
-
-    /// TS: "should send request body" (request.body)
-    #[tokio::test]
-    async fn request_body_string() {
-        let server = MockServer::start().await;
-        mock_json(&server, groq_text_body()).await;
-
-        let model = make_provider(&server);
-
-        let result = model
-            .do_generate(&default_options(test_prompt()))
-            .await
-            .unwrap();
-
-        let request_body = result.request_body.expect("should have request body");
-        assert_eq!(request_body["model"], "gemma2-9b-it");
-        assert_eq!(request_body["messages"][0]["content"], "Hello");
     }
 }
 

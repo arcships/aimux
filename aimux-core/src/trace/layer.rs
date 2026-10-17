@@ -99,7 +99,7 @@ struct RecordCtx {
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
     ctx: RequestCtx,
-    /// RFC-0023 关联 ID:复用 `options.call_id`(缺失时由构造处生成)。
+    /// RFC-0023 关联 ID:取自 `options.recording_context`(缺失时由构造处生成)。
     call_id: Option<String>,
     request_body: Option<serde_json::Value>,
     response_headers: Option<HashMap<String, String>>,
@@ -195,7 +195,10 @@ impl TraceLayer {
             strict: self.strict,
             scope_salt: self.scope_salt,
             session_tracker: self.session_tracker.clone(),
-            call_id: options.call_id.clone(),
+            call_id: options
+                .recording_context
+                .as_ref()
+                .map(|context| context.call_id.clone()),
             ctx: RequestCtx {
                 session_id,
                 scope_key,
@@ -226,7 +229,7 @@ impl RecordCtx {
             output_total: usage.output_tokens.total.map(u64::from),
             output_text: usage.output_tokens.text.map(u64::from),
             output_reasoning: usage.output_tokens.reasoning.map(u64::from),
-            raw: usage.raw.clone(),
+            raw: usage.raw.clone().map(serde_json::Value::Object),
         }
     }
 
@@ -424,14 +427,15 @@ impl RecordCtx {
 /// caller drops the stream before completion (`take(N)` / abort / timeout).
 /// Mirrors `RecordingOutcomeStream`'s Drop pattern (recording.rs): the previous
 /// generator-based record only fired when the stream ran to completion, so
-/// early drops silently lost the call. This wrapper records on natural EOF, on
-/// a terminal part (`Finish` / `Error` / transport `Err`), or — via `Drop` —
-/// when the caller abandons the stream mid-flight.
+/// early drops silently lost the call. This wrapper records when `Finish`
+/// passes (the terminal part: `stream_text` stops polling right after it, so
+/// waiting for EOF would trace every completed call as dropped), on a natural
+/// EOF without `Finish`, or — via `Drop` — when the caller abandons the stream
+/// mid-flight.
 struct TraceRecordingStream<S> {
     inner: S,
     rec_ctx: Option<Arc<RecordCtx>>,
-    /// Accumulated usage (`Finish`) / error (`Error` / `Err`) observed so far.
-    usage: Usage,
+    /// The first error (`Error` part / transport `Err`) observed so far.
     error: Option<String>,
     /// Whether the terminal record has been emitted (idempotent guard).
     recorded: bool,
@@ -461,10 +465,11 @@ where
         let this = self.get_mut();
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Ready(Some(Ok(part))) => {
-                // Accumulate terminal evidence (mirrors the original
-                // end-of-stream record).
                 match &part {
-                    StreamPart::Finish { usage: u, .. } => this.usage = u.clone(),
+                    StreamPart::Finish { usage, .. } => {
+                        let error = this.error.take();
+                        this.record_now(usage.clone(), error);
+                    }
                     StreamPart::Error { error: e } => {
                         this.error.get_or_insert_with(|| e.to_string());
                     }
@@ -477,10 +482,9 @@ where
                 Poll::Ready(Some(Err(e)))
             }
             Poll::Ready(None) => {
-                // Natural end: record accumulated state (matches the original).
-                let usage = std::mem::take(&mut this.usage);
+                // A natural end without `Finish`: no usage was reported.
                 let error = this.error.take();
-                this.record_now(usage, error);
+                this.record_now(Usage::default(), error);
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
@@ -493,12 +497,11 @@ impl<S> Drop for TraceRecordingStream<S> {
         if !self.recorded {
             // Caller dropped before completion — record what was observed with
             // a non-success marker so the call is not silently lost (F1).
-            let usage = std::mem::take(&mut self.usage);
             let error = self
                 .error
                 .take()
                 .or_else(|| Some("stream dropped before completion".into()));
-            self.record_now(usage, error);
+            self.record_now(Usage::default(), error);
         }
     }
 }
@@ -531,10 +534,19 @@ impl LanguageModel for TraceLayer {
         let ctx = self.make_record_ctx(options, None, None, Arc::new(AtomicU64::new(u64::MAX)));
         match self.inner.do_generate(options).await {
             Ok(result) => {
-                let request_id = result.response.id.clone();
+                let request_id = result
+                    .response
+                    .as_ref()
+                    .and_then(|response| response.id.clone());
                 let mut rec_ctx = ctx;
-                rec_ctx.request_body = result.request_body.clone();
-                rec_ctx.response_headers = result.response_headers.clone();
+                rec_ctx.request_body = result
+                    .request
+                    .as_ref()
+                    .and_then(|request| request.body.clone());
+                rec_ctx.response_headers = result
+                    .response
+                    .as_ref()
+                    .and_then(|response| response.headers.clone());
                 rec_ctx.record(&result.usage, None, request_id);
                 Ok(result)
             }
@@ -558,8 +570,14 @@ impl LanguageModel for TraceLayer {
         };
 
         let rec_ctx = Arc::new(RecordCtx {
-            request_body: result.request_body.clone(),
-            response_headers: result.response_headers.clone(),
+            request_body: result
+                .request
+                .as_ref()
+                .and_then(|request| request.body.clone()),
+            response_headers: result
+                .response
+                .as_ref()
+                .and_then(|response| response.headers.clone()),
             ..ctx
         });
         let ttft_obs = ttft.clone();
@@ -574,6 +592,8 @@ impl LanguageModel for TraceLayer {
                     Ok(StreamPart::TextDelta { .. })
                         | Ok(StreamPart::ReasoningDelta { .. })
                         | Ok(StreamPart::ToolCall(_))
+                        | Ok(StreamPart::File(_))
+                        | Ok(StreamPart::ReasoningFile(_))
                 );
                 if is_model_output {
                     ttft_obs.store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
@@ -588,15 +608,14 @@ impl LanguageModel for TraceLayer {
         let guarded = TraceRecordingStream {
             inner: observed,
             rec_ctx: Some(rec_ctx),
-            usage: Usage::default(),
             error: None,
             recorded: false,
         };
 
         Ok(StreamResult {
             stream: Box::pin(guarded),
-            request_body: result.request_body,
-            response_headers: result.response_headers,
+            request: result.request,
+            response: result.response,
         })
     }
 }

@@ -138,7 +138,7 @@ pub struct InputRecord {
     pub operation: RecordingOperation,
     /// 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。
     pub prompt: LanguageModelPrompt,
-    /// 序列化的 CallOptions(abort_signal/call_id 已 serde skip);
+    /// 序列化的 CallOptions(abort_signal/recording_context 已 serde skip);
     /// headers/provider_options/body_overrides 已递归脱敏。
     pub options: serde_json::Value,
 }
@@ -1631,11 +1631,12 @@ impl<S> RecordingOutcomeStream<S> {
     }
 }
 
-impl<S, C> futures::Stream for RecordingOutcomeStream<S>
+impl<S, C, A, R> futures::Stream for RecordingOutcomeStream<S>
 where
-    S: futures::Stream<Item = Result<crate::stream_part::StreamPart<C>, crate::AiMuxError>> + Unpin,
+    S: futures::Stream<Item = Result<crate::stream_part::StreamPart<C, A, R>, crate::AiMuxError>>
+        + Unpin,
 {
-    type Item = Result<crate::stream_part::StreamPart<C>, crate::AiMuxError>;
+    type Item = Result<crate::stream_part::StreamPart<C, A, R>, crate::AiMuxError>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -1888,7 +1889,9 @@ mod tests {
             crate::language_model_message::convert_to_language_model_prompt(
                 &[crate::message::ModelMessage::user("ping")],
                 None,
-            ),
+                None,
+            )
+            .unwrap(),
         )
     }
 
@@ -1908,11 +1911,15 @@ mod tests {
     #[test]
     fn input_record_serializes_options_without_internal_fields() {
         let mut opts = sample_options();
-        opts.call_id = Some("call-test".into());
-        opts.abort_signal = None;
+        opts.recording_context = Some(RecordingContext::new(
+            "call-test",
+            Arc::new(RingRecorder::new()),
+        ));
+        opts.abort_signal = Some(crate::AbortSignal::new());
         let rec = InputRecord::from_call_options(&opts);
         let v = &rec.options;
         assert!(v.get("call_id").is_none());
+        assert!(v.get("recording_context").is_none());
         assert!(v.get("abort_signal").is_none());
     }
 

@@ -5,6 +5,10 @@
 //! cross-language contract: a field rename, a variant rename or a shape change
 //! breaks every binding, so it must break this test first.
 
+use aimux_core::error::ToolChoiceViolationError;
+use aimux_core::result::GenerateContent;
+use aimux_core::tool::LanguageModelV4ToolChoice;
+use aimux_core::types::FinishReasonUnified;
 use aimux_core::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
 
 fn api_error(message: &str) -> ApiCallError {
@@ -105,6 +109,13 @@ fn error_value_snapshots_plain_variants() {
             AiMuxError::InvalidResponseData("eof".into()),
             r#"{"InvalidResponseData":"eof"}"#,
         ),
+        (
+            AiMuxError::ToolCallNotFoundForApproval {
+                tool_call_id: "call-1".into(),
+                approval_id: "approval-1".into(),
+            },
+            r#"{"ToolCallNotFoundForApproval":{"tool_call_id":"call-1","approval_id":"approval-1"}}"#,
+        ),
         // NoSuchTool is pinned in both shapes: `skip_serializing_if` makes
         // the wire payload vary with `available_tools`.
         (
@@ -151,6 +162,27 @@ fn error_value_snapshots_plain_variants() {
             r#"{"InvalidPrompt":"bad prompt"}"#,
         ),
         (
+            AiMuxError::MissingToolResults {
+                tool_call_ids: vec!["call-1".into()],
+            },
+            r#"{"MissingToolResults":{"tool_call_ids":["call-1"]}}"#,
+        ),
+        (
+            AiMuxError::ToolChoiceViolation(Box::new(ToolChoiceViolationError {
+                tool_choice: LanguageModelV4ToolChoice::Tool {
+                    tool_name: "weather".into(),
+                },
+                finish_reason: FinishReasonUnified::Stop,
+                provider: "openai.chat".into(),
+                model_id: "gpt-4o".into(),
+                content: vec![GenerateContent::Text {
+                    text: "sunny".into(),
+                    provider_metadata: None,
+                }],
+            })),
+            r#"{"ToolChoiceViolation":{"tool_choice":{"type":"tool","toolName":"weather"},"finish_reason":"stop","provider":"openai.chat","model_id":"gpt-4o","content":[{"Text":{"text":"sunny"}}]}}"#,
+        ),
+        (
             AiMuxError::TokenExpired("expired".into()),
             r#"{"TokenExpired":"expired"}"#,
         ),
@@ -185,13 +217,66 @@ fn error_value_snapshots_plain_variants() {
     }
 }
 
+/// The AI SDK's `ToolCallNotFoundForApprovalError` message, verbatim
+/// (ai 7.0.127 `src/error/tool-call-not-found-for-approval-error.ts:22`).
+#[test]
+fn tool_call_not_found_for_approval_message_matches_upstream() {
+    let err = AiMuxError::ToolCallNotFoundForApproval {
+        tool_call_id: "call-1".into(),
+        approval_id: "approval-1".into(),
+    };
+    assert_eq!(
+        err.to_string(),
+        r#"Tool call "call-1" not found for approval request "approval-1"."#
+    );
+}
+
+/// The AI SDK's `MissingToolResultsError` message, verbatim
+/// (ai 7.0.127 `src/error/missing-tool-result-error.ts:15-20`).
+#[test]
+fn missing_tool_results_message_matches_upstream() {
+    let error = |ids: &[&str]| AiMuxError::MissingToolResults {
+        tool_call_ids: ids.iter().map(|id| (*id).to_owned()).collect(),
+    };
+    assert_eq!(
+        error(&["call-1"]).to_string(),
+        "Tool result is missing for tool call call-1."
+    );
+    assert_eq!(
+        error(&["call-1", "call-2"]).to_string(),
+        "Tool results are missing for tool calls call-1, call-2."
+    );
+}
+
+/// The AI SDK's `ToolChoiceViolationError` messages, verbatim
+/// (ai 7.0.127 `src/error/tool-choice-violation-error.ts:56-58`).
+#[test]
+fn tool_choice_violation_message_matches_upstream() {
+    let error = |tool_choice| {
+        AiMuxError::ToolChoiceViolation(Box::new(ToolChoiceViolationError {
+            tool_choice,
+            finish_reason: FinishReasonUnified::Stop,
+            provider: "p".into(),
+            model_id: "m".into(),
+            content: vec![],
+        }))
+    };
+    assert_eq!(
+        error(LanguageModelV4ToolChoice::Required).to_string(),
+        "Model response did not contain a tool call even though tool choice was required."
+    );
+    assert_eq!(
+        error(LanguageModelV4ToolChoice::Tool {
+            tool_name: "weather".into()
+        })
+        .to_string(),
+        "Model response did not contain a call to the required tool 'weather'."
+    );
+}
+
 /// The variant set is a cross-language contract of its own: bindings switch on
-/// the wire tag. Adding or removing one is a breaking change (16 variants —
-/// the per-status avatars `Auth`/`ModelNotFound`/`RateLimited` are gone,
-/// `Http`/`Provider` folded into `ApiCall` (a failed exchange is an `ApiCall`
-/// error classified by `status_code`, transport failures included), and the
-/// legacy catch-all `Tool` — never constructed anywhere — is replaced by the
-/// typed `NoSuchTool`/`InvalidToolInput`/`ToolCallRepair`).
+/// the wire tag, and the FFI / Node / Python error mappings match on every
+/// variant. Adding or removing one is a breaking change.
 /// Compile-time pin: adding an `AiMuxError` variant breaks this match, so
 /// the wire-tag list below and every binding's switch must be updated in the
 /// same change (the runtime assertion alone cannot see additions).
@@ -202,11 +287,14 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
         | AiMuxError::Retry(_)
         | AiMuxError::JsonParse(_)
         | AiMuxError::InvalidResponseData(_)
+        | AiMuxError::ToolCallNotFoundForApproval { .. }
         | AiMuxError::NoSuchTool { .. }
         | AiMuxError::InvalidToolInput { .. }
         | AiMuxError::ToolCallRepair { .. }
         | AiMuxError::InvalidArgument(_)
         | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::MissingToolResults { .. }
+        | AiMuxError::ToolChoiceViolation(_)
         | AiMuxError::TokenExpired(_)
         | AiMuxError::UnsupportedFunctionality(_)
         | AiMuxError::NoSuchModel { .. }
@@ -218,7 +306,7 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
 }
 
 #[test]
-fn variant_set_is_exactly_sixteen() {
+fn variant_set_is_exactly_the_wire_tag_list() {
     let all = [
         AiMuxError::ApiCall(Box::new(api_error("x"))),
         AiMuxError::Retry(RetryError {
@@ -227,6 +315,10 @@ fn variant_set_is_exactly_sixteen() {
         }),
         AiMuxError::JsonParse("x".into()),
         AiMuxError::InvalidResponseData("x".into()),
+        AiMuxError::ToolCallNotFoundForApproval {
+            tool_call_id: "x".into(),
+            approval_id: "x".into(),
+        },
         AiMuxError::NoSuchTool {
             tool_name: "x".into(),
             available_tools: None,
@@ -247,6 +339,16 @@ fn variant_set_is_exactly_sixteen() {
         },
         AiMuxError::InvalidArgument("x".into()),
         AiMuxError::InvalidPrompt("x".into()),
+        AiMuxError::MissingToolResults {
+            tool_call_ids: vec!["x".into()],
+        },
+        AiMuxError::ToolChoiceViolation(Box::new(ToolChoiceViolationError {
+            tool_choice: LanguageModelV4ToolChoice::Required,
+            finish_reason: FinishReasonUnified::Stop,
+            provider: "x".into(),
+            model_id: "x".into(),
+            content: vec![],
+        })),
         AiMuxError::TokenExpired("x".into()),
         AiMuxError::UnsupportedFunctionality("x".into()),
         AiMuxError::NoSuchModel {
@@ -265,7 +367,6 @@ fn variant_set_is_exactly_sixteen() {
         .iter()
         .map(|e| match serde_json::to_value(e).unwrap() {
             serde_json::Value::Object(m) => m.into_iter().next().unwrap().0,
-            serde_json::Value::String(s) => s, // unit variants (Aborted)
             v => panic!("unexpected error_value shape: {v}"),
         })
         .collect();
@@ -281,6 +382,7 @@ fn variant_set_is_exactly_sixteen() {
             "InvalidResponseData",
             "InvalidToolInput",
             "JsonParse",
+            "MissingToolResults",
             "NoSuchModel",
             "NoSuchProvider",
             "NoSuchTool",
@@ -288,7 +390,9 @@ fn variant_set_is_exactly_sixteen() {
             "Retry",
             "Timeout",
             "TokenExpired",
+            "ToolCallNotFoundForApproval",
             "ToolCallRepair",
+            "ToolChoiceViolation",
             "UnsupportedFunctionality",
         ],
         "variant set changed"

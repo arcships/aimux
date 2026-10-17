@@ -8,6 +8,7 @@
 //!
 //! This module holds the pieces both share:
 //! - [`ChildModel`] — the child-handle shape (`Arc<dyn LanguageModel>`).
+//! - `step_options` — the call options of one child step.
 //! - [`add_usage`] — per-field `Usage` accumulation.
 //! - [`extract_text`] — pull text out of a `GenerateContent` list.
 //! - [`build_aggregator_prompt`] — assemble the MoA aggregator prompt.
@@ -19,37 +20,50 @@
 use std::sync::Arc;
 
 use crate::language_model::LanguageModel;
-use crate::language_model_message::{LanguageModelPrompt, LanguageModelPromptMessage};
+use crate::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
+use crate::options::CallOptions;
 use crate::result::GenerateContent;
-use crate::types::{TokenUsage, Usage};
+use crate::types::{InputTokenUsage, OutputTokenUsage, Usage};
 
 /// Composite-model child handle. `Arc` (not `Box`) so children are `Clone`,
 /// match the FFI/Node registry shape, and stay alive after a child handle is
 /// dropped (shared by registry + composite).
 pub type ChildModel = Arc<dyn LanguageModel>;
 
+/// Clone `options` for one composite child step (Router child, MoA
+/// reference or aggregator): the recording context, when present, is
+/// replaced by a child context labeled `step`, so the child's exchanges and
+/// retry attempts are recorded as their own step instead of blending into the
+/// parent operation's.
+pub(crate) fn step_options(options: &CallOptions, step: impl Into<String>) -> CallOptions {
+    let mut child = options.clone();
+    child.recording_context = options
+        .recording_context
+        .as_ref()
+        .map(|context| context.child(step.into()));
+    child
+}
+
 /// Add two `Usage` values field-by-field. `Usage::raw` (provider-opaque) is
 /// dropped — summing raw maps across providers is meaningless.
 ///
-/// Each `TokenUsage` field is `Option<u32>`; `None` is treated as zero so a
+/// Each usage detail field is `Option<u32>`; `None` is treated as zero so a
 /// child that doesn't report a breakdown doesn't erase the other child's data.
 #[must_use]
 pub fn add_usage(a: Usage, b: &Usage) -> Usage {
     Usage {
-        input_tokens: add_token_usage(a.input_tokens, &b.input_tokens),
-        output_tokens: add_token_usage(a.output_tokens, &b.output_tokens),
+        input_tokens: InputTokenUsage {
+            total: opt_add(a.input_tokens.total, b.input_tokens.total),
+            no_cache: opt_add(a.input_tokens.no_cache, b.input_tokens.no_cache),
+            cache_read: opt_add(a.input_tokens.cache_read, b.input_tokens.cache_read),
+            cache_write: opt_add(a.input_tokens.cache_write, b.input_tokens.cache_write),
+        },
+        output_tokens: OutputTokenUsage {
+            total: opt_add(a.output_tokens.total, b.output_tokens.total),
+            text: opt_add(a.output_tokens.text, b.output_tokens.text),
+            reasoning: opt_add(a.output_tokens.reasoning, b.output_tokens.reasoning),
+        },
         raw: None,
-    }
-}
-
-fn add_token_usage(a: TokenUsage, b: &TokenUsage) -> TokenUsage {
-    TokenUsage {
-        total: opt_add(a.total, b.total),
-        no_cache: opt_add(a.no_cache, b.no_cache),
-        cache_read: opt_add(a.cache_read, b.cache_read),
-        cache_write: opt_add(a.cache_write, b.cache_write),
-        text: opt_add(a.text, b.text),
-        reasoning: opt_add(a.reasoning, b.reasoning),
     }
 }
 
@@ -119,10 +133,6 @@ pub fn build_aggregator_prompt(
         body.push('\n');
     }
 
-    out.push(LanguageModelPromptMessage {
-        role: crate::message::Role::User,
-        content: vec![crate::content::ContentPart::text(body)],
-        provider_options: None,
-    });
+    out.push(LanguageModelMessage::user_text(body));
     out
 }

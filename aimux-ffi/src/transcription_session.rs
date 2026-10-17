@@ -51,7 +51,7 @@ const JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 #[derive(Default)]
 pub struct SessionOptions {
     pub input_audio_format: Option<InputAudioFormat>,
-    pub provider_options: Option<std::collections::HashMap<String, serde_json::Value>>,
+    pub provider_options: Option<aimux_core::shared::SharedProviderOptions>,
     pub headers: Option<std::collections::HashMap<String, String>>,
     pub include_raw_chunks: bool,
     pub timeout: Option<aimux_core::options::TimeoutConfiguration>,
