@@ -639,6 +639,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `input_schema_input` only when it differs from the call's input under the
   AI SDK's `isDeepEqualData` (`aimux-core`, to-response-messages.ts:133-146).
 
+- Partial-JSON parsing returns one enum (`aimux-core`):
+  `aimux_core::json_repair::parse_partial_json`, `ParsePartialJsonResult` and
+  `ParsePartialJsonState` (also re-exported from `aimux_core::util`) are
+  removed; use `PartialJson::parse(&str)` (doc alias `parsePartialJson`). Its
+  variants `Parsed(Value)`, `Repaired(Value)` and `Failed` carry the value, so
+  a value without a parse state or a state without its value cannot be built;
+  `value()` / `into_value()` return it for either successful variant.
+  Upstream's `undefined-input` state is the caller's `Option`:
+  `parse_partial_json(text)` becomes `text.map(PartialJson::parse)`. Outcomes
+  and values are unchanged; `fix_json` is unchanged.
+
 **Rust (aimux-stream)**
 
 - `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG

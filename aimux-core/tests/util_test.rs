@@ -11,9 +11,7 @@
 //! Rust equivalent because the port uses real `serde_json` parsing instead of
 //! the mocked `safeParseJSON`. Such omissions are called out in comments.
 
-use aimux_core::util::{
-    ParsePartialJsonState, UtilError, cosine_similarity, fix_json, parse_partial_json,
-};
+use aimux_core::util::{PartialJson, UtilError, cosine_similarity, fix_json};
 use serde_json::json;
 
 // ===========================================================================
@@ -382,17 +380,16 @@ mod parse_partial_json {
 
     #[test]
     fn should_handle_nullish_input() {
-        let result = parse_partial_json(None);
-        assert_eq!(result.value, None);
-        assert_eq!(result.state, ParsePartialJsonState::UndefinedInput);
+        // Upstream's `undefined-input` state is the caller's `Option`.
+        let text: Option<&str> = None;
+        assert_eq!(text.map(PartialJson::parse), None);
     }
 
     #[test]
     fn should_parse_valid_json() {
         let valid_json = r#"{"key": "value"}"#;
-        let result = parse_partial_json(Some(valid_json));
-        assert_eq!(result.value, Some(json!({"key": "value"})));
-        assert_eq!(result.state, ParsePartialJsonState::SuccessfulParse);
+        let result = PartialJson::parse(valid_json);
+        assert_eq!(result, PartialJson::Parsed(json!({"key": "value"})));
         // TS also asserts `safeParseJSON` was called with `{ text: validJson }`;
         // skipped: no mock in the Rust port (real serde_json parse is used).
     }
@@ -400,9 +397,8 @@ mod parse_partial_json {
     #[test]
     fn should_repair_and_parse_partial_json() {
         let partial_json = r#"{"key": "value""#;
-        let result = parse_partial_json(Some(partial_json));
-        assert_eq!(result.value, Some(json!({"key": "value"})));
-        assert_eq!(result.state, ParsePartialJsonState::RepairedParse);
+        let result = PartialJson::parse(partial_json);
+        assert_eq!(result, PartialJson::Repaired(json!({"key": "value"})));
         // TS also asserts fixJson was called with the partial input and the
         // second parse used the fixed text; skipped: no mock in the Rust port.
     }
@@ -410,12 +406,12 @@ mod parse_partial_json {
     #[test]
     fn should_handle_invalid_json_that_cannot_be_repaired() {
         let invalid_json = "not json at all";
-        let result = parse_partial_json(Some(invalid_json));
-        assert_eq!(result.value, None);
-        assert_eq!(result.state, ParsePartialJsonState::FailedParse);
+        let result = PartialJson::parse(invalid_json);
+        assert_eq!(result, PartialJson::Failed);
+        assert_eq!(result.value(), None);
         // TS mocks fixJson to return the input unchanged; the real fixJson
         // reduces this input to "n", which still fails to parse, so the
-        // observable outcome (FailedParse) is identical.
+        // observable outcome (`failed-parse`) is identical.
     }
 }
 
