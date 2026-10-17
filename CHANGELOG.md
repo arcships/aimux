@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Removed the generated `ProviderName` type in every binding (Rust enum, TS
+  const object, Go/Java/Kotlin consts, Swift enum, Dart consts, Python
+  `Literal`) and `scripts/gen_provider_names.py`. Provider names are plain
+  strings: `provider("groq", ...)`. Built-in and overlay-registered names now
+  share one string path. The provider list lives in
+  [docs/api/providers.md](docs/api/providers.md); Rust also gains
+  `provider_names()`.
+
 **Rust (aimux-stream)**
 
 - `SseStream` is now a thin adapter over the `sse-stream` crate (WHATWG

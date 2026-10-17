@@ -134,8 +134,8 @@ a/b/d 三者**共用同一个运行时覆盖层**(见 §4),实现上是同一机
 
 - 新增一个**运行时覆盖层** `OVERLAYS: RwLock<HashMap<String, RegistryEntry>>`(或 `OnceLock<...>` 包 `RwLock`)。
 - `provider()` 查找顺序改为:**覆盖层 → 内置 registry**;找到条目后,后端组装管线(`OpenAIConfig` 构造 + `ProviderOptions` 叠加)完全复用,零改动。
-- 内置 registry 仍是 `include_str!` 编译期嵌入(保留 RFC-0017 的"单一数据源 + 类型派生"不变);覆盖层只承载外部新增/覆盖条目。
-- **这是纯增量改动**:不动 `provider_registry.json`、不动 `gen_provider_names.py`、不动 `ProviderName` 派生(外部名字不属于编译期枚举,走字符串路径即可)。
+- 内置 registry 仍是 `include_str!` 编译期嵌入;覆盖层只承载外部新增/覆盖条目。
+- **这是纯增量改动**:不动 `provider_registry.json`;内置与外部名字都走字符串路径。
 
 ### 4.2 Provider / LanguageModel trait 是否 object-safe(能否动态注册)?
 

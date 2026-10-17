@@ -33,8 +33,7 @@ try (Model model = Model.openaiWithBase("sk-...", "gpt-4o", "http://localhost:30
 
 ## Providers
 
-All 251 registry-backed OpenAI-compatible providers are reachable by name;
-`ProviderName` holds the constants:
+All 251 registry-backed OpenAI-compatible providers are reachable by string name:
 
 > **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
 > providers; Anthropic/Google/multimodal/local → typed factories
@@ -43,22 +42,19 @@ All 251 registry-backed OpenAI-compatible providers are reachable by name;
 
 ```java
 import ai.arcships.aimux.Model;
-import ai.arcships.aimux.ProviderName;
 
-// 推荐:ProviderName.GROQ 常量(类型检查 + 补全)
-try (Model model = Model.providerFromEnv(ProviderName.GROQ, "llama-3.3-70b")) {
+try (Model model = Model.providerFromEnv("groq", "llama-3.3-70b")) {
     String result = model.generateText("\"Hello\"");
 }
 
-// 字符串形式同样可用 + 可选 config JSON ({"base_url": "..."}):
+// Optional config JSON ({"base_url": "..."}):
 try (Model model = Model.provider("groq", "sk-...", "llama-3.3-70b", null)) {
     String result = model.generateText("\"Hello\"");
 }
 ```
 
 `deepseek(apiKey, modelId)` remains as a shortcut (registry-backed).
-Unknown names throw `NoSuchProviderError` naming the requested provider
-(valid names come from the generated `ProviderName` constants).
+Unknown names throw `NoSuchProviderError` naming the requested provider.
 
 ## Errors
 

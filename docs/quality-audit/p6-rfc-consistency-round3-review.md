@@ -11,6 +11,8 @@
 >
 > **日期**: 2026-08-07
 > **关联**: [p4-release-v021-head-review.md](p4-release-v021-head-review.md)、[p5-native-providers-round2-review.md](p5-native-providers-round2-review.md)
+>
+> **后续变更**: 2026-09-29 删除生成式 `ProviderName` 及 `scripts/gen_provider_names.py`;本报告范围②与门禁对照中的 provider 名称生成漂移检查(`gen_provider_names.py --check`)已不再适用,provider 名字统一为字符串,运行期列表由 registry 导出(`provider_names()`),现行列表见 [docs/api/providers.md](../api/providers.md)。
 
 ---
 

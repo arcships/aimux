@@ -36,7 +36,7 @@ disagree.
 | RFC-0016 §7.1 | Request deadlines surface as `AiMuxError::Timeout` and are not retried. |
 | RFC-0016 §7.6 R2/R4 and §7.7 S1/S2 | User cancellation surfaces as `AiMuxError::Aborted`; abort must remain responsive during body reads, retry backoff, and provider polling waits. |
 | RFC-0016 alignment goal | Retryability follows the AI SDK response policy: 408, 409, 429, and 5xx are retryable; ordinary 4xx are not. |
-| RFC-0017 §3 stage 4 | Unknown registry names must identify the requested provider and direct callers to the generated `ProviderName` surface. The runtime error must not carry all 250 automatically registered names. |
+| RFC-0017 §3 stage 4 | Unknown registry names must identify the requested provider. The runtime error must not carry all automatically registered names; discovery uses the generated provider documentation. |
 | RFC-0018 §3.2 | Codex subscription 401 remains the specialized `TokenExpired` action signal. Do not fold it back into a generic 401 `ApiCall`. |
 
 ### 2.2 Final error classification table
@@ -98,11 +98,11 @@ disagree.
 2. Remove both `available` and stored `message`. Display text must be derived
    from `provider_id`, so the payload cannot contain contradictory facts.
 3. In `provider_handle`, construct only `provider_id`.
-4. Remove the now-unused `ProviderName` import and fix the stale `provider()`
-   doc comment that still promises the full provider list.
+4. Fix the stale `provider()` doc comment that still promises the full
+   provider list in the error.
 5. Update RFC-0017 stage-4 wording and acceptance item. The accepted behavior
    is: the error names the unknown provider; discoverable valid names come from
-   generated `ProviderName`. The error payload does not contain 250 names.
+   generated provider documentation. The error payload does not contain the registry.
 6. Regenerate or mechanically update the checked-in TS wire type. Do not add a
    compatibility union for the old payload.
 
@@ -387,7 +387,7 @@ Clean only residue directly invalidated by this work:
 - `scripts/gen_responses_convert.py` if it still emits a removed
   `AiMuxError::Provider` constructor;
 - stale Rustdoc references to `AiMuxError::Unsupported` / `AiMuxError::Json`;
-- the unused `ProviderName` import created by removing the available list.
+- stale provider-name discovery references after removing the available list.
 
 Do not turn this into a general documentation sweep.
 
@@ -425,4 +425,3 @@ boundaries are:
 - [ ] Codex subscription 401 still maps to `TokenExpired`.
 - [ ] No binding compatibility work or unrelated API expansion was added.
 - [ ] Focused checks in §9 pass and `git diff --check` is clean.
-
