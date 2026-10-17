@@ -9,6 +9,7 @@ use ts_rs::TS;
 
 use std::time::{Duration, Instant};
 
+use crate::download::{Download, create_download};
 use crate::error::AiMuxError;
 use crate::shared::{
     AspectRatio, SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Size, Warning,
@@ -140,9 +141,7 @@ pub struct VideoCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
-    /// retrying. `None` uses 2, the AI SDK default, unless the model's
-    /// `retry_config()` sets another count (model-level retry settings are
-    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
+    /// retrying. `None` uses 2, the AI SDK default.
     pub max_retries: Option<u32>,
 
     /// Poll pacing for the start/status flow, the AI SDK's `generateVideo`
@@ -155,6 +154,16 @@ pub struct VideoCallOptions {
 
     /// Additional HTTP headers to send with the request.
     pub headers: Option<SharedHeaders>,
+
+    /// The download of the videos a model returns as URLs, the AI SDK's
+    /// `generateVideo` `download` option (`generate-video.ts:136`,
+    /// `:253-261`). `None` uses the guarded download
+    /// ([`create_download`]`(None)`, 2 GiB limit).
+    ///
+    /// Runtime handle; never crosses the JSON boundary.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub download: Option<Download>,
 }
 
 fn default_video_n() -> u32 {
@@ -182,6 +191,7 @@ impl VideoCallOptions {
             poll: None,
             timeout: None,
             headers: None,
+            download: None,
         }
     }
 }
@@ -325,10 +335,6 @@ pub trait VideoModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"kling-video"`.
     fn model_id(&self) -> &str;
 
-    fn retry_config(&self) -> retry::RetryConfig {
-        retry::RetryConfig::default()
-    }
-
     /// Limit of how many videos can be generated in a single API call.
     ///
     /// `None` means no fixed limit. Most video models only support `1`.
@@ -368,11 +374,20 @@ pub trait VideoModel: Send + Sync {
 /// deep-merged the same way start/completion metadata is within a batch (see
 /// `merge_provider_metadata`).
 ///
+/// Every video returned as a URL is then downloaded, in order, with
+/// [`VideoCallOptions::download`] and returned as [`VideoData::Binary`], as
+/// the AI SDK returns generated files (`generate-video.ts:383-410`). Its
+/// media type is the video's own unless that is empty or
+/// `application/octet-stream`, else the downloaded one under the same rule,
+/// else `video/mp4`; aimux has no byte sniffing in Core, so upstream's
+/// `detectMediaType` step is skipped.
+///
 /// # Errors
 ///
 /// Returns `InvalidArgument` when `options.n == 0` (checked before any
 /// network call), or the first batch's provider failure, retry exhaustion,
-/// poll or operation timeout, or caller abort — Rust drops the other
+/// poll or operation timeout, a video download failure, or caller abort —
+/// Rust drops the other
 /// in-flight batches' futures on the first error, unlike `Promise.all`,
 /// which lets sibling settles run to completion; their partial network
 /// effects (e.g. an already-started but abandoned batch) are the same
@@ -402,11 +417,7 @@ async fn start_and_poll(
     }
 
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
 
     let poll = PollPacing::resolve(options.poll);
 
@@ -449,7 +460,35 @@ async fn start_and_poll(
         merged.provider_metadata =
             merge_provider_metadata(merged.provider_metadata, result.provider_metadata);
     }
+
+    let download = options
+        .download
+        .clone()
+        .unwrap_or_else(|| create_download(None));
+    for video in &mut merged.videos {
+        if let VideoData::Url { url, media_type } = video {
+            let file = download.download(url, abort_signal.as_ref()).await?;
+            let media_type = downloaded_video_media_type(media_type, file.media_type.as_deref());
+            *video = VideoData::Binary {
+                data: file.data,
+                media_type,
+            };
+        }
+    }
     Ok(merged)
+}
+
+/// The media type of a downloaded video (generate-video.ts:395-406): the
+/// video's own, else the downloaded one, else `video/mp4`, skipping empty
+/// and `application/octet-stream` values (`isUsableMediaType`).
+fn downloaded_video_media_type(own: &str, downloaded: Option<&str>) -> String {
+    let usable =
+        |media_type: &&str| !media_type.is_empty() && *media_type != "application/octet-stream";
+    Some(own)
+        .filter(usable)
+        .or_else(|| downloaded.filter(usable))
+        .unwrap_or("video/mp4")
+        .to_owned()
 }
 
 /// Run one `do_start` + poll cycle for a single provider-sized batch.
@@ -543,8 +582,8 @@ fn merge_provider_metadata(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use super::*;
     use crate::error::ApiCallError;
@@ -606,13 +645,6 @@ mod tests {
 
         fn model_id(&self) -> &str {
             "scripted"
-        }
-
-        fn retry_config(&self) -> crate::retry::RetryConfig {
-            crate::retry::RetryConfig {
-                initial_delay: Duration::from_millis(1),
-                ..crate::retry::RetryConfig::default()
-            }
         }
 
         fn max_videos_per_call(&self) -> Option<u32> {
@@ -681,8 +713,10 @@ mod tests {
                 }))),
                 StatusStep::Pending => Ok(VideoOperationStatus::Pending),
                 StatusStep::Complete => Ok(VideoOperationStatus::Completed(VideoResult {
+                    // A loopback URL: an injected download fetches it, the
+                    // guarded default download refuses it.
                     videos: vec![VideoData::Url {
-                        url: "https://cdn/video.mp4".to_string(),
+                        url: "http://127.0.0.1:9/video.mp4".to_string(),
                         media_type: "video/mp4".to_string(),
                     }],
                     warnings: vec![Warning::Other {
@@ -701,6 +735,12 @@ mod tests {
             interval_ms: Some(1),
             timeout_ms: Some(2_000),
         });
+        options.download = Some(Download::new(|_| async {
+            Ok(crate::download::DownloadedFile {
+                data: b"video".to_vec(),
+                media_type: None,
+            })
+        }));
         options
     }
 
@@ -729,7 +769,8 @@ mod tests {
         assert_eq!(result.videos.len(), 1);
     }
 
-    #[tokio::test]
+    // Paused time: the fixed 2s retry delay must not make the test wait.
+    #[tokio::test(start_paused = true)]
     async fn start_retry_reuses_one_idempotency_key() {
         let model = ScriptedVideoModel::new(vec![StatusStep::Complete]).with_start_failures(1);
         let mut options = fast_poll_options();
@@ -918,7 +959,9 @@ mod tests {
     /// The race covers the status retries too (upstream passes the status
     /// timeout signal to `prepareRetries`, generate-video.ts:602-605): a
     /// retry delay longer than the remaining budget ends with the polling
-    /// timeout, not after the delay.
+    /// timeout, not after the delay. The failed check asks for a 30 s delay
+    /// (`retry-after-ms`, honoured exactly below 60 s), so the delay does not
+    /// depend on the jittered exponential backoff.
     #[tokio::test]
     async fn status_retries_race_the_remaining_poll_timeout() {
         struct SlowRetries(ScriptedVideoModel);
@@ -929,12 +972,6 @@ mod tests {
             }
             fn model_id(&self) -> &str {
                 "slow-retries"
-            }
-            fn retry_config(&self) -> crate::retry::RetryConfig {
-                crate::retry::RetryConfig {
-                    initial_delay: Duration::from_secs(60),
-                    ..crate::retry::RetryConfig::default()
-                }
             }
             fn max_videos_per_call(&self) -> Option<u32> {
                 Some(1)
@@ -950,7 +987,17 @@ mod tests {
                 operation: &serde_json::Value,
                 options: &VideoCallOptions,
             ) -> Result<VideoOperationStatus, AiMuxError> {
-                self.0.do_status(operation, options).await
+                self.0
+                    .do_status(operation, options)
+                    .await
+                    .map_err(|error| match error {
+                        AiMuxError::ApiCall(mut detail) => {
+                            detail.response_headers =
+                                Some([("retry-after-ms".to_string(), "30000".to_string())].into());
+                            AiMuxError::ApiCall(detail)
+                        }
+                        other => other,
+                    })
             }
         }
         let model = SlowRetries(ScriptedVideoModel::new(vec![
@@ -974,6 +1021,70 @@ mod tests {
 
     /// Without a `poll` option the AI SDK defaults apply
     /// (generate-video.ts:543-544); the model has no poll settings.
+    #[tokio::test]
+    async fn url_videos_are_downloaded_with_the_injected_download() {
+        let model = ScriptedVideoModel::new(vec![StatusStep::Complete]);
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let mut options = fast_poll_options();
+        let recorded = requests.clone();
+        options.download = Some(Download::new(
+            move |request: crate::download::DownloadRequest| {
+                recorded.lock().unwrap().push(request.url);
+                async {
+                    Ok(crate::download::DownloadedFile {
+                        data: vec![7, 7],
+                        media_type: Some("video/webm".into()),
+                    })
+                }
+            },
+        ));
+        let result = generate_video(&model, options).await.unwrap();
+        assert_eq!(*requests.lock().unwrap(), ["http://127.0.0.1:9/video.mp4"]);
+        // The video's own media type comes first.
+        assert!(
+            matches!(&result.videos[..], [VideoData::Binary { data, media_type }]
+                if *data == [7, 7] && media_type == "video/mp4"),
+            "{:?}",
+            result.videos
+        );
+    }
+
+    /// Without an injected download, the guarded download refuses a
+    /// loopback URL.
+    #[tokio::test]
+    async fn the_default_video_download_is_guarded() {
+        let model = ScriptedVideoModel::new(vec![StatusStep::Complete]);
+        let mut options = fast_poll_options();
+        options.download = None;
+        let error = generate_video(&model, options).await.unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument(message)
+                if message == "download URL targets a non-public address: 127.0.0.1"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn a_downloaded_video_takes_the_first_usable_media_type() {
+        assert_eq!(
+            downloaded_video_media_type("video/mp4", Some("video/webm")),
+            "video/mp4"
+        );
+        assert_eq!(
+            downloaded_video_media_type("application/octet-stream", Some("video/webm")),
+            "video/webm"
+        );
+        assert_eq!(
+            downloaded_video_media_type("", Some("video/webm")),
+            "video/webm"
+        );
+        assert_eq!(
+            downloaded_video_media_type("", Some("application/octet-stream")),
+            "video/mp4"
+        );
+        assert_eq!(downloaded_video_media_type("", None), "video/mp4");
+    }
+
     #[test]
     fn poll_pacing_defaults_to_the_ai_sdk_values() {
         let pacing = PollPacing::resolve(None);
@@ -1038,7 +1149,7 @@ mod tests {
         assert_eq!(unique.len(), 3, "one key per batch: {keys:?}");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn caller_key_is_distinct_per_batch_and_stable_across_retries_and_replays() {
         let model = ScriptedVideoModel::new(vec![]).with_start_failures(1);
         let mut options = fast_poll_options();

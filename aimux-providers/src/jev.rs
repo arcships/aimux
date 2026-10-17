@@ -3,13 +3,35 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use aimux_core::decision_model::*;
 use aimux_core::{AiMuxError, Provider};
 use aimux_provider_utils::{HttpRequest, load_api_key};
 
 use crate::systemone::{ResponseProfile, WireResponse};
+
+/// Failed-response handler of the Jev endpoint: `message`, and `type`
+/// else `code` as the provider code, from the body's `error` object, or from
+/// the top level when there is none. This is the mapping the endpoint used
+/// with the removed shared handler; it is not an AI SDK schema.
+fn jev_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
+    aimux_provider_utils::create_json_error_response_handler(|data| {
+        let error = data.get("error").unwrap_or(data);
+        aimux_provider_utils::ProviderErrorParts {
+            message: error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error
+                .get("type")
+                .or_else(|| error.get("code"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }
+    })
+}
 
 const JEV_ROUNDING: DecisionRounding = DecisionRounding {
     probability_decimals: Some(2),
@@ -22,7 +44,6 @@ pub struct JevConfig {
     /// Full POST URL for the official API, or an explicitly configured proxy.
     pub endpoint: String,
     pub headers: HashMap<String, String>,
-    pub retry_config: aimux_core::retry::RetryConfig,
     pub probability_source: DecisionProbabilitySource,
 }
 
@@ -33,7 +54,6 @@ impl JevConfig {
             api_key: api_key.into(),
             endpoint: "https://api.typesafe.ai/v1/systemone".into(),
             headers: HashMap::new(),
-            retry_config: Default::default(),
             probability_source: DecisionProbabilitySource::Native,
         }
     }
@@ -64,9 +84,9 @@ impl JevProvider {
 }
 
 impl Provider for JevProvider {
-    fn name(&self) -> &str {
-        "jev"
-    }
+    crate::__unsupported_required_model!(language_model, LanguageModel, "languageModel");
+    crate::__unsupported_required_model!(embedding_model, EmbeddingModel, "embeddingModel");
+    crate::__unsupported_required_model!(image_model, ImageModel, "imageModel");
 
     fn decision_model(&self, model_id: &str) -> Result<Box<dyn DecisionModel>, AiMuxError> {
         if model_id.trim().is_empty() {
@@ -93,23 +113,6 @@ impl DecisionModel for JevDecisionModel {
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn config_snapshot(&self) -> aimux_core::recording::ProviderRecord {
-        let mut snapshot =
-            aimux_core::recording::ProviderRecord::minimal(self.provider(), self.model_id());
-        snapshot.base_url = Some(self.config.endpoint.clone());
-        snapshot.api_key_source = if self.config.api_key.is_empty() {
-            "none"
-        } else {
-            "explicit"
-        }
-        .into();
-        snapshot.profile = Some(json!({"decision_capabilities": self.capabilities()}));
-        snapshot.provider_options = Some(json!({"headers": self.config.headers}));
-        snapshot
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
     fn capabilities(&self) -> DecisionCapabilities {
         DecisionCapabilities {
@@ -171,7 +174,7 @@ impl DecisionModel for JevDecisionModel {
             ),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<WireResponse>(),
-            aimux_provider_utils::create_standard_json_error_response_handler(),
+            jev_failed_response_handler(),
         )
         .await?;
         let raw = response.raw_value.unwrap_or(Value::Null);

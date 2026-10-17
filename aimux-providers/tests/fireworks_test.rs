@@ -2,7 +2,7 @@
 //!
 //! Translated from `packages/fireworks/src/fireworks-provider.test.ts`.
 //!
-//! Fireworks is a thin OpenAI-compatible wrapper over [`OpenAIProvider`]. The
+//! Fireworks is a registry preset of the OpenAI-compatible package. The
 //! TS suite is mostly provider-configuration unit tests plus a
 //! `transformRequestBody` that snake-cases `thinking.budgetTokens`,
 //! `reasoningHistory`, `promptCacheKey`, `serviceTier` and remaps
@@ -25,6 +25,7 @@
 
 use serde_json::{Value, json};
 use serial_test::serial;
+use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -32,7 +33,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 
-use aimux_providers::{ProviderOptions, provider, provider_from_env};
+use aimux_providers::{PresetSettings, create_provider};
 
 fn test_prompt() -> LanguageModelPrompt {
     vec![LanguageModelMessage::user_text("Hello")]
@@ -57,28 +58,32 @@ fn text_completion_body() -> Value {
     })
 }
 
-fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-    provider(
+fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+    create_provider(
         "fireworks",
-        Some("test-api-key".to_string()),
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-api-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct")
     .expect("fireworks provider should build")
 }
 
 /// TS: `createFireworks()` produces a provider whose name is "fireworks".
 #[test]
 fn provider_builds_fireworks_model() {
-    let model = provider(
+    let model = create_provider(
         "fireworks",
-        Some("test-key".to_string()),
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        None,
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            ..Default::default()
+        },
     )
+    .expect("provider should build")
+    .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct")
     .expect("fireworks provider should build");
     assert_eq!(
         model.model_id(),
@@ -117,15 +122,16 @@ async fn custom_api_key_used_in_auth_header() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "fireworks",
-        Some("my-custom-key".to_string()),
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("my-custom-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct")
     .expect("fireworks provider should build");
 
     model
@@ -146,15 +152,16 @@ async fn custom_headers_forwarded() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "fireworks",
-        Some("test-key".to_string()),
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct")
     .expect("fireworks provider should build");
 
     let mut options = default_options(test_prompt());
@@ -180,15 +187,16 @@ async fn language_model_via_trait() {
         .mount(&server)
         .await;
 
-    let model = provider(
+    let model = create_provider(
         "fireworks",
-        Some("test-key".to_string()),
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        Some(ProviderOptions {
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
             base_url: Some(server.uri()),
             ..Default::default()
-        }),
+        },
     )
+    .expect("provider should build")
+    .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct")
     .expect("provider should build a model");
 
     model
@@ -206,11 +214,9 @@ fn from_env_loads_fireworks_api_key() {
         std::env::set_var("FIREWORKS_API_KEY", "env-test-key");
     }
 
-    let model = provider_from_env(
-        "fireworks",
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        None,
-    );
+    let model = create_provider("fireworks", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct");
     assert!(model.is_ok(), "from_env should succeed with env var set");
 
     unsafe {
@@ -223,19 +229,19 @@ fn from_env_loads_fireworks_api_key() {
 
 /// TS: without the env var, `createFireworks()` fails.
 #[serial]
-#[test]
-fn from_env_fails_without_env_var() {
+#[tokio::test]
+async fn from_env_fails_without_env_var() {
     let saved = std::env::var("FIREWORKS_API_KEY").ok();
     unsafe {
         std::env::remove_var("FIREWORKS_API_KEY");
     }
 
-    let model = provider_from_env(
-        "fireworks",
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        None,
-    );
-    assert!(model.is_err(), "from_env should fail without env var");
+    let model = create_provider("fireworks", PresetSettings::default())
+        .expect("provider should build")
+        .language_model("accounts/fireworks/models/llama-v3p1-70b-instruct")
+        .expect("provider should build a model");
+    let result = model.do_generate(&default_options(test_prompt())).await;
+    assert!(result.is_err(), "from_env should fail without env var");
 
     unsafe {
         if let Some(v) = saved {

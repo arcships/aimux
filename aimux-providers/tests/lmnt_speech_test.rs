@@ -1,4 +1,4 @@
-﻿//! Rust translation of the LMNT speech (TTS) model tests.
+//! Rust translation of the LMNT speech (TTS) model tests.
 //!
 //! Source: `reference/ai/packages/lmnt/src/lmnt-speech-model.test.ts`
 //!
@@ -13,7 +13,8 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel};
-use aimux_providers::{LMNTConfig, LMNTProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{LMNTProviderSettings, create_lmnt};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -66,8 +67,12 @@ async fn should_pass_the_model_and_text() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = LMNTConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = LMNTProvider::new(config);
+    let config = LMNTProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_lmnt(config).unwrap();
     let model = provider.speech("aurora");
 
     model
@@ -93,10 +98,18 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = LMNTConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(provider_headers);
-    let provider = LMNTProvider::new(config);
+    let config = LMNTProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some(
+            (provider_headers)
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let provider = create_lmnt(config).unwrap();
     let model = provider.speech("aurora");
 
     let mut options = speech_options("Hello from the AI SDK!");
@@ -129,8 +142,12 @@ async fn should_pass_options() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = LMNTConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = LMNTProvider::new(config);
+    let config = LMNTProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_lmnt(config).unwrap();
     let model = provider.speech("aurora");
 
     let mut options = speech_options("Hello from the AI SDK!");
@@ -163,8 +180,12 @@ async fn should_return_audio_data_with_correct_content_type() {
     )
     .await;
 
-    let config = LMNTConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = LMNTProvider::new(config);
+    let config = LMNTProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_lmnt(config).unwrap();
     let model = provider.speech("aurora");
 
     let mut options = speech_options("Hello from the AI SDK!");
@@ -189,8 +210,12 @@ async fn should_include_response_data_with_timestamp_modelid_and_headers() {
     )
     .await;
 
-    let config = LMNTConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = LMNTProvider::new(config);
+    let config = LMNTProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_lmnt(config).unwrap();
     let model = provider.speech("aurora");
 
     let result = model
@@ -218,8 +243,12 @@ async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = LMNTConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = LMNTProvider::new(config);
+    let config = LMNTProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_lmnt(config).unwrap();
     let model = provider.speech("aurora");
 
     let result = model
@@ -241,8 +270,12 @@ async fn should_handle_different_audio_formats() {
         let server = MockServer::start().await;
         mock_audio_response(&server, format).await;
 
-        let config = LMNTConfig::new("test-api-key").with_base_url(server.uri());
-        let provider = LMNTProvider::new(config);
+        let config = LMNTProviderSettings {
+            api_key: Some(Resolvable::Value("test-api-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        };
+        let provider = create_lmnt(config).unwrap();
         let model = provider.speech("aurora");
 
         let mut options = speech_options("Hello from the AI SDK!");
@@ -268,8 +301,12 @@ async fn should_include_warnings_if_any_are_generated() {
     let server = MockServer::start().await;
     mock_audio_response(&server, "mp3").await;
 
-    let config = LMNTConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = LMNTProvider::new(config);
+    let config = LMNTProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_lmnt(config).unwrap();
     let model = provider.speech("aurora");
 
     let result = model

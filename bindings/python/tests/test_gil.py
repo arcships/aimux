@@ -14,11 +14,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from aimux import generate_text, openai, openai_embedding
+from aimux import deepseek, generate_text, openai_embedding
 
 CHAT = json.dumps({
     "id": "chatcmpl-gil",
-    "model": "gpt-4o",
+    "model": "deepseek-chat",
     "choices": [{
         "message": {"role": "assistant", "content": "served by a Python thread"},
         "finish_reason": "stop",
@@ -74,7 +74,8 @@ class _ThreadServer:
 
 def test_generate_text_lets_other_python_threads_run():
     with _ThreadServer(CHAT) as server:
-        model = openai("test-key", "gpt-4o", server.url)
+        # A chat-completions provider: openai() uses the Responses API.
+        model = deepseek("test-key", "deepseek-chat", server.url)
         started = time.monotonic()
         result = generate_text(model, "hi", LIMITS)
         assert result["text"] == "served by a Python thread"

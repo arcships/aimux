@@ -10,7 +10,7 @@ use aimux_core::decision_model::*;
 use aimux_core::recording::{self, RingRecorder};
 use aimux_core::replay::{MockDecisionReplayModel, replay_decision_with_model};
 use aimux_core::{AbortSignal, AiMuxError, Provider};
-use aimux_providers::{JevConfig, JevProvider, ProviderOptions, provider_handle};
+use aimux_providers::{JevConfig, JevProvider, PresetSettings, create_provider};
 use serde_json::{Value, json};
 use serial_test::serial;
 use wiremock::matchers::{body_json, header, method, path};
@@ -31,22 +31,40 @@ fn fixture() -> Value {
 fn options() -> DecisionCallOptions {
     serde_json::from_value(fixture()["options"].clone()).unwrap()
 }
-fn model(provider: &str, server: &MockServer) -> Box<dyn DecisionModel> {
-    provider_handle(
+fn runtime(provider: &str, api_key: Option<&str>, base_url: String) -> Arc<dyn Provider> {
+    create_provider(
         provider,
-        Some("runtime-secret".into()),
-        Some(ProviderOptions {
-            base_url: Some(format!("{}/v1", server.uri())),
+        PresetSettings {
+            api_key: api_key.map(|key| key.to_string().into()),
+            base_url: Some(base_url),
             ..Default::default()
-        }),
+        },
     )
     .unwrap()
+}
+fn model(provider: &str, server: &MockServer) -> Box<dyn DecisionModel> {
+    runtime(
+        provider,
+        Some("runtime-secret"),
+        format!("{}/v1", server.uri()),
+    )
     .decision_model(if provider.starts_with("cloudflare") {
         "@cf/cloudflare/clef"
     } else {
         "served-decision"
     })
     .unwrap()
+}
+/// Rebuild from the caller's registry, which names the provider as recorded.
+fn rebuild(
+    record: &aimux_core::recording::ProviderRecord,
+    provider: Arc<dyn Provider>,
+) -> Result<Box<dyn DecisionModel>, AiMuxError> {
+    let registry = aimux_core::create_provider_registry(
+        std::collections::BTreeMap::from([(record.provider_id.clone(), provider)]),
+        Default::default(),
+    );
+    aimux_providers::rebuild_decision_provider(record, &registry)
 }
 struct Stop;
 impl Drop for Stop {
@@ -86,9 +104,11 @@ async fn replay(
     );
     let server = MockServer::start().await;
     common::replay::mount_recording(&server, &recordings[0]).await;
-    let mut snapshot = recordings[0].provider.clone();
-    snapshot.base_url = Some(format!("{}/v1", server.uri()));
-    let rebuilt = aimux_providers::rebuild_decision_provider(&snapshot, Some("new-key")).unwrap();
+    let rebuilt = rebuild(
+        &recordings[0].provider,
+        runtime(provider, Some("new-key"), format!("{}/v1", server.uri())),
+    )
+    .unwrap();
     let again = replay_decision_with_model(&recordings[0], rebuilt.as_ref())
         .await
         .unwrap();
@@ -578,29 +598,56 @@ async fn retry_and_cancellation_use_shared_transport() {
 }
 
 #[test]
-fn local_factories_and_wrapper_factories_preserve_credentials_for_replay() {
-    use aimux_core::Provider;
+fn local_presets_record_identity_and_rebuild_from_the_registry() {
     for provider in ["ollama", "llamacpp", "localai", "laya", "sglang", "vllm"] {
-        let handle = provider_handle(
-            provider,
-            None,
-            Some(ProviderOptions {
-                base_url: Some("http://127.0.0.1:1/v1".into()),
-                ..Default::default()
-            }),
-        )
-        .unwrap();
+        let handle = runtime(provider, None, "http://127.0.0.1:1/v1".into());
         let model = handle.decision_model("served-alias").unwrap();
         assert_eq!(model.provider(), provider);
-        let record = model.config_snapshot();
-        let rebuilt = aimux_providers::rebuild_decision_provider(&record, None).unwrap();
+        let record =
+            aimux_core::recording::ProviderRecord::from_model(model.provider(), model.model_id());
+        assert_eq!(record.provider_id, provider);
+        let rebuilt = rebuild(&record, handle.clone()).unwrap();
         assert_eq!(rebuilt.provider(), provider);
+        // Another runtime registered under the recorded name is refused.
+        let other = if provider == "vllm" { "sglang" } else { "vllm" };
+        assert!(
+            rebuild(
+                &record,
+                runtime(other, None, "http://127.0.0.1:1/v1".into())
+            )
+            .is_err()
+        );
     }
-    let provider =
-        aimux_providers::VllmProvider::new(aimux_providers::VllmConfig::new("explicit-key"));
-    let model = provider.decision_model("served-alias").unwrap();
-    assert_eq!(model.config_snapshot().api_key_source, "explicit");
-    assert!(aimux_providers::rebuild_decision_provider(&model.config_snapshot(), None).is_err());
+    assert!(matches!(
+        runtime("deepseek", Some("key"), "http://127.0.0.1:1/v1".into()).decision_model("any"),
+        Err(AiMuxError::UnsupportedFunctionality(_))
+    ));
+}
+
+#[tokio::test]
+#[serial]
+async fn local_runtime_key_is_read_from_its_optional_variable() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&fixture()["response"]))
+        .mount(&server)
+        .await;
+    let base_url = format!("{}/v1", server.uri());
+    // SAFETY: serial test; no other thread reads the environment meanwhile.
+    unsafe { std::env::remove_var("VLLM_API_KEY") };
+    let model = runtime("vllm", None, base_url.clone())
+        .decision_model("served-decision")
+        .unwrap();
+    decide(model.as_ref(), options()).await.unwrap();
+    // SAFETY: as above.
+    unsafe { std::env::set_var("VLLM_API_KEY", "from-env") };
+    decide(model.as_ref(), options()).await.unwrap();
+    // SAFETY: as above.
+    unsafe { std::env::remove_var("VLLM_API_KEY") };
+    let requests = server.received_requests().await.unwrap();
+    assert!(requests[0].headers.get("authorization").is_none());
+    assert_eq!(requests[1].headers["authorization"], "Bearer from-env");
 }
 
 #[tokio::test]

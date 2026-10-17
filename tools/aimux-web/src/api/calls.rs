@@ -58,7 +58,7 @@ async fn run(state: AppState, req: WireCallRequest) -> Result<Response, AiMuxErr
     } else {
         let m =
             model_builder::build_model(&req.provider, key, &req.model, req.base_url.as_deref())?;
-        state.traced(m)
+        state.traced(m, &req.provider, req.base_url.as_deref())
     };
 
     let options = wire::to_generate_options(&req.options, req.session_id.as_deref())?;
@@ -224,55 +224,114 @@ mod tests {
         })
     }
 
+    /// Sets an environment variable for the test and restores it on drop.
+    struct EnvVar(&'static str, Option<std::ffi::OsString>);
+
+    impl EnvVar {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            // SAFETY: no other test reads or writes these providers' variables.
+            unsafe { std::env::set_var(name, value) };
+            Self(name, previous)
+        }
+    }
+
+    impl Drop for EnvVar {
+        fn drop(&mut self) {
+            // SAFETY: as in `set`.
+            unsafe {
+                match &self.1 {
+                    Some(value) => std::env::set_var(self.0, value),
+                    None => std::env::remove_var(self.0),
+                }
+            }
+        }
+    }
+
     /// A caller-supplied base_url never receives the Settings key or the
     /// provider's environment key: with no key in the request, the call goes
     /// out without one.
     #[tokio::test]
     async fn custom_base_url_gets_no_stored_or_env_key() {
-        // A registry-style provider whose key variable this test owns.
-        aimux_providers::load_providers_from_json(
-            r#"{"providers":[{"name":"web-test-custom-base","base_url":"https://example.invalid/v1","env_var":"AIMUX_WEB_TEST_CUSTOM_BASE_KEY"}]}"#,
-        )
-        .unwrap();
-        // SAFETY: This test owns a unique process-wide env key and removes it below.
-        unsafe { std::env::set_var("AIMUX_WEB_TEST_CUSTOM_BASE_KEY", "env-secret-7") };
+        // A vendor package and a registry row, with their own key variables.
+        let _package_key = EnvVar::set("DEEPSEEK_API_KEY", "env-secret-7");
+        let _row_key = EnvVar::set("API2GPT_API_KEY", "env-secret-8");
 
         let keys = KeyStore::from_path(None);
-        keys.set("openai", "sk-stored-secret-1", false).unwrap();
-        keys.set("web-test-custom-base", "sk-stored-secret-2", false)
+        keys.set("deepseek", "sk-stored-secret-1", false).unwrap();
+        keys.set("api2gpt", "sk-stored-secret-2", false).unwrap();
+        keys.set("amazon_bedrock", "sk-stored-secret-3", false)
             .unwrap();
         let app = router(AppState::with_bind_host_and_store("127.0.0.1", keys));
         let (url, seen) = capture_server().await;
 
-        for provider in ["openai", "web-test-custom-base"] {
+        for provider in ["deepseek", "api2gpt"] {
             let (status, body) = call(app.clone(), request(provider, &url, None)).await;
             assert_eq!(status, StatusCode::OK, "{provider}: {body}");
         }
         // An env: reference is refused outright for a custom base_url.
         let (status, body) = call(
             app.clone(),
-            request(
-                "web-test-custom-base",
-                &url,
-                Some("env:AIMUX_WEB_TEST_CUSTOM_BASE_KEY"),
-            ),
+            request("api2gpt", &url, Some("env:API2GPT_API_KEY")),
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        // A provider that reads other credentials from the environment (AWS)
+        // is not called at a custom base_url.
+        let (status, body) = call(app.clone(), request("amazon_bedrock", &url, None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
         // A key carried in the request (loopback) is what the endpoint gets.
-        let (status, body) = call(app, request("openai", &url, Some("sk-for-this-endpoint"))).await;
+        let (status, body) =
+            call(app, request("deepseek", &url, Some("sk-for-this-endpoint"))).await;
         assert_eq!(status, StatusCode::OK, "{body}");
 
-        // SAFETY: Cleanup of the unique test key set above.
-        unsafe { std::env::remove_var("AIMUX_WEB_TEST_CUSTOM_BASE_KEY") };
-
         let seen = seen.lock().unwrap();
-        assert_eq!(seen.len(), 3, "the refused call must not reach the server");
+        assert_eq!(seen.len(), 3, "the refused calls must not reach the server");
         for raw in seen.iter() {
-            for secret in ["sk-stored-secret-1", "sk-stored-secret-2", "env-secret-7"] {
+            for secret in [
+                "sk-stored-secret-1",
+                "sk-stored-secret-2",
+                "sk-stored-secret-3",
+                "env-secret-7",
+                "env-secret-8",
+            ] {
                 assert!(!raw.contains(secret), "{secret} leaked: {raw}");
             }
         }
         assert!(seen[2].contains("sk-for-this-endpoint"), "{}", seen[2]);
+    }
+
+    /// B18: calls of one provider and model at two endpoints get two trace
+    /// scopes; calls at one endpoint share a scope.
+    #[tokio::test]
+    async fn each_endpoint_gets_its_own_trace_scope() {
+        let state = AppState::with_bind_host_and_store("127.0.0.1", KeyStore::from_path(None));
+        let app = router(state.clone());
+        let (first, _) = capture_server().await;
+        let (second, _) = capture_server().await;
+
+        for url in [&first, &first, &second] {
+            let (status, body) =
+                call(app.clone(), request("deepseek", url, Some("sk-endpoint"))).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+        }
+
+        let scopes: Vec<u64> = state
+            .trace_sink
+            .records()
+            .iter()
+            .map(|record| record.scope_key)
+            .collect();
+        assert_eq!(scopes.len(), 3, "{scopes:?}");
+        assert_eq!(scopes[0], scopes[1], "one endpoint, one scope");
+        assert_ne!(scopes[0], scopes[2], "two endpoints, two scopes");
+        // Records still report the model's provider, not the scope name.
+        let records = state.trace_sink.records();
+        assert!(
+            records
+                .iter()
+                .all(|record| record.provider == records[0].provider
+                    && !record.provider.contains(&first))
+        );
     }
 }

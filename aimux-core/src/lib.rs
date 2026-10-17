@@ -22,7 +22,7 @@ pub mod composite;
 pub mod content;
 pub mod decision_model;
 mod decision_replay;
-pub(crate) mod download;
+pub mod download;
 #[doc(hidden)]
 pub mod download_guard;
 pub mod embedding_model;
@@ -30,20 +30,22 @@ pub mod error;
 pub mod files_model;
 pub mod generate;
 pub mod image_model;
+pub mod image_model_middleware;
 pub mod json_repair;
 pub mod language_model;
 pub mod language_model_message;
+pub mod language_model_middleware;
 pub mod math;
 pub mod message;
 pub mod moa;
 pub mod model_catalogue;
-pub mod model_id;
 pub mod openai_output;
 pub mod operation;
 pub mod options;
 pub mod output;
 pub mod parse_tool_call;
 pub mod provider;
+pub mod provider_registry;
 pub mod recording;
 pub mod replay;
 pub mod reranking_model;
@@ -54,6 +56,7 @@ pub mod router;
 pub mod search_model;
 pub mod session;
 pub mod shared;
+pub mod skills_model;
 pub mod speech_model;
 pub mod step_result;
 pub mod stream_part;
@@ -64,6 +67,7 @@ pub mod transcription_model;
 pub mod types;
 pub mod util;
 pub mod video_model;
+pub mod wrap_provider;
 
 /// Convenience re-exports.
 pub mod prelude {
@@ -92,8 +96,12 @@ pub mod prelude {
         generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
     };
     pub use crate::image_model::{ImageCallOptions, ImageModel, ImageResult, generate_image};
-    pub use crate::language_model::LanguageModel;
+    pub use crate::image_model_middleware::{ImageModelMiddleware, wrap_image_model};
+    pub use crate::language_model::{LanguageModel, SupportedUrls};
     pub use crate::language_model_message::LanguageModelPrompt;
+    pub use crate::language_model_middleware::{
+        LanguageModelMiddleware, LanguageModelOperation, wrap_language_model,
+    };
     pub use crate::message::{
         AssistantContent, ModelMessage, ModelPrompt, ToolContent, UserContent,
     };
@@ -102,7 +110,6 @@ pub mod prelude {
         CatalogueSource, Modality, ModelCapabilities, ModelCost, ModelLimits, ModelModalities,
         ModelSpec, ModelType, ReasoningMode, ReasoningSpec, ReasoningVisibility, RuntimeModel,
     };
-    pub use crate::model_id::ModelId;
     pub use crate::openai_output::{
         ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,
         encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
@@ -139,6 +146,7 @@ pub mod prelude {
         SharedProviderMetadata, SharedProviderOptions, SharedProviderReference, Size,
         provider_namespace,
     };
+    pub use crate::skills_model::{SkillFile, Skills, UploadSkillCallOptions, UploadSkillResult};
     pub use crate::speech_model::{SpeechCallOptions, SpeechModel, SpeechResult, generate_speech};
     pub use crate::step_result::{
         OutputChunkTimingStats, StepModel, StepResponse, StepResponseMetadata, StepResult,
@@ -162,6 +170,7 @@ pub mod prelude {
         VideoCallOptions, VideoModel, VideoOperationStart, VideoOperationStatus, VideoPollOptions,
         VideoResult, generate_video,
     };
+    pub use crate::wrap_provider::wrap_provider;
 }
 
 // Root-level re-exports for convenience.
@@ -173,8 +182,10 @@ pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;
 pub use provider::Provider;
+pub use provider_registry::{ProviderRegistry, ProviderRegistryOptions, create_provider_registry};
 pub use reranking_model::RerankingModel;
 pub use search_model::SearchModel;
+pub use skills_model::Skills;
 pub use speech_model::SpeechModel;
 pub use transcription_model::TranscriptionModel;
 pub use video_model::VideoModel;

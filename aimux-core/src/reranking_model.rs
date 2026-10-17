@@ -44,9 +44,7 @@ pub struct RerankingCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
-    /// retrying. `None` uses 2, the AI SDK default, unless the model's
-    /// `retry_config()` sets another count (model-level retry settings are
-    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
+    /// retrying. `None` uses 2, the AI SDK default.
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
@@ -138,10 +136,6 @@ pub trait RerankingModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"rerank-english-v3.0"`.
     fn model_id(&self) -> &str;
 
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
-
     /// Rerank a list of documents using the query.
     ///
     /// Naming: the `do_` prefix prevents accidental direct usage by users.
@@ -162,11 +156,7 @@ pub async fn rerank(
 ) -> Result<RerankingResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_rerank(&options)),
         abort_signal.as_ref(),

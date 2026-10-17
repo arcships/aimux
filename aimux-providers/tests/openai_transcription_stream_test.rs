@@ -8,7 +8,11 @@
 //!
 //! These replace the TS mock-WebSocket tests that
 //! `openai_transcription_test.rs` omitted ("not practical to translate" —
-//! they became practical with RFC-0028's WebSocket infrastructure).
+//! they became practical with RFC-0028's WebSocket infrastructure). The
+//! provider is built with `create_openai`, whose base URL also names the
+//! realtime endpoint (`ws://` for an `http://` base URL).
+
+#![cfg(feature = "realtime")]
 
 use std::time::Duration;
 
@@ -22,7 +26,7 @@ use aimux_core::transcription_model::{
     AudioChunk, InputAudioFormat, TranscriptionModel, TranscriptionStreamOptions,
     TranscriptionStreamPart,
 };
-use aimux_providers::{OpenAIConfig, OpenAIProvider};
+use aimux_providers::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -135,10 +139,18 @@ async fn serve(ws: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream
     }
 }
 
+/// `create_openai` pointed at `base_url` with `api_key`.
+fn openai_at(base_url: impl Into<String>, api_key: &str) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some(api_key.to_string()),
+        base_url: Some(base_url.into()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
+
 fn realtime_model(base_url: &str) -> aimux_providers::OpenAITranscriptionModel {
-    let config = OpenAIConfig::new("test-api-key").with_base_url(base_url.to_string());
-    let provider = OpenAIProvider::new(config);
-    provider.transcription("gpt-realtime-whisper")
+    openai_at(base_url, "test-api-key").transcription("gpt-realtime-whisper")
 }
 
 fn stream_options(
@@ -354,8 +366,7 @@ async fn stream_abort_mid_session() {
 /// Non-realtime models are rejected from do_stream (inverse gating).
 #[tokio::test]
 async fn stream_rejects_non_realtime_models() {
-    let config = OpenAIConfig::new("k").with_base_url("http://127.0.0.1:1");
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_at("http://127.0.0.1:1", "k");
     let model = provider.transcription("whisper-1");
     let err = model
         .do_stream(stream_options(vec![], None))
@@ -374,8 +385,7 @@ async fn stream_rejects_non_realtime_models() {
 #[tokio::test]
 async fn stream_connect_failure_errors() {
     // Port 1 is never listening on loopback: TCP refuses immediately.
-    let config = OpenAIConfig::new("k").with_base_url("http://127.0.0.1:1".to_string());
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_at("http://127.0.0.1:1".to_string(), "k");
     let model = provider.transcription("gpt-realtime-whisper");
 
     let err = model
@@ -448,8 +458,7 @@ async fn stream_connect_timeout_fires() {
         std::future::pending::<()>().await;
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_at(format!("http://127.0.0.1:{port}"), "k");
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {
@@ -501,8 +510,7 @@ async fn stream_first_chunk_timeout_fires() {
         while let Ok(Some(_)) = tokio::time::timeout(Duration::from_secs(2), ws.next()).await {}
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_at(format!("http://127.0.0.1:{port}"), "k");
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {
@@ -657,8 +665,7 @@ async fn stream_chunk_idle_timeout_fires() {
         while let Ok(Some(_)) = tokio::time::timeout(Duration::from_secs(2), ws.next()).await {}
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_at(format!("http://127.0.0.1:{port}"), "k");
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {
@@ -721,8 +728,7 @@ async fn stream_total_timeout_fires() {
         }
     });
 
-    let config = OpenAIConfig::new("k").with_base_url(format!("http://127.0.0.1:{port}"));
-    let provider = OpenAIProvider::new(config);
+    let provider = openai_at(format!("http://127.0.0.1:{port}"), "k");
     let model = provider.transcription("gpt-realtime-whisper");
 
     let options = TranscriptionStreamOptions {

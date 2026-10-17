@@ -10,9 +10,9 @@
 //! - [`ChildModel`] — the child-handle shape (`Arc<dyn LanguageModel>`).
 //! - `step_context` — the recording context of one child step.
 //! - `child_max_retries` — the operation's retry count for a child call.
-//! - [`add_usage`] — per-field `Usage` accumulation.
-//! - [`extract_text`] — pull text out of a `GenerateContent` list.
-//! - [`build_aggregator_prompt`] — assemble the MoA aggregator prompt.
+//! - `add_usage` — per-field `Usage` accumulation.
+//! - `extract_text` — pull text out of a `GenerateContent` list.
+//! - `build_aggregator_prompt` — assemble the MoA aggregator prompt.
 //!
 //! See [`crate::trace::layer::TraceLayer`] for the established decorator pattern
 //! (`inner: Arc<dyn LanguageModel>` implementing `LanguageModel`); composite
@@ -43,7 +43,8 @@ pub(crate) fn step_context(step: impl Into<String>) -> Option<RecordingContext> 
 
 /// The retry count of a child call: the `max_retries` of the operation the
 /// composite runs in ([`OperationSettings::current`]). `None` outside an
-/// operation, or when the operation sets none, leaves the child's default.
+/// operation, or when the operation sets none, retries twice, the AI SDK
+/// default.
 pub(crate) fn child_max_retries() -> Option<u32> {
     OperationSettings::current().and_then(|settings| settings.max_retries)
 }
@@ -54,7 +55,7 @@ pub(crate) fn child_max_retries() -> Option<u32> {
 /// Each usage detail field is `Option<u32>`; `None` is treated as zero so a
 /// child that doesn't report a breakdown doesn't erase the other child's data.
 #[must_use]
-pub fn add_usage(a: Usage, b: &Usage) -> Usage {
+pub(crate) fn add_usage(a: Usage, b: &Usage) -> Usage {
     Usage {
         input_tokens: InputTokenUsage {
             total: opt_add(a.input_tokens.total, b.input_tokens.total),
@@ -84,7 +85,7 @@ fn opt_add(a: Option<u32>, b: Option<u32>) -> Option<u32> {
 /// are kept; `Reasoning` / `ToolCall` / `Source` / `File` are dropped (MoA
 /// thin version — references contribute analysis text, not tool calls).
 #[must_use]
-pub fn extract_text(content: &[GenerateContent]) -> String {
+pub(crate) fn extract_text(content: &[GenerateContent]) -> String {
     let mut out = String::new();
     for c in content {
         if let GenerateContent::Text { text, .. } = c {
@@ -103,7 +104,7 @@ pub fn extract_text(content: &[GenerateContent]) -> String {
 /// The reference list may be empty — in that case the aggregator just runs the
 /// original prompt (degenerates to a single-model call).
 #[must_use]
-pub fn build_aggregator_prompt(
+pub(crate) fn build_aggregator_prompt(
     prompt: &LanguageModelPrompt,
     instructions: Option<&str>,
     references: &[(String, String)],

@@ -223,7 +223,10 @@ public interface AimuxFFI extends Library {
     /** AIMUX_E_API_CALL: rate-limit hint in ms, or -1. */
     long aimux_error_retry_ms(Pointer err);
 
-    /** AIMUX_E_API_CALL: owned string or NULL. */
+    /**
+     * AIMUX_E_API_CALL: owned string or NULL. AIMUX_E_LOAD_API_KEY /
+     * AIMUX_E_LOAD_SETTING: the environment variable that was consulted.
+     */
     Pointer aimux_error_provider_code(Pointer err);
 
     /** AIMUX_E_API_CALL: owned string or NULL. */
@@ -379,7 +382,7 @@ public interface AimuxFFI extends Library {
     /** Register external OpenAI-compatible providers from JSON config (RFC-0020). Returns the error or null. */
     Pointer aimux_register_providers(String configJson);
 
-    /** Set the global proxy configuration (M6, RFC-0016). Returns the error or null. */
+    /** Replace the default transport's proxy configuration (M6, RFC-0016). Returns the error or null. */
     Pointer aimux_init_proxy(String configJson);
 
     /** Create a RouterModel (RFC-0021) over child handles. {@code handles} is pinned by

@@ -1,6 +1,7 @@
 # RFC-0016: 对齐 Vercel AI SDK 能力缺口
 
 > **Status**: IMPLEMENTED (2026-09-24 核定) — §2 缺口绝大多数落地:H1/H2/H3、M1-M7、M9-M12 经 #99(2026-08-13,M6 proxy/M7 聚合/M11 流聚合/M12 generateObject)、#164(2026-09-12,请求管线对齐:重试分层/错误域/超时)、#165(工具输入解析边界)落地;M13 经核不做、H4 明确不做;工具调用修复由 [RFC-0035](0035-host-side-tool-call-repair.md) 扩展。未落地余项(M8 StreamPart 变体等)逐条追踪见 [§7.2](#72-未落地清单逐条追踪)
+> **修订**: L2(tool-call input 维持 `Value`)由 [aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) 第二部分取代:V4 层 input 为原文 String,解析在 core 层。L7 中“metadataExtractor 已被 usage.raw 超出”不成立:上游 metadataExtractor 从整个响应和流中提取 providerMetadata,不限于 usage(openai-compatible 3.0.62 `chat/openai-compatible-chat-language-model.ts:408`、`:458-459`);该文 D15 要求 openai-compatible 保留上游设置。
 > **Date**: 2026-08-01
 > **Scope**: 系统对比 aimux 0.1.2 与 Vercel AI SDK (`@ai-sdk/openai` / `@ai-sdk/openai-compatible` / `@ai-sdk/provider` V4) 的接口与实现,识别能力缺口,并按优先级规划补齐路径
 > **Related**: [RFC-0009](0009-request-resilience.md) request resilience(retry/timeout,本 RFC 的 abortSignal/timeout 缺口与之相关),[RFC-0014](0014-logging.md) 统一日志体系(可观测性缺口依赖本 RFC 的 span 树)

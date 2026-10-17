@@ -1,0 +1,135 @@
+{
+  "case": "messages-provider-options",
+  "model": {
+    "modelId": "claude-sonnet-4-5",
+    "provider": "anthropic.messages"
+  },
+  "package": "@ai-sdk/anthropic",
+  "request": {
+    "body": {
+      "max_tokens": 6096,
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "What is 17 * 23?",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "claude-sonnet-4-5",
+      "thinking": {
+        "budget_tokens": 2000,
+        "type": "enabled"
+      }
+    },
+    "headers": {
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22",
+      "x-api-key": "<redacted>"
+    },
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages"
+  },
+  "response": {
+    "body": {
+      "content": [
+        {
+          "signature": "sig_fixture",
+          "thinking": "17 * 23 = 391.",
+          "type": "thinking"
+        },
+        {
+          "text": "391",
+          "type": "text"
+        }
+      ],
+      "id": "msg_fixture_1",
+      "model": "claude-sonnet-4-5",
+      "role": "assistant",
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "input_tokens": 12,
+        "output_tokens": 9
+      }
+    },
+    "headers": {
+      "content-type": "application/json",
+      "request-id": "req_fixture_1"
+    },
+    "status": 200
+  },
+  "result": {
+    "content": [
+      {
+        "providerMetadata": {
+          "anthropic": {
+            "signature": "sig_fixture"
+          }
+        },
+        "text": "17 * 23 = 391.",
+        "type": "reasoning"
+      },
+      {
+        "text": "391",
+        "type": "text"
+      }
+    ],
+    "finishReason": "stop",
+    "providerMetadata": {
+      "anthropic": {
+        "container": null,
+        "contextManagement": null,
+        "iterations": null,
+        "stopSequence": null,
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 9
+        }
+      }
+    },
+    "rawFinishReason": "end_turn",
+    "response": {
+      "headers": {
+        "content-type": "application/json",
+        "request-id": "req_fixture_1"
+      },
+      "id": "msg_fixture_1",
+      "modelId": "claude-sonnet-4-5"
+    },
+    "text": "391",
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "noCacheTokens": 12
+      },
+      "inputTokens": 12,
+      "outputTokenDetails": {},
+      "outputTokens": 9,
+      "totalTokens": 21
+    },
+    "warnings": []
+  },
+  "sdk": {
+    "input": {
+      "maxOutputTokens": 4096,
+      "prompt": "What is 17 * 23?",
+      "providerOptions": {
+        "anthropic": {
+          "thinking": {
+            "budgetTokens": 2000,
+            "type": "enabled"
+          }
+        }
+      }
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.71"
+}

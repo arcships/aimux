@@ -36,9 +36,7 @@ pub struct EmbeddingCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
-    /// retrying. `None` uses 2, the AI SDK default, unless the model's
-    /// `retry_config()` sets another count (model-level retry settings are
-    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
+    /// retrying. `None` uses 2, the AI SDK default.
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
@@ -131,10 +129,6 @@ pub trait EmbeddingModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"text-embedding-3-small"`.
     fn model_id(&self) -> &str;
 
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
-
     /// Limit of how many embeddings can be generated in a single API call.
     ///
     /// `None` means the model has no fixed limit. The TS spec allows this to
@@ -162,11 +156,7 @@ pub async fn embed(
 ) -> Result<EmbeddingResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_embed(&options)),
         abort_signal.as_ref(),

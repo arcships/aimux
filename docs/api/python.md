@@ -1,6 +1,6 @@
 # aimux · Python API
 
-> Unified LLM service access layer — one API to access 325 AI providers
+> Unified LLM service access layer — one API to access AI providers
 
 Shared reference — parameter tables, result shapes, factory functions, and the
 feature coverage matrix — lives in the [API overview](../API.md).
@@ -30,20 +30,25 @@ model = provider("groq", None, "llama-3.3-70b")
 model = provider("groq", "sk-...", "llama-3.3-70b", "https://relay.example/v1")
 # Full ProviderOptions via config dict:
 model = provider("groq", "sk-...", "llama-3.3-70b",
-                 config={"headers": {"X-Custom": "1"}, "max_retries": 0})
+                 config={"headers": {"X-Custom": "1"}})
+# A preset with template parameters:
+model = provider("cloudflare_workers_ai", "sk-...", "@cf/meta/llama-3.1-8b-instruct",
+                 config={"params": {"account_id": "acct123"}})
 result = generate_text(model, "Hello")
 ```
 
-`provider(name, api_key, model_id, base_url=None, config=None)` covers all
-251 built-in OpenAI-compatible providers. `config` takes the full
+`provider(name, api_key, model_id, base_url=None, config=None)` covers the vendor packages and
+282 registry-backed OpenAI-compatible providers. `config` takes the full
 `ProviderOptions` shape (`base_url` / `headers` / `organization` / `project` /
-`max_retries` / `body_overrides`); the `base_url` parameter wins over
-`config["base_url"]`. `openai` / `anthropic` / `deepseek` factories
-remain (deepseek is now registry-backed).
+`params`); the `base_url` parameter wins over `config["base_url"]`.
+`max_retries` (a per-call option) and `body_overrides` (removed) in `config`
+raise `InvalidArgumentError`. A missing key or setting raises `LoadAPIKeyError`
+(`env_var`, `description`) / `LoadSettingError` (`env_var`, `setting_name`). `openai` / `anthropic` / `deepseek` factories
+remain; DeepSeek now uses its own vendor chat model. `openai` and by-name
+`provider("openai", …)` select the Responses API.
 
-> **Scope:** `provider(name)` covers only the 251 registry OpenAI-compatible
-> providers; Anthropic/Google/multimodal/local → typed factories
-> (`anthropic(api_key, model)`); custom endpoints → `base_url` param.
+> **Scope:** `provider(name)` reaches vendor packages and the 282 preset rows;
+> typed factories remain available. Custom endpoints use the `base_url` param.
 > Full list: [providers.md](providers.md).
 
 ## Text Generation
@@ -247,7 +252,8 @@ if "Base64" in result["images"]:
 
 ## Video Generation
 
-Video generation typically returns a URL (not binary).
+Most video models return a URL; `generate` downloads it, as the AI SDK's
+`generateVideo` does, and returns the video's bytes (`Binary`).
 
 ```python
 from aimux import google_video
@@ -260,9 +266,10 @@ result = json.loads(videor.generate(json.dumps({
     "provider_options": {},
 })))
 
-# result["videos"] is usually [{"Url": {"url": "...", "media_type": "..."}}]
-if "Url" in result["videos"][0]:
-    print(result["videos"][0]["Url"]["url"])
+# result["videos"] is usually [{"Binary": {"data": [...], "media_type": "..."}}]
+if "Binary" in result["videos"][0]:
+    with open("video.mp4", "wb") as f:
+        f.write(bytes(result["videos"][0]["Binary"]["data"]))
 ```
 
 ## Reranking
@@ -392,6 +399,7 @@ Exception
       ├── JSONParseError / InvalidResponseDataError
       ├── NoSuchToolError / InvalidToolInputError / ToolCallRepairError  # tool-contract errors
       ├── InvalidArgumentError / InvalidPromptError
+      ├── LoadAPIKeyError / LoadSettingError   # no API key / required setting: env_var (+ description / setting_name)
       ├── TokenExpiredError
       ├── UnsupportedFunctionalityError
       ├── NoSuchModelError / NoSuchProviderError
@@ -430,7 +438,10 @@ permitted attempt failed with a retryable error — or `"errorNotRetryable"` —
 a later attempt failed non-retryably), `errors` — the per-attempt history,
 oldest first, each itself an exception from this hierarchy — and
 `last_error`. `TokenExpiredError` has `status == 401`, `NoSuchModelError` has
-`model_id` / `model_type`, and `NoSuchProviderError` has `provider_id`.
+`model_id` / `model_type`, `NoSuchProviderError` has `provider_id`,
+`model_id`, `model_type` and `available_providers`, and
+`LoadAPIKeyError` / `LoadSettingError` have `env_var` (the environment variable
+consulted) plus `description` / `setting_name`.
 
 ```python
 from aimux import (
@@ -478,3 +489,6 @@ SDK's full stream: `Start`, `StartStep` … `FinishStep`, `Finish`), e.g.
 `{"TextDelta": {"id": ..., "text": ...}}`. Iterate dicts with
 `if "TextDelta" in part:` (as in [Streaming Generation](#streaming-generation))
 or validate them with `parse_stream_part(part)` for attribute access.
+
+Provider-layer `StreamPart::ResponseMetadata` events are consumed internally
+and are not emitted by `stream_text`.

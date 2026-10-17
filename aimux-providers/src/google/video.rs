@@ -8,8 +8,6 @@
 //! 2. GET `{base_url}/{operation_name}` — polled by Core via `do_status` until `done: true`
 //! 3. Return video URL(s) from operation result
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -19,9 +17,7 @@ use aimux_core::video_model::{
     VideoResponse, VideoResult,
 };
 
-use aimux_provider_utils::HttpRequest;
-
-use super::GoogleConfig;
+use crate::shared::EndpointConfig;
 
 /// A Google video generation model.
 ///
@@ -29,48 +25,22 @@ use super::GoogleConfig;
 /// `Client` internally (RFC-0009 §4.1).
 pub struct GoogleVideoModel {
     model_id: String,
-    config: GoogleConfig,
+    config: EndpointConfig,
 }
 
 impl GoogleVideoModel {
-    #[must_use]
-    pub fn new(model_id: String, config: GoogleConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut h = HashMap::new();
-        h.insert("x-goog-api-key".to_string(), self.config.api_key.clone());
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                h.insert(k.clone(), v.clone());
-            }
-        }
-        h
-    }
-
-    fn predict_url(&self) -> String {
-        format!(
-            "{}/models/{}:predictLongRunning",
-            self.config.base_url, self.model_id
-        )
-    }
-
-    fn operation_url(&self, name: &str) -> String {
-        format!("{}/{}", self.config.base_url, name)
     }
 }
 
 #[async_trait]
 impl VideoModel for GoogleVideoModel {
     fn provider(&self) -> &str {
-        "google"
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
     fn max_videos_per_call(&self) -> Option<u32> {
         Some(1)
@@ -88,6 +58,7 @@ impl VideoModel for GoogleVideoModel {
         }
 
         let mut parameters = Map::new();
+        parameters.insert("sampleCount".to_string(), json!(options.n));
         if let Some(ar) = options.aspect_ratio {
             parameters.insert("aspectRatio".to_string(), json!(ar.to_string()));
         }
@@ -109,25 +80,12 @@ impl VideoModel for GoogleVideoModel {
             "parameters": Value::Object(parameters),
         });
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let url = self.predict_url();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let url = exchange.url(&format!("/models/{}:predictLongRunning", self.model_id));
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest {
-                url,
-                headers: header_list.clone(),
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
-            body,
+            exchange.request(url, options),
+            exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
             super::google_failed_response_handler(),
         )
@@ -139,9 +97,7 @@ impl VideoModel for GoogleVideoModel {
             .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData(
-                    "Google video prediction missing operation name".to_string(),
-                )
+                AiMuxError::InvalidResponseData("No operation name returned from API".to_string())
             })?
             .to_string();
 
@@ -171,15 +127,10 @@ impl VideoModel for GoogleVideoModel {
                 )
             })?;
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let poll_url = self.operation_url(operation_name);
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let poll_url = exchange.url(&format!("/{operation_name}"));
         let resp = aimux_provider_utils::get_from_api(
-            HttpRequest::new(poll_url.clone(), header_list, options),
+            exchange.request(poll_url.clone(), options),
             aimux_provider_utils::create_json_response_handler::<Value>(),
             super::google_failed_response_handler(),
         )
@@ -188,8 +139,9 @@ impl VideoModel for GoogleVideoModel {
         let response_headers = resp.response_headers;
         let response_body = resp.raw_value.as_ref().map(ToString::to_string);
         let raw_body: Value = resp.value;
-        // Check the in-band error first: a terminal response may carry both
-        // done:true and an error object (provider-declared failure).
+        if raw_body.get("done").and_then(serde_json::Value::as_bool) != Some(true) {
+            return Ok(VideoOperationStatus::Pending);
+        }
         if let Some(err) = raw_body.get("error") {
             let msg = err
                 .get("message")
@@ -205,40 +157,71 @@ impl VideoModel for GoogleVideoModel {
                 ..ApiCallError::new(msg, poll_url, serde_json::json!({}))
             })));
         }
-        if raw_body.get("done").and_then(serde_json::Value::as_bool) != Some(true) {
-            return Ok(VideoOperationStatus::Pending);
-        }
 
-        // Extract videos from response.
-        let videos: Vec<VideoData> = raw_body
+        let outputs = raw_body
             .get("response")
-            .and_then(|r| r.get("videos"))
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| {
-                        v.get("gcsUri")
-                            .or_else(|| v.get("url"))
-                            .and_then(|u| u.as_str())
-                            .map(|url| VideoData::Url {
-                                url: url.to_string(),
-                                media_type: "video/mp4".to_string(),
-                            })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+            .and_then(|r| r.get("generateVideoResponse"))
+            .and_then(|r| r.get("generatedSamples"))
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                AiMuxError::InvalidResponseData(format!(
+                    "No videos in response. Response: {raw_body}"
+                ))
+            })?;
+        if outputs.is_empty() {
+            return Err(AiMuxError::InvalidResponseData(format!(
+                "No videos in response. Response: {raw_body}"
+            )));
+        }
+        let resolved = self.config.exchange(None).await?;
+        let api_key = resolved
+            .headers()
+            .into_iter()
+            .find_map(|(name, value)| name.eq_ignore_ascii_case("x-goog-api-key").then_some(value));
+        let mut videos = Vec::new();
+        let mut video_metadata = Vec::new();
+        for sample in outputs {
+            if let Some(uri) = sample
+                .get("video")
+                .and_then(|v| v.get("uri"))
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            {
+                let url = if let Some(key) = api_key.as_ref().filter(|k| !k.is_empty())
+                    && aimux_provider_utils::same_origin(uri, resolved.base_url())
+                {
+                    let separator = if uri.contains('?') { '&' } else { '?' };
+                    format!("{uri}{separator}key={key}")
+                } else {
+                    uri.to_string()
+                };
+                videos.push(VideoData::Url {
+                    url,
+                    media_type: "video/mp4".to_string(),
+                });
+                video_metadata.push(json!({"uri": uri}));
+            }
+        }
 
         if videos.is_empty() {
             return Err(AiMuxError::InvalidResponseData(
-                "Google video operation completed without any video output".to_string(),
+                "No valid videos in response".to_string(),
             ));
         }
 
         Ok(VideoOperationStatus::Completed(VideoResult {
             videos,
             warnings: Vec::new(),
-            provider_metadata: None,
+            provider_metadata: Some(
+                [(
+                    crate::google::options::GOOGLE.to_string(),
+                    [("videos".to_string(), json!(video_metadata))]
+                        .into_iter()
+                        .collect(),
+                )]
+                .into_iter()
+                .collect(),
+            ),
             response: VideoResponse {
                 timestamp: Some(chrono::Utc::now().to_rfc3339()),
                 model_id: Some(self.model_id.clone()),

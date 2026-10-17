@@ -1,6 +1,5 @@
 package ai.arcships.aimux;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 
@@ -74,6 +73,7 @@ class ModelTest {
             assertThat(result.getString("text"))
                 .isEqualTo("Rust is a systems programming language.");
             assertThat(server.lastRequestMethod()).isEqualTo("POST");
+            assertThat(server.lastRequestPath()).isEqualTo("/responses");
             assertThat(server.lastRequestBody()).contains("gpt-4o-mini");
         }
     }
@@ -239,54 +239,13 @@ class ModelTest {
 
     // ── canned OpenAI responses ────────────────────────────────────────────
 
-    /** Plain OpenAI chat-completions response (no tool calls). */
+    /** Plain OpenAI Responses response (no tool calls). */
     private static String plainOpenAiResponse() {
-        return new JSONObject()
-            .put("id", "chatcmpl-test")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject()
-                    .put("message", new JSONObject()
-                        .put("role", "assistant")
-                        .put("content", "Rust is a systems programming language."))
-                    .put("finish_reason", "stop")))
-            .put("usage", new JSONObject()
-                .put("prompt_tokens", 10)
-                .put("completion_tokens", 8)
-                .put("total_tokens", 18))
-            .toString();
+        return OpenAiResponsesFixtures.text("Rust is a systems programming language.", 10, 8);
     }
 
-    /** OpenAI SSE stream: two content deltas + finish + [DONE]. */
+    /** OpenAI Responses SSE: two text deltas, item done and completed. */
     private static String openAiSseResponse() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("data: ").append(new JSONObject()
-            .put("id", "1")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject().put("delta", new JSONObject()
-                    .put("role", "assistant")
-                    .put("content", "Hello")))))
-            .append("\n\n");
-        sb.append("data: ").append(new JSONObject()
-            .put("id", "1")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject().put("delta", new JSONObject()
-                    .put("content", " world")))))
-            .append("\n\n");
-        sb.append("data: ").append(new JSONObject()
-            .put("id", "1")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject().put("delta", new JSONObject())
-                    .put("finish_reason", "stop")))
-            .put("usage", new JSONObject()
-                .put("prompt_tokens", 5)
-                .put("completion_tokens", 2)
-                .put("total_tokens", 7)))
-            .append("\n\n");
-        sb.append("data: [DONE]\n\n");
-        return sb.toString();
+        return OpenAiResponsesFixtures.textStream();
     }
 }

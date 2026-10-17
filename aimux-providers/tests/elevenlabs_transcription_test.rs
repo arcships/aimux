@@ -8,7 +8,26 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{ElevenLabsConfig, ElevenLabsProvider};
+use aimux_providers::{ElevenLabsProvider, ElevenLabsProviderSettings, create_elevenlabs};
+
+fn test_provider(
+    api_key: &str,
+    base_url: impl Into<String>,
+    headers: Option<HashMap<String, String>>,
+) -> ElevenLabsProvider {
+    create_elevenlabs(ElevenLabsProviderSettings {
+        api_key: Some(api_key.to_string().into()),
+        base_url: Some(base_url.into()),
+        headers: headers.map(|headers| {
+            headers
+                .into_iter()
+                .map(|(name, value)| (name, Some(value)))
+                .collect()
+        }),
+        ..Default::default()
+    })
+    .expect("valid settings")
+}
 
 fn mock_audio() -> Vec<u8> {
     vec![1u8, 2, 3]
@@ -75,8 +94,7 @@ async fn should_pass_model_id() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.transcription("scribe_v1");
 
     model
@@ -100,10 +118,7 @@ async fn should_pass_headers() {
         "Custom-Provider-Header".to_string(),
         "provider-header-value".to_string(),
     );
-    let config = ElevenLabsConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), Some(ph));
     let model = provider.transcription("scribe_v1");
 
     let mut opts = options(mock_audio(), "audio/wav");
@@ -134,8 +149,7 @@ async fn should_extract_text() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.transcription("scribe_v1");
 
     let result = model
@@ -160,8 +174,7 @@ async fn should_include_response_data() {
     )
     .await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.transcription("scribe_v1");
 
     let result = model
@@ -178,8 +191,7 @@ async fn should_use_real_date() {
     let server = MockServer::start().await;
     mock_response(&server, &fixture_response(), &[]).await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.transcription("scribe_v1");
 
     let result = model
@@ -201,8 +213,7 @@ async fn should_handle_no_words() {
     )
     .await;
 
-    let config = ElevenLabsConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = ElevenLabsProvider::new(config);
+    let provider = test_provider("test-api-key", server.uri(), None);
     let model = provider.transcription("scribe_v1");
 
     let result = model

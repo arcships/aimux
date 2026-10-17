@@ -2,13 +2,16 @@
 //! Source: `reference/ai/packages/fal/src/fal-video-model.test.ts`
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
 use aimux_core::video_model::{VideoCallOptions, generate_video};
-use aimux_providers::{FalConfig, FalProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{FalProviderSettings, create_fal};
 
 fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
     Some(aimux_core::video_model::VideoPollOptions {
@@ -20,7 +23,25 @@ fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
 fn options(prompt: &str) -> VideoCallOptions {
     let mut o = VideoCallOptions::new(prompt);
     o.poll = fast_poll();
+    o.download = Some(recording_download(Arc::default()));
     o
+}
+
+/// The bytes the test download returns for every video URL.
+const VIDEO_BYTES: &[u8] = b"video bytes";
+
+/// A download that fetches nothing: it records each URL `generate_video`
+/// asks for and returns [`VIDEO_BYTES`].
+fn recording_download(requests: Arc<Mutex<Vec<String>>>) -> Download {
+    Download::new(move |request: DownloadRequest| {
+        requests.lock().unwrap().push(request.url);
+        async {
+            Ok(DownloadedFile {
+                data: VIDEO_BYTES.to_vec(),
+                media_type: None,
+            })
+        }
+    })
 }
 
 async fn mock_queue_and_result(server: &MockServer, result: &Value) {
@@ -42,8 +63,12 @@ async fn should_generate_video() {
     let result = json!({"video": {"url": "https://cdn.fal.run/video.mp4"}});
     mock_queue_and_result(&server, &result).await;
 
-    let config = FalConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.video("fal-ai/kling-video");
 
     let r = generate_video(&model, options("A cat playing"))
@@ -58,8 +83,12 @@ async fn should_pass_prompt() {
     let result = json!({"video": {"url": "https://cdn.fal.run/video.mp4"}});
     mock_queue_and_result(&server, &result).await;
 
-    let config = FalConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.video("fal-ai/kling-video");
 
     generate_video(&model, options("A cat playing"))
@@ -79,10 +108,13 @@ async fn should_pass_headers() {
 
     let mut ph = HashMap::new();
     ph.insert("Custom-Header".to_string(), "val".to_string());
-    let config = FalConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.video("fal-ai/kling-video");
 
     let mut opts = options("test");
@@ -105,8 +137,12 @@ async fn should_include_response_data() {
     let result = json!({"video": {"url": "https://cdn.fal.run/video.mp4"}});
     mock_queue_and_result(&server, &result).await;
 
-    let config = FalConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = FalProvider::new(config);
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_fal(config).unwrap();
     let model = provider.video("fal-ai/kling-video");
 
     let r = generate_video(&model, options("test")).await.unwrap();

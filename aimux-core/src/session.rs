@@ -348,7 +348,7 @@ pub fn session_inferer() -> Option<Arc<Mutex<SessionInferer>>> {
 /// Lazily honor `AIMUX_SESSION_INFER=1` (checked once, like RFC-0014's env
 /// auto-init). No-op when the inferer is already registered programmatically
 /// (explicit configuration wins) or the env var is not set.
-pub fn ensure_inferer_from_env() {
+fn ensure_inferer_from_env() {
     if INFER_ENV_CHECKED.is_completed() {
         return;
     }
@@ -365,7 +365,7 @@ pub fn ensure_inferer_from_env() {
 /// Returns `(session_id, source)` or `None` when no explicit id is present
 /// and inference is off (or not registered).
 #[must_use]
-pub fn resolve_session_id(
+pub(crate) fn resolve_session_id(
     explicit: Option<&str>,
     prompt: &LanguageModelPrompt,
 ) -> Option<(String, SessionSource)> {

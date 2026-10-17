@@ -15,7 +15,7 @@
  * Getter strings are caller-owned (`aimux_free_string`). See aimux-error.h.
  *
  * Each prototype below identifies its expected high-level error:
- *   [AiMuxError]      codes 1..17
+ *   [AiMuxError]      codes 1..20
  *   [RecordingError]  codes 100..105
  *   [C ABI]           no expected high-level code
  * Every fallible call can additionally return a C ABI failure (200..206).
@@ -177,9 +177,10 @@ aimux_error_t *aimux_azure_new_with_base(const char *api_key, const char *base_u
  *                    a C ABI failure.
  * @param model_id    NUL-terminated model ID.
  * @param config_json Optional JSON object of ProviderOptions
- *                    ({"base_url": "...", "headers": {...}, "max_retries": 0,
- *                     "body_overrides": {...}});
- *                    NULL / empty / "null" for defaults.
+ *                    ({"base_url": "...", "headers": {...}, "organization": "...",
+ *                     "project": "..."}); "max_retries" (call-level) and
+ *                    "body_overrides" (removed) are rejected as invalid
+ *                    arguments. NULL / empty / "null" for defaults.
  * @param out_handle  Receives the model handle. AiMuxError: unknown
  *                    provider, bad config, missing env key, invalid model id.
  */
@@ -735,10 +736,10 @@ aimux_error_t *aimux_recording_try_flush(void);
    rejects (bad schema, unknown protocol) is AiMuxError AIMUX_E_INVALID_ARGUMENT. */
 aimux_error_t *aimux_register_providers(const char *config_json);
 
-/* [AiMuxError] Set the global proxy configuration (M6, RFC-0016). Must be called
-   before the first generate_text / stream_text call; a no-op if the shared
-   HTTP client is already initialised. config_json is a serialized
-   ProxyConfig: { "http_url", "https_url", "all_url", "no_proxy" } (all
+/* [AiMuxError] Replace the default transport with one routed by this proxy
+   configuration (M6, RFC-0016). Requests started afterwards (HTTP, built-in
+   WebSocket connects, download hops) use it; calling it again replaces the
+   previous configuration. config_json is a serialized ProxyConfig: { "http_url", "https_url", "all_url", "no_proxy" } (all
    optional). Malformed text is a C ABI failure; wrong shape is AiMuxError
    AIMUX_E_INVALID_ARGUMENT. */
 aimux_error_t *aimux_init_proxy(const char *config_json);

@@ -13,22 +13,55 @@ mod common;
 
 use common::replay::mount_cassettes;
 use futures::StreamExt;
+use std::sync::Arc;
 use wiremock::MockServer;
 
+use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 
-use aimux_providers::{
-    AnthropicConfig, AnthropicProvider, BedrockProvider, BedrockProviderConfig, CohereConfig,
-    CohereProvider, GoogleConfig, GoogleProvider, HuggingFaceConfig, HuggingFaceProvider,
-    LlamafileConfig, LlamafileProvider, LmStudioConfig, LmStudioProvider, MistralConfig,
-    MistralProvider, MistralrsConfig, MistralrsProvider, OllamaConfig, OllamaProvider,
-    OpenAIConfig, OpenAIProvider, OpenRouterConfig, OpenRouterProvider, ProviderOptions, XAIConfig,
-    XAIProvider, provider,
+use aimux_providers::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
+use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+use aimux_providers::openai_compatible::{
+    OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
 };
+use aimux_providers::{
+    AmazonBedrockProvider, AmazonBedrockProviderSettings, CohereProvider, CohereProviderSettings,
+    GoogleProvider, GoogleProviderSettings, MistralProvider, MistralProviderSettings,
+    PresetSettings, XAIProvider, XAIProviderSettings, create_amazon_bedrock, create_cohere,
+    create_google, create_mistral, create_provider, create_xai,
+};
+
+/// A registry preset pointed at `base_url`, as a language model.
+fn registry_model(
+    name: &str,
+    api_key: String,
+    model_id: &str,
+    base_url: String,
+) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
+    create_provider(
+        name,
+        PresetSettings {
+            api_key: Some(api_key.into()),
+            base_url: Some(base_url),
+            ..Default::default()
+        },
+    )?
+    .language_model(model_id)
+}
+
+/// The native OpenAI package pointed at the mock server.
+fn native_openai(base_url: String) -> OpenAIProvider {
+    create_openai(OpenAIProviderSettings {
+        api_key: Some("test-key".to_string()),
+        base_url: Some(base_url),
+        ..Default::default()
+    })
+    .unwrap()
+}
 
 // 閳光偓閳光偓 helpers 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
@@ -108,8 +141,12 @@ mod anthropic_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> AnthropicProvider {
-        let config = AnthropicConfig::new("test-key").with_base_url(server.uri());
-        AnthropicProvider::new(config)
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-key".to_string()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
     }
 
     /// doGenerate with a non-streaming cassette should return text content.
@@ -119,7 +156,7 @@ mod anthropic_conformance {
         mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("claude-sonnet-4-6");
+        let model = provider.messages("claude-sonnet-4-6");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -153,7 +190,7 @@ mod anthropic_conformance {
         mount_cassettes(&server, "tests/cassettes/anthropic").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("claude-sonnet-4-6");
+        let model = provider.messages("claude-sonnet-4-6");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -191,8 +228,7 @@ mod openai_conformance {
     fn make_provider(server: &MockServer) -> OpenAIProvider {
         // Cassettes are recorded against /v1/responses; the responses model
         // appends `/responses` to the base URL, so base must include `/v1`.
-        let config = OpenAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        OpenAIProvider::new(config)
+        native_openai(format!("{}/v1", server.uri()))
     }
 
     #[tokio::test]
@@ -201,7 +237,7 @@ mod openai_conformance {
         mount_cassettes(&server, "tests/cassettes/openai").await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("gpt-4o");
+        let model = provider.responses("gpt-4o");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -232,7 +268,7 @@ mod openai_conformance {
         mount_cassettes(&server, "tests/cassettes/openai").await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("gpt-4o");
+        let model = provider.responses("gpt-4o");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -265,15 +301,12 @@ mod openai_conformance {
 mod deepseek_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-        provider(
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+        registry_model(
             "deepseek",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "deepseek-chat",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
+            server.uri(),
         )
         .expect("deepseek should construct from registry")
     }
@@ -316,8 +349,12 @@ mod xai_conformance {
     fn make_provider(server: &MockServer) -> XAIProvider {
         // Cassettes are recorded against /v1/responses; the responses model
         // appends `/responses` to the base URL, so base must include `/v1`.
-        let config = XAIConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        XAIProvider::new(config)
+        create_xai(XAIProviderSettings {
+            api_key: Some("test-key".to_string()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -326,7 +363,7 @@ mod xai_conformance {
         mount_cassettes(&server, "tests/cassettes/xai").await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("grok-3-mini");
+        let model = provider.responses("grok-3-mini");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -356,17 +393,14 @@ mod xai_conformance {
 mod groq_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /openai/v1/chat/completions, matching
         // Groq's default base URL https://api.groq.com/openai/v1.
-        provider(
+        registry_model(
             "groq",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "llama-3.3-70b-versatile",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/openai/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/openai/v1", server.uri()),
         )
         .expect("groq should construct from registry")
     }
@@ -409,8 +443,12 @@ mod mistral_conformance {
     fn make_provider(server: &MockServer) -> MistralProvider {
         // Cassettes record paths under /v1/chat/completions, matching Mistral's
         // default base URL https://api.mistral.ai/v1.
-        let config = MistralConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        MistralProvider::new(config)
+        create_mistral(MistralProviderSettings {
+            api_key: Some("test-key".to_string()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -419,7 +457,7 @@ mod mistral_conformance {
         mount_cassettes(&server, "tests/cassettes/mistral").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("mistral-large-latest");
+        let model = provider.chat("mistral-large-latest");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -449,17 +487,9 @@ mod mistral_conformance {
 mod perplexity_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-        provider(
-            "perplexity",
-            Some("test-key".to_string()),
-            "sonar",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("perplexity should construct from registry")
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+        registry_model("perplexity", "test-key".to_string(), "sonar", server.uri())
+            .expect("perplexity should construct from registry")
     }
 
     #[tokio::test]
@@ -498,9 +528,12 @@ mod gemini_conformance {
     use super::*;
 
     fn make_provider(server: &MockServer) -> GoogleProvider {
-        let config =
-            GoogleConfig::new("test-key").with_base_url(format!("{}/v1beta", server.uri()));
-        GoogleProvider::new(config)
+        create_google(GoogleProviderSettings {
+            api_key: Some("test-key".to_string()),
+            base_url: Some(format!("{}/v1beta", server.uri())),
+            ..Default::default()
+        })
+        .unwrap()
     }
 
     #[tokio::test]
@@ -509,7 +542,7 @@ mod gemini_conformance {
         mount_cassettes(&server, "tests/cassettes/gemini").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("gemini-2.5-flash");
+        let model = provider.chat("gemini-2.5-flash");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -537,7 +570,7 @@ mod gemini_conformance {
         mount_cassettes(&server, "tests/cassettes/gemini").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("gemini-2.5-flash");
+        let model = provider.chat("gemini-2.5-flash");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -566,12 +599,16 @@ mod gemini_conformance {
 mod openrouter_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> OpenRouterProvider {
+    fn make_provider(server: &MockServer, model_id: &str) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /api/v1/chat/completions, matching
         // OpenRouter's default base URL https://openrouter.ai/api/v1.
-        let config =
-            OpenRouterConfig::new("test-key").with_base_url(format!("{}/api/v1", server.uri()));
-        OpenRouterProvider::new(config)
+        registry_model(
+            "openrouter",
+            "test-key".to_string(),
+            model_id,
+            format!("{}/api/v1", server.uri()),
+        )
+        .expect("registry provider should construct")
     }
 
     #[tokio::test]
@@ -579,8 +616,7 @@ mod openrouter_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/openrouter").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("openai/gpt-4o");
+        let model = make_provider(&server, "openai/gpt-4o");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -610,20 +646,12 @@ mod openrouter_conformance {
 mod copilot_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-        // Copilot's base URL has no `/v1` prefix; the OpenAIProvider appends
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+        // Copilot's base URL has no `/v1` prefix; the compatible chat model appends
         // `/chat/completions` directly, matching the cassette path
         // `/chat/completions`.
-        provider(
-            "copilot",
-            Some("test-key".to_string()),
-            "gpt-4o",
-            Some(ProviderOptions {
-                base_url: Some(server.uri()),
-                ..Default::default()
-            }),
-        )
-        .expect("copilot should construct from registry")
+        registry_model("copilot", "test-key".to_string(), "gpt-4o", server.uri())
+            .expect("copilot should construct from registry")
     }
 
     #[tokio::test]
@@ -661,18 +689,15 @@ mod copilot_conformance {
 mod doubleword_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-        // Doubleword's base URL includes `/v1`; the OpenAIProvider appends
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+        // Doubleword's base URL includes `/v1`; the compatible chat model appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
-        provider(
+        registry_model(
             "doubleword",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "Qwen/Qwen3.5-9B",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/v1", server.uri()),
         )
         .expect("doubleword should construct from registry")
     }
@@ -712,12 +737,17 @@ mod doubleword_conformance {
 mod llamafile_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> LlamafileProvider {
-        // llamafile's base URL includes `/v1`; the OpenAIProvider appends
+    fn make_provider(server: &MockServer, model_id: &str) -> Arc<dyn LanguageModel> {
+        // llamafile's base URL includes `/v1`; the compatible chat model appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
-        let config = LlamafileConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        LlamafileProvider::new(config)
+        registry_model(
+            "llamafile",
+            "test-key".to_string(),
+            model_id,
+            format!("{}/v1", server.uri()),
+        )
+        .expect("registry provider should construct")
     }
 
     #[tokio::test]
@@ -725,8 +755,7 @@ mod llamafile_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/llamafile").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("llama3.2:latest");
+        let model = make_provider(&server, "llama3.2:latest");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -756,12 +785,17 @@ mod llamafile_conformance {
 mod mistralrs_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> MistralrsProvider {
-        // mistral.rs's base URL includes `/v1`; the OpenAIProvider appends
+    fn make_provider(server: &MockServer, model_id: &str) -> Arc<dyn LanguageModel> {
+        // mistral.rs's base URL includes `/v1`; the compatible chat model appends
         // `/chat/completions`, so we point at `<server>/v1` to match the
         // cassette path `/v1/chat/completions`.
-        let config = MistralrsConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        MistralrsProvider::new(config)
+        registry_model(
+            "mistralrs",
+            "test-key".to_string(),
+            model_id,
+            format!("{}/v1", server.uri()),
+        )
+        .expect("registry provider should construct")
     }
 
     #[tokio::test]
@@ -769,8 +803,7 @@ mod mistralrs_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/mistralrs").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("Qwen/Qwen3-4B");
+        let model = make_provider(&server, "Qwen/Qwen3-4B");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -800,12 +833,16 @@ mod mistralrs_conformance {
 mod bedrock_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> BedrockProvider {
+    fn make_provider(server: &MockServer) -> AmazonBedrockProvider {
         // Bearer-token auth bypasses SigV4 signing so the mock server sees
         // plain requests — matching how the rig cassettes were recorded.
-        let config = BedrockProviderConfig::with_bearer_token("test-token", "us-east-1")
-            .with_base_url(server.uri());
-        BedrockProvider::new(config)
+        create_amazon_bedrock(AmazonBedrockProviderSettings {
+            api_key: Some("test-token".to_string().into()),
+            region: Some("us-east-1".to_string()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .unwrap()
     }
 
     #[tokio::test]
@@ -814,7 +851,7 @@ mod bedrock_conformance {
         mount_cassettes(&server, "tests/cassettes/bedrock").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("amazon.nova-lite-v1:0");
+        let model = provider.chat("amazon.nova-lite-v1:0");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -842,7 +879,7 @@ mod bedrock_conformance {
         mount_cassettes(&server, "tests/cassettes/bedrock").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("amazon.nova-lite-v1:0");
+        let model = provider.chat("amazon.nova-lite-v1:0");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -872,17 +909,14 @@ mod bedrock_conformance {
 mod cerebras_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /v1/chat/completions, matching Cerebras's
         // default base URL https://api.cerebras.ai/v1.
-        provider(
+        registry_model(
             "cerebras",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "llama-3.3-70b",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/v1", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/v1", server.uri()),
         )
         .expect("cerebras should construct from registry")
     }
@@ -925,8 +959,12 @@ mod cohere_conformance {
     fn make_provider(server: &MockServer) -> CohereProvider {
         // Cassettes record paths under /v2/chat, matching Cohere's default base
         // URL https://api.cohere.com/v2; the model appends `/chat`.
-        let config = CohereConfig::new("test-key").with_base_url(format!("{}/v2", server.uri()));
-        CohereProvider::new(config)
+        create_cohere(CohereProviderSettings {
+            api_key: Some("test-key".to_string()),
+            base_url: Some(format!("{}/v2", server.uri())),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -935,7 +973,7 @@ mod cohere_conformance {
         mount_cassettes(&server, "tests/cassettes/cohere").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("command-r-08-2024");
+        let model = provider.chat("command-r-08-2024");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -965,13 +1003,19 @@ mod cohere_conformance {
 mod huggingface_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> HuggingFaceProvider {
+    fn make_provider(server: &MockServer) -> OpenAICompatibleProvider {
         // Cassettes record paths under /together/v1/chat/completions (HF routes
-        // together-hosted models through this prefix). The OpenAI model appends
-        // `/chat/completions` to the base URL.
-        let config = HuggingFaceConfig::new("test-key")
-            .with_base_url(format!("{}/together/v1", server.uri()));
-        HuggingFaceProvider::new(config)
+        // together-hosted models through this prefix). The Hugging Face package
+        // serves the Responses API only, so the router's Chat Completions
+        // endpoint is reached through the OpenAI-compatible package, which
+        // appends `/chat/completions` to the base URL.
+        create_openai_compatible(OpenAICompatibleProviderSettings {
+            name: "huggingface".to_string(),
+            base_url: format!("{}/together/v1", server.uri()),
+            api_key: Some("test-key".to_string()),
+            ..Default::default()
+        })
+        .expect("valid settings")
     }
 
     #[tokio::test]
@@ -980,7 +1024,7 @@ mod huggingface_conformance {
         mount_cassettes(&server, "tests/cassettes/huggingface").await;
 
         let provider = make_provider(&server);
-        let model = provider.model("deepseek-ai/DeepSeek-R1");
+        let model = provider.chat("deepseek-ai/DeepSeek-R1");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -1010,17 +1054,14 @@ mod huggingface_conformance {
 mod zai_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
+    fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
         // Cassettes record paths under /api/paas/v4/chat/completions, matching
         // Zai's base URL https://api.z.ai/api/paas/v4.
-        provider(
+        registry_model(
             "zai",
-            Some("test-key".to_string()),
+            "test-key".to_string(),
             "glm-4.7",
-            Some(ProviderOptions {
-                base_url: Some(format!("{}/api/paas/v4", server.uri())),
-                ..Default::default()
-            }),
+            format!("{}/api/paas/v4", server.uri()),
         )
         .expect("zai should construct from registry")
     }
@@ -1087,13 +1128,18 @@ mod zai_conformance {
 mod ollama_conformance {
     use super::*;
 
-    fn make_provider(server: &MockServer) -> OllamaProvider {
+    fn make_provider(server: &MockServer, model_id: &str) -> Arc<dyn LanguageModel> {
         // pydantic-ai cassettes record paths under /v1/chat/completions,
         // matching Ollama's OpenAI-compatible endpoint.
         // (rig cassettes use the native /api/chat NDJSON endpoint and won't
         //  be hit by this OpenAI-compatible provider — that's expected.)
-        let config = OllamaConfig::new("test-key").with_base_url(format!("{}/v1", server.uri()));
-        OllamaProvider::new(config)
+        registry_model(
+            "ollama",
+            "test-key".to_string(),
+            model_id,
+            format!("{}/v1", server.uri()),
+        )
+        .expect("registry provider should construct")
     }
 
     #[tokio::test]
@@ -1101,8 +1147,7 @@ mod ollama_conformance {
         let server = MockServer::start().await;
         mount_cassettes(&server, "tests/cassettes/ollama").await;
 
-        let provider = make_provider(&server);
-        let model = provider.model("gpt-oss:20b");
+        let model = make_provider(&server, "gpt-oss:20b");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -1135,9 +1180,7 @@ mod chatgpt_conformance {
     fn make_provider(server: &MockServer) -> OpenAIProvider {
         // Cassettes record paths under /backend-api/codex/responses; the
         // responses model appends `/responses` to the base URL.
-        let config = OpenAIConfig::new("test-key")
-            .with_base_url(format!("{}/backend-api/codex", server.uri()));
-        OpenAIProvider::new(config)
+        native_openai(format!("{}/backend-api/codex", server.uri()))
     }
 
     #[tokio::test]
@@ -1146,7 +1189,7 @@ mod chatgpt_conformance {
         mount_cassettes(&server, "tests/cassettes/chatgpt").await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("gpt-5.4");
+        let model = provider.responses("gpt-5.4");
 
         let result = model.do_generate(&default_options(test_prompt())).await;
 
@@ -1177,7 +1220,7 @@ mod chatgpt_conformance {
         mount_cassettes(&server, "tests/cassettes/chatgpt").await;
 
         let provider = make_provider(&server);
-        let model = provider.responses_model("gpt-5.4");
+        let model = provider.responses("gpt-5.4");
 
         let result = model.do_stream(&default_options(test_prompt())).await;
 
@@ -1207,7 +1250,7 @@ mod chatgpt_conformance {
 // Thin-wrapper conformance (OpenAI-compatible providers without real cassettes)
 //
 // alibaba / baseten / bytedance / deepinfra / fireworks / moonshotai /
-// togetherai / vercel are all thin wrappers around OpenAIProvider. Their
+// togetherai / vercel are all registry presets of the OpenAI-compatible package. Their
 // responses are byte-for-byte OpenAI Chat Completions, so cassettes are
 // derived from real OpenAI recordings (path + model rewritten). See
 // scripts/generate_thin_wrapper_cassettes.py.
@@ -1216,43 +1259,19 @@ mod chatgpt_conformance {
 /// Generates a conformance module for an OpenAI-compatible thin-wrapper provider.
 /// Each gets a generate + stream test.
 ///
-/// Two arms:
-/// - native arm (`$provider:ty, $config:ty`): providers with their own src/
-///   implementation (e.g. LmStudio) keep the config/provider construction.
-/// - registry arm (`$name:literal`): the retired phase-4 shell types are built
-///   through the registry-backed `provider(name, ...)` entry point.
+/// Every provider is built through the registry-backed `create_provider(name, ...)`
+/// entry point (a preset of `provider_registry.json`).
 macro_rules! thin_wrapper_conformance {
-    ($mod_name:ident, $provider:ty, $config:ty, $cassette_dir:expr, $base_url_prefix:expr, $model_id:expr) => {
-        mod $mod_name {
-            use super::*;
-
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                Box::new(
-                    <$provider>::new(<$config>::new("test-key").with_base_url(format!(
-                        "{}{}",
-                        server.uri(),
-                        $base_url_prefix
-                    )))
-                    .model($model_id),
-                )
-            }
-
-            thin_wrapper_tests!($cassette_dir);
-        }
-    };
     ($mod_name:ident, $name:literal, $cassette_dir:expr, $base_url_prefix:expr, $model_id:expr) => {
         mod $mod_name {
             use super::*;
 
-            fn make_provider(server: &MockServer) -> Box<dyn LanguageModel> {
-                provider(
+            fn make_provider(server: &MockServer) -> Arc<dyn LanguageModel> {
+                registry_model(
                     $name,
-                    Some("test-key".to_string()),
+                    "test-key".to_string(),
                     $model_id,
-                    Some(ProviderOptions {
-                        base_url: Some(format!("{}{}", server.uri(), $base_url_prefix)),
-                        ..Default::default()
-                    }),
+                    format!("{}{}", server.uri(), $base_url_prefix),
                 )
                 .expect("registry provider should construct")
             }
@@ -1395,8 +1414,7 @@ thin_wrapper_conformance!(
 );
 thin_wrapper_conformance!(
     lmstudio_conformance,
-    LmStudioProvider,
-    LmStudioConfig,
+    "lmstudio",
     "tests/cassettes/lmstudio",
     "/v1",
     "llama-3.2-3b-instruct"

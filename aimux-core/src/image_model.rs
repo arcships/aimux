@@ -113,9 +113,7 @@ pub struct ImageCallOptions {
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
-    /// retrying. `None` uses 2, the AI SDK default, unless the model's
-    /// `retry_config()` sets another count (model-level retry settings are
-    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
+    /// retrying. `None` uses 2, the AI SDK default.
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
@@ -195,16 +193,22 @@ pub trait ImageModel: Send + Sync {
     /// Provider-specific model ID, e.g. `"dall-e-3"`.
     fn model_id(&self) -> &str;
 
-    fn retry_config(&self) -> crate::retry::RetryConfig {
-        crate::retry::RetryConfig::default()
-    }
-
     /// Limit of how many images can be generated in a single API call.
     ///
     /// `None` means there is no fixed limit. The TS spec allows this to be a
     /// function of `modelId`; in Rust the provider resolves it to a plain
     /// `Option<u32>`.
     fn max_images_per_call(&self) -> Option<u32>;
+
+    /// Whether image file inputs are supported; `None` means unknown.
+    fn supports_file_inputs(&self) -> Option<bool> {
+        None
+    }
+
+    /// Whether mask inputs are supported; `None` means unknown.
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        None
+    }
 
     /// Generate an array of images.
     ///
@@ -223,11 +227,7 @@ pub async fn generate_image(
 ) -> Result<ImageResult, AiMuxError> {
     let timeout = timeout::OperationTimeout::new(options.timeout.unwrap_or_default())?;
     let abort_signal = options.abort_signal.clone();
-    let retries = retry::prepare_retries(
-        options.max_retries,
-        model.retry_config(),
-        abort_signal.clone(),
-    );
+    let retries = retry::prepare_retries(options.max_retries, abort_signal.clone());
     timeout::run(
         retries.retry(|| model.do_generate(&options)),
         abort_signal.as_ref(),

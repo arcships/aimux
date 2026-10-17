@@ -2,6 +2,8 @@
 
 > **状态：Draft，待评审；本文不表示实现完成或维护者已接受。**
 >
+> **修订（2026-10-15，V4 [5/8] #253）：** §3.2 第三段关于 redirect 的规则已按实现改写，见该段后的修订说明；“默认不跟随 redirect”不再适用于模型 API 请求。
+>
 > **范围：** ROADMAP 的 B1–B9、#174 / #175、L0 native passthrough；区分架构切换必需工作与新增公开能力。
 >
 > **核对基线：** master `72a37b5`；目标架构参考尚未合并的 [PR #200](https://github.com/arcships/aimux/pull/200) head `d8c3d15`。#200 的 §0.4 已记录四项决定，不能说没有记录；PR 仍开放且文档一致性 review 尚待处理，不能据此宣称已在 master 生效。
@@ -73,6 +75,8 @@ header 名大小写不敏感，以覆盖插入避免重复认证头，删除项�
 凭证作用域至少绑定 `(宿主 namespace, registration 实例, 认证模式, 允许的 origin/audience)`。只用 provider 字符串作 store key 不足以隔离两个同名实例。更换 base URL 必须新建 provider，不继承旧连接的 key、Authorization、token resolver 或默认 env 选择；确需复用时由宿主显式重新绑定到新目的地。
 
 禁用携密认证请求的自动跨 origin redirect；默认不跟随 redirect。批准的同 origin 重定向也必须重新做目标校验与签名，不能复用旧签名。媒体下载/外部 URL 不自动继承 provider headers。TLS/代理属于 transport 实例，不能由单次 model 参数偷偷改写。
+
+> **修订（2026-10-15，V4 [5/8] #253）：** 上段前两句按实现改为：模型 API 请求与上游 `postToApi` 一致，默认跟随 redirect（`@ai-sdk/provider-utils@5.0.55` `post-to-api.ts:98-107` 调 fetch 时不传 `redirect`，取 fetch 默认的 `follow`）。凭证锁定在请求的 origin：某一跳离开该 origin 后只保留 `User-Agent`，其余请求头全部丢弃，transport 收到 `RequestCredentials::Omit`，签名与 token 装饰器不再添加凭证；之后即使跳回原 origin 也不恢复。每一跳都重新经过 transport，签名按实际发送的 URL 重新计算，不复用旧签名。跳转目标只接受 http(s)，最多 10 跳；303，以及 POST 上的 301/302，改为不带 body 的 GET。模型 API 请求的跳转目标不做下载那样的地址校验；响应给出的 URL 与媒体下载仍逐跳校验，不继承 provider 头。这比上游严：上游 API 请求由 fetch 跟随，fetch 规范跨 origin 只去掉 `Authorization`、最多 20 跳（`fetch-with-validated-redirects.ts:89-92` 的说明；`:196-206` 的逐跳剥离只用于带校验的请求与下载）。实现与测试：`aimux-provider-utils/src/http.rs` `send_following_redirects`、`tests/api_redirect_test.rs`；对齐文档 §3.2、§5 已登记。§8 A03 的“跨 origin redirect”按本条验收。
 
 secret 值不可进入 descriptor、Debug、错误、trace、metrics label、settings snapshot 或录制；URL query 中的 token/签名也要按字段脱敏。日志只能记录 credential source 类别、namespace 的非敏感标识、generation 和结果码。调试不得 dump 原始 headers。录制 body 仍可能包含用户敏感数据，必须遵守录制单独的启用与保留策略，不能用“认证已脱敏”宣称整个文件无敏感信息。
 

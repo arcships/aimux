@@ -19,45 +19,26 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::HttpRequest;
+use crate::shared::EndpointConfig;
 
-use super::{VoyageConfig, voyage_failed_response_handler};
+use super::voyage_failed_response_handler;
 
 /// A Voyage embedding model (e.g. `"voyage-3.5"`).
 pub struct VoyageEmbeddingModel {
     model_id: String,
-    config: VoyageConfig,
+    config: EndpointConfig,
 }
 
 impl VoyageEmbeddingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: VoyageConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/embeddings", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl EmbeddingModel for VoyageEmbeddingModel {
     fn provider(&self) -> &str {
-        "voyage"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
@@ -94,19 +75,13 @@ impl EmbeddingModel for VoyageEmbeddingModel {
             body.insert("output_dtype".to_string(), json!(output_dtype));
         }
 
-        let headers = self.build_headers(options.headers.as_ref());
-        let header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         // `send()` returns Ok only for 2xx; non-2xx responses are mapped to an
-        // error internally using the shared error structure. `HttpBody::Json`
-        // sets `Content-Type: application/json`, so it is intentionally not
-        // added to the header list above.
+        // error internally using the shared error structure.
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
-            Value::Object(body),
+            exchange.request(exchange.url("/embeddings"), options),
+            exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler(),
             voyage_failed_response_handler(),
         )
@@ -177,7 +152,7 @@ struct VoyageEmbeddingProviderOptions {
 fn parse_voyage_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> VoyageEmbeddingProviderOptions {
-    let provider_opts = options.and_then(|opts| opts.get("voyage"));
+    let provider_opts = super::options::voyage_options(options);
     VoyageEmbeddingProviderOptions {
         input_type: provider_opts
             .and_then(|o| o.get("inputType"))

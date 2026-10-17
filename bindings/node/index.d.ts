@@ -391,10 +391,9 @@ export declare function googleVideo(apiKey: string, modelId: string, baseUrl?: s
 export declare function initLogging(level: string): void
 
 /**
- * Set the global proxy configuration (M6, RFC-0016). Must be called before
- * the first `generateText` / `streamText` call; a no-op if the shared HTTP
- * client is already initialised (the shared client is lazily built on first
- * use and locked for the process lifetime).
+ * Replace the default transport with one routed by this proxy configuration
+ * (M6, RFC-0016). Requests started afterwards use it; calling it again
+ * replaces the previous configuration.
  *
  * `configJson` shape: `{ "http_url": "...", "https_url": "...", "all_url":
  * "...", "no_proxy": "..." }` (all fields optional; omitting all is equivalent
@@ -496,13 +495,23 @@ export interface ProviderConfig {
   organization?: string
   /** OpenAI project ID (sent via `OpenAI-Project` header). */
   project?: string
-  /** Override the provider's retry count. `0` disables retries. */
+  /**
+   * Values of a preset's template parameters, named as the registry
+   * declares them (e.g. `{ account_id: '…' }`), for providers created by
+   * name (`provider()` / `createProvider()`). Only parameters the preset
+   * declares are accepted.
+   */
+  params?: Record<string, string>
+  /**
+   * Rejected with `InvalidArgumentError`: retry is a per-call setting
+   * (`maxRetries` in the call options). The field exists only so passing it
+   * is reported instead of ignored.
+   */
   maxRetries?: number
   /**
-   * Provider-level request body overrides as a JSON string (deep-merged
-   * into every request). Per-call `bodyOverrides` in GenerateTextOptions
-   * takes precedence. Pass a JSON object string, e.g.
-   * `'{"enable_thinking": false}'`.
+   * Rejected with `InvalidArgumentError`: request-body overrides were
+   * removed. The field exists only so passing it is reported instead of
+   * ignored.
    */
   bodyOverrides?: string
 }

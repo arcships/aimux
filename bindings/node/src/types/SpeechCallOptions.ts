@@ -41,9 +41,7 @@ language: string | null,
 provider_options: { [key in string]: { [key in string]: JsonValue } } | null,
 /**
  * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
- * retrying. `None` uses 2, the AI SDK default, unless the model's
- * `retry_config()` sets another count (model-level retry settings are
- * removed in the target design, docs/aisdk-architecture-alignment.md D14).
+ * retrying. `None` uses 2, the AI SDK default.
  */
 max_retries: number | null,
 /**

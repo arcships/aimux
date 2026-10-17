@@ -215,15 +215,34 @@ class ErrorsTest {
         assertThat(noKey.retryable).isFalse()
     }
 
+    /** 19 / 20: a missing API key / provider setting carry the consulted environment variable. */
+    @Test
+    fun `createByCode maps the missing key and setting codes`() {
+        assertThat(AIMUX_E_LOAD_API_KEY).isEqualTo(19)
+        assertThat(AIMUX_E_LOAD_SETTING).isEqualTo(20)
+        assertThat(AimuxException.codeName(19)).isEqualTo("LoadApiKey")
+        assertThat(AimuxException.codeName(20)).isEqualTo("LoadSetting")
+        val key = AimuxException.createByCode(AIMUX_E_LOAD_API_KEY, "no key", envVar = "OPENAI_API_KEY")
+        assertThat(key).isInstanceOf(LoadAPIKeyError::class.java)
+        assertThat(key.code).isEqualTo(19)
+        assertThat((key as LoadAPIKeyError).envVar).isEqualTo("OPENAI_API_KEY")
+        val setting = AimuxException.createByCode(AIMUX_E_LOAD_SETTING, "no region", envVar = "AWS_REGION")
+        assertThat(setting).isInstanceOf(LoadSettingError::class.java)
+        assertThat(setting.code).isEqualTo(20)
+        assertThat((setting as LoadSettingError).envVar).isEqualTo("AWS_REGION")
+    }
+
     /** A code outside the enum is a header/library mismatch, not an error type. */
     @Test
     fun `createByCode rejects codes outside the enum`() {
         assertThatThrownBy { AimuxException.createByCode(999, "?") }
             .isInstanceOf(IllegalStateException::class.java)
-        // 18 is NoOutputGenerated; 19 is the first unassigned value and is rejected.
-        assertThat(AimuxException.createByCode(AIMUX_E_NO_OUTPUT_GENERATED, "?"))
+        // 18 is NoOutputGenerated; 21 is the first unassigned value.
+        assertThat(AIMUX_E_NO_OUTPUT_GENERATED).isEqualTo(18)
+        assertThat(AimuxException.codeName(18)).isEqualTo("NoOutputGenerated")
+        assertThat(AimuxException.createByCode(18, "?"))
             .isInstanceOf(NoOutputGeneratedError::class.java)
-        assertThatThrownBy { AimuxException.createByCode(19, "?") }
+        assertThatThrownBy { AimuxException.createByCode(21, "?") }
             .isInstanceOf(IllegalStateException::class.java)
         assertThatThrownBy { AimuxException.createByCode(AIMUX_OK, "?") }
             .isInstanceOf(IllegalStateException::class.java)

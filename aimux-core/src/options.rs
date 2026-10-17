@@ -128,11 +128,6 @@ pub struct CallOptions {
     /// Anthropic `thinking` config.
     pub reasoning: Option<ReasoningEffort>,
 
-    /// Per-call request body overrides. Deep-merged into the provider-built
-    /// request body (after any built-in vendor override) before sending.
-    /// `null` values delete the corresponding key. See RFC-0017.
-    pub body_overrides: Option<Value>,
-
     /// Abort signal for cancelling the call.
     ///
     /// Runtime handle — never crosses the JSON boundary (bindings that only
@@ -141,14 +136,16 @@ pub struct CallOptions {
     #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
-    /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
-    /// When `Some(true)`, streaming providers yield one `Raw` part per JSON
-    /// SSE event, carrying the **parsed JSON payload** of the event, emitted
-    /// before the parsed parts. Excludes the `[DONE]` sentinel; unparsable
-    /// chunks emit only `Error`. `null`/`Some(false)` = off.
-    /// Currently honored by the OpenAI-compatible family (openai / azure /
-    /// openai-compatible registry providers); other provider families ignore
-    /// it for now (RFC-0016 M2).
+    /// Emit raw provider stream chunks as `StreamPart::Raw` (the AI SDK's
+    /// `includeRawChunks`). When `Some(true)`, a streaming model yields one
+    /// `Raw` part per SSE event, carrying the event's parsed JSON, before the
+    /// parts made from it; the `[DONE]` sentinel is excluded. A chunk that is
+    /// not JSON yields `Raw` with `null` in Groq and Anthropic, as the AI SDK
+    /// does, and only `Error` elsewhere. `None` / `Some(false)` = off.
+    /// Honored by OpenAI chat, OpenAI-compatible chat and completion (registry
+    /// presets and Azure included), Groq, DeepSeek, Anthropic Messages, and
+    /// the OpenAI and ElevenLabs transcription streams; the other model
+    /// families do not emit `Raw` yet.
     pub include_raw_chunks: Option<bool>,
 }
 
@@ -178,7 +175,6 @@ impl CallOptions {
             headers: None,
             provider_options: None,
             reasoning: None,
-            body_overrides: None,
             abort_signal: None,
             include_raw_chunks: None,
         }

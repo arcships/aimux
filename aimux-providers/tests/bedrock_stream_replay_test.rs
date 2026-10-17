@@ -28,7 +28,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
-use aimux_providers::{BedrockProvider, BedrockProviderConfig};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{AmazonBedrockProviderSettings, create_amazon_bedrock};
 
 /// The one cassette recorded for this model id, so the `(method, path)` group
 /// holds exactly one entry and body-scoring cannot pick a different exchange:
@@ -60,9 +61,14 @@ async fn body_base64_cassette_decodes_and_parses_into_stream_parts() {
         "no bedrock cassettes mounted — the replay directory moved or is empty"
     );
 
-    let config = BedrockProviderConfig::with_bearer_token("test-token", "us-east-1")
-        .with_base_url(server.uri());
-    let model = BedrockProvider::new(config).model(MODEL_ID);
+    let model = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        region: Some("us-east-1".to_string()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .expect("valid settings")
+    .chat(MODEL_ID);
 
     // No error tolerance on purpose. A failed base64 decode, or frames the
     // eventstream parser rejects, surfaces here — and must fail the test rather

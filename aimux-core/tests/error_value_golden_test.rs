@@ -191,6 +191,20 @@ fn error_value_snapshots_plain_variants() {
             r#"{"UnsupportedFunctionality":"no audio"}"#,
         ),
         (
+            AiMuxError::LoadApiKey {
+                env_var: "OPENAI_API_KEY".into(),
+                description: "OpenAI".into(),
+            },
+            r#"{"LoadApiKey":{"env_var":"OPENAI_API_KEY","description":"OpenAI"}}"#,
+        ),
+        (
+            AiMuxError::LoadSetting {
+                env_var: "AWS_REGION".into(),
+                name: "region".into(),
+            },
+            r#"{"LoadSetting":{"env_var":"AWS_REGION","name":"region"}}"#,
+        ),
+        (
             AiMuxError::NoSuchModel {
                 model_id: "gpt-9".into(),
                 model_type: "languageModel".into(),
@@ -200,8 +214,11 @@ fn error_value_snapshots_plain_variants() {
         (
             AiMuxError::NoSuchProvider {
                 provider_id: "acme".into(),
+                model_id: "acme".into(),
+                model_type: "languageModel".into(),
+                available_providers: vec!["other".into()],
             },
-            r#"{"NoSuchProvider":{"provider_id":"acme"}}"#,
+            r#"{"NoSuchProvider":{"provider_id":"acme","model_id":"acme","model_type":"languageModel","available_providers":["other"]}}"#,
         ),
         (
             AiMuxError::Timeout("total timeout".into()),
@@ -293,6 +310,8 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
         | AiMuxError::ToolCallRepair { .. }
         | AiMuxError::InvalidArgument(_)
         | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::LoadApiKey { .. }
+        | AiMuxError::LoadSetting { .. }
         | AiMuxError::MissingToolResults { .. }
         | AiMuxError::ToolChoiceViolation(_)
         | AiMuxError::NoOutputGenerated(_)
@@ -340,6 +359,14 @@ fn variant_set_is_exactly_the_wire_tag_list() {
         },
         AiMuxError::InvalidArgument("x".into()),
         AiMuxError::InvalidPrompt("x".into()),
+        AiMuxError::LoadApiKey {
+            env_var: "X".into(),
+            description: "x".into(),
+        },
+        AiMuxError::LoadSetting {
+            env_var: "X".into(),
+            name: "x".into(),
+        },
         AiMuxError::MissingToolResults {
             tool_call_ids: vec!["x".into()],
         },
@@ -359,6 +386,9 @@ fn variant_set_is_exactly_the_wire_tag_list() {
         },
         AiMuxError::NoSuchProvider {
             provider_id: "x".into(),
+            model_id: "x".into(),
+            model_type: String::new(),
+            available_providers: vec![],
         },
         AiMuxError::Timeout("x".into()),
         AiMuxError::Aborted("request aborted".into()),
@@ -384,6 +414,8 @@ fn variant_set_is_exactly_the_wire_tag_list() {
             "InvalidResponseData",
             "InvalidToolInput",
             "JsonParse",
+            "LoadApiKey",
+            "LoadSetting",
             "MissingToolResults",
             "NoOutputGenerated",
             "NoSuchModel",

@@ -12,11 +12,10 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::convert_to_language_model_prompt;
 use aimux_core::message::ModelPrompt;
-use aimux_core::recording::{ProviderRecord, Recording};
+use aimux_core::recording::Recording;
 use aimux_core::replay::{MockReplayModel, ReplayOverrides, replay_with_model};
 
 use crate::api::err_response;
-use crate::model_builder;
 use crate::state::AppState;
 use crate::wire::{self, WireMessage};
 
@@ -61,39 +60,37 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
         AiMuxError::InvalidArgument(format!("recording '{}' not found", req.call_id))
     })?;
 
-    // Resolve the key for provider rebuild: the recording's own env: source
-    // first, then the request spec, with the Settings key store as the
-    // fallback (RFC-0029 §5.5).
-    // A recording (an imported one in particular) can point anywhere: when
-    // its base URL is not the provider's default, only a key carried in this
-    // request is used.
-    let provider_name = recording.provider.provider.clone();
-    let custom = model_builder::is_custom_base_url(
-        &provider_name,
-        recorded_base_url(&recording.provider).as_deref(),
-    );
-    let key = match recording.provider.api_key_source.as_str() {
-        s if s.starts_with("env:") => {
-            wire::resolve_api_key(Some(s), &provider_name, &state.keys, state.loopback, custom)?
-        }
-        "none" => wire::resolve_api_key(None, &provider_name, &state.keys, state.loopback, custom)?,
-        _ => wire::resolve_api_key(
-            req.api_key.as_deref(),
-            &provider_name,
-            &state.keys,
-            state.loopback,
-            custom,
-        )
-        .map_err(|_| {
-            AiMuxError::InvalidArgument(
-                "this recording has no env key source — pass api_key=\"env:VAR\" or save the \
-                 provider key in Settings to replay"
-                    .into(),
-            )
-        })?,
-    };
+    // Resolve the key for provider rebuild: the request spec first, then the
+    // Settings key store; otherwise the provider's registered env var is read
+    // (RFC-0029 §5.5). The recording stores no credential source and no base
+    // URL (only the provider identity), so the replay goes to the provider's
+    // default endpoint: never a custom base URL.
+    // A recording written by aimux 0.5 or earlier has no provider_id to
+    // rebuild from; refuse it before any key is resolved.
+    let provider_id = recording.provider.registry_id()?;
+    let key = wire::resolve_api_key(
+        req.api_key.as_deref(),
+        provider_id,
+        &state.keys,
+        state.loopback,
+        false,
+    )?;
 
-    let model = aimux_providers::rebuild_provider(&recording.provider, key.as_deref())?;
+    let mut providers = aimux_providers::default_providers();
+    if let Some(key) = key {
+        providers.insert(
+            provider_id.to_string(),
+            aimux_providers::create_provider(
+                provider_id,
+                aimux_providers::PresetSettings {
+                    api_key: Some(key.into()),
+                    ..Default::default()
+                },
+            )?,
+        );
+    }
+    let registry = aimux_core::create_provider_registry(providers, Default::default());
+    let model = aimux_providers::rebuild_provider(&recording.provider, &registry)?;
 
     let mut overrides = ReplayOverrides {
         prompt: None,
@@ -129,17 +126,6 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
     .into_response())
 }
 
-/// The base URL `rebuild_provider` sends a replay of `p` to: the recorded
-/// `provider_options.base_url` when set, else the recorded `base_url`.
-fn recorded_base_url(p: &ProviderRecord) -> Option<String> {
-    p.provider_options
-        .as_ref()
-        .and_then(|options| options.get("base_url"))
-        .and_then(serde_json::Value::as_str)
-        .or(p.base_url.as_deref())
-        .map(str::to_string)
-}
-
 /// `POST /api/mock/load` — load NDJSON recordings into a `MockReplayModel`
 /// and switch the console to offline mock mode (no real API calls).
 pub async fn mock_load(
@@ -159,8 +145,14 @@ fn mock_load_inner(state: AppState, req: MockLoadRequest) -> Result<Response, Ai
         if line.is_empty() {
             continue;
         }
-        let rec: Recording = serde_json::from_str(line)
-            .map_err(|e| AiMuxError::JsonParse(format!("mock load line {}: {e}", idx + 1)))?;
+        let rec: Recording = serde_json::from_str(line).map_err(|e| {
+            let msg = format!("mock load line {}: {e}", idx + 1);
+            if e.classify() == serde_json::error::Category::Data {
+                AiMuxError::InvalidArgument(msg)
+            } else {
+                AiMuxError::JsonParse(msg)
+            }
+        })?;
         recordings.push(rec);
     }
     if recordings.is_empty() {

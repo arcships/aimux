@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use aimux_core::{AiMuxError, ApiCallError};
 
 use crate::extract_response_headers::extract_response_headers;
+use crate::fetch::FetchResponse;
 use crate::read_response_with_size_limit::{
     DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit,
 };
@@ -18,7 +19,7 @@ use crate::read_response_with_size_limit::{
 pub struct ResponseHandlerInput {
     pub url: String,
     pub request_body_values: serde_json::Value,
-    pub response: reqwest::Response,
+    pub response: FetchResponse,
     pub abort_signal: Option<aimux_core::AbortSignal>,
     /// Per-request override of the successful-JSON-body size cap, forwarded
     /// from `HttpRequest::max_json_response_bytes`. Only
@@ -96,7 +97,7 @@ impl<T> ResponseHandler<T> {
 
 /// Parse a successful JSON response using the endpoint's response type.
 ///
-/// The body is size-limited to [`DEFAULT_MAX_JSON_RESPONSE_SIZE`] (or
+/// The body is size-limited to 64 MiB (or
 /// `HttpRequest::max_json_response_bytes`, when the caller overrides it) —
 /// deliberately smaller than the binary-download bound, since a JSON success
 /// body is deserialized straight into `T` and held alongside the raw bytes.
@@ -212,28 +213,6 @@ pub fn invalid_response_api_call(
             crate::logging::redact_error_context(request_body_values),
         )
     }))
-}
-
-/// Handler for the `{ "error": { "message", "type" | "code" } }` error shape,
-/// which several providers share verbatim. Providers whose error JSON differs
-/// keep their own mapping via [`create_json_error_response_handler`].
-#[must_use]
-pub fn create_standard_json_error_response_handler() -> ResponseHandler<AiMuxError> {
-    create_json_error_response_handler(|data| {
-        let error = data.get("error").unwrap_or(data);
-        ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            provider_code: error
-                .get("type")
-                .or_else(|| error.get("code"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned),
-        }
-    })
 }
 
 /// Parse an error JSON and map its data to a provider message and code.

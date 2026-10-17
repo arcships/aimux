@@ -1,6 +1,6 @@
 // Structured end-to-end tests for the Go binding.
 //
-// These spin up a local mock HTTP server speaking the OpenAI chat-completions
+// These spin up a local mock HTTP server speaking the OpenAI Responses API
 // wire format, point an OpenAI Model at it via the base_url constructor,
 // and assert that the binding correctly:
 //   1. parses text from a provider response,
@@ -39,6 +39,7 @@ type mockProviderServer struct {
 	mu              sync.Mutex
 	lastRequestBody string
 	lastMethod      string
+	lastPath        string
 
 	status       int
 	contentType  string
@@ -64,6 +65,7 @@ func (s *mockProviderServer) handle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.lastRequestBody = string(body)
 	s.lastMethod = r.Method
+	s.lastPath = r.URL.Path
 	status := s.status
 	ct := s.contentType
 	var resp string
@@ -103,6 +105,12 @@ func (s *mockProviderServer) LastRequestBody() string {
 	return s.lastRequestBody
 }
 
+func (s *mockProviderServer) LastRequestPath() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastPath
+}
+
 // SetResponse sets the response body and content type (thread-safe).
 func (s *mockProviderServer) SetResponse(body string) {
 	s.mu.Lock()
@@ -128,8 +136,9 @@ func newBackpressureSSEServer(chunks int) (*httptest.Server, <-chan struct{}, <-
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		flusher, _ := w.(http.Flusher)
+		_, _ = fmt.Fprint(w, "data: "+responsesTextStart+"\n\n")
 		for i := 0; i < chunks; i++ {
-			chunk := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"content":"x"}}]}`
+			chunk := `{"type":"response.output_text.delta","item_id":"msg-test","output_index":0,"content_index":0,"delta":"x"}`
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
 			if flusher != nil {
 				flusher.Flush()
@@ -159,32 +168,28 @@ func waitForChannelFull[T any](t *testing.T, channel chan T) {
 
 // plainOpenAIResponse is a plain OpenAI text response (no tool calls).
 const plainOpenAIResponse = `{
-  "id": "chatcmpl-test",
+  "id": "resp-test",
   "model": "gpt-4o",
-  "choices": [{
-    "message": {"role": "assistant", "content": "Rust is a systems programming language."},
-    "finish_reason": "stop"
+  "created_at": 1,
+  "status": "completed",
+  "output": [{
+    "type": "message", "id": "msg-test", "role": "assistant", "status": "completed",
+    "content": [{"type":"output_text","text":"Rust is a systems programming language.","annotations":[]}]
   }],
-  "usage": {"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18}
+  "usage": {"input_tokens": 10, "output_tokens": 8, "total_tokens": 18}
 }`
 
 // toolCallOpenAIResponse is an OpenAI response that requests a tool call.
 const toolCallOpenAIResponse = `{
-  "id": "chatcmpl-tc",
+  "id": "resp-tc",
   "model": "gpt-4o",
-  "choices": [{
-    "message": {
-      "role": "assistant",
-      "content": null,
-      "tool_calls": [{
-        "id": "call_abc",
-        "type": "function",
-        "function": {"name": "get_weather", "arguments": "{\"location\":\"Tokyo\"}"}
-      }]
-    },
-    "finish_reason": "tool_calls"
+  "created_at": 1,
+  "status": "completed",
+  "output": [{
+    "type": "function_call", "id": "fc-abc", "call_id": "call_abc",
+    "name": "get_weather", "arguments": "{\"location\":\"Tokyo\"}", "status": "completed"
   }],
-  "usage": {"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}
+  "usage": {"input_tokens": 20, "output_tokens": 10, "total_tokens": 30}
 }`
 
 // weatherToolsOpts builds a JSON options string with a get_weather tool.
@@ -235,6 +240,9 @@ func TestE2E_GenerateTextParsesText(t *testing.T) {
 	}
 	if len(parsed.ToolCalls) != 0 {
 		t.Errorf("expected no tool calls, got %d", len(parsed.ToolCalls))
+	}
+	if srv.LastRequestPath() != "/responses" {
+		t.Errorf("expected /responses endpoint, got %q", srv.LastRequestPath())
 	}
 }
 
@@ -319,7 +327,7 @@ func TestE2E_MultiRoleMessagesReachProvider(t *testing.T) {
 	if reqBody["model"] != "gpt-4o" {
 		t.Errorf("expected model gpt-4o, got %v", reqBody["model"])
 	}
-	messages := reqBody["messages"].([]any)
+	messages := reqBody["input"].([]any)
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
 	}
@@ -364,7 +372,7 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 	defer srv.Close()
 	srv.SetContentType("text/event-stream")
 
-	// SSE stream: tool_calls delta (name) -> arguments delta -> finish_reason.
+	// Responses SSE: output item -> arguments delta -> completed tool -> finish.
 	sseResponse := buildToolCallSSE()
 	srv.SetResponse(sseResponse)
 
@@ -385,17 +393,36 @@ func TestE2E_StreamTextParsesToolCallStreamParts(t *testing.T) {
 	}
 
 	// The stream opens with Start and StartStep parts.
-	// We just verify we got JSON objects with known tags.
+	var gotToolCall, gotFinish bool
 	for _, p := range parts {
 		sp, err := ParseStreamPart(p)
 		if err != nil {
 			t.Errorf("failed to parse stream part: %v", err)
 			continue
 		}
-		// Tags we expect: Start, StartStep, TextDelta, ToolCall, Finish, etc.
 		if sp.Tag == "" {
 			t.Error("expected non-empty stream part tag")
 		}
+		switch sp.Tag {
+		case "ToolCall":
+			gotToolCall = true
+			var call ToolCall
+			if err := json.Unmarshal(sp.Payload, &call); err != nil {
+				t.Fatalf("decode tool call: %v", err)
+			}
+			if call.ToolName != "get_weather" || call.ToolCallID != "call_xyz" {
+				t.Errorf("unexpected tool call: %#v", call)
+			}
+			var input map[string]any
+			if err := json.Unmarshal(call.Input, &input); err != nil || input["location"] != "Tokyo" {
+				t.Errorf("unexpected tool arguments: %q (%v)", call.Input, err)
+			}
+		case "Finish":
+			gotFinish = true
+		}
+	}
+	if !gotToolCall || !gotFinish {
+		t.Errorf("expected completed tool call and Finish; gotToolCall=%t gotFinish=%t", gotToolCall, gotFinish)
 	}
 }
 
@@ -539,7 +566,29 @@ func TestStreamCancelUnblocksFullPartsChannel(t *testing.T) {
 
 // ── SSE builders ───────────────────────────────────────────────────────────────
 
+const responsesTextStart = `{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg-test","role":"assistant","content":[],"status":"in_progress"}}`
+
+func responsesSSE(events ...string) string {
+	var sb strings.Builder
+	for _, event := range events {
+		sb.WriteString("data: " + event + "\n\n")
+	}
+	return sb.String()
+}
+
 func buildTextDeltaSSE() string {
+	return responsesSSE(
+		`{"type":"response.created","response":{"id":"resp-test","model":"gpt-4o","created_at":1,"status":"in_progress","output":[]}}`,
+		responsesTextStart,
+		`{"type":"response.output_text.delta","item_id":"msg-test","output_index":0,"content_index":0,"delta":"Hello"}`,
+		`{"type":"response.output_text.delta","item_id":"msg-test","output_index":0,"content_index":0,"delta":" world"}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg-test","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello world","annotations":[]}]}}`,
+		`{"type":"response.completed","response":{"id":"resp-test","model":"gpt-4o","created_at":1,"status":"completed","output":[],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}`,
+	)
+}
+
+// Chat providers emit raw chunks; the Responses provider does not support them.
+func buildChatTextDeltaSSE() string {
 	chunk1 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"role":"assistant","content":"Hello"}}]}`
 	chunk2 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"content":" world"}}]}`
 	chunk3 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`
@@ -552,15 +601,13 @@ func buildTextDeltaSSE() string {
 }
 
 func buildToolCallSSE() string {
-	chunk1 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_xyz","type":"function","function":{"name":"get_weather","arguments":""}}]}}]}`
-	chunk2 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"location\":\"Tokyo\"}"}}]}}]}`
-	chunk3 := `{"id":"1","model":"gpt-4o","choices":[{"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}`
-	var sb strings.Builder
-	sb.WriteString("data: " + chunk1 + "\n\n")
-	sb.WriteString("data: " + chunk2 + "\n\n")
-	sb.WriteString("data: " + chunk3 + "\n\n")
-	sb.WriteString("data: [DONE]\n\n")
-	return sb.String()
+	return responsesSSE(
+		`{"type":"response.created","response":{"id":"resp-tc","model":"gpt-4o","created_at":1,"status":"in_progress","output":[]}}`,
+		`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc-xyz","call_id":"call_xyz","name":"get_weather","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc-xyz","delta":"{\"location\":\"Tokyo\"}"}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc-xyz","call_id":"call_xyz","name":"get_weather","arguments":"{\"location\":\"Tokyo\"}","status":"completed"}}`,
+		`{"type":"response.completed","response":{"id":"resp-tc","model":"gpt-4o","created_at":1,"status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}`,
+	)
 }
 
 // ── Tool-call full round-trip ─────────────────────────────────────────────────
@@ -608,8 +655,10 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	}
 	conversation := []ModelMessage{
 		NewTextMessage(RoleUser, "What is the weather in Tokyo?"),
-		NewTextMessage(RoleAssistant, ""), // assistant's prior turn
-		toolResultMsg,                     // tool result fed back
+		{Role: RoleAssistant, Content: []map[string]any{
+			{"type": "tool_call", "tool_call_id": call.ToolCallID, "tool_name": call.ToolName, "input": map[string]any{"location": "Tokyo"}},
+		}},
+		toolResultMsg,
 	}
 	prompt, _ := MarshalMessages(conversation)
 
@@ -624,31 +673,42 @@ func TestE2E_ToolCallFullRoundTrip(t *testing.T) {
 	}
 
 	// Verify the second request carried the tool-result message correctly.
-	// The engine converts multi-part tool_result content into OpenAI's wire
-	// format: {"role":"tool","tool_call_id":"...","content":"<stringified result>"}.
+	// Responses preserves the assistant's function_call and sends the tool's
+	// JSON result as a function_call_output with the same call_id.
 	reqBody := srv.LastRequestBody()
 	var body struct {
-		Messages []struct {
-			Role       string          `json:"role"`
-			Content    json.RawMessage `json:"content"`
-			ToolCallID string          `json:"tool_call_id,omitempty"`
-		} `json:"messages"`
+		Input []struct {
+			Role       string `json:"role"`
+			Type       string `json:"type"`
+			Name       string `json:"name"`
+			Arguments  string `json:"arguments"`
+			Output     string `json:"output"`
+			ToolCallID string `json:"call_id"`
+		} `json:"input"`
 	}
-	json.Unmarshal([]byte(reqBody), &body)
-	if len(body.Messages) != 3 {
-		t.Fatalf("expected 3 messages, got %d", len(body.Messages))
+	if err := json.Unmarshal([]byte(reqBody), &body); err != nil {
+		t.Fatalf("decode request: %v", err)
 	}
-	// The third message (tool result) in OpenAI format.
-	third := body.Messages[2]
-	if third.Role != "tool" {
-		t.Errorf("expected third role 'tool', got %q", third.Role)
+	if len(body.Input) != 3 {
+		t.Fatalf("expected 3 input items, got %d", len(body.Input))
+	}
+	second := body.Input[1]
+	if second.Type != "function_call" || second.ToolCallID != call.ToolCallID || second.Name != call.ToolName {
+		t.Errorf("assistant tool call did not round-trip: %#v", second)
+	}
+	var arguments map[string]any
+	if err := json.Unmarshal([]byte(second.Arguments), &arguments); err != nil || arguments["location"] != "Tokyo" {
+		t.Errorf("assistant arguments did not round-trip: %q (%v)", second.Arguments, err)
+	}
+	third := body.Input[2]
+	if third.Type != "function_call_output" {
+		t.Errorf("expected function_call_output, got %q", third.Type)
 	}
 	if third.ToolCallID != call.ToolCallID {
 		t.Errorf("expected tool_call_id %q, got %q", call.ToolCallID, third.ToolCallID)
 	}
-	// The content should contain the result data (stringified by the engine).
-	contentStr := string(third.Content)
-	if !strings.Contains(contentStr, "temperature") {
-		t.Errorf("expected content to contain result data, got %s", contentStr)
+	var output map[string]any
+	if err := json.Unmarshal([]byte(third.Output), &output); err != nil || output["temperature"] != "20C" {
+		t.Errorf("tool output did not round-trip: %q (%v)", third.Output, err)
 	}
 }

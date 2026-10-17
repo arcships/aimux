@@ -178,11 +178,7 @@ impl RouterModel {
             if i == exclude {
                 continue;
             }
-            let retries = retry::prepare_retries(
-                child_max_retries(),
-                m.retry_config(),
-                options.abort_signal.clone(),
-            );
+            let retries = retry::prepare_retries(child_max_retries(), options.abort_signal.clone());
             let context = step_context(self.step_label(i));
             match RecordingContext::scope(
                 context.clone(),
@@ -232,24 +228,11 @@ impl LanguageModel for RouterModel {
         &self.config.model_id
     }
 
-    fn retry_config(&self) -> retry::RetryConfig {
-        // Retrying the composite would rerun routing and previously attempted
-        // children; each child is retried at its own execution boundary.
-        retry::RetryConfig {
-            max_retries: 0,
-            ..retry::RetryConfig::default()
-        }
-    }
-
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let raw = self.router.route(&options.prompt, &self.models)?;
         let idx = self.check_index(raw, "router")?;
         let model = &self.models[idx];
-        let retries = retry::prepare_retries(
-            child_max_retries(),
-            model.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(child_max_retries(), options.abort_signal.clone());
         let context = step_context(self.step_label(idx));
         match RecordingContext::scope(
             context.clone(),
@@ -277,11 +260,7 @@ impl LanguageModel for RouterModel {
         let raw = self.router.route(&options.prompt, &self.models)?;
         let idx = self.check_index(raw, "router")?;
         let model = &self.models[idx];
-        let retries = retry::prepare_retries(
-            child_max_retries(),
-            model.retry_config(),
-            options.abort_signal.clone(),
-        );
+        let retries = retry::prepare_retries(child_max_retries(), options.abort_signal.clone());
         let context = step_context(self.step_label(idx));
         // Only setup can be retried. The returned stream is passed through, so
         // failures after setup never invoke another child or duplicate output.
@@ -674,7 +653,6 @@ mod tests {
             FallbackPolicy::OnError,
             RouterConfig::default(),
         );
-        assert_eq!(router.retry_config().max_retries, 0);
 
         let result = crate::generate::generate_text(
             &router,

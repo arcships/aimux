@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
  * the Kotlin binding's StructuredE2ETest.kt).
  *
  * <p>These spin up a local mock HTTP server speaking the OpenAI
- * chat-completions wire format, point an OpenAI {@code Model} at it via the
+ * Responses wire format, point an OpenAI {@code Model} at it via the
  * base-url constructor, and assert that the binding correctly:
  * <ol>
  *   <li>parses tool_calls out of a provider response,</li>
@@ -50,107 +50,22 @@ class StructuredE2ETest {
 
     /** Plain OpenAI text response (no tool calls). */
     private static String plainOpenAiResponse() {
-        return new JSONObject()
-            .put("id", "chatcmpl-test")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject()
-                    .put("message", new JSONObject()
-                        .put("role", "assistant")
-                        .put("content", "Rust is a systems programming language."))
-                    .put("finish_reason", "stop")))
-            .put("usage", new JSONObject()
-                .put("prompt_tokens", 10)
-                .put("completion_tokens", 8)
-                .put("total_tokens", 18))
-            .toString();
+        return OpenAiResponsesFixtures.text("Rust is a systems programming language.", 10, 8);
     }
 
     /** OpenAI response that requests a tool call (get_weather). */
     private static String toolCallOpenAiResponse() {
-        return new JSONObject()
-            .put("id", "chatcmpl-tc")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject()
-                    .put("message", new JSONObject()
-                        .put("role", "assistant")
-                        .put("content", JSONObject.NULL)
-                        .put("tool_calls", new JSONArray().put(
-                            new JSONObject()
-                                .put("id", "call_abc")
-                                .put("type", "function")
-                                .put("function", new JSONObject()
-                                    .put("name", "get_weather")
-                                    .put("arguments", "{\"location\":\"Tokyo\"}")))))
-                    .put("finish_reason", "tool_calls")))
-            .put("usage", new JSONObject()
-                .put("prompt_tokens", 20)
-                .put("completion_tokens", 10)
-                .put("total_tokens", 30))
-            .toString();
+        return OpenAiResponsesFixtures.toolCall();
     }
 
     /** A plain text response used as the second leg of the tool-call round-trip. */
     private static String finalTextResponse() {
-        return new JSONObject()
-            .put("id", "chatcmpl-2")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject()
-                    .put("message", new JSONObject()
-                        .put("role", "assistant")
-                        .put("content", "The weather in Tokyo is sunny."))
-                    .put("finish_reason", "stop")))
-            .put("usage", new JSONObject()
-                .put("prompt_tokens", 30)
-                .put("completion_tokens", 8)
-                .put("total_tokens", 38))
-            .toString();
+        return OpenAiResponsesFixtures.text("The weather in Tokyo is sunny.", 30, 8);
     }
 
-    /** OpenAI SSE stream: tool_calls name delta -> arguments delta -> finish -> [DONE]. */
+    /** OpenAI Responses SSE: item added -> argument deltas -> item done -> completed. */
     private static String toolCallSseResponse() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("data: ").append(new JSONObject()
-            .put("id", "1")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject().put("delta", new JSONObject()
-                    .put("role", "assistant")
-                    .put("tool_calls", new JSONArray().put(
-                        new JSONObject()
-                            .put("index", 0)
-                            .put("id", "call_xyz")
-                            .put("type", "function")
-                            .put("function", new JSONObject()
-                                .put("name", "get_weather")
-                                .put("arguments", ""))))))))
-            .append("\n\n");
-        sb.append("data: ").append(new JSONObject()
-            .put("id", "1")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject().put("delta", new JSONObject()
-                    .put("tool_calls", new JSONArray().put(
-                        new JSONObject()
-                            .put("index", 0)
-                            .put("function", new JSONObject()
-                                .put("arguments", "{\"location\":\"Tokyo\"}"))))))))
-            .append("\n\n");
-        sb.append("data: ").append(new JSONObject()
-            .put("id", "1")
-            .put("model", "gpt-4o")
-            .put("choices", new JSONArray().put(
-                new JSONObject().put("delta", new JSONObject())
-                    .put("finish_reason", "tool_calls")))
-            .put("usage", new JSONObject()
-                .put("prompt_tokens", 5)
-                .put("completion_tokens", 2)
-                .put("total_tokens", 7)))
-            .append("\n\n");
-        sb.append("data: [DONE]\n\n");
-        return sb.toString();
+        return OpenAiResponsesFixtures.toolCallStream();
     }
 
     /** A {@code tools} option describing a single get_weather function tool. */
@@ -224,7 +139,7 @@ class StructuredE2ETest {
             // The provider received both messages (system + user).
             JSONObject reqBody = new JSONObject(server.lastRequestBody());
             assertThat(reqBody.getString("model")).isEqualTo("gpt-4o");
-            JSONArray messages = reqBody.getJSONArray("messages");
+            JSONArray messages = reqBody.getJSONArray("input");
             assertThat(messages.length()).isEqualTo(2);
             assertThat(messages.getJSONObject(0).getString("role")).isEqualTo("system");
             assertThat(messages.getJSONObject(1).getString("role")).isEqualTo("user");
@@ -247,7 +162,7 @@ class StructuredE2ETest {
 
     @Test
     void streamTextParsesToolCallStreamParts() {
-        // SSE: tool_calls delta (name) -> arguments delta -> finish_reason.
+        // Responses SSE: function-call item -> argument deltas -> completed.
         server.setContentType("text/event-stream");
         server.setResponseBody(toolCallSseResponse());
 
@@ -363,14 +278,17 @@ class StructuredE2ETest {
             assertThat(secondResult.getString("text"))
                 .isEqualTo("The weather in Tokyo is sunny.");
 
-            // The provider received 3 messages; the last is the tool result,
-            // carrying the matching tool_call_id.
+            // The provider received 3 input items; the last is the function-call output,
+            // carrying the matching call_id.
             JSONObject reqBody = new JSONObject(server.lastRequestBody());
-            JSONArray reqMessages = reqBody.getJSONArray("messages");
+            JSONArray reqMessages = reqBody.getJSONArray("input");
             assertThat(reqMessages.length()).isEqualTo(3);
             JSONObject lastMsg = reqMessages.getJSONObject(2);
-            assertThat(lastMsg.getString("role")).isEqualTo("tool");
-            assertThat(lastMsg.getString("tool_call_id")).isEqualTo("call_abc");
+            assertThat(lastMsg.getString("type")).isEqualTo("function_call_output");
+            assertThat(lastMsg.getString("call_id")).isEqualTo("call_abc");
+            JSONObject output = new JSONObject(lastMsg.getString("output"));
+            assertThat(output.getInt("temperature")).isEqualTo(22);
+            assertThat(output.getString("condition")).isEqualTo("sunny");
         }
     }
 }

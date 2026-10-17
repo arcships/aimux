@@ -28,15 +28,15 @@ static INIT: Once = Once::new();
 
 /// Default level: `warn` — only retries and failures are printed, normal
 /// traffic stays silent.
-pub const DEFAULT_LEVEL: &str = "warn";
+const DEFAULT_LEVEL: &str = "warn";
 
 /// Body log truncation limit (bytes), RFC-0014 §4.3.
-pub const BODY_LOG_LIMIT: usize = 4096;
+const BODY_LOG_LIMIT: usize = 4096;
 
 /// Initialize the global logger (idempotent). Every entry point funnels here.
 ///
 /// Precedence: `AIMUX_LOG` (RUST_LOG-style directives) > `AIMUX_LOG_LEVEL`
-/// (simple level name) > `level` argument > [`DEFAULT_LEVEL`].
+/// (simple level name) > `level` argument > `DEFAULT_LEVEL`.
 ///
 /// No-ops (without registering anything) when a global subscriber is already
 /// installed by the consumer — we never override the host's own logger.
@@ -66,7 +66,7 @@ pub fn init_logging(level: &str) {
 /// Cheap when already initialized (`Once::is_completed` is a single atomic
 /// load). Registers a subscriber only when an `AIMUX_LOG*` env var is present
 /// **and** no global subscriber exists yet.
-pub fn auto_init_from_env() {
+pub(crate) fn auto_init_from_env() {
     if INIT.is_completed() || tracing::dispatcher::has_been_set() {
         return;
     }
@@ -79,7 +79,7 @@ pub fn auto_init_from_env() {
 
 /// Whether request/response body trace logging is enabled (`AIMUX_LOG_BODY=1`).
 #[must_use]
-pub fn body_logging_enabled() -> bool {
+pub(crate) fn body_logging_enabled() -> bool {
     std::env::var("AIMUX_LOG_BODY")
         .map(|v| v == "1")
         .unwrap_or(false)
@@ -104,7 +104,7 @@ fn build_filter(level: Option<&str>) -> EnvFilter {
     EnvFilter::try_new(format!("aimux={level}")).unwrap_or_else(|_| EnvFilter::new(DEFAULT_LEVEL))
 }
 
-/// Truncate `body` to [`BODY_LOG_LIMIT`] bytes at a UTF-8 char boundary.
+/// Truncate `body` to `BODY_LOG_LIMIT` bytes at a UTF-8 char boundary.
 fn truncate(body: &str) -> &str {
     if body.len() <= BODY_LOG_LIMIT {
         return body;
@@ -119,9 +119,9 @@ fn truncate(body: &str) -> &str {
 /// Redact a body for trace logging: JSON object keys whose lowercased name
 /// match the shared recording sensitivity policy have their values replaced
 /// with `[REDACTED]`. Non-JSON bodies pass through unchanged. Always truncated
-/// to [`BODY_LOG_LIMIT`].
+/// to `BODY_LOG_LIMIT`.
 #[must_use]
-pub fn redact_body(body: &str) -> String {
+pub(crate) fn redact_body(body: &str) -> String {
     let truncated = truncate(body);
     match serde_json::from_str::<serde_json::Value>(truncated) {
         Ok(value) => serde_json::to_string(&redact_error_context(value))
@@ -184,7 +184,7 @@ fn redact_value(value: serde_json::Value, depth: usize) -> serde_json::Value {
 
 /// Sanitize request values before storing them in a public `ApiCallError`.
 #[must_use]
-pub fn redact_request_values(body: &crate::http::HttpBody) -> serde_json::Value {
+pub(crate) fn redact_request_values(body: &crate::http::HttpBody) -> serde_json::Value {
     match body {
         crate::http::HttpBody::Json(value) => redact_error_context(value.clone()),
         crate::http::HttpBody::Bytes(bytes, content_type) => serde_json::json!({

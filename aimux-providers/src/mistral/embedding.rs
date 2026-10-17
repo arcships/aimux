@@ -5,8 +5,6 @@
 //!
 //! Endpoint: `POST {base_url}/embeddings`
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -16,53 +14,28 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::HttpRequest;
-
-use super::MistralConfig;
+use crate::shared::EndpointConfig;
 
 /// A Mistral embedding model (e.g. `"mistral-embed"`).
 pub struct MistralEmbeddingModel {
     model_id: String,
-    config: MistralConfig,
+    config: EndpointConfig,
 }
 
 impl MistralEmbeddingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: MistralConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn build_headers(&self, extra: Option<&HashMap<String, String>>) -> HashMap<String, String> {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.config.api_key),
-        );
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                headers.insert(k.clone(), v.clone());
-            }
-        }
-        headers
-    }
-
-    fn endpoint(&self) -> String {
-        format!("{}/embeddings", self.config.base_url)
     }
 }
 
 #[async_trait]
 impl EmbeddingModel for MistralEmbeddingModel {
     fn provider(&self) -> &str {
-        "mistral"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn max_embeddings_per_call(&self) -> Option<u32> {
@@ -93,17 +66,11 @@ impl EmbeddingModel for MistralEmbeddingModel {
         }
         body.insert("encoding_format".to_string(), json!("float"));
 
-        let headers = self.build_headers(options.headers.as_ref());
-
-        let mut header_list: Vec<(String, String)> = headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        header_list.push(("Content-Type".to_string(), "application/json".to_string()));
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(
-            HttpRequest::new(self.endpoint(), header_list, options),
-            Value::Object(body),
+            exchange.request(exchange.url("/embeddings"), options),
+            exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler(),
             super::mistral_failed_response_handler(),
         )
@@ -163,7 +130,7 @@ struct MistralEmbeddingProviderOptions {
 fn parse_mistral_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> MistralEmbeddingProviderOptions {
-    let provider_opts = options.and_then(|opts| opts.get("mistral"));
+    let provider_opts = super::options::mistral_options(options);
     MistralEmbeddingProviderOptions {
         metadata: provider_opts.and_then(|o| o.get("metadata")).cloned(),
         output_dimension: provider_opts

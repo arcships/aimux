@@ -6,13 +6,16 @@
 //! async polling loop without a real delay.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
 use aimux_core::video_model::{VideoCallOptions, VideoModel, generate_video};
-use aimux_providers::{RunwaymlConfig, RunwaymlProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{RunwaymlProviderSettings, create_runwayml};
 
 const MODEL_ID: &str = "gen3a_turbo";
 const VIDEO_URL: &str = "https://cdn.runwayml.com/video.mp4";
@@ -27,14 +30,36 @@ fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
 fn options(prompt: &str) -> VideoCallOptions {
     let mut o = VideoCallOptions::new(prompt);
     o.poll = fast_poll();
+    o.download = Some(recording_download(Arc::default()));
     o
+}
+
+/// The bytes the test download returns for every video URL.
+const VIDEO_BYTES: &[u8] = b"video bytes";
+
+/// A download that fetches nothing: it records each URL `generate_video`
+/// asks for and returns [`VIDEO_BYTES`].
+fn recording_download(requests: Arc<Mutex<Vec<String>>>) -> Download {
+    Download::new(move |request: DownloadRequest| {
+        requests.lock().unwrap().push(request.url);
+        async {
+            Ok(DownloadedFile {
+                data: VIDEO_BYTES.to_vec(),
+                media_type: None,
+            })
+        }
+    })
 }
 
 /// A config pointed at the mock server. Poll pacing is a per-call option
 /// ([`fast_poll`]), as the AI SDK's `generateVideo` `poll`. Uses a dummy,
 /// non-secret API key.
-fn config(server_uri: String) -> RunwaymlConfig {
-    RunwaymlConfig::new("test-api-key").with_base_url(server_uri)
+fn config(server_uri: String) -> RunwaymlProviderSettings {
+    RunwaymlProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server_uri.to_string()),
+        ..Default::default()
+    }
 }
 
 /// Mount a submit mock (returning task id `task-123`) and a polling sequence:
@@ -83,19 +108,23 @@ async fn should_generate_video_from_prompt() {
     let server = MockServer::start().await;
     mock_task_sequence(&server).await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
-    let result = generate_video(&model, options("A cat playing"))
-        .await
-        .unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut opts = options("A cat playing");
+    opts.download = Some(recording_download(requests.clone()));
+    let result = generate_video(&model, opts).await.unwrap();
 
+    // `generate_video` downloads the returned URL, as the AI SDK does.
+    assert_eq!(*requests.lock().unwrap(), [VIDEO_URL]);
     assert_eq!(result.videos.len(), 1);
     match &result.videos[0] {
-        aimux_core::video_model::VideoData::Url { url, .. } => {
-            assert_eq!(url, VIDEO_URL);
+        aimux_core::video_model::VideoData::Binary { data, media_type } => {
+            assert_eq!(data, VIDEO_BYTES);
+            assert_eq!(media_type, "video/mp4");
         }
-        v => panic!("expected Url, got: {v:?}"),
+        v => panic!("expected the downloaded video, got: {v:?}"),
     }
     assert!(result.response.timestamp.is_some());
     assert_eq!(result.response.model_id, Some(MODEL_ID.to_string()));
@@ -106,7 +135,7 @@ async fn should_post_to_text_to_video_endpoint() {
     let server = MockServer::start().await;
     mock_task_sequence(&server).await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     generate_video(&model, options("A cat playing"))
@@ -127,7 +156,7 @@ async fn should_send_auth_and_version_headers() {
     let server = MockServer::start().await;
     mock_task_sequence(&server).await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     generate_video(&model, options("test")).await.unwrap();
@@ -161,10 +190,18 @@ async fn should_pass_custom_headers() {
 
     let mut provider_headers = HashMap::new();
     provider_headers.insert("Custom-Provider-Header".to_string(), "val".to_string());
-    let cfg = RunwaymlConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(provider_headers);
-    let provider = RunwaymlProvider::new(cfg);
+    let cfg = RunwaymlProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some(
+            (provider_headers)
+                .into_iter()
+                .map(|(k, v)| (k, Some(v)))
+                .collect(),
+        ),
+        ..Default::default()
+    };
+    let provider = create_runwayml(cfg).unwrap();
     let model = provider.video(MODEL_ID);
 
     let mut opts = options("test");
@@ -198,7 +235,7 @@ async fn should_return_error_when_task_failed() {
         .mount(&server)
         .await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     let result = generate_video(&model, options("test")).await;
@@ -219,7 +256,7 @@ async fn should_return_error_on_submit_failure() {
         .mount(&server)
         .await;
 
-    let provider = RunwaymlProvider::new(config(server.uri()));
+    let provider = create_runwayml(config(server.uri())).unwrap();
     let model = provider.video(MODEL_ID);
 
     let result = generate_video(&model, options("test")).await;
@@ -228,9 +265,13 @@ async fn should_return_error_on_submit_failure() {
 
 #[tokio::test]
 async fn should_return_max_videos_per_call() {
-    let provider = RunwaymlProvider::new(RunwaymlConfig::new("test-api-key"));
+    let provider = create_runwayml(RunwaymlProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
     let model = provider.video(MODEL_ID);
     assert_eq!(model.max_videos_per_call(), Some(1));
-    assert_eq!(model.provider(), "runwayml");
+    assert_eq!(model.provider(), "runwayml.video");
     assert_eq!(model.model_id(), MODEL_ID);
 }

@@ -1,104 +1,71 @@
-//! Provider construction for the console (RFC-0029 §8.2): native single-key
-//! providers and the registry-backed OpenAI-compatible family.
-//!
-//! Adapted from `aimux-cli` `probe::provider::build_model` so the console and
-//! the CLI share the same provider construction semantics.
+//! Provider construction for the console (RFC-0029 §8.2).
 
 use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_providers::provider::ProviderOptions;
+use aimux_providers::PresetSettings;
 
 /// Build a model from a provider name + model id + optional key / base URL.
 ///
-/// - Native providers (openai/anthropic/google/mistral/xai/cohere) need a key:
-///   explicit `api_key` or the provider's standard env var.
-/// - Everything else goes through the registry (`provider(name, …)`), where a
-///   `None` key reads the provider's registered env var.
+/// The name is any built-in provider (a vendor package or a registry row); a
+/// `None` key is read from that provider's environment variable when the
+/// request is made.
 pub fn build_model(
     provider: &str,
     api_key: Option<String>,
     model_id: &str,
     base_url: Option<&str>,
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-    macro_rules! native {
-        ($provider_mod:ident, $config:ident, $provider_type:ident) => {{
-            let env = native_key_env(provider).unwrap_or_default();
-            let key = native_key(provider, env, api_key.clone())?;
-            let mut cfg = aimux_providers::$provider_mod::$config::new(key);
-            if let Some(url) = base_url {
-                cfg = cfg.with_base_url(url);
-            }
-            let p = aimux_providers::$provider_mod::$provider_type::new(cfg);
-            Ok(Arc::from(p.model(model_id)))
-        }};
-    }
-
-    match provider {
-        "openai" => native!(openai, OpenAIConfig, OpenAIProvider),
-        "anthropic" => native!(anthropic, AnthropicConfig, AnthropicProvider),
-        "google" => native!(google, GoogleConfig, GoogleProvider),
-        "mistral" => native!(mistral, MistralConfig, MistralProvider),
-        "xai" => native!(xai, XAIConfig, XAIProvider),
-        "cohere" => native!(cohere, CohereConfig, CohereProvider),
-        _ => {
-            let mut options = ProviderOptions::default();
-            if let Some(url) = base_url {
-                options.base_url = Some(url.to_string());
-            }
-            let model = aimux_providers::provider(provider, api_key, model_id, Some(options))
-                .map_err(|e| AiMuxError::InvalidArgument(format!("provider '{provider}': {e}")))?;
-            Ok(Arc::from(model))
-        }
-    }
+    aimux_providers::create_provider(
+        provider,
+        PresetSettings {
+            api_key: api_key.map(Into::into),
+            base_url: base_url.map(str::to_string),
+            ..Default::default()
+        },
+    )?
+    .language_model(model_id)
 }
 
 /// Whether `base_url` points somewhere other than `provider`'s own default
-/// endpoint. Stored and environment keys are never sent to such a URL: it
-/// came from the caller (a request field, or an imported recording).
+/// endpoint ([`aimux_providers::provider_default_base_url`]). Stored and
+/// environment keys are never sent to such a URL: it came from the caller.
 ///
-/// The default is what [`build_model`] uses when no base URL is given; when
-/// it cannot be determined (an unknown provider, a templated registry URL)
-/// every given URL counts as custom.
+/// When the default cannot be determined (an unknown provider, an endpoint
+/// built from settings such as a region or a template), every given URL
+/// counts as custom.
 pub fn is_custom_base_url(provider: &str, base_url: Option<&str>) -> bool {
     let Some(url) = base_url else {
         return false;
     };
-    let default = build_model(provider, Some(String::new()), "default-base-url", None)
-        .ok()
-        .and_then(|model| model.config_snapshot().base_url);
-    default.is_none_or(|default| default.trim_end_matches('/') != url.trim_end_matches('/'))
+    aimux_providers::provider_default_base_url(provider)
+        .is_none_or(|default| default.trim_end_matches('/') != url.trim_end_matches('/'))
 }
 
-/// The env var a native provider (see [`build_model`]) reads its key from.
-pub fn native_key_env(provider: &str) -> Option<&'static str> {
-    Some(match provider {
-        "openai" => "OPENAI_API_KEY",
-        "anthropic" => "ANTHROPIC_API_KEY",
-        "google" => "GOOGLE_GENERATIVE_AI_API_KEY",
-        "mistral" => "MISTRAL_API_KEY",
-        "xai" => "XAI_API_KEY",
-        "cohere" => "COHERE_API_KEY",
-        _ => return None,
-    })
-}
+/// Providers that read credentials from the server environment besides the
+/// `api_key` setting: AWS credentials (SigV4 signing, session token),
+/// the Vertex access token, the Codex sign-in, the DataForSEO login. An empty
+/// `api_key` does not stop them, so the console does not call them at a
+/// caller-chosen base URL.
+const AMBIENT_CREDENTIALS: [&str; 6] = [
+    "amazon_bedrock",
+    "anthropic_aws",
+    "aws_polly",
+    "codex",
+    "dataforseo",
+    "google_vertex",
+];
 
-/// Resolve the key for a native provider: explicit key, else the standard env var.
-fn native_key(provider: &str, env: &str, api_key: Option<String>) -> Result<String, AiMuxError> {
-    match api_key {
-        Some(k) => Ok(k),
-        None => std::env::var(env).map_err(|_| {
-            AiMuxError::InvalidArgument(format!(
-                "provider '{provider}' needs an API key — set `{env}` or pass api_key=\"env:{env}\""
-            ))
-        }),
-    }
+/// Whether `provider` may read credentials other than the `api_key` setting
+/// from the server environment ([`AMBIENT_CREDENTIALS`]).
+pub fn reads_ambient_credentials(provider: &str) -> bool {
+    AMBIENT_CREDENTIALS.contains(&provider)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_custom_base_url;
+    use super::{AMBIENT_CREDENTIALS, is_custom_base_url};
 
     #[test]
     fn only_the_providers_own_default_is_not_custom() {
@@ -115,6 +82,10 @@ mod tests {
             "groq",
             Some("https://api.groq.com/openai/v1")
         ));
+        assert!(!is_custom_base_url(
+            "openrouter",
+            Some("https://openrouter.ai/api/v1")
+        ));
         assert!(is_custom_base_url(
             "openai",
             Some("https://attacker.example/v1")
@@ -128,5 +99,17 @@ mod tests {
             "no-such-provider",
             Some("https://x.example")
         ));
+        assert!(is_custom_base_url(
+            "amazon_bedrock",
+            Some("https://bedrock-runtime.us-east-1.amazonaws.com")
+        ));
+    }
+
+    #[test]
+    fn ambient_credential_providers_are_built_in() {
+        let names = aimux_providers::provider_names();
+        for name in AMBIENT_CREDENTIALS {
+            assert!(names.contains(&name), "{name}");
+        }
     }
 }

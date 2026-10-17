@@ -1,0 +1,120 @@
+{
+  "case": "responses-basic",
+  "model": {
+    "modelId": "gpt-4o",
+    "provider": "openai.responses"
+  },
+  "package": "@ai-sdk/openai",
+  "request": {
+    "body": {
+      "input": [
+        {
+          "content": [
+            {
+              "text": "Say hello.",
+              "type": "input_text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "gpt-4o"
+    },
+    "headers": {
+      "authorization": "<redacted>",
+      "content-type": "application/json",
+      "user-agent": "ai/7.0.127 ai-sdk-provider-utils/5.0.53 node.js/22"
+    },
+    "method": "POST",
+    "url": "https://api.openai.com/v1/responses"
+  },
+  "response": {
+    "body": {
+      "created_at": 1735689600,
+      "error": null,
+      "id": "resp_fixture_1",
+      "incomplete_details": null,
+      "model": "gpt-4o-2024-08-06",
+      "object": "response",
+      "output": [
+        {
+          "content": [
+            {
+              "annotations": [],
+              "text": "Hello! How can I help you today?",
+              "type": "output_text"
+            }
+          ],
+          "id": "msg_fixture_1",
+          "role": "assistant",
+          "status": "completed",
+          "type": "message"
+        }
+      ],
+      "status": "completed",
+      "usage": {
+        "input_tokens": 12,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 9,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 21
+      }
+    },
+    "headers": {
+      "content-type": "application/json"
+    },
+    "status": 200
+  },
+  "result": {
+    "content": [
+      {
+        "providerMetadata": {
+          "openai": {
+            "itemId": "msg_fixture_1"
+          }
+        },
+        "text": "Hello! How can I help you today?",
+        "type": "text"
+      }
+    ],
+    "finishReason": "stop",
+    "providerMetadata": {
+      "openai": {
+        "responseId": "resp_fixture_1"
+      }
+    },
+    "response": {
+      "headers": {
+        "content-type": "application/json"
+      },
+      "id": "resp_fixture_1",
+      "modelId": "gpt-4o-2024-08-06"
+    },
+    "text": "Hello! How can I help you today?",
+    "usage": {
+      "inputTokenDetails": {
+        "cacheReadTokens": 0,
+        "noCacheTokens": 12
+      },
+      "inputTokens": 12,
+      "outputTokenDetails": {
+        "reasoningTokens": 0,
+        "textTokens": 9
+      },
+      "outputTokens": 9,
+      "totalTokens": 21
+    },
+    "warnings": []
+  },
+  "sdk": {
+    "input": {
+      "prompt": "Say hello."
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.83"
+}

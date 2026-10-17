@@ -1318,6 +1318,181 @@ async fn generated_and_streamed_output_replay_the_same_messages() {
     );
 }
 
+/// A scripted model that fetches `https://model.test/` images itself and
+/// records the prompt of each call.
+struct UrlModel {
+    inner: ScriptedModel,
+    prompts: Mutex<Vec<crate::language_model_message::LanguageModelPrompt>>,
+}
+
+#[async_trait]
+impl LanguageModel for UrlModel {
+    fn provider(&self) -> &str {
+        self.inner.provider()
+    }
+
+    fn model_id(&self) -> &str {
+        self.inner.model_id()
+    }
+
+    async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        self.prompts.lock().unwrap().push(options.prompt.clone());
+        self.inner.do_generate(options).await
+    }
+
+    async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        self.prompts.lock().unwrap().push(options.prompt.clone());
+        self.inner.do_stream(options).await
+    }
+
+    async fn supported_urls(&self) -> crate::language_model::SupportedUrls {
+        crate::language_model::SupportedUrls(HashMap::from([(
+            "image/*".to_owned(),
+            vec![regex::Regex::new(r"^https://model\.test/").unwrap()],
+        )]))
+    }
+}
+
+fn url_prompt() -> Vec<ModelMessage> {
+    serde_json::from_value(json!([
+        { "role": "user", "content": [
+            { "type": "file_url", "url": "https://model.test/a.png", "media_type": "image/png" },
+            { "type": "file_url", "url": "https://cdn.test/b.png", "media_type": "image/png" }
+        ] }
+    ]))
+    .unwrap()
+}
+
+/// What the model received for the two URLs of [`url_prompt`].
+fn sent_files(model: &UrlModel) -> Vec<crate::shared::FileData> {
+    let prompts = model.prompts.lock().unwrap();
+    let [prompt] = &prompts[..] else {
+        panic!("one model call: {prompts:?}")
+    };
+    let [crate::language_model_message::LanguageModelMessage::User { content, .. }] = &prompt[..]
+    else {
+        panic!("one user message: {prompt:?}")
+    };
+    content
+        .iter()
+        .map(|part| match part {
+            crate::language_model_message::UserPart::File(file) => file.data.clone(),
+            crate::language_model_message::UserPart::Text(_) => panic!("file parts only"),
+        })
+        .collect()
+}
+
+/// A prompt download that records its requests and downloads every URL the
+/// model does not fetch itself.
+fn recording_prompt_download(
+    requests: std::sync::Arc<Mutex<Vec<crate::download::PlannedDownload>>>,
+) -> crate::download::DownloadFunction {
+    crate::download::DownloadFunction::new(move |planned: Vec<crate::download::PlannedDownload>| {
+        requests.lock().unwrap().extend(planned.clone());
+        async move {
+            Ok(planned
+                .into_iter()
+                .map(|planned| {
+                    (!planned.is_url_supported_by_model).then(|| crate::download::DownloadedFile {
+                        data: vec![1, 2, 3],
+                        media_type: None,
+                    })
+                })
+                .collect())
+        }
+    })
+}
+
+fn expected_files() -> Vec<crate::shared::FileData> {
+    vec![
+        crate::shared::FileData::Url {
+            url: "https://model.test/a.png".into(),
+            original_url: None,
+        },
+        crate::shared::FileData::Data {
+            data: crate::shared::FileBytes::Binary(vec![1, 2, 3]),
+        },
+    ]
+}
+
+/// generate-text.ts:963-971 and convert-to-language-model-prompt.ts:36-55:
+/// the prompt's URLs go to `experimental_download`, marked with the model's
+/// `supportedUrls`; downloaded files are sent inline, the others as URLs.
+#[tokio::test]
+async fn generate_text_downloads_the_urls_the_model_does_not_fetch() {
+    let model = UrlModel {
+        inner: ScriptedModel::generating(generated(
+            vec![text_content("ok")],
+            FinishReasonUnified::Stop,
+        )),
+        prompts: Mutex::new(Vec::new()),
+    };
+    let requests = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let options = GenerateTextOptions {
+        download: Some(recording_prompt_download(requests.clone())),
+        ..Default::default()
+    };
+    generate_text(&model, url_prompt(), options).await.unwrap();
+    assert_eq!(
+        *requests.lock().unwrap(),
+        [
+            crate::download::PlannedDownload {
+                url: "https://model.test/a.png".into(),
+                is_url_supported_by_model: true,
+            },
+            crate::download::PlannedDownload {
+                url: "https://cdn.test/b.png".into(),
+                is_url_supported_by_model: false,
+            },
+        ]
+    );
+    assert_eq!(sent_files(&model), expected_files());
+}
+
+/// stream-text.ts:1343: `streamText` passes the same download.
+#[tokio::test]
+async fn stream_text_downloads_the_urls_the_model_does_not_fetch() {
+    let model = UrlModel {
+        inner: ScriptedModel::streaming(text_stream(&["ok"], FinishReasonUnified::Stop)),
+        prompts: Mutex::new(Vec::new()),
+    };
+    let options = GenerateTextOptions {
+        download: Some(recording_prompt_download(std::sync::Arc::default())),
+        ..Default::default()
+    };
+    let result = stream_text(&model, url_prompt(), options).await.unwrap();
+    collect(result).await;
+    assert_eq!(sent_files(&model), expected_files());
+}
+
+/// Without `download`, the default downloads with the guarded download,
+/// which refuses a loopback URL before the model is called.
+#[tokio::test]
+async fn the_default_prompt_download_is_guarded() {
+    let model = UrlModel {
+        inner: ScriptedModel::generating(generated(
+            vec![text_content("ok")],
+            FinishReasonUnified::Stop,
+        )),
+        prompts: Mutex::new(Vec::new()),
+    };
+    let prompt: Vec<ModelMessage> = serde_json::from_value(json!([
+        { "role": "user", "content": [
+            { "type": "file_url", "url": "http://127.0.0.1:9/a.png", "media_type": "image/png" }
+        ] }
+    ]))
+    .unwrap();
+    let error = generate_text(&model, prompt, GenerateTextOptions::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument(message)
+            if message == "download URL targets a non-public address: 127.0.0.1"),
+        "{error:?}"
+    );
+    assert!(model.prompts.lock().unwrap().is_empty());
+}
+
 /// stream-text.ts:1725-1757: an abort after a step finished keeps the step;
 /// the result resolves with the recorded step and, without a `finish` part,
 /// the null total usage. Only a stream that recorded no step fails with the

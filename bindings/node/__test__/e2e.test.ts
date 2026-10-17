@@ -8,7 +8,7 @@
 
 import test from 'ava'
 import { createServer, type Server } from 'node:http'
-import { openai, anthropic } from '../src/native.ts'
+import { deepseek, anthropic } from '../src/native.ts'
 
 // ── Mock server helpers ─────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ test('e2e: OpenAI generateText via mock server', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const resultJson = await model.generateText(JSON.stringify('What is Rust?'))
     const r = JSON.parse(resultJson)
 
@@ -95,7 +95,7 @@ test('e2e: OpenAI streamText via mock server', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const parts: any[] = []
 
     for await (const json of await model.streamText(JSON.stringify('Say hello'))) {
@@ -172,7 +172,7 @@ test('e2e: OpenAI generateText with options (max_tokens, temperature)', async (t
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const opts = JSON.stringify({ max_output_tokens: 100, temperature: 0.5 })
     await model.generateText(JSON.stringify('Hello'), opts)
 
@@ -211,7 +211,7 @@ test('e2e: OpenAI generateText parses tool_calls (structured content)', async (t
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const opts = JSON.stringify({
       tools: [{
         type: 'function',
@@ -259,7 +259,7 @@ test('e2e: OpenAI generateText with multi-role messages (system + user)', async 
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const prompt = JSON.stringify([
       { role: 'system', content: 'You are a helpful assistant.' },
       { role: 'user', content: 'What is Rust?' },
@@ -294,7 +294,7 @@ test('e2e: OpenAI generateText with tool_choice: required', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const opts = JSON.stringify({
       tools: [{
         type: 'function',
@@ -328,7 +328,7 @@ test('e2e: OpenAI streamText parses tool-call stream parts', async (t) => {
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const opts = JSON.stringify({
       tools: [{
         type: 'function',
@@ -376,7 +376,7 @@ test('e2e: OpenAI tool-call full round-trip (ToolCall → ToolResult → final t
   })
 
   try {
-    const model = await openai('test-key', 'gpt-4o', url)
+    const model = await deepseek('test-key', 'gpt-4o', url)
     const opts = JSON.stringify({
       tools: [{
         type: 'function',

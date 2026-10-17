@@ -7,50 +7,55 @@ import type { ProviderRecord } from "./ProviderRecord";
 /**
  * 一次完整调用的录制记录(三层 + call_id 关联)。
  */
-export type Recording = { 
+export type Recording = {
 /**
- * 格式版本。
+ * 格式版本。Written as [`RECORDING_SCHEMA`]; schemas 1 and 2 are read.
+ * Recordings written by aimux 0.5 and earlier also carry a configuration
+ * snapshot under `provider` (base URL, key source, profile, provider
+ * options), which is ignored.
  */
-schema: number, 
+schema: number,
 /**
  * 暴露逻辑调用 ID,关联三层。
  */
-call_id: string, 
+call_id: string,
 /**
  * ISO 8601 时间戳。
  */
-recorded_at: string, 
+recorded_at: string,
 /**
  * ① 输入侧:调用参数(prompt + options)。
  */
-input: InputRecord, 
+input: InputRecord,
 /**
  * ② 配置侧:provider 身份与配置。
  */
-provider: ProviderRecord, 
+provider: ProviderRecord,
 /**
  * ③ HTTP 侧:实际 wire 交换(per-attempt 一条)。
  */
-exchanges: Array<HttpExchange>, 
+exchanges: Array<HttpExchange>,
 /**
  * 最终结果摘要(状态 + finish_reason + usage)。
  */
-outcome: OutcomeRecord, 
+outcome: OutcomeRecord,
 /**
- * wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。
+ * wire 是否完整(流式 body 未补全时为 false;由 writer 标记)。A call
+ * that lost an event (full queue, writer gone) or was marked
+ * inconsistent (duplicate attempt, unmatched update) is never complete.
  */
-complete: boolean, 
+complete: boolean,
 /**
  * 传输层封闭信号:层 B 声明"不再有 exchange"(P1:层 A 收尾自动发;
  * P2:由层 B 发送)。false = 仍可能来 exchange(记录暂不可定稿)。
  */
-transport_closed: boolean, 
+transport_closed: boolean,
 /**
  * 会话归组(RFC-0024 P3):所在会话 id。None = 未归组(无 session_id 且
  * 推断关闭)。由 `Recorder::record_session` 填充,写入 InputRecord 之前
  * 或之后均可(writer 端按 call_id 合并)。
  */
-session_id?: string | null, 
+session_id?: string | null,
 /**
  * 会话内步号(0 起,由 SessionStore 分配)。与 `session_id` 同生命周期。
  */

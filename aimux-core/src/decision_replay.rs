@@ -51,16 +51,13 @@ impl MockDecisionReplayModel {
                     "decision replay: no matching provider/model recording".into(),
                 )
             })?;
-        let capabilities = serde_json::from_value(
-            first
-                .provider
-                .profile
-                .as_ref()
-                .and_then(|v| v.get("decision_capabilities"))
-                .cloned()
-                .unwrap_or(Value::Null),
-        )
-        .map_err(|e| AiMuxError::InvalidArgument(format!("decision replay capabilities: {e}")))?;
+        let capabilities = first.input.decision_capabilities.clone().ok_or_else(|| {
+            AiMuxError::InvalidArgument(
+                "decision replay: missing decision capabilities (recordings written by aimux \
+                 0.5 or earlier keep them in provider.profile, which this version does not read)"
+                    .into(),
+            )
+        })?;
         Ok(Self {
             provider,
             model_id,

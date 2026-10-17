@@ -85,8 +85,6 @@ pub struct WireOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub body_overrides: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
@@ -312,7 +310,6 @@ pub fn to_generate_options(
             .map(|ts| ts.iter().map(to_function_tool).collect()),
         output,
         headers: o.headers.clone(),
-        body_overrides: o.body_overrides.clone(),
         max_retries: o.max_retries,
         session_id: session_id.map(str::to_string),
         include_raw_chunks: o.include_raw_chunks,
@@ -338,7 +335,9 @@ pub fn to_generate_options(
 /// goes to a base URL the caller chose. Then only a key carried in the request
 /// itself is used: no Settings key, no environment variable (`env:` is
 /// refused), and with no key the call is sent without one (`Some("")`), so
-/// the provider does not fall back to its env var either.
+/// the provider does not fall back to its env var either. Providers that read
+/// other credentials from the environment
+/// ([`crate::model_builder::reads_ambient_credentials`]) are refused.
 pub fn resolve_api_key(
     spec: Option<&str>,
     provider: &str,
@@ -346,6 +345,12 @@ pub fn resolve_api_key(
     allow_plaintext: bool,
     custom_base_url: bool,
 ) -> Result<Option<String>, AiMuxError> {
+    if custom_base_url && crate::model_builder::reads_ambient_credentials(provider) {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "provider '{provider}' reads credentials from the server environment, so the \
+             console does not call it at a custom base_url — leave base_url empty"
+        )));
+    }
     let blank = spec.is_none_or(|s| s.trim().is_empty());
     if custom_base_url && blank {
         return Ok(Some(String::new()));
@@ -413,18 +418,49 @@ pub fn resolve_api_key(
 }
 
 /// The environment variable a provider's key is registered under: the
-/// native providers' standard variable, or the registry / runtime overlay
-/// entry's. The only name an `env:` reference may use for that provider.
-pub fn registered_key_env(provider: &str) -> Option<String> {
-    crate::model_builder::native_key_env(provider)
-        .map(str::to_string)
-        .or_else(|| aimux_providers::provider_api_key_env(provider))
+/// vendor package's key variable or the registry row's `env_var`
+/// ([`aimux_providers::provider_api_key_env`]). The only name an `env:`
+/// reference may use for that provider.
+pub fn registered_key_env(provider: &str) -> Option<&'static str> {
+    aimux_providers::provider_api_key_env(provider)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::settings::KeyStore;
+
+    /// Sets (or, with `None`, removes) a registry provider's key variable for
+    /// one test and restores the previous value on drop. Each test uses its
+    /// own provider, so the variables never overlap.
+    struct KeyVar(&'static str, Option<std::ffi::OsString>);
+
+    impl KeyVar {
+        fn set(provider: &str, value: Option<&str>) -> Self {
+            let name = registered_key_env(provider).expect("a registry row with a key variable");
+            let previous = std::env::var_os(name);
+            // SAFETY: no other test reads or writes this provider's variable.
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+            Self(name, previous)
+        }
+    }
+
+    impl Drop for KeyVar {
+        fn drop(&mut self) {
+            // SAFETY: as in `set`.
+            unsafe {
+                match &self.1 {
+                    Some(value) => std::env::set_var(self.0, value),
+                    None => std::env::remove_var(self.0),
+                }
+            }
+        }
+    }
 
     #[test]
     fn empty_spec_resolves_as_unset() {
@@ -442,27 +478,15 @@ mod tests {
         );
     }
 
-    /// Register a console-test provider whose key variable is `env_var`.
-    fn test_provider(name: &str, env_var: &str) {
-        aimux_providers::load_providers_from_json(&format!(
-            r#"{{"providers":[{{"name":"{name}","base_url":"https://example.invalid/v1","env_var":"{env_var}"}}]}}"#
-        ))
-        .unwrap();
-    }
-
     #[test]
     fn resolve_key_priority_explicit_env_over_store() {
-        test_provider("web-test-priority", "AIMUX_WEB_TEST_KEY");
         let store = KeyStore::from_path(None);
-        store
-            .set("web-test-priority", "sk-from-store", false)
-            .unwrap();
-        // SAFETY: This test owns a unique process-wide env key and removes it below.
-        unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY", "k-123") };
+        store.set("xpersona", "sk-from-store", false).unwrap();
+        let _var = KeyVar::set("xpersona", Some("k-123"));
         assert_eq!(
             resolve_api_key(
-                Some("env:AIMUX_WEB_TEST_KEY"),
-                "web-test-priority",
+                Some("env:XPERSONA_API_KEY"),
+                "xpersona",
                 &store,
                 true,
                 false
@@ -470,8 +494,6 @@ mod tests {
             .unwrap(),
             Some("k-123".to_string())
         );
-        // SAFETY: Cleanup of the unique test key set above.
-        unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY") };
     }
 
     #[test]
@@ -509,13 +531,11 @@ mod tests {
         let err = resolve_api_key(Some("sk-literal"), "openai", &store, false, false).unwrap_err();
         assert!(err.to_string().contains("loopback"), "err: {err}");
         // env: references still work on non-loopback.
-        test_provider("web-test-lan", "AIMUX_WEB_TEST_KEY_LAN");
-        // SAFETY: This test owns a unique process-wide env key and removes it below.
-        unsafe { std::env::set_var("AIMUX_WEB_TEST_KEY_LAN", "k-lan") };
+        let _var = KeyVar::set("the_grid_ai", Some("k-lan"));
         assert_eq!(
             resolve_api_key(
-                Some("env:AIMUX_WEB_TEST_KEY_LAN"),
-                "web-test-lan",
+                Some("env:THEGRIDAI_API_KEY"),
+                "the_grid_ai",
                 &store,
                 false,
                 false
@@ -523,8 +543,6 @@ mod tests {
             .unwrap(),
             Some("k-lan".to_string())
         );
-        // SAFETY: Cleanup of the unique test key set above.
-        unsafe { std::env::remove_var("AIMUX_WEB_TEST_KEY_LAN") };
     }
 
     #[test]
@@ -545,11 +563,12 @@ mod tests {
             "{err}"
         );
 
-        assert_eq!(registered_key_env("groq").as_deref(), Some("GROQ_API_KEY"));
+        assert_eq!(registered_key_env("groq"), Some("GROQ_API_KEY"));
         assert_eq!(
-            registered_key_env("google").as_deref(),
+            registered_key_env("google"),
             Some("GOOGLE_GENERATIVE_AI_API_KEY")
         );
+        assert_eq!(registered_key_env("openrouter"), Some("OPENROUTER_API_KEY"));
     }
 
     #[test]
@@ -574,22 +593,30 @@ mod tests {
             Some("sk-literal".to_string())
         );
         assert!(resolve_api_key(Some("sk-literal"), "openai", &store, false, true).is_err());
+        // A provider that also reads other credentials from the environment
+        // is not called at a custom base_url at all.
+        for provider in ["amazon_bedrock", "google_vertex", "codex"] {
+            let err = resolve_api_key(Some("k"), provider, &store, true, true).unwrap_err();
+            assert!(err.to_string().contains("server environment"), "{err}");
+            assert!(resolve_api_key(None, provider, &store, true, false).is_ok());
+        }
     }
 
     #[test]
     fn resolve_key_rejects_plaintext_and_missing_env() {
         let store = KeyStore::from_path(None);
         assert!(resolve_api_key(Some("sk-literal"), "openai", &store, false, false).is_err());
-        assert!(
-            resolve_api_key(
-                Some("env:AIMUX_WEB_MISSING_VAR"),
-                "openai",
-                &store,
-                true,
-                false
-            )
-            .is_err()
-        );
+        // The provider's own variable, unset.
+        let _var = KeyVar::set("siliconflow", None);
+        let err = resolve_api_key(
+            Some("env:SILICONFLOW_API_KEY"),
+            "siliconflow",
+            &store,
+            true,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("is not set"), "{err}");
         assert!(resolve_api_key(Some("env:"), "openai", &store, true, false).is_err());
     }
 

@@ -503,7 +503,9 @@ class Model implements Finalizable {
   ///
   /// [apiKey] may be null to read the provider's env var from the registry
   /// entry. [configJson] is an optional JSON object of ProviderOptions
-  /// (`{"base_url": "...", "headers": {...}, "max_retries": 0, "body_overrides": {...}}`).
+  /// (`{"base_url": "...", "headers": {...}, "organization": "...",
+  /// "project": "...", "params": {...}}`). `max_retries` (a per-call option)
+  /// and `body_overrides` (removed) are rejected as [InvalidArgumentError].
   factory Model.provider(String name, String modelId,
       {String? apiKey, String? configJson}) {
     checkJson(configJson, 'config_json', emptyIsDefault: true);
@@ -746,20 +748,21 @@ class ProviderConfig {
   /// OpenAI project ID (`OpenAI-Project` header).
   final String? project;
 
-  /// Retry count override; `0` disables retries.
-  final int? maxRetries;
-
-  /// Request-body overrides (deep-merged into every request). Any
-  /// JSON-serializable value (typically a `Map<String, dynamic>`).
-  final Object? bodyOverrides;
+  /// Values of a preset's template parameters (`account_id`, `region`, ...);
+  /// only the ones the preset declares are accepted.
+  ///
+  /// Retry is a per-call setting ([GenerateTextOptions.maxRetries]) and
+  /// request-body overrides no longer exist: a `max_retries` or
+  /// `body_overrides` key in the config is rejected as [InvalidArgumentError],
+  /// so this class has neither.
+  final Map<String, String>? params;
 
   const ProviderConfig({
     this.baseUrl,
     this.headers,
     this.organization,
     this.project,
-    this.maxRetries,
-    this.bodyOverrides,
+    this.params,
   });
 
   /// Serialize to the `ProviderOptions` JSON wire format (snake_case keys,
@@ -771,8 +774,7 @@ class ProviderConfig {
     if (headers != null) map['headers'] = headers;
     if (organization != null) map['organization'] = organization;
     if (project != null) map['project'] = project;
-    if (maxRetries != null) map['max_retries'] = maxRetries;
-    if (bodyOverrides != null) map['body_overrides'] = bodyOverrides;
+    if (params != null) map['params'] = params;
     if (map.isEmpty) return null;
     return encodeJson(map, 'config_json');
   }
@@ -1018,9 +1020,9 @@ void registerProviders(String configJSON) {
       (p) => expectAimuxError(_ffi.registerProviders(p), 'register_providers'));
 }
 
-/// Set the global proxy configuration (M6, RFC-0016). Must be called before
-/// the first `generateText` / `streamText` call; a no-op if the shared HTTP
-/// client is already initialised.
+/// Replace the default transport with one routed by this proxy configuration
+/// (M6, RFC-0016). Requests started afterwards use it; calling it again
+/// replaces the previous configuration.
 ///
 /// `configJSON` shape: `{ "http_url", "https_url", "all_url", "no_proxy" }`
 /// (all fields optional). Wrong shape throws [InvalidArgumentError].

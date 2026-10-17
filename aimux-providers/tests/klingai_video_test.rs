@@ -2,13 +2,16 @@
 //! Source: `reference/ai/packages/klingai/src/klingai-video-model.test.ts`
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
 use aimux_core::video_model::{VideoCallOptions, VideoModel, generate_video};
-use aimux_providers::{KlingAIConfig, KlingAIProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{KlingAIProviderSettings, create_klingai};
 
 fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
     Some(aimux_core::video_model::VideoPollOptions {
@@ -20,7 +23,25 @@ fn fast_poll() -> Option<aimux_core::video_model::VideoPollOptions> {
 fn options(prompt: &str) -> VideoCallOptions {
     let mut o = VideoCallOptions::new(prompt);
     o.poll = fast_poll();
+    o.download = Some(recording_download(Arc::default()));
     o
+}
+
+/// The bytes the test download returns for every video URL.
+const VIDEO_BYTES: &[u8] = b"video bytes";
+
+/// A download that fetches nothing: it records each URL `generate_video`
+/// asks for and returns [`VIDEO_BYTES`].
+fn recording_download(requests: Arc<Mutex<Vec<String>>>) -> Download {
+    Download::new(move |request: DownloadRequest| {
+        requests.lock().unwrap().push(request.url);
+        async {
+            Ok(DownloadedFile {
+                data: VIDEO_BYTES.to_vec(),
+                media_type: None,
+            })
+        }
+    })
 }
 
 async fn mock_task_and_result(
@@ -67,20 +88,30 @@ async fn should_generate_video_from_prompt() {
     let videos = vec![json!({"url": "https://cdn.klingai.com/video.mp4"})];
     mock_task_and_result(&server, &videos, &[]).await;
 
-    let config = KlingAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = KlingAIProvider::new(config);
+    let config = KlingAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_klingai(config).unwrap();
     let model = provider.video("kling-v2.1-master-t2v");
 
-    let result = generate_video(&model, options("A cat playing"))
-        .await
-        .unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut opts = options("A cat playing");
+    opts.download = Some(recording_download(requests.clone()));
+    let result = generate_video(&model, opts).await.unwrap();
 
+    // `generate_video` downloads the returned URL, as the AI SDK does.
+    assert_eq!(
+        *requests.lock().unwrap(),
+        ["https://cdn.klingai.com/video.mp4"]
+    );
     assert_eq!(result.videos.len(), 1);
     match &result.videos[0] {
-        aimux_core::video_model::VideoData::Url { url, .. } => {
-            assert_eq!(url, "https://cdn.klingai.com/video.mp4");
+        aimux_core::video_model::VideoData::Binary { data, .. } => {
+            assert_eq!(data, VIDEO_BYTES);
         }
-        v => panic!("expected Url, got: {v:?}"),
+        v => panic!("expected the downloaded video, got: {v:?}"),
     }
 }
 
@@ -90,8 +121,12 @@ async fn should_pass_model_name_and_prompt() {
     let videos = vec![json!({"url": "https://cdn.klingai.com/video.mp4"})];
     mock_task_and_result(&server, &videos, &[]).await;
 
-    let config = KlingAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = KlingAIProvider::new(config);
+    let config = KlingAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_klingai(config).unwrap();
     let model = provider.video("kling-v2.1-master-t2v");
 
     generate_video(&model, options("A cat playing"))
@@ -112,10 +147,13 @@ async fn should_pass_headers() {
 
     let mut ph = HashMap::new();
     ph.insert("Custom-Provider-Header".to_string(), "val".to_string());
-    let config = KlingAIConfig::new("test-api-key")
-        .with_base_url(server.uri())
-        .with_headers(ph);
-    let provider = KlingAIProvider::new(config);
+    let config = KlingAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        headers: Some((ph).into_iter().map(|(k, v)| (k, Some(v))).collect()),
+        ..Default::default()
+    };
+    let provider = create_klingai(config).unwrap();
     let model = provider.video("kling-v2.1-master-t2v");
 
     let mut opts = options("test");
@@ -138,8 +176,12 @@ async fn should_pass_seed_duration_and_aspect_ratio() {
     let videos = vec![json!({"url": "https://cdn.klingai.com/video.mp4"})];
     mock_task_and_result(&server, &videos, &[]).await;
 
-    let config = KlingAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = KlingAIProvider::new(config);
+    let config = KlingAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_klingai(config).unwrap();
     let model = provider.video("kling-v2.1-master-t2v");
 
     let mut opts = options("test");
@@ -162,8 +204,12 @@ async fn should_include_response_data() {
     let videos = vec![json!({"url": "https://cdn.klingai.com/video.mp4"})];
     mock_task_and_result(&server, &videos, &[("x-request-id", "test-req")]).await;
 
-    let config = KlingAIConfig::new("test-api-key").with_base_url(server.uri());
-    let provider = KlingAIProvider::new(config);
+    let config = KlingAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let provider = create_klingai(config).unwrap();
     let model = provider.video("kling-v2.1-master-t2v");
 
     let result = generate_video(&model, options("test")).await.unwrap();
@@ -177,8 +223,11 @@ async fn should_include_response_data() {
 
 #[tokio::test]
 async fn should_return_max_videos_per_call() {
-    let config = KlingAIConfig::new("test-api-key");
-    let provider = KlingAIProvider::new(config);
+    let config = KlingAIProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        ..Default::default()
+    };
+    let provider = create_klingai(config).unwrap();
     let model = provider.video("kling-v2.1-master-t2v");
     assert_eq!(model.max_videos_per_call(), Some(1));
 }

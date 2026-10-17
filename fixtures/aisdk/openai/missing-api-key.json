@@ -1,0 +1,24 @@
+{
+  "case": "missing-api-key",
+  "error": {
+    "message": "OpenAI API key is missing. Pass it using the 'apiKey' parameter or the OPENAI_API_KEY environment variable.",
+    "name": "AI_LoadAPIKeyError"
+  },
+  "model": {
+    "modelId": "gpt-4o",
+    "provider": "openai.chat"
+  },
+  "observations": {
+    "requestsSent": 0
+  },
+  "package": "@ai-sdk/openai",
+  "request": null,
+  "response": null,
+  "sdk": {
+    "input": {
+      "prompt": "Say hello."
+    },
+    "operation": "generateText"
+  },
+  "version": "4.0.83"
+}

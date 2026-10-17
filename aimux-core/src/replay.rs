@@ -52,10 +52,10 @@ pub trait ReplayMatcher: Send + Sync {
 
 /// 精确匹配:provider/model_id 相同,且 prompt + 影响响应的可重放选项
 /// (temperature/max_output_tokens/seed/response_format/tools/tool_choice)
-/// 以及 headers/provider_options/body_overrides 规范相同才命中。运行时字段
+/// 以及 headers/provider_options 规范相同才命中。运行时字段
 /// (call_id/abort_signal)不参与比较。
 ///
-/// headers/provider_options/body_overrides 用**脱敏感知比较**:录制侧这些
+/// headers/provider_options 用**脱敏感知比较**:录制侧这些
 /// 字段经 `recording::redact_json` 脱敏
 /// (敏感键值→`"[REDACTED]"`),脱敏值视为通配,匹配任意显式请求值;非脱敏
 /// 部分仍精确比较。规则见 `redaction_aware_eq`。
@@ -97,9 +97,9 @@ impl ReplayMatcher for ExactMatcher {
 /// `CallOptions` 中影响响应、可重放选项的规范键(ExactMatcher 用)。
 ///
 /// 含 prompt + temperature/max_output_tokens/seed/response_format/tools/
-/// tool_choice + headers/provider_options/body_overrides;排除运行时字段
+/// tool_choice + headers/provider_options;排除运行时字段
 /// (call_id/abort_signal)。序列化为 `Value` 后比较,
-/// 等价于"稳定规范哈希"但无碰撞风险。headers/provider_options/body_overrides
+/// 等价于"稳定规范哈希"但无碰撞风险。headers/provider_options
 /// 在比较时走脱敏感知语义(见 [`canonical_keys_match`])。
 fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
     serde_json::json!({
@@ -112,7 +112,6 @@ fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
         "tool_choice": serde_json::to_value(&opts.tool_choice).unwrap_or_default(),
         "headers": serde_json::to_value(&opts.headers).unwrap_or_default(),
         "provider_options": serde_json::to_value(&opts.provider_options).unwrap_or_default(),
-        "body_overrides": serde_json::to_value(&opts.body_overrides).unwrap_or_default(),
     })
 }
 
@@ -129,11 +128,10 @@ fn canonical_recording_key(rec: &Recording) -> serde_json::Value {
         "tool_choice": o.get("tool_choice").cloned().unwrap_or_default(),
         "headers": o.get("headers").cloned().unwrap_or_default(),
         "provider_options": o.get("provider_options").cloned().unwrap_or_default(),
-        "body_overrides": o.get("body_overrides").cloned().unwrap_or_default(),
     })
 }
 
-/// 脱敏感知比较(用于 headers/provider_options/body_overrides)。
+/// 脱敏感知比较(用于 headers/provider_options)。
 ///
 /// 录制侧这些字段经 `recording::redact_json`
 /// 脱敏:敏感键(authorization/api-key/apikey/key/token/cookie/...)的**值**
@@ -175,7 +173,7 @@ pub(crate) fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Valu
     }
 }
 
-/// 比较规范键:headers/provider_options/body_overrides 用脱敏感知比较
+/// 比较规范键:headers/provider_options 用脱敏感知比较
 /// (录制侧可能已脱敏);其余字段(prompt/temperature/...)精确比较。
 ///
 /// 注意:`max_output_tokens` 等含 "token" 子串的字段在录制侧也会被
@@ -183,7 +181,7 @@ pub(crate) fn redaction_aware_eq(rec: &serde_json::Value, req: &serde_json::Valu
 /// 被脱敏为 `"[REDACTED]"` 而请求值为数值,精确比较会 miss(保守:宁可 miss
 /// 不可误 hit,因为 max_output_tokens 影响响应,通配会引入伪命中)。
 fn canonical_keys_match(rec_key: &serde_json::Value, call_key: &serde_json::Value) -> bool {
-    const REDACTED_FIELDS: [&str; 3] = ["headers", "provider_options", "body_overrides"];
+    const REDACTED_FIELDS: [&str; 2] = ["headers", "provider_options"];
     let (ro, co) = match (rec_key.as_object(), call_key.as_object()) {
         (Some(a), Some(b)) => (a, b),
         _ => return rec_key == call_key,
@@ -442,8 +440,9 @@ impl MockReplayModel {
     ///
     /// # Errors
     ///
-    /// Returns `AiMuxError::InvalidArgument` when the file cannot be read or
-    /// contains no recordings, and `JsonParse` when a line is not valid JSON.
+    /// Returns `AiMuxError::InvalidArgument` when the file cannot be read,
+    /// contains no recordings, or holds a recording of an unsupported schema,
+    /// and `JsonParse` when a line is not valid JSON.
     pub fn from_jsonl(path: &str) -> Result<Self, AiMuxError> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| AiMuxError::InvalidArgument(format!("mock replay: {e}")))?;
@@ -452,8 +451,16 @@ impl MockReplayModel {
             if line.trim().is_empty() {
                 continue;
             }
-            let rec: Recording = serde_json::from_str(line)
-                .map_err(|e| AiMuxError::JsonParse(format!("mock replay line {}: {e}", idx + 1)))?;
+            let rec: Recording = serde_json::from_str(line).map_err(|e| {
+                let msg = format!("mock replay line {}: {e}", idx + 1);
+                // Well-formed JSON that is not a current-schema `Recording`
+                // (including an old `schema`) is a bad argument, not a parse error.
+                if e.classify() == serde_json::error::Category::Data {
+                    AiMuxError::InvalidArgument(msg)
+                } else {
+                    AiMuxError::JsonParse(msg)
+                }
+            })?;
             recordings.push(rec);
         }
         if recordings.is_empty() {
@@ -471,6 +478,32 @@ impl MockReplayModel {
     pub fn recordings(&self) -> &[Recording] {
         &self.recordings
     }
+
+    /// The matcher's recording, or its error naming the recordings of this
+    /// provider and model whose prompt this version cannot read (written by
+    /// aimux 0.5 or earlier), which never match.
+    fn matching(&self, options: &CallOptions) -> Result<&Recording, AiMuxError> {
+        self.matcher
+            .r#match(options, &self.recordings)
+            .map_err(|error| {
+                let unreadable = self
+                    .recordings
+                    .iter()
+                    .filter(|r| {
+                        r.provider.provider == self.provider
+                            && r.provider.model_id == self.model_id
+                            && r.input.unreadable_prompt().is_some()
+                    })
+                    .count();
+                if unreadable == 0 {
+                    return error;
+                }
+                AiMuxError::InvalidArgument(format!(
+                    "{error}; {unreadable} recording(s) of this model hold a prompt this \
+                     version cannot read (written by aimux 0.5 or earlier) and never match"
+                ))
+            })
+    }
 }
 
 #[async_trait]
@@ -484,13 +517,11 @@ impl LanguageModel for MockReplayModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let rec = self.matcher.r#match(options, &self.recordings)?;
-        rebuild_generate_result(rec)
+        rebuild_generate_result(self.matching(options)?)
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let rec = self.matcher.r#match(options, &self.recordings)?;
-        rebuild_stream_result(rec)
+        rebuild_stream_result(self.matching(options)?)
     }
 }
 
@@ -946,13 +977,13 @@ pub struct ReplayOverrides {
 ///   - `recording.input.options` 中的 headers/provider_options 已脱敏,
 ///     重发会用脱敏后的 `[REDACTED]` 值——需要真实头时用 `overrides` 或
 ///     重建 provider 时补充。
-///   - 逐消息 `provider_options`(如 anthropic cacheControl)不参与重建。
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::JsonParse` when the recorded call options cannot be
-/// deserialized, `AiMuxError::InvalidPrompt` for inline text file data without
-/// a user-facing representation, and propagates errors from `generate_text`.
+/// Returns `AiMuxError::InvalidArgument` for a recording whose prompt this
+/// version cannot read ([`InputRecord::unreadable_prompt`](crate::recording::InputRecord::unreadable_prompt)),
+/// `AiMuxError::JsonParse` when the recorded call options cannot be
+/// deserialized, and propagates errors from the generation pipeline.
 pub async fn replay_with_model(
     recording: &Recording,
     model: &dyn LanguageModel,
@@ -963,12 +994,29 @@ pub async fn replay_with_model(
             "language replay requires a language-model recording".into(),
         ));
     }
+    if let Some(error) = recording.input.unreadable_prompt() {
+        return Err(AiMuxError::InvalidArgument(format!(
+            "language replay: this version cannot read the recorded prompt (recordings \
+             written by aimux 0.5 or earlier use another prompt format): {error}"
+        )));
+    }
+    // A recording without a provider_id was written by aimux 0.5 or earlier;
+    // its options may use fields this version reads differently.
+    let older = if recording.provider.provider_id.is_empty() {
+        " (the recording was written by aimux 0.5 or earlier)"
+    } else {
+        ""
+    };
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
     //    and the operation settings recorded next to them.
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+        .map_err(|e| {
+            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+        })?;
     let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
-        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+        .map_err(|e| {
+            AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
+        })?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {
@@ -1005,7 +1053,8 @@ fn user_tool_choice(choice: LanguageModelV4ToolChoice) -> ToolChoice {
 /// 侧到用户侧的反向映射)。
 ///
 /// `instructions` 已烘焙进 prompt(system 消息),重建时置 None;
-/// `abort_signal` 运行时句柄不跨 JSON,重建时置 None。
+/// `abort_signal` 运行时句柄不跨 JSON,重建时置 None;回放原样发送录制的
+/// prompt,不再下载其中的 URL,`download` 置 None。
 fn generate_options_from_call_options(
     o: CallOptions,
     settings: OperationSettings,
@@ -1026,13 +1075,13 @@ fn generate_options_from_call_options(
         provider_options: o.provider_options,
         reasoning: o.reasoning,
         instructions: None,
-        body_overrides: o.body_overrides,
         max_retries: settings.max_retries,
         timeout: settings.timeout,
         session_id: settings.session_id,
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
         repair_tool_call: None,
+        download: None,
     }
 }
 
@@ -1100,6 +1149,7 @@ mod tests {
             call_id: trace_id.to_string(),
             recorded_at: "2026-08-06T00:00:00Z".to_string(),
             input: InputRecord {
+                decision_capabilities: None,
                 operation: Default::default(),
                 prompt: input_prompt,
                 // A recorded call always carries the prepared tool choice.
@@ -1108,14 +1158,7 @@ mod tests {
                     "tool_choice": { "type": "auto" },
                 }),
             },
-            provider: ProviderRecord {
-                provider: "openai".into(),
-                model_id: "gpt-4o".into(),
-                base_url: None,
-                api_key_source: "none".into(),
-                profile: None,
-                provider_options: None,
-            },
+            provider: ProviderRecord::new("openai", "openai", "gpt-4o"),
             exchanges: vec![HttpExchange {
                 step: None,
                 attempt: 0,

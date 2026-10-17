@@ -9,8 +9,6 @@
 //! request/response payloads. This implementation adapts based on the model ID,
 //! matching the TS reference.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
@@ -20,11 +18,10 @@ use aimux_core::embedding_model::{
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use aimux_provider_utils::{HttpBody, HttpRequest};
+use aimux_provider_utils::HttpBody;
 
-use super::BedrockAuth;
-use super::model::BedrockConfig;
-use super::sigv4::sign_request;
+use super::options;
+use crate::shared::EndpointConfig;
 
 /// An Amazon Bedrock embedding model (e.g. `"amazon.titan-embed-text-v2:0"`).
 ///
@@ -32,51 +29,12 @@ use super::sigv4::sign_request;
 /// `Client` internally (RFC-0009 §4.1).
 pub struct BedrockEmbeddingModel {
     model_id: String,
-    config: BedrockConfig,
+    config: EndpointConfig,
 }
 
 impl BedrockEmbeddingModel {
-    #[must_use]
-    pub fn new(model_id: String, config: BedrockConfig) -> Self {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
-    }
-
-    fn endpoint(&self) -> String {
-        // Bedrock model IDs contain dots and colons (e.g.
-        // `amazon.titan-embed-text-v2:0`). The TS reference URL-encodes the
-        // model ID, but these characters are valid in URL paths and AWS accepts
-        // them unencoded — matching the LanguageModel implementation.
-        format!("{}/model/{}/invoke", self.config.base_url, self.model_id)
-    }
-
-    fn build_headers(
-        &self,
-        body: &str,
-        url: &str,
-        extra: Option<&HashMap<String, String>>,
-    ) -> Result<Vec<(String, String)>, AiMuxError> {
-        let mut extra_headers: Vec<(String, String)> = Vec::new();
-        if let Some(extra) = extra {
-            for (k, v) in extra {
-                extra_headers.push((k.clone(), v.clone()));
-            }
-        }
-
-        match &self.config.auth {
-            BedrockAuth::BearerToken(token) => {
-                let mut headers = vec![("Authorization".to_string(), format!("Bearer {token}"))];
-                headers.extend(extra_headers);
-                Ok(headers)
-            }
-            BedrockAuth::SigV4(creds) => {
-                let signed = sign_request(creds, "bedrock", "POST", url, body, &extra_headers);
-                let mut headers: Vec<(String, String)> = Vec::new();
-                for (k, v) in &signed.headers {
-                    headers.push((k.clone(), v.clone()));
-                }
-                Ok(headers)
-            }
-        }
     }
 }
 
@@ -95,15 +53,11 @@ fn is_nova_embedding_model(model_id: &str) -> bool {
 #[async_trait]
 impl EmbeddingModel for BedrockEmbeddingModel {
     fn provider(&self) -> &str {
-        "amazon-bedrock"
+        &self.config.provider
     }
 
     fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    fn retry_config(&self) -> aimux_core::retry::RetryConfig {
-        self.config.retry_config
     }
 
     fn max_embeddings_per_call(&self) -> Option<u32> {
@@ -195,20 +149,17 @@ impl EmbeddingModel for BedrockEmbeddingModel {
             Value::Object(body)
         };
 
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+        let body = exchange.transform_body(body);
         let body_str = serde_json::to_string(&body).unwrap_or_default();
-        let url = self.endpoint();
-        let headers = self.build_headers(&body_str, &url, options.headers.as_ref())?;
+        // Bedrock model IDs contain dots and colons (e.g.
+        // `amazon.titan-embed-text-v2:0`). The TS reference URL-encodes the
+        // model ID, but these characters are valid in URL paths and AWS accepts
+        // them unencoded — matching the LanguageModel implementation.
+        let url = exchange.url(&format!("/model/{}/invoke", self.model_id));
 
         let resp = aimux_provider_utils::post_to_api(
-            HttpRequest {
-                url,
-                headers,
-
-                abort_signal: options.abort_signal.clone(),
-                call_id: None,
-                recording_context: None,
-                ..Default::default()
-            },
+            exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
             super::bedrock_failed_response_handler(),
@@ -335,14 +286,11 @@ struct BedrockEmbeddingProviderOptions {
 
 /// Parse Bedrock embedding provider options.
 ///
-/// Tries the `"amazonBedrock"` key first, then falls back to the legacy
-/// `"bedrock"` key for backward compatibility.
+/// Reads the `amazonBedrock` key only.
 fn parse_bedrock_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> BedrockEmbeddingProviderOptions {
-    let provider_opts = options
-        .and_then(|o| o.get("amazonBedrock"))
-        .or_else(|| options.and_then(|o| o.get("bedrock")));
+    let provider_opts = options::read(options);
 
     BedrockEmbeddingProviderOptions {
         dimensions: provider_opts

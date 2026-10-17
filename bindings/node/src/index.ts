@@ -109,6 +109,8 @@ export {
   ToolCallRepairError,
   InvalidArgumentError,
   InvalidPromptError,
+  LoadAPIKeyError,
+  LoadSettingError,
   TokenExpiredError,
   UnsupportedFunctionalityError,
   NoSuchModelError,

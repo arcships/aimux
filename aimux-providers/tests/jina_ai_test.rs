@@ -10,10 +10,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use aimux_core::Provider;
 use aimux_core::error::AiMuxError;
 use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
-use aimux_providers::{JinaAiConfig, JinaAiProvider};
+use aimux_provider_utils::Resolvable;
+use aimux_providers::{JinaAiProvider, JinaAiProviderSettings, create_jina_ai};
 
 const API_KEY: &str = "test-jina-key";
 const MODEL: &str = "jina-reranker-v2-base-multilingual";
@@ -49,8 +49,12 @@ fn rerank_response_body() -> Value {
 }
 
 fn provider(server: &MockServer) -> JinaAiProvider {
-    let config = JinaAiConfig::new(API_KEY).with_base_url(server.uri());
-    JinaAiProvider::new(config)
+    let config = JinaAiProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    create_jina_ai(config).unwrap()
 }
 
 fn text_docs_opts(query: &str, top_n: u32) -> RerankingCallOptions {
@@ -276,25 +280,3 @@ async fn status_401_maps_to_auth_error() {
 }
 
 // -- Provider trait ----------------------------------------------------------
-
-#[tokio::test]
-async fn provider_name_is_jina_ai() {
-    let config = JinaAiConfig::new(API_KEY);
-    let provider = JinaAiProvider::new(config);
-    assert_eq!(provider.name(), "jina_ai");
-}
-
-#[test]
-fn language_model_returns_unsupported_error() {
-    let config = JinaAiConfig::new(API_KEY);
-    let provider = JinaAiProvider::new(config);
-    match provider.language_model(MODEL) {
-        Err(AiMuxError::UnsupportedFunctionality(msg)) => {
-            assert!(
-                msg.contains("provider 'jina_ai' does not provide language models"),
-                "unexpected message: {msg}"
-            );
-        }
-        _ => panic!("expected Unsupported error, got success or another error variant"),
-    }
-}

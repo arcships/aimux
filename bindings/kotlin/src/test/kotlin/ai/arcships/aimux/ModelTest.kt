@@ -4,8 +4,6 @@ import com.sun.jna.ptr.PointerByReference
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.json.JSONArray
-import org.json.JSONObject
 import org.junit.jupiter.api.Test
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -214,29 +212,7 @@ class ModelTest {
 
     // ── canned OpenAI responses ────────────────────────────────────────────
 
-    /** Plain OpenAI chat-completions response (no tool calls). */
+    /** Plain OpenAI Responses response (no tool calls). */
     private fun plainOpenAiResponse(): String =
-        JSONObject().apply {
-            put("id", "chatcmpl-test")
-            put("model", "gpt-4o")
-            put(
-                "choices",
-                JSONArray().put(
-                    JSONObject()
-                        .put(
-                            "message",
-                            JSONObject()
-                                .put("role", "assistant")
-                                .put("content", "Rust is a systems programming language."),
-                        ).put("finish_reason", "stop"),
-                ),
-            )
-            put(
-                "usage",
-                JSONObject()
-                    .put("prompt_tokens", 10)
-                    .put("completion_tokens", 8)
-                    .put("total_tokens", 18),
-            )
-        }.toString()
+        OpenAiResponsesFixtures.text("Rust is a systems programming language.")
 }

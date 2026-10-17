@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
 // Tests for the typed [TypedModel] wrapper over the raw JSON-string [Model].
 //
 // Like StructuredE2ETest, these spin up the shared [MockProviderServer]
-// (OpenAI chat-completions wire format) and assert that the typed wrapper:
+// (OpenAI Responses wire format) and assert that the typed wrapper:
 //   1. returns a [GenerateTextResult] object (no manual JSON parsing),
 //   2. surfaces `.text`, `.toolCalls[0].toolName`, and `.content`,
 //   3. forwards typed `tools` / `tool_choice` onto the provider request,
@@ -42,79 +42,10 @@ class TypedModelTest {
 
     /** Plain OpenAI text response (no tool calls). */
     private val plainOpenAiResponse: String =
-        JSONObject().apply {
-            put("id", "chatcmpl-test")
-            put("model", "gpt-4o")
-            put(
-                "choices",
-                JSONArray().put(
-                    JSONObject().apply {
-                        put(
-                            "message",
-                            JSONObject().apply {
-                                put("role", "assistant")
-                                put("content", "Rust is a systems programming language.")
-                            },
-                        )
-                        put("finish_reason", "stop")
-                    },
-                ),
-            )
-            put(
-                "usage",
-                JSONObject().apply {
-                    put("prompt_tokens", 10)
-                    put("completion_tokens", 8)
-                    put("total_tokens", 18)
-                },
-            )
-        }.toString()
+        OpenAiResponsesFixtures.text("Rust is a systems programming language.")
 
     /** OpenAI response that requests a tool call (get_weather). */
-    private val toolCallOpenAiResponse: String =
-        JSONObject().apply {
-            put("id", "chatcmpl-tc")
-            put("model", "gpt-4o")
-            put(
-                "choices",
-                JSONArray().put(
-                    JSONObject().apply {
-                        put(
-                            "message",
-                            JSONObject().apply {
-                                put("role", "assistant")
-                                put("content", JSONObject.NULL)
-                                put(
-                                    "tool_calls",
-                                    JSONArray().put(
-                                        JSONObject().apply {
-                                            put("id", "call_abc")
-                                            put("type", "function")
-                                            put(
-                                                "function",
-                                                JSONObject().apply {
-                                                    put("name", "get_weather")
-                                                    put("arguments", "{\"location\":\"Tokyo\"}")
-                                                },
-                                            )
-                                        },
-                                    ),
-                                )
-                            },
-                        )
-                        put("finish_reason", "tool_calls")
-                    },
-                ),
-            )
-            put(
-                "usage",
-                JSONObject().apply {
-                    put("prompt_tokens", 20)
-                    put("completion_tokens", 10)
-                    put("total_tokens", 30)
-                },
-            )
-        }.toString()
+    private val toolCallOpenAiResponse: String = OpenAiResponsesFixtures.toolCall()
 
     // ── typed builders ──────────────────────────────────────────────────
 
@@ -148,6 +79,7 @@ class TypedModelTest {
 
             // .text is a plain Kotlin String.
             assertThat(result.text).isEqualTo("Rust is a systems programming language.")
+            assertThat(server.lastRequestPath).isEqualTo("/responses")
 
             // A plain-text response carries no tool calls.
             assertThat(result.toolCalls).isEmpty()
@@ -208,10 +140,10 @@ class TypedModelTest {
             assertThat(tools.length()).isEqualTo(1)
             val tool = tools.getJSONObject(0)
             // The engine forwards the typed tool to the provider in OpenAI's
-            // wire format: {type:"function", function:{name, parameters}}.
+            // Responses wire format: {type:"function", name, parameters}.
             assertThat(tool.getString("type")).isEqualTo("function")
-            assertThat(tool.getJSONObject("function").getString("name")).isEqualTo("get_weather")
-            assertThat(tool.getJSONObject("function").getJSONObject("parameters").getString("type"))
+            assertThat(tool.getString("name")).isEqualTo("get_weather")
+            assertThat(tool.getJSONObject("parameters").getString("type"))
                 .isEqualTo("object")
         }
     }
@@ -233,13 +165,15 @@ class TypedModelTest {
             // The provider received both messages (system + user), in order.
             val reqBody = JSONObject(server.lastRequestBody)
             assertThat(reqBody.getString("model")).isEqualTo("gpt-4o")
-            val reqMessages = reqBody.getJSONArray("messages")
+            val reqMessages = reqBody.getJSONArray("input")
             assertThat(reqMessages.length()).isEqualTo(2)
             assertThat(reqMessages.getJSONObject(0).getString("role")).isEqualTo("system")
             assertThat(reqMessages.getJSONObject(0).getString("content"))
                 .isEqualTo("You are a helpful assistant.")
             assertThat(reqMessages.getJSONObject(1).getString("role")).isEqualTo("user")
-            assertThat(reqMessages.getJSONObject(1).getString("content")).isEqualTo("What is Rust?")
+            assertThat(reqMessages.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("type"))
+                .isEqualTo("input_text")
+            assertThat(reqMessages.getJSONObject(1).getJSONArray("content").getJSONObject(0).getString("text")).isEqualTo("What is Rust?")
         }
     }
 }

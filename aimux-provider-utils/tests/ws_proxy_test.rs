@@ -1,4 +1,5 @@
-//! RFC-0034 §2: the global `ProxyConfig` governs WebSocket connections.
+//! RFC-0034 §2: a WebSocket connector's `ProxyConfig` governs its
+//! connections; the built-in default shares the default HTTP transport's.
 //!
 //! Integration tests run a real local WS server and a fake CONNECT proxy on
 //! a dedicated runtime thread (the fixture must outlive every `#[tokio::test]`
@@ -10,8 +11,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use aimux_core::options::TimeoutConfiguration;
-use aimux_provider_utils::http::ProxyConfig;
-use aimux_provider_utils::ws::{WebSocketRequest, ws_connect};
+use aimux_provider_utils::ws::{TungsteniteConnector, WebSocketRequest, ws_connect};
+use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
 use futures::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -65,10 +66,11 @@ fn fixture() -> &'static Fixture {
         });
         let (proxy_port, tunnel_port, direct_port) = ready_rx.recv().expect("fixture thread died");
 
-        // One process-wide proxy config (init_proxy is a set-once global):
-        // everything tunnels through the fake proxy except the direct
-        // server's port, which is covered by a port-specific no_proxy entry.
-        let configured = aimux_provider_utils::http::init_proxy(ProxyConfig {
+        // The default transport's proxy config, which the built-in connector
+        // shares: everything tunnels through the fake proxy except the
+        // direct server's port, which is covered by a port-specific no_proxy
+        // entry.
+        set_default_transport(ReqwestFetch::new(ProxyConfig {
             http_url: Some(format!("http://127.0.0.1:{proxy_port}")),
             // wss targets tunnel too — the live smoke relies on it to drive
             // the rustls branch through the CONNECT proxy against the real
@@ -77,8 +79,7 @@ fn fixture() -> &'static Fixture {
             all_url: None,
             // Port-specific entry: also exercises the port-aware matching.
             no_proxy: Some(format!("127.0.0.1:{direct_port}")),
-        });
-        assert!(configured, "init_proxy must win (no earlier test set it)");
+        }));
 
         Fixture {
             tunnel_port,
@@ -205,6 +206,7 @@ fn ws_request(url: String) -> WebSocketRequest {
             step_ms: None,
             total_ms: Some(10_000),
         }),
+        connector: None,
     }
 }
 
@@ -237,6 +239,25 @@ async fn ws_tunnels_through_connect_proxy() {
         "proxy must see the target authority, saw {authorities:?}"
     );
     assert!(fixture.proxy_connections.load(Ordering::SeqCst) >= 1);
+}
+
+/// A connector with its own settings ignores the default transport's: one
+/// without a proxy reaches the tunnel-only server directly.
+#[tokio::test]
+#[serial_test::serial]
+async fn a_connector_uses_its_own_proxy_settings() {
+    let fixture = fixture();
+    let before = fixture.proxy_connections.load(Ordering::SeqCst);
+    let mut request = ws_request(format!("ws://127.0.0.1:{}", fixture.tunnel_port));
+    request.connector = Some(Arc::new(TungsteniteConnector::new(ProxyConfig::default())));
+    let mut connection = ws_connect(&request).await.expect("direct connect");
+    connection.send_text("own").await.expect("send direct");
+    match connection.next().await {
+        Some(Ok(aimux_provider_utils::ws::WsMessage::Text(text))) => assert_eq!(text, "own"),
+        other => panic!("expected direct echo, got {other:?}"),
+    }
+    connection.close().await;
+    assert_eq!(fixture.proxy_connections.load(Ordering::SeqCst), before);
 }
 
 #[tokio::test]
@@ -563,6 +584,7 @@ async fn live_wss_handshake_through_connect_proxy() {
             step_ms: None,
             total_ms: Some(20_000),
         }),
+        connector: None,
     };
     let _ = &mut request;
 

@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from aimux import openai, anthropic
+from aimux import deepseek, anthropic
 from aimux.wrapper import (
     GenerateTextOptions,
     GenerateTextResult,
@@ -45,7 +45,7 @@ class TestGenerateText:
 
     def test_returns_typed_result_with_text(self):
         with MockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             result = generate_text(model, "What is Rust?")
 
         assert isinstance(result, GenerateTextResult)
@@ -58,7 +58,7 @@ class TestGenerateText:
 
     def test_parses_tool_calls(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             opts = GenerateTextOptions(
                 tools=[
                     FunctionTool(
@@ -92,7 +92,7 @@ class TestGenerateText:
 
     def test_content_is_text_variant(self):
         with MockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             result = generate_text(model, "What is Rust?")
 
         # content[0] is a typed Text content part.
@@ -107,7 +107,7 @@ class TestStreamText:
 
     def test_yields_text_delta_dicts(self):
         with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             parts = list(stream_text(model, "Say hello"))
 
         assert len(parts) > 0
@@ -117,7 +117,7 @@ class TestStreamText:
     def test_stream_part_can_be_typed(self):
         """A yielded dict round-trips through parse_stream_part into a model."""
         with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             first_delta = next(
                 p for p in stream_text(model, "Say hello") if "TextDelta" in p
             )
@@ -135,7 +135,7 @@ class TestStreamText:
         """include_raw_chunks=True surfaces one Raw part per JSON SSE event,
         before the parsed parts ([DONE] excluded)."""
         with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             parts = list(
                 stream_text(model, "Say hello",
                             GenerateTextOptions(include_raw_chunks=True))
@@ -160,7 +160,7 @@ class TestStreamText:
     def test_raw_chunks_off_by_default(self):
         """Default options emit no Raw parts."""
         with MockServer(OPENAI_STREAM, content_type="text/event-stream") as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             parts = list(stream_text(model, "Say hello"))
 
         assert all("Raw" not in p for p in parts)
@@ -194,7 +194,7 @@ class TestOptionsReachProvider:
 
     def test_tools_and_tool_choice_reach_provider(self):
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             opts = GenerateTextOptions(
                 tools=[
                     FunctionTool(
@@ -229,7 +229,7 @@ class TestOptionsReachProvider:
         """The ``tool`` tool-choice variant forces the specific tool at the
         provider (OpenAI renders it as ``{"type":"function","function":{...}}``)."""
         with RecordingMockServer(OPENAI_TOOL_CALL) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             opts = GenerateTextOptions(
                 tools=[FunctionTool(name="get_weather", input_schema={"type": "object"})],
                 tool_choice=ToolChoiceTool(tool_name="get_weather"),
@@ -267,7 +267,7 @@ class TestPromptMessages:
 
     def test_multi_role_messages_reach_provider(self):
         with RecordingMockServer(OPENAI_CHAT) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
             prompt = [
                 ModelMessage(role="system", content="You are a helpful assistant."),
                 ModelMessage(role="user", content="What is Rust?"),
@@ -332,7 +332,7 @@ class TestToolCallRoundTrip:
         )
 
         with SequencedMockServer([OPENAI_TOOL_CALL, OPENAI_CHAT]) as mock:
-            model = openai("test-key", "gpt-4o", mock.url)
+            model = deepseek("test-key", "gpt-4o", mock.url)
 
             # Step 1: model requests a tool call.
             result = generate_text(model, "What's the weather in Tokyo?", opts)

@@ -186,6 +186,25 @@ final class AimuxTests: XCTestCase {
                        Int32(AIMUX_E_TIMEOUT.rawValue))
     }
 
+    /// 19 / 20: a missing API key / provider setting have their own codes and
+    /// carry the consulted environment variable.
+    func testLoadErrorCodes() {
+        XCTAssertEqual(AIMUX_E_NO_OUTPUT_GENERATED.rawValue, 18)
+        XCTAssertEqual(AimuxError.noOutputGenerated(message: "no output", status: -1,
+                                                    retryMs: -1, retryable: false).code, 18)
+        XCTAssertEqual(AIMUX_E_LOAD_API_KEY.rawValue, 19)
+        XCTAssertEqual(AIMUX_E_LOAD_SETTING.rawValue, 20)
+        let key = AimuxError.loadApiKey(message: "no key", status: -1, retryMs: -1, retryable: false,
+                                        envVar: "OPENAI_API_KEY")
+        XCTAssertEqual(key.code, Int32(AIMUX_E_LOAD_API_KEY.rawValue))
+        XCTAssertEqual(key.envVar, "OPENAI_API_KEY")
+        XCTAssertNil(key.status)
+        let setting = AimuxError.loadSetting(message: "no region", status: -1, retryMs: -1, retryable: false,
+                                             envVar: "AWS_REGION")
+        XCTAssertEqual(setting.code, Int32(AIMUX_E_LOAD_SETTING.rawValue))
+        XCTAssertEqual(setting.envVar, "AWS_REGION")
+    }
+
     /// HTTP-shaped failures all arrive as `.apiCall`; the classification is the
     /// `status` field (there are no per-status cases any more).
     func testApiCallClassifiesByStatus() {
@@ -363,9 +382,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let resultJson = try model.generateText(prompt: jsonEncodeString("What is Rust?"))
         let r = parseJSON(resultJson)
         XCTAssertEqual(r["text"] as? String, "Rust is a systems programming language.")
@@ -380,9 +397,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
@@ -422,9 +437,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let prompt = jsonEncode([
             ["role": "system", "content": "You are a helpful assistant."],
             ["role": "user", "content": "What is Rust?"],
@@ -448,9 +461,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
@@ -476,9 +487,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         var parts: [String] = []
         var streamErr: (any Error)?
         model.streamText(
@@ -504,9 +513,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",
@@ -558,7 +565,7 @@ final class AimuxTests: XCTestCase {
 
         let model = try Model.anthropic(
             apiKey: "test-key", modelId: "claude-3-5-sonnet-20241022",
-            baseUrl: server.baseURL
+            baseUrl: server.baseURL + "/v1"
         )
         let r = parseJSON(try model.generateText(prompt: jsonEncodeString("Hello")))
         XCTAssertEqual(r["text"] as? String, "Hello from Claude!")
@@ -583,9 +590,7 @@ final class AimuxTests: XCTestCase {
         try server.start()
         defer { server.stop() }
 
-        let model = try Model.openai(
-            apiKey: "test-key", modelId: "gpt-4o", baseUrl: server.baseURL
-        )
+        let model = try chatModel(server.baseURL)
         let opts = jsonEncode([
             "tools": [[
                 "type": "function",

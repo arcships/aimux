@@ -1067,12 +1067,7 @@ public enum GenerateContent: Codable, Equatable {
     }
 }
 
-public struct GenerateRequest: Codable, Equatable {
-    public var body: JSONValue?
-    public init(body: JSONValue? = nil) { self.body = body }
-}
-
-public struct GenerateResponseMetadata: Codable, Equatable {
+public struct ResponseInfo: Codable, Equatable {
     public var id: String?
     public var timestamp: String?
     public var modelId: String?
@@ -1081,11 +1076,15 @@ public struct GenerateResponseMetadata: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, timestamp, headers, body, modelId = "model_id"
     }
-    public init(id: String? = nil, timestamp: String? = nil, modelId: String? = nil,
-                headers: [String: String]? = nil, body: JSONValue? = nil) {
-        self.id = id; self.timestamp = timestamp; self.modelId = modelId
-        self.headers = headers; self.body = body
+    public init(id: String? = nil, timestamp: String? = nil, modelId: String? = nil, headers: [String: String]? = nil, body: JSONValue? = nil) {
+        self.id = id; self.timestamp = timestamp; self.modelId = modelId; self.headers = headers; self.body = body
     }
+}
+
+public struct RequestInfo: Codable, Equatable {
+    public var body: JSONValue?
+
+    public init(body: JSONValue? = nil) { self.body = body }
 }
 
 /// Raw provider result.
@@ -1095,21 +1094,20 @@ public struct GenerateResult: Codable, Equatable {
     public var usage: Usage?
     public var warnings: [Warning]?
     public var providerMetadata: JSONValue?
-    public var response: GenerateResponseMetadata?
-    public var request: GenerateRequest?
+    public var response: ResponseInfo?
+    public var request: RequestInfo?
 
     enum CodingKeys: String, CodingKey {
         case content
         case finishReason = "finish_reason"
         case usage, warnings
         case providerMetadata = "provider_metadata"
-        case response
-        case request
+        case response, request
     }
 
     public init(content: [GenerateContent], finishReason: FinishReason? = nil, usage: Usage? = nil,
                 warnings: [Warning]? = nil, providerMetadata: JSONValue? = nil,
-                response: GenerateResponseMetadata? = nil, request: GenerateRequest? = nil) {
+                response: ResponseInfo? = nil, request: RequestInfo? = nil) {
         self.content = content; self.finishReason = finishReason; self.usage = usage
         self.warnings = warnings; self.providerMetadata = providerMetadata
         self.response = response; self.request = request
@@ -1292,7 +1290,6 @@ public struct GenerateTextOptions: Codable, Equatable {
     public var providerOptions: JSONValue?
     public var reasoning: ReasoningEffort?
     public var instructions: String?
-    public var bodyOverrides: JSONValue?
     public var maxRetries: UInt32?
     public var timeout: TimeoutConfiguration?
     public var includeRawChunks: Bool?
@@ -1346,7 +1343,6 @@ public struct GenerateTextOptions: Codable, Equatable {
         case headers
         case providerOptions = "provider_options"
         case reasoning, instructions
-        case bodyOverrides = "body_overrides"
         case maxRetries = "max_retries"
         case timeout
         case includeRawChunks = "include_raw_chunks"
@@ -1360,7 +1356,7 @@ public struct GenerateTextOptions: Codable, Equatable {
                 tools: [Tool]? = nil, toolChoice: ToolChoice? = nil,
                 headers: [String: String]? = nil, providerOptions: JSONValue? = nil,
                 reasoning: ReasoningEffort? = nil, instructions: String? = nil,
-                bodyOverrides: JSONValue? = nil, maxRetries: UInt32? = nil,
+                maxRetries: UInt32? = nil,
                 timeout: TimeoutConfiguration? = nil,
                 includeRawChunks: Bool? = nil,
                 sessionId: String? = nil,
@@ -1371,7 +1367,7 @@ public struct GenerateTextOptions: Codable, Equatable {
         self.output = output; self.seed = seed; self.tools = tools
         self.toolChoice = toolChoice; self.headers = headers; self.providerOptions = providerOptions
         self.reasoning = reasoning; self.instructions = instructions
-        self.bodyOverrides = bodyOverrides; self.maxRetries = maxRetries; self.timeout = timeout
+        self.maxRetries = maxRetries; self.timeout = timeout
         self.includeRawChunks = includeRawChunks
         self.sessionId = sessionId
         self.repairToolCallBox = repairToolCall.map(RepairToolCallBox.init(run:))

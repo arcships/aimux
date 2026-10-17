@@ -88,7 +88,7 @@ Core user operation
 | error context 安全 | AI SDK 传原始 request context；Aimux 写入 public error 前使用统一白名单/脱敏/大小限制，binary 与大型 data URL 只保留摘要 |
 | 错误 body 上限 | AI SDK 全量读取错误 body（仅受 2 GiB 防 OOM 上限，超限直接抛 `DownloadError` 替换原错误）；Aimux 的 `ApiCallError` 会跨 FFI 序列化并写入 recording，因此错误 body 采用 best-effort 截断读：public `response_body` 上限 64 KiB（lossy 解码后按字符边界执行，带 `…(truncated)` 标记），解析上限 1 MiB 保证超大但合法的错误 JSON 仍能进 provider mapper，读取中途连接死亡保留已收到的部分 |
 | 成功 JSON body 上限 | AI SDK 对成功 body 复用同一个 2 GiB 下载上限；Aimux 的成功 JSON body 会同时以 bytes + `T` 的形式驻留（`raw_value` 是 best-effort 的第二次解析，不再额外持有 `Value` 克隆），2 GiB 上限会放大峰值内存，因此 `create_json_response_handler` 改用独立更小的默认值 `DEFAULT_MAX_JSON_RESPONSE_SIZE`（64 MiB），可通过 `HttpRequest::max_json_response_bytes` 按请求覆盖；`create_binary_response_handler` 不受影响，仍使用 `DEFAULT_MAX_DOWNLOAD_SIZE`（2 GiB） |
-| provider 默认 retry | 保留既有 `RetryConfig` 源码与行为兼容；Core 读取 model config，per-call 只覆盖 `max_retries`（目标设计已撤销：[aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) D14、§9.4 删除 model/provider 级默认 retry，组合模型改为给每个 child 配预算；删除它的那层合入前，这里仍是主线现状） |
+| provider 默认 retry | 调用级常量默认（`max_retries` 2 / `initial_delay` 2000 ms / `backoff_factor` 2）；provider 没有 retry 设置，`prepare_retries(max_retries, abort)` 是唯一读取点，per-call 只传 `max_retries`（RFC-0036 D-e） |
 | jitter | AI SDK 默认不抖动但留 `getDelayInMs` 注入点；Aimux 用同一注入点默认注入 RFC-0009 Full Jitter，只作用于 exponential delay，server hint 精确遵守（§6.5） |
 | 第一条 SSE error | AI SDK OpenAI provider 会扫描到首个 semantic output；Aimux 保留 RFC-0016 的更窄 first-event peek，使立即到达的 error 成为 retry 边界内的 attempt 失败（§8.3） |
 | 默认超时 | 与 AI SDK 一致无默认 `total_ms`；Aimux 有意保留非流式 exchange 的 30s whole-response 上限，但从 shared-client 全局配置下移到单次 exchange，流式 exchange 豁免（§5.4） |
@@ -296,7 +296,7 @@ redaction helper。不得依赖每个 Provider 自己记得脱敏。
 
 它们遵循 AI SDK 的单次 fetch attempt 契约：
 
-- 不接受 `RetryConfig`；
+- 不接受 retry 配置；
 - 不接受 `TimeoutConfiguration`；
 - 不执行 backoff；
 - 不调用自身或另一个 API helper 进行 retry；
@@ -357,17 +357,18 @@ fetch 无默认 exchange timeout 的有意差异，CHANGELOG 必须明确。
 | `mergeAbortSignals` | 不逐字移植；Core 的 `tokio::select!` 同时观察 caller signal、deadline 和 operation future（§8.0） |
 | `setAbortTimeout` | `timeout::OperationTimeout` 保存 deadline，驱动 future 直接 `sleep_until`（§8.0） |
 
-Core operation 把 per-call override、既有 model `RetryConfig` 和 caller abort 交给同名函数：
+Core operation 把 per-call override 和 caller abort 交给同名函数：
 
 ```text
-prepare_retries(max_retries, retry_config, abort_signal)
+prepare_retries(max_retries, abort_signal)
 ```
 
-`max_retries=None` 使用 `retry_config.max_retries`（默认 2）；per-call `Some(n)` 只覆盖
-该计数，`initial_delay` 和 `backoff_factor` 保持既有配置。`RetryConfig` 的 canonical
-定义移到 `aimux-core::retry`，`aimux-provider-utils::RetryConfig` 和
-`aimux_provider_utils::retry::RetryConfig` 都 re-export 同一类型。旧
-`retry_config` / `with_retry_config` 保留，不增加第二套 provider config 命名。
+默认值是调用级常量（`DEFAULT_MAX_RETRIES` = 2、`DEFAULT_INITIAL_DELAY_MS` = 2000、
+`DEFAULT_BACKOFF_FACTOR` = 2，与 AI SDK 一致）：`max_retries=None` 用 2，per-call
+`Some(n)` 只覆盖该计数，`initial_delay` 和 `backoff_factor` 是常量。**provider 没有 retry
+设置**：不再有 provider 级的 retry 配置类型、配置字段、builder 方法或 model trait 上的只读
+getter，`prepare_retries` 是 retry 配置的唯一读取点（RFC-0036 D-e）。jitter、`Retry-After`
+和错误历史不变。
 
 两层函数的边界与 AI SDK 相同，**不得合并成一个 APICall-aware 的 primitive**：
 
@@ -395,7 +396,7 @@ async fn retry_with_exponential_backoff_respecting_retry_headers<..>(
 }
 ```
 
-`prepare_retries(max_retries, retry_config, abort_signal)` 返回 `PreparedRetries { max_retries, retry }`
+`prepare_retries(max_retries, abort_signal)` 返回 `PreparedRetries { max_retries, retry }`
 的 Rust 形式是 `PreparedRetries::retry(&self, op)`，与 AI SDK 的 `{ maxRetries, retry }` 一致；
 不另起额外的 retry 类型。
 
@@ -788,6 +789,10 @@ start/status 流），Core 拥有 poll 循环并分别 retry 两个阶段：
   设置；`poll.timeout` 是整个轮询的预算：每次 `do_status`（含其重试）与剩余时间
   竞争，超时即丢弃挂起的请求，以 `Video generation timed out after {timeoutMs}ms.`
   失败（与上游一致，ai 7.0.127 `generate-video/generate-video.ts:543-549`、`:586-625`）；
+- 所有批次完成后，Core 按顺序下载以 URL 返回的视频，返回 `VideoData::Binary`
+  （上游 `generateVideo` 返回 `GeneratedFile`，ai 7.0.127
+  `generate-video/generate-video.ts:383-410`）；传输为 `VideoCallOptions::download`，
+  缺省为受控下载 `create_download(None)`。下载不重试，计入 operation timeout；
 - Provider-specific polling delay 不是通用 exponential retry；
 - 耗尽产生的 `RetryError` 原样透传，外层不得再次 submit。
 - **修订**（RFC-0031 review）：`options.n` 按 `VideoModel::max_videos_per_call`
@@ -822,15 +827,14 @@ Composite 外层不重放；重试放在已有语义边界内：
 
 ### 9.4 Files
 
-`Files::upload_file` 在本 RFC 中直接作为公开 operation，没有对应的
-`do_upload_file`；本轮不为它增加第二层。（上游另有用户操作 `uploadFile`，直接调用
-provider 的 `files().uploadFile` 且不重试，见 ai 7.0.127 `upload-file/upload-file.ts:37`、
-`:94`。V4 分层中删除 provider 级 `RetryConfig` 的那层会去掉这里的重试，与上游一致；
-该层合入前，下面描述的重试仍是主线现状。）**修订**（RFC-0031 review）：`upload_file`
-自己用 Provider 已配置的 `RetryConfig` 重试（与 `execute_list_models` 同一
-primitive）。这是“创建资源类 POST 不自动重试”一般规则的显式例外，前提是
-upload 不计费、失败的 create-file 请求不会返回可复用的 file id。多阶段的
-Google Files 按 exchange 分别重试，而不是包住整个 `upload_file`。
+`Files::upload_file` 按 AI SDK Provider SPI 本身就是公开 operation，没有对应的
+`do_upload_file`；本轮不为它虚构第二层。**修订**（RFC-0031 review）：`upload_file`
+自己重试（RFC-0031 review 的修订）。**RFC-0036 撤销该修订**：provider 没有 retry
+设置，`upload_file`（OpenAI、Anthropic、Google Files 的多阶段上传同样）与
+`list_models` 一样是单次 exchange，不重试——“创建资源类 POST 不自动重试”的一般规则
+不再有例外；需要重试的调用方自己包一层。上游的用户操作 `uploadFile` 同样直接调用
+provider 的 `files().uploadFile` 且不重试（ai 7.0.127 `upload-file/upload-file.ts:37`、
+`:94`）。
 
 ---
 
@@ -856,9 +860,9 @@ search
 所有 binding 调用这些 user operations，不得直接调用 provider-facing `do_*`。`do_*`
 继续作为 Provider SPI。
 
-（目标设计已撤销：[aisdk-architecture-alignment.md](aisdk-architecture-alignment.md) D14、§9.4 删除 model/provider 级默认 retry，组合模型改为给每个 child 配预算；删除它的那层合入前，这里仍是主线现状）为保留现有 model-level 配置，各 model trait 提供只读 `retry_config()`；只有
-Core user operation 读取它。Provider 的 `do_*` 不得重试整个 operation；§9.1 的
-已创建 job 安全 exchange 例外除外。
+retry 只有调用级一个入口（`prepare_retries(max_retries, abort)`），model trait 上没有
+任何 retry getter。Provider 的 `do_*` 不得重试整个 operation；§9.1 的已创建 job 安全
+exchange 例外除外（轮询阶段按 provider 包内常量有界执行，`shared::poll`）。
 
 ### 10.2 Recording
 
@@ -919,9 +923,9 @@ Node/Python/Go/Java/Kotlin/Swift/Flutter。
 | `parse_provider_error` | 删除；由 failed response handler 替代 |
 | `TimeoutBodyStream` | 删除；由 Core semantic stream timeout 替代 |
 | `get_retry_delay_ms_with_jitter` | 删除；Full Jitter 改为 `aimux-core::retry` 里 `get_delay_ms` hook 的默认实现，且不再抖动 server hint（§6.5） |
-| Provider `resolve_retry_config` | 删除；effective max retries 由 Core 解析 |
-| Provider-owned retry execution | 删除；旧 `RetryConfig` 类型/配置 API 保留，由 Core 执行 |
-| `aimux-provider-utils/src/retry.rs` | 仅保留 `RetryConfig` 兼容 re-export；retry 实现只在 `aimux-core::retry` |
+| Provider 内的 retry 解析函数 | 删除；effective max retries 由 Core 解析（`prepare_retries`） |
+| Provider-owned retry execution | 删除；provider 没有 retry 设置，Core 以调用级常量默认执行 |
+| `aimux-provider-utils/src/retry.rs` | 删除；retry 实现只在 `aimux-core::retry` |
 | `logging.rs::is_sensitive_key` | 删除；统一用 `aimux_core::recording::is_sensitive_key` |
 | `shared.rs::AbortSignal` | 实现迁到 `abort_signal.rs`，旧路径 re-export；timeout 不塞进 signal |
 

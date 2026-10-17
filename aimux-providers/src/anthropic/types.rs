@@ -15,6 +15,15 @@ pub struct AnthropicResponse {
     pub content: Vec<ContentBlock>,
     pub stop_reason: Option<String>,
     pub usage: AnthropicUsage,
+    /// The matched custom stop sequence, when generation ended on one
+    /// (`providerMetadata.anthropic.stopSequence`).
+    #[serde(default)]
+    pub stop_sequence: Option<String>,
+    /// The code-execution container of the turn, if any
+    /// (`providerMetadata.anthropic.container`). Left opaque; the model layer
+    /// maps it into the result-level provider metadata.
+    #[serde(default)]
+    pub container: Option<Value>,
     /// Optional `context_management` object echoed by the API, carrying
     /// `applied_edits`. Left opaque here; the model layer maps it into
     /// `providerMetadata.anthropic.contextManagement`.
@@ -169,22 +178,30 @@ pub enum ContentBlock {
 /// the count of thinking/reasoning tokens.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct OutputTokenDetails {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_tokens: Option<u32>,
 }
 
+/// The `usage` object of a response, `message_start` or `message_delta`.
+///
+/// Serializing it reproduces what the API sent: absent fields stay absent and
+/// every field this type does not name (`iterations`, `service_tier`, ...) is
+/// kept in `extra`, so the raw usage and `providerMetadata.anthropic.usage`
+/// are the provider's own object.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AnthropicUsage {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens_details: Option<OutputTokenDetails>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_creation_input_tokens: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read_input_tokens: Option<u32>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 // ── Streaming events ──
@@ -208,6 +225,8 @@ pub enum StreamEvent {
         delta: MessageDeltaBody,
         #[serde(default)]
         usage: Option<AnthropicUsage>,
+        #[serde(default)]
+        context_management: Option<Value>,
     },
     #[serde(rename = "message_stop")]
     MessageStop,
@@ -255,4 +274,8 @@ pub struct DeltaBlock {
 pub struct MessageDeltaBody {
     #[serde(default)]
     pub stop_reason: Option<String>,
+    #[serde(default)]
+    pub stop_sequence: Option<String>,
+    #[serde(default)]
+    pub container: Option<Value>,
 }
