@@ -4,6 +4,7 @@
 > **Date**: 2026-08-05
 > **Scope**: `aimux-core` 新增 `session_id` 字段(显式为主 + 隐式推断兜底),把连续调用聚合成会话组,为录制(RFC-0023)、缓存探测(RFC-0015)、回放提供链级视图。不做 fork 语义、不做 agent loop。
 > **Related**: [RFC-0023](0023-runtime-request-recording.md) 录制(Recording 加 session_id)、[RFC-0015](0015-cache-trace-audit.md) 缓存探测(链级聚合)、[RFC-0019](0019-session-affinity.md) 会话亲和(路由层 session,与本 RFC 可观测层 session 共享 id 概念但职责不同)、[RFC-0016](0016-align-with-aisdk.md) H4(不做 agent loop 边界)
+> **后续变更**: 2026-10-16(#252)`CallOptions` 不再有 `max_retries`、`timeout`、`session_id`。三者是操作设置:调用方在 `GenerateTextOptions` 上传入,`generate_text` / `stream_text` 把它们放进 `OperationSettings`,模型调用期间下层用 `OperationSettings::current()` 读取。AI SDK 同样把 `maxRetries`、`timeout` 放在 `generateText` 的请求选项上,`LanguageModelV4CallOptions` 里没有它们。录制仍把三者写在 `InputRecord.options` 的原键名下,录制格式不变。§1.2 表格与 §3.1 已按此改写;§7 改动清单与 §10 P1 记录的是当时的落点。
 
 ---
 
@@ -27,7 +28,7 @@ aimux 当前的录制(RFC-0023)、缓存探测(RFC-0015)、回放都是**孤立�
 | | RFC-0019 会话亲和(路由层) | 本 RFC 会话聚合(可观测层) |
 |---|---|---|
 | 目的 | 传 session 头让**上游**做粘性路由 | 归组调用让**本地**报告链级表现 |
-| 载体 | `CallOptions.headers`(`x-session-id` 等,各厂商头名不同) | `CallOptions.session_id`(新字段,统一) |
+| 载体 | `CallOptions.headers`(`x-session-id` 等,各厂商头名不同) | `GenerateTextOptions.session_id`(操作设置,统一) |
 | 代码改动 | 零(文档方案,复用现有 headers) | 加字段 + 聚合逻辑 |
 | 消费者 | 上游网关/provider | 录制/缓存探测/回放 |
 
@@ -50,21 +51,21 @@ aimux 当前的录制(RFC-0023)、缓存探测(RFC-0015)、回放都是**孤立�
 ### 3.1 session_id 字段
 
 ```rust
-// aimux-core/src/options.rs 增量
+// aimux-core/src/operation.rs
 
-pub struct CallOptions {
-    // ... 现有字段 ...
-
+pub struct OperationSettings {
+    pub max_retries: Option<u32>,
+    pub timeout: Option<TimeoutConfiguration>,
     /// 会话标识,用于把连续调用聚合成组(可观测用,见 RFC-0024)。
     /// 显式传入优先;None 时可由隐式推断填充(若开启)。
     /// 与 RFC-0019 的会话亲和头正交:本字段供本地归组,headers 里的
     /// session 头供上游路由,两者可共用同一 id 值但走不同路径。
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
 }
 ```
 
-`GenerateTextOptions`(用户面)同步加 `session_id: Option<String>`。`#[serde(skip_serializing_if)]` 保证未传时不进 JSON,不影响现有 wire 格式。
+用户面是 `GenerateTextOptions.session_id: Option<String>`。`generate_text` / `stream_text` 把它连同 `max_retries`、`timeout` 放进 `OperationSettings`,模型调用期间下层用 `OperationSettings::current()` 读取;模型调用选项 `CallOptions` 不带它,与 AI SDK 的 `LanguageModelV4CallOptions` 一致。`#[serde(skip_serializing_if)]` 保证未传时不进 JSON,不影响现有 wire 格式。
 
 **为什么不用 `headers` 复用**(RFC-0019 路径):
 - headers 的 session 头是**厂商专属**的(OpenRouter `x-session-id`、Cloudflare `x-session-affinity`、Anthropic `x-claude-code-session-id`...),头名各不同,aimux 无法从中统一提取"会话 id"做归组。
