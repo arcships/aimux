@@ -1,11 +1,11 @@
 //! Session aggregation (RFC-0024): session_id 归组基础设施.
 //!
 //! Groups consecutive calls into sessions via an explicit `session_id`
-//! (`CallOptions.session_id`, explicit-first) with an optional prompt-prefix
-//! continuation inferer as fallback (opt-in, off by default). The session
-//! index itself is an in-process, bounded LRU — it is never persisted
-//! (RFC-0024 §6.5: Recording/TraceRecord keep the `session_id` field, so an
-//! index can be rebuilt after a restart).
+//! (`GenerateTextOptions.session_id`, an operation setting, explicit-first)
+//! with an optional prompt-prefix continuation inferer as fallback (opt-in,
+//! off by default). The session index itself is an in-process, bounded
+//! LRU — it is never persisted (RFC-0024 §6.5: Recording/TraceRecord keep
+//! the `session_id` field, so an index can be rebuilt after a restart).
 //!
 //! Registration is explicit and opt-in, mirroring RFC-0023's `init_recording`
 //! pattern: nothing is recorded and no state exists until
@@ -35,7 +35,7 @@ use crate::language_model_message::LanguageModelPrompt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub enum SessionSource {
-    /// Passed explicitly via `CallOptions.session_id` / `GenerateTextOptions.session_id`.
+    /// Passed explicitly via `GenerateTextOptions.session_id`.
     Explicit,
     /// Produced by the opt-in `SessionInferer` (ids carry an `auto-` prefix).
     Inferred,

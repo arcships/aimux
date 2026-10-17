@@ -4,6 +4,7 @@
 > **Date**: 2026-08-01(初稿)/ 2026-08-05(重写)
 > **Scope**: aimux 统一 LLM 访问层上的可选缓存命中探测能力——采集 request_body 指纹 + usage 快照,客户端对连续 agent 调用的原始请求体做前缀对比,判定各 provider 服务端上报的 cache 命中率是否掺水,暴露 verdict 数据与查询接口供消费。**探测本身进 core,探测业务(CLI)独立,告警外部消费。**
 > **Related**: [RFC-0014](0014-logging.md) 统一日志(挂载其 span 树)、[RFC-0023](0023-runtime-request-recording.md) 录制与回放(明文兄弟子系统,call_id 关联)、[RFC-0024](0024-session-aggregation.md) 会话聚合(session_id 统一来源)、[RFC-0009](0009-request-resilience.md) retry/超时(重试语义影响判定规则)、研究存档 [cache-tracing](../docs/internal/cache-tracing/00-research-plan.md)
+> **后续变更**: 2026-10-16(#252)`CallOptions` 不再有 `max_retries`、`timeout`、`session_id`。三者是操作设置:调用方在 `GenerateTextOptions` 上传入,`generate_text` / `stream_text` 把它们放进 `OperationSettings`,模型调用期间下层用 `OperationSettings::current()` 读取。AI SDK 同样把 `maxRetries`、`timeout` 放在 `generateText` 的请求选项上,`LanguageModelV4CallOptions` 里没有它们。录制仍把三者写在 `InputRecord.options` 的原键名下,录制格式不变。§5、§8 已按此改写;§10 第 7 条与 §11 决策记录里的 `CallOptions.session_id` 是当时的落点。
 
 ---
 
@@ -139,9 +140,9 @@ U = min(prompt, quantize_down(token_upper(LCP_i), gran))
 
 ### 5.1 TraceRecord(serde + ts_rs,FFI JSON 惯例)
 
-请求身份(provider/model/request_id/**session_id(来自 RFC-0024 CallOptions 字段)**/时间戳)+ Fingerprint(块哈希链/body_hash/字节数/token_estimate)+ UsageSnapshot(7 字段平铺 + raw 透传)+ ResponseCacheHeaders + RequestCacheHints(请求侧档位,best-effort)+ Verdict + error。全 owned、Clone、Send+Sync;明文永不进 trace。
+请求身份(provider/model/request_id/**session_id(来自 RFC-0024 的操作设置)**/时间戳)+ Fingerprint(块哈希链/body_hash/字节数/token_estimate)+ UsageSnapshot(7 字段平铺 + raw 透传)+ ResponseCacheHeaders + RequestCacheHints(请求侧档位,best-effort)+ Verdict + error。全 owned、Clone、Send+Sync;明文永不进 trace。
 
-**session_id 来源(2026-08-05 对齐)**:`TraceRecord.session_id` 统一来自 [RFC-0024](0024-session-aggregation.md) 的 `CallOptions.session_id`(显式为主 + 隐式推断兜底)。**不再用 `TraceLayer::with_session` 实例注入**——同一 wrapper 无法跟随 agent loop 中途换 session。`with_session` 降级为"默认 session_id"(CallOptions 未传时 fallback),并保持会话密钥注入(HMAC 脱敏 key)。
+**session_id 来源(2026-08-05 对齐)**:`TraceRecord.session_id` 统一来自 [RFC-0024](0024-session-aggregation.md) 的操作设置 `session_id`(显式为主 + 隐式推断兜底;`TraceLayer` 在模型调用期间用 `OperationSettings::current()` 读取)。**不再用 `TraceLayer::with_session` 实例注入**——同一 wrapper 无法跟随 agent loop 中途换 session。`with_session` 降级为"默认 session_id"(操作未设 session_id 时 fallback),并保持会话密钥注入(HMAC 脱敏 key)。
 
 ### 5.2 统计口径(防 D3 口径叠加坑)
 
@@ -178,7 +179,7 @@ pub struct TraceLayer { /* inner: Arc<dyn LanguageModel>, sink: Arc<dyn TraceSin
 
 impl TraceLayer {
     pub fn new(inner: Arc<dyn LanguageModel>, sink: Arc<dyn TraceSink>) -> Self;
-    /// 默认 session_id(CallOptions.session_id 未传时 fallback)+ 会话密钥(指纹 HMAC 脱敏)
+    /// 默认 session_id(操作未设 session_id 时 fallback)+ 会话密钥(指纹 HMAC 脱敏)
     pub fn with_default_session(self, session_id: String, key: [u8; 32]) -> Self;
     /// 挂判定引擎(缺省 no-op,verdict=None,不破坏现有流程)
     pub fn with_auditor(self, auditor: Arc<dyn CacheAuditor>) -> Self;
@@ -277,7 +278,7 @@ pub struct PrefixBreak {
 | **缓存可复现性验证** | 对同一录制多次[请求回放](0023-runtime-request-recording.md)(重发真实 API),跑探测算法看 verdict 是否稳定(验证 provider 缓存稳定性/抖动) | ② CLI 组合两者 |
 | **共享 ring-store 模式** | 探测的 `RingTraceStore` 与录制的 `RingRecorder` 共用 FIFO 环形 + TTL 过期 + export 模式,类型不同(`TraceRecord` vs `Recording`);先实施方定义抽象,后实施方复用 | core 内协调 |
 | **共享 LCP/前缀算法** | 探测的块哈希链 LCP 与回放的 `PrefixMatcher`(RFC-0023)共用"前缀最长公共匹配"算法模块 | core 内协调 |
-| **session_id 统一** | 探测/录制/回放共用 [RFC-0024](0024-session-aggregation.md) 的 `CallOptions.session_id` 归组 | RFC-0024 |
+| **session_id 统一** | 探测/录制/回放共用 [RFC-0024](0024-session-aggregation.md) 的操作设置 `session_id` 归组 | RFC-0024 |
 
 **告警闭环(③外部消费,远期)**:探测 verdict → 外部应用告警"provider 掺水" → 回放策略切换(RFC-0021 RouterModel 对该 provider 优先用客户端 mock 回放)。这是三者的终极闭环,但属外部应用逻辑,本 RFC 只保证数据可消费。
 

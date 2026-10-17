@@ -447,28 +447,24 @@ impl LanguageModel for OpenResponsesModel {
             usage,
             warnings,
             provider_metadata: None,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::GenerateResponse {
-                body: response_body,
+            response: Some(aimux_core::shared::ResponseInfo {
                 headers: Some(response_headers),
-                ..aimux_core::result::GenerateResponse::from(response)
+                body: response_body,
+                ..response.into()
             }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        let headers = self.build_headers(options.headers.as_ref());
         validate_tool_output_media(&options.prompt)?;
-        let (body, warnings) =
+        let headers = self.build_headers(options.headers.as_ref());
+        let (mut stream_body, warnings) =
             build_request_body(&self.model_id, options, &self.config.provider_options_name);
 
-        let stream_body = {
-            let mut b = body.clone();
-            if let Some(obj) = b.as_object_mut() {
-                obj.insert("stream".to_string(), json!(true));
-            }
-            b
-        };
+        if let Some(obj) = stream_body.as_object_mut() {
+            obj.insert("stream".to_string(), json!(true));
+        }
 
         let resp = aimux_provider_utils::post_json_to_api(
             HttpRequest::new(
@@ -828,8 +824,10 @@ impl LanguageModel for OpenResponsesModel {
 
         Ok(StreamResult {
             stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::StreamResponse {
+            request: Some(aimux_core::shared::RequestInfo {
+                body: Some(stream_body),
+            }),
+            response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })

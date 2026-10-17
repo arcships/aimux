@@ -196,7 +196,7 @@ if err != nil {
 fmt.Println(result)
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -556,8 +556,9 @@ Typed structs live in `bindings/go/types.go` (text) and
 `bindings/go/multimodal_types.go` (multimodal): `GenerateTextOptions`,
 `GenerateTextResult`, `StreamPart`, `ModelMessage`, `Tool`, `ToolChoice`
 (with helpers `ToolChoiceAuto()` / `ToolChoiceNone()`), `ToolCall`,
-`ToolResult`, `Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
-`ResponseFormat`, `ReasoningEffort`, `Warning`, `GenerateResult`,
+`ToolResult`, `LanguageModelUsage`, `StepResult`, `FinishReasonUnified`,
+`Usage`, `FinishReason`, `Role`, `MessageContent`, `ContentPart`,
+`ReasoningEffort`, `Warning`, `GenerateResult`, `GenerateObjectResult`,
 `RawToolCall`, `ToolCallRepairContext`, `RepairToolCallFunc`, plus
 `EmbeddingCallOptions/Result`, `SpeechCallOptions/Result`,
 `ImageCallOptions/Result`, `TranscriptionCallOptions/Result`,

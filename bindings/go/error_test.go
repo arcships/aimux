@@ -471,8 +471,9 @@ func TestEmbedRejectsRawPassThroughOpts(t *testing.T) {
 }
 
 func TestCodeFromCRejectsOutOfRange(t *testing.T) {
-	// 4 is retired; 14 is Retry; 15..17 are tool-call errors.
-	for _, bad := range []int{0, 4, 18, 999} {
+	// 4 is retired; 14 is Retry; 15..17 are tool-call errors; 18 is
+	// NoOutputGenerated.
+	for _, bad := range []int{0, 4, 19, 999} {
 		if _, ok := codeFromC(bad); ok {
 			t.Fatalf("%d is not an AiMuxError variant", bad)
 		}
@@ -486,6 +487,9 @@ func TestCodeFromCRejectsOutOfRange(t *testing.T) {
 	}
 	if c, ok := codeFromC(14); !ok || c != CodeRetry {
 		t.Fatalf("14 → %v, %v; want CodeRetry", c, ok)
+	}
+	if c, ok := codeFromC(18); !ok || c != CodeNoOutputGenerated || c.String() != "NoOutputGenerated" {
+		t.Fatalf("18 → %v, %v; want CodeNoOutputGenerated", c, ok)
 	}
 }
 

@@ -295,6 +295,7 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
         | AiMuxError::InvalidPrompt(_)
         | AiMuxError::MissingToolResults { .. }
         | AiMuxError::ToolChoiceViolation(_)
+        | AiMuxError::NoOutputGenerated(_)
         | AiMuxError::TokenExpired(_)
         | AiMuxError::UnsupportedFunctionality(_)
         | AiMuxError::NoSuchModel { .. }
@@ -349,6 +350,7 @@ fn variant_set_is_exactly_the_wire_tag_list() {
             model_id: "x".into(),
             content: vec![],
         })),
+        AiMuxError::NoOutputGenerated("x".into()),
         AiMuxError::TokenExpired("x".into()),
         AiMuxError::UnsupportedFunctionality("x".into()),
         AiMuxError::NoSuchModel {
@@ -383,6 +385,7 @@ fn variant_set_is_exactly_the_wire_tag_list() {
             "InvalidToolInput",
             "JsonParse",
             "MissingToolResults",
+            "NoOutputGenerated",
             "NoSuchModel",
             "NoSuchProvider",
             "NoSuchTool",

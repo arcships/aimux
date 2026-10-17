@@ -8,7 +8,7 @@
  * Errors: every fallible C call returns an `aimux_error_t *` ([Pointer]?):
  * null = success, result written to the trailing out-parameter
  * ([LongByReference] for handles, [PointerByReference] for JSON strings);
- * non-null = failure. Its unified code identifies [AimuxException] (1..17),
+ * non-null = failure. Its unified code identifies [AimuxException] (1..18),
  * [RecordingException] (100..105), or a C ABI failure (200..206). The last
  * range maps to `IllegalStateException("aimux ffi: …")`. A decoder releases
  * the returned pointer with `aimux_error_free`.
@@ -290,7 +290,7 @@ private fun ffiError(e: Pointer, prefix: String): IllegalStateException {
 }
 
 /**
- * Decode an error from a call that may return `AiMuxError`: 1..17 →
+ * Decode an error from a call that may return `AiMuxError`: 1..18 →
  * [AimuxException]; 200..206 → [IllegalStateException]. Frees [e].
  */
 internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeException {
@@ -299,7 +299,7 @@ internal fun expectAimuxError(e: Pointer, context: String = ""): RuntimeExceptio
         val code = FFI.lib.aimux_error_code(e)
         if (isFfiCode(code)) return ffiError(e, prefix)
         // Code 4 is retired; Retry is 14 and tool errors are 15..17.
-        check(code in AIMUX_E_OTHER..AIMUX_E_TOOL_CALL_REPAIR && code != 4) {
+        check(code in AIMUX_E_OTHER..AIMUX_E_NO_OUTPUT_GENERATED && code != 4) {
             "${prefix}aimux ffi: expected AiMuxError code, got $code"
         }
         return AimuxException.fromC(e, prefix)
@@ -533,9 +533,9 @@ class Model internal constructor(handle: Long) : Closeable {
      * Generate a structured JSON object (M12, RFC-0016).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }` via
-     * [optsJson] for schema control; aimux-core applies JSON repair before
-     * parsing.
+     * `GenerateObjectResult`. Pass `"output": {"Object": {"schema": ...}}` via
+     * [optsJson] to describe the object; the model's text must parse as JSON
+     * and match the schema.
      *
      * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
      * @param optsJson Optional JSON-serialized GenerateTextOptions.
@@ -558,11 +558,11 @@ class Model internal constructor(handle: Long) : Closeable {
      * (M11, RFC-0016). Synchronous (blocks until the stream finishes).
      *
      * Same signature as [generateText]; returns a JSON-serialized
-     * `StreamTextResultAggregated`.
+     * `GenerateTextResult`.
      *
      * @param promptJson JSON prompt string (bare value or {"prompt": ...}).
      * @param optsJson Optional JSON-serialized GenerateTextOptions.
-     * @return JSON-serialized StreamTextResultAggregated.
+     * @return JSON-serialized GenerateTextResult.
      * @throws AimuxException on AiMuxError.
      * @throws IllegalArgumentException when a raw JSON argument is malformed; IllegalStateException after [close].
      */

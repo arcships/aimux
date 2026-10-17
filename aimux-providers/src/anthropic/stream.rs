@@ -97,7 +97,6 @@ fn build_anthropic_request(
     build_headers: &impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
-    recording_context: Option<aimux_core::recording::RecordingContext>,
 ) -> Result<(HttpRequest, HttpBody), AiMuxError> {
     // Serialize once; the Bytes path sends these exact bytes and the closure
     // signs over them, guaranteeing signature/body agreement.
@@ -109,6 +108,8 @@ fn build_anthropic_request(
         BodyEncoding::Bytes => HttpBody::Bytes(body_bytes, "application/json".to_string()),
     };
 
+    // The recording context of the operation the call runs in.
+    let recording_context = aimux_core::recording::RecordingContext::current();
     Ok((
         HttpRequest {
             url: endpoint.to_string(),
@@ -854,18 +855,11 @@ pub(crate) async fn anthropic_generate_core(
     build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
-    recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: &ToolNameMapping,
     generate_id: &(dyn Fn() -> String + Send + Sync),
 ) -> Result<GenerateResult, AiMuxError> {
-    let (request, request_body) = build_anthropic_request(
-        endpoint,
-        &body,
-        &build_headers,
-        body_encoding,
-        abort_signal,
-        recording_context,
-    )?;
+    let (request, request_body) =
+        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
     let resp = aimux_provider_utils::post_to_api(
         request,
         request_body,
@@ -875,6 +869,8 @@ pub(crate) async fn anthropic_generate_core(
     .await?;
 
     let response_body = resp.raw_value;
+    let response_headers = resp.response_headers;
+
     let data: AnthropicResponse = resp.value;
 
     let content = parse_anthropic_content(&data.content, tool_names, generate_id);
@@ -899,16 +895,14 @@ pub(crate) async fn anthropic_generate_core(
         usage,
         warnings,
         provider_metadata: None,
-        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::result::GenerateResponse {
+        response: Some(aimux_core::shared::ResponseInfo {
+            id: Some(data.id),
+            timestamp: None,
+            model_id: Some(data.model),
+            headers: Some(response_headers),
             body: response_body,
-            headers: None,
-            ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                id: Some(data.id),
-                timestamp: None,
-                model_id: Some(data.model),
-            })
         }),
+        request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
 }
 
@@ -957,18 +951,11 @@ pub(crate) async fn anthropic_stream_core(
     build_headers: impl Fn(&[u8], &str) -> Result<Vec<(String, String)>, AiMuxError>,
     body_encoding: BodyEncoding,
     abort_signal: Option<AbortSignal>,
-    recording_context: Option<aimux_core::recording::RecordingContext>,
     tool_names: ToolNameMapping,
     generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
-    let (request, request_body) = build_anthropic_request(
-        endpoint,
-        &body,
-        &build_headers,
-        body_encoding,
-        abort_signal,
-        recording_context,
-    )?;
+    let (request, request_body) =
+        build_anthropic_request(endpoint, &body, &build_headers, body_encoding, abort_signal)?;
     let resp = aimux_provider_utils::post_to_api(
         request,
         request_body,
@@ -1424,7 +1411,7 @@ pub(crate) async fn anthropic_stream_core(
     Ok(StreamResult {
         stream: Box::pin(stream),
         request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-        response: Some(aimux_core::result::StreamResponse {
+        response: Some(aimux_core::shared::StreamResponseInfo {
             headers: Some(response_headers),
         }),
     })

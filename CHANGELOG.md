@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Provider results carry request and response information as the AI SDK does
+  (`aimux-core`). `GenerateResult` has `request: Option<RequestInfo>` and
+  `response: Option<ResponseInfo>`; `ResponseInfo` gains `id` and holds the
+  timestamp, model id, headers and body. `StreamResult` has `request` and
+  `response: Option<StreamResponseInfo>`. The flat `request_body` and
+  `response_headers` fields are removed and `response` is optional; the call
+  layer fills a missing id, timestamp and model id. The user-facing results and
+  their JSON are unchanged.
+
 - The prompt a provider receives is modelled by role (`aimux-core`), as the AI
   SDK's `LanguageModelV4Message`. `LanguageModelPrompt` is
   `Vec<LanguageModelMessage>`: `System { content: String }`,
@@ -102,8 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InvalidPromptError` and `InvalidResponseDataError`.
 
 - Text results carry the AI SDK's core `ContentPart` (`aimux-core`), eleven
-  kinds, instead of the provider's `GenerateContent`: `GenerateTextResult`
-  and `StreamTextResultAggregated` `content` is `Vec<ContentPart>`
+  kinds, instead of the provider's `GenerateContent`: `StepResult.content`
+  (and so `GenerateTextResult.content`) is `Vec<ContentPart>`
   (`TextContent` is removed; Node exports `ContentPart`, Python keeps the
   `TextContent` model name). New kinds: `ToolError(TypedToolError)` and
   `ToolApprovalResponse(ToolApprovalResponseOutput)`. A provider tool result
@@ -174,10 +183,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `CallOptions.call_id` and `CallOptions::for_step` are removed
   (`aimux-core`); the V4 call options have no call id. The recording
-  correlation id is `recording_context.call_id`, and `HttpRequest::new` takes
-  it from there. Provider code that built `HttpRequest { call_id:
+  correlation id is the recording context's `call_id`, and `HttpRequest::new`
+  takes it from there. Provider code that built `HttpRequest { call_id:
   options.call_id.clone(), .. }` uses `HttpRequest::new(url, headers,
   options)`. The JSON is unchanged (both were internal and never serialized).
+
+- `CallOptions.max_retries`, `CallOptions.timeout` and
+  `CallOptions.session_id` are removed (`aimux-core`), as in the V4 call
+  options. They are settings of the `generate_text` / `stream_text`
+  operation: `GenerateTextOptions` keeps all three, and the JSON bindings
+  are unchanged. The operation runs its model calls inside
+  `operation::OperationSettings::scope`. The router and MoA take the child
+  retry count from `OperationSettings::current()`, and `TraceLayer` takes
+  the session id from it. Code that calls `do_generate` / `do_stream` on a
+  router, MoA or trace layer directly wraps the call in
+  `OperationSettings { .. }.scope(..)`. Recordings keep the three keys in
+  `input.options`, and replay restores them.
+
+- `generate_text` accepts a provider tool result without its call only for a
+  provider tool that sets `supportsDeferredResults: true` (new optional
+  `ProviderTool.supports_deferred_results`), as in the AI SDK
+  (`convert-language-model-content.ts:96-103`); before, any provider tool of
+  that name was enough. `stream_text` passes such a result on without its
+  input, as `streamText` does (`stream-language-model-call.ts:760-798`). The
+  flag is not sent to the provider.
+
+- `CallOptions.recording_context` and `DecisionCallOptions.recording_context`
+  are removed (`aimux-core`): the V4 call options carry no recording context.
+  `generate_text`, `stream_text` and `decide` run the model call in
+  `recording::RecordingContext::scope`, and the stream in
+  `RecordingContext::scope_stream`; the router and MoA scope each child step
+  in a child context. `HttpRequest::new` and the trace layer read
+  `RecordingContext::current()`. Code that set the field on call options
+  wraps the call in `RecordingContext::scope(Some(context), ..)`. The JSON is
+  unchanged (the field was never serialized).
 
 - `ProviderTool.id` is a `types::NamespacedKind`, the V4
   `${string}.${string}` identifier: an id without a `.` (for example
@@ -195,6 +234,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   share one string path. The provider list lives in
   [docs/api/providers.md](docs/api/providers.md); Rust also gains
   `provider_names()`.
+
+- `RetryError`'s text names the last attempt's message as the AI SDK's
+  `getErrorMessage` does: `Failed after 3 attempts. Last error: Too Many
+  Requests`, not `... Last error: API call error: HTTP 429: Too Many
+  Requests`. The HTTP status stays a field of the attempt error.
+
+- Video poll settings belong to the operation, as the AI SDK's
+  `generateVideo` `poll` option (`aimux-core`, `aimux-providers`).
+  `VideoModel::poll_config()` and `VideoPollConfig` are removed; unset
+  `VideoCallOptions::poll` fields use the AI SDK defaults (5000 ms interval,
+  600000 ms timeout). `RunwaymlConfig` loses `poll_interval`, `timeout`,
+  `with_poll_interval` and `with_timeout` (RunwayML used 2 s / 300 s); pass
+  `poll` per call instead. Each status check, its retries included, now races
+  the time left in the poll budget and a hanging check fails with `Timeout`
+  "Video generation timed out after {timeoutMs}ms." as upstream.
+
+- Call-level usage and finish reasons follow the AI SDK (`aimux-core`). The
+  results of `generate_text` / `stream_text` / `generate_object` and the
+  `TextStreamPart` finish parts report usage as `LanguageModelUsage`
+  (`input_tokens`, `input_token_details { no_cache_tokens,
+  cache_read_tokens, cache_write_tokens }`, `output_tokens`,
+  `output_token_details { text_tokens, reasoning_tokens }`, `total_tokens`,
+  `raw`) and the finish reason as the unified string (`"stop"`,
+  `"tool-calls"`, ...) with `raw_finish_reason` beside it. Usage is summed
+  over steps with `add_language_model_usage`. Provider results
+  (`GenerateResult`, `StreamPart`) keep `Usage` and `FinishReason`.
+  Recordings store the call-level usage for both the generate and the
+  stream path.
+
+- `GenerateTextResult` is built from steps, as the AI SDK's
+  (`aimux-core`). It holds `steps: Vec<StepResult>`, the summed usage and the
+  parsed output; everything else is an accessor: `final_step()`, `content()`,
+  `text()`, `files()`, `sources()`, `tool_calls()`, `static_tool_calls()`,
+  `dynamic_tool_calls()`, `tool_results()` (and the static/dynamic
+  variants), `finish_reason()`, `raw_finish_reason()`, `usage()`,
+  `warnings()`, `response_messages()`, `output()`, and the deprecated
+  `reasoning()`, `reasoning_text()`, `total_usage()`, `request()`,
+  `response()`, `provider_metadata()` that the AI SDK also deprecates.
+  `StepResult` carries the step's call id, model, content, finish reason,
+  usage, performance, warnings, request, response (with its messages) and
+  provider metadata. The `raw` provider result is removed, and
+  `reasoning_text` is `None` when there is no reasoning. The JSON form is a
+  snapshot: it writes the derived values next to `steps`, `total_usage` and
+  `output`, and only those three are read back.
+
+- Structured output is the `output` option, as the AI SDK's `Output`
+  (`aimux-core`). `GenerateTextOptions::response_format` is replaced by
+  `output: Option<Output>` (`Text`, `Object`, `Array`, `Choice`, `Json`); the
+  parsed and schema-checked value is `GenerateTextResult::output()`.
+  `generate_object` is deprecated, as upstream, and is a wrapper over
+  `generate_text` with `Output::Object`; its `GenerateObjectResult` has
+  `object`, `reasoning`, `finish_reason`, `usage`, `warnings`, `request`,
+  `response` (`GenerateObjectResponse`: id, timestamp, model id, headers,
+  body) and `provider_metadata`, and no `raw`. It no longer repairs
+  malformed JSON before parsing.
+
+- `TextStreamPart` is the AI SDK's call-level stream part, its own enum and
+  no longer `StreamPart<ToolCall>` (`aimux-core`). The stream opens with
+  `Start` and `StartStep { request, warnings }` and closes with
+  `FinishStep { response, usage, performance, finish_reason,
+  raw_finish_reason, provider_metadata }` and
+  `Finish { finish_reason, raw_finish_reason, total_usage }`; the provider's
+  `StreamStart` and `ResponseMetadata` parts are not forwarded. `TextDelta`
+  and `ReasoningDelta` carry `text` (was `delta`). Aborting the call ends the
+  stream with `Abort { reason }`. `StreamTextResult::consume()` returns a
+  `GenerateTextResult`; `StreamTextResultAggregated` is removed.
+
+- `stream_text` drops an empty `TextDelta` that carries no provider
+  metadata, as the AI SDK does (`aimux-core`); providers emit one, e.g. the
+  opening `"content": ""` chunk of OpenAI chat.
+
+- `TextStreamPart` carries the AI SDK's tool parts (`aimux-core`,
+  stream-language-model-call.ts:760-792). `ToolResult` is a
+  `TypedToolResult` (`tool_call_id`, `tool_name`, `input?` from the call it
+  answers, `output`, `provider_executed`, `provider_metadata?`, `dynamic?`,
+  `preliminary?`) instead of the provider's `ToolResult`; a provider result
+  marked `is_error` arrives as `ToolError` (`TypedToolError`, with
+  `error`), and an invalid client tool call is followed by a `ToolError`
+  holding its error message and `dynamic: true`
+  (stream-language-model-call.ts:709-725). `ToolOutputDenied` and
+  `ToolApprovalResponse` are added to complete the AI SDK's set; aimux's
+  stream does not produce them yet. Unlike upstream, the provider's `preliminary` flag is kept, so
+  a preliminary result stays out of the step content, as on the generated
+  path. A consumed stream's step content records the tool results, tool
+  errors and approval responses as they arrive (stream-text.ts:1529-1538,
+  :1648-1650), so an invalid call's tool error is inline after its call
+  there, where `generate_text` puts it after the content, as upstream does.
+
+- `generate_text` fails with `Tool call {id} not found.` when the model
+  returns a provider tool result whose call is not in the response and no
+  provider tool of that name was passed (`aimux-core`,
+  convert-language-model-content.ts:87-104). A result for a passed provider
+  tool is kept as a deferred result. The stream passes such results through,
+  without `input`, as upstream does.
+
+- The response messages write a tool approval request's
+  `input_schema_input` only when it differs from the call's input under the
+  AI SDK's `isDeepEqualData` (`aimux-core`, to-response-messages.ts:133-146).
 
 **Rust (aimux-stream)**
 
@@ -269,6 +406,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `InvalidResponseData` (previously it started a call with an empty name).
   `DeltaToolCall.index` is now `Option<usize>`.
 
+**All bindings**
+
+- Typed provider tools in Java, Kotlin, Swift, Python and Flutter carry
+  optional `supportsDeferredResults`, omitted from JSON when absent
+  (provider-utils@5.0.55 src/types/tool.ts:316-326).
+
+- The typed results and stream parts follow the core's AI SDK shapes
+  (Go, Java, Kotlin, Swift, Flutter, Node, Python). `GenerateTextResult`
+  gains `steps`, `tool_results` and `output` and loses `raw`; its `content`
+  holds the final step's parsed parts; `usage` / `total_usage` are
+  `LanguageModelUsage` and `finish_reason` the unified string.
+  `GenerateObjectResult` loses `raw` and `raw_finish_reason`.
+  `consume_stream_text` returns a `GenerateTextResult`
+  (`StreamTextResultAggregated` is removed). The options' `response_format`
+  is replaced by `output`. Stream parts: `TextDelta` / `ReasoningDelta` carry
+  `text`; `StreamStart` and `ResponseMetadata` give way to `Start`,
+  `StartStep`, `FinishStep`, `Finish { finish_reason, raw_finish_reason,
+  total_usage }` and `Abort`; `ToolResult` carries `output` and the call's
+  `input` (was `result`, `is_error`), and `ToolError`, `ToolOutputDenied` and
+  `ToolApprovalResponse` are decoded. Tool-call
+  repair reads the top-level `tool_calls` only.
+
 ### Fixed
 
 - Gated aimux-core's ts-rs exports behind `ts-export`, so plain `cargo test`
@@ -300,6 +459,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixes for released versions ship from a maintenance branch. `ROADMAP.md`
   defers the ops protocol schema and L0 passthrough and no longer fixes C1
   at nine exports.
+- `docs/aisdk-architecture-alignment.md` and RFC-0031
+  (`docs/ai-sdk-request-pipeline.md`), against ai 7.0.127: object generation
+  is the deprecated wrapper over `output` (no separate object spans), async
+  jobs follow `generateVideo`'s start/status retries and poll budget, the
+  result convenience fields are marked deprecated as upstream marks them,
+  the response-message rules gain the empty-reasoning, invalid-input,
+  `inputSchemaInput`, tool-message order and tool-error encoding rows, and
+  the remaining differences are listed: stream retries, the first-chunk
+  timeout's start, `additionalRetryableError` and per-batch idempotency
+  keys.
 
 ## [0.5.0] - 2026-09-27
 

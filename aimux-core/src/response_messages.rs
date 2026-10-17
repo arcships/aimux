@@ -12,8 +12,8 @@ use serde_json::Value;
 use crate::content::{AssistantContentPart, ToolContentPart, ToolResultOutput, ToolResultPart};
 use crate::message::ModelMessage;
 use crate::result::{
-    ContentPart, GeneratedFile, ReasoningFileOutput, ReasoningOutput, ReasoningPart, Source,
-    ToolApprovalRequestOutput, TypedToolError, TypedToolResult,
+    ContentPart, GeneratedFile, ReasoningFileOutput, ReasoningOutput, Source,
+    ToolApprovalRequestOutput, ToolApprovalResponseOutput, TypedToolError, TypedToolResult,
 };
 use crate::shared::{FileBytes, GeneratedFileData, SharedProviderMetadata};
 use crate::types::NamespacedKind;
@@ -30,6 +30,26 @@ pub(crate) fn response_tool_call_input(input: &Value, invalid: Option<bool>) -> 
     }
 }
 
+/// The AI SDK's `isDeepEqualData` (`ai` `util/is-deep-equal-data.ts:8-48`)
+/// over parsed JSON: numbers compare as JavaScript numbers (`1` equals `1.0`,
+/// `-0` equals `0`, integers beyond 2^53 compare after rounding to a
+/// double), objects compare by key set regardless of order, and arrays
+/// element by element.
+pub(crate) fn is_deep_equal_data(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(x, y)| is_deep_equal_data(x, y))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(key, x)| y.get(key).is_some_and(|y| is_deep_equal_data(x, y)))
+        }
+        _ => a == b,
+    }
+}
+
 /// Accumulates generated content in provider order, updating streamed segments by ID.
 #[derive(Default)]
 pub(crate) struct ResponseMessageBuilder {
@@ -41,7 +61,6 @@ pub(crate) struct ResponseMessageBuilder {
 pub(crate) struct ResponseMessages {
     pub messages: Vec<ModelMessage>,
     pub content: Vec<ContentPart>,
-    pub reasoning: Vec<ReasoningPart>,
 }
 
 impl ResponseMessageBuilder {
@@ -203,10 +222,25 @@ impl ResponseMessageBuilder {
         });
     }
 
-    /// A tool error produced by the call itself, such as the failure of a
-    /// tool call that could not be parsed.
+    /// A streamed tool result. A preliminary result stays out of the
+    /// content (`stream-text.ts:1648-1650`).
+    pub fn typed_tool_result(&mut self, result: TypedToolResult) {
+        if result.preliminary != Some(true) {
+            self.content.push(ContentPart::ToolResult(result));
+        }
+    }
+
+    /// A tool error: a streamed provider tool error, or one produced by the
+    /// call itself, such as the failure of a tool call that could not be
+    /// parsed.
     pub fn tool_error(&mut self, error: TypedToolError) {
         self.content.push(ContentPart::ToolError(error));
+    }
+
+    /// The answer to a tool approval request.
+    pub fn approval_response(&mut self, response: ToolApprovalResponseOutput) {
+        self.content
+            .push(ContentPart::ToolApprovalResponse(response));
     }
 
     pub fn source(&mut self, source: Source) {
@@ -220,7 +254,6 @@ impl ResponseMessageBuilder {
     /// errors and approval responses, ordered by tool call.
     pub fn finish(self) -> ResponseMessages {
         let mut parts = Vec::new();
-        let mut reasoning = Vec::new();
         let mut tool_call_order = HashMap::new();
         for content in &self.content {
             parts.push(match content {
@@ -236,13 +269,10 @@ impl ResponseMessageBuilder {
                         provider_options: provider_metadata.clone(),
                     }
                 }
-                ContentPart::Reasoning(output) => {
-                    reasoning.push(ReasoningPart::Text(output.clone()));
-                    AssistantContentPart::Reasoning {
-                        text: output.text.clone(),
-                        provider_options: output.provider_metadata.clone(),
-                    }
-                }
+                ContentPart::Reasoning(output) => AssistantContentPart::Reasoning {
+                    text: output.text.clone(),
+                    provider_options: output.provider_metadata.clone(),
+                },
                 ContentPart::Custom {
                     kind,
                     provider_metadata,
@@ -266,19 +296,16 @@ impl ResponseMessageBuilder {
                         provider_options: provider_metadata.clone(),
                     },
                 },
-                ContentPart::ReasoningFile(output) => {
-                    reasoning.push(ReasoningPart::File(output.clone()));
-                    AssistantContentPart::ReasoningFile {
-                        data: match &output.file.data {
-                            GeneratedFileData::Data { data } => GeneratedFileData::Data {
-                                data: FileBytes::Base64(file_base64(data)),
-                            },
-                            url => url.clone(),
+                ContentPart::ReasoningFile(output) => AssistantContentPart::ReasoningFile {
+                    data: match &output.file.data {
+                        GeneratedFileData::Data { data } => GeneratedFileData::Data {
+                            data: FileBytes::Base64(file_base64(data)),
                         },
-                        media_type: output.file.media_type.clone(),
-                        provider_options: output.provider_metadata.clone(),
-                    }
-                }
+                        url => url.clone(),
+                    },
+                    media_type: output.file.media_type.clone(),
+                    provider_options: output.provider_metadata.clone(),
+                },
                 ContentPart::ToolApprovalRequest(approval) => {
                     AssistantContentPart::ToolApprovalRequest {
                         approval_id: approval.approval_id.clone(),
@@ -286,7 +313,13 @@ impl ResponseMessageBuilder {
                         reason: approval.reason.clone(),
                         is_automatic: approval.is_automatic,
                         signature: approval.signature.clone(),
-                        input_schema_input: None,
+                        // Written only when it differs from the call's input
+                        // (`to-response-messages.ts:133-146`).
+                        input_schema_input: approval
+                            .input_schema_input
+                            .as_ref()
+                            .filter(|raw| !is_deep_equal_data(raw, &approval.tool_call.input))
+                            .cloned(),
                     }
                 }
                 ContentPart::ToolCall(call) => {
@@ -341,7 +374,6 @@ impl ResponseMessageBuilder {
         ResponseMessages {
             messages,
             content: self.content,
-            reasoning,
         }
     }
 }
@@ -490,5 +522,100 @@ mod tests {
         let expected = serde_json::to_string(&metadata).unwrap();
         let replayed = serde_json::to_string(&messages).unwrap();
         assert_eq!(replayed.matches(expected.as_str()).count(), 2, "{replayed}");
+    }
+}
+
+#[cfg(test)]
+mod deep_equal_tests {
+    use serde_json::{Value, json};
+
+    use super::{ResponseMessageBuilder, is_deep_equal_data};
+    use crate::content::AssistantContentPart;
+    use crate::message::{AssistantContent, ModelMessage};
+    use crate::result::ToolApprovalRequestOutput;
+    use crate::tool::ToolCall;
+
+    /// Each case is `[a, b, isDeepEqualData(JSON.parse(a), JSON.parse(b))]`
+    /// for `ai` `util/is-deep-equal-data.ts:8-48`: `===` on numbers (doubles),
+    /// `==` null check, constructor check (array vs object), key-set check.
+    #[test]
+    fn deep_equal_data_matches_javascript() {
+        let cases = [
+            (r#"{"a":1}"#, r#"{"a":1.0}"#, true),
+            ("-0.0", "0", true),
+            (r#"{"x":-0.0}"#, r#"{"x":0}"#, true),
+            ("9007199254740993", "9007199254740992", true),
+            ("[9007199254740993]", "[9007199254740992]", true),
+            ("18446744073709551615", "18446744073709551616", true),
+            ("1e2", "100", true),
+            (r#"{"a":1,"b":2}"#, r#"{"b":2,"a":1}"#, true),
+            ("[]", "{}", false),
+            ("null", "{}", false),
+            (r#""1""#, "1", false),
+            (r#"{"a":null}"#, "{}", false),
+            (r#"{"a":[1,{"b":2}]}"#, r#"{"a":[1,{"b":3}]}"#, false),
+        ];
+        for (a, b, js) in cases {
+            let (x, y): (Value, Value) = (
+                serde_json::from_str(a).unwrap(),
+                serde_json::from_str(b).unwrap(),
+            );
+            assert_eq!(is_deep_equal_data(&x, &y), js, "{a} vs {b}");
+            assert_eq!(is_deep_equal_data(&y, &x), js, "{b} vs {a}");
+        }
+    }
+
+    fn approval(input: Value, input_schema_input: Option<Value>) -> ToolApprovalRequestOutput {
+        ToolApprovalRequestOutput {
+            approval_id: "approval-1".to_string(),
+            tool_call: ToolCall {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "weather".to_string(),
+                input,
+                provider_executed: None,
+                dynamic: None,
+                provider_metadata: None,
+                invalid: None,
+                error: None,
+            },
+            reason: None,
+            is_automatic: None,
+            signature: None,
+            input_schema_input,
+        }
+    }
+
+    fn replayed_input_schema_input(request: &ToolApprovalRequestOutput) -> Option<Value> {
+        let mut builder = ResponseMessageBuilder::new();
+        builder.approval(request);
+        let messages = builder.finish().messages;
+        let ModelMessage::Assistant {
+            content: AssistantContent::Parts(parts),
+            ..
+        } = &messages[0]
+        else {
+            panic!("an assistant message with parts");
+        };
+        match &parts[0] {
+            AssistantContentPart::ToolApprovalRequest {
+                input_schema_input, ..
+            } => input_schema_input.clone(),
+            other => panic!("unexpected part {other:?}"),
+        }
+    }
+
+    /// `to-response-messages.ts:133-146`: the approval part carries
+    /// `inputSchemaInput` only when it is not deep-equal to the call input.
+    #[test]
+    fn approval_writes_input_schema_input_only_when_it_differs() {
+        let raw = json!({ "city": "Paris", "unit": "c" });
+        let request = approval(json!({ "city": "Paris" }), Some(raw.clone()));
+        assert_eq!(replayed_input_schema_input(&request), Some(raw));
+
+        let request = approval(json!({ "n": 1 }), Some(json!({ "n": 1.0 })));
+        assert_eq!(replayed_input_schema_input(&request), None);
+
+        let request = approval(json!({ "n": 1 }), None);
+        assert_eq!(replayed_input_schema_input(&request), None);
     }
 }

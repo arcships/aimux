@@ -7,46 +7,49 @@ import type { JsonValue } from "./serde_json/JsonValue";
  *
  * Aligned with V4 `SpeechModelV4CallOptions`.
  */
-export type SpeechCallOptions = { 
+export type SpeechCallOptions = {
 /**
  * Text to convert to speech.
  */
-text: string, 
+text: string,
 /**
  * The voice to use (provider-specific voice ID, name, or other
  * identifier).
  */
-voice: string | null, 
+voice: string | null,
 /**
  * The desired output format for the audio, e.g. `"mp3"`, `"wav"`.
  */
-output_format: string | null, 
+output_format: string | null,
 /**
  * Instructions for the speech generation, e.g.
  * `"Speak in a slow and steady tone"`.
  */
-instructions: string | null, 
+instructions: string | null,
 /**
  * The speed of the speech generation.
  */
-speed: number | null, 
+speed: number | null,
 /**
  * The language for speech generation (ISO 639-1 code, e.g. `"en"`, or
  * `"auto"` for automatic detection). Provider support varies.
  */
-language: string | null, 
+language: string | null,
 /**
  * Additional provider-specific options, keyed by provider name.
  */
-provider_options: { [key in string]: { [key in string]: JsonValue } } | null, 
+provider_options: { [key in string]: { [key in string]: JsonValue } } | null,
 /**
- * Per-call retry override. `None` uses the model default.
+ * Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+ * retrying. `None` uses 2, the AI SDK default, unless the model's
+ * `retry_config()` sets another count (model-level retry settings are
+ * removed in the target design, docs/aisdk-architecture-alignment.md D14).
  */
-max_retries: number | null, 
+max_retries: number | null,
 /**
  * Per-call operation timeout.
  */
-timeout: TimeoutConfiguration | null, 
+timeout: TimeoutConfiguration | null,
 /**
  * Additional HTTP headers to send with the request.
  */

@@ -273,20 +273,25 @@ pub fn to_generate_options(
     o: &WireOptions,
     session_id: Option<&str>,
 ) -> Result<GenerateTextOptions, AiMuxError> {
-    let response_format = match &o.response_format {
+    // The console's `response_format` selects the core output: a JSON
+    // format with a schema is an object output, one without is the JSON
+    // output.
+    let output = match &o.response_format {
         None => None,
         Some(Value::String(s)) if s == "text" => None,
         Some(Value::Object(obj)) => {
-            let schema = obj.get("schema").cloned();
             let name = obj.get("name").and_then(Value::as_str).map(str::to_string);
             let description = obj
                 .get("description")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            Some(aimux_core::options::ResponseFormat::Json {
-                schema,
-                name,
-                description,
+            Some(match obj.get("schema").cloned() {
+                Some(schema) => aimux_core::output::Output::Object {
+                    schema,
+                    name,
+                    description,
+                },
+                None => aimux_core::output::Output::Json { name, description },
             })
         }
         Some(other) => {
@@ -305,7 +310,7 @@ pub fn to_generate_options(
             .tools
             .as_ref()
             .map(|ts| ts.iter().map(to_function_tool).collect()),
-        response_format,
+        output,
         headers: o.headers.clone(),
         body_overrides: o.body_overrides.clone(),
         max_retries: o.max_retries,

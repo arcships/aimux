@@ -38,6 +38,34 @@ Map<String, dynamic> _$FinishReasonToJson(FinishReason instance) =>
       'raw': instance.raw,
     };
 
+InputTokenDetails _$InputTokenDetailsFromJson(Map<String, dynamic> json) => InputTokenDetails(noCacheTokens: (json['no_cache_tokens'] as num?)?.toInt(), cacheReadTokens: (json['cache_read_tokens'] as num?)?.toInt(), cacheWriteTokens: (json['cache_write_tokens'] as num?)?.toInt());
+Map<String, dynamic> _$InputTokenDetailsToJson(InputTokenDetails instance) => {'no_cache_tokens': instance.noCacheTokens, 'cache_read_tokens': instance.cacheReadTokens, 'cache_write_tokens': instance.cacheWriteTokens};
+
+OutputTokenDetails _$OutputTokenDetailsFromJson(Map<String, dynamic> json) => OutputTokenDetails(textTokens: (json['text_tokens'] as num?)?.toInt(), reasoningTokens: (json['reasoning_tokens'] as num?)?.toInt());
+Map<String, dynamic> _$OutputTokenDetailsToJson(OutputTokenDetails instance) => {'text_tokens': instance.textTokens, 'reasoning_tokens': instance.reasoningTokens};
+
+LanguageModelUsage _$LanguageModelUsageFromJson(Map<String, dynamic> json) =>
+    LanguageModelUsage(
+      inputTokens: (json['input_tokens'] as num?)?.toInt(),
+      inputTokenDetails: InputTokenDetails.fromJson(
+          json['input_token_details'] as Map<String, dynamic>? ?? const {}),
+      outputTokens: (json['output_tokens'] as num?)?.toInt(),
+      outputTokenDetails: OutputTokenDetails.fromJson(
+          json['output_token_details'] as Map<String, dynamic>? ?? const {}),
+      totalTokens: (json['total_tokens'] as num?)?.toInt(),
+      raw: json['raw'] as Map<String, dynamic>?,
+    );
+
+Map<String, dynamic> _$LanguageModelUsageToJson(LanguageModelUsage instance) =>
+    <String, dynamic>{
+      'input_tokens': instance.inputTokens,
+      'input_token_details': instance.inputTokenDetails.toJson(),
+      'output_tokens': instance.outputTokens,
+      'output_token_details': instance.outputTokenDetails.toJson(),
+      'total_tokens': instance.totalTokens,
+      if (instance.raw != null) 'raw': instance.raw,
+    };
+
 ToolCall _$ToolCallFromJson(Map<String, dynamic> json) => ToolCall(
       toolCallId: json['tool_call_id'] as String,
       toolName: json['tool_name'] as String,
@@ -100,163 +128,105 @@ GenerateTextResult _$GenerateTextResultFromJson(Map<String, dynamic> json) =>
     GenerateTextResult(
       content: (json['content'] as List<dynamic>? ?? []).map((item) => item as Map<String, dynamic>).toList(),
       text: json['text'] as String,
-      toolCalls: (json['tool_calls'] as List<dynamic>)
-          .map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      finishReason:
-          FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
-      usage: Usage.fromJson(json['usage'] as Map<String, dynamic>),
-      warnings: (json['warnings'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
-              .toList() ??
-          const [],
-      raw: GenerateResult.fromJson(json['raw'] as Map<String, dynamic>),
       reasoning: (json['reasoning'] as List<dynamic>?)
               ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
           const [],
-      reasoningText: json['reasoning_text'] as String? ?? '',
-      sources: (json['sources'] as List<dynamic>?)
-              ?.map((e) => Source.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          const [],
+      reasoningText: json['reasoning_text'] as String?,
       files: (json['files'] as List<dynamic>?)
               ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
           const [],
+      sources: (json['sources'] as List<dynamic>?)
+              ?.map((e) => Source.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      toolCalls: (json['tool_calls'] as List<dynamic>?)
+              ?.map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      toolResults: (json['tool_results'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          const [],
+      finishReason: json['finish_reason'] as String,
+      rawFinishReason: json['raw_finish_reason'] as String?,
+      usage: LanguageModelUsage.fromJson(json['usage'] as Map<String, dynamic>),
+      totalUsage: LanguageModelUsage.fromJson(
+          json['total_usage'] as Map<String, dynamic>? ?? const {}),
+      warnings: (json['warnings'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          const [],
+      request: json['request'] as Map<String, dynamic>?,
+      response: json['response'] != null
+          ? ResponseMetadata.fromJson(json['response'] as Map<String, dynamic>)
+          : ResponseMetadata(),
       responseMessages: (json['response_messages'] as List<dynamic>?)
               ?.map((e) => ModelMessage.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      rawFinishReason: json['raw_finish_reason'] as String?,
       providerMetadata: json['provider_metadata'] as Map<String, dynamic>?,
-      response: json['response'] != null
-          ? ResponseMetadata.fromJson(json['response'] as Map<String, dynamic>)
-          : ResponseMetadata(),
-      totalUsage: json['total_usage'] != null
-          ? Usage.fromJson(json['total_usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
+      steps: (json['steps'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          const [],
+      output: json['output'],
     );
 
 Map<String, dynamic> _$GenerateTextResultToJson(GenerateTextResult instance) =>
     <String, dynamic>{
-      'text': instance.text,
       'content': instance.content,
-      'tool_calls': instance.toolCalls,
-      'finish_reason': instance.finishReason,
-      'usage': instance.usage,
-      'warnings': instance.warnings,
-      'raw': instance.raw,
+      'text': instance.text,
       'reasoning': instance.reasoning,
       'reasoning_text': instance.reasoningText,
-      'sources': instance.sources,
       'files': instance.files,
-      'response_messages': instance.responseMessages,
+      'sources': instance.sources,
+      'tool_calls': instance.toolCalls,
+      'tool_results': instance.toolResults,
+      'finish_reason': instance.finishReason,
       'raw_finish_reason': instance.rawFinishReason,
-      'provider_metadata': instance.providerMetadata,
-      'response': instance.response,
+      'usage': instance.usage,
       'total_usage': instance.totalUsage,
+      'warnings': instance.warnings,
+      'request': instance.request,
+      'response': instance.response,
+      'response_messages': instance.responseMessages,
+      'provider_metadata': instance.providerMetadata,
+      'steps': instance.steps,
+      if (instance.output != null) 'output': instance.output,
     };
 
 GenerateObjectResult _$GenerateObjectResultFromJson(
         Map<String, dynamic> json) =>
     GenerateObjectResult(
       object: json['object'],
-      finishReason:
-          FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
-      rawFinishReason: json['raw_finish_reason'] as String?,
-      usage: json['usage'] != null
-          ? Usage.fromJson(json['usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
+      reasoning: json['reasoning'] as String?,
+      finishReason: json['finish_reason'] as String,
+      usage: LanguageModelUsage.fromJson(
+          json['usage'] as Map<String, dynamic>? ?? const {}),
       warnings: (json['warnings'] as List<dynamic>?)
               ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
           const [],
-      reasoning: json['reasoning'] as String?,
-      providerMetadata: json['provider_metadata'] as Map<String, dynamic>?,
+      request: json['request'] as Map<String, dynamic>?,
       response: json['response'] != null
           ? ResponseMetadata.fromJson(json['response'] as Map<String, dynamic>)
           : ResponseMetadata(),
-      raw: GenerateTextResult.fromJson(json['raw'] as Map<String, dynamic>),
+      providerMetadata: json['provider_metadata'] as Map<String, dynamic>?,
     );
 
 Map<String, dynamic> _$GenerateObjectResultToJson(
         GenerateObjectResult instance) =>
     <String, dynamic>{
       'object': instance.object,
+      'reasoning': instance.reasoning,
       'finish_reason': instance.finishReason,
-      'raw_finish_reason': instance.rawFinishReason,
       'usage': instance.usage,
       'warnings': instance.warnings,
-      'reasoning': instance.reasoning,
-      'provider_metadata': instance.providerMetadata,
+      'request': instance.request,
       'response': instance.response,
-      'raw': instance.raw,
-    };
-
-StreamTextResultAggregated _$StreamTextResultAggregatedFromJson(
-        Map<String, dynamic> json) =>
-    StreamTextResultAggregated(
-      content: (json['content'] as List<dynamic>? ?? []).map((item) => item as Map<String, dynamic>).toList(),
-      text: json['text'] as String? ?? '',
-      reasoning: (json['reasoning'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
-              .toList() ??
-          const [],
-      reasoningText: json['reasoning_text'] as String? ?? '',
-      toolCalls: (json['tool_calls'] as List<dynamic>?)
-              ?.map((e) => ToolCall.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          const [],
-      sources: (json['sources'] as List<dynamic>?)
-              ?.map((e) => Source.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          const [],
-      files: (json['files'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
-              .toList() ??
-          const [],
-      finishReason:
-          FinishReason.fromJson(json['finish_reason'] as Map<String, dynamic>),
-      rawFinishReason: json['raw_finish_reason'] as String?,
-      usage: json['usage'] != null
-          ? Usage.fromJson(json['usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
-      totalUsage: json['total_usage'] != null
-          ? Usage.fromJson(json['total_usage'] as Map<String, dynamic>)
-          : Usage(inputTokens: InputTokenUsage(), outputTokens: OutputTokenUsage()),
-      warnings: (json['warnings'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
-              .toList() ??
-          const [],
-      providerMetadata: json['provider_metadata'] as Map<String, dynamic>?,
-      response: json['response'] == null
-          ? null
-          : ResponseMetadata.fromJson(json['response'] as Map<String, dynamic>),
-      responseMessages: (json['response_messages'] as List<dynamic>?)
-              ?.map((e) => ModelMessage.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          const [],
-    );
-
-Map<String, dynamic> _$StreamTextResultAggregatedToJson(
-        StreamTextResultAggregated instance) =>
-    <String, dynamic>{
-      'text': instance.text,
-      'content': instance.content,
-      'reasoning': instance.reasoning,
-      'reasoning_text': instance.reasoningText,
-      'tool_calls': instance.toolCalls,
-      'sources': instance.sources,
-      'files': instance.files,
-      'finish_reason': instance.finishReason,
-      'raw_finish_reason': instance.rawFinishReason,
-      'usage': instance.usage,
-      'total_usage': instance.totalUsage,
-      'warnings': instance.warnings,
       'provider_metadata': instance.providerMetadata,
-      'response': instance.response,
-      'response_messages': instance.responseMessages,
     };
 
 TimeoutConfiguration _$TimeoutConfigurationFromJson(
@@ -288,7 +258,7 @@ GenerateTextOptions _$GenerateTextOptionsFromJson(Map<String, dynamic> json) =>
       topK: (json['top_k'] as num?)?.toDouble(),
       presencePenalty: (json['presence_penalty'] as num?)?.toDouble(),
       frequencyPenalty: (json['frequency_penalty'] as num?)?.toDouble(),
-      responseFormat: json['response_format'] as Map<String, dynamic>?,
+      output: json['output'] as Map<String, dynamic>?,
       seed: (json['seed'] as num?)?.toInt(),
       tools: (json['tools'] as List<dynamic>?)
           ?.map((e) => Tool.fromJson(e as Map<String, dynamic>))
@@ -321,7 +291,7 @@ Map<String, dynamic> _$GenerateTextOptionsToJson(
       'top_k': instance.topK,
       'presence_penalty': instance.presencePenalty,
       'frequency_penalty': instance.frequencyPenalty,
-      'response_format': instance.responseFormat,
+      'output': instance.output,
       'seed': instance.seed,
       'tools': instance.tools,
       'tool_choice': instance.toolChoice,

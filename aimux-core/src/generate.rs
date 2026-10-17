@@ -4,14 +4,18 @@
 //! 1. Convert user prompt (`ModelPrompt`) to `LanguageModelPrompt` (provider-facing).
 //! 2. Build `CallOptions` from user-facing options.
 //! 3. Call `LanguageModel::do_generate` / `do_stream`.
-//! 4. Extract / wrap the result for the user.
+//! 4. Record the model call as a [`StepResult`] and aggregate the steps into
+//!    a [`GenerateTextResult`], as the AI SDK's `generateText` and
+//!    `streamText` do (ai@7.0.127 `generate-text/generate-text.ts`,
+//!    `generate-text/stream-text.ts`). Aimux runs one step per call.
 
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use futures::{Stream, StreamExt};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use tracing::Instrument;
 use ts_rs::TS;
@@ -20,17 +24,51 @@ use crate::error::AiMuxError;
 use crate::language_model::LanguageModel;
 use crate::language_model_message::convert_to_language_model_prompt;
 use crate::message::{ModelMessage, ModelPrompt};
-use crate::options::{CallOptions, ResponseFormat, ToolChoice, prepare_tool_choice};
+use crate::operation::OperationSettings;
+use crate::options::{CallOptions, ToolChoice, prepare_tool_choice};
+use crate::output::Output;
 use crate::parse_tool_call::{ToolCallRepair, parse_tool_call};
 use crate::result::{
-    GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput, ReasoningPart, Source,
-    StreamResult, StreamTextResultAggregated, ToolApprovalRequestOutput,
+    ContentPart, GenerateContent, GenerateResult, GeneratedFile, ReasoningFileOutput,
+    ReasoningPart, Source, StreamResult, ToolApprovalRequestOutput, TypedToolError,
+    TypedToolResult,
 };
-use crate::shared::SharedProviderOptions;
-use crate::stream_part::{StreamPart, TextStreamPart};
-use crate::tool::Tool;
-use crate::types::{FinishReason, ProviderMetadata, ReasoningEffort, Usage, Warning};
+use crate::shared::{RequestInfo, SharedHeaders, SharedProviderOptions};
+use crate::step_result::{
+    StepModel, StepResponse, StepResponseMetadata, StepResult, StepResultPerformance,
+};
+use crate::stream_part::{StreamPart, StreamPartPayload, TextStreamPart};
+use crate::tool::{Tool, ToolCall, ToolResult};
+use crate::types::{
+    FinishReasonUnified, LanguageModelUsage, ProviderMetadata, ReasoningEffort, Warning,
+    add_language_model_usage, as_language_model_usage,
+};
 use crate::{AbortSignal, retry, timeout};
+
+fn response_metadata_defaults(
+    mut metadata: crate::types::ResponseMetadata,
+    model_id: &str,
+) -> crate::types::ResponseMetadata {
+    metadata.id.get_or_insert_with(|| {
+        use rand::Rng;
+        rand::thread_rng()
+            .sample_iter(rand::distributions::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect()
+    });
+    metadata
+        .timestamp
+        .get_or_insert_with(crate::util::rfc3339_now);
+    metadata.model_id.get_or_insert_with(|| model_id.to_owned());
+    metadata
+}
+
+/// Milliseconds between two instants, the unit of the AI SDK's step timing
+/// (`util/now.ts` reads `performance.now()`).
+fn ms_between(start: Instant, end: Instant) -> f64 {
+    end.saturating_duration_since(start).as_secs_f64() * 1000.0
+}
 
 /// Matches the AI SDK's `isOutputChunk`: only chunks containing model output
 /// start or reset the first/chunk output timers.
@@ -72,7 +110,12 @@ pub struct GenerateTextOptions {
     pub top_k: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub frequency_penalty: Option<f64>,
-    pub response_format: Option<ResponseFormat>,
+    /// The structured output to generate, the AI SDK's `output`
+    /// (`generate-text/output.ts`). It sets the model call's
+    /// `response_format` and parses the final text into
+    /// [`GenerateTextResult::output`]. `None` sends no response format and
+    /// takes the text as the output.
+    pub output: Option<Output>,
     #[ts(type = "number | null")]
     pub seed: Option<u64>,
     pub tools: Option<Vec<Tool>>,
@@ -85,7 +128,10 @@ pub struct GenerateTextOptions {
     pub instructions: Option<String>,
     /// Per-call request body overrides (deep-merged). See RFC-0017.
     pub body_overrides: Option<Value>,
-    /// Per-call retry count override. `None` = provider default, `Some(0)` = disable.
+    /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
+    /// retrying. `None` uses 2, the AI SDK default, unless the model's
+    /// `retry_config()` sets another count (model-level retry settings are
+    /// removed in the target design, docs/aisdk-architecture-alignment.md D14).
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
     pub timeout: Option<crate::options::TimeoutConfiguration>,
@@ -112,7 +158,19 @@ pub struct GenerateTextOptions {
 }
 
 impl GenerateTextOptions {
+    /// The operation settings of these options: the retry count, the timeout
+    /// and the session id, which the model call options do not carry.
+    #[must_use]
+    pub fn operation_settings(&self) -> OperationSettings {
+        OperationSettings {
+            max_retries: self.max_retries,
+            timeout: self.timeout,
+            session_id: self.session_id.clone(),
+        }
+    }
+
     /// Build the provider-facing `CallOptions` from user-facing options.
+    /// The operation settings ([`Self::operation_settings`]) are left out.
     #[must_use]
     pub fn into_call_options(
         self,
@@ -131,7 +189,9 @@ impl GenerateTextOptions {
             top_k: self.top_k,
             presence_penalty: self.presence_penalty,
             frequency_penalty: self.frequency_penalty,
-            response_format: self.response_format,
+            // `responseFormat: await output?.responseFormat`
+            // (generate-text.ts:1048, stream-language-model-call.ts:361).
+            response_format: self.output.as_ref().map(Output::response_format),
             seed: self.seed,
             tools: self.tools,
             tool_choice,
@@ -139,11 +199,7 @@ impl GenerateTextOptions {
             provider_options: self.provider_options,
             reasoning: self.reasoning,
             body_overrides: self.body_overrides,
-            max_retries: self.max_retries,
-            timeout: self.timeout,
-            session_id: self.session_id,
             abort_signal: self.abort_signal,
-            recording_context: None,
             include_raw_chunks: self.include_raw_chunks,
         }
     }
@@ -153,88 +209,435 @@ impl GenerateTextOptions {
 // User-facing result types
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Result of `generate_text` (user-facing).
-#[derive(Debug, Serialize, Deserialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+/// Result of `generate_text` and of a consumed `stream_text`: the AI SDK's
+/// `GenerateTextResult` (ai@7.0.127 `generate-text/generate-text-result.ts`).
+///
+/// It stores the steps, the usage summed over them and the parsed output, as
+/// `DefaultGenerateTextResult` does (`generate-text.ts:1691-1808`); every
+/// other value is derived from the steps by an accessor. The serialized form
+/// is a snapshot that writes the derived values next to the stored ones, so
+/// a binding reads `text`, `tool_calls`, `usage` and the rest directly. Only
+/// `steps`, `total_usage` and `output` are read back.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "GenerateTextResultFacts")]
 pub struct GenerateTextResult {
-    /// Ordered generated content with parsed tool calls (the core
-    /// [`ContentPart`](crate::result::ContentPart)).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub content: Vec<crate::result::ContentPart>,
-    /// The generated text (concatenated from all text content parts).
-    pub text: String,
-    /// Tool calls requested by the model.
-    pub tool_calls: Vec<crate::tool::ToolCall>,
-    /// Why generation stopped.
-    pub finish_reason: FinishReason,
-    /// Token usage.
-    pub usage: Usage,
-    /// Warnings from the provider.
-    pub warnings: Vec<Warning>,
-    /// Raw provider result (for advanced use).
-    pub raw: GenerateResult,
-    // ── M7: top-level aggregation (extracted from `raw.content`) ──
-    /// Reasoning / thinking segments from the model.
-    #[serde(default)]
-    pub reasoning: Vec<ReasoningPart>,
-    /// Concatenated reasoning text (convenience for `reasoning.iter().map(text).join("")`).
-    #[serde(default)]
-    pub reasoning_text: String,
-    /// Sources / citations (search-preview models).
-    #[serde(default)]
-    pub sources: Vec<Source>,
-    /// Files generated by the model.
-    #[serde(default)]
-    pub files: Vec<GeneratedFile>,
-    /// Assistant messages ready to append to the prompt for the next turn
-    /// (solves the multi-turn "manually build assistant message" footgun).
-    #[serde(default)]
-    pub response_messages: Vec<ModelMessage>,
-    /// The raw provider-specific finish reason string (e.g. "stop",
-    /// "end_turn", "safety"). Useful when `finish_reason.unified` is `Other`.
-    #[serde(default)]
-    pub raw_finish_reason: Option<String>,
-    /// Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
-    /// `raw.provider_metadata` for top-level convenience.
-    #[serde(default)]
-    pub provider_metadata: Option<ProviderMetadata>,
-    /// Response metadata (id, timestamp, model_id). Mirrored from
-    /// `raw.response` for top-level convenience.
-    #[serde(default)]
-    pub response: crate::types::ResponseMetadata,
-    /// Total token usage across all steps. In single-step mode (aimux's
-    /// default), `total_usage` equals `usage`. Provided for AI SDK parity.
-    #[serde(default)]
-    pub total_usage: Usage,
+    steps: Vec<StepResult>,
+    total_usage: LanguageModelUsage,
+    output: OutputState,
 }
 
-/// Result of `generate_object` (user-facing, M12). The parsed JSON object plus
-/// convenience fields from the underlying `generate_text` call.
-#[derive(Debug, Serialize, Deserialize, TS)]
+/// The output of a result.
+#[derive(Debug, Clone)]
+pub(crate) enum OutputState {
+    /// Parsed by the output specification.
+    Parsed(Value),
+    /// Not parsed: `generate_text` parses only a final step that finished
+    /// with `stop`, or with text and not with tool calls
+    /// (`generate-text.ts:1599-1612`).
+    NotParsed,
+    /// Parsing a streamed final step failed. Only reading the output fails,
+    /// as only `StreamTextResult.output` rejects upstream
+    /// (`stream-text.ts:3419-3439`).
+    Failed(AiMuxError),
+}
+
+/// The text output, used when no output is configured (`output ?? text()`).
+static TEXT_OUTPUT: Output = Output::Text {};
+
+impl GenerateTextResult {
+    /// Aggregate the steps of a call with the usage summed over them
+    /// (`generate-text.ts:1526-1544`).
+    pub(crate) fn from_steps(steps: Vec<StepResult>, output: OutputState) -> Self {
+        let total_usage = steps
+            .iter()
+            .fold(LanguageModelUsage::default(), |total, step| {
+                add_language_model_usage(&total, &step.usage)
+            });
+        Self::with_total_usage(steps, total_usage, output)
+    }
+
+    fn with_total_usage(
+        steps: Vec<StepResult>,
+        total_usage: LanguageModelUsage,
+        output: OutputState,
+    ) -> Self {
+        assert!(!steps.is_empty(), "a text result has at least one step");
+        Self {
+            steps,
+            total_usage,
+            output,
+        }
+    }
+
+    /// Every step of the call, in order. Aimux runs one step per call.
+    #[must_use]
+    pub fn steps(&self) -> &[StepResult] {
+        &self.steps
+    }
+
+    /// The last step.
+    #[must_use]
+    pub fn final_step(&self) -> &StepResult {
+        self.steps
+            .last()
+            .expect("a text result has at least one step")
+    }
+
+    /// The content of every step.
+    #[must_use]
+    pub fn content(&self) -> Vec<&ContentPart> {
+        self.steps.iter().flat_map(|step| &step.content).collect()
+    }
+
+    /// The text of the last step.
+    #[must_use]
+    pub fn text(&self) -> String {
+        self.final_step().text()
+    }
+
+    /// The reasoning of the last step in output form.
+    #[deprecated(note = "use `final_step().reasoning()`, as the AI SDK deprecates \
+                         `GenerateTextResult.reasoning` for `finalStep.reasoning`")]
+    #[must_use]
+    pub fn reasoning(&self) -> Vec<ReasoningPart> {
+        self.final_step().reasoning_outputs()
+    }
+
+    /// The reasoning text of the last step, `None` when it is empty.
+    #[deprecated(
+        note = "use `final_step().reasoning_text()`, as the AI SDK deprecates \
+                         `GenerateTextResult.reasoningText` for `finalStep.reasoningText`"
+    )]
+    #[must_use]
+    pub fn reasoning_text(&self) -> Option<String> {
+        self.final_step().reasoning_text()
+    }
+
+    /// The files of every step.
+    #[must_use]
+    pub fn files(&self) -> Vec<&GeneratedFile> {
+        self.steps.iter().flat_map(StepResult::files).collect()
+    }
+
+    /// The sources of every step.
+    #[must_use]
+    pub fn sources(&self) -> Vec<&Source> {
+        self.steps.iter().flat_map(StepResult::sources).collect()
+    }
+
+    /// The tool calls of every step.
+    #[must_use]
+    pub fn tool_calls(&self) -> Vec<&ToolCall> {
+        self.steps.iter().flat_map(StepResult::tool_calls).collect()
+    }
+
+    /// The tool calls of tools known in advance, from every step.
+    #[must_use]
+    pub fn static_tool_calls(&self) -> Vec<&ToolCall> {
+        self.steps
+            .iter()
+            .flat_map(StepResult::static_tool_calls)
+            .collect()
+    }
+
+    /// The tool calls of dynamic tools, from every step.
+    #[must_use]
+    pub fn dynamic_tool_calls(&self) -> Vec<&ToolCall> {
+        self.steps
+            .iter()
+            .flat_map(StepResult::dynamic_tool_calls)
+            .collect()
+    }
+
+    /// The tool results of every step.
+    #[must_use]
+    pub fn tool_results(&self) -> Vec<&TypedToolResult> {
+        self.steps
+            .iter()
+            .flat_map(StepResult::tool_results)
+            .collect()
+    }
+
+    /// The tool results of tools known in advance, from every step.
+    #[must_use]
+    pub fn static_tool_results(&self) -> Vec<&TypedToolResult> {
+        self.steps
+            .iter()
+            .flat_map(StepResult::static_tool_results)
+            .collect()
+    }
+
+    /// The tool results of dynamic tools, from every step.
+    #[must_use]
+    pub fn dynamic_tool_results(&self) -> Vec<&TypedToolResult> {
+        self.steps
+            .iter()
+            .flat_map(StepResult::dynamic_tool_results)
+            .collect()
+    }
+
+    /// Why the last step finished.
+    #[must_use]
+    pub fn finish_reason(&self) -> FinishReasonUnified {
+        self.final_step().finish_reason
+    }
+
+    /// The provider's own finish reason of the last step.
+    #[must_use]
+    pub fn raw_finish_reason(&self) -> Option<&str> {
+        self.final_step().raw_finish_reason.as_deref()
+    }
+
+    /// The usage summed over every step.
+    #[must_use]
+    pub fn usage(&self) -> &LanguageModelUsage {
+        &self.total_usage
+    }
+
+    /// The usage summed over every step.
+    #[deprecated(note = "use `usage()`, as the AI SDK deprecates \
+                         `GenerateTextResult.totalUsage` for `usage`")]
+    #[must_use]
+    pub fn total_usage(&self) -> &LanguageModelUsage {
+        &self.total_usage
+    }
+
+    /// The warnings of every step.
+    #[must_use]
+    pub fn warnings(&self) -> Vec<&Warning> {
+        self.steps.iter().flat_map(|step| &step.warnings).collect()
+    }
+
+    /// The request of the last step.
+    #[deprecated(note = "use `final_step().request`, as the AI SDK deprecates \
+                         `GenerateTextResult.request` for `finalStep.request`")]
+    #[must_use]
+    pub fn request(&self) -> &RequestInfo {
+        &self.final_step().request
+    }
+
+    /// The response of the last step.
+    #[deprecated(note = "use `final_step().response`, as the AI SDK deprecates \
+                         `GenerateTextResult.response` for `finalStep.response`")]
+    #[must_use]
+    pub fn response(&self) -> &StepResponse {
+        &self.final_step().response
+    }
+
+    /// The response messages of every step, ready to append to the prompt of
+    /// the next call.
+    #[must_use]
+    pub fn response_messages(&self) -> Vec<&ModelMessage> {
+        self.steps
+            .iter()
+            .flat_map(|step| &step.response.messages)
+            .collect()
+    }
+
+    /// The provider metadata of the last step.
+    #[deprecated(
+        note = "use `final_step().provider_metadata`, as the AI SDK deprecates \
+                         `GenerateTextResult.providerMetadata` for `finalStep.providerMetadata`"
+    )]
+    #[must_use]
+    pub fn provider_metadata(&self) -> Option<&ProviderMetadata> {
+        self.final_step().provider_metadata.as_ref()
+    }
+
+    /// The output parsed by [`GenerateTextOptions::output`] (the text when
+    /// no output is configured).
+    ///
+    /// # Errors
+    ///
+    /// `NoOutputGenerated` ("No output generated.", the AI SDK's
+    /// `NoOutputGeneratedError`) when the output was not parsed; for a
+    /// streamed result, the parse error when parsing failed.
+    pub fn output(&self) -> Result<&Value, AiMuxError> {
+        match &self.output {
+            OutputState::Parsed(value) => Ok(value),
+            OutputState::NotParsed => {
+                Err(AiMuxError::NoOutputGenerated("No output generated.".into()))
+            }
+            OutputState::Failed(error) => Err(error.clone()),
+        }
+    }
+
+    pub(crate) fn steps_mut(&mut self) -> &mut [StepResult] {
+        &mut self.steps
+    }
+
+    fn snapshot(&self) -> GenerateTextResultSnapshot<'_> {
+        let final_step = self.final_step();
+        GenerateTextResultSnapshot {
+            content: self.content(),
+            text: final_step.text(),
+            reasoning: final_step.reasoning_outputs(),
+            reasoning_text: final_step.reasoning_text(),
+            files: self.files(),
+            sources: self.sources(),
+            tool_calls: self.tool_calls(),
+            tool_results: self.tool_results(),
+            finish_reason: final_step.finish_reason,
+            raw_finish_reason: final_step.raw_finish_reason.as_deref(),
+            usage: &self.total_usage,
+            total_usage: &self.total_usage,
+            warnings: self.warnings(),
+            request: &final_step.request,
+            response: &final_step.response,
+            response_messages: self.response_messages(),
+            provider_metadata: final_step.provider_metadata.as_ref(),
+            steps: &self.steps,
+            output: match &self.output {
+                OutputState::Parsed(value) => Some(value),
+                OutputState::NotParsed | OutputState::Failed(_) => None,
+            },
+        }
+    }
+}
+
+/// The serialized [`GenerateTextResult`]: the stored values and the values
+/// the AI SDK's result derives from them (`generate-text.ts:1714-1808`).
+/// `finalStep` and the static/dynamic subsets are left out: they are the
+/// last entry of `steps` and a filter on `dynamic`.
+#[derive(Serialize, TS)]
+#[ts(rename = "GenerateTextResult")]
+#[cfg_attr(feature = "ts-export", ts(export))]
+struct GenerateTextResultSnapshot<'a> {
+    content: Vec<&'a ContentPart>,
+    text: String,
+    /// Deprecated upstream: the last step's reasoning.
+    reasoning: Vec<ReasoningPart>,
+    /// Deprecated upstream: the last step's reasoning text.
+    reasoning_text: Option<String>,
+    files: Vec<&'a GeneratedFile>,
+    sources: Vec<&'a Source>,
+    tool_calls: Vec<&'a ToolCall>,
+    tool_results: Vec<&'a TypedToolResult>,
+    finish_reason: FinishReasonUnified,
+    raw_finish_reason: Option<&'a str>,
+    usage: &'a LanguageModelUsage,
+    /// Deprecated upstream: equal to `usage`.
+    total_usage: &'a LanguageModelUsage,
+    warnings: Vec<&'a Warning>,
+    /// Deprecated upstream: the last step's request.
+    request: &'a RequestInfo,
+    /// Deprecated upstream: the last step's response.
+    response: &'a StepResponse,
+    response_messages: Vec<&'a ModelMessage>,
+    /// Deprecated upstream: the last step's provider metadata.
+    provider_metadata: Option<&'a ProviderMetadata>,
+    steps: &'a [StepResult],
+    /// Absent when the output was not parsed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    output: Option<&'a Value>,
+}
+
+impl Serialize for GenerateTextResult {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.snapshot().serialize(serializer)
+    }
+}
+
+/// The values a serialized [`GenerateTextResult`] is read back from.
+#[derive(Deserialize)]
+struct GenerateTextResultFacts {
+    steps: Vec<StepResult>,
+    total_usage: LanguageModelUsage,
+    #[serde(default, deserialize_with = "present_value")]
+    output: Option<Value>,
+}
+
+/// A present `output` is `Some`, JSON `null` included.
+fn present_value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
+}
+
+impl TryFrom<GenerateTextResultFacts> for GenerateTextResult {
+    type Error = String;
+
+    fn try_from(facts: GenerateTextResultFacts) -> Result<Self, Self::Error> {
+        if facts.steps.is_empty() {
+            return Err("a text result has at least one step".into());
+        }
+        Ok(Self::with_total_usage(
+            facts.steps,
+            facts.total_usage,
+            facts
+                .output
+                .map_or(OutputState::NotParsed, OutputState::Parsed),
+        ))
+    }
+}
+
+/// Parse the output of a generated final step: only a step that finished with
+/// `stop`, or with text and not with tool calls, is parsed, and a parse
+/// failure fails the call (`generate-text.ts:1599-1612`).
+fn generate_output(step: &StepResult, output: Option<&Output>) -> Result<OutputState, AiMuxError> {
+    let text = step.text();
+    if step.finish_reason == FinishReasonUnified::Stop
+        || (step.finish_reason != FinishReasonUnified::ToolCalls && !text.is_empty())
+    {
+        let value = output
+            .unwrap_or(&TEXT_OUTPUT)
+            .parse_complete_output(&text)?;
+        Ok(OutputState::Parsed(value))
+    } else {
+        Ok(OutputState::NotParsed)
+    }
+}
+
+/// Parse the output of a streamed final step: always parsed, and a failure
+/// only fails reading the output (`stream-text.ts:3419-3435`).
+fn stream_output(step: &StepResult, output: Option<&Output>) -> OutputState {
+    match output
+        .unwrap_or(&TEXT_OUTPUT)
+        .parse_complete_output(&step.text())
+    {
+        Ok(value) => OutputState::Parsed(value),
+        Err(error) => OutputState::Failed(error),
+    }
+}
+
+/// Result of the deprecated [`generate_object`]: the AI SDK's
+/// `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResult {
-    /// The parsed JSON object returned by the model.
+    /// The generated object, as parsed by the output.
     pub object: Value,
-    /// Why generation stopped.
-    pub finish_reason: FinishReason,
-    /// Raw provider-specific finish reason string.
-    #[serde(default)]
-    pub raw_finish_reason: Option<String>,
-    /// Token usage.
-    pub usage: Usage,
-    /// Warnings from the provider.
-    pub warnings: Vec<Warning>,
-    /// Concatenated reasoning text (if the model produced reasoning/thinking).
+    /// The reasoning text, `None` when there is none.
     #[serde(default)]
     pub reasoning: Option<String>,
-    /// Provider-specific metadata (e.g. Anthropic cache info).
+    /// Why the model call finished.
+    pub finish_reason: FinishReasonUnified,
+    /// Token usage of the model call.
+    pub usage: LanguageModelUsage,
+    /// Warnings of the model call.
+    #[serde(default)]
+    pub warnings: Vec<Warning>,
+    /// The request of the model call.
+    #[serde(default)]
+    pub request: RequestInfo,
+    /// The response of the model call, without messages.
+    pub response: GenerateObjectResponse,
+    /// Provider metadata of the model call.
     #[serde(default)]
     pub provider_metadata: Option<ProviderMetadata>,
-    /// Response metadata (id, timestamp, model_id).
+}
+
+/// `GenerateObjectResult.response`: the AI SDK's
+/// `Omit<LanguageModelResponseMetadata, 'messages'>`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[cfg_attr(feature = "ts-export", ts(export))]
+pub struct GenerateObjectResponse {
+    pub id: String,
+    pub timestamp: String,
+    pub model_id: String,
     #[serde(default)]
-    pub response: crate::types::ResponseMetadata,
-    /// The full `generate_text` result (for advanced use).
-    pub raw: GenerateTextResult,
+    pub headers: Option<SharedHeaders>,
+    #[serde(default)]
+    pub body: Option<Value>,
 }
 
 /// Result of `stream_text` (user-facing).
@@ -245,6 +648,9 @@ pub struct StreamTextResult {
     pub request_body: Option<serde_json::Value>,
     /// Response headers.
     pub response_headers: Option<HashMap<String, String>>,
+    call_id: String,
+    model: StepModel,
+    output: Option<Output>,
 }
 
 impl std::fmt::Debug for StreamTextResult {
@@ -253,243 +659,196 @@ impl std::fmt::Debug for StreamTextResult {
             .field("stream", &"<stream>")
             .field("request_body", &self.request_body)
             .field("response_headers", &self.response_headers)
+            .field("call_id", &self.call_id)
+            .field("model", &self.model)
+            .field("output", &self.output)
             .finish()
     }
 }
 
 impl StreamTextResult {
-    /// Consume the stream and collect all text deltas into a single `String`.
+    /// Consume the stream and return the text of the final step.
     ///
     /// # Errors
     ///
-    /// Returns the stream's error part or transport error, propagated from the
-    /// underlying model stream.
+    /// The errors of [`consume`](Self::consume).
     pub async fn text(self) -> Result<String, AiMuxError> {
-        let mut result = String::new();
-        let mut saw_output = false;
-        let mut saw_finish = false;
-        let mut provider_error: Option<AiMuxError> = None;
-        let mut stream = self.stream;
-        while let Some(part) = stream.next().await {
-            let part = match part {
-                Ok(part) => part,
-                // A recoverable frame error is data on this stream (core keeps
-                // the stream alive past it); fold it into the same first-error
-                // slot as a provider error event and keep consuming so the
-                // trailing Finish still lands (usage, recording).
-                Err(error) if error.is_recoverable_stream_error() => {
-                    if provider_error.is_none() {
-                        provider_error = Some(error);
-                    }
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
-            if is_output_chunk(&part) {
-                saw_output = true;
-            }
-            match part {
-                StreamPart::TextDelta { delta, .. } => result.push_str(&delta),
-                StreamPart::Finish { .. } => {
-                    saw_finish = true;
-                    break;
-                }
-                // Keep consuming after a provider error event: a trailing
-                // Finish still carries usage for the recording layer. The
-                // error is returned once the stream reaches its end.
-                StreamPart::Error { error } if provider_error.is_none() => {
-                    provider_error = Some(error);
-                }
-                _ => {}
-            }
-        }
-        if let Some(error) = provider_error {
-            return Err(error);
-        }
-        // AI SDK semantics: an incomplete stream with no output at all is an
-        // error; an incomplete stream with partial output retains the partial
-        // result.
-        if !saw_finish && !saw_output {
-            return Err(AiMuxError::InvalidResponseData(
-                "No output generated. The model stream ended without a finish chunk.".into(),
-            ));
-        }
-        Ok(result)
+        self.consume().await.map(|result| result.text())
     }
 
-    /// Consume the full stream and return an aggregated result (M11).
+    /// Consume the stream and return the result, as the AI SDK's
+    /// `StreamTextResult` promises resolve once the stream has finished.
     ///
-    /// Unlike [`text`](Self::text) (which returns only the concatenated text),
-    /// this collects reasoning, tool calls, sources, files, usage, finish
-    /// reason, and builds `response_messages` for the next turn.
+    /// Each step is recorded from the parts between its `StartStep` and
+    /// `FinishStep` (the event processor of `stream-text.ts:1480-1700`); the
+    /// total usage comes from `Finish`.
     ///
     /// # Errors
     ///
-    /// Returns the stream's error part or transport error, propagated from the
-    /// underlying model stream.
-    pub async fn consume(self) -> Result<StreamTextResultAggregated, AiMuxError> {
-        let mut text = String::new();
-        let mut tool_calls: Vec<crate::tool::ToolCall> = Vec::new();
-        let mut sources: Vec<Source> = Vec::new();
-        let mut files: Vec<GeneratedFile> = Vec::new();
-        let mut warnings: Vec<Warning> = Vec::new();
-        let mut finish_reason = FinishReason {
-            unified: crate::types::FinishReasonUnified::Stop,
-            raw: None,
-        };
-        let mut raw_finish_reason: Option<String> = None;
-        let mut usage = Usage::default();
-        let mut finish_provider_metadata: Option<ProviderMetadata> = None;
-        let mut response: Option<crate::types::ResponseMetadata> = None;
+    /// The first error part or recoverable stream error, once the stream has
+    /// ended; a transport error, timeout or abort error at once. A stream that
+    /// recorded no step fails with the abort error when it was aborted and
+    /// with `NoOutputGenerated` ("No output generated. Check the stream for
+    /// errors.") otherwise (`stream-text.ts:1724-1736`).
+    pub async fn consume(self) -> Result<GenerateTextResult, AiMuxError> {
+        let Self {
+            stream,
+            call_id,
+            model,
+            output,
+            ..
+        } = self;
+        let mut steps: Vec<StepResult> = Vec::new();
         let mut rm = crate::response_messages::ResponseMessageBuilder::new();
-
-        let mut saw_output = false;
-        let mut saw_finish = false;
-        let mut provider_error: Option<AiMuxError> = None;
-        let mut stream = self.stream;
+        let mut request = RequestInfo::default();
+        let mut warnings: Vec<Warning> = Vec::new();
+        let mut total_usage: Option<LanguageModelUsage> = None;
+        let mut aborted: Option<AiMuxError> = None;
+        let mut first_error: Option<AiMuxError> = None;
+        let mut stream = stream;
         while let Some(part) = stream.next().await {
             let part = match part {
                 Ok(part) => part,
                 // A recoverable frame error is data on this stream (core keeps
                 // the stream alive past it); fold it into the same first-error
-                // slot as a provider error event and keep consuming so the
-                // trailing Finish still lands (usage, recording).
+                // slot as an error part and keep consuming so the trailing
+                // Finish still lands (usage, recording).
                 Err(error) if error.is_recoverable_stream_error() => {
-                    if provider_error.is_none() {
-                        provider_error = Some(error);
-                    }
+                    first_error.get_or_insert(error);
                     continue;
                 }
                 Err(error) => return Err(error),
             };
-            if is_output_chunk(&part) {
-                saw_output = true;
-            }
             match part {
-                StreamPart::TextStart {
+                TextStreamPart::StartStep {
+                    request: step_request,
+                    warnings: step_warnings,
+                } => {
+                    rm = crate::response_messages::ResponseMessageBuilder::new();
+                    request = step_request;
+                    warnings = step_warnings;
+                }
+                TextStreamPart::TextStart {
                     id,
                     provider_metadata,
                 } => rm.text_start(id, provider_metadata),
-                StreamPart::TextDelta {
+                TextStreamPart::TextDelta {
                     id,
-                    delta,
+                    text,
                     provider_metadata,
-                } => {
-                    text.push_str(&delta);
-                    rm.text_delta(id, &delta, provider_metadata);
-                }
-                StreamPart::TextEnd {
+                } => rm.text_delta(id, &text, provider_metadata),
+                TextStreamPart::TextEnd {
                     id,
                     provider_metadata,
                 } => rm.text_end(id, provider_metadata),
-                StreamPart::ReasoningStart {
+                TextStreamPart::ReasoningStart {
                     id,
                     provider_metadata,
                 } => rm.reasoning_start(id, provider_metadata),
-                StreamPart::ReasoningDelta {
+                TextStreamPart::ReasoningDelta {
                     id,
-                    delta,
+                    text,
                     provider_metadata,
-                } => rm.reasoning_delta(id, &delta, provider_metadata),
-                StreamPart::ReasoningEnd {
+                } => rm.reasoning_delta(id, &text, provider_metadata),
+                TextStreamPart::ReasoningEnd {
                     id,
                     provider_metadata,
                 } => rm.reasoning_end(id, provider_metadata),
-                StreamPart::ToolCall(call) => {
-                    rm.tool_call(&call);
-                    tool_calls.push(call);
-                }
-                StreamPart::ToolResult(result) => rm.tool_result(result),
-                StreamPart::Source(source) => {
-                    rm.source(source.clone());
-                    sources.push(source);
-                }
-                StreamPart::File(file) => {
-                    rm.file(&file, false);
-                    files.push(file);
-                }
-                StreamPart::ReasoningFile(output) => rm.file(&output.file, true),
-                StreamPart::Custom {
+                TextStreamPart::ToolCall(call) => rm.tool_call(&call),
+                // Tool results (not preliminary ones), tool errors and
+                // approval responses enter the step content as they arrive
+                // (stream-text.ts:1529-1538, :1648-1650).
+                TextStreamPart::ToolResult(result) => rm.typed_tool_result(result),
+                TextStreamPart::ToolError(error) => rm.tool_error(error),
+                TextStreamPart::ToolApprovalResponse(response) => rm.approval_response(response),
+                TextStreamPart::Source(source) => rm.source(source),
+                TextStreamPart::File(file) => rm.file(&file, false),
+                TextStreamPart::ReasoningFile(output) => rm.file(&output.file, true),
+                TextStreamPart::Custom {
                     kind,
                     provider_metadata,
                 } => rm.custom(kind, provider_metadata),
-                StreamPart::ToolApprovalRequest(approval) => rm.approval(&approval),
-                StreamPart::StreamStart { warnings: w, .. } => {
-                    warnings = w;
-                }
-                StreamPart::Finish {
-                    finish_reason: fr,
-                    usage: u,
-                    provider_metadata: pm,
+                TextStreamPart::ToolApprovalRequest(approval) => rm.approval(&approval),
+                TextStreamPart::FinishStep {
+                    response,
+                    usage,
+                    performance,
+                    finish_reason,
+                    raw_finish_reason,
+                    provider_metadata,
                 } => {
-                    raw_finish_reason = fr.raw.clone();
-                    finish_reason = fr;
-                    usage = u.clone();
-                    finish_provider_metadata = pm;
-                    saw_finish = true;
+                    let assembled = std::mem::take(&mut rm).finish();
+                    steps.push(StepResult {
+                        call_id: call_id.clone(),
+                        step_number: u32::try_from(steps.len()).unwrap_or(u32::MAX),
+                        model: model.clone(),
+                        content: assembled.content,
+                        finish_reason,
+                        raw_finish_reason,
+                        usage,
+                        performance,
+                        warnings: std::mem::take(&mut warnings),
+                        request: std::mem::take(&mut request),
+                        response: StepResponse {
+                            id: response.id,
+                            timestamp: response.timestamp,
+                            model_id: response.model_id,
+                            headers: response.headers,
+                            body: None,
+                            messages: assembled.messages,
+                        },
+                        provider_metadata,
+                    });
+                }
+                TextStreamPart::Finish {
+                    total_usage: usage, ..
+                } => {
+                    total_usage = Some(usage);
                     break;
                 }
-                // Keep consuming after a provider error event: a trailing
-                // Finish still carries usage for the recording layer. The
-                // error is returned once the stream reaches its end.
-                StreamPart::Error { error } if provider_error.is_none() => {
-                    provider_error = Some(error);
+                // stream-text.ts:1725-1757: an abort after a recorded step
+                // resolves the result (null total usage without `finish`);
+                // only a stream that recorded no step fails with the abort
+                // (:1729-1740). stream_text itself yields FinishStep and
+                // Finish back to back, so this order only comes from a
+                // caller-supplied stream.
+                TextStreamPart::Abort { reason } => {
+                    aborted = Some(AiMuxError::Aborted(
+                        reason.unwrap_or_else(|| "request aborted".into()),
+                    ));
+                    break;
                 }
-                StreamPart::ResponseMetadata(meta) => response = Some(meta),
-                _ => {}
+                // Keep consuming after an error part: a trailing Finish still
+                // carries usage for the recording layer. The error is
+                // returned once the stream reaches its end.
+                TextStreamPart::Error { error } => {
+                    first_error.get_or_insert(error);
+                }
+                TextStreamPart::ToolInputStart { .. }
+                | TextStreamPart::ToolInputDelta { .. }
+                | TextStreamPart::ToolInputEnd { .. }
+                | TextStreamPart::ToolOutputDenied(_)
+                | TextStreamPart::Start {}
+                | TextStreamPart::Raw { .. } => {}
             }
         }
 
-        if let Some(error) = provider_error {
+        if let Some(error) = first_error {
             return Err(error);
         }
-        if !saw_finish {
-            // AI SDK semantics: an incomplete stream with no output at all is
-            // an error; an incomplete stream with partial output retains the
-            // partial result but must not claim a normal stop.
-            if !saw_output {
-                return Err(AiMuxError::InvalidResponseData(
-                    "No output generated. The model stream ended without a finish chunk.".into(),
-                ));
-            }
-            finish_reason = FinishReason {
-                unified: crate::types::FinishReasonUnified::Other,
-                raw: None,
-            };
+        if steps.is_empty() {
+            return Err(aborted.unwrap_or_else(|| {
+                AiMuxError::NoOutputGenerated(
+                    "No output generated. Check the stream for errors.".into(),
+                )
+            }));
         }
-
-        let crate::response_messages::ResponseMessages {
-            messages: response_messages,
-            content,
-            reasoning,
-        } = rm.finish();
-
-        let reasoning_text = reasoning
-            .iter()
-            .filter_map(|r| match r {
-                ReasoningPart::Text(r) => Some(r.text.as_str()),
-                ReasoningPart::File(_) => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        Ok(StreamTextResultAggregated {
-            content,
-            text,
-            reasoning,
-            reasoning_text,
-            tool_calls,
-            sources,
-            files,
-            finish_reason,
-            raw_finish_reason,
-            total_usage: usage.clone(),
-            usage,
-            warnings,
-            provider_metadata: finish_provider_metadata,
-            response,
-            response_messages,
-        })
+        let output = stream_output(steps.last().expect("checked above"), output.as_ref());
+        Ok(GenerateTextResult::with_total_usage(
+            steps,
+            total_usage.unwrap_or_default(),
+            output,
+        ))
     }
 }
 
@@ -519,7 +878,7 @@ fn provider_id(model: &dyn LanguageModel) -> Option<&str> {
 ///     GenerateTextOptions::default(),
 /// ).await?;
 ///
-/// println!("{}", result.text);
+/// println!("{}", result.text());
 /// # Ok(())
 /// # }
 /// ```
@@ -527,7 +886,8 @@ fn provider_id(model: &dyn LanguageModel) -> Option<&str> {
 /// # Errors
 ///
 /// Returns the error produced by the model's `do_generate` call (provider API,
-/// network, or abort).
+/// network, or abort), and the output's parse error when the final step's
+/// text does not parse.
 pub async fn generate_text(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
@@ -547,17 +907,38 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     messages: Vec<ModelMessage>,
     options: GenerateTextOptions,
 ) -> Result<GenerateTextResult, AiMuxError> {
+    let settings = options.operation_settings();
+    settings
+        .clone()
+        .scope(generate_in_operation(
+            model, lm_prompt, messages, options, settings,
+        ))
+        .await
+}
+
+// The operation body runs inside its settings' scope, where the model, the
+// composite children and the recorder read them.
+async fn generate_in_operation(
+    model: &dyn LanguageModel,
+    lm_prompt: crate::language_model_message::LanguageModelPrompt,
+    messages: Vec<ModelMessage>,
+    options: GenerateTextOptions,
+    settings: OperationSettings,
+) -> Result<GenerateTextResult, AiMuxError> {
     let repair_tool_call = options.repair_tool_call.clone();
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
+    let output = options.output.clone();
+    if let Some(output) = &output {
+        output.validate()?;
+    }
 
     // 2. Build CallOptions.
-    let mut call_options = options.into_call_options(lm_prompt);
-    let operation_timeout =
-        timeout::OperationTimeout::new(call_options.timeout.unwrap_or_default())?;
+    let call_options = options.into_call_options(lm_prompt);
+    let operation_timeout = timeout::OperationTimeout::new(settings.timeout.unwrap_or_default())?;
     let abort_signal = call_options.abort_signal.clone();
     let retries = retry::prepare_retries(
-        call_options.max_retries,
+        settings.max_retries,
         model.retry_config(),
         abort_signal.clone(),
     );
@@ -568,7 +949,6 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
             &call_options,
@@ -593,10 +973,7 @@ pub(crate) async fn generate_text_from_language_model_prompt(
     //     and store lookups are cheap (once-locked env check + two RwLock
     //     reads) when no store / inferer is registered.
     if let (Some((session_id, source)), Some(store)) = (
-        crate::session::resolve_session_id(
-            call_options.session_id.as_deref(),
-            &call_options.prompt,
-        ),
+        crate::session::resolve_session_id(settings.session_id.as_deref(), &call_options.prompt),
         crate::session::session_store(),
     ) {
         let call = store.append(&session_id, call_id.as_deref(), source);
@@ -609,6 +986,8 @@ pub(crate) async fn generate_text_from_language_model_prompt(
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
     //    The http layer's `http_request` span nests under this one.
+    //    `stepStartTimestampMs` (generate-text.ts:1023) is taken before the
+    //    retry loop, so the response time includes retries (:1068).
     let started = Instant::now();
     let span = tracing::info_span!(
         target: "aimux_core::generate",
@@ -617,12 +996,15 @@ pub(crate) async fn generate_text_from_language_model_prompt(
         model = %model.model_id(),
         modality = "text",
     );
-    let operation = retries.retry(|| {
-        if let Some(context) = &context {
-            let _ = context.start_attempt();
-        }
-        do_generate_with_logging(model, &call_options, span.clone(), started)
-    });
+    let operation = crate::recording::RecordingContext::scope(
+        context.clone(),
+        retries.retry(|| {
+            if let Some(context) = &context {
+                let _ = context.start_attempt();
+            }
+            do_generate_with_logging(model, &call_options, span.clone(), started)
+        }),
+    );
     let result = match timeout::run(operation, abort_signal.as_ref(), operation_timeout).await {
         Ok(r) => r,
         Err(e) => {
@@ -632,51 +1014,152 @@ pub(crate) async fn generate_text_from_language_model_prompt(
             return Err(e);
         }
     };
-    // 4. Extract text, tool calls, reasoning, sources, files from content.
-    let mut text = String::new();
-    let mut tool_calls = Vec::new();
-    let mut sources = Vec::new();
-    let mut files = Vec::new();
-    // Build the assistant response message content parts in parallel.
+    let response_time_ms = ms_between(started, Instant::now());
+
+    // 4. Parse tool calls, build the step and parse the output. Parsing,
+    //    repair and file resolution are part of the user operation: the
+    //    outcome is recorded once this phase has completed within the same
+    //    deadline/cancellation scope as the provider call.
+    let step = async {
+        let mut tool_calls = Vec::new();
+        for content in &result.content {
+            if let GenerateContent::ToolCall(call) = content {
+                tool_calls.push(
+                    parse_tool_call(
+                        call.clone(),
+                        tools.as_deref(),
+                        repair_tool_call.as_ref(),
+                        &messages,
+                        operation_instructions.as_deref(),
+                    )
+                    .await,
+                );
+            }
+        }
+        if let Some(error) = tool_choice_violation(
+            call_options.tool_choice.as_ref(),
+            tool_calls.iter().map(|call| call.tool_name.as_str()),
+            result.finish_reason.unified,
+            model,
+            || result.content.clone(),
+        ) {
+            return Err(error);
+        }
+        // The step time ends after tool handling and before content
+        // conversion (generate-text.ts:1382, :1437-1446).
+        let step_time_ms = ms_between(started, Instant::now());
+        let content = convert_generated_content(
+            &result,
+            &tool_calls,
+            tools.as_deref(),
+            abort_signal.as_ref(),
+            operation_timeout,
+        )
+        .await?;
+        Ok::<_, AiMuxError>(build_generated_step(
+            model,
+            call_id.clone(),
+            result,
+            content,
+            response_time_ms,
+            step_time_ms,
+        ))
+    }
+    .await;
+    let outcome = step.and_then(|step| {
+        let output = generate_output(&step, output.as_ref())?;
+        Ok(GenerateTextResult::from_steps(vec![step], output))
+    });
+    if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
+        rec.record_outcome(
+            call_id,
+            &match &outcome {
+                Ok(result) => crate::recording::OutcomeRecord::success(
+                    result.finish_reason(),
+                    &result.final_step().usage,
+                ),
+                Err(error) => crate::recording::OutcomeRecord::from_error(error),
+            },
+        );
+    }
+    outcome
+}
+
+/// The tool error that follows a client tool call that could not be parsed
+/// (`stream-language-model-call.ts:709-725`): the call's input, its error
+/// message, and `dynamic`.
+pub(crate) fn invalid_tool_call_error(call: &ToolCall) -> Option<TypedToolError> {
+    (call.invalid == Some(true) && call.provider_executed != Some(true)).then(|| TypedToolError {
+        tool_call_id: call.tool_call_id.clone(),
+        tool_name: call.tool_name.clone(),
+        input: Some(call.input.clone()),
+        error: Value::String(
+            call.error
+                .as_ref()
+                .map_or_else(|| "unknown error".to_owned(), ToString::to_string),
+        ),
+        provider_executed: None,
+        provider_metadata: None,
+        dynamic: Some(true),
+    })
+}
+
+/// A provider's tool result as a stream part
+/// (`stream-language-model-call.ts:760-792`): a tool error when the provider
+/// marks it as one, otherwise a tool result, with the input of the call it
+/// answers (`None` when the call is not in this stream).
+///
+/// Upstream drops the provider's `preliminary` flag here; aimux keeps it so
+/// that, as on the generated path, a preliminary result does not enter the
+/// step content.
+fn provider_tool_result_part(result: ToolResult, input: Option<Value>) -> TextStreamPart {
+    if result.is_error == Some(true) {
+        TextStreamPart::ToolError(TypedToolError {
+            tool_call_id: result.tool_call_id,
+            tool_name: result.tool_name,
+            input,
+            error: result.result,
+            provider_executed: Some(true),
+            provider_metadata: result.provider_metadata,
+            dynamic: result.dynamic,
+        })
+    } else {
+        TextStreamPart::ToolResult(TypedToolResult {
+            tool_call_id: result.tool_call_id,
+            tool_name: result.tool_name,
+            input,
+            output: result.result,
+            provider_executed: Some(true),
+            provider_metadata: result.provider_metadata,
+            dynamic: result.dynamic,
+            preliminary: result.preliminary,
+        })
+    }
+}
+
+/// The content of a generated model call with parsed tool calls and
+/// resolved files, and its response messages (the AI SDK's
+/// `convertLanguageModelContent` and `toResponseMessages`,
+/// `generate-text.ts:1437-1455`).
+///
+/// A provider tool result whose call is not in this response is a deferred
+/// result. It is accepted only for a provider tool of that name that sets
+/// `supportsDeferredResults`, and otherwise fails with `Tool call {id} not
+/// found.` (`convert-language-model-content.ts:87-104`).
+async fn convert_generated_content(
+    result: &GenerateResult,
+    tool_calls: &[ToolCall],
+    tools: Option<&[Tool]>,
+    abort_signal: Option<&AbortSignal>,
+    operation_timeout: timeout::OperationTimeout,
+) -> Result<crate::response_messages::ResponseMessages, AiMuxError> {
     let mut rm = crate::response_messages::ResponseMessageBuilder::new();
-    for content in &result.content {
-        if let GenerateContent::ToolCall(call) = content {
-            tool_calls.push(
-                parse_tool_call(
-                    call.clone(),
-                    tools.as_deref(),
-                    repair_tool_call.as_ref(),
-                    &messages,
-                    operation_instructions.as_deref(),
-                )
-                .await,
-            );
-        }
-    }
-    if let Some(error) = tool_choice_violation(
-        call_options.tool_choice.as_ref(),
-        tool_calls.iter().map(|call| call.tool_name.as_str()),
-        result.finish_reason.unified,
-        model,
-        || result.content.clone(),
-    ) {
-        if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
-            rec.record_outcome(
-                call_id,
-                &crate::recording::OutcomeRecord::from_error(&error),
-            );
-        }
-        return Err(error);
-    }
     for content in &result.content {
         match content {
             GenerateContent::Text {
-                text: t,
+                text,
                 provider_metadata,
-            } => {
-                text.push_str(t);
-                rm.text(t, provider_metadata.as_ref());
-            }
+            } => rm.text(text, provider_metadata.as_ref()),
             GenerateContent::ToolCall(call) => {
                 let parsed = tool_calls
                     .iter()
@@ -685,24 +1168,20 @@ pub(crate) async fn generate_text_from_language_model_prompt(
                 rm.tool_call(parsed);
             }
             GenerateContent::Reasoning(reasoning) => rm.reasoning(reasoning),
-            GenerateContent::Source(source) => {
-                rm.source(source.clone());
-                sources.push(source.clone());
-            }
+            GenerateContent::Source(source) => rm.source(source.clone()),
             GenerateContent::File(file) => {
                 let file = timeout::run(
-                    resolve_file(file.clone(), abort_signal.as_ref()),
-                    abort_signal.as_ref(),
+                    resolve_file(file.clone(), abort_signal),
+                    abort_signal,
                     operation_timeout,
                 )
                 .await?;
                 rm.file(&file, false);
-                files.push(file);
             }
             GenerateContent::ReasoningFile(file) => {
                 let file = timeout::run(
-                    resolve_file(file.clone(), abort_signal.as_ref()),
-                    abort_signal.as_ref(),
+                    resolve_file(file.clone(), abort_signal),
+                    abort_signal,
                     operation_timeout,
                 )
                 .await?;
@@ -726,109 +1205,120 @@ pub(crate) async fn generate_text_from_language_model_prompt(
                     reason: None,
                     is_automatic: None,
                     signature: None,
+                    input_schema_input: None,
                 });
             }
-            GenerateContent::ToolResult(result) => rm.tool_result(result.clone()),
+            GenerateContent::ToolResult(result) => {
+                let has_call = tool_calls
+                    .iter()
+                    .any(|call| call.tool_call_id == result.tool_call_id);
+                let deferred_allowed = tools.unwrap_or_default().iter().any(|tool| {
+                    matches!(tool, Tool::Provider(tool)
+                        if tool.name == result.tool_name
+                            && tool.supports_deferred_results == Some(true))
+                });
+                if !has_call && !deferred_allowed {
+                    return Err(AiMuxError::Other(format!(
+                        "Tool call {} not found.",
+                        result.tool_call_id
+                    )));
+                }
+                rm.tool_result(result.clone());
+            }
         }
     }
     // A tool call that could not be parsed gets a tool error, after the
     // model's content (`generate-text.ts:1303-1323`,
     // `convert-language-model-content.ts:208-214`).
-    for call in &tool_calls {
-        if call.invalid == Some(true)
-            && call.dynamic == Some(true)
-            && call.provider_executed != Some(true)
-        {
-            rm.tool_error(crate::result::TypedToolError {
-                tool_call_id: call.tool_call_id.clone(),
-                tool_name: call.tool_name.clone(),
-                input: Some(call.input.clone()),
-                error: Value::String(
-                    call.error
-                        .as_ref()
-                        .map_or_else(|| "unknown error".to_owned(), ToString::to_string),
-                ),
-                provider_executed: None,
-                provider_metadata: None,
-                dynamic: Some(true),
-            });
+    for call in tool_calls.iter().filter(|call| call.dynamic == Some(true)) {
+        if let Some(error) = invalid_tool_call_error(call) {
+            rm.tool_error(error);
         }
     }
-
-    let crate::response_messages::ResponseMessages {
-        messages: response_messages,
-        content,
-        reasoning,
-    } = rm.finish();
-    let reasoning_text = reasoning
-        .iter()
-        .filter_map(|r| match r {
-            ReasoningPart::Text(r) => Some(r.text.as_str()),
-            ReasoningPart::File(_) => None,
-        })
-        .collect::<Vec<_>>()
-        .join("");
-
-    // Parsing and optional repair are part of the user operation. Record a
-    // successful outcome only after that phase has completed within the same
-    // deadline/cancellation scope as the provider call.
-    if let (Some(rec), Some(call_id)) = (&recorder, &call_id) {
-        rec.record_outcome(
-            call_id,
-            &crate::recording::OutcomeRecord::from_generate_result(&result),
-        );
-    }
-
-    // Extract fields before moving `result` into `raw`.
-    let raw_finish_reason = result.finish_reason.raw.clone();
-    let provider_metadata = result.provider_metadata.clone();
-    let response = result.response.clone().map(Into::into).unwrap_or_default();
-    let usage = result.usage.clone();
-
-    Ok(GenerateTextResult {
-        content,
-        text,
-        tool_calls,
-        finish_reason: result.finish_reason.clone(),
-        usage: usage.clone(),
-        warnings: result.warnings.clone(),
-        raw: result,
-        reasoning,
-        reasoning_text,
-        sources,
-        files,
-        response_messages,
-        raw_finish_reason,
-        provider_metadata,
-        response,
-        total_usage: usage,
-    })
+    Ok(rm.finish())
 }
 
-/// Generate a structured JSON object (M12). Uses `generate_text` with
-/// `response_format: Json`, then parses the model output into a JSON value.
+/// The step of a generated model call (`generate-text.ts:1382-1401`,
+/// `:1457-1490`). A generated call has no first-output timing.
+fn build_generated_step(
+    model: &dyn LanguageModel,
+    call_id: Option<String>,
+    result: GenerateResult,
+    content: crate::response_messages::ResponseMessages,
+    response_time_ms: f64,
+    step_time_ms: f64,
+) -> StepResult {
+    let GenerateResult {
+        finish_reason,
+        usage,
+        warnings,
+        provider_metadata,
+        request,
+        response,
+        ..
+    } = result;
+    let response = response.unwrap_or_default();
+    let metadata = response_metadata_defaults(
+        crate::types::ResponseMetadata {
+            id: response.id,
+            timestamp: response.timestamp,
+            model_id: response.model_id,
+        },
+        model.model_id(),
+    );
+    let usage = as_language_model_usage(&usage);
+    let performance = StepResultPerformance::new(&usage, response_time_ms, step_time_ms, None, &[]);
+    StepResult {
+        call_id: call_id.unwrap_or_else(crate::recording::new_call_id),
+        step_number: 0,
+        model: StepModel {
+            provider: model.provider().to_owned(),
+            model_id: model.model_id().to_owned(),
+        },
+        content: content.content,
+        finish_reason: finish_reason.unified,
+        raw_finish_reason: finish_reason.raw,
+        usage,
+        performance,
+        warnings,
+        request: request.unwrap_or_default(),
+        response: StepResponse {
+            id: metadata.id.unwrap_or_default(),
+            timestamp: metadata.timestamp.unwrap_or_default(),
+            model_id: metadata.model_id.unwrap_or_default(),
+            headers: response.headers,
+            body: response.body,
+            messages: content.messages,
+        },
+        provider_metadata,
+    }
+}
+
+/// Generate a structured JSON value: a deprecated wrapper over
+/// [`generate_text`] with [`GenerateTextOptions::output`], as the AI SDK
+/// deprecates `generateObject` for `generateText({ output })`
+/// (`generate-object/generate-object.ts:120`).
 ///
-/// The schema is passed via `options.response_format = ResponseFormat::Json {
-/// schema: Some(schema), .. }`. JSON repair (`fix_json`) is applied before
-/// parsing to handle truncated or slightly malformed model output. No schema
-/// validation is performed (weak validation — relies on the model following
-/// the schema; use retries for robustness).
+/// `options.output` describes the value; without one the JSON output
+/// (`Output::Json`, any JSON value) applies. The object is the result's
+/// output, so the model's text must parse and match the schema, with the
+/// output's errors.
 ///
 /// # Example
 /// ```
+/// # #![allow(deprecated)]
 /// # use aimux_core::prelude::*;
-/// # use aimux_core::options::ResponseFormat;
 /// # async fn example(model: &dyn aimux_core::LanguageModel) -> Result<(), aimux_core::error::AiMuxError> {
 /// let result = generate_object(
 ///     model,
 ///     "Extract: John is 25 years old.",
 ///     GenerateTextOptions {
-///         response_format: Some(ResponseFormat::Json {
-///             schema: Some(serde_json::json!({
+///         output: Some(Output::Object {
+///             schema: serde_json::json!({
 ///                 "type": "object",
 ///                 "properties": { "name": { "type": "string" }, "age": { "type": "number" } },
 ///                 "required": ["name", "age"]
-///             })),
+///             }),
 ///             name: None,
 ///             description: None,
 ///         }),
@@ -842,46 +1332,40 @@ pub(crate) async fn generate_text_from_language_model_prompt(
 ///
 /// # Errors
 ///
-/// Propagates `generate_text` failures; additionally returns `JsonParse` when
-/// the (repaired) model output is not valid JSON.
+/// Propagates `generate_text` failures, including the output's parse
+/// errors; `NoOutputGenerated` when the model call finished without a
+/// parsed output (for example with tool calls).
+#[deprecated(
+    note = "use `generate_text` with `GenerateTextOptions::output`, as the AI SDK \
+                     deprecates `generateObject` for `generateText({ output })`"
+)]
 pub async fn generate_object(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
-    options: GenerateTextOptions,
+    mut options: GenerateTextOptions,
 ) -> Result<GenerateObjectResult, AiMuxError> {
-    let text_result = generate_text(model, prompt, options).await?;
-    let repaired = crate::json_repair::fix_json(&text_result.text);
-    let object: Value = serde_json::from_str(&repaired).map_err(|e| {
-        AiMuxError::JsonParse(format!(
-            "generateObject: model output is not valid JSON after repair: {e}"
-        ))
-    })?;
-    let raw_finish_reason = text_result.raw_finish_reason.clone();
-    let finish_reason = text_result.finish_reason.clone();
-    let usage = text_result.usage.clone();
-    let warnings = text_result.warnings.clone();
-    let reasoning = if text_result.reasoning_text.is_empty() {
-        None
-    } else {
-        Some(text_result.reasoning_text.clone())
-    };
-    let provider_metadata = text_result.raw.provider_metadata.clone();
-    let response = text_result
-        .raw
-        .response
-        .clone()
-        .map(Into::into)
-        .unwrap_or_default();
+    options.output.get_or_insert(Output::Json {
+        name: None,
+        description: None,
+    });
+    let result = generate_text(model, prompt, options).await?;
+    let object = result.output()?.clone();
+    let step = result.final_step();
     Ok(GenerateObjectResult {
         object,
-        finish_reason,
-        raw_finish_reason,
-        usage,
-        warnings,
-        reasoning,
-        provider_metadata,
-        response,
-        raw: text_result,
+        reasoning: step.reasoning_text(),
+        finish_reason: step.finish_reason,
+        usage: step.usage.clone(),
+        warnings: step.warnings.clone(),
+        request: step.request.clone(),
+        response: GenerateObjectResponse {
+            id: step.response.id.clone(),
+            timestamp: step.response.timestamp.clone(),
+            model_id: step.response.model_id.clone(),
+            headers: step.response.headers.clone(),
+            body: step.response.body.clone(),
+        },
+        provider_metadata: step.provider_metadata.clone(),
     })
 }
 
@@ -902,36 +1386,59 @@ pub async fn generate_object(
 ///
 /// let mut stream = result.stream;
 /// while let Some(part) = stream.next().await {
-///     if let StreamPart::TextDelta { delta, .. } = part? {
-///         print!("{}", delta);
+///     if let TextStreamPart::TextDelta { text, .. } = part? {
+///         print!("{}", text);
 ///     }
 /// }
 /// # Ok(())
 /// # }
 /// ```
 ///
+/// The stream is framed as the AI SDK's `fullStream`
+/// (`stream-text.ts:1855`, `:2830-2840`, `:3015-3135`): `Start`, then
+/// `StartStep` on the step's first chunk, the content parts, `FinishStep` and
+/// `Finish`. Aborting ends it with an `Abort` part (`:1860-1882`).
+///
 /// # Errors
 ///
 /// Returns setup failures from the model's `do_stream` call. Provider error
-/// events surface as `Ok(StreamPart::Error { .. })`; transport failures,
-/// caller cancellation, and Core timeouts surface as `Err(AiMuxError)` stream
-/// items.
+/// events surface as `Ok(TextStreamPart::Error { .. })`; transport failures
+/// and Core timeouts surface as `Err(AiMuxError)` stream items.
 pub async fn stream_text(
     model: &dyn LanguageModel,
     prompt: impl Into<ModelPrompt>,
     options: GenerateTextOptions,
 ) -> Result<StreamTextResult, AiMuxError> {
+    let settings = options.operation_settings();
+    settings
+        .clone()
+        .scope(stream_in_operation(model, prompt.into(), options, settings))
+        .await
+}
+
+// The stream setup runs inside the operation settings' scope, like
+// `generate_in_operation`. The pump task that drives the returned stream
+// calls no model and does not read them.
+async fn stream_in_operation(
+    model: &dyn LanguageModel,
+    prompt: ModelPrompt,
+    options: GenerateTextOptions,
+    settings: OperationSettings,
+) -> Result<StreamTextResult, AiMuxError> {
     // 1. Convert user prompt to provider-facing prompt.
     let repair_tool_call = options.repair_tool_call.clone();
     let tools = options.tools.clone();
     let operation_instructions = options.instructions.clone();
-    let (messages, instructions) =
-        standardize_prompt(prompt.into(), operation_instructions.as_deref())?;
+    let output = options.output.clone();
+    if let Some(output) = &output {
+        output.validate()?;
+    }
+    let (messages, instructions) = standardize_prompt(prompt, operation_instructions.as_deref())?;
     let lm_prompt = convert_to_language_model_prompt(&messages, instructions, provider_id(model))?;
 
     // 2. Build CallOptions.
-    let mut call_options = options.into_call_options(lm_prompt);
-    let stream_timeout = call_options.timeout.unwrap_or_default();
+    let call_options = options.into_call_options(lm_prompt);
+    let stream_timeout = settings.timeout.unwrap_or_default();
     let operation_timeout = timeout::OperationTimeout::new(stream_timeout)?;
     // Armed at operation start: providers await their first SSE event inside
     // do_stream, so the first-chunk budget must already be counting there —
@@ -943,7 +1450,7 @@ pub async fn stream_text(
         .transpose()?;
     let abort_signal = call_options.abort_signal.clone();
     let retries = retry::prepare_retries(
-        call_options.max_retries,
+        settings.max_retries,
         model.retry_config(),
         abort_signal.clone(),
     );
@@ -954,7 +1461,6 @@ pub async fn stream_text(
     let context = crate::recording::recorder().map(|recorder| {
         let ctx =
             crate::recording::RecordingContext::new(crate::recording::new_call_id(), recorder);
-        call_options.recording_context = Some(ctx.clone());
         ctx.recorder.record_input(
             &ctx.call_id,
             &call_options,
@@ -971,6 +1477,13 @@ pub async fn stream_text(
     });
     let call_id = context.as_ref().map(|c| c.call_id.clone());
     let recorder = context.as_ref().map(|c| c.recorder.clone());
+    let step_call_id = call_id
+        .clone()
+        .unwrap_or_else(crate::recording::new_call_id);
+    let step_model = StepModel {
+        provider: model.provider().to_owned(),
+        model_id: model.model_id().to_owned(),
+    };
 
     // 2b. Session grouping (RFC-0024): explicit session_id first, opt-in
     //     prompt-prefix inference as fallback. Recorded before the call so
@@ -979,10 +1492,7 @@ pub async fn stream_text(
     //     and store lookups are cheap (once-locked env check + two RwLock
     //     reads) when no store / inferer is registered.
     if let (Some((session_id, source)), Some(store)) = (
-        crate::session::resolve_session_id(
-            call_options.session_id.as_deref(),
-            &call_options.prompt,
-        ),
+        crate::session::resolve_session_id(settings.session_id.as_deref(), &call_options.prompt),
         crate::session::session_store(),
     ) {
         let call = store.append(&session_id, call_id.as_deref(), source);
@@ -994,6 +1504,9 @@ pub async fn stream_text(
     }
 
     // 3. Call provider, inside the "generate" span (RFC-0014 §4.1 span tree).
+    //    The step starts before the retry loop (`stepStartTimestampMs`,
+    //    stream-text.ts:2399); each attempt restarts the model call's clock
+    //    (`callStartTimestampMs`, stream-language-model-call.ts:348).
     let span = tracing::info_span!(
         target: "aimux_core::generate",
         "generate",
@@ -1001,15 +1514,23 @@ pub async fn stream_text(
         model = %model.model_id(),
         modality = "text",
     );
-    let operation = retries.retry(|| {
-        if let Some(context) = &context {
-            let _ = context.start_attempt();
-        }
-        // Call-level retry boundary: once do_stream returns a stream, retry
-        // no longer recreates the provider request; the returned stream is
-        // consumed by the stream-step timeout logic below.
-        model.do_stream(&call_options).instrument(span.clone())
-    });
+    let step_started = Instant::now();
+    let attempt_started = Mutex::new(step_started);
+    let operation = crate::recording::RecordingContext::scope(
+        context.clone(),
+        retries.retry(|| {
+            if let Some(context) = &context {
+                let _ = context.start_attempt();
+            }
+            *attempt_started
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Instant::now();
+            // Call-level retry boundary: once do_stream returns a stream, retry
+            // no longer recreates the provider request; the returned stream is
+            // consumed by the stream-step timeout logic below.
+            model.do_stream(&call_options).instrument(span.clone())
+        }),
+    );
     let setup_deadline = timeout::min_deadline(operation_timeout.deadline(), first_chunk_deadline);
     let result: StreamResult =
         match timeout::run_until(operation, abort_signal.as_ref(), setup_deadline).await {
@@ -1021,6 +1542,9 @@ pub async fn stream_text(
                 return Err(e);
             }
         };
+    let call_started = *attempt_started
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // 解构避免部分 move(result 各字段去向不同)。
     let StreamResult {
         stream,
@@ -1040,105 +1564,124 @@ pub async fn stream_text(
     // for the consumer's latency. The channel is unbounded so the pump never
     // blocks on the consumer (which would put that latency back into the
     // timers); the AI SDK's `streamText` consumes eagerly for the same
-    // reason, and buffering is bounded by the response itself.
+    // reason, and buffering is bounded by the response itself. Each item is
+    // stamped with its arrival time, which the step's performance uses.
     //
     // Spawned even with no abort signal or deadlines armed: the pump is also
     // the stream's terminal fuse — `Finish` and non-recoverable errors must
     // end the stream under every configuration, or a provider that keeps the
     // connection open after `Finish` hangs a consumer reading to end-of-stream.
-    let file_abort_signal = abort_signal.clone();
-    let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> = {
-        let mut stream = stream;
-        let chunk_ms = stream_timeout.chunk_ms;
-        let pump_abort = abort_signal.clone();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let pump = tokio::spawn(async move {
-            let mut chunk_deadline = first_chunk_deadline;
+    // The pump runs in its own task, which does not inherit the recording
+    // scope; the stream carries it into every poll.
+    let mut provider_stream =
+        crate::recording::RecordingContext::scope_stream(context.clone(), stream);
+    let chunk_ms = stream_timeout.chunk_ms;
+    let pump_abort = abort_signal.clone();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let pump = tokio::spawn(async move {
+        let mut chunk_deadline = first_chunk_deadline;
 
-            loop {
-                let next = tokio::select! {
-                    biased;
-                    // Dropping the provider stream cancels the in-flight HTTP
-                    // exchange; the consumer side reports the abort error.
-                    () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
-                    () = timeout::wait_for_deadline(operation_deadline) => {
-                        let _ = tx.send(Err(operation_deadline
-                            .expect("operation deadline future only resolves for a deadline")
-                            .error()));
-                        break;
-                    }
-                    () = timeout::wait_for_deadline(chunk_deadline) => {
-                        let _ = tx.send(Err(chunk_deadline
-                            .expect("chunk deadline future only resolves for a deadline")
-                            .error()));
-                        break;
-                    }
-                    item = stream.next() => item,
-                };
-
-                let Some(item) = next else { break };
-                let terminal = is_terminal_item(&item);
-                if let Ok(part) = &item
-                    && is_output_chunk(part)
-                {
-                    chunk_deadline = match chunk_ms
-                        .map(|duration_ms| timeout::TimeoutDeadline::from_now("Chunk", duration_ms))
-                        .transpose()
-                    {
-                        Ok(deadline) => deadline,
-                        Err(error) => {
-                            let _ = tx.send(Err(error));
-                            break;
-                        }
-                    };
-                }
-
-                // A closed receiver means the consumer dropped the stream.
-                if tx.send(item).is_err() || terminal {
+        loop {
+            let next = tokio::select! {
+                biased;
+                // Dropping the provider stream cancels the in-flight HTTP
+                // exchange; the consumer side reports the abort.
+                () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
+                () = timeout::wait_for_deadline(operation_deadline) => {
+                    let _ = tx.send((Instant::now(), Err(operation_deadline
+                        .expect("operation deadline future only resolves for a deadline")
+                        .error())));
                     break;
                 }
+                () = timeout::wait_for_deadline(chunk_deadline) => {
+                    let _ = tx.send((Instant::now(), Err(chunk_deadline
+                        .expect("chunk deadline future only resolves for a deadline")
+                        .error())));
+                    break;
+                }
+                item = provider_stream.next() => item,
+            };
+
+            let Some(item) = next else { break };
+            let arrived = Instant::now();
+            let terminal = is_terminal_item(&item);
+            if let Ok(part) = &item
+                && is_output_chunk(part)
+            {
+                chunk_deadline = match chunk_ms
+                    .map(|duration_ms| timeout::TimeoutDeadline::from_now("Chunk", duration_ms))
+                    .transpose()
+                {
+                    Ok(deadline) => deadline,
+                    Err(error) => {
+                        let _ = tx.send((arrived, Err(error)));
+                        break;
+                    }
+                };
             }
-        });
-        let pump = AbortOnDrop(pump);
-        Box::pin(async_stream::stream! {
+
+            // A closed receiver means the consumer dropped the stream.
+            if tx.send((arrived, item)).is_err() || terminal {
+                break;
+            }
+        }
+    });
+    let pump = AbortOnDrop(pump);
+
+    let file_abort_signal = abort_signal.clone();
+    let tool_choice = call_options.tool_choice.clone();
+    let step_provider = model.provider().to_owned();
+    let step_model_id = model.model_id().to_owned();
+    let response_metadata =
+        response_metadata_defaults(crate::types::ResponseMetadata::default(), model.model_id());
+    let stream_response_headers = response_headers.clone();
+    let step_request = RequestInfo {
+        body: request_body.clone(),
+    };
+    let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
+        async_stream::stream! {
             let _pump = pump;
+            let mut step = StreamStep::new(call_started, response_metadata);
+            let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
+            let mut content = StreamedContent::default();
+            yield Ok(TextStreamPart::Start {});
             loop {
                 let next = tokio::select! {
                     biased;
                     () = timeout::wait_for_abort(abort_signal.as_ref()) => {
-                        yield Err(AiMuxError::from_abort_signal(
+                        let error = AiMuxError::from_abort_signal(
                             abort_signal.as_ref().expect("abort future only resolves for a signal"),
-                        ));
-                        break;
+                        );
+                        yield Ok(TextStreamPart::Abort { reason: Some(error.to_string()) });
+                        return;
                     }
                     item = rx.recv() => item,
                 };
-                let Some(item) = next else { break };
-                // Mirror the pump's fuse here so the stream ends right after
-                // the terminal item, ahead of a later abort or the channel
-                // close racing it.
-                let terminal = is_terminal_item(&item);
-                yield item;
-                if terminal {
-                    break;
+                let Some((arrived, item)) = next else { break };
+                let part = match item {
+                    Ok(part) => part,
+                    Err(error) => {
+                        let terminal = !error.is_recoverable_stream_error();
+                        yield Err(error);
+                        if terminal { return; }
+                        continue;
+                    }
+                };
+                // `model-call-start` only carries the warnings; every other
+                // chunk first opens the step (stream-text.ts:2822-2840).
+                if !matches!(part, StreamPart::StreamStart { .. }) {
+                    if !step.started {
+                        step.started = true;
+                        yield Ok(TextStreamPart::StartStep {
+                            request: step_request.clone(),
+                            warnings: step.warnings.clone(),
+                        });
+                    }
+                    step.record_chunk(&part, arrived);
+                    content.observe(&part);
                 }
-            }
-        })
-    };
-    let mut stream = stream;
-    let tool_choice = call_options.tool_choice.clone();
-    let provider = model.provider().to_owned();
-    let model_id = model.model_id().to_owned();
-    let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
-        async_stream::stream! {
-            let mut tool_calls = HashMap::new();
-            let mut content = StreamedContent::default();
-            while let Some(item) = stream.next().await {
-                if let Ok(part) = &item {
-                    content.observe(part);
-                }
-                match item {
-                    Ok(StreamPart::ToolCall(raw)) => {
+                match part.split_payload() {
+                    StreamPartPayload::ToolCall(raw) => {
                         let parsed = parse_tool_call(
                             raw,
                             tools.as_deref(),
@@ -1147,69 +1690,101 @@ pub async fn stream_text(
                             operation_instructions.as_deref(),
                         ).await;
                         tool_calls.insert(parsed.tool_call_id.clone(), parsed.clone());
-                        yield Ok(StreamPart::ToolCall(parsed));
-                    }
-                    Ok(StreamPart::File(file)) => {
-                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                            Ok(file) => yield Ok(StreamPart::File(file)),
-                            Err(error) => yield Ok(StreamPart::Error { error }),
+                        let tool_error = invalid_tool_call_error(&parsed);
+                        yield Ok(TextStreamPart::ToolCall(parsed));
+                        if let Some(error) = tool_error {
+                            yield Ok(TextStreamPart::ToolError(error));
                         }
                     }
-                    Ok(StreamPart::ReasoningFile(file)) => {
-                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
-                            Ok(file) => yield Ok(StreamPart::ReasoningFile(ReasoningFileOutput {
-                                provider_metadata: file.provider_metadata.clone(), file,
-                            })),
-                            Err(error) => yield Ok(StreamPart::Error { error }),
-                        }
-                    }
-                    Ok(StreamPart::ToolApprovalRequest(approval)) => {
+                    StreamPartPayload::ToolApprovalRequest(approval) => {
                         if let Some(call) = tool_calls.get(&approval.tool_call_id) {
-                            yield Ok(StreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
+                            yield Ok(TextStreamPart::ToolApprovalRequest(ToolApprovalRequestOutput {
                                 approval_id: approval.approval_id, tool_call: call.clone(),
-                                reason: None, is_automatic: None, signature: None,
+                                reason: None, is_automatic: None, signature: None, input_schema_input: None,
                             }));
                         } else {
-                            yield Ok(StreamPart::Error { error: AiMuxError::ToolCallNotFoundForApproval {
+                            yield Ok(TextStreamPart::Error { error: AiMuxError::ToolCallNotFoundForApproval {
                                 tool_call_id: approval.tool_call_id, approval_id: approval.approval_id,
                             }});
                         }
                     }
-                    // `stream-language-model-call.ts:644-687`: a response that
-                    // breaks an enforced tool choice ends with an error and
-                    // an `error` finish reason (the raw reason is kept).
-                    Ok(StreamPart::Finish { finish_reason, usage, provider_metadata }) => {
-                        let violation = tool_choice_violation_error(
-                            tool_choice.as_ref(),
-                            tool_calls.values().map(|call: &crate::tool::ToolCall| call.tool_name.as_str()),
-                            finish_reason.unified,
-                            &provider,
-                            &model_id,
-                            || std::mem::take(&mut content.content),
-                        );
-                        match violation {
-                            None => yield Ok(StreamPart::Finish { finish_reason, usage, provider_metadata }),
-                            Some(error) => {
-                                yield Ok(StreamPart::Error { error });
-                                yield Ok(StreamPart::Finish {
-                                    finish_reason: FinishReason {
-                                        unified: crate::types::FinishReasonUnified::Error,
-                                        raw: finish_reason.raw,
-                                    },
-                                    usage,
-                                    provider_metadata,
-                                });
-                            }
+                    StreamPartPayload::ReasoningFile(file) => {
+                        match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                            Ok(file) => yield Ok(TextStreamPart::ReasoningFile(ReasoningFileOutput {
+                                provider_metadata: file.provider_metadata.clone(), file,
+                            })),
+                            Err(error) => yield Ok(TextStreamPart::Error { error }),
                         }
                     }
-                    Ok(part) => yield Ok(part.map_payloads(|_| unreachable!("matched above"), |_| unreachable!("matched above"))
-                        .map_reasoning_file(|file| ReasoningFileOutput { provider_metadata: file.provider_metadata.clone(), file })),
-                    Err(error) => yield Err(error),
+                    StreamPartPayload::Other(part) => match part {
+                        StreamPart::StreamStart { warnings } => step.warnings = warnings,
+                        StreamPart::ResponseMetadata(metadata) => step.response_metadata(metadata),
+                        // `stream-language-model-call.ts:644-687`: a response that
+                        // breaks an enforced tool choice finishes the model call
+                        // with an `error` finish reason (the raw reason is kept),
+                        // followed by an error part.
+                        StreamPart::Finish { mut finish_reason, usage, provider_metadata } => {
+                            let violation = tool_choice_violation_error(
+                                tool_choice.as_ref(),
+                                tool_calls.values().map(|call| call.tool_name.as_str()),
+                                finish_reason.unified,
+                                &step_provider,
+                                &step_model_id,
+                                || std::mem::take(&mut content.content),
+                            );
+                            if violation.is_some() {
+                                finish_reason.unified = FinishReasonUnified::Error;
+                            }
+                            step.finish(finish_reason, &usage, provider_metadata, arrived);
+                            if let Some(error) = violation {
+                                yield Ok(TextStreamPart::Error { error });
+                            }
+                        }
+                        StreamPart::Error { error } => {
+                            step.terminal = true;
+                            step.finish_reason = FinishReasonUnified::Error;
+                            yield Ok(TextStreamPart::Error { error });
+                        }
+                        StreamPart::ToolResult(result) => {
+                            let input = tool_calls.get(&result.tool_call_id).map(|call| call.input.clone());
+                            yield Ok(provider_tool_result_part(result, input));
+                        }
+                        StreamPart::File(file) => {
+                            match timeout::run(resolve_file(file, file_abort_signal.as_ref()), file_abort_signal.as_ref(), operation_timeout).await {
+                                Ok(file) => yield Ok(TextStreamPart::File(file)),
+                                Err(error) => yield Ok(TextStreamPart::Error { error }),
+                            }
+                        }
+                        // An empty text delta without provider metadata is not
+                        // forwarded (stream-text.ts:2881-2891); providers emit
+                        // one, e.g. OpenAI chat's opening `"content": ""`.
+                        StreamPart::TextDelta { delta, provider_metadata: None, .. } if delta.is_empty() => {}
+                        part => {
+                            if let Some(part) = part
+                                .widen::<ToolCall, ToolApprovalRequestOutput, ReasoningFileOutput>()
+                                .into_text_stream_part()
+                            {
+                                yield Ok(part);
+                            }
+                        }
+                    },
                 }
             }
+            // An incomplete model stream without output is an error, not an
+            // empty step; one with partial output keeps it
+            // (stream-text.ts:3015-3030).
+            if !step.terminal && !step.saw_output {
+                yield Ok(TextStreamPart::Error { error: AiMuxError::NoOutputGenerated(
+                    "No output generated. The model stream ended without a finish chunk.".into(),
+                ) });
+                return;
+            }
+            let (finish_step, finish) = step.into_parts(stream_response_headers, step_started);
+            yield Ok(finish_step);
+            yield Ok(finish);
         },
     );
-    // 录制开启时才包装(终结时写 outcome + 传输封闭);关闭时零成本透传。
+
     let stream = crate::recording::RecordingOutcomeStream::new(
         stream,
         recorder.clone(),
@@ -1222,7 +1797,135 @@ pub async fn stream_text(
         stream: Box::pin(stream),
         request_body,
         response_headers,
+        call_id: step_call_id,
+        model: step_model,
+        output,
     })
+}
+
+/// The state of the streamed step: what `stream-text.ts:2736-2780` keeps
+/// per step, plus the output timing of `stream-language-model-call.ts:441-460`.
+struct StreamStep {
+    started: bool,
+    warnings: Vec<Warning>,
+    /// A finish or error chunk arrived.
+    terminal: bool,
+    saw_output: bool,
+    finish_reason: FinishReasonUnified,
+    raw_finish_reason: Option<String>,
+    usage: LanguageModelUsage,
+    provider_metadata: Option<ProviderMetadata>,
+    response: crate::types::ResponseMetadata,
+    call_started: Instant,
+    first_output_ms: Option<f64>,
+    previous_output: Option<Instant>,
+    chunk_gaps_ms: Vec<f64>,
+    /// The model call's performance, known once its finish chunk arrived.
+    model_call_performance: Option<StepResultPerformance>,
+}
+
+impl StreamStep {
+    fn new(call_started: Instant, response: crate::types::ResponseMetadata) -> Self {
+        Self {
+            started: false,
+            warnings: Vec::new(),
+            terminal: false,
+            saw_output: false,
+            finish_reason: FinishReasonUnified::Other,
+            raw_finish_reason: None,
+            usage: LanguageModelUsage::default(),
+            provider_metadata: None,
+            response,
+            call_started,
+            first_output_ms: None,
+            previous_output: None,
+            chunk_gaps_ms: Vec::new(),
+            model_call_performance: None,
+        }
+    }
+
+    /// Output timing by arrival time (`stream-language-model-call.ts:450-460`).
+    fn record_chunk(&mut self, part: &StreamPart, arrived: Instant) {
+        if !is_output_chunk(part) {
+            return;
+        }
+        self.saw_output = true;
+        if self.first_output_ms.is_none() {
+            self.first_output_ms = Some(ms_between(self.call_started, arrived));
+        } else if let Some(previous) = self.previous_output {
+            self.chunk_gaps_ms.push(ms_between(previous, arrived));
+        }
+        self.previous_output = Some(arrived);
+    }
+
+    /// `model-call-response-metadata` (stream-text.ts:2962-2968).
+    fn response_metadata(&mut self, metadata: crate::types::ResponseMetadata) {
+        if metadata.id.is_some() {
+            self.response.id = metadata.id;
+        }
+        if metadata.timestamp.is_some() {
+            self.response.timestamp = metadata.timestamp;
+        }
+        if metadata.model_id.is_some() {
+            self.response.model_id = metadata.model_id;
+        }
+    }
+
+    /// The finish chunk: usage and the model call's performance
+    /// (`stream-language-model-call.ts:593-624`, stream-text.ts:2971-2983).
+    fn finish(
+        &mut self,
+        finish_reason: crate::types::FinishReason,
+        usage: &crate::types::Usage,
+        provider_metadata: Option<ProviderMetadata>,
+        arrived: Instant,
+    ) {
+        self.terminal = true;
+        self.finish_reason = finish_reason.unified;
+        self.raw_finish_reason = finish_reason.raw;
+        self.usage = as_language_model_usage(usage);
+        self.provider_metadata = provider_metadata;
+        self.model_call_performance = Some(StepResultPerformance::new(
+            &self.usage,
+            ms_between(self.call_started, arrived),
+            0.0,
+            self.first_output_ms,
+            &self.chunk_gaps_ms,
+        ));
+    }
+
+    /// The `finish-step` and `finish` parts (stream-text.ts:3032-3048,
+    /// :3128-3134). Without a finish chunk the model call's performance
+    /// stays zero (`createModelCallPerformance`, :2755-2767).
+    fn into_parts(
+        self,
+        headers: Option<SharedHeaders>,
+        step_started: Instant,
+    ) -> (TextStreamPart, TextStreamPart) {
+        let mut performance = self.model_call_performance.unwrap_or_default();
+        performance.step_time_ms = ms_between(step_started, Instant::now());
+        let total_usage = add_language_model_usage(&LanguageModelUsage::default(), &self.usage);
+        (
+            TextStreamPart::FinishStep {
+                response: StepResponseMetadata {
+                    id: self.response.id.unwrap_or_default(),
+                    timestamp: self.response.timestamp.unwrap_or_default(),
+                    model_id: self.response.model_id.unwrap_or_default(),
+                    headers,
+                },
+                usage: self.usage,
+                performance,
+                finish_reason: self.finish_reason,
+                raw_finish_reason: self.raw_finish_reason.clone(),
+                provider_metadata: self.provider_metadata,
+            },
+            TextStreamPart::Finish {
+                finish_reason: self.finish_reason,
+                raw_finish_reason: self.raw_finish_reason,
+                total_usage,
+            },
+        )
+    }
 }
 
 /// The AI SDK's tool choice check after a model call (`generate-text.ts:1155-1176`,
@@ -1394,6 +2097,11 @@ impl StreamedContent {
     }
 }
 
+#[cfg(test)]
+mod pipeline_tests;
+#[cfg(test)]
+mod tests;
+
 /// A malformed individual frame does not prove that the transport is dead:
 /// SSE framing lets a later event still be valid. `Finish` and transport/Core
 /// errors are terminal so the stream is not polled past a dead source.
@@ -1485,17 +2193,15 @@ pub(crate) fn split_prompt(
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::openai_output::{
-    ChatCompletion, ChatCompletionFunction, ChatCompletionStream, ChatCompletionToolCall,
-    OpenAiStreamOptions, parsed_tool_call_arguments, to_chat_completion, to_chat_completion_stream,
+    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, to_chat_completion_stream,
 };
 
 /// Generate text and return the result as an OpenAI Chat Completion.
 ///
 /// This is the OpenAI-compatible equivalent of [`generate_text`]. Internally
-/// it calls `generate_text`, then converts the [`GenerateResult`] into a
-/// [`ChatCompletion`] via [`to_chat_completion`].
-/// Tool calls reflect Core parsing and any configured repair; provider
-/// response metadata, usage, and non-tool content are preserved from `raw`.
+/// it calls `generate_text`, then converts the result with
+/// [`generate_text_result_to_chat_completion`]. Tool calls reflect Core
+/// parsing and any configured repair.
 ///
 /// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
 /// always standard OpenAI Chat Completions JSON.
@@ -1535,45 +2241,21 @@ pub async fn generate_text_as_openai(
 
 /// Convert a [`GenerateTextResult`] into an OpenAI [`ChatCompletion`].
 ///
-/// The pure half of [`generate_text_as_openai`]: tool calls come from
-/// `result.tool_calls` (so they reflect Core parsing and any repair already
-/// applied to the result), everything else from `result.raw` via
-/// [`to_chat_completion`]. Hosts that repair a result themselves (RFC-0035)
-/// convert it with this afterwards.
+/// The pure half of [`generate_text_as_openai`]: the message is built from
+/// the content of the result's steps, so tool calls reflect Core parsing and
+/// any repair already applied to the result; the finish reason, id, model and
+/// logprobs come from the last step and the usage is the result's total.
+/// Hosts that repair a result themselves (RFC-0035) convert it with this
+/// afterwards.
 ///
-/// `model_id` is the fallback for `ChatCompletion.model` when the provider
-/// response carries no model id.
+/// `model_id` is the fallback for `ChatCompletion.model` when the response
+/// carries no model id.
 #[must_use]
 pub fn generate_text_result_to_chat_completion(
     result: &GenerateTextResult,
     model_id: &str,
 ) -> ChatCompletion {
-    let mut completion = to_chat_completion(&result.raw, model_id);
-    if let Some(choice) = completion.choices.first_mut() {
-        choice.message.tool_calls = if result.tool_calls.is_empty() {
-            None
-        } else {
-            Some(
-                result
-                    .tool_calls
-                    .iter()
-                    .map(|tool_call| ChatCompletionToolCall {
-                        id: tool_call.tool_call_id.clone(),
-                        tool_type: "function".to_string(),
-                        function: ChatCompletionFunction {
-                            name: tool_call.tool_name.clone(),
-                            arguments: parsed_tool_call_arguments(
-                                &tool_call.input,
-                                tool_call.invalid,
-                                tool_call.error.as_ref(),
-                            ),
-                        },
-                    })
-                    .collect(),
-            )
-        };
-    }
-    completion
+    crate::openai_output::text_result_to_chat_completion(result, model_id)
 }
 
 /// Stream text and return the result as a stream of OpenAI Chat Completion chunks.

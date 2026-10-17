@@ -88,6 +88,17 @@ pub struct ProviderTool {
     /// The arguments for configuring the tool. Must match the expected
     /// arguments defined by the provider for this tool.
     pub args: Map<String, Value>,
+    /// Whether a result of this tool may arrive in a later response than its
+    /// call (a deferred result, as in programmatic tool calling). The AI SDK
+    /// tool's `supportsDeferredResults` (provider-utils@5.0.55
+    /// `src/types/tool.ts:316-326`), which the provider's tool factory sets;
+    /// absent means `false`. It is not sent to the provider.
+    #[serde(
+        rename = "supportsDeferredResults",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub supports_deferred_results: Option<bool>,
 }
 
 /// A tool that can be either a user-defined function tool or a

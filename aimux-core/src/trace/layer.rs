@@ -72,7 +72,7 @@ pub struct TraceLayer {
     /// strict mode (RFC-0015 §4.3); default shared (safe for multi-process
     /// / shared API keys).
     strict: bool,
-    /// Default session id when `CallOptions.session_id` is absent.
+    /// Default session id when the operation sets no session id.
     default_session: Option<String>,
     /// Scope salt (HMAC-style key for fingerprint scoping).
     scope_salt: u64,
@@ -99,7 +99,7 @@ struct RecordCtx {
     scope_salt: u64,
     session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
     ctx: RequestCtx,
-    /// RFC-0023 关联 ID:取自 `options.recording_context`(缺失时由构造处生成)。
+    /// RFC-0023 关联 ID:取自当前的录制作用域(`RecordingContext::current`;缺失时由构造处生成)。
     call_id: Option<String>,
     request_body: Option<serde_json::Value>,
     response_headers: Option<HashMap<String, String>>,
@@ -120,7 +120,7 @@ impl TraceLayer {
         }
     }
 
-    /// Default session id (used when `CallOptions.session_id` is absent) +
+    /// Default session id (used when the operation sets no session id) +
     /// session key (32-byte HMAC-style salt for fingerprint scoping).
     #[must_use]
     pub fn with_default_session(mut self, session_id: String, key: [u8; 32]) -> Self {
@@ -154,14 +154,14 @@ impl TraceLayer {
 
     fn make_record_ctx(
         &self,
-        options: &CallOptions,
         request_body: Option<serde_json::Value>,
         response_headers: Option<HashMap<String, String>>,
         ttft_ms: Arc<AtomicU64>,
     ) -> RecordCtx {
-        let session_id = options
-            .session_id
-            .clone()
+        // The explicit session id of the operation the call runs in
+        // (`OperationSettings`); the model call options carry none.
+        let session_id = crate::operation::OperationSettings::current()
+            .and_then(|settings| settings.session_id)
             .or_else(|| self.default_session.clone());
         // B1: scope_key isolates by (provider, base_url, model_id) — not just
         // model_id — so two TraceLayers over the same model_id but different
@@ -195,10 +195,7 @@ impl TraceLayer {
             strict: self.strict,
             scope_salt: self.scope_salt,
             session_tracker: self.session_tracker.clone(),
-            call_id: options
-                .recording_context
-                .as_ref()
-                .map(|context| context.call_id.clone()),
+            call_id: crate::recording::RecordingContext::current().map(|context| context.call_id),
             ctx: RequestCtx {
                 session_id,
                 scope_key,
@@ -531,7 +528,7 @@ impl LanguageModel for TraceLayer {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        let ctx = self.make_record_ctx(options, None, None, Arc::new(AtomicU64::new(u64::MAX)));
+        let ctx = self.make_record_ctx(None, None, Arc::new(AtomicU64::new(u64::MAX)));
         match self.inner.do_generate(options).await {
             Ok(result) => {
                 let request_id = result
@@ -560,7 +557,7 @@ impl LanguageModel for TraceLayer {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let ttft = Arc::new(AtomicU64::new(u64::MAX));
-        let ctx = self.make_record_ctx(options, None, None, ttft.clone());
+        let ctx = self.make_record_ctx(None, None, ttft.clone());
         let result = match self.inner.do_stream(options).await {
             Ok(r) => r,
             Err(e) => {

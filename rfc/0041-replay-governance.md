@@ -243,7 +243,7 @@ session query 使用独立、版本化的 SessionStore 导出，不把 TraceReco
 
 | 项目 | 状态与所需证据 |
 |---|---|
-| `CallOptions.session_id` | 已落地；只保留显式优先/default fallback 回归 |
+| `session_id`（原 `CallOptions.session_id`，现为操作设置） | 已落地；只保留显式优先/default fallback 回归 |
 | TTFT | 已有观测与测试；迁移后覆盖预读、取消、empty stream，不重复声称新增基础功能 |
 | span 树 | 待验收：operation → child → attempt → exchange，通过 IDs 连接 cache observation；一个 ID 存在不等于 span tree 已正确 |
 | Anthropic 三字段 / response cache header | 已有部分测试；保留 golden 并补真实边界组合，不整组重写 |

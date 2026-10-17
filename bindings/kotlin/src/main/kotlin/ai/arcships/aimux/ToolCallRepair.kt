@@ -125,8 +125,8 @@ fun applyToolCallRepair(toolCallJson: String, optsJson: String?, replyJson: Stri
 }
 
 /**
- * Apply a repair reply to a whole serialized result (`GenerateTextResult`,
- * `GenerateObjectResult` via its nested `raw`, or `StreamTextResultAggregated`).
+ * Apply a repair reply to a whole serialized `GenerateTextResult`, generated
+ * or consumed from a stream (a `GenerateObjectResult` has no tool calls).
  *
  * Rewrites both `tool_calls` and the matching `response_messages` tool-call
  * part — the transcript must agree with the repaired call, or the next turn
@@ -198,9 +198,7 @@ internal fun repairToolCallsInResult(
     repair: RepairToolCall,
 ): String {
     val root = AimuxJson.parseToJsonElement(resultJson) as? JsonObject ?: return resultJson
-    // GenerateObjectResult nests the text result under `raw`.
-    val target = if (root.containsKey("tool_calls")) root else root["raw"] as? JsonObject ?: return resultJson
-    val invalid = (target["tool_calls"] as? JsonArray)
+    val invalid = (root["tool_calls"] as? JsonArray)
         ?.mapNotNull { it as? JsonObject }
         ?.filter(::isInvalid)
         ?: return resultJson

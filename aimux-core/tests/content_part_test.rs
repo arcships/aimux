@@ -14,8 +14,8 @@ use aimux_core::result::{
     TypedToolResult,
 };
 use aimux_core::shared::{FileBytes, GeneratedFileData};
-use aimux_core::tool::{FunctionTool, RawToolCall, ToolResult};
-use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
+use aimux_core::tool::{FunctionTool, ProviderTool, RawToolCall, Tool, ToolResult};
+use aimux_core::types::{FinishReason, FinishReasonUnified, NamespacedKind, Usage};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
@@ -80,6 +80,14 @@ async fn generate(content: Vec<GenerateContent>) -> aimux_core::generate::Genera
         GenerateTextOptions {
             tools: Some(vec![
                 FunctionTool::new("weather", json!({ "type": "object" })).into(),
+                // The provider tool whose late result `c0` answers; it
+                // accepts deferred results (`convert-language-model-content.ts:87-104`).
+                Tool::Provider(ProviderTool {
+                    id: NamespacedKind::new("openai.web_search").unwrap(),
+                    name: "web_search".into(),
+                    args: serde_json::Map::new(),
+                    supports_deferred_results: Some(true),
+                }),
             ]),
             ..Default::default()
         },
@@ -114,8 +122,11 @@ async fn a_generated_file_is_wrapped() {
         GenerateContent::ReasoningFile(file),
     ])
     .await;
-    assert_eq!(tags(&result.content), ["File", "ReasoningFile"]);
-    let wire = serde_json::to_value(&result.content).unwrap();
+    assert_eq!(
+        tags(&result.final_step().content),
+        ["File", "ReasoningFile"]
+    );
+    let wire = serde_json::to_value(&result.final_step().content).unwrap();
     assert_eq!(
         wire[0],
         json!({ "File": { "file": {
@@ -147,7 +158,7 @@ async fn tool_results_errors_and_invalid_calls_become_their_own_parts() {
     ])
     .await;
     assert_eq!(
-        tags(&result.content),
+        tags(&result.final_step().content),
         [
             "ToolCall",
             "ToolResult",
@@ -159,7 +170,7 @@ async fn tool_results_errors_and_invalid_calls_become_their_own_parts() {
             "ToolError"
         ]
     );
-    let ContentPart::ToolResult(found) = &result.content[1] else {
+    let ContentPart::ToolResult(found) = &result.final_step().content[1] else {
         panic!()
     };
     assert_eq!(
@@ -171,16 +182,18 @@ async fn tool_results_errors_and_invalid_calls_become_their_own_parts() {
             output: json!({ "hits": 3 }),
             provider_executed: Some(true),
             provider_metadata: None,
-            dynamic: Some(true),
+            // The call is to a declared provider tool, so it is not dynamic
+            // (`parse-tool-call.ts:267`).
+            dynamic: None,
             preliminary: None,
         }
     );
-    let ContentPart::ToolError(error) = &result.content[3] else {
+    let ContentPart::ToolError(error) = &result.final_step().content[3] else {
         panic!()
     };
     assert_eq!(error.error, json!("quota exceeded"));
     assert_eq!(error.input, Some(json!({ "q": "go" })));
-    let ContentPart::ToolResult(deferred) = &result.content[4] else {
+    let ContentPart::ToolResult(deferred) = &result.final_step().content[4] else {
         panic!()
     };
     assert_eq!(deferred.input, None);
@@ -191,7 +204,7 @@ async fn tool_results_errors_and_invalid_calls_become_their_own_parts() {
             .is_none(),
         "a deferred result has no input key"
     );
-    let ContentPart::ToolError(invalid) = &result.content[7] else {
+    let ContentPart::ToolError(invalid) = &result.final_step().content[7] else {
         panic!()
     };
     assert_eq!(
@@ -201,7 +214,7 @@ async fn tool_results_errors_and_invalid_calls_become_their_own_parts() {
             tool_name: "unknown_tool".into(),
             input: Some(json!({ "x": 1 })),
             error: json!(
-                "Model tried to call unavailable tool 'unknown_tool'. Available tools: weather."
+                "Model tried to call unavailable tool 'unknown_tool'. Available tools: weather, web_search."
             ),
             provider_executed: None,
             provider_metadata: None,
@@ -228,9 +241,9 @@ async fn tool_errors_replay_where_upstream_puts_them() {
             content: tool_content,
             ..
         },
-    ] = &result.response_messages[..]
+    ] = &result.final_step().response.messages[..]
     else {
-        panic!("{:#?}", result.response_messages)
+        panic!("{:#?}", result.final_step().response.messages)
     };
     let aimux_core::message::AssistantContent::Parts(parts) = content else {
         panic!()

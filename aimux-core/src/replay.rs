@@ -23,6 +23,7 @@ use crate::language_model::LanguageModel;
 use crate::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, UserPart,
 };
+use crate::operation::OperationSettings;
 use crate::options::CallOptions;
 use crate::recording::Recording;
 use crate::result::{GenerateContent, GenerateResult, StreamResult};
@@ -52,7 +53,7 @@ pub trait ReplayMatcher: Send + Sync {
 /// 精确匹配:provider/model_id 相同,且 prompt + 影响响应的可重放选项
 /// (temperature/max_output_tokens/seed/response_format/tools/tool_choice)
 /// 以及 headers/provider_options/body_overrides 规范相同才命中。运行时字段
-/// (call_id/abort_signal/recording_context)不参与比较。
+/// (call_id/abort_signal)不参与比较。
 ///
 /// headers/provider_options/body_overrides 用**脱敏感知比较**:录制侧这些
 /// 字段经 `recording::redact_json` 脱敏
@@ -97,7 +98,7 @@ impl ReplayMatcher for ExactMatcher {
 ///
 /// 含 prompt + temperature/max_output_tokens/seed/response_format/tools/
 /// tool_choice + headers/provider_options/body_overrides;排除运行时字段
-/// (call_id/abort_signal/recording_context)。序列化为 `Value` 后比较,
+/// (call_id/abort_signal)。序列化为 `Value` 后比较,
 /// 等价于"稳定规范哈希"但无碰撞风险。headers/provider_options/body_overrides
 /// 在比较时走脱敏感知语义(见 [`canonical_keys_match`])。
 fn canonical_call_key(opts: &CallOptions) -> serde_json::Value {
@@ -962,8 +963,11 @@ pub async fn replay_with_model(
             "language replay requires a language-model recording".into(),
         ));
     }
-    // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)。
+    // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
+    //    and the operation settings recorded next to them.
     let mut call_options: CallOptions = serde_json::from_value(recording.input.options.clone())
+        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
+    let settings: OperationSettings = serde_json::from_value(recording.input.options.clone())
         .map_err(|e| AiMuxError::JsonParse(format!("mock replay: input options invalid: {e}")))?;
 
     // 2. 应用 overrides。
@@ -982,7 +986,7 @@ pub async fn replay_with_model(
     // Recorded options already contain the complete provider-facing prompt.
     // Repair callbacks are runtime-only and are not restored from recordings.
     let prompt = std::mem::take(&mut call_options.prompt);
-    let options = generate_options_from_call_options(call_options);
+    let options = generate_options_from_call_options(call_options, settings);
     generate_text_from_language_model_prompt(model, prompt, Vec::new(), options).await
 }
 
@@ -997,11 +1001,15 @@ fn user_tool_choice(choice: LanguageModelV4ToolChoice) -> ToolChoice {
     }
 }
 
-/// `CallOptions` → `GenerateTextOptions`(record 侧到用户侧的反向映射)。
+/// `CallOptions` and the operation settings → `GenerateTextOptions`(record
+/// 侧到用户侧的反向映射)。
 ///
 /// `instructions` 已烘焙进 prompt(system 消息),重建时置 None;
 /// `abort_signal` 运行时句柄不跨 JSON,重建时置 None。
-fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
+fn generate_options_from_call_options(
+    o: CallOptions,
+    settings: OperationSettings,
+) -> GenerateTextOptions {
     GenerateTextOptions {
         max_output_tokens: o.max_output_tokens,
         temperature: o.temperature,
@@ -1010,7 +1018,7 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         top_k: o.top_k,
         presence_penalty: o.presence_penalty,
         frequency_penalty: o.frequency_penalty,
-        response_format: o.response_format,
+        output: o.response_format.map(output_for_response_format),
         seed: o.seed,
         tools: o.tools,
         tool_choice: o.tool_choice.map(user_tool_choice),
@@ -1019,12 +1027,36 @@ fn generate_options_from_call_options(o: CallOptions) -> GenerateTextOptions {
         reasoning: o.reasoning,
         instructions: None,
         body_overrides: o.body_overrides,
-        max_retries: o.max_retries,
-        timeout: o.timeout,
-        session_id: o.session_id,
+        max_retries: settings.max_retries,
+        timeout: settings.timeout,
+        session_id: settings.session_id,
         abort_signal: None,
         include_raw_chunks: o.include_raw_chunks,
         repair_tool_call: None,
+    }
+}
+
+/// The output that sends a recorded `response_format` again: a JSON format
+/// with a schema replays as an object output with that schema, one without a
+/// schema as the JSON output. The replayed request carries the same response
+/// format as the recorded one.
+fn output_for_response_format(format: crate::options::ResponseFormat) -> crate::output::Output {
+    match format {
+        crate::options::ResponseFormat::Text => crate::output::Output::Text {},
+        crate::options::ResponseFormat::Json {
+            schema: Some(schema),
+            name,
+            description,
+        } => crate::output::Output::Object {
+            schema,
+            name,
+            description,
+        },
+        crate::options::ResponseFormat::Json {
+            schema: None,
+            name,
+            description,
+        } => crate::output::Output::Json { name, description },
     }
 }
 
@@ -1943,7 +1975,7 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result =
             rt.block_on(async { replay_with_model(&rec, &EchoModel, None).await.unwrap() });
-        assert_eq!(result.text, "hello");
+        assert_eq!(result.text(), "hello");
     }
 
     #[test]
@@ -1959,7 +1991,7 @@ mod tests {
                 .await
                 .unwrap()
         });
-        assert_eq!(result.text, "overridden");
+        assert_eq!(result.text(), "overridden");
     }
 
     #[test]

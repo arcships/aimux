@@ -107,7 +107,8 @@ test('default streams carry no Raw parts (RFC-0016 M2 contract)', async (t) => {
   }
 
   t.truthy(parts.length >= 1)
-  t.truthy(parts[0].includes('StreamStart'), `part[0] must be StreamStart: ${parts[0]}`)
+  t.truthy('Start' in JSON.parse(parts[0]), `part[0] must be Start: ${parts[0]}`)
+  t.truthy('StartStep' in JSON.parse(parts[1]), `part[1] must be StartStep: ${parts[1]}`)
   t.true(
     parts.every((p) => !p.includes('"Raw"')),
     'no Raw parts by default',
@@ -121,5 +122,5 @@ test('non-traced model still generates normally', async (t) => {
   const model = await openai('sk-test-fake-key', 'gpt-4o-mini', { baseUrl: url })
   const result: GenerateTextResult = await generateText(model, 'hello')
   t.truthy(result.text)
-  t.is(result.usage.input_tokens.total, 200)
+  t.is(result.usage.input_tokens, 200)
 })

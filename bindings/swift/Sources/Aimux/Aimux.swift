@@ -11,7 +11,7 @@ import Foundation
 //
 // Every fallible C function returns `aimux_error_t *` (`OpaquePointer?`):
 // NULL = success (result in the trailing out-param), non-NULL = failure. The
-// unified code is AiMuxError (1...17), RecordingError (100...105), or a C ABI
+// unified code is AiMuxError (1...18), RecordingError (100...105), or a C ABI
 // failure (200...206). The three `expect*` decoders copy the relevant fields, release
 // it with `aimux_error_free` (exactly once) and return the Swift error
 // to throw. Errors are not handles: never `aimux_drop_handle` one.
@@ -44,7 +44,7 @@ func expectFfiError(_ e: OpaquePointer, context: String) -> any Error {
     return invariant("aimux ffi: \(context): \(message)")
 }
 
-/// Decode a returned error from an `[AiMuxError]` call: 1...17 becomes
+/// Decode a returned error from an `[AiMuxError]` call: 1...18 becomes
 /// `AimuxError`; 200...206 is decoded by `expectFfiError`. Frees `e` once.
 func expectAimuxError(_ e: OpaquePointer, context: String) -> any Error {
     let code = aimux_error_code(e)
@@ -141,6 +141,7 @@ public enum RetryErrorReason: String, Equatable, Sendable {
 /// }
 /// ```
 public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatable, Sendable {
+    case noOutputGenerated(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case jsonParse(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case invalidResponseData(message: String, status: Int, retryMs: Int64, retryable: Bool)
     case invalidArgument(message: String, status: Int, retryMs: Int64, retryable: Bool)
@@ -185,7 +186,8 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     /// The C-derived payload.
     private var payload: (message: String, status: Int, retryMs: Int64, retryable: Bool) {
         switch self {
-        case .jsonParse(let m, let s, let r, let t),
+        case .noOutputGenerated(let m, let s, let r, let t),
+             .jsonParse(let m, let s, let r, let t),
              .invalidResponseData(let m, let s, let r, let t),
              .invalidArgument(let m, let s, let r, let t),
              .invalidPrompt(let m, let s, let r, let t),
@@ -212,6 +214,7 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
     public var code: Int32 {
         let c: aimux_error_code_t
         switch self {
+        case .noOutputGenerated: c = AIMUX_E_NO_OUTPUT_GENERATED
         case .jsonParse: c = AIMUX_E_JSON_PARSE
         case .invalidResponseData: c = AIMUX_E_INVALID_RESPONSE_DATA
         case .invalidArgument: c = AIMUX_E_INVALID_ARGUMENT
@@ -385,6 +388,8 @@ public enum AimuxError: Error, LocalizedError, CustomStringConvertible, Equatabl
         let message = rawMsg.isEmpty ? "aimux: operation failed" : rawMsg
 
         switch code {
+        case AIMUX_E_NO_OUTPUT_GENERATED:
+            return .noOutputGenerated(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_JSON_PARSE:
             return .jsonParse(message: message, status: status, retryMs: retryMs, retryable: retryable)
         case AIMUX_E_INVALID_RESPONSE_DATA:
@@ -927,9 +932,9 @@ public final class Model: @unchecked Sendable {
     /// Generate a structured JSON object (M12, RFC-0016).
     ///
     /// Same signature as `generateText`; returns a JSON-serialized
-    /// `GenerateObjectResult`. Pass `response_format: { "Json": { ... } }`
-    /// via `options` for schema control; aimux-core applies JSON repair
-    /// before parsing.
+    /// `GenerateObjectResult`. Pass `"output": {"Object": {"schema": ...}}`
+    /// via `options` to describe the object; the model's text must parse as
+    /// JSON and match the schema.
     ///
     /// - Parameters:
     ///   - prompt: A prompt string or messages array (serialized as JSON).
@@ -945,12 +950,12 @@ public final class Model: @unchecked Sendable {
     /// (M11, RFC-0016). Synchronous (blocks until the stream finishes).
     ///
     /// Same signature as `generateText`; returns a JSON-serialized
-    /// `StreamTextResultAggregated`.
+    /// `GenerateTextResult`.
     ///
     /// - Parameters:
     ///   - prompt: A prompt string or messages array (serialized as JSON).
     ///   - options: Optional GenerateTextOptions (serialized as JSON).
-    /// - Returns: The JSON-serialized StreamTextResultAggregated.
+    /// - Returns: The JSON-serialized GenerateTextResult.
     public func consumeStreamText(prompt: String, options: String? = nil) throws -> String {
         try validateJson(prompt, parameter: "prompt")
         try validateJson(options, parameter: "options")

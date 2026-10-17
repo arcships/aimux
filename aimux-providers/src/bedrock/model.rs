@@ -246,16 +246,14 @@ impl LanguageModel for BedrockModel {
             usage,
             warnings: Vec::new(),
             provider_metadata: None,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::GenerateResponse {
+            response: Some(aimux_core::shared::ResponseInfo {
+                id: request_id,
+                timestamp: response_headers.get("date").cloned(),
+                model_id: Some(self.model_id.clone()),
+                headers: Some(response_headers),
                 body: response_body,
-                headers: Some(response_headers.clone()),
-                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                    id: request_id,
-                    timestamp: response_headers.get("date").cloned(),
-                    model_id: Some(self.model_id.clone()),
-                })
             }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -602,7 +600,7 @@ impl LanguageModel for BedrockModel {
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::StreamResponse {
+            response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })

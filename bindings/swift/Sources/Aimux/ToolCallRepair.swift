@@ -137,11 +137,10 @@ public func applyToolCallRepair(
     return try ffiStringCall { aimux_apply_tool_call_repair(toolCall, options, reply, $0) }
 }
 
-/// Apply a repair reply to a serialized `GenerateTextResult` or
-/// `GenerateObjectResult`. Both `tool_calls` and the matching
-/// `response_messages` tool-call part are rewritten — the transcript must keep
-/// pointing at the same entry, or the next turn replays the unrepaired
-/// arguments.
+/// Apply a repair reply to a serialized `GenerateTextResult`. Both `tool_calls`
+/// and the matching `response_messages` tool-call part are rewritten — the
+/// transcript must keep pointing at the same entry, or the next turn replays
+/// the unrepaired arguments.
 public func applyToolCallRepairToResult(
     result: String, options: String?, toolCallId: String, reply: String
 ) throws -> String {
@@ -160,9 +159,9 @@ public func applyToolCallRepairToResult(
 /// Repair every invalid tool call in a serialized result document and return
 /// the patched JSON (the input unchanged when no repair function is set).
 ///
-/// Handles `GenerateTextResult` and `StreamTextResultAggregated` (top-level
-/// `tool_calls`) as well as `GenerateObjectResult` (`raw.tool_calls`). Calls
-/// are visited in document order and each gets at most one repair attempt, as
+/// Handles a `GenerateTextResult`, generated or consumed from a stream
+/// (top-level `tool_calls`); a `GenerateObjectResult` has none. Calls are
+/// visited in document order and each gets at most one repair attempt, as
 /// in the AI SDK.
 func repairedResultJson(
     _ resultJson: String, promptJson: String, optsJson: String?,
@@ -171,9 +170,7 @@ func repairedResultJson(
     guard let repair = options?.repairToolCall else { return resultJson }
     guard let document = (try? JSONSerialization.jsonObject(with: Data(resultJson.utf8)))
         as? [String: Any] else { return resultJson }
-    // A GenerateObjectResult keeps the whole text result under `raw`.
-    let target = document["tool_calls"] != nil ? document : document["raw"] as? [String: Any]
-    guard let calls = target?["tool_calls"] as? [[String: Any]] else { return resultJson }
+    guard let calls = document["tool_calls"] as? [[String: Any]] else { return resultJson }
 
     var patched = resultJson
     for call in calls where call["invalid"] as? Bool == true {

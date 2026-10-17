@@ -192,11 +192,11 @@ class StructuredE2ETest {
             assertThat(firstCall.getString("tool_call_id")).isEqualTo("call_abc");
             assertThat(firstCall.getJSONObject("input").getString("location")).isEqualTo("Tokyo");
 
-            // raw.content contains a "ToolCall" variant.
-            JSONArray rawContent = result.getJSONObject("raw").getJSONArray("content");
+            // content contains a "ToolCall" variant.
+            JSONArray content = result.getJSONArray("content");
             boolean hasToolCallVariant = false;
-            for (int i = 0; i < rawContent.length(); i++) {
-                if (rawContent.getJSONObject(i).has("ToolCall")) {
+            for (int i = 0; i < content.length(); i++) {
+                if (content.getJSONObject(i).has("ToolCall")) {
                     hasToolCallVariant = true;
                     break;
                 }

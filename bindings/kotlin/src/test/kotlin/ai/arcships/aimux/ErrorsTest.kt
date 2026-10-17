@@ -220,8 +220,10 @@ class ErrorsTest {
     fun `createByCode rejects codes outside the enum`() {
         assertThatThrownBy { AimuxException.createByCode(999, "?") }
             .isInstanceOf(IllegalStateException::class.java)
-        // 18 is the first unassigned value and is rejected.
-        assertThatThrownBy { AimuxException.createByCode(18, "?") }
+        // 18 is NoOutputGenerated; 19 is the first unassigned value and is rejected.
+        assertThat(AimuxException.createByCode(AIMUX_E_NO_OUTPUT_GENERATED, "?"))
+            .isInstanceOf(NoOutputGeneratedError::class.java)
+        assertThatThrownBy { AimuxException.createByCode(19, "?") }
             .isInstanceOf(IllegalStateException::class.java)
         assertThatThrownBy { AimuxException.createByCode(AIMUX_OK, "?") }
             .isInstanceOf(IllegalStateException::class.java)

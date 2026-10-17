@@ -10,7 +10,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::message::{ModelMessage, ModelPrompt};
 use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
-use aimux_core::stream_part::StreamPart;
+use aimux_core::stream_part::{StreamPart, TextStreamPart};
 use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, RawToolCall, Tool, ToolChoice};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 use async_trait::async_trait;
@@ -250,14 +250,25 @@ async fn stream_text_ends_with_the_violation() {
     let parts: Vec<_> = parts.into_iter().map(Result::unwrap).collect();
     let [
         ..,
-        StreamPart::Error { error },
-        StreamPart::Finish { finish_reason, .. },
+        TextStreamPart::Error { error },
+        TextStreamPart::FinishStep {
+            finish_reason: step_finish_reason,
+            raw_finish_reason: step_raw_finish_reason,
+            ..
+        },
+        TextStreamPart::Finish {
+            finish_reason,
+            raw_finish_reason,
+            ..
+        },
     ] = &parts[..]
     else {
         panic!("{parts:#?}")
     };
-    assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
-    assert_eq!(finish_reason.raw.as_deref(), Some("end_turn"));
+    assert_eq!(*step_finish_reason, FinishReasonUnified::Error);
+    assert_eq!(step_raw_finish_reason.as_deref(), Some("end_turn"));
+    assert_eq!(*finish_reason, FinishReasonUnified::Error);
+    assert_eq!(raw_finish_reason.as_deref(), Some("end_turn"));
     let details = violation(error);
     assert_eq!(
         details.tool_choice,
@@ -292,11 +303,11 @@ async fn stream_text_ends_with_the_violation() {
     assert!(
         parts
             .iter()
-            .all(|part| !matches!(part, Ok(StreamPart::Error { .. }))),
+            .all(|part| !matches!(part, Ok(TextStreamPart::Error { .. }))),
         "{parts:#?}"
     );
-    let Some(Ok(StreamPart::Finish { finish_reason, .. })) = parts.last() else {
+    let Some(Ok(TextStreamPart::Finish { finish_reason, .. })) = parts.last() else {
         panic!("{parts:#?}")
     };
-    assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(*finish_reason, FinishReasonUnified::Stop);
 }

@@ -527,7 +527,7 @@ async fn should_handle_mcp_tools_with_annotations() {
     let result = generate_text(&model, "Hello", GenerateTextOptions::default())
         .await
         .expect("dynamic MCP call should pass Core validation without local tools");
-    let call = result.tool_calls.first().expect("MCP tool call");
+    let call = *result.tool_calls().first().expect("MCP tool call");
     assert_eq!(call.tool_name, "search");
     assert_eq!(call.provider_executed, Some(true));
     assert_eq!(call.dynamic, Some(true));

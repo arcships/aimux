@@ -3,7 +3,7 @@ package aimux
 // RFC-0016 第一批 e2e tests (Go shell):
 //   M2 include_raw_chunks -> StreamPart.Raw emission
 //   M10 Usage.raw preservation
-//   M9 StreamStart non-empty warnings
+//   M9 StartStep non-empty warnings
 //
 // Mirrors the Rust provider tests (openai_model_test.rs / groq_test.rs) at
 // the Go binding level, driving the real FFI path against a mock SSE server.
@@ -49,7 +49,7 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 		case "TextDelta":
 			var td TextDeltaPayload
 			json.Unmarshal(sp.Payload, &td)
-			textBuilder.WriteString(td.Delta)
+			textBuilder.WriteString(td.Text)
 		}
 	}
 	if err := stream.Err(); err != nil {
@@ -79,10 +79,10 @@ func TestE2E_StreamTextEmitsRawWhenEnabled(t *testing.T) {
 	}
 }
 
-// RFC-0016 M10: streaming Finish carries the provider's raw usage object
+// RFC-0016 M10: the streaming FinishStep usage carries the provider's raw usage object
 // (buildTextDeltaSSE usage has prompt_tokens=3).
 
-func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
+func TestE2E_StartStepCarriesNonEmptyWarnings(t *testing.T) {
 	srv := newMockServer()
 	defer srv.Close()
 	srv.SetContentType("text/event-stream")
@@ -93,36 +93,36 @@ func TestE2E_StreamStartCarriesNonEmptyWarnings(t *testing.T) {
 
 	// top_k on a provider that supports it produces no warning on the openai
 	// full profile; the Go assertion here is that a non-empty warnings array
-	// in StreamStart decodes without breaking the stream (the warning itself
+	// in StartStep decodes without breaking the stream (the warning itself
 	// is produced by the groq profile — covered in groq_test.rs).
 	stream := m.StreamText(`"Say hello"`, mustMarshalOptions(t, &GenerateTextOptions{
 		TopK: f64Ptr(0.5),
 	}))
 
-	sawStreamStart := false
+	sawStartStep := false
 	for part := range stream.Parts() {
 		sp, err := ParseStreamPart(part)
 		if err != nil {
 			t.Fatalf("failed to parse: %v", err)
 		}
-		if sp.Tag == "StreamStart" {
-			sawStreamStart = true
+		if sp.Tag == "StartStep" {
+			sawStartStep = true
 			var start struct {
 				Warnings []json.RawMessage `json:"warnings"`
 			}
 			if err := json.Unmarshal(sp.Payload, &start); err != nil {
-				t.Fatalf("failed to decode StreamStart payload: %v", err)
+				t.Fatalf("failed to decode StartStep payload: %v", err)
 			}
 			// warnings may be empty on the full profile; the point is that a
 			// non-empty array would decode here without error.
-			t.Logf("StreamStart warnings: %d", len(start.Warnings))
+			t.Logf("StartStep warnings: %d", len(start.Warnings))
 		}
 	}
 	if err := stream.Err(); err != nil {
 		t.Fatalf("stream error: %v", err)
 	}
-	if !sawStreamStart {
-		t.Fatal("no StreamStart part received")
+	if !sawStartStep {
+		t.Fatal("no StartStep part received")
 	}
 }
 

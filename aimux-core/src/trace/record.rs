@@ -43,8 +43,8 @@ pub struct TraceRecord {
     pub provider: String,
     pub model: String,
     pub request_id: Option<String>,
-    /// From `CallOptions.session_id` (RFC-0024) — explicit first, inference
-    /// fallback; may also be the layer's default session.
+    /// The explicit session id of the operation (RFC-0024), else the
+    /// layer's default session.
     pub session_id: Option<String>,
     /// Call-level unique id (association key for Recording / replay,
     /// RFC-0023).

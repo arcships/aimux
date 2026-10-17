@@ -140,7 +140,6 @@ impl LanguageModel for AnthropicModel {
             build_headers,
             BodyEncoding::Json,
             options.abort_signal.clone(),
-            options.recording_context.clone(),
             &ToolNameMapping::new(options.tools.as_deref()),
             self.generate_id.as_ref(),
         )
@@ -159,7 +158,6 @@ impl LanguageModel for AnthropicModel {
             build_headers,
             BodyEncoding::Json,
             options.abort_signal.clone(),
-            options.recording_context.clone(),
             ToolNameMapping::new(options.tools.as_deref()),
             self.generate_id.clone(),
         )

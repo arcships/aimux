@@ -15,6 +15,7 @@ from .aimux import (
     RetryError,
     JSONParseError,
     InvalidResponseDataError,
+    NoOutputGeneratedError,
     NoSuchToolError,
     InvalidToolInputError,
     ToolCallRepairError,
@@ -93,6 +94,7 @@ __all__ = [
     "RetryError",
     "JSONParseError",
     "InvalidResponseDataError",
+    "NoOutputGeneratedError",
     "NoSuchToolError",
     "InvalidToolInputError",
     "ToolCallRepairError",
@@ -309,7 +311,9 @@ def generate_text(
         options: Optional generation options.
 
     Returns:
-        Dict with keys: text, tool_calls, finish_reason, usage, warnings, raw.
+        The ``GenerateTextResult`` dict: text, content, tool_calls,
+        finish_reason, usage, warnings, steps, response_messages, … and
+        ``output`` when ``options["output"]`` was parsed.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -327,18 +331,19 @@ def generate_object(
 ) -> Dict[str, Any]:
     """Generate a structured JSON object from the model (M12, RFC-0016).
 
-    Same signature as ``generate_text``. Pass
-    ``response_format: {"Json": {...}}`` via options for schema control; the
-    function applies JSON repair before parsing.
+    Same signature as ``generate_text``; core's deprecated
+    ``generate_object`` wrapper. Pass ``output: {"Object": {"schema": ...}}``
+    via options to describe the value; the model's text must parse and match
+    the schema.
 
     Args:
         model: A model instance from openai(), anthropic(), etc.
         prompt: A string or a list of message dicts.
-        options: Optional generation options (incl. response_format).
+        options: Optional generation options (incl. output).
 
     Returns:
-        Dict with keys: object, finish_reason, raw_finish_reason, usage,
-        warnings, reasoning, provider_metadata, response, raw.
+        Dict with keys: object, reasoning, finish_reason, usage, warnings,
+        request, response, provider_metadata.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -357,8 +362,8 @@ def consume_stream_text(
     """Consume a stream to completion and return the aggregated result
     (M11, RFC-0016).
 
-    Drives ``stream_text`` to completion and returns the aggregated
-    ``StreamTextResultAggregated`` dict (the fully-consumed stream summary).
+    Drives ``stream_text`` to completion and returns the
+    ``GenerateTextResult`` dict, the same result ``generate_text`` returns.
 
     Args:
         model: A model instance from openai(), anthropic(), etc.
@@ -366,7 +371,7 @@ def consume_stream_text(
         options: Optional generation options.
 
     Returns:
-        Dict with the aggregated stream result.
+        The ``GenerateTextResult`` dict of the consumed stream.
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)
@@ -382,12 +387,13 @@ def stream_text(
     prompt: Union[str, List[Dict[str, Any]]],
     options: Optional[Dict[str, Any]] = None,
 ):
-    """Stream text from a model. Yields StreamPart dicts.
+    """Stream text from a model. Yields TextStreamPart dicts: ``Start``,
+    then per step ``StartStep`` … ``FinishStep``, then ``Finish``.
 
     Usage:
         for part in stream_text(model, "Write a haiku about Rust."):
             if "TextDelta" in part:
-                print(part["TextDelta"]["delta"], end="")
+                print(part["TextDelta"]["text"], end="")
     """
     prompt_json = _prompt_to_json(prompt)
     opts_json = _opts_to_json(options)

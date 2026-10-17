@@ -17,7 +17,7 @@ use aimux_core::openai_output::OpenAiStreamOptions;
 use aimux_core::options::CallOptions;
 use aimux_core::parse_tool_call::ToolCallRepair;
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
-use aimux_core::stream_part::StreamPart;
+use aimux_core::stream_part::{StreamPart, TextStreamPart};
 use aimux_core::tool::{FunctionTool, RawToolCall, Tool, ToolCall};
 use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
 use async_trait::async_trait;
@@ -448,13 +448,8 @@ async fn generate_text_parses_provider_raw_input_at_the_core_boundary() {
     .await
     .unwrap();
 
-    assert_eq!(result.tool_calls[0].input, json!({ "city": "Singapore" }));
-    assert_eq!(result.tool_calls[0].invalid, None);
-    assert!(matches!(
-        &result.raw.content[0],
-        GenerateContent::ToolCall(RawToolCall { input, .. })
-            if input == r#"{"city":"Singapore"}"#
-    ));
+    assert_eq!(result.tool_calls()[0].input, json!({ "city": "Singapore" }));
+    assert_eq!(result.tool_calls()[0].invalid, None);
 }
 
 #[tokio::test]
@@ -472,7 +467,7 @@ async fn stream_text_parses_provider_raw_input_at_the_core_boundary() {
     .unwrap();
 
     while let Some(part) = result.stream.next().await {
-        if let StreamPart::ToolCall(ToolCall { input, invalid, .. }) = part.unwrap() {
+        if let TextStreamPart::ToolCall(ToolCall { input, invalid, .. }) = part.unwrap() {
             assert_eq!(input, json!({ "city": "Singapore" }));
             assert_eq!(invalid, None);
             return;

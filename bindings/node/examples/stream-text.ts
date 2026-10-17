@@ -3,7 +3,6 @@
 // Run: OPENAI_API_KEY=sk-... node --experimental-strip-types examples/stream-text.ts
 
 import { openai, streamText } from '../src/index.ts'
-import type { StreamPart } from '../src/index.ts'
 
 async function main() {
   const apiKey = process.env.OPENAI_API_KEY
@@ -16,13 +15,11 @@ async function main() {
 
   console.log('Streaming:\n')
   for await (const part of streamText(model, 'Write a haiku about Rust.')) {
-    // StreamPart is a tagged union — check the type field
-    const obj = part as Record<string, unknown>
-    const key = Object.keys(obj)[0]
-    if (key === 'TextDelta') {
-      process.stdout.write((obj[key] as { delta: string }).delta)
-    } else if (key === 'Finish') {
-      console.log('\n\n[done]')
+    // TextStreamPart is an externally tagged union — narrow by key.
+    if ('TextDelta' in part) {
+      process.stdout.write(part.TextDelta.text)
+    } else if ('Finish' in part) {
+      console.log(`\n\n[done: ${part.Finish.finish_reason}]`)
     }
   }
 }

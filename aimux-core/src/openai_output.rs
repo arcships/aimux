@@ -1,6 +1,6 @@
 //! OpenAI Chat Completions output format.
 //!
-//! Converts aimux's internal types ([`GenerateResult`] / [`StreamPart`]) into
+//! Converts aimux's internal types ([`GenerateResult`] / [`TextStreamPart`]) into
 //! standard OpenAI Chat Completions structures ([`ChatCompletion`] /
 //! [`ChatCompletionChunk`]). This lets any provider (OpenAI, Anthropic, Google,
 //! …) be consumed via the OpenAI wire format.
@@ -9,7 +9,7 @@
 //!
 //! ```text
 //!   provider.do_generate()  →  GenerateResult  →  to_chat_completion()  →  ChatCompletion
-//!   provider.do_stream()    →  Stream<StreamPart>  →  to_chat_completion_stream()  →  Stream<Chunk>
+//!   stream_text()           →  Stream<TextStreamPart>  →  to_chat_completion_stream()  →  Stream<Chunk>
 //! ```
 //!
 //! The conversion is a post-processing step — it does not modify the
@@ -34,12 +34,16 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::error::AiMuxError;
+use crate::generate::GenerateTextResult;
 use crate::parse_tool_call::original_tool_call_text;
-use crate::result::{GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source};
+use crate::result::{
+    ContentPart, GenerateContent, GenerateResult, GeneratedFile, ReasoningOutput, Source,
+    TypedToolError, TypedToolResult,
+};
 use crate::shared::GeneratedFileData;
-use crate::stream_part::{StreamPart, TextStreamPart};
-use crate::tool::{ToolCall, ToolResult};
-use crate::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use crate::stream_part::TextStreamPart;
+use crate::tool::ToolCall;
+use crate::types::{FinishReasonUnified, LanguageModelUsage, as_language_model_usage};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-streaming response types
@@ -227,38 +231,166 @@ impl Default for OpenAiStreamOptions {
 /// precedence.
 #[must_use]
 pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletion {
+    let content = result.content.iter().map(|item| match item {
+        GenerateContent::Text { text, .. } => CompletionContent::Text(text),
+        GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
+            CompletionContent::Reasoning(text)
+        }
+        // The provider's raw argument text passes through verbatim; OpenAI's
+        // wire format requires a JSON object even when the model emitted no
+        // arguments at all.
+        GenerateContent::ToolCall(call) => CompletionContent::ToolCall {
+            id: &call.tool_call_id,
+            name: &call.tool_name,
+            arguments: if call.input.trim().is_empty() {
+                "{}".to_string()
+            } else {
+                call.input.clone()
+            },
+        },
+        GenerateContent::Source(source) => CompletionContent::Source(source),
+        GenerateContent::File(file) => CompletionContent::File(file),
+        GenerateContent::ToolResult(result) => CompletionContent::ToolResult {
+            tool_name: &result.tool_name,
+            output: &result.result,
+            is_error: result.is_error == Some(true),
+        },
+        GenerateContent::Custom { .. }
+        | GenerateContent::ReasoningFile(_)
+        | GenerateContent::ToolApprovalRequest(_) => CompletionContent::None,
+    });
+    let response = result.response.as_ref();
+    build_chat_completion(
+        content,
+        finish_reason_to_openai(
+            result.finish_reason.unified,
+            result.finish_reason.raw.as_deref(),
+        ),
+        result.provider_metadata.as_ref(),
+        response.and_then(|response| response.id.clone()),
+        response
+            .and_then(|response| response.model_id.clone())
+            .unwrap_or_else(|| model.to_string()),
+        usage_to_openai(&as_language_model_usage(&result.usage)),
+    )
+}
+
+/// Convert a [`GenerateTextResult`] into an OpenAI [`ChatCompletion`]: the
+/// content of every step, the last step's finish reason, id, model and
+/// logprobs, and the usage summed over the steps. Tool calls carry the
+/// Core-parsed (and possibly repaired) arguments.
+#[must_use]
+pub(crate) fn text_result_to_chat_completion(
+    result: &GenerateTextResult,
+    model: &str,
+) -> ChatCompletion {
+    let content = result.content().into_iter().map(|item| match item {
+        ContentPart::Text { text, .. } => CompletionContent::Text(text),
+        ContentPart::Reasoning(ReasoningOutput { text, .. }) => CompletionContent::Reasoning(text),
+        ContentPart::ToolCall(call) => CompletionContent::ToolCall {
+            id: &call.tool_call_id,
+            name: &call.tool_name,
+            arguments: parsed_tool_call_arguments(&call.input, call.invalid, call.error.as_ref()),
+        },
+        ContentPart::Source(source) => CompletionContent::Source(source),
+        ContentPart::File { file, .. } => CompletionContent::File(file),
+        ContentPart::ToolResult(result) => CompletionContent::ToolResult {
+            tool_name: &result.tool_name,
+            output: &result.output,
+            is_error: false,
+        },
+        // A provider's tool error renders as the generated path renders it;
+        // the error of a call that could not be parsed has no Chat
+        // Completions form.
+        ContentPart::ToolError(error) if error.provider_executed == Some(true) => {
+            CompletionContent::ToolResult {
+                tool_name: &error.tool_name,
+                output: &error.error,
+                is_error: true,
+            }
+        }
+        ContentPart::Custom { .. }
+        | ContentPart::ReasoningFile(_)
+        | ContentPart::ToolError(_)
+        | ContentPart::ToolApprovalRequest(_)
+        | ContentPart::ToolApprovalResponse(_) => CompletionContent::None,
+    });
+    let final_step = result.final_step();
+    let model = if final_step.response.model_id.is_empty() {
+        model.to_string()
+    } else {
+        final_step.response.model_id.clone()
+    };
+    build_chat_completion(
+        content,
+        finish_reason_to_openai(
+            final_step.finish_reason,
+            final_step.raw_finish_reason.as_deref(),
+        ),
+        final_step.provider_metadata.as_ref(),
+        Some(final_step.response.id.clone()).filter(|id| !id.is_empty()),
+        model,
+        usage_to_openai(result.usage()),
+    )
+}
+
+/// A content item as the non-streaming converter maps it.
+enum CompletionContent<'a> {
+    Text(&'a str),
+    Reasoning(&'a str),
+    ToolCall {
+        id: &'a str,
+        name: &'a str,
+        arguments: String,
+    },
+    Source(&'a Source),
+    File(&'a GeneratedFile),
+    /// A provider-executed tool result or error.
+    ToolResult {
+        tool_name: &'a str,
+        output: &'a serde_json::Value,
+        is_error: bool,
+    },
+    /// No Chat Completions equivalent.
+    None,
+}
+
+fn build_chat_completion<'a>(
+    content: impl Iterator<Item = CompletionContent<'a>>,
+    finish_reason: Option<String>,
+    provider_metadata: Option<&crate::types::ProviderMetadata>,
+    id: Option<String>,
+    model: String,
+    usage: ChatCompletionUsage,
+) -> ChatCompletion {
     let mut content_text = String::new();
     let mut reasoning_text = String::new();
     let mut tool_calls = Vec::new();
     let mut annotations = Vec::new();
 
-    for item in &result.content {
+    for item in content {
         match item {
-            GenerateContent::Text { text, .. } => {
+            CompletionContent::Text(text) => {
                 content_text.push_str(text);
             }
-            GenerateContent::Reasoning(ReasoningOutput { text, .. }) => {
+            CompletionContent::Reasoning(text) => {
                 reasoning_text.push_str(text);
             }
-            GenerateContent::ToolCall(call) => {
-                // The provider's raw argument text passes through verbatim;
-                // OpenAI's wire format requires a JSON object even when the
-                // model emitted no arguments at all.
-                let arguments = if call.input.trim().is_empty() {
-                    "{}".to_string()
-                } else {
-                    call.input.clone()
-                };
+            CompletionContent::ToolCall {
+                id,
+                name,
+                arguments,
+            } => {
                 tool_calls.push(ChatCompletionToolCall {
-                    id: call.tool_call_id.clone(),
+                    id: id.to_string(),
                     tool_type: "function".to_string(),
                     function: ChatCompletionFunction {
-                        name: call.tool_name.clone(),
+                        name: name.to_string(),
                         arguments,
                     },
                 });
             }
-            GenerateContent::Source(Source::Url { url, title, .. }) => {
+            CompletionContent::Source(Source::Url { url, title, .. }) => {
                 // Map to OpenAI url_citation annotation.
                 let mut ann = serde_json::json!({
                     "type": "url_citation",
@@ -276,7 +408,7 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 }
                 content_text.push_str(url);
             }
-            GenerateContent::File(GeneratedFile {
+            CompletionContent::File(GeneratedFile {
                 data, media_type, ..
             }) => {
                 if !content_text.is_empty() {
@@ -284,27 +416,23 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
                 }
                 content_text.push_str(&file_data_to_text(data, media_type));
             }
-            GenerateContent::Custom { .. }
-            | GenerateContent::Source(Source::Document { .. })
-            | GenerateContent::ReasoningFile(_)
-            | GenerateContent::ToolApprovalRequest(_) => {}
-            GenerateContent::ToolResult(ToolResult {
+            CompletionContent::Source(Source::Document { .. }) | CompletionContent::None => {}
+            CompletionContent::ToolResult {
                 tool_name,
-                result,
+                output,
                 is_error,
-                ..
-            }) => {
+            } => {
                 // Degraded mapping: provider-executed tool result as text.
                 if !content_text.is_empty() {
                     content_text.push('\n');
                 }
-                let prefix = if is_error.unwrap_or(false) {
+                let prefix = if is_error {
                     format!("[tool error: {tool_name}] ")
                 } else {
                     format!("[tool result: {tool_name}] ")
                 };
                 content_text.push_str(&prefix);
-                content_text.push_str(&result.to_string());
+                content_text.push_str(&output.to_string());
             }
         }
     }
@@ -336,34 +464,16 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
         },
     };
 
-    // finish_reason
-    let finish_reason = finish_reason_to_openai(&result.finish_reason);
-
     // logprobs from provider_metadata
-    let logprobs = result
-        .provider_metadata
-        .as_ref()
+    let logprobs = provider_metadata
         .and_then(|pm| pm.get("openai"))
         .and_then(|o| o.get("logprobs"))
         .cloned();
 
-    // id / model / created
-    let id = result
-        .response
-        .as_ref()
-        .and_then(|response| response.id.clone())
-        .unwrap_or_else(|| format!("chatcmpl-{}", random_id()));
-    let model = result
-        .response
-        .as_ref()
-        .and_then(|response| response.model_id.clone())
-        .unwrap_or_else(|| model.to_string());
-    let created = now_unix();
-
     ChatCompletion {
-        id,
+        id: id.unwrap_or_else(|| format!("chatcmpl-{}", random_id())),
         object: "chat.completion".to_string(),
-        created,
+        created: now_unix(),
         model,
         choices: vec![ChatCompletionChoice {
             index: 0,
@@ -371,13 +481,13 @@ pub fn to_chat_completion(result: &GenerateResult, model: &str) -> ChatCompletio
             finish_reason,
             logprobs,
         }],
-        usage: usage_to_openai(&result.usage),
+        usage,
         system_fingerprint: None,
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Streaming conversion: Stream<StreamPart> → Stream<ChatCompletionChunk>
+// Streaming conversion: Stream<TextStreamPart> → Stream<ChatCompletionChunk>
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A streaming OpenAI Chat Completions result.
@@ -394,7 +504,7 @@ impl std::fmt::Debug for ChatCompletionStream {
     }
 }
 
-/// Convert a `StreamPart` stream into a `ChatCompletionChunk` stream.
+/// Convert a `TextStreamPart` stream into a `ChatCompletionChunk` stream.
 ///
 /// Uses a stateful converter that maintains tool-call indices and accumulates
 /// the final usage / finish_reason. The output follows OpenAI SSE conventions:
@@ -445,7 +555,7 @@ pub fn to_chat_completion_stream(
             }
 
             // After Finish, stop (but we already emitted the final chunk).
-            if matches!(part, StreamPart::Finish { .. }) {
+            if matches!(part, TextStreamPart::Finish { .. }) {
                 return;
             }
         }
@@ -473,8 +583,8 @@ struct StreamState {
     next_tool_index: u32,
     /// Whether each tool_call_id has had its opening chunk emitted.
     tool_call_opened: std::collections::HashSet<String>,
-    final_usage: Option<Usage>,
-    final_finish_reason: Option<FinishReason>,
+    final_usage: Option<LanguageModelUsage>,
+    final_finish_reason: Option<(FinishReasonUnified, Option<String>)>,
     finish_emitted: bool,
 }
 
@@ -536,7 +646,7 @@ impl StreamState {
         Some(chunk)
     }
 
-    /// Process a single StreamPart, returning zero or more output chunks.
+    /// Process a single TextStreamPart, returning zero or more output chunks.
     fn process_part(
         &mut self,
         part: &TextStreamPart,
@@ -546,27 +656,26 @@ impl StreamState {
         let mut chunks = Vec::new();
 
         match part {
-            StreamPart::StreamStart { .. } => {
+            TextStreamPart::Start {} => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
             }
 
-            StreamPart::ResponseMetadata(ResponseMetadata { id, model_id, .. }) => {
-                if let Some(id) = id {
-                    self.id = id.clone();
-                }
-                if let Some(m) = model_id {
-                    self.model = m.clone();
+            TextStreamPart::FinishStep { response, .. } => {
+                // Response metadata arrives at step end; emitted chunks keep their identity.
+                if !self.started {
+                    self.id.clone_from(&response.id);
+                    self.model.clone_from(&response.model_id);
                 }
             }
 
-            StreamPart::TextStart { .. } => {
+            TextStreamPart::TextStart { .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
             }
-            StreamPart::TextDelta { delta, .. } => {
+            TextStreamPart::TextDelta { text: delta, .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -582,10 +691,10 @@ impl StreamState {
                 }];
                 chunks.push(chunk);
             }
-            StreamPart::TextEnd { .. } => {}
+            TextStreamPart::TextEnd { .. } => {}
 
-            StreamPart::ReasoningStart { .. } => {}
-            StreamPart::ReasoningDelta { delta, .. } => {
+            TextStreamPart::ReasoningStart { .. } => {}
+            TextStreamPart::ReasoningDelta { text: delta, .. } => {
                 if include_reasoning {
                     if let Some(c) = self.ensure_started() {
                         chunks.push(c);
@@ -603,9 +712,9 @@ impl StreamState {
                     chunks.push(chunk);
                 }
             }
-            StreamPart::ReasoningEnd { .. } => {}
+            TextStreamPart::ReasoningEnd { .. } => {}
 
-            StreamPart::ToolInputStart { id, tool_name, .. } => {
+            TextStreamPart::ToolInputStart { id, tool_name, .. } => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -649,7 +758,7 @@ impl StreamState {
                 }];
                 chunks.push(chunk);
             }
-            StreamPart::ToolInputDelta { id, delta, .. } => {
+            TextStreamPart::ToolInputDelta { id, delta, .. } => {
                 // Ensure started (shouldn't happen without Start, but be safe).
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
@@ -697,9 +806,9 @@ impl StreamState {
                 }];
                 chunks.push(chunk);
             }
-            StreamPart::ToolInputEnd { .. } => {}
+            TextStreamPart::ToolInputEnd { .. } => {}
 
-            StreamPart::ToolCall(ToolCall {
+            TextStreamPart::ToolCall(ToolCall {
                 tool_call_id,
                 tool_name,
                 input,
@@ -788,14 +897,14 @@ impl StreamState {
                 }
             }
 
-            StreamPart::ToolResult(ToolResult {
-                tool_name, result, ..
+            TextStreamPart::ToolResult(TypedToolResult {
+                tool_name, output, ..
             }) => {
                 // Degraded: provider-executed tool result as content.
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
-                let text = format!("[tool result: {tool_name}] {result}");
+                let text = format!("[tool result: {tool_name}] {output}");
                 let mut chunk = self.base_chunk();
                 chunk.choices = vec![ChatCompletionChunkChoice {
                     index: 0,
@@ -809,7 +918,32 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::File(GeneratedFile {
+            TextStreamPart::ToolError(TypedToolError {
+                tool_name,
+                error,
+                provider_executed: Some(true),
+                ..
+            }) => {
+                // Degraded: provider-executed tool error as content, as the
+                // generated path renders it.
+                if let Some(c) = self.ensure_started() {
+                    chunks.push(c);
+                }
+                let text = format!("[tool error: {tool_name}] {error}");
+                let mut chunk = self.base_chunk();
+                chunk.choices = vec![ChatCompletionChunkChoice {
+                    index: 0,
+                    delta: ChatCompletionDelta {
+                        content: Some(text),
+                        ..Default::default()
+                    },
+                    finish_reason: None,
+                    logprobs: None,
+                }];
+                chunks.push(chunk);
+            }
+
+            TextStreamPart::File(GeneratedFile {
                 data, media_type, ..
             }) => {
                 if let Some(c) = self.ensure_started() {
@@ -829,7 +963,7 @@ impl StreamState {
                 chunks.push(chunk);
             }
 
-            StreamPart::Source(Source::Url { url, .. }) => {
+            TextStreamPart::Source(Source::Url { url, .. }) => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
                 }
@@ -849,30 +983,35 @@ impl StreamState {
                 }
             }
 
-            StreamPart::Finish {
+            TextStreamPart::Finish {
                 finish_reason,
-                usage,
-                ..
+                raw_finish_reason,
+                total_usage,
             } => {
-                self.final_usage = Some(usage.clone());
-                self.final_finish_reason = Some(finish_reason.clone());
+                self.final_usage = Some(total_usage.clone());
+                self.final_finish_reason = Some((*finish_reason, raw_finish_reason.clone()));
                 // Emit the final chunk here.
                 if let Some(c) = self.final_chunk_impl(include_usage) {
                     chunks.push(c);
                 }
             }
 
-            StreamPart::Error { error } => {
+            TextStreamPart::Error { error } => {
                 if let Some(chunk) = self.error_chunk(error) {
                     chunks.push(chunk);
                 }
             }
 
-            StreamPart::Raw { .. }
-            | StreamPart::Source(Source::Document { .. })
-            | StreamPart::Custom { .. }
-            | StreamPart::ReasoningFile(_)
-            | StreamPart::ToolApprovalRequest(_) => { /* no OpenAI chat equivalent */ }
+            TextStreamPart::Raw { .. }
+            | TextStreamPart::StartStep { .. }
+            | TextStreamPart::Abort { .. }
+            | TextStreamPart::Source(Source::Document { .. })
+            | TextStreamPart::Custom { .. }
+            | TextStreamPart::ReasoningFile(_)
+            | TextStreamPart::ToolError(_)
+            | TextStreamPart::ToolOutputDenied(_)
+            | TextStreamPart::ToolApprovalRequest(_)
+            | TextStreamPart::ToolApprovalResponse(_) => { /* no OpenAI chat equivalent */ }
         }
 
         chunks
@@ -917,7 +1056,7 @@ impl StreamState {
         let finish_reason_str = self
             .final_finish_reason
             .as_ref()
-            .map(finish_reason_to_openai)
+            .map(|(unified, raw)| finish_reason_to_openai(*unified, raw.as_deref()))
             .unwrap_or(Some("stop".to_string()));
 
         let usage = if include_usage {
@@ -956,29 +1095,29 @@ pub const DONE_FRAME: &str = "data: [DONE]\n\n";
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Map an aimux [`FinishReason`] to an OpenAI `finish_reason` string.
-fn finish_reason_to_openai(reason: &FinishReason) -> Option<String> {
-    match reason.unified {
+/// Map a finish reason to an OpenAI `finish_reason` string.
+fn finish_reason_to_openai(unified: FinishReasonUnified, raw: Option<&str>) -> Option<String> {
+    match unified {
         FinishReasonUnified::Stop => Some("stop".to_string()),
         FinishReasonUnified::Length => Some("length".to_string()),
         FinishReasonUnified::ContentFilter => Some("content_filter".to_string()),
         FinishReasonUnified::ToolCalls => Some("tool_calls".to_string()),
         FinishReasonUnified::Error => Some("stop".to_string()),
-        FinishReasonUnified::Other => reason.raw.clone().or(Some("stop".to_string())),
+        FinishReasonUnified::Other => Some(raw.unwrap_or("stop").to_string()),
     }
 }
 
-/// Convert aimux [`Usage`] to OpenAI [`ChatCompletionUsage`].
+/// Convert a [`LanguageModelUsage`] to OpenAI [`ChatCompletionUsage`].
 ///
 /// This is the inverse of `convert_usage` in
 /// `aimux-providers/src/openai/model.rs`.
-fn usage_to_openai(usage: &Usage) -> ChatCompletionUsage {
-    let prompt_tokens = usage.input_tokens.total.unwrap_or(0);
-    let completion_tokens = usage.output_tokens.total.unwrap_or(0);
+fn usage_to_openai(usage: &LanguageModelUsage) -> ChatCompletionUsage {
+    let prompt_tokens = usage.input_tokens.unwrap_or(0);
+    let completion_tokens = usage.output_tokens.unwrap_or(0);
 
-    let cached_tokens = usage.input_tokens.cache_read.unwrap_or(0);
-    let cache_write = usage.input_tokens.cache_write;
-    let reasoning_tokens = usage.output_tokens.reasoning;
+    let cached_tokens = usage.input_token_details.cache_read_tokens.unwrap_or(0);
+    let cache_write = usage.input_token_details.cache_write_tokens;
+    let reasoning_tokens = usage.output_token_details.reasoning_tokens;
 
     ChatCompletionUsage {
         prompt_tokens,
@@ -1019,7 +1158,7 @@ fn now_unix() -> u64 {
 
 // Rejected repairs retain the original call. Recover its text from the
 // original error, never from the replacement's validation failure.
-/// Render a Core-parsed `StreamPart::ToolCall`'s arguments as OpenAI-compatible
+/// Render a Core-parsed `TextStreamPart::ToolCall`'s arguments as OpenAI-compatible
 /// wire text: the provider's raw argument text verbatim for an invalid call,
 /// compact JSON of the parsed value otherwise.
 ///
@@ -1065,7 +1204,8 @@ fn random_id() -> String {
 mod tests {
     use super::*;
     use crate::result::GenerateResult;
-    use crate::result::{GenerateResponse, ReasoningOutput};
+    use crate::result::ReasoningOutput;
+    use crate::shared::ResponseInfo;
     use crate::tool::RawToolCall;
     use crate::types::{
         FinishReason, FinishReasonUnified, InputTokenUsage, OutputTokenUsage, Usage,
@@ -1083,7 +1223,7 @@ mod tests {
             usage: Usage::default(),
             warnings: vec![],
             provider_metadata: None,
-            response: Some(GenerateResponse {
+            response: Some(ResponseInfo {
                 id: Some("chatcmpl-test123".to_string()),
                 timestamp: None,
                 model_id: Some("gpt-4o".to_string()),
@@ -1261,7 +1401,7 @@ mod tests {
             assert_eq!(parsed.invalid, Some(true), "{raw_input}");
 
             let parts: Vec<Result<TextStreamPart, AiMuxError>> =
-                vec![Ok(StreamPart::ToolCall(ToolCall {
+                vec![Ok(TextStreamPart::ToolCall(ToolCall {
                     tool_call_id: parsed.tool_call_id,
                     tool_name: parsed.tool_name,
                     input: parsed.input,
@@ -1386,8 +1526,10 @@ mod tests {
             (FinishReasonUnified::Error, "stop"),
         ];
         for (unified, expected) in cases {
-            let fr = FinishReason { unified, raw: None };
-            assert_eq!(finish_reason_to_openai(&fr).as_deref(), Some(expected));
+            assert_eq!(
+                finish_reason_to_openai(unified, None).as_deref(),
+                Some(expected)
+            );
         }
     }
 
@@ -1405,32 +1547,29 @@ mod tests {
     #[tokio::test]
     async fn test_stream_text_only() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::TextStart {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextStart {
                 id: "0".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::TextDelta {
+            Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
-                delta: "Hello ".to_string(),
+                text: "Hello ".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::TextDelta {
+            Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
-                delta: "world".to_string(),
+                text: "world".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::TextEnd {
+            Ok(TextStreamPart::TextEnd {
                 id: "0".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
             }),
         ];
 
@@ -1462,8 +1601,8 @@ mod tests {
     #[tokio::test]
     async fn test_stream_tool_calls() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::ToolInputStart {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::ToolInputStart {
                 id: "call_1".to_string(),
                 tool_name: "get_weather".to_string(),
                 provider_executed: None,
@@ -1471,21 +1610,21 @@ mod tests {
                 title: None,
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolInputDelta {
+            Ok(TextStreamPart::ToolInputDelta {
                 id: "call_1".to_string(),
                 delta: "{\"city\":".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolInputDelta {
+            Ok(TextStreamPart::ToolInputDelta {
                 id: "call_1".to_string(),
                 delta: "\"Tokyo\"}".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolInputEnd {
+            Ok(TextStreamPart::ToolInputEnd {
                 id: "call_1".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolCall(ToolCall {
+            Ok(TextStreamPart::ToolCall(ToolCall {
                 tool_call_id: "call_1".to_string(),
                 tool_name: "get_weather".to_string(),
                 input: json!({ "city": "Tokyo" }),
@@ -1495,13 +1634,10 @@ mod tests {
                 error: None,
                 provider_metadata: None,
             })),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::ToolCalls,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::ToolCalls,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
             }),
         ];
 
@@ -1563,7 +1699,7 @@ mod tests {
     #[tokio::test]
     async fn test_stream_complete_call_backfills_arguments_absent_from_deltas() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::ToolInputStart {
+            Ok(TextStreamPart::ToolInputStart {
                 id: "call_1".to_string(),
                 tool_name: "fetch".to_string(),
                 provider_executed: Some(true),
@@ -1571,11 +1707,11 @@ mod tests {
                 title: None,
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolInputEnd {
+            Ok(TextStreamPart::ToolInputEnd {
                 id: "call_1".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolCall(ToolCall {
+            Ok(TextStreamPart::ToolCall(ToolCall {
                 tool_call_id: "call_1".to_string(),
                 tool_name: "fetch".to_string(),
                 input: json!({ "url": "https://example.com" }),
@@ -1585,13 +1721,10 @@ mod tests {
                 error: None,
                 provider_metadata: None,
             })),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
             }),
         ];
 
@@ -1623,8 +1756,8 @@ mod tests {
     #[tokio::test]
     async fn test_stream_multiple_tool_calls_index() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::ToolInputStart {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::ToolInputStart {
                 id: "call_a".to_string(),
                 tool_name: "tool_a".to_string(),
                 provider_executed: None,
@@ -1632,7 +1765,7 @@ mod tests {
                 title: None,
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ToolInputStart {
+            Ok(TextStreamPart::ToolInputStart {
                 id: "call_b".to_string(),
                 tool_name: "tool_b".to_string(),
                 provider_executed: None,
@@ -1640,13 +1773,10 @@ mod tests {
                 title: None,
                 provider_metadata: None,
             }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::ToolCalls,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::ToolCalls,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
             }),
         ];
 
@@ -1680,32 +1810,29 @@ mod tests {
     #[tokio::test]
     async fn test_stream_reasoning() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::ReasoningStart {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::ReasoningStart {
                 id: "reasoning-0".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ReasoningDelta {
+            Ok(TextStreamPart::ReasoningDelta {
                 id: "reasoning-0".to_string(),
-                delta: "Hmm...".to_string(),
+                text: "Hmm...".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::ReasoningEnd {
+            Ok(TextStreamPart::ReasoningEnd {
                 id: "reasoning-0".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::TextDelta {
+            Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
-                delta: "Answer".to_string(),
+                text: "Answer".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: LanguageModelUsage::default(),
             }),
         ];
 
@@ -1759,19 +1886,16 @@ mod tests {
         };
 
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::TextDelta {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
-                delta: "Hi".to_string(),
+                text: "Hi".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage,
-                provider_metadata: None,
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: as_language_model_usage(&usage),
             }),
         ];
 
@@ -1795,21 +1919,18 @@ mod tests {
     #[tokio::test]
     async fn test_stream_no_usage_when_disabled() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: None,
-                },
-                usage: Usage {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: None,
+                total_usage: as_language_model_usage(&Usage {
                     input_tokens: InputTokenUsage {
                         total: Some(42),
                         ..Default::default()
                     },
                     output_tokens: OutputTokenUsage::default(),
                     raw: None,
-                },
-                provider_metadata: None,
+                }),
             }),
         ];
 
@@ -1831,13 +1952,13 @@ mod tests {
     #[tokio::test]
     async fn test_stream_error() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::TextDelta {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
-                delta: "partial".to_string(),
+                text: "partial".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::Error {
+            Ok(TextStreamPart::Error {
                 error: AiMuxError::ApiCall(Box::new(crate::error::ApiCallError::new(
                     "something went wrong",
                     "https://example.test/v1",
@@ -1880,20 +2001,17 @@ mod tests {
     #[tokio::test]
     async fn recoverable_frame_error_does_not_truncate_chat_completion_stream() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
+            Ok(TextStreamPart::Start {}),
             Err(AiMuxError::JsonParse("malformed SSE data".into())),
-            Ok(StreamPart::TextDelta {
+            Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
-                delta: "after-error".to_string(),
+                text: "after-error".to_string(),
                 provider_metadata: None,
             }),
-            Ok(StreamPart::Finish {
-                finish_reason: FinishReason {
-                    unified: FinishReasonUnified::Stop,
-                    raw: Some("stop".into()),
-                },
-                usage: Usage::default(),
-                provider_metadata: None,
+            Ok(TextStreamPart::Finish {
+                finish_reason: FinishReasonUnified::Stop,
+                raw_finish_reason: Some("stop".into()),
+                total_usage: LanguageModelUsage::default(),
             }),
         ];
 
@@ -1926,10 +2044,10 @@ mod tests {
     async fn test_stream_completes_without_finish() {
         // Stream ends without Finish — should still emit a final chunk.
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
-            Ok(StreamPart::StreamStart { warnings: vec![] }),
-            Ok(StreamPart::TextDelta {
+            Ok(TextStreamPart::Start {}),
+            Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
-                delta: "Hello".to_string(),
+                text: "Hello".to_string(),
                 provider_metadata: None,
             }),
         ];

@@ -207,8 +207,9 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
         let elapsed_ms = started.elapsed().as_millis();
         match result {
             Ok(r) => {
-                let claimed = r.usage.input_tokens.cache_read.unwrap_or(0) as u64;
-                per_round.push((i, Ok((claimed, elapsed_ms, r.usage))));
+                let usage = r.usage().clone();
+                let claimed = u64::from(usage.input_token_details.cache_read_tokens.unwrap_or(0));
+                per_round.push((i, Ok((claimed, elapsed_ms, usage))));
             }
             Err(e) => per_round.push((i, Err(e.to_string()))),
         }
@@ -238,7 +239,7 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
                     Ok((claimed, elapsed_ms, usage)) => {
                         println!(
                             "  round {i}: cache_read={claimed:>6} tokens  input_total={:>6}  {elapsed_ms}ms",
-                            usage.input_tokens.total.unwrap_or(0)
+                            usage.input_tokens.unwrap_or(0)
                         );
                     }
                     Err(e) => println!("  round {i}: ERROR {e}"),
@@ -287,7 +288,7 @@ pub async fn run(args: &ProviderArgs) -> anyhow::Result<Option<serde_json::Value
                     Ok((claimed, elapsed_ms, usage)) => serde_json::json!({
                         "round": i,
                         "cache_read_tokens": claimed,
-                        "input_total_tokens": usage.input_tokens.total,
+                        "input_total_tokens": usage.input_tokens,
                         "elapsed_ms": elapsed_ms,
                     }),
                     Err(e) => serde_json::json!({ "round": i, "error": e }),

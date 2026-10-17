@@ -223,20 +223,18 @@ impl LanguageModel for HuggingFaceResponsesModel {
             finish_reason,
             usage,
             warnings: request.warnings,
-            provider_metadata: Some(
-                provider_namespace("huggingface", json!({ "responseId": response_id }))
-                    .expect("provider metadata must be an object"),
-            ),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::GenerateResponse {
-                body: response_body,
+            provider_metadata: Some(provider_namespace(
+                "huggingface",
+                json!({ "responseId": response_id }),
+            )?),
+            response: Some(aimux_core::shared::ResponseInfo {
+                id: response_id,
+                timestamp: format_timestamp(created_at),
+                model_id: model,
                 headers: Some(response_headers),
-                ..aimux_core::result::GenerateResponse::from(ResponseMetadata {
-                    id: response_id,
-                    timestamp: format_timestamp(created_at),
-                    model_id: model,
-                })
+                body: response_body,
             }),
+            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
     }
 
@@ -554,7 +552,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
         Ok(StreamResult {
             stream: Box::pin(stream),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::result::StreamResponse {
+            response: Some(aimux_core::shared::StreamResponseInfo {
                 headers: Some(response_headers),
             }),
         })

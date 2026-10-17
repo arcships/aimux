@@ -63,7 +63,7 @@ let result2 = try model.generateText(prompt: #"[{"role":"user","content":"Hello"
 print(result2)
 ```
 
-> Parameters, return value, and the `raw.content` variants are documented in
+> Parameters, return value, and the `content` variants are documented in
 > the [API overview](../API.md#text-generation).
 
 ## Streaming Generation
@@ -261,12 +261,12 @@ mirroring the shared JSON shape — usable with the JSON-string APIs:
 `JSONValue` (recursive JSON enum with `stringValue` / `boolValue` /
 `doubleValue` / `intValue` / `arrayValue` / `objectValue` accessors), `Role`,
 `FinishReasonUnified`, `ReasoningEffort`, `FinishReason`, `TokenUsage`,
-`Usage`, `ResponseMetadata`, `Warning`, `FunctionTool`, `ProviderTool`,
-`Tool`, `ToolChoice`, `ResponseFormat`, `ContentPart`, `MessageContent`,
-`ModelMessage`, `ModelPrompt`, `ToolCall`, `FileBytes`, `FileData`,
-`GenerateContent`, `GenerateResult`, `GenerateTextResult`,
-`GenerateTextOptions`, `StreamPart`, `RawToolCall`, `ToolCallRepairContext`
-(all `Codable, Equatable`).
+`Usage`, `LanguageModelUsage`, `ResponseMetadata`, `Warning`, `FunctionTool`,
+`ProviderTool`, `Tool`, `ToolChoice`, `ResponseFormat`, `ContentPart`,
+`MessageContent`, `ModelMessage`, `ModelPrompt`, `ToolCall`, `FileBytes`,
+`FileData`, `GenerateContent`, `GenerateResult`, `GenerateTextResult`,
+`GenerateObjectResult`, `GenerateTextOptions`, `StreamPart`, `RawToolCall`,
+`ToolCallRepairContext` (all `Codable, Equatable`).
 
 `ToolCall` (top-level and `StreamPart.toolCall`) carries `providerMetadata`
 plus `invalid` (set by Core when tool lookup, input parse, or schema validation
@@ -277,8 +277,8 @@ Example:
 
 ```swift
 let data = result.data(using: .utf8)!
-let decoded = try JSONDecoder().decode(Usage.self, from: data)
-print(decoded.inputTokens.total ?? 0)
+let decoded = try JSONDecoder().decode(GenerateTextResult.self, from: data)
+print(decoded.usage.inputTokens ?? 0)
 ```
 
 ## Coverage

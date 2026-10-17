@@ -29,6 +29,7 @@ import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -121,6 +122,37 @@ data class Usage(
     }
 }
 
+/** Input-token breakdown of a [LanguageModelUsage]. Mirrors `InputTokenDetails.ts`. */
+@Serializable
+data class InputTokenDetails(
+    @SerialName("no_cache_tokens") val noCacheTokens: Long? = null,
+    @SerialName("cache_read_tokens") val cacheReadTokens: Long? = null,
+    @SerialName("cache_write_tokens") val cacheWriteTokens: Long? = null,
+)
+
+/** Output-token breakdown of a [LanguageModelUsage]. Mirrors `OutputTokenDetails.ts`. */
+@Serializable
+data class OutputTokenDetails(
+    @SerialName("text_tokens") val textTokens: Long? = null,
+    @SerialName("reasoning_tokens") val reasoningTokens: Long? = null,
+)
+
+/**
+ * Call-level token usage, the AI SDK's `LanguageModelUsage`: flat counts,
+ * unknown counts `null`. Provider results keep [Usage].
+ *
+ * Mirrors `LanguageModelUsage.ts`.
+ */
+@Serializable
+data class LanguageModelUsage(
+    @SerialName("input_tokens") val inputTokens: Long? = null,
+    @SerialName("input_token_details") val inputTokenDetails: InputTokenDetails = InputTokenDetails(),
+    @SerialName("output_tokens") val outputTokens: Long? = null,
+    @SerialName("output_token_details") val outputTokenDetails: OutputTokenDetails = OutputTokenDetails(),
+    @SerialName("total_tokens") val totalTokens: Long? = null,
+    val raw: JsonObject? = null,
+)
+
 /**
  * Unified finish reason.
  *
@@ -146,12 +178,17 @@ data class ResponseMetadata(
 )
 
 @Serializable
+data class GenerateRequest(
+    val body: JsonElement? = null,
+)
+
+@Serializable
 data class GenerateResponse(
     val id: String? = null,
     val timestamp: String? = null,
     @SerialName("model_id") val modelId: String? = null,
-    val body: JsonElement? = null,
     val headers: Map<String, String>? = null,
+    val body: JsonElement? = null,
 )
 
 /**
@@ -215,6 +252,8 @@ data class ProviderTool(
     val id: String,
     val name: String,
     val args: JsonObject = JsonObject(emptyMap()),
+    /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
+    @SerialName("supportsDeferredResults") val supportsDeferredResults: Boolean? = null,
 )
 
 /**
@@ -254,9 +293,13 @@ sealed interface Tool {
         val id: String,
         val name: String,
         val args: JsonObject = JsonObject(emptyMap()),
+        /** Whether a result may arrive in a later response than its call (provider-utils@5.0.55 src/types/tool.ts:316-326). */
+        @SerialName("supportsDeferredResults") val supportsDeferredResults: Boolean? = null,
     ) : Tool {
         companion object {
-            fun from(tool: ProviderTool): Provider = Provider(tool.id, tool.name, tool.args)
+            fun from(tool: ProviderTool): Provider = Provider(
+                tool.id, tool.name, tool.args, tool.supportsDeferredResults,
+            )
         }
     }
 }
@@ -621,8 +664,13 @@ data class GenerateTextOptions(
     @SerialName("top_k") val topK: Double? = null,
     @SerialName("presence_penalty") val presencePenalty: Double? = null,
     @SerialName("frequency_penalty") val frequencyPenalty: Double? = null,
-    /** Response format. Untyped ([JsonElement]) — use a `ResponseFormat` JSON object if needed. */
-    @SerialName("response_format") val responseFormat: JsonElement? = null,
+    /**
+     * Structured output, the AI SDK's `output`: for example
+     * `{"Object": {"schema": {...}}}`, `{"Array": {"element": {...}}}`,
+     * `{"Choice": {"options": [...]}}` or `{"Json": {}}`. Untyped
+     * ([JsonElement]). The parsed value is [GenerateTextResult.output].
+     */
+    val output: JsonElement? = null,
     val seed: Long? = null,
     val tools: List<Tool>? = null,
     @SerialName("tool_choice") val toolChoice: ToolChoice? = null,
@@ -1051,8 +1099,7 @@ data class GenerateResult(
     val warnings: List<JsonElement> = emptyList(),
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     val response: GenerateResponse? = null,
-    @SerialName("request_body") val requestBody: JsonElement? = null,
-    @SerialName("response_headers") val responseHeaders: Map<String, String>? = null,
+    val request: GenerateRequest? = null,
 ) {
     /** Names of the variant tags present in [content] (e.g. "Text", "ToolCall"). */
     val contentVariantTags: List<String>
@@ -1064,91 +1111,64 @@ data class GenerateResult(
 }
 
 /**
- * Result of `generate_text` (user-facing).
+ * Result of `generate_text` and of a consumed stream (user-facing), the AI
+ * SDK's `GenerateTextResult`. [steps] holds every step (weak type); the other
+ * fields are derived from them: the last step's text, finish reason,
+ * reasoning, request, response and provider metadata, every step's content,
+ * files, sources, tool calls, tool results and warnings, and the usage summed
+ * over the steps. [reasoning], [reasoningText] (`null` when there is none),
+ * [totalUsage] (equal to [usage]), [request], [response] and
+ * [providerMetadata] are deprecated upstream. [output] is the value parsed by
+ * the `output` option, `null` when it was not parsed.
  *
- * Mirrors `GenerateTextResult.ts`.
+ * Mirrors `GenerateTextResult.ts`; [response] reads the id, timestamp and
+ * model id of the step response.
  */
 @Serializable
 data class GenerateTextResult(
     val text: String = "",
     val content: List<JsonElement> = emptyList(),
-    @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
-    @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
-    val usage: Usage = Usage(),
-    val warnings: List<JsonElement> = emptyList(),
-    val raw: GenerateResult = GenerateResult(),
-    // M7: top-level aggregation fields
     val reasoning: List<JsonElement> = emptyList(),
-    @SerialName("reasoning_text") val reasoningText: String = "",
-    val sources: List<Source> = emptyList(),
+    @SerialName("reasoning_text") val reasoningText: String? = null,
     val files: List<JsonElement> = emptyList(),
-    @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
-    // M12: raw provider-specific finish reason string.
+    val sources: List<Source> = emptyList(),
+    @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
+    @SerialName("tool_results") val toolResults: List<JsonElement> = emptyList(),
+    @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
     @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
-    // Provider-specific metadata (e.g. Anthropic cache info). Mirrored from
-    // raw.provider_metadata for top-level convenience. Weak type (JsonElement?).
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    // Response metadata (id, timestamp, model_id). Mirrored from raw.response.
+    val usage: LanguageModelUsage = LanguageModelUsage(),
+    @SerialName("total_usage") val totalUsage: LanguageModelUsage = LanguageModelUsage(),
+    val warnings: List<JsonElement> = emptyList(),
+    val request: JsonElement? = null,
     val response: ResponseMetadata = ResponseMetadata(),
-    // Total token usage across all steps. In single-step mode (aimux's
-    // default), equals usage. Provided for AI SDK parity.
-    @SerialName("total_usage") val totalUsage: Usage = Usage(),
+    @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
+    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+    val steps: List<JsonElement> = emptyList(),
+    val output: JsonElement? = null,
 )
 
 /**
- * Result of `generate_object` (user-facing, M12). The parsed JSON object plus
- * convenience fields from the underlying `generate_text` call.
+ * Result of `generate_object` (user-facing, M12), the AI SDK's
+ * `GenerateObjectResult`: the parsed JSON object and the call's reasoning,
+ * finish reason, usage, warnings, request, response and provider metadata.
+ * The AI SDK deprecates `generateObject` for `generateText` with an `output`.
  *
  * Mirrors `GenerateObjectResult.ts`. `object` is a [JsonElement] (arbitrary
- * JSON value, weak type).
+ * JSON value, weak type); [response] reads the id, timestamp and model id.
  */
 @Serializable
 data class GenerateObjectResult(
     // `object` is an arbitrary JSON value — weak type (JsonElement).
     val `object`: JsonElement,
-    @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
-    @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
-    val usage: Usage = Usage(),
-    val warnings: List<JsonElement> = emptyList(),
     // Concatenated reasoning text (if the model produced reasoning/thinking).
     val reasoning: String? = null,
+    @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
+    val usage: LanguageModelUsage = LanguageModelUsage(),
+    val warnings: List<JsonElement> = emptyList(),
+    val request: JsonElement? = null,
+    val response: ResponseMetadata = ResponseMetadata(),
     // Provider-specific metadata (e.g. Anthropic cache info). Weak type.
     @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    // Response metadata (id, timestamp, model_id).
-    val response: ResponseMetadata = ResponseMetadata(),
-    val raw: GenerateTextResult = GenerateTextResult(),
-)
-
-/**
- * Aggregated result of `stream_text().consume()` (M11). Mirrors
- * `GenerateTextResult`'s user-facing fields (without `raw`, since streaming
- * has no `GenerateResult` equivalent).
- *
- * Mirrors `StreamTextResultAggregated.ts`. reasoning/sources/files use weak
- * types (JsonElement) — same strategy as [GenerateTextResult].
- */
-@Serializable
-data class StreamTextResultAggregated(
-    val text: String = "",
-    val content: List<JsonElement> = emptyList(),
-    // reasoning/sources/files use weak types (JsonElement).
-    val reasoning: List<JsonElement> = emptyList(),
-    @SerialName("reasoning_text") val reasoningText: String = "",
-    @SerialName("tool_calls") val toolCalls: List<ToolCall> = emptyList(),
-    val sources: List<Source> = emptyList(),
-    val files: List<JsonElement> = emptyList(),
-    @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
-    @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
-    val usage: Usage = Usage(),
-    // Total token usage across all steps. In single-step mode (aimux's
-    // default), equals usage. Provided for AI SDK parity.
-    @SerialName("total_usage") val totalUsage: Usage = Usage(),
-    val warnings: List<JsonElement> = emptyList(),
-    // Provider-specific metadata from the Finish chunk. Weak type.
-    @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    // Response metadata (id, timestamp, model_id) if emitted by the stream.
-    val response: ResponseMetadata? = null,
-    @SerialName("response_messages") val responseMessages: List<ModelMessage> = emptyList(),
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1194,7 +1214,7 @@ sealed interface StreamPart {
     @Serializable
     data class TextDelta(
         val id: String = "",
-        val delta: String = "",
+        val text: String = "",
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : StreamPart
 
@@ -1204,15 +1224,43 @@ sealed interface StreamPart {
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : StreamPart
 
+    /** Opens the stream (the AI SDK's `start` part). */
     @Serializable
-    data class StreamStart(val warnings: List<JsonElement> = emptyList()) : StreamPart
+    class Start : StreamPart {
+        override fun equals(other: Any?): Boolean = other is Start
+        override fun hashCode(): Int = 0
+        override fun toString(): String = "Start"
+    }
 
+    /** Opens a step: the step's request and the provider's call warnings. */
     @Serializable
-    data class Finish(
-        @SerialName("finish_reason") val finishReason: FinishReason = FinishReason(),
-        val usage: Usage = Usage(),
+    data class StartStep(
+        val request: JsonElement? = null,
+        val warnings: List<JsonElement> = emptyList(),
+    ) : StreamPart
+
+    /** Closes a step: its response metadata, usage, performance and finish reason. */
+    @Serializable
+    data class FinishStep(
+        val response: ResponseMetadata = ResponseMetadata(),
+        val usage: LanguageModelUsage = LanguageModelUsage(),
+        val performance: JsonElement? = null,
+        @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
+        @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : StreamPart
+
+    /** Closes the stream: the last step's finish reason and the usage summed over the steps. */
+    @Serializable
+    data class Finish(
+        @SerialName("finish_reason") val finishReason: FinishReasonUnified = FinishReasonUnified.OTHER,
+        @SerialName("raw_finish_reason") val rawFinishReason: String? = null,
+        @SerialName("total_usage") val totalUsage: LanguageModelUsage = LanguageModelUsage(),
+    ) : StreamPart
+
+    /** Ends a stream whose call was aborted. */
+    @Serializable
+    data class Abort(val reason: String? = null) : StreamPart
 
     @Serializable
     data class ToolInputStart(
@@ -1253,15 +1301,54 @@ sealed interface StreamPart {
         val error: JsonElement? = null,
     ) : StreamPart
 
+    /**
+     * A provider-executed tool's result (Rust `TypedToolResult`), with the
+     * input of the call it answers (`null` for a deferred result).
+     */
     @Serializable
     data class ToolResult(
         @SerialName("tool_call_id") val toolCallId: String = "",
         @SerialName("tool_name") val toolName: String = "",
-        val result: JsonElement = JsonObject(emptyMap()),
-        @SerialName("is_error") val isError: Boolean? = null,
-        @SerialName("preliminary") val preliminary: Boolean? = null,
-        @SerialName("dynamic") val dynamic: Boolean? = null,
+        val input: JsonElement? = null,
+        val output: JsonElement = JsonNull,
+        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        @SerialName("dynamic") val dynamic: Boolean? = null,
+        @SerialName("preliminary") val preliminary: Boolean? = null,
+    ) : StreamPart
+
+    /**
+     * A provider-executed tool's error result, or the error that follows an
+     * invalid tool call (Rust `TypedToolError`).
+     */
+    @Serializable
+    data class ToolError(
+        @SerialName("tool_call_id") val toolCallId: String = "",
+        @SerialName("tool_name") val toolName: String = "",
+        val input: JsonElement? = null,
+        val error: JsonElement = JsonNull,
+        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
+        @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
+        @SerialName("dynamic") val dynamic: Boolean? = null,
+    ) : StreamPart
+
+    /** A tool whose execution was denied (Rust `ToolOutputDenied`). */
+    @Serializable
+    data class ToolOutputDenied(
+        @SerialName("tool_call_id") val toolCallId: String = "",
+        @SerialName("tool_name") val toolName: String = "",
+        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
+        @SerialName("dynamic") val dynamic: Boolean? = null,
+    ) : StreamPart
+
+    /** The answer to a tool approval request (Rust `ToolApprovalResponseOutput`). */
+    @Serializable
+    data class ToolApprovalResponse(
+        @SerialName("approval_id") val approvalId: String,
+        @SerialName("tool_call") val toolCall: ai.arcships.aimux.ToolCall,
+        val approved: Boolean,
+        val reason: String? = null,
+        @SerialName("provider_executed") val providerExecuted: Boolean? = null,
     ) : StreamPart
 
     // ── P2: file ──
@@ -1282,7 +1369,7 @@ sealed interface StreamPart {
     @Serializable
     data class ReasoningDelta(
         val id: String = "",
-        val delta: String = "",
+        val text: String = "",
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
     ) : StreamPart
 
@@ -1290,13 +1377,6 @@ sealed interface StreamPart {
     data class ReasoningEnd(
         val id: String = "",
         @SerialName("provider_metadata") val providerMetadata: JsonElement? = null,
-    ) : StreamPart
-
-    @Serializable
-    data class ResponseMetadata(
-        val id: String? = null,
-        val timestamp: String? = null,
-        @SerialName("model_id") val modelId: String? = null,
     ) : StreamPart
 
     data class Source(val source: ai.arcships.aimux.Source) : StreamPart
@@ -1322,18 +1402,23 @@ val StreamPart.variantTag: String
         is StreamPart.TextStart -> "TextStart"
         is StreamPart.TextDelta -> "TextDelta"
         is StreamPart.TextEnd -> "TextEnd"
-        is StreamPart.StreamStart -> "StreamStart"
+        is StreamPart.Start -> "Start"
+        is StreamPart.StartStep -> "StartStep"
+        is StreamPart.FinishStep -> "FinishStep"
         is StreamPart.Finish -> "Finish"
+        is StreamPart.Abort -> "Abort"
         is StreamPart.ToolInputStart -> "ToolInputStart"
         is StreamPart.ToolInputDelta -> "ToolInputDelta"
         is StreamPart.ToolInputEnd -> "ToolInputEnd"
         is StreamPart.ToolCall -> "ToolCall"
         is StreamPart.ToolResult -> "ToolResult"
+        is StreamPart.ToolError -> "ToolError"
+        is StreamPart.ToolOutputDenied -> "ToolOutputDenied"
+        is StreamPart.ToolApprovalResponse -> "ToolApprovalResponse"
         is StreamPart.File -> "File"
         is StreamPart.ReasoningStart -> "ReasoningStart"
         is StreamPart.ReasoningDelta -> "ReasoningDelta"
         is StreamPart.ReasoningEnd -> "ReasoningEnd"
-        is StreamPart.ResponseMetadata -> "ResponseMetadata"
         is StreamPart.Source -> "Source"
         is StreamPart.Raw -> "Raw"
         is StreamPart.Error -> "Error"
@@ -1370,18 +1455,23 @@ object StreamPartSerializer : KSerializer<StreamPart> {
             "TextStart" -> ctx.decodeFromJsonElement(StreamPart.TextStart.serializer(), innerObj)
             "TextDelta" -> ctx.decodeFromJsonElement(StreamPart.TextDelta.serializer(), innerObj)
             "TextEnd" -> ctx.decodeFromJsonElement(StreamPart.TextEnd.serializer(), innerObj)
-            "StreamStart" -> ctx.decodeFromJsonElement(StreamPart.StreamStart.serializer(), innerObj)
+            "Start" -> StreamPart.Start()
+            "StartStep" -> ctx.decodeFromJsonElement(StreamPart.StartStep.serializer(), innerObj)
+            "FinishStep" -> ctx.decodeFromJsonElement(StreamPart.FinishStep.serializer(), innerObj)
             "Finish" -> ctx.decodeFromJsonElement(StreamPart.Finish.serializer(), innerObj)
+            "Abort" -> ctx.decodeFromJsonElement(StreamPart.Abort.serializer(), innerObj)
             "ToolInputStart" -> ctx.decodeFromJsonElement(StreamPart.ToolInputStart.serializer(), innerObj)
             "ToolInputDelta" -> ctx.decodeFromJsonElement(StreamPart.ToolInputDelta.serializer(), innerObj)
             "ToolInputEnd" -> ctx.decodeFromJsonElement(StreamPart.ToolInputEnd.serializer(), innerObj)
             "ToolCall" -> ctx.decodeFromJsonElement(StreamPart.ToolCall.serializer(), innerObj)
             "ToolResult" -> ctx.decodeFromJsonElement(StreamPart.ToolResult.serializer(), innerObj)
+            "ToolError" -> ctx.decodeFromJsonElement(StreamPart.ToolError.serializer(), innerObj)
+            "ToolOutputDenied" -> ctx.decodeFromJsonElement(StreamPart.ToolOutputDenied.serializer(), innerObj)
+            "ToolApprovalResponse" -> ctx.decodeFromJsonElement(StreamPart.ToolApprovalResponse.serializer(), innerObj)
             "File" -> ctx.decodeFromJsonElement(StreamPart.File.serializer(), innerObj)
             "ReasoningStart" -> ctx.decodeFromJsonElement(StreamPart.ReasoningStart.serializer(), innerObj)
             "ReasoningDelta" -> ctx.decodeFromJsonElement(StreamPart.ReasoningDelta.serializer(), innerObj)
             "ReasoningEnd" -> ctx.decodeFromJsonElement(StreamPart.ReasoningEnd.serializer(), innerObj)
-            "ResponseMetadata" -> ctx.decodeFromJsonElement(StreamPart.ResponseMetadata.serializer(), innerObj)
             "Source" -> StreamPart.Source(ctx.decodeFromJsonElement(Source.serializer(), innerObj))
             "Raw" -> ctx.decodeFromJsonElement(StreamPart.Raw.serializer(), innerObj)
             "Error" -> ctx.decodeFromJsonElement(StreamPart.Error.serializer(), innerObj)
@@ -1400,18 +1490,23 @@ object StreamPartSerializer : KSerializer<StreamPart> {
             is StreamPart.TextStart -> "TextStart" to ctx.encodeToJsonElement(StreamPart.TextStart.serializer(), value)
             is StreamPart.TextDelta -> "TextDelta" to ctx.encodeToJsonElement(StreamPart.TextDelta.serializer(), value)
             is StreamPart.TextEnd -> "TextEnd" to ctx.encodeToJsonElement(StreamPart.TextEnd.serializer(), value)
-            is StreamPart.StreamStart -> "StreamStart" to ctx.encodeToJsonElement(StreamPart.StreamStart.serializer(), value)
+            is StreamPart.Start -> "Start" to JsonObject(emptyMap())
+            is StreamPart.StartStep -> "StartStep" to ctx.encodeToJsonElement(StreamPart.StartStep.serializer(), value)
+            is StreamPart.FinishStep -> "FinishStep" to ctx.encodeToJsonElement(StreamPart.FinishStep.serializer(), value)
             is StreamPart.Finish -> "Finish" to ctx.encodeToJsonElement(StreamPart.Finish.serializer(), value)
+            is StreamPart.Abort -> "Abort" to ctx.encodeToJsonElement(StreamPart.Abort.serializer(), value)
             is StreamPart.ToolInputStart -> "ToolInputStart" to ctx.encodeToJsonElement(StreamPart.ToolInputStart.serializer(), value)
             is StreamPart.ToolInputDelta -> "ToolInputDelta" to ctx.encodeToJsonElement(StreamPart.ToolInputDelta.serializer(), value)
             is StreamPart.ToolInputEnd -> "ToolInputEnd" to ctx.encodeToJsonElement(StreamPart.ToolInputEnd.serializer(), value)
             is StreamPart.ToolCall -> "ToolCall" to ctx.encodeToJsonElement(StreamPart.ToolCall.serializer(), value)
             is StreamPart.ToolResult -> "ToolResult" to ctx.encodeToJsonElement(StreamPart.ToolResult.serializer(), value)
+            is StreamPart.ToolError -> "ToolError" to ctx.encodeToJsonElement(StreamPart.ToolError.serializer(), value)
+            is StreamPart.ToolOutputDenied -> "ToolOutputDenied" to ctx.encodeToJsonElement(StreamPart.ToolOutputDenied.serializer(), value)
+            is StreamPart.ToolApprovalResponse -> "ToolApprovalResponse" to ctx.encodeToJsonElement(StreamPart.ToolApprovalResponse.serializer(), value)
             is StreamPart.File -> "File" to ctx.encodeToJsonElement(StreamPart.File.serializer(), value)
             is StreamPart.ReasoningStart -> "ReasoningStart" to ctx.encodeToJsonElement(StreamPart.ReasoningStart.serializer(), value)
             is StreamPart.ReasoningDelta -> "ReasoningDelta" to ctx.encodeToJsonElement(StreamPart.ReasoningDelta.serializer(), value)
             is StreamPart.ReasoningEnd -> "ReasoningEnd" to ctx.encodeToJsonElement(StreamPart.ReasoningEnd.serializer(), value)
-            is StreamPart.ResponseMetadata -> "ResponseMetadata" to ctx.encodeToJsonElement(StreamPart.ResponseMetadata.serializer(), value)
             is StreamPart.Source -> "Source" to ctx.encodeToJsonElement(Source.serializer(), value.source)
             is StreamPart.Raw -> "Raw" to ctx.encodeToJsonElement(StreamPart.Raw.serializer(), value)
             is StreamPart.Error -> "Error" to ctx.encodeToJsonElement(StreamPart.Error.serializer(), value)

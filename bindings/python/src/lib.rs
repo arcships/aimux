@@ -21,10 +21,11 @@ use crate::error::{
     AiMuxBindingError, BindingError, binding_py_err, serialize_result, to_py_err, wire_json,
 };
 use aimux_core::AiMuxError;
+#[allow(deprecated)]
+use aimux_core::generate::generate_object;
 use aimux_core::generate::{
-    GenerateTextOptions, GenerateTextResult, generate_object, generate_text,
-    generate_text_as_openai, generate_text_result_to_chat_completion, stream_text,
-    stream_text_as_openai,
+    GenerateTextOptions, GenerateTextResult, generate_text, generate_text_as_openai,
+    generate_text_result_to_chat_completion, stream_text, stream_text_as_openai,
 };
 use aimux_core::language_model::LanguageModel;
 use aimux_core::message::ModelPrompt;
@@ -167,10 +168,12 @@ impl Model {
     ///
     /// prompt_json: JSON string (bare prompt or {"prompt": ...})
     /// opts_json: optional JSON-serialized GenerateTextOptions
-    /// Returns JSON-serialized GenerateObjectResult. Pass
-    /// `response_format: { "Json": { ... } }` via opts_json for schema
-    /// control; the function applies JSON repair before parsing.
+    /// Returns JSON-serialized GenerateObjectResult (core's deprecated
+    /// `generate_object` wrapper). Pass `output: { "Object": { "schema": ... } }`
+    /// via opts_json to describe the value; the model's text must parse and
+    /// match the schema.
     #[pyo3(signature = (prompt_json, opts_json=None))]
+    #[allow(deprecated)]
     fn generate_object(
         &self,
         py: Python<'_>,
@@ -196,7 +199,8 @@ impl Model {
     ///
     /// prompt_json: JSON string (bare prompt or {"prompt": ...})
     /// opts_json: optional JSON-serialized GenerateTextOptions
-    /// Returns JSON-serialized StreamTextResultAggregated.
+    /// Returns JSON-serialized GenerateTextResult, the same result
+    /// `generate_text` returns.
     #[pyo3(signature = (prompt_json, opts_json=None))]
     fn consume_stream_text(
         &self,
@@ -1162,10 +1166,9 @@ fn apply_tool_call_repair(
     serialize_result(&repaired)
 }
 
-/// Apply a repair reply to a serialized ``GenerateTextResult`` or
-/// ``GenerateObjectResult``, rewriting both ``tool_calls`` and the matching
-/// ``response_messages`` tool-call part. `opts_json` is the same string the
-/// call was generated with.
+/// Apply a repair reply to a serialized ``GenerateTextResult``, rewriting the
+/// call in its steps' content and the matching response-message tool-call
+/// part. `opts_json` is the same string the call was generated with.
 ///
 /// The OpenAI-shaped result has no equivalent: it carries no ``invalid`` /
 /// ``error``, so repair is driven from the native result, which

@@ -126,7 +126,7 @@ func TestTypedStreamTextDeltas(t *testing.T) {
 		case "TextDelta":
 			var td TextDeltaPayload
 			json.Unmarshal(part.Payload, &td)
-			textBuilder += td.Delta
+			textBuilder += td.Text
 		case "Finish":
 			gotFinish = true
 		}

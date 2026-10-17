@@ -67,7 +67,7 @@
  * - Malformed JSON text is a C ABI failure; well-formed JSON of the wrong
  *   shape is AiMuxError AIMUX_E_INVALID_ARGUMENT.
  * - Results: serialized JSON of GenerateTextResult on success
- * - Stream parts: serialized JSON of StreamPart
+ * - Stream parts: serialized JSON of TextStreamPart
  */
 
 #ifndef AIMUX_FFI_H
@@ -239,17 +239,19 @@ aimux_error_t *aimux_generate_text(uint64_t handle,
                                        const char *prompt_json,
                                        const char *opts_json, char **out_json);
 
-/* [AiMuxError] Generate a structured JSON object (M12, RFC-0016). Same signature
-   as aimux_generate_text; writes serialized GenerateObjectResult JSON.
-   Pass response_format: { "Json": { ... } } via opts_json for schema control. */
+/* [AiMuxError] Generate a structured JSON object (M12, RFC-0016) with the core's
+   deprecated generate_object wrapper. Same signature as aimux_generate_text;
+   writes serialized GenerateObjectResult JSON. Pass
+   output: { "Object": { "schema": ... } } via opts_json to describe the value;
+   the model's text must parse and match the schema. */
 aimux_error_t *aimux_generate_object(uint64_t handle,
                                          const char *prompt_json,
                                          const char *opts_json, char **out_json);
 
-/* [AiMuxError] Consume a stream to completion and write the aggregated result
+/* [AiMuxError] Consume a stream to completion and write its result
    (M11, RFC-0016). Synchronous (blocks until the stream finishes). Same
-   signature as aimux_generate_text; writes serialized
-   StreamTextResultAggregated JSON. */
+   signature as aimux_generate_text; writes serialized GenerateTextResult
+   JSON, the same result aimux_generate_text writes. */
 aimux_error_t *aimux_consume_stream_text(uint64_t handle,
                                              const char *prompt_json,
                                              const char *opts_json, char **out_json);
@@ -261,7 +263,7 @@ aimux_error_t *aimux_consume_stream_text(uint64_t handle,
  * @param handle      Model handle from aimux_*_new.
  * @param prompt_json JSON prompt (see wire format above).
  * @param opts_json   JSON options (NULL or empty for defaults).
- * @param on_part     Called for each StreamPart (JSON string, valid during
+ * @param on_part     Called for each TextStreamPart (JSON string, valid during
  *                    the call only). Required: NULL is a C ABI failure
  *                    ("on_part: must not be NULL").
  * @param on_done     Called once when the stream ends normally. Required.
@@ -309,7 +311,7 @@ void aimux_abort_signal_drop(uint64_t abort_handle);
  * @param abort_handle Handle from aimux_abort_signal_new.
  * @param prompt_json  JSON prompt.
  * @param opts_json    JSON options. NULL or empty uses defaults.
- * @param on_part      Called for each StreamPart.
+ * @param on_part      Called for each TextStreamPart.
  * @param on_done      Called once after normal completion.
  * @param stream_ctx   Opaque pointer passed through to callbacks.
  */
@@ -432,11 +434,11 @@ aimux_error_t *aimux_apply_tool_call_repair(const char *tool_call_json,
                                                 const char *reply_json, char **out_json);
 
 /**
- * [AiMuxError] Apply a repair reply to a serialized GenerateTextResult,
- * GenerateObjectResult, or StreamTextResultAggregated (the output of
- * aimux_consume_stream_text). Both tool_calls and the matching response_messages
- * tool-call part are rewritten (tool_call_id included — a repair may rename
- * the call); everything else is left as-is.
+ * [AiMuxError] Apply a repair reply to a serialized GenerateTextResult (the
+ * output of aimux_generate_text or aimux_consume_stream_text). The call in
+ * the steps' content and the matching response-message tool-call part are
+ * rewritten (tool_call_id included — a repair may rename the call), and the
+ * top-level tool_calls and response_messages follow.
  */
 aimux_error_t *aimux_apply_tool_call_repair_to_result(const char *result_json,
                                                           const char *opts_json,

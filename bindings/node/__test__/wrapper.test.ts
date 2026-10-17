@@ -2,7 +2,7 @@
 //
 // Verifies that `generateText` / `streamText` (from src/index.ts) erase the
 // JSON-string boundary: inputs are typed objects and outputs are parsed into
-// typed objects (`.text`, `.tool_calls`, `.raw.content`, stream `TextDelta` /
+// typed objects (`.text`, `.tool_calls`, `.content`, stream `TextDelta` /
 // `ToolCall`). Uses the same mock-HTTP-server pattern as e2e.test.ts — no real
 // API calls.
 
@@ -14,7 +14,7 @@ import { createServer, type Server } from 'node:http'
 import { openai, anthropic, generateText, streamText } from '../src/index.ts'
 import type {
   GenerateTextResult,
-  StreamPart,
+  TextStreamPart,
   ModelMessage,
   Tool,
   ToolChoice,
@@ -137,7 +137,7 @@ const weatherTool: Tool = {
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
-test('wrapper: generateText returns a typed object (.text / .usage / .finish_reason / .raw.content)', async (t) => {
+test('wrapper: generateText returns a typed object (.text / .usage / .finish_reason / .content)', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(OPENAI_CHAT_RESPONSE)
@@ -150,21 +150,22 @@ test('wrapper: generateText returns a typed object (.text / .usage / .finish_rea
 
     // Top-level convenience fields are typed and present.
     t.is(result.text, 'Rust is a systems programming language.')
-    t.truthy(result.usage, 'usage is present')
-    t.truthy(result.finish_reason, 'finish_reason is present')
+    t.is(result.usage.input_tokens, 10)
+    t.is(result.usage.output_tokens, 8)
+    t.is(result.finish_reason, 'stop')
     t.true(Array.isArray(result.warnings))
 
-    // raw is the provider-facing GenerateResult; .content is a typed array.
-    t.truthy(result.raw, 'raw provider result is present')
-    t.true(Array.isArray(result.raw.content), 'raw.content is a typed array')
-    const textPart = result.raw.content.find((c) => 'Text' in c)
-    t.truthy(textPart, 'raw.content contains a Text content part')
+    // .content is the final step's typed content; .steps holds every step.
+    t.is(result.steps.length, 1)
+    t.true(Array.isArray(result.content), 'content is a typed array')
+    const textPart = result.content.find((c) => 'Text' in c)
+    t.truthy(textPart, 'content contains a Text content part')
   } finally {
     await closeServer(server)
   }
 })
 
-test('wrapper: generateText parses tool_calls + raw.content ToolCall', async (t) => {
+test('wrapper: generateText parses tool_calls + content ToolCall', async (t) => {
   const { server, url } = await startMockServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(OPENAI_TOOL_CALL_RESPONSE)
@@ -183,14 +184,13 @@ test('wrapper: generateText parses tool_calls + raw.content ToolCall', async (t)
     t.is(result.tool_calls[0].tool_call_id, 'call_abc')
     t.deepEqual(result.tool_calls[0].input, { location: 'Tokyo' })
 
-    // Structured content: raw.content carries the ToolCall variant.
-    const tc = result.raw.content.find((c) => 'ToolCall' in c)
-    t.truthy(tc, 'raw.content contains a ToolCall content part')
+    // Structured content: content carries the parsed ToolCall variant.
+    const tc = result.content.find((c) => 'ToolCall' in c)
+    t.truthy(tc, 'content contains a ToolCall content part')
     if (tc && 'ToolCall' in tc) {
       t.is(tc.ToolCall.tool_name, 'get_weather')
       t.is(tc.ToolCall.tool_call_id, 'call_abc')
-      // raw content keeps the provider's argument text (see e2e.test.ts).
-      t.is(tc.ToolCall.input, '{"location":"Tokyo"}')
+      t.deepEqual(tc.ToolCall.input, { location: 'Tokyo' })
     }
   } finally {
     await closeServer(server)
@@ -268,8 +268,8 @@ test('wrapper: streamText yields typed TextDelta parts', async (t) => {
 
   try {
     const model = await openai('test-key', 'gpt-4o', url)
-    const parts: StreamPart[] = []
-    // streamText is an async generator of typed StreamParts — no JSON.parse.
+    const parts: TextStreamPart[] = []
+    // streamText is an async generator of typed TextStreamParts — no JSON.parse.
     for await (const part of streamText(model, 'Say hello')) {
       parts.push(part)
     }
@@ -278,8 +278,8 @@ test('wrapper: streamText yields typed TextDelta parts', async (t) => {
 
     // Narrow the tagged union by key presence (typed, not `any`).
     const deltas = parts
-      .filter((p): p is Extract<StreamPart, { TextDelta: unknown }> => 'TextDelta' in p)
-      .map((p) => p.TextDelta.delta)
+      .filter((p): p is Extract<TextStreamPart, { TextDelta: unknown }> => 'TextDelta' in p)
+      .map((p) => p.TextDelta.text)
     t.is(deltas.join(''), 'Hello world')
   } finally {
     await closeServer(server)
@@ -296,7 +296,7 @@ test('wrapper: streamText emits Raw parts when include_raw_chunks set', async (t
 
   try {
     const model = await openai('test-key', 'gpt-4o', url)
-    const parts: StreamPart[] = []
+    const parts: TextStreamPart[] = []
     for await (const part of streamText(model, 'Say hello', {
       include_raw_chunks: true,
     })) {
@@ -304,7 +304,7 @@ test('wrapper: streamText emits Raw parts when include_raw_chunks set', async (t
     }
 
     const rawParts = parts.filter(
-      (p): p is Extract<StreamPart, { Raw: unknown }> => 'Raw' in p,
+      (p): p is Extract<TextStreamPart, { Raw: unknown }> => 'Raw' in p,
     )
     // OPENAI_STREAM_BODY has 3 JSON events (2 content + 1 usage chunk);
     // the [DONE] sentinel emits no Raw.
@@ -329,7 +329,7 @@ test('wrapper: no Raw parts by default', async (t) => {
 
   try {
     const model = await openai('test-key', 'gpt-4o', url)
-    const parts: StreamPart[] = []
+    const parts: TextStreamPart[] = []
     for await (const part of streamText(model, 'Say hello')) {
       parts.push(part)
     }
@@ -347,7 +347,7 @@ test('wrapper: streamText yields typed ToolCall parts', async (t) => {
 
   try {
     const model = await openai('test-key', 'gpt-4o', url)
-    const parts: StreamPart[] = []
+    const parts: TextStreamPart[] = []
     for await (const part of streamText(model, "What's the weather?", {
       tools: [weatherTool],
     })) {
@@ -357,11 +357,11 @@ test('wrapper: streamText yields typed ToolCall parts', async (t) => {
     // The stream must contain a tool-related part.
     t.true(
       parts.some((p) => 'ToolCall' in p || 'ToolInputStart' in p || 'ToolInputDelta' in p),
-      'stream contained a tool-related StreamPart',
+      'stream contained a tool-related TextStreamPart',
     )
 
     // A complete ToolCall part carries the parsed tool name + input (typed).
-    const toolCall = parts.find((p): p is Extract<StreamPart, { ToolCall: unknown }> => 'ToolCall' in p)
+    const toolCall = parts.find((p): p is Extract<TextStreamPart, { ToolCall: unknown }> => 'ToolCall' in p)
     if (toolCall) {
       t.is(toolCall.ToolCall.tool_name, 'get_weather')
       t.deepEqual(toolCall.ToolCall.input, { location: 'Tokyo' })

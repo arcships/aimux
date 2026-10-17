@@ -141,7 +141,7 @@ public interface AimuxFFI extends Library {
     /** Writes JSON GenerateObjectResult to {@code outJson} (caller MUST free); returns the error or null. */
     Pointer aimux_generate_object(long handle, String promptJson, String optsJson, PointerByReference outJson);
 
-    /** Writes JSON StreamTextResultAggregated to {@code outJson} (caller MUST free); returns the error or null. */
+    /** Writes JSON GenerateTextResult to {@code outJson} (caller MUST free); returns the error or null. */
     Pointer aimux_consume_stream_text(long handle, String promptJson, String optsJson, PointerByReference outJson);
 
     /**
