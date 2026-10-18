@@ -1129,8 +1129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Generated Dart and Java hold integers as signed 64-bit values and cannot
   represent a `u64` above 2^63-1; Node decodes numbers as doubles and rounds
   integers above 2^53; Go accepts any string for a single-value tag where the
-  other languages reject other values. These are registered in
-  `docs/rfc-0039-implementation.md` (D13 to D15). `cargo run -p aimux-codegen
+  other languages reject other values; Node, which has declarations but no
+  codec, keeps an explicit `null` that the other languages fold to an omitted
+  key. These are registered in `docs/rfc-0039-implementation.md` (D13 to D16). `cargo run -p aimux-codegen
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
