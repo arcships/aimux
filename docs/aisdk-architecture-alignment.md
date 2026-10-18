@@ -90,7 +90,7 @@ FFI / Node / Python / 5 个 C-ABI 绑定 / CLI / Web   由 descriptor + manifest
 ### 0.5 两部分之间的衔接约定
 
 - 第二部分提出的"无运行时依赖的 `aimux-protocol` crate"即第一部分的 `aimux-provider`(V4 类型)加 `aimux-provider-utils` 中的用户层 `ModelMessage`,按 AI SDK 的包归属放置,不再另建第三个 crate。
-- 第二部分的 JSON 适配规则(base64 字节、ISO 时间、缺失属性省略、JSON null 保留、结构化错误)采纳;第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源,ts-rs 与 `scripts/gen_*` 在该生成链落地时退役,落地前保留为过渡生成来源,不另建第二条生成链(第二部分"ts-rs 可继续"的建议不采纳)。
+- 第二部分的 JSON 适配规则(base64 字节、ISO 时间、缺失属性省略、JSON null 保留、结构化错误)采纳;第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源,ts-rs 与 `scripts/gen_*` 在该生成链落地时退役,落地前保留为过渡生成来源,不另建第二条生成链(第二部分"ts-rs 可继续"的建议不采纳)。业务类型的生成链已由 #268 落地,ts-rs 与 `scripts/gen_ts_types.py` 随之删除。
 - 第二部分对 `ProviderOptions`(工厂配置)与 `providerOptions`(消息)同名异义的处理,落在第一部分 §3.3:工厂配置改名为各包 `XxxProviderSettings`。
 - 第二部分 §与 provider→model 重构的衔接 中"遵循显示身份、options namespace、catalogue、重建身份分离"一句,以第一部分 §7 的三类信息(模型身份 / 可寻址引用 / 元数据来源)为准;不存在"重建身份"。
 
@@ -1342,7 +1342,7 @@ source_verification
 
 manifest 的 `types` 段覆盖 Recording、操作输入/结果、StreamPart、错误、tool 数据、多模态数据；不只覆盖 provider settings。
 
-- ts-rs 和原脚本生成链全部退役。
+- ts-rs 和原脚本生成链全部退役(#268 已完成:`scripts/gen_ts_types.py` 与 ts-rs 已删除,业务 schema 与各绑定 DTO 由 `aimux-codegen` 生成)。
 - `metadataExtractor`、`convertUsage` 等闭包在 C JSON 中不可用；除非另有显式内建实现，未知字段直接报错。
 - 不把闭包的 `serde(skip)` 当成“传了但忽略”的合法行为。
 - 结构化联合类型使用 discriminator；JSON value、nullable 等基础联合由生成器明确支持。
@@ -1511,7 +1511,7 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - feature 组合矩阵 CI（§9.2）。
 - 协议 fixture 扩到四个家族以外，逐字段比对结果与流（§9.3）。
 - CLI 探测加 `--method`；现在 OpenAI 只能探测 Responses（§4.6、RFC-0025）。
-- 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省；公共 JSON 层把信封与其中的选项、结果写成 camelCase，主线的 snake_case 信封键作为别名读取），回放不了的部分在回放时报错说明。
+- 录制 schema 3（§4.3、§4.4）；在 #268 之后作为单独的后续 PR 做，发版前完成。在此之前仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省；公共 JSON 层把信封与其中的选项、结果写成 camelCase，主线的 snake_case 信封键作为别名读取），回放不了的部分在回放时报错说明。
 - OpenAI 兼容输出的流带回上游的 id 与 model（RFC-0026）；这是回归，不是新功能。
 - Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
 - `decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`），随 Telemetry 一起做（§3.5）。
@@ -1528,12 +1528,15 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - RFC-0039 D8：跨所有者查询返回与未知 ID 相同且不含 `actual` 类型的 InvalidHandle，跨所有者的 `handle.drop` 则成功但无效果，因为所有权边界不能泄露资源信息（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D9：唯一的重试提示解析器位于 `aimux_core::error::retry_after_ms_from_headers` 并由 ops 重新导出，已解析但无效的优先数值阻止回退、格式错误的文本允许回退，因为 core 的重试策略不能依赖适配层 crate（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 D10：未暴露 stdio、宿主 fetch/token/model/telemetry 回调、单次原始二进制上传、原生透传及 skills/Batch/Evaluation 操作，因为这些能力需要超出现有引擎范围的独立实现（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
-- RFC-0039 D11：维护者接受 D8 在 ops/ABI 切换后按 RFC-0042 交付，ts-rs 与 `scripts/gen_ts_types.py` 保留为业务类型过渡链，因为本 PR 先完成控制对象、头文件和操作常量的同源生成；D8 完成时须删除过渡链及其漂移门禁，G-d 仍未关闭（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
-- RFC-0039 D12：维护者接受 schema-2 读写保留至本系列最后一个 PR，因为 schema-3 迁移由 RFC-0041 的最后一步完成；届时必须删除 schema-2 及更早格式的读取，不能提前删除或长期保留（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D11（已交付）：维护者接受 D8 在 ops/ABI 切换后按 RFC-0042 交付，ts-rs 与 `scripts/gen_ts_types.py` 在此之前保留为业务类型过渡链；#268 已交付 D8，`aimux-codegen` 生成业务 schema 与各绑定的 DTO，过渡链及其漂移门禁已删除，类型漂移由 `cargo run -p aimux-codegen -- --check` 与 `python3 scripts/check_dto_vectors.py <语言>` 把关，G-d 随之关闭（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D12：维护者接受 schema-2 读写保留至 #268 之后单独的后续 PR；该 PR 按 RFC-0041 迁移到 schema 3 并删除 schema-2 及更早格式的读取，须在发版前合入，不能提前删除，也不能作为长期兼容路径保留（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D13：Node 把大于 2^53 的整数按 IEEE 双精度处理，解码再编码时会舍入，DTO 向量检查对 Node 按 double 比较；`contract-tests/dto/ErrorEnvelope/001.json` 的 `retryAfterMs` 为 2^64-1，Node 重编码为 18446744073709552000，与 RFC-0042 §7.2 "任意 JSON number 不得静默舍入、便捷投影显式校验"存在差异，因为 JS number 无法无损表示这类整数；句柄与序号是十进制字符串，不受影响（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D14：Go 把单值（字面量）标签字段解码为普通字符串，接受任意取值，而 Java、Dart、Swift、Python 拒绝其他取值（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
+- RFC-0039 D15：Java 与 Dart 以有符号 64 位整数保存整数，无法表示大于 2^63-1 的 u64，因此向量 `ErrorEnvelope/001.json` 对这两种语言不参与检查，其余向量六种语言全部运行（[实现说明](rfc-0039-implementation.md#registered-differences-from-rfc-0039)）。
 - RFC-0039 G-a：录制器、会话存储挂接及推断状态仍为进程全局，因为按所有者隔离采集需要修改 core 的运行时上下文（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
-- RFC-0039 G-b：`aimux-core/src/recording.rs` 的写入格式是 schema 2，读取接受 schema 1 和 2，因为迁至 schema 3 并移除旧 schema 读取计划作为本系列的最后一步按 RFC-0041 完成（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
+- RFC-0039 G-b：`aimux-core/src/recording.rs` 的写入格式是 schema 2，读取接受 schema 1 和 2，因为迁至 schema 3 并移除旧 schema 读取计划作为 #268 之后单独的后续 PR 按 RFC-0041 完成，并在发版前合入（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-c：`credential.create` 和 `replay.capabilities` 仍属 Future 并返回 UnsupportedFunctionality，回放只保留既有 Language/Decision 模型路径，因为尚未实现凭据构造及 Fetch/WebSocket/Download 回放引擎（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
-- RFC-0039 G-d：业务类型只有稳定的 Rust 类型引用，尚无完整生成的 schema 和语言 DTO 链，`scripts/gen_ts_types.py` 仍保留原有输出，因为这部分由 RFC-0042 负责（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
+- RFC-0039 G-d（已由 #268 关闭）：`aimux-codegen` 从 Rust 类型生成业务 schema 与各绑定的 DTO（RFC-0042 D8），ts-rs 与 `scripts/gen_ts_types.py` 已删除（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-e：发布配置已将 ops 排在 FFI 前并打包头文件，但本文尚未提供所有平台产物的安装和运行验证，因为构建与打包定义不能证明发布验收完成（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-f：完整包来源、所有包的权威默认方法、通用厂商命名方法分发及文本请求的 registry/字符串模型提升仍缺失，已解析模型只有按所有者隔离的引用元数据且 `provider.invoke` 只接受 `listModels`，因为注册项保留的是规范 Arc，现有工厂和控制 DTO 未提供全部元数据或提升逻辑（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
 - RFC-0039 G-g：队列和线格式限制尚不能约束所有 provider 分配及 core 现有的无界文本转发队列，因为本层只控制已准入的数据，不改写 core 的流式内部实现（[实现说明](rfc-0039-implementation.md#registered-gaps)）。
@@ -1783,7 +1786,7 @@ AI SDK 两者均为 `Record<string, JSONObject>`，不是任意 JSON，也不是
 
 共同缺口是：六套手写 `ModelMessage` 都没有消息级 `providerOptions`；同时所有绑定都继承了缺少 reasoning-file、custom、审批相关分支的问题。
 
-`ts-rs` 当前有生成与文件集检查脚本，但其保证范围只到 TS。脚本会启动 Cargo 并写临时导出目录，因此本次没有运行。其实现见 [gen_ts_types.py:37](../scripts/gen_ts_types.py:37)。
+核验当时 `ts-rs` 有生成与文件集检查脚本 `scripts/gen_ts_types.py`，但其保证范围只到 TS；脚本会启动 Cargo 并写临时导出目录，因此本次没有运行。该脚本和 ts-rs 已随 #268 删除，由 `cargo run -p aimux-codegen -- --check` 覆盖全部绑定的生成文件集。
 
 需要特别区分两种 TS 情况：
 
@@ -2730,7 +2733,7 @@ TS、Go、Java、Kotlin、Swift、Dart、Python DTO 与 codec
 - 不再手写第二份消息 enum、result struct 或字段名映射。
 - Schema 是生成物，不与 Rust 同时人工维护。
 - 自定义 serde 类型必须同时提供生成描述：Optional、base64、ToolChoice、受约束静态/动态工具调用、日期和错误。
-- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源；生成链落地前 ts-rs 保留为过渡，见 §0.5）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
+- ~~`ts-rs` 可以继续生成原生 Rust DTO 的 TS 声明~~（**§0.5 已裁定不采纳**：ts-rs 与 `scripts/gen_*` 全部退役，第一部分 §6.5 的 descriptor + manifest 生成链是唯一生成来源；生成链落地前 ts-rs 保留为过渡，见 §0.5；#268 已落地并删除 ts-rs）。若日后重新引入任何 TS 生成器，必须与同源 schema/serde fixture 校验，不能只靠 `derive(TS)` 推断自定义行为。
 - Go 不再用 RawMessage 代替已知协议联合；opaque JSON 字段才使用通用 JSON 类型。
 - Java/Kotlin 不再为必填字段默认填空字符串、空对象。
 - Python/Dart 不再对同一 providerMetadata 字段一处接受 Any、一处强制字典。

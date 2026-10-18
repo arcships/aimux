@@ -77,9 +77,12 @@ flush a recorder or complete an operation normally.
 
 DTOs are generated from the Rust manifest into `lib/src/generated/types.dart`.
 Import `package:aimux/types.dart` for immutable classes, enums and union variants.
-`Field<T>` keeps an absent field distinct from an explicit JSON null. Numeric
-uint64 fields use `BigInt`; `dtoJsonDecode` and `dtoJsonEncode` preserve those
-numbers in native calls and opaque JSON. Handle and sequence codecs stay strings.
+`Field<T>` keeps an absent field distinct from an explicit JSON null. Integer
+fields, including Rust `u64` ones, are Dart `int` (64-bit signed on the VM), so a
+`u64` above 2^63-1 cannot be held; `ErrorEnvelope/001.json` in the DTO vectors is
+the one vector skipped for this reason. Handle and sequence ids stay decimal
+strings in the DTOs, and `_u64String` rejects a string outside the `u64` range.
+There is no `BigInt` or custom JSON codec in the DTOs: they use `dart:convert`.
 Unknown union tags raise `FormatException` with the type and tag.
 
 ## Native packaging

@@ -34,8 +34,8 @@
 
 现状:[Aimux.swift](../../bindings/swift/Sources/Aimux/Aimux.swift) 只包装语言模型
 (4 个构造 + `generateText` / `streamText` / `streamTextAsync` / `generate`),
-FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Types.swift)
-只有文本侧 26 个 Codable 类型。
+FFI 调用仅 8 个符号。Codable 类型当时只有文本侧 26 个;现在由 aimux-codegen 生成到
+[Types.swift](../../bindings/swift/generated/Types.swift)。
 
 ### 缺失的类(每个 = 构造 + 调用方法 + Codable 类型)
 
@@ -71,8 +71,8 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 
 现状:[Model.kt](../../bindings/kotlin/src/main/kotlin/aimux/Model.kt) 的 JNA 接口
 `AimuxFFI` 只声明 8 个 ABI 函数;[TypedModel.kt](../../bindings/kotlin/src/main/kotlin/aimux/TypedModel.kt)
-只做文本 typed 包装;[Types.kt](../../bindings/kotlin/src/main/kotlin/aimux/Types.kt)
-已有文本侧类型 + `FileBytes`/`FileData`。
+只做文本 typed 包装;`Types.kt` 已有文本侧类型 + `FileBytes`/`FileData`(该文件已删除,
+类型现在是 Java 工件里生成的 `ai.arcships.aimux.types` 包)。
 
 ### 缺失的工作项
 
@@ -91,8 +91,9 @@ FFI 调用仅 8 个符号。[Types.swift](../../bindings/swift/Sources/Aimux/Typ
 
 现状:[aimux.dart](../../bindings/flutter/lib/aimux.dart) 的 dart:ffi `lookupFunction`
 只有 8 个 ABI 符号(L76-85);[typed_model.dart](../../bindings/flutter/lib/typed_model.dart)
-纯文本;[types.dart](../../bindings/flutter/lib/types.dart) 已有文本侧类型 +
-`FileBytes`/`FileData`/`ContentPart`。
+纯文本;[types.dart](../../bindings/flutter/lib/types.dart) 当时已有文本侧类型 +
+`FileBytes`/`FileData`/`ContentPart`(现在重新导出
+[生成的类型](../../bindings/flutter/lib/src/generated/types.dart))。
 
 ### 缺失的工作项
 

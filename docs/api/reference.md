@@ -7,40 +7,42 @@
 
 ## Types
 
+A dash in the TS column marks a Rust type that is not part of the generated binding DTOs.
+
 | Type | Rust source | TS declaration | Notes |
 |------|-------------|----------------|-------|
-| `GenerateTextOptions` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextOptions.ts](../../bindings/node/src/types/GenerateTextOptions.ts) | per-call text options (temperature, tools, reasoning, timeout, …) |
-| `CallOptions` | [options.rs](../../aimux-core/src/options.rs) | [CallOptions.ts](../../bindings/node/src/types/CallOptions.ts) | base options for all modalities |
-| `TimeoutConfiguration` | [options.rs](../../aimux-core/src/options.rs) | [TimeoutConfiguration.ts](../../bindings/node/src/types/TimeoutConfiguration.ts) | `total_ms` / `step_ms` / `first_chunk_ms` / `chunk_ms` |
-| `ResponseFormat` | [options.rs](../../aimux-core/src/options.rs) | [ResponseFormat.ts](../../bindings/node/src/types/ResponseFormat.ts) | text / json_object / json_schema |
-| `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [ReasoningEffort.ts](../../bindings/node/src/types/ReasoningEffort.ts) | 7 levels, passed through verbatim |
+| `GenerateTextOptions` | [generate.rs](../../aimux-core/src/generate.rs) | [`GenerateTextOptions`](../../bindings/node/src/generated/types.ts) | per-call text options (temperature, tools, reasoning, timeout, …) |
+| `CallOptions` | [options.rs](../../aimux-core/src/options.rs) | — | base options for all modalities |
+| `TimeoutConfiguration` | [options.rs](../../aimux-core/src/options.rs) | [`TimeoutConfiguration`](../../bindings/node/src/generated/types.ts) | `total_ms` / `step_ms` / `first_chunk_ms` / `chunk_ms` |
+| `ResponseFormat` | [options.rs](../../aimux-core/src/options.rs) | — | text / json_object / json_schema |
+| `ReasoningEffort` | [types.rs](../../aimux-core/src/types.rs) | [`ReasoningEffort`](../../bindings/node/src/generated/types.ts) | 7 levels, passed through verbatim |
 | `AbortSignal` | [abort_signal.rs](../../aimux-core/src/abort_signal.rs) | — (runtime handle) | Rust: options field; Node: `AbortBridge` + JS `AbortSignal` |
 | `aimux_providers::provider::ProviderOptions` (binding compatibility) | [provider.rs](../../aimux-providers/src/provider.rs) | `ProviderConfig` (per binding) | `base_url` / `headers` / `organization` / `project` / `params` (a `max_retries` or `body_overrides` key is rejected as `InvalidArgument`) |
-| `Output` | [output.rs](../../aimux-core/src/output.rs) | [Output.ts](../../bindings/node/src/types/Output.ts) | the `output` option: Text / Object / Array / Choice / Json |
-| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [GenerateTextResult.ts](../../bindings/node/src/types/GenerateTextResult.ts) | `steps`, `text`, `content`, `tool_calls`, `usage`, `finish_reason`, `output`, … |
-| `StepResult` | [step_result.rs](../../aimux-core/src/step_result.rs) | [StepResult.ts](../../bindings/node/src/types/StepResult.ts) | one model call: content, usage, performance, request, response |
+| `Output` | [output.rs](../../aimux-core/src/output.rs) | [`Output`](../../bindings/node/src/generated/types.ts) | the `output` option: Text / Object / Array / Choice / Json |
+| `GenerateTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | [`GenerateTextResult`](../../bindings/node/src/generated/types.ts) | `steps`, `text`, `content`, `tool_calls`, `usage`, `finish_reason`, `output`, … |
+| `StepResult` | [step_result.rs](../../aimux-core/src/step_result.rs) | [`StepResult`](../../bindings/node/src/generated/types.ts) | one model call: content, usage, performance, request, response |
 | `StreamTextResult` | [generate.rs](../../aimux-core/src/generate.rs) | — | use `TextStreamPart` while iterating; `consume()` gives a `GenerateTextResult` |
-| `TextStreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [TextStreamPart.ts](../../bindings/node/src/types/TextStreamPart.ts) | Start / StartStep / TextDelta / ToolCall / FinishStep / Finish / … |
-| `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [StreamPart.ts](../../bindings/node/src/types/StreamPart.ts) | the provider-level stream (`LanguageModel::do_stream`) |
-| `LanguageModelUsage` | [types.rs](../../aimux-core/src/types.rs) | [LanguageModelUsage.ts](../../bindings/node/src/types/LanguageModelUsage.ts) | call-level usage: flat input/output/total tokens plus details |
-| `Usage` / `TokenUsage` | [types.rs](../../aimux-core/src/types.rs) | [Usage.ts](../../bindings/node/src/types/Usage.ts) | provider-level usage |
-| `FinishReason` / `FinishReasonUnified` | [types.rs](../../aimux-core/src/types.rs) | [FinishReason.ts](../../bindings/node/src/types/FinishReason.ts) | |
-| `Warning` | [types.rs](../../aimux-core/src/types.rs) | [Warning.ts](../../bindings/node/src/types/Warning.ts) | non-fatal provider notices |
-| `AiMuxError` | [error.rs](../../aimux-core/src/error.rs) | [AiMuxError.ts](../../bindings/node/src/types/AiMuxError.ts) | typed error with `error_type` + `status_code` |
-| `ModelMessage` / `Role` / `MessageContent` / `ModelPrompt` | [message.rs](../../aimux-core/src/message.rs) | [ModelMessage.ts](../../bindings/node/src/types/ModelMessage.ts) | chat message shapes |
-| `LanguageModelPromptMessage` | [language_model_message.rs](../../aimux-core/src/language_model_message.rs) | [LanguageModelPromptMessage.ts](../../bindings/node/src/types/LanguageModelPromptMessage.ts) | canonical prompt message |
-| `ContentPart` | [content.rs](../../aimux-core/src/content.rs) | [ContentPart.ts](../../bindings/node/src/types/ContentPart.ts) | Text / Reasoning / ToolResult / … |
-| `Tool` / `FunctionTool` / `ProviderTool` | [tool.rs](../../aimux-core/src/tool.rs) | [Tool.ts](../../bindings/node/src/types/Tool.ts) | tool definitions |
-| `ToolCall` / `ToolResult` / `ToolChoice` | [tool.rs](../../aimux-core/src/tool.rs) | [ToolCall.ts](../../bindings/node/src/types/ToolCall.ts) | tool invocation plumbing |
-| Embedding types | [embedding_model.rs](../../aimux-core/src/embedding_model.rs) | `Embedding*.ts` | `EmbeddingCallOptions` / `EmbeddingResult` / `EmbeddingResponse` |
-| Image types | [image_model.rs](../../aimux-core/src/image_model.rs) | `Image*.ts` | `ImageCallOptions` / `ImageResult` / `ImageResponse` / `ImageFile` |
-| Speech types | [speech_model.rs](../../aimux-core/src/speech_model.rs) | `Speech*.ts` | `SpeechCallOptions` / `SpeechResult` / `AudioData` |
-| Transcription types | [transcription_model.rs](../../aimux-core/src/transcription_model.rs) | `Transcription*.ts` | `TranscriptionCallOptions` / `TranscriptionResult` / `TranscriptionSegment` |
-| Video types | [video_model.rs](../../aimux-core/src/video_model.rs) | `Video*.ts` | `VideoCallOptions` / `VideoResult` / `VideoData` |
-| Reranking types | [reranking_model.rs](../../aimux-core/src/reranking_model.rs) | `Reranking*.ts` | `RerankingCallOptions` / `RerankingResult` / `RerankingRank` |
-| Search types | [search_model.rs](../../aimux-core/src/search_model.rs) | `Search*.ts` | `SearchCallOptions` / `SearchResult` / `SearchResultItem` |
-| Files types | [files_model.rs](../../aimux-core/src/files_model.rs) | `UploadFile*.ts` | `UploadFileCallOptions` / `UploadFileResult` |
-| Shared | [shared.rs](../../aimux-core/src/shared.rs) | `FileBytes.ts` / `FileData.ts` / `Size.ts` / `AspectRatio.ts` | |
+| `TextStreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | [`TextStreamPart`](../../bindings/node/src/generated/types.ts) | Start / StartStep / TextDelta / ToolCall / FinishStep / Finish / … |
+| `StreamPart` | [stream_part.rs](../../aimux-core/src/stream_part.rs) | — | the provider-level stream (`LanguageModel::do_stream`) |
+| `LanguageModelUsage` | [types.rs](../../aimux-core/src/types.rs) | [`LanguageModelUsage`](../../bindings/node/src/generated/types.ts) | call-level usage: flat input/output/total tokens plus details |
+| `Usage` | [types.rs](../../aimux-core/src/types.rs) | — | provider-level usage |
+| `FinishReason` / `FinishReasonUnified` | [types.rs](../../aimux-core/src/types.rs) | [`FinishReasonUnified`](../../bindings/node/src/generated/types.ts) | |
+| `Warning` | [types.rs](../../aimux-core/src/types.rs) | [`Warning`](../../bindings/node/src/generated/types.ts) | non-fatal provider notices |
+| `AiMuxError` | [error.rs](../../aimux-core/src/error.rs) | [`AiMuxError`](../../bindings/node/src/generated/types.ts) | typed error with `error_type` + `status_code` |
+| `ModelMessage` / `UserContent` / `AssistantContent` / `ModelPrompt` | [message.rs](../../aimux-core/src/message.rs) | [`ModelMessage`](../../bindings/node/src/generated/types.ts) | chat message shapes |
+| `LanguageModelMessage` | [language_model_message.rs](../../aimux-core/src/language_model_message.rs) | — | canonical prompt message |
+| `ContentPart` | [content.rs](../../aimux-core/src/content.rs) | [`ContentPart`](../../bindings/node/src/generated/types.ts) | Text / Reasoning / ToolResult / … |
+| `Tool` / `FunctionTool` / `ProviderTool` | [tool.rs](../../aimux-core/src/tool.rs) | [`Tool`](../../bindings/node/src/generated/types.ts) | tool definitions |
+| `ToolCall` / `ToolResult` / `ToolChoice` | [tool.rs](../../aimux-core/src/tool.rs) | [`ToolCall`](../../bindings/node/src/generated/types.ts) | tool invocation plumbing |
+| Embedding types | [embedding_model.rs](../../aimux-core/src/embedding_model.rs) | `Embedding*` in [types.ts](../../bindings/node/src/generated/types.ts) | `EmbeddingCallOptions` / `EmbeddingResult` / `EmbeddingResponse` |
+| Image types | [image_model.rs](../../aimux-core/src/image_model.rs) | `Image*` in [types.ts](../../bindings/node/src/generated/types.ts) | `ImageCallOptions` / `ImageResult` / `ImageResponse` / `ImageFile` |
+| Speech types | [speech_model.rs](../../aimux-core/src/speech_model.rs) | `Speech*` in [types.ts](../../bindings/node/src/generated/types.ts) | `SpeechCallOptions` / `SpeechResult` / `AudioData` |
+| Transcription types | [transcription_model.rs](../../aimux-core/src/transcription_model.rs) | `Transcription*` in [types.ts](../../bindings/node/src/generated/types.ts) | `TranscriptionCallOptions` / `TranscriptionResult` / `TranscriptionSegment` |
+| Video types | [video_model.rs](../../aimux-core/src/video_model.rs) | `Video*` in [types.ts](../../bindings/node/src/generated/types.ts) | `VideoCallOptions` / `VideoResult` / `VideoData` |
+| Reranking types | [reranking_model.rs](../../aimux-core/src/reranking_model.rs) | `Reranking*` in [types.ts](../../bindings/node/src/generated/types.ts) | `RerankingCallOptions` / `RerankingResult` / `RerankingRank` |
+| Search types | [search_model.rs](../../aimux-core/src/search_model.rs) | `Search*` in [types.ts](../../bindings/node/src/generated/types.ts) | `SearchCallOptions` / `SearchResult` / `SearchResultItem` |
+| Files types | [files_model.rs](../../aimux-core/src/files_model.rs) | `UploadFile*` in [types.ts](../../bindings/node/src/generated/types.ts) | `UploadFileCallOptions` / `UploadFileResult` |
+| Shared | [shared.rs](../../aimux-core/src/shared.rs) | `FileBytes` / `FileData` / `Size` / `AspectRatio` in [types.ts](../../bindings/node/src/generated/types.ts) | |
 
 ## Functions
 

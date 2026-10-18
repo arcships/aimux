@@ -26,7 +26,7 @@ OpenAI-compatible preset 来自 `provider_registry.json` 的运行时 descriptor
 | 面 | 守护 |
 |---|---|
 | 公开 JSON：camelCase、kebab-case `type`、base64 字节、缺失省略、null 保留 | 绑定测试、`cargo test --workspace` |
-| ts-rs 生成的 d.ts（不新增 `#[derive(TS)]`，要退役） | `python3 scripts/gen_ts_types.py --check` |
+| 各绑定的 DTO 和 web 控制台的 wire 类型（`cargo run -p aimux-codegen` 从 Rust 类型生成，不手写、不用 ts-rs） | `cargo run -p aimux-codegen -- --check`；`python3 scripts/check_dto_vectors.py <语言>` |
 | C ABI（`aimux-ffi`，各语言绑定依赖） | `aimux-ffi/tests`、`scripts/local-ci.sh` |
 | Node 绑定 | 构建后 `git diff --exit-code -- bindings/node/index.js bindings/node/index.d.ts` |
 | 录制格式、cassette 回放 | 回放测试 |
@@ -47,8 +47,8 @@ OpenAI-compatible preset 来自 `provider_registry.json` 的运行时 descriptor
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-cargo test --workspace        # 会改写 bindings/node/src/types/*.ts，跑完 checkout 回去
-python3 scripts/gen_ts_types.py --check
+cargo test --workspace
+cargo run -p aimux-codegen -- --check   # 生成物漂移；改了公开类型先不带 --check 重新生成
 python3 scripts/gen_providers_doc.py --check
 bash scripts/check_provider_boundaries.sh
 ```
