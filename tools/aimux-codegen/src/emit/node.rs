@@ -24,27 +24,8 @@ impl Emitter for Node {
             "export const dtoTags: Partial<Record<keyof DtoTypes, { tag: string; values: readonly string[] }>> = {\n",
         );
         let mut names = String::from("export const dtoTypeNames = [\n");
-        let mut omit_null = String::from(
-            "export const dtoOmitNull: Partial<Record<keyof DtoTypes, readonly string[]>> = {\n",
-        );
         for named in &model.types {
             write_declaration(&mut out, named);
-            if let Kind::Struct { fields, .. } = &named.kind {
-                let fields: Vec<_> = fields
-                    .iter()
-                    .filter(|f| !f.required && !f.ty.accepts_null())
-                    .map(|f| quote(&f.json_name))
-                    .collect();
-                if !fields.is_empty() {
-                    writeln!(
-                        omit_null,
-                        "  {}: [{}],",
-                        quote(&named.name),
-                        fields.join(", ")
-                    )
-                    .unwrap();
-                }
-            }
             if let Kind::Tagged { tag, variants } = &named.kind {
                 writeln!(
                     tags,
@@ -67,8 +48,6 @@ impl Emitter for Node {
         names.push_str("] as const satisfies readonly (keyof DtoTypes)[]\n");
         table.push_str(&tags);
         table.push_str(&names);
-        omit_null.push_str("}\n");
-        table.push_str(&omit_null);
         Ok(vec![
             (self.owned()[0].into(), out),
             (self.owned()[1].into(), table),

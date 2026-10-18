@@ -21,6 +21,10 @@ RUNNERS = {
 # JavaScript numbers are IEEE doubles, so integers above 2^53 round (a registered difference).
 DOUBLE_NUMBERS = {"node"}
 
+# TypeScript declarations have no codec: values pass through JSON.parse/stringify
+# unchanged, so these languages compare against the input, not a vector's `expect`.
+DECLARATION_ONLY = {"node"}
+
 # Native 64-bit signed integers cannot hold u64 values above 2^63-1 (a registered difference): such vectors may fail.
 INT64_NUMBERS = {"dart", "java"}
 
@@ -60,12 +64,13 @@ def main():
     args = parser.parse_args()
     directory = ROOT / "contract-tests/dto"
     index = json.loads((directory / "index.json").read_text())
-    expected = {}
+    expected, inputs = {}, {}
     for entry in index:
         name = entry["file"]
         path = (directory / name).resolve()
         if not path.is_relative_to(directory.resolve()) or name in expected:
             raise ValueError(f"unsafe or duplicate vector: {name}")
+        inputs[name] = json.loads(path.read_text(), parse_float=Decimal)
         want = (directory / entry.get("expect", name)).resolve()
         if not want.is_relative_to(directory.resolve()):
             raise ValueError(f"unsafe expected output: {entry['expect']}")
@@ -91,7 +96,7 @@ def main():
                 continue
             if record.get("ok") is not True or "error" in record:
                 raise ValueError(f"{language}: {name}: {record.get('error', 'codec failed')}")
-            value, want = record.get("value"), expected[name]
+            value, want = record.get("value"), (inputs if language in DECLARATION_ONLY else expected)[name]
             if language in DOUBLE_NUMBERS:
                 value, want = as_double(value), as_double(want)
             if "value" not in record or not same(value, want):
