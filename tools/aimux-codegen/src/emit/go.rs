@@ -1,6 +1,6 @@
 //! Go DTOs and their JSON codecs, generated solely from the normalized model.
 use super::Emitter;
-use crate::model::{Codec, Field, Kind, Model, Ty};
+use crate::model::{Codec, Field, Kind, Model, Result, Ty, escape};
 use std::{collections::BTreeMap, fmt::Write, path::PathBuf};
 
 pub struct Go;
@@ -61,32 +61,32 @@ fn presence_inner(value: &Ty) -> Option<&Ty> {
     }
 }
 
-fn shape<'a>(value: &'a Ty, model: &'a Model) -> &'a Ty {
-    match value {
-        Ty::Ref(name) => match kind(name, model) {
-            Kind::Alias(inner) => shape(inner, model),
+fn shape<'a>(value: &'a Ty, model: &'a Model) -> Result<&'a Ty> {
+    Ok(match value {
+        Ty::Ref(name) => match kind(name, model)? {
+            Kind::Alias(inner) => shape(inner, model)?,
             _ => value,
         },
-        Ty::Codec(_, inner) => shape(inner, model),
+        Ty::Codec(_, inner) => shape(inner, model)?,
         _ => value,
-    }
+    })
 }
 
-fn field_ty(field: &Field, model: &Model) -> String {
+fn field_ty(field: &Field, model: &Model) -> Result<String> {
     if let Some(inner) = presence_inner(&field.ty) {
-        return format!("Field[{}]", ty(inner));
+        return Ok(format!("Field[{}]", ty(inner)));
     }
     if field.required {
-        return ty(&field.ty);
+        return Ok(ty(&field.ty));
     }
     let mut value = &field.ty;
-    while let Ty::Nullable(inner) = shape(value, model) {
+    while let Ty::Nullable(inner) = shape(value, model)? {
         value = inner;
     }
-    match shape(value, model) {
+    Ok(match shape(value, model)? {
         Ty::Array(_) | Ty::Map(_) => ty(value),
         _ => format!("*{}", ty(value)),
-    }
+    })
 }
 
 fn docs(out: &mut String, doc: Option<&str>, indent: &str) {
@@ -96,19 +96,34 @@ fn docs(out: &mut String, doc: Option<&str>, indent: &str) {
     }
 }
 
-fn structure(out: &mut String, name: &str, fields: &[Field], model: &Model) {
+fn structure(out: &mut String, name: &str, fields: &[Field], model: &Model) -> Result<()> {
     if fields.is_empty() {
         writeln!(out, "type {name} struct{{}}\n").unwrap();
-        return;
+        return Ok(());
     }
     writeln!(out, "type {name} struct {{").unwrap();
     for group in fields.chunk_by(|_, right| right.doc.is_none()) {
         let rows: Vec<_> = group
             .iter()
-            .map(|f| (ident(&f.json_name), field_ty(f, model)))
-            .collect();
-        let names = rows.iter().map(|r| r.0.len()).max().unwrap();
-        let types = rows.iter().map(|r| r.1.len()).max().unwrap();
+            .map(|f| {
+                Ok((
+                    ident(&f.json_name),
+                    field_ty(f, model).map_err(|e| {
+                        format!("{name} #/properties/{}: {e}", escape(&f.json_name))
+                    })?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let names = rows
+            .iter()
+            .map(|r| r.0.len())
+            .max()
+            .ok_or_else(|| format!("{name} #/properties: empty field group"))?;
+        let types = rows
+            .iter()
+            .map(|r| r.1.len())
+            .max()
+            .ok_or_else(|| format!("{name} #/properties: empty field group"))?;
         docs(out, group[0].doc.as_deref(), "\t");
         for (field, (id, ty)) in group.iter().zip(rows) {
             let omit = if field.required { "" } else { ",omitzero" };
@@ -121,10 +136,16 @@ fn structure(out: &mut String, name: &str, fields: &[Field], model: &Model) {
         }
     }
     out.push_str("}\n\n");
+    Ok(())
 }
 
-fn kind<'a>(name: &str, model: &'a Model) -> &'a Kind {
-    &model.types.iter().find(|t| t.name == name).unwrap().kind
+fn kind<'a>(name: &str, model: &'a Model) -> Result<&'a Kind> {
+    model
+        .types
+        .iter()
+        .find(|t| t.name == name)
+        .map(|t| &t.kind)
+        .ok_or_else(|| format!("{name} #/$ref: unresolved type"))
 }
 
 // Secondary discriminators select flattened variants that share the outer tag.
@@ -146,13 +167,13 @@ impl Emitter for Go {
         &["bindings/go/types_gen.go"]
     }
 
-    fn files(&self, model: &Model) -> Vec<(PathBuf, String)> {
+    fn files(&self, model: &Model) -> Result<Vec<(PathBuf, String)>> {
         let mut out = String::from(HELPERS);
         for named in &model.types {
             let name = ident(&named.name);
             docs(&mut out, named.doc.as_deref(), "");
             match &named.kind {
-                Kind::Struct { fields, .. } => structure(&mut out, &name, fields, model),
+                Kind::Struct { fields, .. } => structure(&mut out, &name, fields, model)?,
                 Kind::Alias(value) => {
                     writeln!(out, "type {name} = {}\n", ty(value)).unwrap();
                 }
@@ -181,7 +202,10 @@ impl Emitter for Go {
                             variants.iter().flat_map(|v| literals(&v.fields)).collect();
                         if !keys.is_empty() {
                             out.push_str("\t\tvar subtag struct {\n");
-                            let width = keys.keys().map(|k| ident(k).len()).max().unwrap();
+                            let width =
+                                keys.keys().map(|k| ident(k).len()).max().ok_or_else(|| {
+                                    format!("{name} #/oneOf: missing discriminator")
+                                })?;
                             for key in keys.keys() {
                                 let id = ident(key);
                                 writeln!(out, "\t\t\t{id:width$} string `json:{key:?}`").unwrap();
@@ -224,7 +248,7 @@ impl Emitter for Go {
                     .unwrap();
                     for variant in variants {
                         let vn = format!("{name}Variant{}", ident(&variant.name));
-                        structure(&mut out, &vn, &variant.fields, model);
+                        structure(&mut out, &vn, &variant.fields, model)?;
                         writeln!(out, "func ({vn}) is{name}() {{}}\n\nfunc (v {vn}) MarshalJSON() ([]byte, error) {{\n\ttype plain {vn}\n\treturn json.Marshal(struct {{\n\t\t{} string `json:{tag:?}`\n\t\tplain\n\t}}{{{}: {:?}, plain: plain(v)}})\n}}\n", ident(tag), ident(tag), variant.tag_value).unwrap();
                     }
                 }
@@ -240,13 +264,13 @@ impl Emitter for Go {
                         let branch = &branch.ty;
                         let mut required = String::new();
                         if let Ty::Ref(reference) = branch
-                            && let Kind::Struct { fields, .. } = kind(reference, model)
+                            && let Kind::Struct { fields, .. } = kind(reference, model)?
                         {
                             for field in fields.iter().filter(|f| f.required) {
                                 write!(required, ", {:?}", field.json_name).unwrap();
                             }
                         }
-                        let nullable = matches!(shape(branch, model), Ty::Nullable(_) | Ty::Json);
+                        let nullable = matches!(shape(branch, model)?, Ty::Nullable(_) | Ty::Json);
                         writeln!(out, "\t{{\n\t\tvar next {}\n\t\tif err = decodeUnionBranch(data, &next, {nullable}{required}); err == nil {{\n\t\t\tv.Value = {name}Branch{branch_name}{{Value: next}}\n\t\t\treturn nil\n\t\t}}\n\t}}", ty(branch)).unwrap();
                     }
                     out.push_str("\treturn err\n}\n\n");
@@ -269,7 +293,7 @@ impl Emitter for Go {
             .unwrap();
         }
         out.push_str("\t}\n\treturn nil, fmt.Errorf(\"unknown DTO %q\", name)\n}\n");
-        vec![("bindings/go/types_gen.go".into(), out)]
+        Ok(vec![("bindings/go/types_gen.go".into(), out)])
     }
 }
 

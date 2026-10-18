@@ -240,6 +240,11 @@
     "file": "ErrorEnvelope/001.json"
   },
   {
+    "type": "ErrorEnvelope",
+    "file": "ErrorEnvelope/002.json",
+    "expect": "ErrorEnvelope/002.expect.json"
+  },
+  {
     "type": "FileBytes",
     "file": "FileBytes/001.json"
   },
@@ -346,6 +351,10 @@
   {
     "type": "GenerateTextOptions",
     "file": "GenerateTextOptions/001.json"
+  },
+  {
+    "type": "GenerateTextResult",
+    "file": "GenerateTextResult/001.json"
   },
   {
     "type": "GeneratedFile",
@@ -516,6 +525,10 @@
     "file": "ReasoningPart/002.json"
   },
   {
+    "type": "Recording",
+    "file": "Recording/001.json"
+  },
+  {
     "type": "RequestInfo",
     "file": "RequestInfo/001.json"
   },
@@ -586,6 +599,10 @@
   {
     "type": "SpeechResponse",
     "file": "SpeechResponse/002.json"
+  },
+  {
+    "type": "SpeechResult",
+    "file": "SpeechResult/001.json"
   },
   {
     "type": "StepModel",
@@ -736,6 +753,10 @@
     "file": "ToolCall/001.json"
   },
   {
+    "type": "ToolCall",
+    "file": "ToolCall/002.json"
+  },
+  {
     "type": "ToolCallInput",
     "file": "ToolCallInput/001.json"
   },
@@ -770,6 +791,10 @@
   {
     "type": "ToolResultOutput",
     "file": "ToolResultOutput/001.json"
+  },
+  {
+    "type": "TraceRecord",
+    "file": "TraceRecord/001.json"
   },
   {
     "type": "TranscriptionRequest",

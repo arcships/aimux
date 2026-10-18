@@ -220,7 +220,7 @@ pub fn generate(value: &Value, runtime_digest: &str) -> Result<Artifacts> {
     let (mut model, definitions) = model::normalize_with_schemas(&manifest.type_defs)?;
     model.drop_builtin_aliases();
     for emitter in emit::EMITTERS {
-        for (path, contents) in emitter.files(&model) {
+        for (path, contents) in emitter.files(&model)? {
             artifacts.insert(path, contents.into_bytes());
         }
     }

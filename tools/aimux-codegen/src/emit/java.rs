@@ -1,6 +1,6 @@
 //! Java 8 immutable DTOs using Jackson annotations.
 use super::Emitter;
-use crate::model::{Codec, Field, Kind, Model, Ty};
+use crate::model::{Codec, Field, Kind, Model, Result, Ty};
 use std::{collections::BTreeSet, fmt::Write, path::PathBuf};
 
 pub struct Java;
@@ -12,7 +12,7 @@ impl Emitter for Java {
         &[DIRECTORY]
     }
 
-    fn files(&self, model: &Model) -> Vec<(PathBuf, String)> {
+    fn files(&self, model: &Model) -> Result<Vec<(PathBuf, String)>> {
         let names: BTreeSet<_> = model.types.iter().map(|t| t.name.as_str()).collect();
         let variant_name = |n: &str| {
             if names.contains(n)
@@ -177,7 +177,7 @@ impl Emitter for Java {
             format!("{DIRECTORY}/FieldPresence.java").into(),
             format!("{HEADER}{PRESENCE}"),
         ));
-        files
+        Ok(files)
     }
 }
 

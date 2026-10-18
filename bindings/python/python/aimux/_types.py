@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import sys
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, ClassVar, Dict, List, Literal, Optional, Union
 
 from pydantic import (
     BaseModel, BeforeValidator, ConfigDict, Discriminator, Field, Tag,
@@ -66,12 +66,14 @@ def _tag(value, key, attribute):
 
 class _Wire(BaseModel):
     model_config = ConfigDict(populate_by_name=True, strict=True, extra="ignore", allow_inf_nan=False)
+    _omit_null: ClassVar[frozenset[str]] = frozenset()
 
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler, info):
         data = handler(self)
         for name, field in type(self).model_fields.items():
-            if name not in self.model_fields_set and not field.is_required() and field.default is None:
+            if (name not in self.model_fields_set and not field.is_required() and field.default is None
+                    or name in self._omit_null and getattr(self, name) is None):
                 data.pop(field.alias if info.by_alias else name, None)
         return data
 
@@ -285,6 +287,7 @@ class AiMuxErrorInputAIAPICallError(_Wire):
     status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["is_retryable"])
 
 
 class AiMuxErrorInputAIRetryError(_Wire):
@@ -371,6 +374,7 @@ class AiMuxErrorInputAINoSuchModelError(_Wire):
     name: Literal["AI_NoSuchModelError"] = Field(default="AI_NoSuchModelError", alias="name")
     model_id: str = Field(alias="modelId")
     model_type: Optional[str] = Field(default=None, alias="modelType")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["model_type"])
 
 
 class AiMuxErrorInputAINoSuchProviderError(_Wire):
@@ -534,6 +538,7 @@ class ApiCallErrorInput(_Wire):
     status_code: Optional[U16] = Field(default=None, alias="statusCode")
     #: Sanitized request URL. Required for every API-derived failure.
     url: str = Field(alias="url")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["is_retryable"])
 
 
 #: Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).
@@ -1305,6 +1310,7 @@ class ErrorEnvelope(_Wire):
     kind: "_dto.ErrorDomain" = Field(alias="kind")
     message: str = Field(alias="message")
     retry_after_ms: Optional[U64] = Field(default=None, alias="retryAfterMs")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["retry_after_ms"])
 
 
 Fallback = TypeAliasType("Fallback", Literal["on-error", "none"])
@@ -1838,6 +1844,7 @@ class InputRecord(_Wire):
     #: 完整 prompt(消息数组,含 ContentPart::Image 等多模态)。Loads as
     #: empty when this version cannot read it ([`Self::unreadable_prompt`]).
     prompt: List["_dto.LanguageModelMessage"] = Field(alias="prompt")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["operation"])
 
 
 #: `LanguageModelUsage.inputTokenDetails`.
@@ -1987,6 +1994,7 @@ class LanguageModelUsageInput(_Wire):
     raw: Optional[Dict[str, Any]] = Field(default=None, alias="raw")
     #: Input plus output tokens, when either is known.
     total_tokens: Optional[U32] = Field(default=None, alias="totalTokens")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["input_token_details", "output_token_details"])
 
 
 class LanguageModelV4ToolChoiceAuto(_Wire):
@@ -2067,6 +2075,7 @@ class MoaParams(_Wire):
     #: Strip `tools` / `tool_choice` from reference calls so references stay
     #: cheap (Hermes: references don't carry tool schemas). Default `true`.
     strip_reference_tools: Optional[bool] = Field(default=None, alias="stripReferenceTools")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["fail_mode", "model_id", "provider_name", "strip_reference_tools"])
 
 
 #: A single input or output modality.
@@ -2148,6 +2157,7 @@ ModelMethod = TypeAliasType("ModelMethod", Literal["languageModel", "embeddingMo
 class ModelModalities(_Wire):
     input: Optional[List["_dto.Modality"]] = Field(default=None, alias="input")
     output: Optional[List["_dto.Modality"]] = Field(default=None, alias="output")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["input", "output"])
 
 
 #: What the user passes as `prompt` to `generate_text` / `stream_text`.
@@ -2217,6 +2227,7 @@ class OpenAiTextRequest(_Wire):
     options: Optional["_dto.Options"] = Field(default=None, alias="options")
     prompt: "_dto.ModelPrompt" = Field(alias="prompt")
     stream_options: Optional["_dto.StreamOptions"] = Field(default=None, alias="streamOptions")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["options", "stream_options"])
 
 
 class OperationCapabilities(_Wire):
@@ -2229,6 +2240,7 @@ class OperationCapabilities(_Wire):
 class OperationNextParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     timeout_ms: Optional[U64] = Field(default=None, alias="timeoutMs")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["timeout_ms"])
 
 
 OperationOutcome = TypeAliasType("OperationOutcome", Literal["success", "error", "cancelled"])
@@ -2411,6 +2423,7 @@ class ProviderCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     package: str = Field(alias="package")
     settings: Optional["_dto.ProviderSettings"] = Field(default=None, alias="settings")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["settings"])
 
 
 class ProviderCustomParams(_Wire):
@@ -2429,6 +2442,7 @@ class ProviderCustomParams(_Wire):
     speech_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="speechModels")
     transcription_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="transcriptionModels")
     video_models: Optional[Dict[str, "_dto.HandleIdInput"]] = Field(default=None, alias="videoModels")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["decision_models", "embedding_models", "image_model_middleware", "image_models", "language_model_middleware", "language_models", "reranking_models", "search_models", "speech_models", "transcription_models", "video_models"])
 
 
 class ProviderDefaultParams(_Wire):
@@ -2476,6 +2490,7 @@ class ProviderSettings(_Wire):
     probability_source: Optional[str] = Field(default=None, alias="probabilitySource")
     project: Optional[str] = Field(default=None, alias="project")
     web_socket: Optional["_dto.HandleIdInput"] = Field(default=None, alias="webSocket")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["headers", "params"])
 
 
 #: A provider-defined tool (e.g. `anthropic.web_search_20250305`,
@@ -2506,6 +2521,7 @@ class ProviderWrapParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     image_model_middleware: Optional[List["_dto.HandleIdInput"]] = Field(default=None, alias="imageModelMiddleware")
     language_model_middleware: Optional[List["_dto.HandleIdInput"]] = Field(default=None, alias="languageModelMiddleware")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["image_model_middleware", "language_model_middleware"])
 
 
 #: Provider approval request for a provider-executed call.
@@ -2592,6 +2608,7 @@ class ReasoningSpec(_Wire):
     supported: bool = Field(alias="supported")
     #: Output visibility.
     visibility: Optional["_dto.ReasoningVisibility"] = Field(default=None, alias="visibility")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["effort_options"])
 
 
 #: Visibility of reasoning output to the caller.
@@ -2667,6 +2684,7 @@ class RegistryCreateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     entries: List["_dto.RegistryEntry"] = Field(alias="entries")
     namespace: Optional[str] = Field(default=None, alias="namespace")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["namespace"])
 
 
 class RegistryEntry(_Wire):
@@ -2690,6 +2708,7 @@ class RepairedToolCall(_Wire):
     tool_name: str = Field(alias="toolName")
     #: Required value: "tool-call".
     type: Optional[Literal["tool-call"]] = Field(default=None, alias="type")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["type"])
 
 
 class ReplayCreateParams(_Wire):
@@ -2876,6 +2895,7 @@ class RouterParams(_Wire):
     model_id: Optional[str] = Field(default=None, alias="modelId")
     provider_name: Optional[str] = Field(default=None, alias="providerName")
     strategy: "_dto.Strategy" = Field(alias="strategy")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["fallback"])
 
 
 class RuntimeConfigureParams(_Wire):
@@ -3169,6 +3189,7 @@ class StepResponseInput(_Wire):
     messages: Optional[List["_dto.ModelMessage"]] = Field(default=None, alias="messages")
     model_id: str = Field(alias="modelId")
     timestamp: "_dto.Timestamp" = Field(alias="timestamp")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["messages"])
 
 
 #: The response of a step without its messages and body: the AI SDK's
@@ -3247,6 +3268,7 @@ class StepResultInput(_Wire):
     usage: "_dto.LanguageModelUsageInput" = Field(alias="usage")
     #: Warnings of the model call.
     warnings: Optional[List["_dto.Warning"]] = Field(default=None, alias="warnings")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["request", "warnings"])
 
 
 #: Timing of a step (`StepResultPerformance`, `step-result.ts:62-133`).
@@ -3295,6 +3317,7 @@ class StepResultPerformanceInput(_Wire):
     #: Execution time of each host-executed tool, by tool call id. Aimux does
     #: not execute tools, so this is empty.
     tool_execution_ms: Optional[Dict[str, float]] = Field(default=None, alias="toolExecutionMs")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["tool_execution_ms"])
 
 
 class StrategyRule(_Wire):
@@ -3334,6 +3357,7 @@ class StreamOptions(_Wire):
     model_config = ConfigDict(extra="forbid")
     include_reasoning: Optional[bool] = Field(default=None, alias="includeReasoning")
     include_usage: Optional[bool] = Field(default=None, alias="includeUsage")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["include_reasoning", "include_usage"])
 
 
 #: A raw provider call with its required wire tag.
@@ -3384,6 +3408,7 @@ class TextRequest(_Wire):
     abort: Optional["_dto.HandleIdInput"] = Field(default=None, alias="abort")
     options: Optional["_dto.Options"] = Field(default=None, alias="options")
     prompt: "_dto.ModelPrompt" = Field(alias="prompt")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["options"])
 
 
 class TextStreamPartTextStart(_Wire):
@@ -3950,6 +3975,7 @@ class ToolRepairApplyRequest(_Wire):
     options: Optional["_dto.GenerateTextOptions"] = Field(default=None, alias="options")
     reply: "_dto.ToolCallRepairReply" = Field(alias="reply")
     tool_call: "_dto.ToolCallInput" = Field(alias="toolCall")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["options"])
 
 
 class ToolRepairApplyResultRequest(_Wire):
@@ -3958,6 +3984,7 @@ class ToolRepairApplyResultRequest(_Wire):
     reply: "_dto.ToolCallRepairReply" = Field(alias="reply")
     result: "_dto.GenerateTextResultInput" = Field(alias="result")
     tool_call_id: str = Field(alias="toolCallId")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["options"])
 
 
 class ToolRepairContextRequest(_Wire):
@@ -3965,6 +3992,7 @@ class ToolRepairContextRequest(_Wire):
     options: Optional["_dto.GenerateTextOptions"] = Field(default=None, alias="options")
     prompt: "_dto.ModelPrompt" = Field(alias="prompt")
     tool_call: "_dto.ToolCallInput" = Field(alias="toolCall")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["options"])
 
 
 ToolRepairContextResult = TypeAliasType("ToolRepairContextResult", Optional["_dto.ToolRepairContextSchema"])
@@ -4168,6 +4196,7 @@ class TraceAggregateFilter(_Wire):
 class TraceAggregateParams(_Wire):
     model_config = ConfigDict(extra="forbid")
     filter: Optional["_dto.TraceAggregateFilter"] = Field(default=None, alias="filter")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["filter"])
 
 
 TraceAuditMode = TypeAliasType("TraceAuditMode", Literal["off", "shared", "strict"])
@@ -4177,6 +4206,7 @@ class TraceCreateParams(_Wire):
     audit_mode: Optional["_dto.TraceAuditMode"] = Field(default=None, alias="auditMode")
     capacity: Optional[U64] = Field(default=None, alias="capacity")
     per_scope_capacity: Optional[U64] = Field(default=None, alias="perScopeCapacity")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["audit_mode", "capacity", "per_scope_capacity"])
 
 
 #: One probed call. Plaintext never persists — fingerprints only.
@@ -4313,6 +4343,7 @@ class TranscriptionStartParams(_Wire):
     input_audio_format: Optional["_dto.InputAudioFormat"] = Field(default=None, alias="inputAudioFormat")
     provider_options: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="providerOptions")
     timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["include_raw_chunks"])
 
 
 class TranscriptionStreamPartStreamStart(_Wire):
@@ -4383,12 +4414,14 @@ class TransportParamsFetch(_Wire):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["fetch"] = Field(default="fetch", alias="kind")
     proxy: Optional["_dto.TransportProxy"] = Field(default=None, alias="proxy")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["proxy"])
 
 
 class TransportParamsWs(_Wire):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["ws"] = Field(default="ws", alias="kind")
     proxy: Optional["_dto.TransportProxy"] = Field(default=None, alias="proxy")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["proxy"])
 
 
 class TransportParamsDownload(_Wire):
@@ -4492,6 +4525,7 @@ class TypedToolCallInput(_Wire):
     tool_name: str = Field(alias="toolName")
     #: Required value: "tool-call".
     type: Optional[Literal["tool-call"]] = Field(default=None, alias="type")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["type"])
 
 
 #: A tool error (the AI SDK's `TypedToolError`, `ai`
@@ -4699,6 +4733,7 @@ class VideoCallOptions(_Wire):
     seed: Optional[U64] = Field(default=None, alias="seed")
     #: Per-call operation timeout.
     timeout: Optional["_dto.TimeoutConfiguration"] = Field(default=None, alias="timeout")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["n", "provider_options"])
 
 
 class VideoDataUrl(_Wire):

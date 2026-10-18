@@ -107,6 +107,11 @@ fn dto_vectors_round_trip_through_rust() {
             "GenerateTextOptions" => {
                 round_trip::<aimux_core::generate::GenerateTextOptions>(value.clone())
             }
+            "GenerateTextResult" => {
+                round_trip::<aimux_core::generate::GenerateTextResult>(value.clone())
+            }
+            "Recording" => round_trip::<aimux_core::recording::Recording>(value.clone()),
+            "TraceRecord" => round_trip::<aimux_core::trace::TraceRecord>(value.clone()),
             "GeneratedFile" => round_trip::<aimux_core::result::GeneratedFile>(value.clone()),
             "GeneratedFileData" => {
                 round_trip::<aimux_core::shared::GeneratedFileData>(value.clone())
@@ -172,6 +177,7 @@ fn dto_vectors_round_trip_through_rust() {
             "SpeechCallOptions" => {
                 round_trip::<aimux_core::speech_model::SpeechCallOptions>(value.clone())
             }
+            "SpeechResult" => round_trip::<aimux_core::speech_model::SpeechResult>(value.clone()),
             "SpeechRequest" => round_trip::<aimux_core::speech_model::SpeechRequest>(value.clone()),
             "SpeechResponse" => {
                 round_trip::<aimux_core::speech_model::SpeechResponse>(value.clone())
@@ -237,6 +243,117 @@ fn dto_vectors_round_trip_through_rust() {
             name => panic!("unregistered vector type {name}: {file}"),
         }
         .unwrap_or_else(|error| panic!("{file}: {error}"));
-        assert_eq!(result, value, "{file}");
+        let expected = entry["expect"].as_str().map_or(value, |file| {
+            assert!(
+                std::path::Path::new(file)
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_)))
+            );
+            serde_json::from_str(&std::fs::read_to_string(root.join(file)).unwrap()).unwrap()
+        });
+        assert_eq!(result, expected, "{file}");
+    }
+}
+
+/// Keep realistic business vectors tied to Rust serialization, including derived
+/// result fields. Set UPDATE_DTO_VECTORS=1 to refresh these three files.
+#[test]
+fn business_vectors_match_rust_serialization() {
+    use aimux_core::generate::GenerateTextResult;
+    use aimux_core::options::CallOptions;
+    use aimux_core::recording::{
+        HttpExchange, HttpRecord, InputRecord, OutcomeRecord, ProviderRecord, Recording,
+        ResponseRecord, TimingRecord,
+    };
+    use aimux_core::trace::TraceRecord;
+    use serde_json::json;
+
+    let usage = json!({"inputTokens": 12, "outputTokens": 3, "totalTokens": 15,
+        "inputTokenDetails": {"noCacheTokens": 12}, "outputTokenDetails": {"textTokens": 3}});
+    let result: GenerateTextResult = serde_json::from_value(json!({
+        "steps": [{
+            "callId": "call-dto-1", "stepNumber": 0,
+            "model": {"provider": "openai.chat", "modelId": "gpt-4o"},
+            "content": [{"type": "text", "text": "Hello, world!"}],
+            "finishReason": "stop", "rawFinishReason": "stop", "usage": usage,
+            "performance": {"effectiveOutputTokensPerSecond": 12.0,
+                "effectiveTotalTokensPerSecond": 60.0, "stepTimeMs": 260.0,
+                "responseTimeMs": 250.0, "toolExecutionMs": {}},
+            "request": {"body": null},
+            "response": {"id": "resp-dto-1", "modelId": "gpt-4o",
+                "timestamp": "2026-01-01T00:00:00.000Z",
+                "messages": [{"role": "assistant", "content": [{"type": "text", "text": "Hello, world!"}]}]},
+            "providerMetadata": {"openai": {"serviceTier": "default", "opaque": null}}
+        }], "totalUsage": usage, "output": "Hello, world!"
+    })).unwrap();
+    let cassette: Value = serde_json::from_str(include_str!(
+        "../../aimux-providers/tests/cassettes/openai/completions_api_agent_prompt.json"
+    ))
+    .unwrap();
+    let options: CallOptions = serde_json::from_value(json!({
+        "prompt": [{"role": "user", "content": [{"type": "text", "text": "Hi"}]}]
+    }))
+    .unwrap();
+    let mut recording = Recording::new(
+        "call-dto-1",
+        InputRecord::from_call_options(&options),
+        ProviderRecord::new("openai", "openai.chat", "gpt-4o"),
+    );
+    recording.recorded_at = "2026-01-01T00:00:00.000Z".into();
+    recording.session_id = Some("session-dto".into());
+    recording.step = Some(0);
+    recording.complete = true;
+    recording.transport_closed = true;
+    recording.outcome = OutcomeRecord::success(result.finish_reason(), result.usage());
+    recording.exchanges.push(HttpExchange {
+        step: Some("0".into()),
+        attempt: 1,
+        exchange_index: 1,
+        request: HttpRecord {
+            method: "POST".into(),
+            url: "https://api.openai.com/v1/chat/completions".into(),
+            headers: vec![("authorization".into(), "[REDACTED]".into())],
+            body: Some(serde_json::to_string(&cassette["request"]["body"]).unwrap()),
+        },
+        response: Some(ResponseRecord {
+            status: 200,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: Some(cassette["response"]["body"].as_str().unwrap().into()),
+            stream_chunks: None,
+            ttfb_ms: Some(125),
+        }),
+        timing: TimingRecord {
+            latency_ms: 250,
+            ttfb_ms: Some(125),
+        },
+        error: None,
+        finalized: true,
+    });
+    let trace: TraceRecord = serde_json::from_value(json!({
+        "provider": "openai", "model": "gpt-4o", "callId": "call-dto-1",
+        "requestId": "req-dto-1", "sessionId": "session-dto", "sentAtUnixMs": 1767225600000_i64,
+        "fingerprint": {"bodyHash": "a3d1", "lenBytes": 128, "blockSize": 4096,
+            "blockHashes": ["a3d1"], "tokenEstimate": 32},
+        "usage": {"inputTotal": 120, "inputNoCache": 20, "cacheRead": 100,
+            "outputTotal": 3, "outputText": 3, "raw": {"cached_tokens": 100, "extra": null}},
+        "ttftMs": 125, "lcpTokenUpper": 32,
+        "responseCacheHeaders": {"x-cache-status": "hit"},
+        "requestCacheHints": {"requestedWrite": false}
+    }))
+    .unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../contract-tests/dto");
+    for (name, value) in [
+        ("GenerateTextResult", serde_json::to_value(result).unwrap()),
+        ("Recording", serde_json::to_value(recording).unwrap()),
+        ("TraceRecord", serde_json::to_value(trace).unwrap()),
+    ] {
+        let path = root.join(name).join("001.json");
+        if std::env::var_os("UPDATE_DTO_VECTORS").is_some() {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, serde_json::to_string_pretty(&value).unwrap() + "\n").unwrap();
+        }
+        let expected: Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(value, expected, "{name}");
     }
 }

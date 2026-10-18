@@ -66,7 +66,10 @@ def main():
         path = (directory / name).resolve()
         if not path.is_relative_to(directory.resolve()) or name in expected:
             raise ValueError(f"unsafe or duplicate vector: {name}")
-        expected[name] = json.loads(path.read_text(), parse_float=Decimal)
+        want = (directory / entry.get("expect", name)).resolve()
+        if not want.is_relative_to(directory.resolve()):
+            raise ValueError(f"unsafe expected output: {entry['expect']}")
+        expected[name] = json.loads(want.read_text(), parse_float=Decimal)
     if args.list:
         print(f"{len(index)} vectors, {len({v['type'] for v in index})} types")
         return 0

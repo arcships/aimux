@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dtoTags, dtoTypeNames } from '../src/generated/dto_vectors.ts'
+import { dtoOmitNull, dtoTags, dtoTypeNames } from '../src/generated/dto_vectors.ts'
 import type { DtoTypes } from '../src/generated/dto_vectors.ts'
 
 function isDtoType(type: string): type is keyof DtoTypes {
@@ -9,6 +9,12 @@ function isDtoType(type: string): type is keyof DtoTypes {
 
 export function roundTrip<K extends keyof DtoTypes>(type: K, json: string): DtoTypes[K] {
   const value = JSON.parse(json) as DtoTypes[K]
+  // TypeScript declarations have no decoder; mirror Rust's omission of ordinary
+  // optional nulls at the DTO root, using the generated field metadata.
+  for (const key of dtoOmitNull[type] ?? []) {
+    const fields = value as Record<string, unknown>
+    if (fields[key] === null) delete fields[key]
+  }
   const tagged = dtoTags[type]
   if (tagged) {
     const tag: unknown = value !== null && typeof value === 'object'

@@ -1,6 +1,6 @@
 //! Swift Codable declarations and vector dispatch from the normalized model.
 use super::Emitter;
-use crate::model::{Codec, Field, Kind, Model, Ty};
+use crate::model::{Codec, Field, Kind, Model, Result, Ty};
 use std::{collections::BTreeMap, fmt::Write, path::PathBuf};
 
 pub struct Swift;
@@ -335,7 +335,7 @@ impl Emitter for Swift {
         ]
     }
 
-    fn files(&self, model: &Model) -> Vec<(PathBuf, String)> {
+    fn files(&self, model: &Model) -> Result<Vec<(PathBuf, String)>> {
         let mut out = SUPPORT.to_owned();
         for named in &model.types {
             docs(&mut out, named.doc.as_deref(), "");
@@ -512,13 +512,13 @@ impl Emitter for Swift {
             }
         }
         runner.push_str("        default: throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: \"Unknown vector type \\(name)\"))\n        }\n    }\n}\n");
-        vec![
+        Ok(vec![
             ("bindings/swift/generated/Types.swift".into(), out),
             (
                 "bindings/swift/generated/DtoVectorTypes.swift".into(),
                 runner,
             ),
-        ]
+        ])
     }
 }
 
@@ -676,7 +676,7 @@ mod tests {
             }, "required": ["required"]
         }}}))
         .unwrap();
-        let files = Swift.files(&model);
+        let files = Swift.files(&model).unwrap();
         let source = &files[0].1;
         assert!(source.contains("c.decode(String?.self, forKey: .required)"));
         assert!(source.contains("c.decodeIfPresent(String.self, forKey: .optional)"));
@@ -690,7 +690,7 @@ mod tests {
         let model = normalize(&json!({"input": {}, "output": {"Record": {
             "type": "object", "properties": {"snake_case": {"type": "string"}}, "required": ["snake_case"]
         }}})).unwrap();
-        let files = Swift.files(&model);
+        let files = Swift.files(&model).unwrap();
         let declaration = files[0].1.split("public struct Record").nth(1).unwrap();
         assert!(declaration.contains("public var snakeCase: String"));
         assert!(declaration.contains("case snakeCase = \"snake_case\""));
@@ -706,7 +706,7 @@ mod tests {
                 {"type": "object", "properties": {"type": {"const": "b"}}, "required": ["type"]}
             ]}
         }})).unwrap();
-        let files = Swift.files(&model);
+        let files = Swift.files(&model).unwrap();
         let source = &files[0].1;
         let choice = source.split("public indirect enum Choice:").nth(1).unwrap();
         assert!(
@@ -719,15 +719,15 @@ mod tests {
                 .1
                 .contains("decoder.decode(Event.self, from: data)")
         );
-        assert_eq!(files, Swift.files(&model));
+        assert_eq!(files, Swift.files(&model).unwrap());
     }
 
     #[test]
     fn full_manifest_covers_vectors_and_is_deterministic() {
         let mut model = normalize(&aimux_ops::manifest::manifest()["typeDefs"]).unwrap();
         model.drop_builtin_aliases();
-        let files = Swift.files(&model);
-        assert_eq!(files, Swift.files(&model));
+        let files = Swift.files(&model).unwrap();
+        assert_eq!(files, Swift.files(&model).unwrap());
         let index: serde_json::Value =
             serde_json::from_str(include_str!("../../../../contract-tests/dto/index.json"))
                 .unwrap();

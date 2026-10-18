@@ -3,7 +3,7 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 
-type Result<T> = std::result::Result<T, String>;
+pub(crate) type Result<T> = std::result::Result<T, String>;
 
 #[derive(Debug, PartialEq)]
 pub struct Model {
@@ -105,7 +105,7 @@ fn without_descriptions(mut schema: Value) -> Value {
     schema
 }
 
-fn escape(value: &str) -> String {
+pub(crate) fn escape(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
 }
 
@@ -253,6 +253,8 @@ fn resolve_aliases(
     schema: &mut Value,
     aliases: &BTreeMap<String, Value>,
     pending: &mut BTreeSet<String>,
+    name: &str,
+    pointer: &str,
 ) -> Result<()> {
     if let Some(reference) = schema["$ref"].as_str().map(str::to_owned)
         && let Some(target) = aliases.get(&reference)
@@ -261,9 +263,11 @@ fn resolve_aliases(
             return Err(format!("recursive path alias {reference}"));
         }
         let mut target = target.clone();
-        resolve_aliases(&mut target, aliases, pending)?;
+        resolve_aliases(&mut target, aliases, pending, name, pointer)?;
         pending.remove(&reference);
-        let overlay = schema.as_object_mut().unwrap();
+        let overlay = schema
+            .as_object_mut()
+            .ok_or_else(|| Normalizer::fail(name, pointer, "expected alias object"))?;
         overlay.remove("$ref");
         for (key, value) in std::mem::take(overlay) {
             target[&key] = value;
@@ -272,13 +276,19 @@ fn resolve_aliases(
     }
     match schema {
         Value::Object(object) => {
-            for value in object.values_mut() {
-                resolve_aliases(value, aliases, pending)?;
+            for (key, value) in object {
+                resolve_aliases(
+                    value,
+                    aliases,
+                    pending,
+                    name,
+                    &format!("{pointer}/{}", escape(key)),
+                )?;
             }
         }
         Value::Array(values) => {
-            for value in values {
-                resolve_aliases(value, aliases, pending)?;
+            for (i, value) in values.iter_mut().enumerate() {
+                resolve_aliases(value, aliases, pending, name, &format!("{pointer}/{i}"))?;
             }
         }
         _ => {}
@@ -290,8 +300,12 @@ pub(crate) fn schema_definitions(
     type_defs: &Value,
     names: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, Value>> {
-    let input = type_defs["input"].as_object().unwrap();
-    let output = type_defs["output"].as_object().unwrap();
+    let input = type_defs["input"]
+        .as_object()
+        .ok_or("typeDefs #/input: expected object")?;
+    let output = type_defs["output"]
+        .as_object()
+        .ok_or("typeDefs #/output: expected object")?;
     let mut schemas = BTreeMap::new();
     for (direction, defs) in [("input", input), ("output", output)] {
         for (name, schema) in defs {
@@ -306,8 +320,8 @@ pub(crate) fn schema_definitions(
         .filter(|(name, _)| name.starts_with('_'))
         .map(|(name, schema)| (format!("{name}.json"), schema.clone()))
         .collect();
-    for schema in schemas.values_mut() {
-        resolve_aliases(schema, &aliases, &mut BTreeSet::new())?;
+    for (name, schema) in &mut schemas {
+        resolve_aliases(schema, &aliases, &mut BTreeSet::new(), name, "#")?;
     }
     Ok(schemas)
 }
@@ -357,6 +371,14 @@ impl Kind {
 }
 
 impl Ty {
+    pub(crate) fn accepts_null(&self) -> bool {
+        match self {
+            Self::Nullable(_) | Self::Json | Self::Codec(Codec::Presence, _) => true,
+            Self::Codec(_, inner) => inner.accepts_null(),
+            _ => false,
+        }
+    }
+
     fn refs<'a>(&'a self, out: &mut BTreeSet<&'a str>) {
         match self {
             Ty::Ref(name) => {
@@ -481,35 +503,41 @@ impl Normalizer {
                     "expected object or union variant reference",
                 ));
             }
-            let mut overlay = schema.clone();
-            overlay.as_object_mut().unwrap().remove("$ref");
+            let mut overlay = schema
+                .as_object()
+                .cloned()
+                .ok_or_else(|| Self::fail(name, pointer, "expected variant object"))?;
+            overlay.remove("$ref");
             schema = target.clone();
             if let Some(object) = schema.as_object_mut() {
                 object.remove("description");
             }
-            let properties = overlay.as_object_mut().unwrap().remove("properties");
-            let required = overlay.as_object_mut().unwrap().remove("required");
+            let properties = overlay.remove("properties");
+            let required = overlay.remove("required");
             if let Some(properties) = properties {
-                for (key, value) in properties.as_object().unwrap() {
+                for (key, value) in properties.as_object().ok_or_else(|| {
+                    Self::fail(name, &format!("{pointer}/properties"), "expected object")
+                })? {
                     schema["properties"][key] = value.clone();
                 }
             }
             if let Some(required) = required {
                 let mut keys = schema["required"].as_array().cloned().unwrap_or_default();
-                for key in required.as_array().unwrap() {
+                for key in required.as_array().ok_or_else(|| {
+                    Self::fail(name, &format!("{pointer}/required"), "expected array")
+                })? {
                     if !keys.contains(key) {
                         keys.push(key.clone());
                     }
                 }
                 schema["required"] = json!(keys);
             }
-            for (key, value) in overlay.as_object().unwrap() {
-                schema[key] = value.clone();
+            for (key, value) in overlay {
+                schema[&key] = value;
             }
         }
         if let Some(variants) = schema["oneOf"].as_array() {
-            let mut overlay = schema.clone();
-            overlay.as_object_mut().unwrap().remove("oneOf");
+            let overlay = &schema;
             let mut result = Vec::new();
             for (i, variant) in variants.iter().enumerate() {
                 let path = format!("{pointer}/oneOf/{i}");
@@ -552,10 +580,11 @@ impl Normalizer {
                 return Err(Self::fail(name, pointer, "empty intersection"));
             }
             // Distribute an object tag across an internally tagged union.
-            if parts.len() == 2 && parts[0]["oneOf"].is_array() && parts[1]["type"] == "object" {
-                let branches = parts[0]["oneOf"]
-                    .as_array()
-                    .unwrap()
+            if parts.len() == 2
+                && parts[1]["type"] == "object"
+                && let Some(variants) = parts[0]["oneOf"].as_array()
+            {
+                let branches = variants
                     .iter()
                     .map(|branch| json!({"allOf":[branch, parts[1]]}))
                     .map(|intersection| self.merge_objects(&intersection, name, pointer))
@@ -609,8 +638,16 @@ impl Normalizer {
                             .cloned()
                             .unwrap_or_else(|| vec![branch["const"].clone()])
                     })
-                    .map(|value| value.as_str().unwrap().to_owned())
-                    .collect();
+                    .map(|value| {
+                        value.as_str().map(str::to_owned).ok_or_else(|| {
+                            Self::fail(
+                                name,
+                                &format!("{pointer}/oneOf"),
+                                "expected string enum value",
+                            )
+                        })
+                    })
+                    .collect::<Result<_>>()?;
                 return Ok(Kind::StringEnum(values));
             }
             let branches = branches
@@ -640,11 +677,18 @@ impl Normalizer {
                 for (index, branch) in branches.iter().enumerate() {
                     let path = format!("{pointer}/oneOf/{index}");
                     self.keywords(branch, name, &path)?;
-                    let value = branch["properties"][&tag]["const"].as_str().unwrap();
+                    let value = branch["properties"][&tag]["const"]
+                        .as_str()
+                        .ok_or_else(|| {
+                            Self::fail(
+                                name,
+                                &format!("{path}/properties/{}/const", escape(&tag)),
+                                "expected string tag",
+                            )
+                        })?;
                     variants.push(Variant {
                         tag_value: value.to_owned(),
-                        name: variant_name(&branches, branch, &tag)
-                            .map_err(|reason| Self::fail(name, &path, &reason))?,
+                        name: variant_name(&branches, branch, &tag, name, &path)?,
                         fields: self.fields(branch, name, &path, Some(&tag))?,
                         closed: branch["additionalProperties"] == false,
                     });
@@ -700,8 +744,11 @@ impl Normalizer {
     }
 
     fn merge_objects(&self, schema: &Value, name: &str, pointer: &str) -> Result<Value> {
-        let parts = schema["allOf"].as_array().unwrap();
+        let parts = schema["allOf"]
+            .as_array()
+            .ok_or_else(|| Self::fail(name, &format!("{pointer}/allOf"), "expected array"))?;
         let mut merged = json!({"type":"object", "properties":{}, "required":[]});
+        let mut required_keys = Vec::new();
         for (i, part) in parts.iter().enumerate() {
             self.keywords(part, name, &format!("{pointer}/allOf/{i}"))?;
             if part.get("additionalProperties").is_some() {
@@ -720,12 +767,13 @@ impl Normalizer {
             }
             if let Some(required) = part["required"].as_array() {
                 for key in required {
-                    if !merged["required"].as_array().unwrap().contains(key) {
-                        merged["required"].as_array_mut().unwrap().push(key.clone());
+                    if !required_keys.contains(key) {
+                        required_keys.push(key.clone());
                     }
                 }
             }
         }
+        merged["required"] = json!(required_keys);
         Ok(merged)
     }
 
@@ -840,18 +888,19 @@ impl Normalizer {
                     ));
                 }
             };
-            let mut inner = schema.clone();
-            inner.as_object_mut().unwrap().remove("x-aimux-codec");
+            let mut inner = object.clone();
+            inner.remove("x-aimux-codec");
             // An extension on an unconstrained Value schema is still explicitly JSON.
             if inner
-                .as_object()
-                .unwrap()
                 .keys()
                 .all(|key| ["description", "default", "title"].contains(&key.as_str()))
             {
                 return Ok(Ty::Codec(codec, Box::new(Ty::Json)));
             }
-            return Ok(Ty::Codec(codec, Box::new(self.ty(&inner, name, pointer)?)));
+            return Ok(Ty::Codec(
+                codec,
+                Box::new(self.ty(&Value::Object(inner), name, pointer)?),
+            ));
         }
         if schema.get("$ref").is_some() && schema.get("properties").is_some() {
             return self.lift(schema, name, pointer);
@@ -868,7 +917,17 @@ impl Normalizer {
         if let Some(types) = schema["type"].as_array() {
             if types.len() == 2 && types.iter().any(|v| v == "null") {
                 let mut inner = schema.clone();
-                inner["type"] = types.iter().find(|v| *v != "null").unwrap().clone();
+                inner["type"] = types
+                    .iter()
+                    .find(|v| *v != "null")
+                    .ok_or_else(|| {
+                        Self::fail(
+                            name,
+                            &format!("{pointer}/type"),
+                            "nullable union requires a non-null type",
+                        )
+                    })?
+                    .clone();
                 return Ok(Ty::Nullable(Box::new(self.ty(&inner, name, pointer)?)));
             }
             return Err(Self::fail(
@@ -881,11 +940,22 @@ impl Normalizer {
             && branches.len() == 2
             && branches.iter().any(|v| v["type"] == "null")
         {
-            return Ok(Ty::Nullable(Box::new(self.ty(
-                branches.iter().find(|v| v["type"] != "null").unwrap(),
-                name,
-                &format!("{pointer}/anyOf"),
-            )?)));
+            return Ok(Ty::Nullable(Box::new(
+                self.ty(
+                    branches
+                        .iter()
+                        .find(|v| v["type"] != "null")
+                        .ok_or_else(|| {
+                            Self::fail(
+                                name,
+                                &format!("{pointer}/anyOf"),
+                                "nullable union requires a non-null branch",
+                            )
+                        })?,
+                    name,
+                    &format!("{pointer}/anyOf"),
+                )?,
+            )));
         }
         if let Some(value) = schema["const"].as_str() {
             return Ok(Ty::Literal(value.to_owned()));
@@ -974,19 +1044,31 @@ fn branch_name(union: &str, ty: &Ty) -> String {
     }
 }
 
-fn variant_name(branches: &[Value], branch: &Value, tag: &str) -> Result<String> {
+fn variant_name(
+    branches: &[Value],
+    branch: &Value,
+    tag: &str,
+    name: &str,
+    pointer: &str,
+) -> Result<String> {
     let value = &branch["properties"][tag]["const"];
     let siblings: Vec<_> = branches
         .iter()
         .filter(|b| b["properties"][tag]["const"] == *value)
         .collect();
-    let outer = pascal(value.as_str().unwrap());
+    let outer = pascal(value.as_str().ok_or_else(|| {
+        Normalizer::fail(
+            name,
+            &format!("{pointer}/properties/{}/const", escape(tag)),
+            "expected string tag",
+        )
+    })?);
     if siblings.len() == 1 {
         return Ok(outer);
     }
     let inner = branch["properties"]
         .as_object()
-        .unwrap()
+        .ok_or_else(|| Normalizer::fail(name, &format!("{pointer}/properties"), "expected object"))?
         .iter()
         .find(|(key, schema)| {
             key.as_str() != tag
@@ -996,15 +1078,21 @@ fn variant_name(branches: &[Value], branch: &Value, tag: &str) -> Result<String>
                     .all(|b| b["properties"][key.as_str()]["const"].is_string())
                 && siblings
                     .iter()
-                    .map(|b| b["properties"][key.as_str()]["const"].as_str().unwrap())
+                    .filter_map(|b| b["properties"][key.as_str()]["const"].as_str())
                     .collect::<BTreeSet<_>>()
                     .len()
                     == siblings.len()
         })
-        .map(|(_, schema)| schema["const"].as_str().unwrap());
+        .and_then(|(_, schema)| schema["const"].as_str());
     inner
         .map(|inner| format!("{outer}{}", pascal(inner)))
-        .ok_or_else(|| format!("shared tag {value} requires a literal inner discriminator"))
+        .ok_or_else(|| {
+            Normalizer::fail(
+                name,
+                pointer,
+                &format!("shared tag {value} requires a literal inner discriminator"),
+            )
+        })
 }
 
 fn pascal(value: &str) -> String {
@@ -1023,6 +1111,43 @@ mod tests {
     use super::*;
     fn model(schema: Value) -> Model {
         normalize(&json!({"input": {}, "output": {"Example": schema}})).unwrap()
+    }
+
+    #[test]
+    fn malformed_nullable_and_variant_schemas_report_their_location() {
+        for (schema, pointer) in [
+            (json!({"type": ["null", "null"]}), "#/type"),
+            (
+                json!({"anyOf": [{"type": "null"}, {"type": "null"}]}),
+                "#/anyOf",
+            ),
+            (
+                json!({"$ref": "#/typeDefs/output/Base", "properties": []}),
+                "#/properties",
+            ),
+            (
+                json!({"$ref": "#/typeDefs/output/Base", "properties": {}, "required": {}}),
+                "#/required",
+            ),
+        ] {
+            let error = normalize(&json!({"input": {}, "output": {
+                "Base": {"type": "object"}, "Example": schema
+            }}))
+            .unwrap_err();
+            assert!(error.starts_with(&format!("Example {pointer}:")), "{error}");
+        }
+        let error = variant_name(
+            &[],
+            &json!({"properties": {"type": {"const": 1}}}),
+            "type",
+            "Example",
+            "#/oneOf/0",
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "Example #/oneOf/0/properties/type/const: expected string tag"
+        );
     }
     #[test]
     fn untagged_branches_are_named_once_from_their_types() {
