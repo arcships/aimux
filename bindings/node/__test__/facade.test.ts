@@ -43,6 +43,22 @@ test('error properties and prototype match for both layers, including zero retry
   }
 })
 
+test('the payload cause is the standard Error.cause on raw and typed rejections', async () => {
+  const client = new Client()
+  for (const call of [() => client.raw.call('0', 'fixture.cause', '{}'), () => client.call('0', 'fixture.cause')]) {
+    await assert.rejects(call, (error: unknown) => {
+      assert.ok(error instanceof AimuxError)
+      assert.equal(error.cause, (error.error as { cause?: unknown }).cause)
+      assert.deepEqual(error.cause, { message: 'error sending request', cause: { message: 'Connection refused (os error 111)' } })
+      assert.equal(Object.keys(error).includes('cause'), false)
+      return true
+    })
+  }
+  const built = new AimuxError({ kind: 'aimux', code: 2, message: 'm', error: { name: 'AI_JSONParseError', message: 'm', text: '{', cause: { message: 'EOF' } } })
+  assert.deepEqual(built.cause, { message: 'EOF' })
+  assert.equal('cause' in new AimuxError({ kind: 'aimux', code: 12, message: 't', error: { name: 'TimeoutError', message: 't' } }), false)
+})
+
 test('events retain recoverable error data and a unique explicit terminal', async () => {
   const client = new Client()
   const model = await (await client.provider({ package: 'openai' })).model('test')

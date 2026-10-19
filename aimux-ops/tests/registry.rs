@@ -38,7 +38,7 @@ impl LanguageModel for Model {
         'b: 'f,
         Self: 'f,
     {
-        Box::pin(async { Err(AiMuxError::Other("generation reached".into())) })
+        Box::pin(async { Err(AiMuxError::other("generation reached")) })
     }
     fn do_stream<'a, 'b, 'f>(
         &'a self,
@@ -49,7 +49,7 @@ impl LanguageModel for Model {
         'b: 'f,
         Self: 'f,
     {
-        Box::pin(async { Err(AiMuxError::Other("stream reached".into())) })
+        Box::pin(async { Err(AiMuxError::other("stream reached")) })
     }
 }
 impl ImageModel for Model {
@@ -71,7 +71,7 @@ impl ImageModel for Model {
         'b: 'f,
         Self: 'f,
     {
-        Box::pin(async { Err(AiMuxError::Other("image reached".into())) })
+        Box::pin(async { Err(AiMuxError::other("image reached")) })
     }
 }
 impl DecisionModel for Model {
@@ -93,7 +93,7 @@ impl DecisionModel for Model {
         'b: 'f,
         Self: 'f,
     {
-        Box::pin(async { Err(AiMuxError::Other("decision reached".into())) })
+        Box::pin(async { Err(AiMuxError::other("decision reached")) })
     }
 }
 

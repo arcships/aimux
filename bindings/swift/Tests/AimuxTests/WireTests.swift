@@ -21,6 +21,19 @@ struct WireTests {
 #if !AIMUX_STANDALONE
     @Test
 #endif
+    static func testErrorCauseIsThePayloadCause() throws {
+        let error = try JSONDecoder().decode(AimuxError.self, from: Data(#"""
+            {"kind":"aimux","code":11,"message":"API call error: Cannot connect","error":{"name":"AI_APICallError",
+             "message":"Cannot connect","cause":{"message":"tcp connect error","cause":{"message":"Connection refused"}}}}
+            """#.utf8))
+        try require(error.cause?["message"] == .string("tcp connect error"))
+        try require(error.cause?["cause"]?["message"] == .string("Connection refused"))
+        try require(AimuxError.binding("x").cause == nil)
+    }
+
+#if !AIMUX_STANDALONE
+    @Test
+#endif
     static func testToolCallProviderMetadataRoundTrip() throws {
         let original = ToolCall(
             toolCallId: "call_1",

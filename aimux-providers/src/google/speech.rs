@@ -15,6 +15,7 @@ use serde::de::{Deserialize, Deserializer, Error as _};
 use serde::{Deserialize as DeriveDeserialize, Serialize};
 use serde_json::{Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
 use aimux_core::speech_model::{
@@ -115,10 +116,9 @@ struct SpeechOptions {
 fn parse_options(
     raw: Option<&aimux_core::shared::JsonObject>,
 ) -> Result<SpeechOptions, AiMuxError> {
-    let invalid = |error: String| {
-        AiMuxError::InvalidArgument(format!(
-            "Invalid argument for parameter providerOptions: {error}"
-        ))
+    let invalid = |error: String, cause: Option<ErrorCause>| AiMuxError::InvalidArgument {
+        message: format!("Invalid argument for parameter providerOptions: {error}"),
+        cause,
     };
     let Some(raw) = raw else {
         return Ok(SpeechOptions {
@@ -127,10 +127,10 @@ fn parse_options(
             multi_speaker_voice_config: None,
         });
     };
-    let options: SpeechOptions =
-        serde_json::from_value(Value::Object(raw.clone())).map_err(|e| invalid(e.to_string()))?;
+    let options: SpeechOptions = serde_json::from_value(Value::Object(raw.clone()))
+        .map_err(|e| invalid(e.to_string(), Some(ErrorCause::source(&e))))?;
     if options.turns.as_ref().is_some_and(Vec::is_empty) {
-        return Err(invalid("turns must contain at least one turn".into()));
+        return Err(invalid("turns must contain at least one turn".into(), None));
     }
     Ok(options)
 }
@@ -291,8 +291,8 @@ impl GoogleSpeechModel {
             .as_ref(),
         );
         if input.uses_custom_voice {
-            return Err(AiMuxError::InvalidArgument(
-                "Invalid argument for parameter voice: Custom voices are not supported. Use a prebuilt voice instead.".into(),
+            return Err(AiMuxError::invalid_argument(
+                "Invalid argument for parameter voice: Custom voices are not supported. Use a prebuilt voice instead.",
             ));
         }
 
@@ -323,9 +323,8 @@ impl GoogleSpeechModel {
         let mut parts = vec![json!({"text": prompt_text})];
         if structured {
             if google.turns.is_some() && google.speech_metadata.is_some() {
-                return Err(AiMuxError::InvalidArgument(
-                    "Invalid argument for parameter providerOptions: Set speechMetadata on each turn when using turns."
-                        .into(),
+                return Err(AiMuxError::invalid_argument(
+                    "Invalid argument for parameter providerOptions: Set speechMetadata on each turn when using turns.",
                 ));
             }
             if google.turns.is_some() && !text.is_empty() {
@@ -353,9 +352,8 @@ impl GoogleSpeechModel {
                         .iter()
                         .any(|config| Some(&config.speaker) == speaker.as_ref())
                 {
-                    return Err(AiMuxError::InvalidArgument(
-                        "Invalid argument for parameter speechMetadata.speaker: Every multi-speaker turn must specify a speechMetadata.speaker matching a configured speaker."
-                            .into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "Invalid argument for parameter speechMetadata.speaker: Every multi-speaker turn must specify a speechMetadata.speaker matching a configured speaker.",
                     ));
                 }
                 let mut part = json!({"text": part_text});
@@ -365,16 +363,14 @@ impl GoogleSpeechModel {
                 parts.push(part);
             }
         } else if google.turns.is_some() || google.speech_metadata.is_some() {
-            return Err(AiMuxError::InvalidArgument(
-                "Invalid argument for parameter providerOptions: Structured speech metadata and turns require Gemini 3.8 TTS."
-                    .into(),
+            return Err(AiMuxError::invalid_argument(
+                "Invalid argument for parameter providerOptions: Structured speech metadata and turns require Gemini 3.8 TTS.",
             ));
         }
 
         if input.text.is_empty() {
-            return Err(AiMuxError::InvalidArgument(
-                "Invalid argument for parameter text: Speech input must contain a non-empty transcript."
-                    .into(),
+            return Err(AiMuxError::invalid_argument(
+                "Invalid argument for parameter text: Speech input must contain a non-empty transcript.",
             ));
         }
 
@@ -489,8 +485,9 @@ impl SpeechModel for GoogleSpeechModel {
         let bytes = match inline.and_then(|inline| inline.data) {
             Some(data) => base64::engine::general_purpose::STANDARD
                 .decode(data)
-                .map_err(|e| {
-                    AiMuxError::InvalidResponseData(format!("invalid base64 audio: {e}"))
+                .map_err(|e| AiMuxError::InvalidResponseData {
+                    message: format!("invalid base64 audio: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
                 })?,
             None => Vec::new(),
         };

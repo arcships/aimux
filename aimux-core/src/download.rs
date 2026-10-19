@@ -30,6 +30,7 @@ use futures::future::BoxFuture;
 use crate::abort_signal::AbortSignal;
 use crate::download_guard::{validate_download_target, validate_download_url};
 use crate::error::AiMuxError;
+use crate::error::ErrorCause;
 use crate::shared::{FileBytes, GeneratedFileData};
 
 const DEFAULT_MAX_DOWNLOAD_SIZE: usize = 2 * 1024 * 1024 * 1024;
@@ -161,7 +162,7 @@ impl DownloadFunction {
         let requested = downloads.len();
         let files = (self.0)(downloads).await?;
         if files.len() != requested {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "the download function returned {} results for {requested} URLs",
                 files.len()
             )));
@@ -246,10 +247,10 @@ async fn download_inner(
         let addresses = validate_download_target(&current, None).await?;
         let host = parsed
             .host_str()
-            .ok_or_else(|| AiMuxError::InvalidArgument("download URL has no host".into()))?;
+            .ok_or_else(|| AiMuxError::invalid_argument("download URL has no host"))?;
         let port = parsed
             .port_or_known_default()
-            .ok_or_else(|| AiMuxError::InvalidArgument("download URL has no known port".into()))?;
+            .ok_or_else(|| AiMuxError::invalid_argument("download URL has no known port"))?;
         let addresses: Vec<_> = addresses
             .into_iter()
             .map(|address| SocketAddr::new(address, port))
@@ -276,7 +277,7 @@ async fn download_inner(
             && let Some(location) = response.headers().get(reqwest::header::LOCATION)
         {
             if redirects == MAX_DOWNLOAD_REDIRECTS {
-                return Err(AiMuxError::Other("download exceeded 10 redirects".into()));
+                return Err(AiMuxError::other("download exceeded 10 redirects"));
             }
             let location = location.to_str().map_err(download_error)?;
             current = parsed.join(location).map_err(download_error)?.to_string();
@@ -284,7 +285,7 @@ async fn download_inner(
             continue;
         }
         if !status.is_success() {
-            return Err(AiMuxError::Other(format!(
+            return Err(AiMuxError::other(format!(
                 "download failed with HTTP status {status}"
             )));
         }
@@ -313,12 +314,15 @@ async fn download_inner(
     unreachable!("download loop returns a response or redirect error")
 }
 
-fn download_error(error: impl std::fmt::Display) -> AiMuxError {
-    AiMuxError::Other(format!("download failed: {error}"))
+fn download_error(error: impl std::error::Error + 'static) -> AiMuxError {
+    AiMuxError::Other {
+        message: format!("download failed: {error}"),
+        cause: Some(ErrorCause::source(&error)),
+    }
 }
 
 fn size_error(max_bytes: usize) -> AiMuxError {
-    AiMuxError::Other(format!(
+    AiMuxError::other(format!(
         "download exceeded maximum size of {max_bytes} bytes"
     ))
 }
@@ -392,7 +396,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message)
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
                 if message == "the download function returned 1 results for 2 URLs"),
             "{error:?}"
         );
@@ -407,7 +411,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message)
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
                 if message == "download URL targets a non-public address: 127.0.0.1"),
             "{error:?}"
         );

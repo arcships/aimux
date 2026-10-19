@@ -146,14 +146,14 @@ impl OpsError {
         match self {
             Self::Projected(error) => error.envelope.code,
             Self::AiMux(error) => match error {
-                AiMuxError::Other(_) => 1,
-                AiMuxError::JsonParse(_) => 2,
-                AiMuxError::InvalidResponseData(_)
+                AiMuxError::Other { .. } => 1,
+                AiMuxError::JsonParse { .. } => 2,
+                AiMuxError::InvalidResponseData { .. }
                 | AiMuxError::ToolCallNotFoundForApproval { .. }
                 | AiMuxError::ToolChoiceViolation(_) => 3,
                 // Code 4 is retired. Preserve the existing FFI groupings.
-                AiMuxError::InvalidArgument(_) => 5,
-                AiMuxError::InvalidPrompt(_) | AiMuxError::MissingToolResults { .. } => 6,
+                AiMuxError::InvalidArgument { .. } => 5,
+                AiMuxError::InvalidPrompt { .. } | AiMuxError::MissingToolResults { .. } => 6,
                 AiMuxError::TokenExpired(_) => 7,
                 AiMuxError::UnsupportedFunctionality(_) => 8,
                 AiMuxError::NoSuchModel { .. } => 9,
@@ -165,7 +165,7 @@ impl OpsError {
                 AiMuxError::NoSuchTool { .. } => 15,
                 AiMuxError::InvalidToolInput { .. } => 16,
                 AiMuxError::ToolCallRepair { .. } => 17,
-                AiMuxError::NoOutputGenerated(_) => 18,
+                AiMuxError::NoOutputGenerated { .. } => 18,
                 AiMuxError::LoadApiKey { .. } => 19,
                 AiMuxError::LoadSetting { .. } => 20,
             },

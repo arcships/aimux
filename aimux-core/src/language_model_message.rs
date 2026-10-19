@@ -12,6 +12,7 @@ use crate::content::{
 };
 use crate::download::{DownloadFunction, DownloadedFile, PlannedDownload};
 use crate::error::AiMuxError;
+use crate::error::ErrorCause;
 use crate::language_model::SupportedUrls;
 use crate::message::{AssistantContent, ModelMessage, UserContent};
 use crate::shared::{
@@ -350,9 +351,8 @@ pub fn convert_file_part_data(
     match data {
         FilePartData::Tagged(FileData::Data {
             data: FileBytes::Base64(text),
-        }) if text.starts_with("data:") => Err(AiMuxError::InvalidPrompt(
-            "Data URLs are not valid inline data. Pass them as { type: \"url\", url } instead."
-                .into(),
+        }) if text.starts_with("data:") => Err(AiMuxError::invalid_prompt(
+            "Data URLs are not valid inline data. Pass them as { type: \"url\", url } instead.",
         )),
         FilePartData::Tagged(FileData::Url { url, original_url }) => {
             convert_url_to_file_part_data(url, original_url.clone())
@@ -417,7 +417,7 @@ fn convert_url_to_file_part_data(
             },
             Some(media_type.to_owned()),
         )),
-        _ => Err(AiMuxError::InvalidPrompt(format!(
+        _ => Err(AiMuxError::invalid_prompt(format!(
             "Invalid data URL format in content {url}"
         ))),
     }
@@ -667,8 +667,8 @@ fn assistant_part(
                 FileData::Data { data } => GeneratedFileData::Data { data },
                 FileData::Url { url, original_url } => GeneratedFileData::Url { url, original_url },
                 FileData::Reference { .. } | FileData::Text { .. } => {
-                    return Err(AiMuxError::InvalidPrompt(
-                        "Unsupported reasoning-file data type".into(),
+                    return Err(AiMuxError::invalid_prompt(
+                        "Unsupported reasoning-file data type",
                     ));
                 }
             };
@@ -726,7 +726,7 @@ fn tool_result_part(
             .or_else(|| context.tool_names.get(tool_call_id))
             .cloned()
             .ok_or_else(|| {
-                AiMuxError::InvalidPrompt(format!(
+                AiMuxError::invalid_prompt(format!(
                     "tool result {tool_call_id} has no tool name or preceding tool call"
                 ))
             })?,
@@ -816,8 +816,10 @@ fn deprecated_reference(warnings: &mut Vec<Warning>, kind: &str) {
 /// with the given spelling kept as `original_url` when normalizing changed
 /// it (`:666-676`, `:741-747`).
 fn normalized_url(given: &str) -> Result<FileData, AiMuxError> {
-    let parsed = url::Url::parse(given)
-        .map_err(|e| AiMuxError::InvalidPrompt(format!("Invalid URL: {given}: {e}")))?;
+    let parsed = url::Url::parse(given).map_err(|e| AiMuxError::InvalidPrompt {
+        message: format!("Invalid URL: {given}: {e}"),
+        cause: Some(ErrorCause::source(&e)),
+    })?;
     let normalized = parsed.to_string();
     Ok(FileData::Url {
         original_url: (normalized != given).then(|| given.to_owned()),
@@ -989,10 +991,9 @@ fn file_id_reference(
         user::ToolResultFileId::ByProvider(reference) => Ok(reference),
         user::ToolResultFileId::Id(id) => {
             let provider = provider.ok_or_else(|| {
-                AiMuxError::InvalidPrompt(
+                AiMuxError::invalid_prompt(
                     "Cannot convert string fileId to provider reference without a provider ID. \
-                     Use a Record<string, string> fileId or switch to the file-reference type."
-                        .into(),
+                     Use a Record<string, string> fileId or switch to the file-reference type.",
                 )
             })?;
             Ok(SharedProviderReference::from([(provider.to_owned(), id)]))
@@ -1563,8 +1564,8 @@ mod tests {
             convert_output(json!([{ "type": "file-id", "fileId": "file-1" }]), None).unwrap_err();
         assert_eq!(
             error.to_string(),
-            AiMuxError::InvalidPrompt(
-                "Cannot convert string fileId to provider reference without a provider ID. Use a Record<string, string> fileId or switch to the file-reference type.".into()
+            AiMuxError::invalid_prompt(
+                "Cannot convert string fileId to provider reference without a provider ID. Use a Record<string, string> fileId or switch to the file-reference type."
             )
             .to_string()
         );

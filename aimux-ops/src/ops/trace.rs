@@ -128,9 +128,9 @@ fn aggregate(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
 fn session_chain(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
     Box::pin(async move {
         let p: TraceSessionParams = decode(value)?;
-        let view = store(target)?.session_chain(&p.session_id).ok_or_else(|| {
-            OpsError::AiMux(AiMuxError::InvalidArgument("unknown session".into()))
-        })?;
+        let view = store(target)?
+            .session_chain(&p.session_id)
+            .ok_or_else(|| OpsError::AiMux(AiMuxError::invalid_argument("unknown session")))?;
         result(view)
     })
 }

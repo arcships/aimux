@@ -354,7 +354,7 @@ fn only_direct_api_calls_get_top_level_retry_hints() {
         }),
         AiMuxError::ToolCallRepair {
             original_error: Box::new(attempt),
-            cause: Box::new(AiMuxError::Other("repair failed".into())),
+            cause: Box::new(AiMuxError::other("repair failed")),
         },
         AiMuxError::Timeout("timeout".into()),
         AiMuxError::Aborted("aborted".into()),

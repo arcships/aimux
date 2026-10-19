@@ -517,9 +517,7 @@ impl GenerateTextResult {
     pub fn output(&self) -> Result<&Value, AiMuxError> {
         match &self.output {
             OutputState::Parsed(value) => Ok(value),
-            OutputState::NotParsed => {
-                Err(AiMuxError::NoOutputGenerated("No output generated.".into()))
-            }
+            OutputState::NotParsed => Err(AiMuxError::no_output_generated("No output generated.")),
             OutputState::Failed(error) => Err(error.clone()),
         }
     }
@@ -923,9 +921,7 @@ impl StreamTextResult {
         }
         if steps.is_empty() {
             return Err(aborted.unwrap_or_else(|| {
-                AiMuxError::NoOutputGenerated(
-                    "No output generated. Check the stream for errors.".into(),
-                )
+                AiMuxError::no_output_generated("No output generated. Check the stream for errors.")
             }));
         }
         let output = stream_output(steps.last().expect("checked above"), output.as_ref());
@@ -1372,7 +1368,7 @@ async fn convert_generated_content(
                             && tool.supports_deferred_results == Some(true))
                 });
                 if !has_call && !deferred_allowed {
-                    return Err(AiMuxError::Other(format!(
+                    return Err(AiMuxError::other(format!(
                         "Tool call {} not found.",
                         result.tool_call_id
                     )));
@@ -1934,8 +1930,8 @@ async fn stream_in_operation(
             // empty step; one with partial output keeps it
             // (stream-text.ts:3015-3030).
             if !step.terminal && !step.saw_output {
-                yield Ok(TextStreamPart::Error { error: AiMuxError::NoOutputGenerated(
-                    "No output generated. The model stream ended without a finish chunk.".into(),
+                yield Ok(TextStreamPart::Error { error: AiMuxError::no_output_generated(
+                    "No output generated. The model stream ended without a finish chunk.",
                 ) });
                 return;
             }
@@ -2334,9 +2330,7 @@ pub(crate) fn standardize_prompt(
 ) -> Result<(Vec<ModelMessage>, Option<&str>), AiMuxError> {
     let (messages, instructions) = split_prompt(prompt, instructions);
     if messages.is_empty() {
-        return Err(AiMuxError::InvalidPrompt(
-            "messages must not be empty".into(),
-        ));
+        return Err(AiMuxError::invalid_prompt("messages must not be empty"));
     }
     Ok((messages, instructions))
 }

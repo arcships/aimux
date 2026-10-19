@@ -21,6 +21,10 @@ class ProtocolError(Exception):
     """Failure in the protocol domain."""
 
 
+class SourceError(Exception):
+    """An underlying error that is not an aimux error (OS, TLS, JSON parser)."""
+
+
 class APICallError(AimuxError): pass
 class RetryError(AimuxError): pass
 class JSONParseError(AimuxError): pass
@@ -80,7 +84,12 @@ def _snake(name):
 
 
 def _payload_exception(payload, domain="aimux", message=None):
-    cls = _AIMUX_TYPES.get(payload.get("name"), AimuxError) if domain == "aimux" else _DOMAINS[domain]
+    if domain != "aimux":
+        cls = _DOMAINS[domain]
+    elif "name" in payload:
+        cls = _AIMUX_TYPES.get(payload["name"], AimuxError)
+    else:
+        cls = SourceError
     error = cls(message if message is not None else payload.get("message", payload.get("name", "")))
     error.error = payload
     for field, value in payload.items():
@@ -107,5 +116,5 @@ def from_envelope(envelope):
 
 
 __all__ = [cls.__name__ for cls in _AIMUX_TYPES.values()] + [
-    "AimuxError", "RecordingError", "BindingError", "ProtocolError",
+    "AimuxError", "RecordingError", "BindingError", "ProtocolError", "SourceError",
 ]

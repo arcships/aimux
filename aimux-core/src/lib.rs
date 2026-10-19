@@ -183,7 +183,10 @@ pub use abort_signal::AbortSignal;
 pub use custom_provider::{CustomProvider, CustomProviderOptions, custom_provider};
 pub use decision_model::DecisionModel;
 pub use embedding_model::EmbeddingModel;
-pub use error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason, ToolChoiceViolationError};
+pub use error::{
+    AiMuxError, ApiCallError, ErrorCause, RetryError, RetryErrorReason, SourceError,
+    ToolChoiceViolationError,
+};
 pub use files_model::Files;
 pub use image_model::ImageModel;
 pub use language_model::LanguageModel;

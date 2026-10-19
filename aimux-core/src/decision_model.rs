@@ -424,7 +424,7 @@ pub struct DecideResult {
 }
 
 fn invalid_input(parameter: &str, message: &str) -> AiMuxError {
-    AiMuxError::InvalidArgument(format!(
+    AiMuxError::invalid_argument(format!(
         "Invalid argument for parameter {parameter}: {message}"
     ))
 }
@@ -471,7 +471,7 @@ pub fn validate_decision_input(questions: &DecisionQuestions) -> Result<(), AiMu
 const TOLERANCE: f64 = 1e-6;
 
 fn invalid_answer(message: String) -> AiMuxError {
-    AiMuxError::InvalidResponseData(message)
+    AiMuxError::invalid_response_data(message)
 }
 
 fn is_probability(value: f64) -> bool {

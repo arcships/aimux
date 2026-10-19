@@ -350,7 +350,7 @@ async fn subscription_generate_returns_parse_error_without_a_completed_event() {
         .await
         .unwrap_err();
 
-    assert!(matches!(error, AiMuxError::JsonParse(_)));
+    assert!(matches!(error, AiMuxError::JsonParse { .. }));
 }
 
 #[tokio::test]

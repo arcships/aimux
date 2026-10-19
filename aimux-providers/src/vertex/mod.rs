@@ -169,7 +169,7 @@ impl ProjectLocationSource {
     /// The project and location of one request.
     pub(crate) async fn resolve(&self) -> Result<ProjectLocation, AiMuxError> {
         if self.resolver.express_key().await?.is_some() {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Google Vertex {} models do not support Express Mode API keys. \
                  Use standard Google Cloud credentials instead.",
                 self.what
@@ -196,7 +196,7 @@ impl ResolveEndpoint for GeminiEndpoint {
     /// The base URL and provider headers of one request.
     async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
         if self.tuned && self.resolver.express_key().await?.is_some() {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Google Vertex tuned models do not support Express Mode API keys. \
                  Use standard Google Cloud credentials instead."
                     .to_string(),
@@ -447,7 +447,7 @@ impl VertexProvider {
     /// A Gemini model (e.g. `"gemini-2.0-flash"`, or a tuned
     /// `"endpoints/{id}"`); `provider()` is `"google.vertex.chat"`.
     ///
-    /// A tuned model fails its requests with `AiMuxError::InvalidArgument` in
+    /// A tuned model fails its requests with `AiMuxError::invalid_argument` in
     /// Express mode.
     #[must_use]
     pub fn chat(&self, model_id: &str) -> VertexModel {

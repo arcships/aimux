@@ -420,8 +420,8 @@ fn create_package(
             || settings.project.is_some()
             || !settings.params.is_empty()
         {
-            return Err(OpsError::AiMux(AiMuxError::InvalidArgument(
-                "Jev accepts apiKey, endpoint, headers and probabilitySource settings".into(),
+            return Err(OpsError::AiMux(AiMuxError::invalid_argument(
+                "Jev accepts apiKey, endpoint, headers and probabilitySource settings",
             )));
         }
         let mut config = match settings.api_key {
@@ -446,8 +446,8 @@ fn create_package(
         );
     }
     if settings.endpoint.is_some() || settings.probability_source.is_some() {
-        return Err(OpsError::AiMux(AiMuxError::InvalidArgument(
-            "endpoint and probabilitySource settings require the Jev provider".into(),
+        return Err(OpsError::AiMux(AiMuxError::invalid_argument(
+            "endpoint and probabilitySource settings require the Jev provider",
         )));
     }
     let mut headers = settings.headers;
@@ -775,7 +775,7 @@ mod tests {
                         owned_by: None,
                         created: None,
                     }]),
-                    Discovery::Error => Err(AiMuxError::InvalidArgument("discovery failed".into())),
+                    Discovery::Error => Err(AiMuxError::invalid_argument("discovery failed")),
                     Discovery::Pending => futures::future::pending().await,
                 }
             })
@@ -1024,7 +1024,7 @@ mod tests {
         let (provider, _) = mock(owner, Discovery::Error);
         assert!(
             matches!(call(owner, provider, "provider.invoke", json!({"method":"listModels"})).await,
-            Err(OpsError::AiMux(AiMuxError::InvalidArgument(message))) if message == "discovery failed")
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { message, .. })) if message == "discovery failed")
         );
         let provider = handle(
             owner,

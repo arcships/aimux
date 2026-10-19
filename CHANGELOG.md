@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Errors keep their cause, as the AI SDK's `cause`. `JsonParse`,
+  `NoOutputGenerated`, `InvalidResponseData`, `InvalidArgument`,
+  `InvalidPrompt` and `Other` are `{ message, cause }` (build them with
+  `AiMuxError::json_parse(..)`, `invalid_argument(..)`, ...), `ApiCallError`
+  has `cause` (`.caused_by(..)`), and `InvalidToolInput.cause` is the parse or
+  validation error itself instead of its text. A cause is a nested
+  `AiMuxError` or a `SourceError` chain of an OS, TLS or parser error; it is
+  what `source()` returns and the payload's `cause` in every binding (Node
+  `error.cause`, Python `__cause__`, Java/Kotlin `getCause()`, Go `Unwrap()`,
+  Swift/Flutter `cause`, C++ `aimux::NativeError::json()`). `FetchError`
+  carries a `SourceError` without the request URL. Messages are unchanged.
+
 - aimux's public JSON equals the AI SDK's JSON. Struct fields serialize
   camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
   AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,

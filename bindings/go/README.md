@@ -59,7 +59,9 @@ abandoned stream.
 
 Native errors support `errors.As` with `*aimux.Error`. `Envelope` contains the
 domain, code, message, complete error payload and optional retry hint;
-`RawEnvelope` also retains unknown envelope fields. The binding adds no retry
+`RawEnvelope` also retains unknown envelope fields. `Unwrap` returns the
+payload's cause as a `*aimux.Cause` chain (`Name` is empty for an OS, TLS or
+parser error), so `errors.Unwrap` and `errors.As` reach it. The binding adds no retry
 policy. Handles support concurrent calls and idempotent Close. Use Close for
 normal cleanup; the fallback finalizer only enqueues native cleanup.
 

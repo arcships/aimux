@@ -59,7 +59,7 @@ pub async fn run(State(state): State<AppState>, Json(req): Json<ReplayRequest>) 
 
 async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMuxError> {
     let recording = state.recording(&req.call_id).ok_or_else(|| {
-        AiMuxError::InvalidArgument(format!("recording '{}' not found", req.call_id))
+        AiMuxError::invalid_argument(format!("recording '{}' not found", req.call_id))
     })?;
 
     // Resolve the key for provider rebuild: the request spec first, then the
@@ -104,8 +104,8 @@ async fn run_inner(state: AppState, req: ReplayRequest) -> Result<Response, AiMu
         overrides.max_output_tokens = o.max_output_tokens;
         if let Some(msgs) = &o.messages {
             let ModelPrompt::Messages(list) = wire::to_model_prompt(msgs)? else {
-                return Err(AiMuxError::InvalidArgument(
-                    "prompt override must be a message list".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "prompt override must be a message list",
                 ));
             };
             overrides.prompt = Some(convert_to_language_model_prompt(
@@ -150,16 +150,16 @@ fn mock_load_inner(state: AppState, req: MockLoadRequest) -> Result<Response, Ai
         let rec: Recording = serde_json::from_str(line).map_err(|e| {
             let msg = format!("mock load line {}: {e}", idx + 1);
             if e.classify() == serde_json::error::Category::Data {
-                AiMuxError::InvalidArgument(msg)
+                AiMuxError::invalid_argument(msg)
             } else {
-                AiMuxError::JsonParse(msg)
+                AiMuxError::json_parse(msg)
             }
         })?;
         recordings.push(rec);
     }
     if recordings.is_empty() {
-        return Err(AiMuxError::InvalidArgument(
-            "mock load: empty recording data".into(),
+        return Err(AiMuxError::invalid_argument(
+            "mock load: empty recording data",
         ));
     }
 

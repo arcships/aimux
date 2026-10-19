@@ -173,7 +173,7 @@ enum Channel {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: credentials are resolved
 /// per request, not here.
 pub fn create_codex(settings: CodexProviderSettings) -> Result<CodexProvider, AiMuxError> {
@@ -438,7 +438,7 @@ impl CodexModel {
                 response_headers,
             ),
             None => Err(failure.unwrap_or_else(|| {
-                AiMuxError::InvalidResponseData(
+                AiMuxError::invalid_response_data(
                     "subscription stream ended without response.completed".to_string(),
                 )
             })),
@@ -609,7 +609,7 @@ pub async fn codex_refresh_at(
         .get("access_token")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            AiMuxError::InvalidResponseData("oauth token response missing access_token".to_string())
+            AiMuxError::invalid_response_data("oauth token response missing access_token")
         })?;
 
     Ok(CodexTokens {

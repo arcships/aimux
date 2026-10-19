@@ -211,7 +211,7 @@ async fn builtin_download_keeps_the_guard_and_model_supported_url_policy() {
                 is_url_supported_by_model: false
             }])
             .await,
-        Err(AiMuxError::InvalidArgument(_))
+        Err(AiMuxError::InvalidArgument { .. })
     ));
     assert_eq!(
         download

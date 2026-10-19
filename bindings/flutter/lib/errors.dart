@@ -21,6 +21,13 @@ final class OpsException implements Exception {
   Map<String, dynamic> get error =>
       Map<String, dynamic>.unmodifiable(envelope['error'] as Map);
   int? get retryAfterMs => envelope['retryAfterMs'] as int?;
+
+  /// The payload's cause: a nested AI SDK error (with `name`) or an
+  /// underlying OS, TLS or parser error as `{message, cause?}`.
+  Map<String, dynamic>? get cause {
+    final cause = (envelope['error'] as Map)['cause'];
+    return cause is Map ? Map<String, dynamic>.unmodifiable(cause) : null;
+  }
   Map<String, dynamic> toJson() => Map.of(envelope);
 
   @override

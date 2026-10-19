@@ -62,6 +62,8 @@ return. No callback exception crosses the C boundary.
 `OpsException` preserves the complete error envelope, including unknown payload
 names/fields and optional `retryAfterMs`. AI SDK payloads keep their `name`, flat
 fields and `isRetryable`; the binding does not invent HTTP status or retry policy.
+`cause` is the payload's cause: a nested AI SDK error, or an OS, TLS or parser
+error as `{message, cause?}`.
 `TranscriptionOperation` wraps the new push/next primitives and typed
 part/ended/timeout states. `ToolCallRepair` exposes the three pure DTO ops.
 `DecisionModel` exposes `decision.decide` and `decision.capabilities` over an

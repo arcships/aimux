@@ -25,6 +25,25 @@
 结构化字段只放在真正拥有它的错误上。例如，HTTP 状态和响应头属于
 `APICallError`，不放进通用基类（retry hint 与 request id 从 `response_headers` 读取）。
 
+## 错误原因（cause）
+
+AI SDK 构造时接受 `cause` 的错误，在 aimux 里都有可选的 `cause`；它就是 Rust
+的 `Error::source()`，序列化后在错误 payload 的 `cause` 字段。`cause` 有两种：
+带 `name` 的嵌套 aimux 错误，或者没有 `name` 的底层错误 `{message, cause?}`
+（OS、TLS、JSON 解析器等），后者的 `cause` 继续往下一层。
+
+| 语言 | 原生入口 |
+|---|---|
+| Rust | `source()` 链，`anyhow` / `{:#}` 可直接打印 |
+| Node.js | 标准 `error.cause` |
+| Python | `__cause__`：嵌套错误是对应子类，底层错误是 `SourceError` |
+| Java / Kotlin | `getCause()` 链上的 `ErrorCause` |
+| Go | `Unwrap()` 返回 `*aimux.Cause`，`errors.Unwrap` / `errors.As` 可用 |
+| Swift / Flutter | `cause` 属性 |
+| C / C++ | 错误 JSON 的 `error.cause`；C++ 的 `aimux::NativeError::json()` |
+
+message 仍包含原来的底层错误文字，所以只看 message 的调用方不会少信息。
+
 ## 兼容性约定
 
 1. 已有错误名称和错误码不改名、不改号、不复用。

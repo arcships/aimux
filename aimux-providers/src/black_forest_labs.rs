@@ -18,6 +18,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
@@ -143,7 +144,7 @@ impl std::fmt::Debug for BlackForestLabsProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_black_forest_labs(
@@ -290,8 +291,8 @@ impl ImageModel for BlackForestLabsImageModel {
         };
 
         if input_images.len() > 10 {
-            return Err(AiMuxError::InvalidArgument(
-                "Black Forest Labs supports up to 10 input images.".into(),
+            return Err(AiMuxError::invalid_argument(
+                "Black Forest Labs supports up to 10 input images.",
             ));
         }
 
@@ -398,7 +399,7 @@ impl ImageModel for BlackForestLabsImageModel {
             .get("polling_url")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData("missing polling_url in BFL response".to_string())
+                AiMuxError::invalid_response_data("missing polling_url in BFL response")
             })?
             .to_string();
         let request_id = submit_body
@@ -413,8 +414,11 @@ impl ImageModel for BlackForestLabsImageModel {
             POLL_INTERVAL_MS,
         ));
 
-        let mut poll_url_with_id = url::Url::parse(&poll_url)
-            .map_err(|e| AiMuxError::InvalidResponseData(format!("invalid BFL poll URL: {e}")))?;
+        let mut poll_url_with_id =
+            url::Url::parse(&poll_url).map_err(|e| AiMuxError::InvalidResponseData {
+                message: format!("invalid BFL poll URL: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
         if !poll_url_with_id.query_pairs().any(|(k, _)| k == "id") {
             poll_url_with_id
                 .query_pairs_mut()
@@ -466,7 +470,7 @@ impl ImageModel for BlackForestLabsImageModel {
                         .and_then(|v| v.as_str())
                         .map(String::from)
                         .ok_or_else(|| {
-                            AiMuxError::InvalidResponseData(
+                            AiMuxError::invalid_response_data(
                                 "BFL poll reported Ready without result.sample".to_string(),
                             )
                         })?;

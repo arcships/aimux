@@ -248,7 +248,7 @@ fn catalogue_normalize_and_lookup() {
 #[test]
 fn parse_anya2a_missing_providers_key() {
     let err = catalogue::parse_anya2a_all(&serde_json::json!({"updated_at":"0"})).unwrap_err();
-    assert!(matches!(err, aimux_core::AiMuxError::JsonParse(_)));
+    assert!(matches!(err, aimux_core::AiMuxError::JsonParse { .. }));
 }
 
 #[test]

@@ -68,10 +68,14 @@ class Errors(unittest.TestCase):
         self.assertIs(error.__cause__, error.cause)
         self.assertIs(error.error['originalError'], API)
 
-    def test_string_cause_is_preserved(self):
-        error = e.from_envelope(envelope(dict(name='AI_InvalidToolInputError', cause='invalid input')))
-        self.assertEqual(error.cause, 'invalid input')
-        self.assertIsNone(error.__cause__)
+    def test_transport_cause_chain_becomes_source_errors(self):
+        os_error = dict(message='Connection refused (os error 111)')
+        cause = dict(message='error sending request', cause=dict(message='tcp connect error', cause=os_error))
+        error = e.from_envelope(envelope(dict(API, cause=cause)))
+        self.assertIsInstance(error.__cause__, e.SourceError)
+        self.assertEqual(str(error.__cause__), 'error sending request')
+        self.assertEqual(str(error.__cause__.__cause__.__cause__), 'Connection refused (os error 111)')
+        self.assertNotIsInstance(error.__cause__, e.AimuxError)
 
     def test_domains_are_separate(self):
         for domain, cls in [('recording', e.RecordingError), ('binding', e.BindingError), ('protocol', e.ProtocolError)]:

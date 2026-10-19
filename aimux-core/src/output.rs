@@ -9,14 +9,14 @@
 //! Parse failures follow the AI SDK's `NoObjectGeneratedError` messages
 //! ("No object generated: could not parse the response." and "No object
 //! generated: response did not match schema."), carried by the Aimux variants
-//! for the same two cases: [`AiMuxError::JsonParse`] for text that is not
-//! JSON and [`AiMuxError::InvalidResponseData`] for JSON of the wrong shape.
+//! for the same two cases: [`AiMuxError::json_parse`] for text that is not
+//! JSON and [`AiMuxError::invalid_response_data`] for JSON of the wrong shape.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use ts_rs::TS;
 
-use crate::error::AiMuxError;
+use crate::error::{AiMuxError, ErrorCause, SourceError};
 use crate::options::ResponseFormat;
 
 /// What the final text of a generation is parsed into.
@@ -105,8 +105,8 @@ impl Output {
         } = self
             && min_items > max_items
         {
-            return Err(AiMuxError::InvalidArgument(
-                "minItems must be less than or equal to maxItems".into(),
+            return Err(AiMuxError::invalid_argument(
+                "minItems must be less than or equal to maxItems",
             ));
         }
         Ok(())
@@ -197,8 +197,10 @@ impl Output {
     /// JSON does not have the requested shape; both messages start with the
     /// AI SDK's `NoObjectGeneratedError` message.
     pub fn parse_complete_output(&self, text: &str) -> Result<Value, AiMuxError> {
-        let schema_mismatch =
-            |cause: String| AiMuxError::InvalidResponseData(format!("{DID_NOT_MATCH} {cause}"));
+        let schema_mismatch = |cause: SourceError| AiMuxError::InvalidResponseData {
+            message: format!("{DID_NOT_MATCH} {cause}"),
+            cause: Some(cause.into()),
+        };
         match self {
             Self::Text {} => Ok(Value::String(text.to_owned())),
             Self::Json { .. } => parse_json(text),
@@ -215,25 +217,28 @@ impl Output {
             } => {
                 let value = parse_json(text)?;
                 let Some(elements) = value.get("elements").and_then(Value::as_array) else {
-                    return Err(schema_mismatch(type_validation_failed(
+                    return Err(schema_mismatch(type_validation_error(
                         &value,
                         "response must be an object with an elements array",
+                        None,
                     )));
                 };
                 if let Some(min_items) = min_items
                     && elements.len() < *min_items as usize
                 {
-                    return Err(schema_mismatch(type_validation_failed(
+                    return Err(schema_mismatch(type_validation_error(
                         &Value::Array(elements.clone()),
                         &format!("elements array must contain at least {min_items} items"),
+                        None,
                     )));
                 }
                 if let Some(max_items) = max_items
                     && elements.len() > *max_items as usize
                 {
-                    return Err(schema_mismatch(type_validation_failed(
+                    return Err(schema_mismatch(type_validation_error(
                         &Value::Array(elements.clone()),
                         &format!("elements array must contain at most {max_items} items"),
+                        None,
                     )));
                 }
                 for item in elements {
@@ -247,9 +252,10 @@ impl Output {
                     Some(result) if options.iter().any(|option| option == result) => {
                         Ok(Value::String(result.to_owned()))
                     }
-                    _ => Err(schema_mismatch(type_validation_failed(
+                    _ => Err(schema_mismatch(type_validation_error(
                         &value,
                         "response must be an object that contains a choice value.",
+                        None,
                     ))),
                 }
             }
@@ -258,37 +264,79 @@ impl Output {
 }
 
 /// The AI SDK's `safeParseJSON` (`@ai-sdk/provider-utils` `parse-json.ts`):
-/// JSON with the prototype-poisoning guard of `secure-json-parse`.
+/// JSON with the prototype-poisoning guard of `secure-json-parse`. A failure
+/// is the `NoObjectGeneratedError` message with the `JSONParseError` as its
+/// cause.
 fn parse_json(text: &str) -> Result<Value, AiMuxError> {
-    let parse_failed = |message: String| {
-        AiMuxError::JsonParse(format!(
-            "{COULD_NOT_PARSE} JSON parsing failed: Text: {text}.\nError message: {message}"
-        ))
+    let no_object = |parse_error: AiMuxError| AiMuxError::JsonParse {
+        message: format!("{COULD_NOT_PARSE} {}", parse_error_message(&parse_error)),
+        cause: Some(parse_error.into()),
     };
-    let value: Value =
-        serde_json::from_str(text).map_err(|error| parse_failed(error.to_string()))?;
+    let value: Value = serde_json::from_str(text)
+        .map_err(|error| no_object(json_parse_error(text, &error.to_string(), Some(&error))))?;
     if crate::parse_tool_call::contains_forbidden_prototype(&value) {
-        return Err(parse_failed(
-            "Object contains forbidden prototype property".into(),
-        ));
+        return Err(no_object(json_parse_error(
+            text,
+            "Object contains forbidden prototype property",
+            None,
+        )));
     }
     Ok(value)
 }
 
-/// The AI SDK's `TypeValidationError` message
-/// (`@ai-sdk/provider` `errors/type-validation-error.ts`).
-fn type_validation_failed(value: &Value, cause: &str) -> String {
-    format!("Type validation failed: Value: {value}.\nError message: {cause}")
+fn parse_error_message(error: &AiMuxError) -> &str {
+    match error {
+        AiMuxError::JsonParse { message, .. } => message,
+        _ => "",
+    }
+}
+
+/// The AI SDK's `JSONParseError` (`@ai-sdk/provider` `errors/json-parse-error.ts`):
+/// its message, with the parser's error as its cause.
+pub(crate) fn json_parse_error(
+    text: &str,
+    message: &str,
+    source: Option<&(dyn std::error::Error + 'static)>,
+) -> AiMuxError {
+    AiMuxError::JsonParse {
+        message: format!("JSON parsing failed: Text: {text}.\nError message: {message}"),
+        cause: source.map(ErrorCause::source),
+    }
+}
+
+/// The AI SDK's `TypeValidationError`
+/// (`@ai-sdk/provider` `errors/type-validation-error.ts`), with the
+/// validator's error as its cause when one exists.
+pub(crate) fn type_validation_error(
+    value: &Value,
+    message: &str,
+    source: Option<SourceError>,
+) -> SourceError {
+    SourceError {
+        message: format!("Type validation failed: Value: {value}.\nError message: {message}"),
+        cause: source.map(Box::new),
+    }
+}
+
+/// A `jsonschema` error as a cause. It borrows the validated value, so it
+/// cannot be kept as a `'static` source; it has no source chain of its own.
+pub(crate) fn validator_error(error: &jsonschema::ValidationError<'_>) -> SourceError {
+    error.to_string().into()
 }
 
 /// Validate a value against a JSON schema, as tool inputs are validated
 /// (`parse_tool_call`).
-fn validate(value: &Value, schema: &Value) -> Result<(), String> {
-    let validator = jsonschema::validator_for(schema)
-        .map_err(|error| type_validation_failed(value, &format!("schema is invalid: {error}")))?;
-    validator
-        .validate(value)
-        .map_err(|error| type_validation_failed(value, &error.to_string()))
+fn validate(value: &Value, schema: &Value) -> Result<(), SourceError> {
+    let validator = jsonschema::validator_for(schema).map_err(|error| {
+        type_validation_error(
+            value,
+            &format!("schema is invalid: {error}"),
+            Some(validator_error(&error)),
+        )
+    })?;
+    validator.validate(value).map_err(|error| {
+        type_validation_error(value, &error.to_string(), Some(validator_error(&error)))
+    })
 }
 
 #[cfg(test)]
@@ -332,13 +380,13 @@ mod tests {
         );
         let error = output.parse_complete_output("{not json").unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::JsonParse(message)
+            matches!(&error, AiMuxError::JsonParse { message, .. }
                 if message.starts_with("No object generated: could not parse the response.")),
             "{error:?}"
         );
         let error = output.parse_complete_output(r#"{"age":3}"#).unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidResponseData(message)
+            matches!(&error, AiMuxError::InvalidResponseData { message, .. }
                 if message.starts_with("No object generated: response did not match schema.")),
             "{error:?}"
         );
@@ -396,7 +444,7 @@ mod tests {
             assert!(
                 matches!(
                     output.parse_complete_output(text),
-                    Err(AiMuxError::InvalidResponseData(_))
+                    Err(AiMuxError::InvalidResponseData { .. })
                 ),
                 "{text}"
             );
@@ -415,7 +463,7 @@ mod tests {
         };
         assert!(matches!(
             output.validate(),
-            Err(AiMuxError::InvalidArgument(message))
+            Err(AiMuxError::InvalidArgument { message, .. })
                 if message == "minItems must be less than or equal to maxItems"
         ));
     }
@@ -442,7 +490,7 @@ mod tests {
         );
         assert!(matches!(
             output.parse_complete_output(r#"{"result":"maybe"}"#),
-            Err(AiMuxError::InvalidResponseData(_))
+            Err(AiMuxError::InvalidResponseData { .. })
         ));
     }
 
@@ -463,7 +511,7 @@ mod tests {
         );
         assert!(matches!(
             output.parse_complete_output(r#"{"__proto__":{}}"#),
-            Err(AiMuxError::JsonParse(_))
+            Err(AiMuxError::JsonParse { .. })
         ));
     }
 }

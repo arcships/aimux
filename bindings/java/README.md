@@ -69,6 +69,8 @@ cause after native return. Exceptions never cross the C callback.
 optional unsigned `retryAfterMs` as `BigInteger`. Domain exceptions select
 subclasses by `error.name`; unfamiliar variants use the domain's `Unknown`
 subclass and retain their payload. Retryability comes from `error.isRetryable`.
+The payload's `cause` is `getCause()`: an `ErrorCause` (`getErrorName()` is
+empty for an OS, TLS or parser error) whose own cause continues the chain.
 A missing retry hint differs from zero. The Java adapter performs no retries.
 
 `TranscriptionSession` uses binary push, `operation.inputDone` and native polling.

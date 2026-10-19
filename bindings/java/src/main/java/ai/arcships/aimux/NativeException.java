@@ -3,13 +3,18 @@ package ai.arcships.aimux;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigInteger;
 
-/** Structured error envelope, retaining the complete AI SDK or domain payload. */
+/**
+ * Structured error envelope, retaining the complete AI SDK or domain payload.
+ * The payload's {@code cause} is {@link #getCause()}, as an {@link ErrorCause}.
+ */
 public abstract class NativeException extends RuntimeException {
     private final JsonNode envelope;
 
     NativeException(JsonNode envelope) {
         super(envelope.path("message").asText());
         this.envelope = envelope.deepCopy();
+        ErrorCause cause = ErrorCause.of(envelope.path("error"));
+        if (cause != null) initCause(cause);
     }
 
     public final String getKind() { return envelope.path("kind").asText(); }

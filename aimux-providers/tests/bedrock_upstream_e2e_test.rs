@@ -450,7 +450,7 @@ async fn provider_tool_args_are_checked_before_the_request() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message) if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
+        matches!(&error, AiMuxError::InvalidArgument { message, .. } if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
         "{error:?}"
     );
     assert!(fetch.seen().is_empty());

@@ -359,14 +359,14 @@ impl NamespacedKind {
     ///
     /// # Errors
     ///
-    /// [`AiMuxError::InvalidArgument`](crate::error::AiMuxError::InvalidArgument)
+    /// [`AiMuxError::invalid_argument`](crate::error::AiMuxError::invalid_argument)
     /// when `value` has no `.`.
     pub fn new(value: impl Into<String>) -> Result<Self, crate::error::AiMuxError> {
         let value = value.into();
         if value.contains('.') {
             Ok(Self(value))
         } else {
-            Err(crate::error::AiMuxError::InvalidArgument(format!(
+            Err(crate::error::AiMuxError::invalid_argument(format!(
                 "expected a `<provider-id>.<name>` identifier, got {value:?}"
             )))
         }

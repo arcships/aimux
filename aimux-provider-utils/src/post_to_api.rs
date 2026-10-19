@@ -181,6 +181,7 @@ async fn execute_exchange<T>(
                     url,
                     request_body_values,
                 )
+                .caused_by(error)
             }))),
         };
     }
@@ -198,6 +199,7 @@ async fn execute_exchange<T>(
                 url,
                 request_body_values,
             )
+            .caused_by(error)
         }))),
     }
 }

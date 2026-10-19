@@ -11,6 +11,7 @@ use aimux_core::tool::ToolResult;
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::options::CallOptions;
@@ -114,8 +115,13 @@ impl LanguageModel for VertexModel {
         {
             parsed_response["candidates"] = json!([]);
         }
-        let data: GenerateContentResponse = serde_json::from_value(parsed_response)
-            .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?;
+        let data: GenerateContentResponse =
+            serde_json::from_value(parsed_response).map_err(|error| {
+                AiMuxError::InvalidResponseData {
+                    message: error.to_string(),
+                    cause: Some(ErrorCause::source(&error)),
+                }
+            })?;
 
         let candidate = data.candidates.into_iter().next().unwrap_or(Candidate {
             content: None,
@@ -691,8 +697,12 @@ impl Transformer for VertexModelStream {
                     self.final_usage = vertex_usage(Some(usage));
                     self.last_usage_metadata_value = Some(usage.clone());
                 }
-                serde_json::from_value::<GoogleStreamEvent>(raw)
-                    .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))
+                serde_json::from_value::<GoogleStreamEvent>(raw).map_err(|error| {
+                    AiMuxError::InvalidResponseData {
+                        message: error.to_string(),
+                        cause: Some(ErrorCause::source(&error)),
+                    }
+                })
             }
             Err(error) => Err(error),
         };

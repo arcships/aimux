@@ -9,12 +9,17 @@ export interface ErrorEnvelope {
   retryAfterMs?: number
 }
 
-/** The exact shared ErrorEnvelope, including the AI SDK payload in `error`. */
+/**
+ * The exact shared ErrorEnvelope, including the AI SDK payload in `error`.
+ * The payload's `cause` (a nested AI SDK error, or an underlying OS, TLS or
+ * parser error as `{ message, cause? }`) is also the standard `Error.cause`.
+ */
 export class AimuxError extends Error implements ErrorEnvelope {
   readonly kind: ErrorDomain
   readonly code: number
   readonly error: ErrorEnvelope['error']
   declare readonly retryAfterMs?: number
+  declare readonly cause?: unknown
 
   constructor(envelope: ErrorEnvelope) {
     super(envelope.message)
@@ -23,6 +28,14 @@ export class AimuxError extends Error implements ErrorEnvelope {
     this.code = envelope.code
     this.error = envelope.error
     if (envelope.retryAfterMs !== undefined) this.retryAfterMs = envelope.retryAfterMs
+    attachCause(this)
+  }
+}
+
+// Like `new Error(message, { cause })`: an own, non-enumerable property.
+function attachCause(error: AimuxError): void {
+  if ('cause' in error.error) {
+    Object.defineProperty(error, 'cause', { value: error.error.cause, writable: true, configurable: true })
   }
 }
 
@@ -30,6 +43,7 @@ export function rethrow(error: unknown): never {
   if (isEnvelope(error)) {
     // Preserve the original native error's stack and all payload fields.
     Object.setPrototypeOf(error, AimuxError.prototype)
+    attachCause(error as AimuxError)
   }
   throw error
 }

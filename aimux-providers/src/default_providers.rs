@@ -113,7 +113,7 @@ pub fn create_provider(
         transform_request_body,
     } = settings;
     let unsupported = |field: &str| {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "provider '{name}' has no `{field}` setting"
         )))
     };
@@ -576,7 +576,7 @@ mod tests {
             ]);
             let error = model.do_generate(&options).await.expect_err(name);
             assert!(
-                matches!(&error, AiMuxError::InvalidArgument(message) if message.starts_with(var)),
+                matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.starts_with(var)),
                 "{name}: {error:?}"
             );
         }

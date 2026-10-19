@@ -66,7 +66,7 @@ impl LanguageModel for FailingChild {
         'b: 'f,
         Self: 'f,
     {
-        Box::pin(async { Err(AiMuxError::Other("mock stream".into())) })
+        Box::pin(async { Err(AiMuxError::other("mock stream")) })
     }
 }
 

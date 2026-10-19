@@ -9,6 +9,9 @@ public struct AimuxError: Error, Codable, Equatable, Sendable, LocalizedError {
     public let error: JSONValue
     public let retryAfterMs: UInt64?
     public var errorDescription: String? { message }
+    /// The payload's cause: a nested AI SDK error (with `name`) or an
+    /// underlying OS, TLS or parser error as `{message, cause?}`.
+    public var cause: JSONValue? { error["cause"] }
 
     static func binding(_ message: String, code: Int32 = 206) -> AimuxError {
         AimuxError(kind: "binding", code: code, message: message,

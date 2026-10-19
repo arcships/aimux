@@ -398,7 +398,7 @@ fn assemble(
             .iter()
             .find(|spec| &spec.name == name && spec.derive.is_none());
         if declared.is_none() {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "preset '{}' has no template parameter `{name}`; declared parameters: [{}]",
                 descriptor.name,
                 settable_params(descriptor).join(", ")
@@ -497,7 +497,7 @@ fn check_param_value(
     if plain {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "preset '{}': template parameter `{name}` must be a plain segment \
              (letters, digits, `.`, `_`, `-`; no `/`, `@`, `:`, `?`, `#` or spaces), got {value:?}",
             descriptor.name
@@ -523,8 +523,10 @@ pub(crate) fn resolve_base_url(
     if let Some(var) = descriptor.base_url_env.as_deref()
         && let Some(url) = env_value(&[var])
     {
-        return validate_base_url(&url)
-            .map_err(|e| AiMuxError::InvalidArgument(format!("{var}: {e}")));
+        return validate_base_url(&url).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("{var}: {e}"),
+            cause: Some(e.into()),
+        });
     }
 
     let mut values: HashMap<&str, String> = HashMap::new();
@@ -544,7 +546,7 @@ pub(crate) fn resolve_base_url(
                 } else {
                     format!(" or set {}", spec.env.join(" / "))
                 };
-                AiMuxError::InvalidArgument(format!(
+                AiMuxError::invalid_argument(format!(
                     "preset '{}' needs the template parameter `{}`: pass it in `params`{source}, \
                      or pass a concrete `base_url`",
                     descriptor.name, spec.name
@@ -556,7 +558,7 @@ pub(crate) fn resolve_base_url(
     for spec in descriptor.params.iter() {
         let Some(derive) = &spec.derive else { continue };
         let from = values.get(derive.from.as_str()).cloned().ok_or_else(|| {
-            AiMuxError::InvalidArgument(format!(
+            AiMuxError::invalid_argument(format!(
                 "preset '{}': derived parameter `{}` depends on undeclared `{}`",
                 descriptor.name, spec.name, derive.from
             ))
@@ -579,7 +581,7 @@ pub(crate) fn resolve_base_url(
         url = url.replace(&format!("{{{name}}}"), value);
     }
     if url.chars().any(|c| matches!(c, '{' | '}' | '<' | '>')) {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "preset '{}': base URL {:?} still has an unexpanded placeholder after expanding its \
              parameters",
             descriptor.name, url

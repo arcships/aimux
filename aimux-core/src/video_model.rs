@@ -479,7 +479,7 @@ async fn start_and_poll(
     options: VideoCallOptions,
 ) -> Result<VideoResult, AiMuxError> {
     if options.n == 0 {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "video generation `n` must be at least 1".to_string(),
         ));
     }
@@ -1136,7 +1136,7 @@ mod tests {
         options.download = None;
         let error = generate_video(&model, options).await.unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message)
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
                 if message == "download URL targets a non-public address: 127.0.0.1"),
             "{error:?}"
         );
@@ -1186,7 +1186,7 @@ mod tests {
         let error = generate_video(&model, options).await.unwrap_err();
 
         assert!(
-            matches!(error, AiMuxError::InvalidArgument(_)),
+            matches!(error, AiMuxError::InvalidArgument { .. }),
             "expected InvalidArgument, got {error:?}"
         );
         assert_eq!(
