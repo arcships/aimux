@@ -42,7 +42,7 @@ its own, ...), it is case 2: add its own package next to `groq/` and
    (`"alibaba"` or `"moonshotai"`: a usage shape that differs from the
    generic OpenAI one; a new shape is a new converter in `preset.rs`);
    `profile.structured_output_models` (the chat models that take a
-   `json_schema` response format, each an id or an id prefix followed by `-`;
+   `json_schema` response format, exact model ids;
    `[]` for none; absent for every model; a vendor with an AI SDK package
    follows its `supportsStructuredOutputs`). Per-call
    body fields can use the
