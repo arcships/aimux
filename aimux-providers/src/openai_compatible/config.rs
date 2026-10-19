@@ -138,6 +138,12 @@ pub(crate) fn default_error_structure(data: &Value) -> ProviderErrorParts {
 pub(crate) struct ChatSettings {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
+    /// When set, only these chat models take structured outputs, whatever
+    /// `supports_structured_outputs` says: a model id matches an entry equal
+    /// to it or followed by `-` and a suffix. A preset's
+    /// `profile.structured_output_models`, the vendor package's per-model
+    /// `supportsStructuredOutputs`.
+    pub structured_output_models: Option<&'static [String]>,
     /// `supportsMultiPartToolContent`: a `content` tool output is sent as an
     /// array of content parts instead of a JSON string.
     pub supports_multi_part_tool_content: bool,
@@ -168,6 +174,7 @@ impl Default for ChatSettings {
         Self {
             include_usage: false,
             supports_structured_outputs: false,
+            structured_output_models: None,
             supports_multi_part_tool_content: false,
             supported_urls: None,
             convert_usage: None,
@@ -183,6 +190,18 @@ impl Default for ChatSettings {
 }
 
 impl ChatSettings {
+    /// These settings for the chat model `model_id`.
+    pub(crate) fn for_model(mut self, model_id: &str) -> Self {
+        if let Some(models) = self.structured_output_models {
+            self.supports_structured_outputs = models.iter().any(|model| {
+                model_id
+                    .strip_prefix(model.as_str())
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
+            });
+        }
+        self
+    }
+
     /// The URL patterns chat models fetch themselves.
     pub(crate) async fn supported_urls(&self) -> SupportedUrls {
         match &self.supported_urls {
@@ -361,5 +380,40 @@ impl Fetch for FetchUserAgent {
             .unwrap_or_else(aimux_provider_utils::default_fetch)
             .fetch(request)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static MODELS: std::sync::LazyLock<Vec<String>> =
+        std::sync::LazyLock::new(|| vec!["qwen3.7-plus".to_string()]);
+
+    fn supports(model_id: &str) -> bool {
+        ChatSettings {
+            supports_structured_outputs: true,
+            structured_output_models: Some(&MODELS),
+            ..ChatSettings::default()
+        }
+        .for_model(model_id)
+        .supports_structured_outputs
+    }
+
+    #[test]
+    fn a_model_list_matches_the_id_or_a_dash_suffix() {
+        assert!(supports("qwen3.7-plus"));
+        assert!(supports("qwen3.7-plus-2026-09-01"));
+        assert!(!supports("qwen3.7-plusplus"));
+        assert!(!supports("qwen3.7"));
+    }
+
+    #[test]
+    fn without_a_model_list_the_flag_applies() {
+        let settings = ChatSettings {
+            supports_structured_outputs: true,
+            ..ChatSettings::default()
+        };
+        assert!(settings.for_model("any").supports_structured_outputs);
     }
 }

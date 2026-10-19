@@ -281,7 +281,9 @@ impl OpenAICompatibleProvider {
     /// A chat-completions model; `provider()` is `"{name}.chat"`.
     #[must_use]
     pub fn chat(&self, model_id: &str) -> OpenAICompatibleChatModel {
-        OpenAICompatibleChatModel::from_config(model_id.to_string(), self.model_config("chat"))
+        let mut config = self.model_config("chat");
+        config.chat = config.chat.for_model(model_id);
+        OpenAICompatibleChatModel::from_config(model_id.to_string(), config)
     }
 
     /// A text-completion model; `provider()` is `"{name}.completion"`.

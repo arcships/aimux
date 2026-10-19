@@ -1788,7 +1788,11 @@
     "display": "Together AI",
     "base_url": "https://api.together.xyz/v1",
     "env_var": "TOGETHER_API_KEY",
-    "profile": {}
+    "profile": {
+      "structured_output_models": [
+        "deepseek-ai/DeepSeek-V4-Flash-0731"
+      ]
+    }
   },
   {
     "name": "tokenflux",
@@ -1858,7 +1862,9 @@
     "display": "Vercel",
     "base_url": "https://api.v0.dev/v1",
     "env_var": "VERCEL_API_KEY",
-    "profile": {}
+    "profile": {
+      "structured_output_models": []
+    }
   },
   {
     "name": "vertex_ai_ai21_models",
