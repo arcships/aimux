@@ -483,7 +483,7 @@ async fn gemini_3_fills_only_a_missing_thought_signature() {
     assert_eq!(parts[0]["thoughtSignature"], THOUGHT_SIGNATURE);
 }
 
-/// Upstream: `candidates` is `.nullish()` (google/src/google-language-model.ts:1988),
+/// Upstream: `candidates` is `.nullish()` (@ai-sdk/google@4.0.87 src/google-language-model.ts:1744),
 /// so a blocked prompt answered with `"candidates": null` finishes as a content filter.
 #[tokio::test]
 async fn generate_reads_null_candidates_as_none() {
