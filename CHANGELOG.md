@@ -1149,10 +1149,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The model catalogue keys specs by the names `create_provider` accepts.
-  anya2a provider ids map through an explicit table of providers serving the
-  same endpoint (13 old aliases named providers that do not exist, such as
-  `vertex`, `bedrock` and `xiaomi`), or map to themselves when they are a
-  provider name; the rest go to `Catalogue::unmapped` under the anya2a id
+  anya2a provider ids map through an explicit table of the same vendor's
+  providers, checked by hand (13 old aliases named providers that do not
+  exist, such as `vertex`, `bedrock` and `xiaomi`), or map to themselves when
+  they are a provider name; the rest, and an alias whose target the catalogue
+  also lists under its own id, go to `Catalogue::unmapped` under the anya2a id
   instead of a name guessed from the spelling. `normalize_provider_name`
   returns `None` for them, and each mapped `ModelSpec` carries its
   `provider`.

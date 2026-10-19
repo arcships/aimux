@@ -28,8 +28,11 @@ pub const DEFAULT_ANYA2A_URL: &str = "https://raw.githubusercontent.com/ThinkInA
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// anya2a provider ids whose aimux provider has another name. Each target is
-/// a name [`crate::create_provider`] accepts, serving the same endpoint; no
-/// two ids share a target, so one endpoint's models never overwrite
+/// a name [`crate::create_provider`] accepts for the same vendor, checked by
+/// hand. The endpoint can differ (`minimax-cn` lists the Anthropic-format
+/// host, `minimax_cn` uses the OpenAI-format one). No two ids share a
+/// target, and a target that the catalogue also lists under its own id keeps
+/// that entry ([`parse_anya2a_all`]), so one id's models never overwrite
 /// another's.
 const PROVIDER_ALIASES: &[(&str, &str)] = &[
     ("302ai", "ai302"),
@@ -192,8 +195,15 @@ pub fn parse_anya2a_all(json: &Value) -> Result<Catalogue, AiMuxError> {
         updated_at,
         ..Catalogue::default()
     };
+    // Names the catalogue lists under their own id; an alias to one of them
+    // goes to `unmapped` instead of overwriting it.
+    let listed: std::collections::HashSet<&str> = providers
+        .keys()
+        .filter_map(|id| crate::default_providers::provider_name(id))
+        .collect();
     for (anya2a_id, provider_val) in providers {
-        let aimux_name = normalize_provider_name(anya2a_id);
+        let aimux_name = normalize_provider_name(anya2a_id)
+            .filter(|name| name == anya2a_id || !listed.contains(name));
         let models = provider_val.get("models").and_then(|v| v.as_array());
         let Some(models) = models else {
             continue;
@@ -511,6 +521,21 @@ mod tests {
             );
             assert!(targets.insert(to), "{to} is the target of two aliases");
         }
+    }
+
+    #[test]
+    fn an_alias_to_a_name_listed_under_its_own_id_stays_unmapped() {
+        let raw = json!({
+            "updated_at": "0",
+            "providers": {
+                "fireworks-ai": { "models": [{ "id": "alias", "type": "chat" }] },
+                "fireworks": { "models": [{ "id": "own", "type": "chat" }] }
+            }
+        });
+        let cat = parse_anya2a_all(&raw).unwrap();
+        assert!(cat.lookup("fireworks", "own").is_some());
+        assert!(cat.lookup("fireworks", "alias").is_none());
+        assert_eq!(cat.unmapped["fireworks-ai"]["alias"].provider, None);
     }
 
     #[test]

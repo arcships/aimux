@@ -146,7 +146,7 @@ config 只给用户读;aimux 不在请求里自动套用。
 
 ### 3.4 provider 命名不一致(关键)
 
-aimux registry 用 snake_case(`siliconflow`/`fireworks`),anya2a 用 kebab-case(`siliconflow`/`fireworks-ai`)。实测 251 vs 186,**精确名重合仅 99**。实现用 `catalogue.rs` 内联别名表(`PROVIDER_ALIASES`,每个目标都是 `create_provider` 接受的名字、同一端点)加精确同名匹配;不按拼写推导名字。匹配不到的条目不报错,按 anya2a 自己的 id 放入 `Catalogue::unmapped`(见 §4.3)。
+aimux registry 用 snake_case(`siliconflow`/`fireworks`),anya2a 用 kebab-case(`siliconflow`/`fireworks-ai`)。实测 251 vs 186,**精确名重合仅 99**。实现用 `catalogue.rs` 内联别名表(`PROVIDER_ALIASES`,每个目标都是 `create_provider` 接受的、同一厂商的名字,人工核对;端点可以不同,例如 `minimax-cn` 列的是 Anthropic 格式的地址)加精确同名匹配;不按拼写推导名字。匹配不到的条目不报错,按 anya2a 自己的 id 放入 `Catalogue::unmapped`(见 §4.3)。
 
 ---
 
@@ -221,7 +221,7 @@ pub struct Catalogue {
 }
 ```
 
-`specs` 的键是 `create_provider` 接受的名字：anya2a id 经显式对照表（同一端点）映射，或本身就是 provider 名；其余条目保留 anya2a 自己的 id 放入 `unmapped`，不按拼写推导名字（对齐文档 §4.6）。
+`specs` 的键是 `create_provider` 接受的名字：anya2a id 经显式对照表（同一厂商，人工核对）映射，或本身就是 provider 名；其余条目，以及目标名已被 anya2a 自己同名条目占用的别名条目，保留 anya2a 自己的 id 放入 `unmapped`，不按拼写推导名字（对齐文档 §4.6）。
 
 **关键:catalogue 是独立原语,不是 `list_models` 内部依赖。** `get_model_specs` 只负责 fetch + parse;是否缓存、TTL 多少、离线怎么降级,都是 host 的策略,库不持有状态。源码 URL 可用参数覆盖(自建镜像/内网)。
 
@@ -313,7 +313,7 @@ P1 是核心(Rust 层 list_models + anya2a 原语);P2 是 binding 暴露;P3 是 
 |---|---|---|
 | anya2a 上游不稳定/停更 | 中 | models.dev 降级备选 + 自建镜像 + bundled 快照;config 留空=回退现状 |
 | anya2a schema 变更 | 中 | `ModelSpec` 宽松反序列化,未知字段入 `raw` |
-| provider 命名映射漏项 | 中 | 未映射条目放入 `unmapped`、不报错;别名表由测试保证每个目标都是真实 provider 名 |
+| provider 命名映射漏项 | 中 | 未映射条目放入 `unmapped`、不报错;别名表由测试保证每个目标都是真实 provider 名、互不重复;目标名已有同名条目时别名条目进 `unmapped`,不覆盖 |
 | list_models 鉴权/限流 | 中 | 复用 RetryConfig;失败返回 Unsupported 不 panic |
 | all.json 5.5MB 体积 | 低 | 版本化增量(per-provider 文件)+ 本地缓存 |
 | 隐私:list_models 暴露账号模型清单 | 低 | 纯客户端拉取,数据不离开 aimux |
