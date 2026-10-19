@@ -725,8 +725,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers)
-        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs
+      - name: AI SDK pin scripts (fetch-aisdk.sh, VERSIONS.json helpers, upstream test inventory)
+        run: node --test scripts/fetch-aisdk.test.mjs scripts/aisdk-fixtures/versions.test.mjs scripts/aisdk-tests/inventory.test.mjs
 
   # Swift tests need macOS (XCTest) and the FFI cdylib, which the Swift package
   # links via the CAimuxFFI system module.
