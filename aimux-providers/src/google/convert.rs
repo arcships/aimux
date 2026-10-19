@@ -1710,7 +1710,8 @@ pub fn parse_finish_reason(reason: &str, has_tool_calls: bool) -> FinishReason {
                 FinishReasonUnified::Stop
             }
         }
-        "MAX_TOKENS" => FinishReasonUnified::Length,
+        // `CONTINUATION`: a Gemini 4 long decode reached the per-request cap.
+        "MAX_TOKENS" | "CONTINUATION" => FinishReasonUnified::Length,
         "IMAGE_SAFETY" | "RECITATION" | "SAFETY" | "BLOCKLIST" | "PROHIBITED_CONTENT" | "SPII" => {
             FinishReasonUnified::ContentFilter
         }

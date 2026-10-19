@@ -502,3 +502,108 @@ async fn generate_reads_null_candidates_as_none() {
     );
     assert_eq!(result.finish_reason.raw.as_deref(), Some("SAFETY"));
 }
+
+fn sse(chunks: &[Value]) -> Canned {
+    Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "text/event-stream".into())],
+        body: chunks
+            .iter()
+            .map(|chunk| format!("data: {chunk}\n\n"))
+            .collect::<String>()
+            .into_bytes(),
+    }
+}
+
+/// Upstream: an error event sets the finish reason to `error` and the stream
+/// goes on (google/src/google-language-model.ts:1002-1021); usage is the last
+/// one reported (:1470, :1488).
+#[tokio::test]
+async fn stream_error_event_keeps_reading() {
+    let mock = MockFetch::new(vec![sse(&[
+        json!({"candidates": [{"content": {"role": "model", "parts": [{"text": "a"}]}}],
+               "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 1, "totalTokenCount": 4}}),
+        json!({"error": {"code": 429, "message": "busy", "status": "RESOURCE_EXHAUSTED"}}),
+        json!({"candidates": [{"content": {"role": "model", "parts": [{"text": "b"}]}}]}),
+    ])]);
+    let result = create_google(settings(&mock))
+        .unwrap()
+        .chat("gemini-pro")
+        .do_stream(&options())
+        .await
+        .unwrap();
+    let parts: Vec<_> = result
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    let deltas: Vec<_> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::TextDelta { delta, .. } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(deltas, ["a", "b"]);
+    assert_eq!(
+        parts
+            .iter()
+            .filter(|part| matches!(part, StreamPart::Error { .. }))
+            .count(),
+        1
+    );
+    let Some(StreamPart::Finish {
+        finish_reason,
+        usage,
+        ..
+    }) = parts.last()
+    else {
+        panic!("{parts:?}");
+    };
+    assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+    assert_eq!(usage.input_tokens.total, Some(3));
+}
+
+/// Upstream: `CONTINUATION` maps to `length`, as `MAX_TOKENS` does
+/// (google/src/map-google-finish-reason.ts).
+#[tokio::test]
+async fn continuation_finishes_as_length() {
+    let body = json!({"candidates": [{"content": {"parts": [{"text": "partial"}], "role": "model"}, "finishReason": "CONTINUATION"}]});
+    let mock = MockFetch::new(vec![Canned::json(&body)]);
+    let result = create_google(settings(&mock))
+        .unwrap()
+        .chat("gemini-pro")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Length);
+    assert_eq!(result.finish_reason.raw.as_deref(), Some("CONTINUATION"));
+}
+
+/// Upstream: server tool metadata carries `thoughtSignature` only when it is
+/// not empty (google/src/google-language-model.ts:659-668).
+#[tokio::test]
+async fn server_tool_metadata_leaves_out_an_empty_thought_signature() {
+    let body = json!({"candidates": [{"content": {"role": "model", "parts": [
+        {"toolCall": {"id": "s1", "toolType": "GOOGLE_SEARCH_WEB", "args": {}}, "thoughtSignature": ""},
+        {"toolResponse": {"id": "s1", "toolType": "GOOGLE_SEARCH_WEB", "response": {}}, "thoughtSignature": "sig"}
+    ]}, "finishReason": "STOP"}]});
+    let mock = MockFetch::new(vec![Canned::json(&body)]);
+    let result = create_google(settings(&mock))
+        .unwrap()
+        .chat("gemini-pro")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let content = serde_json::to_value(&result.content).unwrap();
+    assert_eq!(
+        content[0]["providerMetadata"]["google"],
+        json!({"serverToolCallId": "s1", "serverToolType": "GOOGLE_SEARCH_WEB"})
+    );
+    assert_eq!(
+        content[1]["providerMetadata"]["google"]["thoughtSignature"],
+        "sig"
+    );
+}

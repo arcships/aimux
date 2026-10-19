@@ -306,7 +306,6 @@ struct GoogleLanguageModelStream {
     /// `partialArgs`), innermost last.
     active_tool_calls: Vec<(RawToolCall, GoogleJsonAccumulator)>,
     response_metadata_emitted: bool,
-    stream_errored: bool,
     prompt_blocked: bool,
     // Provider-metadata accumulators (mirrors TS `lastGroundingMetadata` /
     // `lastUrlContextMetadata` + the finishReason-chunk snapshot).
@@ -780,6 +779,9 @@ impl Transformer for GoogleLanguageModelStream {
         match event {
             Ok(GoogleStreamEvent::Chunk(chunk)) => self.transform_chunk(chunk, controller),
             Ok(GoogleStreamEvent::Error(error)) => {
+                // The stream goes on: later chunks still add content, usage
+                // and metadata, and may set another finish reason.
+                self.final_finish_reason = Some(FINISH_ERROR);
                 controller.enqueue(StreamPart::Error {
                     error: super::google_stream_error(
                         &error.error,
@@ -788,10 +790,6 @@ impl Transformer for GoogleLanguageModelStream {
                         self.ctx.response_headers.clone(),
                     ),
                 });
-                // The rest of the body is not read: the stream finishes now.
-                self.stream_errored = true;
-                self.finish(controller);
-                controller.terminate();
             }
             Err(error) => {
                 let recoverable = error.is_recoverable_stream_error();
@@ -803,15 +801,8 @@ impl Transformer for GoogleLanguageModelStream {
         }
     }
 
+    /// Close the open segments and emit `Finish`.
     fn flush(mut self, controller: &mut Controller) {
-        self.finish(controller);
-    }
-}
-
-impl GoogleLanguageModelStream {
-    /// Close the open segments and emit `Finish`: at the end of the body, or
-    /// right after an error event.
-    fn finish(&mut self, controller: &mut Controller) {
         // Close any remaining open text/reasoning segment.
         if let Some(id) = self.text_id.take() {
             controller.text_end(id);
@@ -831,16 +822,8 @@ impl GoogleLanguageModelStream {
         })));
 
         controller.enqueue(StreamPart::Finish {
-            finish_reason: if self.stream_errored {
-                FINISH_ERROR
-            } else {
-                self.final_finish_reason.take().unwrap_or(FINISH_OTHER)
-            },
-            usage: if self.stream_errored {
-                Usage::default()
-            } else {
-                std::mem::take(&mut self.final_usage)
-            },
+            finish_reason: self.final_finish_reason.unwrap_or(FINISH_OTHER),
+            usage: self.final_usage,
             provider_metadata,
         });
     }
@@ -886,7 +869,7 @@ fn server_tool_metadata(
         "serverToolCallId": tool_call_id,
         "serverToolType": server_tool_type,
     });
-    if let Some(signature) = thought_signature {
+    if let Some(signature) = thought_signature.filter(|signature| !signature.is_empty()) {
         payload["thoughtSignature"] = json!(signature);
     }
     namespace.metadata(payload)

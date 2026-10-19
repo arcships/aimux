@@ -1148,6 +1148,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Gemini streams (Google and Vertex AI) keep reading after an error event,
+  as the AI SDK does: the error part is sent, later chunks still add
+  content, usage and metadata, and the finish reason is `error` unless a
+  later chunk sets another one. Usage is no longer zeroed. `CONTINUATION`
+  finishes as `length`, like `MAX_TOKENS`, and server tool metadata leaves
+  out an empty `thoughtSignature`.
 - Vertex AI Gemini models are the Google model reading the Vertex
   namespaces, as `@ai-sdk/google-vertex` reuses `GoogleLanguageModel`; the
   separate Vertex copy is removed (`VertexModel` is now an alias of
