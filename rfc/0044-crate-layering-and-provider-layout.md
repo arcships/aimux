@@ -16,7 +16,7 @@
 
 | 编号 | 决定 | 后果 |
 |---|---|---|
-| L1 | 按 D17 新建 `aimux-provider`、`aimux-devtools`；`aimux-core` 拆出规范层和观测工具后，剩下的运行时就是对齐文档里的 `aimux` 层，crate 名保留 `aimux-core`（贡献者 li 的意见：不改名；D17 写的是改名，登记差异，由维护者决定）；不留兼容 re-export（对齐文档 §2.1 约束 6、D31） | 每一步在同一个 PR 里改完 ops、FFI、四个工具、Node/Python 绑定（各自独立的 workspace，Python 测试里还有名为 `aimux-core` 的替身包）的全部 import |
+| L1 | 按 D17 新建 `aimux-provider`、`aimux-devtools`，`aimux-core` 拆空后改名 `aimux`；不留兼容 re-export（对齐文档 §2.1 约束 6、D31） | 每一步在同一个 PR 里改完 ops、FFI、四个工具、Node/Python 绑定（各自独立的 workspace，Python 测试里还有名为 `aimux-core` 的替身包）的全部 import |
 | L2 | 先在 core 内部按层拆开混在一起的文件，再切 crate | crate 切分本身变成机械移动，评审只看依赖边 |
 | L3 | core 不再直接调用录制、session 存储、trace、具体下载实现；下载改为注入接口（§4），录制、session、trace 的接入方式由调用观测的后续 RFC 定（§4.1） | 去掉 4 个进程全局单例；关闭 RFC-0039 G-a |
 | L4 | 下载只保留一份实现：地址校验、重定向逐跳校验在 `aimux-provider-utils`，何时下载、大小上限在 `aimux` 的操作里 | 删除 core 自建的 reqwest client 和第二个重定向循环 |
@@ -41,9 +41,7 @@
 | `tools/aimux-codegen` | ops | 553 | 483 | |
 | `bindings/node`、`bindings/python` | core、ops | — | — | 不在 workspace 内 |
 
-目标（对齐文档 §2.1）是 `aimux-provider` 在最底层且不依赖任何 aimux crate；现在最底层是包含运行时的 `aimux-core`，`aimux-provider` 和 `aimux-devtools` 都不存在。crates.io 上 `aimux-provider`、`aimux-devtools` 两个名字目前未被占用（2026-10-19 查询）。
-
-下文的 `aimux` 指运行时这一层（对齐文档的叫法），crate 名仍是 `aimux-core`。
+目标（对齐文档 §2.1）是 `aimux-provider` 在最底层且不依赖任何 aimux crate；现在最底层是包含运行时的 `aimux-core`，`aimux-provider` 和 `aimux-devtools` 都不存在。crates.io 上 `aimux`、`aimux-provider`、`aimux-devtools` 三个名字目前未被占用（2026-10-19 查询）。
 
 ### 2.2 同一个文件里混着两层
 
@@ -250,7 +248,7 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 | C4 | 下载归一（§4 下载一行）：video、transcribe、prompt、生成文件都走 provider-utils 的不可信 URL 下载；删除 core 的 reqwest client | C3 |
 | C5 | 等调用观测的后续 RFC：按它把录制、session 归组接到调用上，去掉四个全局量 | C3、后续 RFC |
 | C6 | 新建 `aimux-devtools`，搬入录制、回放、trace、session；`rebuild_provider` 移到 ops；providers 不再依赖 core | C5 |
-| C7 | 发布顺序改为 provider → provider-utils → providers → core → devtools → ops → ffi；`schema/ops` 里 33 处 `x-aimux-type` 的类型路径（由 `aimux-ops/src/manifest/controls.rs` 生成）随搬移重新生成 | C6 |
+| C7 | `aimux-core` 改名 `aimux`；发布顺序改为 provider → provider-utils → providers → aimux → devtools → ops → ffi；`schema/ops` 里 33 处 `x-aimux-type` 的类型路径（由 `aimux-ops/src/manifest/controls.rs` 生成）重新生成；CLI 的二进制也叫 `aimux`，给它设 `doc = false`，避免和库的文档目录冲突 | C6 |
 
 RFC-0046 的 provider 整理与 C 系列互不阻塞；它先做的话，C2/C3 改 import 时对着整理好的目录一次改完。
 
@@ -273,7 +271,6 @@ RFC-0046 的 provider 整理与 C 系列互不阻塞；它先做的话，C2/C3 �
 
 登记差异（写入对齐文档 §5）：
 
-- 运行时 crate 保留 `aimux-core` 这个名字，不按 D17 改名 `aimux`（贡献者 li 的意见）：避免 crates.io 换包名，也避免和命令行工具的二进制 `aimux` 重名。
 - 共享错误枚举在 `aimux-provider`，含上游放在 `ai` 包里的 retry、工具调用类错误。原因：ops 错误封装和绑定只认一个联合类型（RFC-0042）。这与对齐文档 §2.1 约束 1 “`aimux-provider` 不包含 retry”冲突，见 §9。
 - session 归组、前缀推断是 aimux 扩展，上游 `generateText` 没有。它们只影响观测，不改变调用本身（推断出的 ID 不进入请求、不影响返回结果，见 `generate.rs:1129-1139`），所以整体放在 devtools，按上游 devtools 的方式以订阅接入。这改写对齐文档 C8 的 2026-10-13 修订（“沿用现有的 opt-in 前缀推断实现，与 generate 入口一起留在 `aimux`”）和 RFC-0041 中“`aimux` 拥有 SessionInferer 注册接口”一句，在 C5 的 PR 中同步改 C8、§3.6 和 RFC-0041。
 - 对齐文档 §3.5 的“关闭观测”表写着关闭观测时 session 和 session 推断仍然执行。session 整体进 devtools 后，没有装 devtools 就没有归组；ops 默认装上 devtools，所以绑定用户行为不变，只有自己组装、不装 devtools 的 Rust 用户没有归组。见 §9。
@@ -286,14 +283,16 @@ RFC-0046 的 provider 整理与 C 系列互不阻塞；它先做的话，C2/C3 �
 
 1. 依赖边检查（新增脚本，读 `cargo metadata`，进 CI）：`aimux-provider` 不依赖任何 aimux crate，也不依赖 reqwest、tokio 网络特性；`aimux-provider-utils` 只依赖 `aimux-provider`；workspace 里没有 `aimux-stream`；`aimux-providers` 不依赖 `aimux`、`aimux-devtools`；`aimux` 不依赖 `aimux-providers`、`aimux-devtools`；`aimux-devtools` 不依赖 `aimux-providers`。
 2. `aimux` 源码里没有 `static` 可变全局（允许列表只含常量；task-local 的操作设置不算）。
-3. 每个 PR 的测试数量前后相等（`cargo test --workspace -- --list`），生成物重新生成后无 diff。
-4. 产物体积不超过 RFC-0043 记录的当前值。
+3. workspace 里任何地方都不出现 `aimux_core`（C7 后）。
+4. 每个 PR 的测试数量前后相等（`cargo test --workspace -- --list`），生成物重新生成后无 diff。
+5. 产物体积不超过 RFC-0043 记录的当前值。
 
 ## 9. 开放问题与不采纳
 
 - **`session_id` 的入口。** 本文保留它作为操作设置里的一个字段（绑定已暴露，RFC-0041 §10.2 已落地），`aimux` 只透传。完全照上游可以改成通用的 telemetry metadata，由 devtools 自己读出 session；这会改绑定 API，单独决定。
 - **不装 devtools 时要不要 session 归组。** 本文的方案是不要（ops 默认装上）；对齐文档 §3.5 写的是关闭观测也照样归组。
 - **重试错误放在哪。** 本文放在 `aimux-provider` 的共享错误里（绑定只认一个联合类型），与对齐文档 §2.1 约束 1 冲突，需要登记或改放 `aimux`。
-- **不采纳：保留旧路径的 re-export 门面。** 拆走的模块不在 `aimux-core` 里留 re-export，违反对齐文档 §2.1 约束 6，且会让两个路径长期共存。
+- **crates.io 上的 `aimux-core`。** 建议改名后发最后一个版本说明已改名，不撤回旧版本。
+- **不采纳：保留 `aimux-core` 作为 re-export 门面。** 违反对齐文档 §2.1 约束 6，且会让两个路径长期共存。
 - **不采纳：一次性大 PR 完成全部拆分。** 改动面覆盖整个 workspace 和两个绑定，无法评审，也无法逐步定位回归。
 - 每个错误补 `cause`（错误链）另开小 PR，与本文的搬移互不依赖；若先于 C2 合入，C2 原样搬移。
