@@ -10,7 +10,8 @@ use aimux_core::generate::{
 };
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::{
-    ChatCompletionChunk, OpenAiStreamOptions, to_chat_completion_stream,
+    ChatCompletionChunk, OpenAiStreamOptions, ResponseIdentity,
+    to_chat_completion_stream_with_identity,
 };
 use aimux_core::stream_part::TextStreamPart;
 use aimux_core::{AbortSignal, AiMuxError, LanguageModel};
@@ -302,9 +303,12 @@ fn start_stream(
 ) -> EventStream {
     let signal = request.options.core.abort_signal.clone();
     let setup = async move {
+        // The OpenAI chunks carry the response id and model the provider reports.
+        let identity = ResponseIdentity::default();
+        let observed = identity.observe(model.as_ref());
         let result = cancellable(
             signal.clone(),
-            stream_text(model.as_ref(), request.prompt, request.options.core),
+            stream_text(&observed, request.prompt, request.options.core),
         )
         .await?;
         let native = NativeEvents::new(result.stream, signal);
@@ -315,8 +319,12 @@ fn start_stream(
                     native,
                     sender: Some(sender),
                 };
-                let converted =
-                    to_chat_completion_stream(Box::pin(input), model.model_id(), options);
+                let converted = to_chat_completion_stream_with_identity(
+                    Box::pin(input),
+                    model.model_id(),
+                    options,
+                    identity,
+                );
                 Box::pin(OpenAiEvents {
                     chunks: converted.stream,
                     terminal,

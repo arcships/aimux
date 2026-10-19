@@ -1512,7 +1512,6 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - 协议 fixture 扩到四个家族以外，逐字段比对结果与流（§9.3）。
 - CLI 探测加 `--method`；现在 OpenAI 只能探测 Responses（§4.6、RFC-0025）。
 - 录制 schema 3（§4.3、§4.4）；随最后几层做。在此之前各层仍写主线的 schema 2，`ProviderRecord` 只记身份；主线写的录制可以读取（只有主线写的字段忽略，只有新层写的字段读时可缺省；公共 JSON 层把信封与其中的选项、结果写成 camelCase，主线的 snake_case 信封键作为别名读取），回放不了的部分在回放时报错说明。
-- OpenAI 兼容输出的流带回上游的 id 与 model（RFC-0026）；这是回归，不是新功能。
 - Bedrock Mantle 仍是 registry 预设（OpenAI 兼容 chat），只对齐了 user-agent。上游 `createBedrockMantle` 是完整 provider，有 chat、responses 两种模型和自己的鉴权（amazon-bedrock 5.0.100 `mantle/bedrock-mantle-provider.ts:122-273`；§4.1）。
 - `decide` 的 onStart / onEnd 回调与 tracing span（`ai@7.0.128 src/decide/decide.ts:95-190`），随 Telemetry 一起做（§3.5）。
 - AWS SigV4 fetch（Bedrock、Anthropic-AWS）也给 GET 请求签名，即 `list_models`；上游只签带 body 的 POST（`amazon-bedrock-sigv4-fetch.ts:57-62`、`anthropic-aws-fetch.ts:57-62`）。模型列表是 aimux 独有的接口，不签名就调不通，所以保留这一差异，不再修改（§3.3）。
