@@ -1148,6 +1148,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses and the Codex subscription stream honor
+  `include_raw_chunks`: each SSE chunk is sent as `StreamPart::Raw` before
+  the parts made from it, as the AI SDK's Open Responses model and aimux's
+  OpenAI Responses stream do. Both ignored the option.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

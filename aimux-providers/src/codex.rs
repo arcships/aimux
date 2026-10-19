@@ -55,7 +55,7 @@ use aimux_provider_utils::{
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::responses::responses_convert::{
-    build_responses_event_stream, build_responses_generate_result,
+    build_responses_event_stream_with_raw, build_responses_generate_result,
 };
 use crate::openai::responses::{
     OpenAIResponsesModel, ResponsesNamespace, build_responses_request_body,
@@ -469,7 +469,7 @@ impl CodexModel {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
             first_event => first_event,
         };
-        let stream = build_responses_event_stream(
+        let stream = build_responses_event_stream_with_raw(
             first_event,
             sse_stream,
             ResponsesNamespace::OPENAI.write_key().to_string(),
@@ -478,6 +478,7 @@ impl CodexModel {
             endpoint,
             body.clone(),
             response_headers.clone(),
+            options.include_raw_chunks == Some(true),
         )?;
 
         Ok(StreamResult {
