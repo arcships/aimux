@@ -171,7 +171,7 @@ aimux-provider          V4 规范：Provider 与各模态 trait、CallOptions、
    ↑
 aimux-provider-utils ← aimux-stream
                         Fetch/WS、headers、Resolvable、load_*、单次 HTTP helper、下载守卫与逐跳重定向、
-                        传输诊断接口、脱敏、ModelMessage 用户输入、descriptor/catalogue 类型
+                        Fetch 观察点、脱敏、ModelMessage 用户输入、descriptor/catalogue 类型
    ↑
 aimux-providers         厂商工厂与模型实现、preset、catalogue 摄取
 aimux                   → aimux-provider、aimux-provider-utils
@@ -214,7 +214,7 @@ aimux/src/
 
 | 现在 | 反转后 | 接口所在 | 实现所在 |
 |---|---|---|---|
-| provider-utils 读 `RecordingContext::current()` 并直接写 `Recorder`（`http.rs:126`、`:861`） | provider-utils 定义传输诊断：自己的 task-local 诊断作用域 + 观察者 trait，在 leaf 发出请求、响应、分块、错误事件（D4、RFC-0041 §3） | `aimux-provider-utils` | `aimux-devtools` 的 Recorder |
+| provider-utils 读 `RecordingContext::current()` 并直接写 `Recorder`（`http.rs:126`、`:861`） | provider-utils 不再认识录制：在 `Fetch` 这一层留观察点，请求、响应、分块、错误由套在 `Fetch` 外的观察者看到（D4、D5 `replay_fetch` 同一个接口，RFC-0041 §3）。调用上下文是像 Rig 的 `Exchange` 那样随请求显式传入，还是用作用域，由后续 RFC 定 | `aimux-provider-utils` | `aimux-devtools` 的 Recorder |
 | generate / decide / router / MoA / composite 读全局 `RECORDER` 并自己建 `RecordingContext` | `aimux` 不再认识录制；录制在 `aimux-devtools`，接入方式由调用观测的后续 RFC 定（§4.1） | 后续 RFC | `aimux-devtools` |
 | generate 解析 session、读全局 `SESSION_STORE` 并 `append`，再写进录制（`generate.rs:1129-1139`） | generate 不再认识 session：调用方给的 `session_id` 只是操作设置里的一个字符串，原样交给观测层；推断、索引、与录制的关联全部在 devtools（§4.1） | 后续 RFC | `aimux-devtools` |
 | 前缀推断是全局 `SESSION_INFERER` + 环境变量 `AIMUX_SESSION_INFER` | 推断器是 devtools 里 session 归组的配置项，宿主开启，默认关闭；删除环境变量开关 | `aimux-devtools` | `aimux-devtools` |
@@ -262,7 +262,7 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 | P1 | provider 目录与测试整理（§5），按厂商家族分批：OpenAI 一族与 compat、Anthropic、Google/Vertex、Bedrock、其余模态厂商、无上游厂商与 preset | 无；#268 只改 providers 的 2 个文件，可以现在开始 |
 | C1 | core 内部按层拆开混合文件，操作函数搬进按操作分的目录（§2.2、§3.2），不新建 crate | #268 合入（它改了 core 的 36 个文件） |
 | C2 | 新建 `aimux-provider`，搬入规范模块；core 改为依赖它 | C1 |
-| C3 | provider-utils 定义传输诊断接口，core 的录制改为订阅；`ModelMessage`、下载守卫、脱敏、catalogue 类型搬入 provider-utils；日志初始化移到 ops（§4.1 第 3 条）；provider-utils 不再依赖 core | C2 |
+| C3 | provider-utils 在 `Fetch` 层留观察点，core 的录制改为观察者，HTTP 层不再读 `RecordingContext`；`ModelMessage`、下载守卫、脱敏、catalogue 类型搬入 provider-utils；provider-utils 不再依赖 core | C2 |
 | C4 | 下载归一（§4 下载一行）：video、transcribe、prompt、生成文件都走 provider-utils 的不可信 URL 下载；删除 core 的 reqwest client | C3 |
 | C5 | 等调用观测的后续 RFC：按它把录制、session 归组接到调用上，去掉四个全局量 | C3、后续 RFC |
 | C6 | 新建 `aimux-devtools`，搬入录制、回放、trace、session；`rebuild_provider` 移到 ops；providers 不再依赖 core | C5 |
