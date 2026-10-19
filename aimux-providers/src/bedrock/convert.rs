@@ -23,7 +23,7 @@ use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
-use aimux_provider_utils::is_full_media_type;
+use aimux_provider_utils::{inject_json_instruction_into_messages, is_full_media_type};
 use base64::Engine;
 use serde_json::{Value, json};
 
@@ -1513,24 +1513,15 @@ pub fn build_request_body_checked(
         }
     }
     if uses_json_instruction {
-        let instruction = format!(
-            "JSON schema:\n{}\nYou MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text.",
-            schema.unwrap()
+        // amazon-bedrock-chat-language-model.ts:619-626
+        prompt = inject_json_instruction_into_messages(
+            &prompt,
+            schema,
+            None,
+            Some(
+                "You MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text.",
+            ),
         );
-        if let Some(LanguageModelMessage::System { content, .. }) = prompt.first_mut() {
-            if !content.is_empty() {
-                content.push_str("\n\n");
-            }
-            content.push_str(&instruction);
-        } else {
-            prompt.insert(
-                0,
-                LanguageModelMessage::System {
-                    content: instruction,
-                    provider_options: None,
-                },
-            );
-        }
     }
     let (system, messages) = convert_prompt(&prompt, model_id.contains("mistral."))?;
     let mut body = json!({"messages":messages});

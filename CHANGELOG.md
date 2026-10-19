@@ -1148,6 +1148,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Mistral with `structuredOutputs: false` and a JSON schema adds the schema
+  instruction to the system prompt and asks for `json_object`, as the AI SDK
+  does; it sent the bare `json_object` mode with no instruction.
+  `aimux-provider-utils` gains `inject_json_instruction` and
+  `inject_json_instruction_into_messages` (the AI SDK's
+  `injectJsonInstruction*`), which Mistral and Bedrock now share.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

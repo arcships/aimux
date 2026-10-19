@@ -12,7 +12,9 @@ use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Warning};
-use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
+use aimux_provider_utils::{
+    get_top_level_media_type, inject_json_instruction_into_messages, resolve_full_media_type,
+};
 use serde_json::{Value, json};
 
 // ── Prepared tools ──────────────────────────────────────────────────────────
@@ -229,23 +231,23 @@ pub fn build_request_body(
 ) -> Result<Value, AiMuxError> {
     let provider_options =
         super::options::validated_mistral_options(options.provider_options.as_ref())?;
-    let mut messages = convert_prompt_to_mistral_messages(&options.prompt)?;
-    if matches!(
-        options.response_format,
-        Some(ResponseFormat::Json { schema: None, .. })
-    ) {
-        let instruction = "You MUST answer with JSON.";
-        if messages.first().is_some_and(|m| m["role"] == "system") {
-            let text = messages[0]["content"].as_str().unwrap_or_default();
-            messages[0]["content"] = json!(if text.is_empty() {
-                instruction.to_owned()
-            } else {
-                format!("{text}\n\n{instruction}")
-            });
-        } else {
-            messages.insert(0, json!({"role":"system", "content":instruction}));
+    let structured_outputs = provider_options
+        .and_then(|o| o.get("structuredOutputs"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    // Mistral's JSON object mode needs the instruction in the prompt
+    // (mistral-chat-language-model.ts:172-182).
+    let messages = match &options.response_format {
+        Some(ResponseFormat::Json { schema, .. }) if !structured_outputs || schema.is_none() => {
+            convert_prompt_to_mistral_messages(&inject_json_instruction_into_messages(
+                &options.prompt,
+                schema.as_ref(),
+                None,
+                None,
+            ))?
         }
-    }
+        _ => convert_prompt_to_mistral_messages(&options.prompt)?,
+    };
 
     let mut body = json!({
         "model": model_id,
@@ -287,12 +289,7 @@ pub fn build_request_body(
                 name,
                 description,
             } => {
-                if schema.is_some()
-                    && provider_options
-                        .and_then(|o| o.get("structuredOutputs"))
-                        .and_then(Value::as_bool)
-                        .unwrap_or(true)
-                {
+                if schema.is_some() && structured_outputs {
                     let mut schema_obj = json!({});
                     if let Some(s) = schema {
                         schema_obj["schema"] = s.clone();

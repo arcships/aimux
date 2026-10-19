@@ -6,7 +6,7 @@ mod mock_fetch;
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
-use aimux_core::options::CallOptions;
+use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
@@ -305,4 +305,79 @@ async fn model_length_is_a_length_finish() {
         .expect("a finish part");
     assert_eq!(finish.unified, FinishReasonUnified::Length);
     assert_eq!(finish.raw.as_deref(), Some("model_length"));
+}
+
+/// The request body of a generate call with `response_format` and Mistral
+/// provider options.
+async fn json_request(response_format: ResponseFormat, mistral: Option<Value>) -> Value {
+    let fetch = MockFetch::new(vec![Canned::json(&usage_details_response())]);
+    let mut options = options();
+    options.response_format = Some(response_format);
+    if let Some(mistral) = mistral {
+        options.provider_options =
+            Some(serde_json::from_value(json!({ "mistral": mistral })).unwrap());
+    }
+    provider(&fetch)
+        .chat("mistral-small-latest")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    fetch.seen()[0].json_body()
+}
+
+fn json_format(schema: Option<Value>) -> ResponseFormat {
+    ResponseFormat::Json {
+        schema,
+        name: None,
+        description: None,
+    }
+}
+
+fn user_hello() -> Value {
+    json!({"role": "user", "content": [{"type": "text", "text": "Hello"}]})
+}
+
+/// TS: "should inject JSON instruction for JSON response format" (mistral/src/mistral-chat-language-model.test.ts)
+#[tokio::test]
+async fn json_without_schema_injects_the_instruction() {
+    let body = json_request(json_format(None), None).await;
+    assert_eq!(
+        body["messages"],
+        json!([{"role": "system", "content": "You MUST answer with JSON."}, user_hello()])
+    );
+    assert_eq!(body["response_format"], json!({"type": "json_object"}));
+}
+
+/// TS: "should inject JSON instruction for JSON response format with schema" (mistral/src/mistral-chat-language-model.test.ts)
+#[tokio::test]
+async fn json_with_schema_uses_json_schema_without_instruction() {
+    let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+    let body = json_request(json_format(Some(schema.clone())), None).await;
+    assert_eq!(body["messages"], json!([user_hello()]));
+    assert_eq!(
+        body["response_format"],
+        json!({"type": "json_schema", "json_schema": {"schema": schema, "strict": false, "name": "response"}})
+    );
+}
+
+/// TS: "should inject JSON schema when structured outputs are disabled" (mistral/src/mistral-chat-language-model.test.ts)
+#[tokio::test]
+async fn json_with_structured_outputs_disabled_injects_the_schema() {
+    let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+    let body = json_request(
+        json_format(Some(schema.clone())),
+        Some(json!({"structuredOutputs": false})),
+    )
+    .await;
+    assert_eq!(
+        body["messages"],
+        json!([
+            {
+                "role": "system",
+                "content": format!("JSON schema:\n{schema}\nYou MUST answer with a JSON object that matches the JSON schema above.")
+            },
+            user_hello()
+        ])
+    );
+    assert_eq!(body["response_format"], json!({"type": "json_object"}));
 }
