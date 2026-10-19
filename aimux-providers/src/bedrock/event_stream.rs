@@ -260,7 +260,6 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
 }
 
 /// Decode frames incrementally, surfacing transport, framing, and checksum errors.
-#[must_use]
 pub fn decode_stream(
     mut input: futures::stream::BoxStream<'static, Result<bytes::Bytes, aimux_core::AiMuxError>>,
 ) -> futures::stream::BoxStream<'static, Result<EventStreamMessage, aimux_core::AiMuxError>> {
