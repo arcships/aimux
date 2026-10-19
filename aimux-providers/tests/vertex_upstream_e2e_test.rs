@@ -895,9 +895,9 @@ async fn gemini_generate_takes_ids_and_metadata_from_the_google_model() {
 }
 
 /// Upstream: block ids count only text and reasoning blocks
-/// (@ai-sdk/google src/google-language-model.ts:1164, :1185); code
+/// (@ai-sdk/google src/google-language-model.ts:1166, :1190); code
 /// execution and sources take `generateId` (:1105, extractSources); usage is
-/// read from the parsed chunk (:1033).
+/// read from the parsed chunk (:1035).
 #[tokio::test]
 async fn gemini_stream_numbers_only_text_blocks_and_takes_ids_from_generate_id() {
     let fetch = MockFetch::new(vec![sse(&[
@@ -947,7 +947,7 @@ async fn gemini_stream_numbers_only_text_blocks_and_takes_ids_from_generate_id()
 }
 
 /// Upstream: request warnings are the option warnings, then the tool warnings
-/// (@ai-sdk/google src/google-language-model.ts:452), the reasoning mapping
+/// (@ai-sdk/google src/google-language-model.ts:455), the reasoning mapping
 /// included.
 #[tokio::test]
 async fn gemini_keeps_the_request_builder_warnings() {
