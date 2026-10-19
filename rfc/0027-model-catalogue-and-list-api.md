@@ -217,8 +217,11 @@ pub async fn get_model_specs(source_url: Option<&str>) -> Result<Catalogue, AiMu
 pub struct Catalogue {
     pub updated_at: u64,
     pub specs: HashMap<String, HashMap<String, ModelSpec>>,  // provider → model_id → spec
+    pub unmapped: HashMap<String, HashMap<String, ModelSpec>>, // anya2a provider id → model_id → spec
 }
 ```
+
+`specs` 的键是 `create_provider` 接受的名字：anya2a id 经显式对照表（同一端点）映射，或本身就是 provider 名；其余条目保留 anya2a 自己的 id 放入 `unmapped`，不按拼写推导名字（对齐文档 §4.6）。
 
 **关键:catalogue 是独立原语,不是 `list_models` 内部依赖。** `get_model_specs` 只负责 fetch + parse;是否缓存、TTL 多少、离线怎么降级,都是 host 的策略,库不持有状态。源码 URL 可用参数覆盖(自建镜像/内网)。
 

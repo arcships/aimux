@@ -78,6 +78,15 @@ pub fn provider_names() -> Vec<&'static str> {
     names
 }
 
+/// `name` as [`create_provider`] accepts it, or `None`.
+pub(crate) fn provider_name(name: &str) -> Option<&'static str> {
+    PACKAGES
+        .iter()
+        .copied()
+        .chain(preset::names())
+        .find(|candidate| *candidate == name)
+}
+
 /// Create the built-in provider `name` with `settings` (key, base URL, extra
 /// headers, transport) applied to its factory. A vendor package wins over a
 /// registry row of the same name.
