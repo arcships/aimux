@@ -482,3 +482,23 @@ async fn gemini_3_fills_only_a_missing_thought_signature() {
         replayed_model_parts("gemini-3-pro-preview", second_turn(Some(THOUGHT_SIGNATURE))).await;
     assert_eq!(parts[0]["thoughtSignature"], THOUGHT_SIGNATURE);
 }
+
+/// Upstream: `candidates` is `.nullish()` (google/src/google-language-model.ts:1988),
+/// so a blocked prompt answered with `"candidates": null` finishes as a content filter.
+#[tokio::test]
+async fn generate_reads_null_candidates_as_none() {
+    let body = json!({"candidates": null, "promptFeedback": {"blockReason": "SAFETY"}});
+    let mock = MockFetch::new(vec![Canned::json(&body)]);
+    let result = create_google(settings(&mock))
+        .unwrap()
+        .chat("gemini-pro")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    assert!(result.content.is_empty());
+    assert_eq!(
+        result.finish_reason.unified,
+        FinishReasonUnified::ContentFilter
+    );
+    assert_eq!(result.finish_reason.raw.as_deref(), Some("SAFETY"));
+}

@@ -1148,6 +1148,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Vertex AI Gemini models are the Google model reading the Vertex
+  namespaces, as `@ai-sdk/google-vertex` reuses `GoogleLanguageModel`; the
+  separate Vertex copy is removed (`VertexModel` is now an alias of
+  `GoogleModel`). Code execution, server tool calls and sources take their
+  ids from `generate_id` (new on `VertexProviderSettings`); stream text and
+  reasoning ids count only text and reasoning blocks; code execution carries
+  no server-tool metadata; an empty `thoughtSignature` adds no metadata;
+  `serviceTier: null` stays in the provider metadata; stream usage comes from
+  the parsed chunk; and the request builder's warnings (reasoning mapping,
+  thought-signature sentinel) are no longer dropped. Both models now read
+  `"candidates": null` as no candidates and stream function-call arguments
+  sent as `partialArgs`.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

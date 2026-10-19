@@ -11,12 +11,14 @@ use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::{CallOptions, Tool};
 use aimux_core::result::GenerateContent;
 use aimux_core::shared::{AspectRatio, provider_namespace};
+use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};
 use aimux_core::types::FinishReasonUnified;
 use aimux_core::video_model::{VideoCallOptions, VideoData, VideoModel, VideoOperationStatus};
 use aimux_provider_utils::Resolvable;
 use aimux_providers::vertex::{VertexProvider, VertexProviderSettings, create_google_vertex};
+use futures::StreamExt;
 use mock_fetch::{Canned, MockFetch};
 use serde_json::json;
 use std::sync::Arc;
@@ -813,4 +815,216 @@ async fn only_gemini_models_send_the_google_vertex_user_agent_part() {
         .unwrap();
     let agent = &fetch.seen()[0].headers["user-agent"];
     assert!(agent.starts_with("ai-sdk-google-vertex/"), "{agent}");
+}
+
+/// `id-0`, `id-1`, ... in call order, like the AI SDK tests' `generateId` mock.
+fn counting_provider(fetch: &Arc<MockFetch>) -> VertexProvider {
+    let next = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    create_google_vertex(VertexProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".into())),
+        base_url: Some("https://api.example.com".into()),
+        fetch: Some(fetch.transport()),
+        generate_id: Some(Arc::new(move || {
+            format!(
+                "id-{}",
+                next.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            )
+        })),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+fn sse(chunks: &[serde_json::Value]) -> Canned {
+    Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "text/event-stream".into())],
+        body: chunks
+            .iter()
+            .map(|chunk| format!("data: {chunk}\n\n"))
+            .collect::<String>()
+            .into_bytes(),
+    }
+}
+
+/// Upstream: the Vertex chat model is `GoogleLanguageModel`
+/// (@ai-sdk/google-vertex src/google-vertex-provider-base.ts:310-312), so ids
+/// come from `generateId` (@ai-sdk/google src/google-language-model.ts:562,
+/// :650, :672, :627, extractSources :1689) and `serviceTier` is always written (:725).
+#[tokio::test]
+async fn gemini_generate_takes_ids_and_metadata_from_the_google_model() {
+    let response = json!({
+        "candidates": [{
+            "content": {"role": "model", "parts": [
+                {"executableCode": {"language": "PYTHON", "code": "print(1)"}},
+                {"codeExecutionResult": {"outcome": "OUTCOME_OK", "output": "1"}},
+                {"toolCall": {"toolType": "GOOGLE_SEARCH_WEB", "args": {"q": "x"}}},
+                {"toolResponse": {"toolType": "GOOGLE_SEARCH_WEB", "response": {"ok": true}}},
+                {"functionCall": {"name": "weather", "args": {"city": "Paris"}}, "thoughtSignature": ""}
+            ]},
+            "finishReason": "STOP",
+            "groundingMetadata": {"groundingChunks": [{"web": {"uri": "https://example.com", "title": "Example"}}]}
+        }],
+        "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1, "totalTokenCount": 2}
+    });
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let result = counting_provider(&fetch)
+        .chat("gemini-2.5-flash")
+        .do_generate(&prompt())
+        .await
+        .unwrap();
+    let content = serde_json::to_value(&result.content).unwrap();
+    let ids: Vec<_> = content
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| part.get("toolCallId").or_else(|| part.get("id")).unwrap())
+        .collect();
+    assert_eq!(ids, ["id-0", "id-0", "id-1", "id-1", "id-2", "id-3"]);
+    // Code execution carries no server-tool metadata; an empty signature none.
+    assert!(content[0].get("providerMetadata").is_none(), "{content}");
+    assert!(content[1].get("providerMetadata").is_none(), "{content}");
+    assert!(content[4].get("providerMetadata").is_none(), "{content}");
+    assert_eq!(
+        content[2]["providerMetadata"]["googleVertex"]["serverToolCallId"],
+        "id-1"
+    );
+    let metadata = serde_json::to_value(result.provider_metadata.unwrap()).unwrap();
+    assert_eq!(metadata["googleVertex"]["serviceTier"], json!(null));
+    assert_eq!(metadata["vertex"], metadata["googleVertex"]);
+}
+
+/// Upstream: block ids count only text and reasoning blocks
+/// (@ai-sdk/google src/google-language-model.ts:1164, :1185); code
+/// execution and sources take `generateId` (:1105, extractSources); usage is
+/// read from the parsed chunk (:1033).
+#[tokio::test]
+async fn gemini_stream_numbers_only_text_blocks_and_takes_ids_from_generate_id() {
+    let fetch = MockFetch::new(vec![sse(&[
+        json!({"candidates": [{"content": {"role": "model", "parts": [
+            {"executableCode": {"language": "PYTHON", "code": "print(1)"}},
+            {"codeExecutionResult": {"outcome": "OUTCOME_OK", "output": "1"}},
+            {"text": "a"}
+        ]}}]}),
+        json!({"candidates": [{"content": {"role": "model", "parts": [
+            {"toolCall": {"toolType": "GOOGLE_SEARCH_WEB", "args": {}}},
+            {"toolResponse": {"toolType": "GOOGLE_SEARCH_WEB", "response": {}}},
+            {"text": "r", "thought": true},
+            {"text": "b"}
+        ]}, "finishReason": "STOP",
+        "groundingMetadata": {"groundingChunks": [{"web": {"uri": "https://example.com", "title": "Example"}}]}}],
+        "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 2, "totalTokenCount": 5}}),
+    ])]);
+    let result = counting_provider(&fetch)
+        .chat("gemini-2.5-flash")
+        .do_stream(&prompt())
+        .await
+        .unwrap();
+    let mut code_execution = Vec::new();
+    let mut blocks = Vec::new();
+    let mut sources = Vec::new();
+    let mut usage = None;
+    for part in result.stream.collect::<Vec<_>>().await {
+        match part.unwrap() {
+            StreamPart::ToolCall(call) if call.dynamic.is_none() => {
+                assert!(call.provider_metadata.is_none());
+                code_execution.push(call.tool_call_id);
+            }
+            StreamPart::TextStart { id, .. } => blocks.push(format!("text {id}")),
+            StreamPart::ReasoningStart { id, .. } => blocks.push(format!("reasoning {id}")),
+            StreamPart::Source(aimux_core::result::Source::Url { id, .. }) => sources.push(id),
+            StreamPart::Finish { usage: finish, .. } => usage = Some(finish),
+            _ => {}
+        }
+    }
+    assert_eq!(code_execution, ["id-0"]);
+    assert_eq!(blocks, ["text 0", "reasoning 1", "text 2"]);
+    // The source is emitted before the parts of its chunk: after the server tool call.
+    assert_eq!(sources, ["id-1"]);
+    let usage = usage.unwrap();
+    assert_eq!(usage.input_tokens.total, Some(3));
+    assert_eq!(usage.output_tokens.total, Some(2));
+}
+
+/// Upstream: request warnings are the option warnings, then the tool warnings
+/// (@ai-sdk/google src/google-language-model.ts:452), the reasoning mapping
+/// included.
+#[tokio::test]
+async fn gemini_keeps_the_request_builder_warnings() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "candidates": [{"content": {"parts": [{"text": "ok"}], "role": "model"}, "finishReason": "STOP"}]
+    }))]);
+    let mut options = prompt();
+    options.reasoning = Some(aimux_core::types::ReasoningEffort::Xhigh);
+    let result = provider(&fetch)
+        .chat("gemini-3-pro-preview")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert!(
+        result.warnings.iter().any(|warning| matches!(
+            warning,
+            aimux_core::types::Warning::Compatibility { feature, .. } if feature == "reasoning"
+        )),
+        "{:?}",
+        result.warnings
+    );
+}
+
+/// Upstream: Vertex AI streams function-call arguments when
+/// `streamFunctionCallArguments` is set (@ai-sdk/google
+/// src/google-language-model.ts:369-393), and the stream accumulates
+/// `partialArgs` until the empty chunk that ends the call (:1288-1376).
+#[tokio::test]
+async fn gemini_stream_accumulates_streamed_function_call_arguments() {
+    let call = |function_call: serde_json::Value| json!({"candidates": [{"content": {"role": "model", "parts": [{"functionCall": function_call}]}}]});
+    let fetch = MockFetch::new(vec![sse(&[
+        call(json!({"name": "weather", "willContinue": true})),
+        call(
+            json!({"partialArgs": [{"jsonPath": "$.city", "stringValue": "Par", "willContinue": true}], "willContinue": true}),
+        ),
+        call(
+            json!({"partialArgs": [{"jsonPath": "$.city", "stringValue": "is"}], "willContinue": true}),
+        ),
+        call(json!({})),
+        json!({"candidates": [{"content": {"role": "model", "parts": [{"text": ""}]}, "finishReason": "STOP"}]}),
+    ])]);
+    let mut options = prompt();
+    options.provider_options = Some(
+        provider_namespace("googleVertex", json!({"streamFunctionCallArguments": true})).unwrap(),
+    );
+    let result = counting_provider(&fetch)
+        .chat("gemini-2.5-flash")
+        .do_stream(&options)
+        .await
+        .unwrap();
+    let parts: Vec<_> = result
+        .stream
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        fetch.seen()[0].json_body()["toolConfig"]["functionCallingConfig"]["streamFunctionCallArguments"],
+        true
+    );
+    let calls: Vec<_> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolCall(call) => Some(call),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(calls.len(), 1, "{parts:?}");
+    assert_eq!(calls[0].tool_call_id, "id-0");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&calls[0].input).unwrap(),
+        json!({"city": "Paris"})
+    );
+    let finish = parts.last().unwrap();
+    assert!(
+        matches!(finish, StreamPart::Finish { finish_reason, .. } if finish_reason.unified == FinishReasonUnified::ToolCalls),
+        "{finish:?}"
+    );
 }
