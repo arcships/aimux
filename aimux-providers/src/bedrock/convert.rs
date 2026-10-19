@@ -1513,7 +1513,7 @@ pub fn build_request_body_checked(
         }
     }
     if uses_json_instruction {
-        // amazon-bedrock-chat-language-model.ts:619-626
+        // @ai-sdk/amazon-bedrock@5.0.100 amazon-bedrock-chat-language-model.ts:614-621
         prompt = inject_json_instruction_into_messages(
             &prompt,
             schema,

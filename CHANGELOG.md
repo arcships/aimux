@@ -1153,7 +1153,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does; it sent the bare `json_object` mode with no instruction.
   `aimux-provider-utils` gains `inject_json_instruction` and
   `inject_json_instruction_into_messages` (the AI SDK's
-  `injectJsonInstruction*`), which Mistral and Bedrock now share.
+  `injectJsonInstruction*`), which Mistral and Bedrock now share. The
+  Mistral pin moves to `@ai-sdk/mistral` 4.0.55, the first release with this
+  behavior: the user-agent reads `ai-sdk-mistral/4.0.55
+  ai-sdk-provider-utils/5.0.52`, and an `error` finish reason maps to
+  `error` instead of `other`.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

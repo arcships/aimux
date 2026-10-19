@@ -40,8 +40,8 @@
     "integrity": "sha512-FCjGyrLhnV2nh6euHleq4/d6ZD/7d5g+2XnxUjjJx7SVp/PT1ICLG2kJ3zBiveMG6i5FfUN+7sj5377o8w/jFw=="
   },
   "@ai-sdk/mistral": {
-    "version": "4.0.54",
-    "integrity": "sha512-s3RkuUtkVvh8rmUgqBBtB7Ysttfq64Mr76G/589+IFOCp6WkBXO61lw+lCO1w61tWG5YFfMhg3RaHmKPSCWVIw=="
+    "version": "4.0.55",
+    "integrity": "sha512-5A9A4ojjKM9BccqS7JP/oZmTjLKc0l357p17tHgtTeJtq8vRqR53TwLYa1ifxie6tpLSCdl+Y7eUYB1II/vk5w=="
   },
   "@ai-sdk/open-responses": {
     "version": "2.0.58",

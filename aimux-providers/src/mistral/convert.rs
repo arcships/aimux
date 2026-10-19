@@ -236,7 +236,7 @@ pub fn build_request_body(
         .and_then(Value::as_bool)
         .unwrap_or(true);
     // Mistral's JSON object mode needs the instruction in the prompt
-    // (mistral-chat-language-model.ts:172-182).
+    // (@ai-sdk/mistral@4.0.55 mistral-chat-language-model.ts:171-181).
     let messages = match &options.response_format {
         Some(ResponseFormat::Json { schema, .. }) if !structured_outputs || schema.is_none() => {
             convert_prompt_to_mistral_messages(&inject_json_instruction_into_messages(
@@ -439,13 +439,15 @@ pub fn request_warnings(options: &CallOptions, model_id: &str) -> Vec<Warning> {
 
 /// Parse Mistral finish reason string into `FinishReason`.
 ///
-/// Differences from OpenAI: `model_length` is also mapped to `Length`.
+/// Differences from OpenAI: `model_length` is also mapped to `Length`, and
+/// `error` to `Error` (`@ai-sdk/mistral@4.0.55` map-mistral-finish-reason.ts).
 #[must_use]
 pub fn parse_finish_reason(s: &str) -> FinishReason {
     let unified = match s {
         "stop" => FinishReasonUnified::Stop,
         "length" | "model_length" => FinishReasonUnified::Length,
         "tool_calls" => FinishReasonUnified::ToolCalls,
+        "error" => FinishReasonUnified::Error,
         _ => FinishReasonUnified::Other,
     };
     FinishReason {

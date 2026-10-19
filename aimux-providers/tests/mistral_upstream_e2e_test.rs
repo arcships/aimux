@@ -252,10 +252,26 @@ async fn embed_request_vectors_and_usage() {
     assert!(result.warnings.is_empty());
 }
 
+/// Mistral's `error` finish reason is an error finish
+/// (`@ai-sdk/mistral@4.0.55` `src/map-mistral-finish-reason.ts:14-15`).
+#[tokio::test]
+async fn error_is_an_error_finish() {
+    let mut body = usage_details_response();
+    body["choices"][0]["finish_reason"] = json!("error");
+    let fetch = MockFetch::new(vec![Canned::json(&body)]);
+    let result = provider(&fetch)
+        .chat("mistral-small-latest")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Error);
+    assert_eq!(result.finish_reason.raw.as_deref(), Some("error"));
+}
+
 /// Mistral's `model_length` (the model's context length was reached) is a
-/// length stop, in `doGenerate` and `doStream` alike (`@ai-sdk/mistral@4.0.54`
+/// length stop, in `doGenerate` and `doStream` alike (`@ai-sdk/mistral@4.0.55`
 /// `src/map-mistral-finish-reason.ts:9-11`, used at
-/// `src/mistral-chat-language-model.ts:316` and `:462`; aimux
+/// `src/mistral-chat-language-model.ts:319` and `:465`; aimux
 /// `mistral/convert.rs:447-458`, used at `mistral/model.rs:249` and `:446`).
 #[tokio::test]
 async fn model_length_is_a_length_finish() {
