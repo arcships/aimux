@@ -34,7 +34,7 @@
 | `aimux-core` | 无 | 35,958 | 7,710 | 规范 trait、类型、操作、retry、组合模型、录制、回放、trace、session 全在这里 |
 | `aimux-stream` | 无 | 178 | 850 | 约 120 行 SSE 适配（包在第三方 `sse-stream` 外）加 `extract_lines`；唯一调用方是 provider-utils `response_handler.rs:389`；`aimux-providers` 声明了依赖但没有使用；`extract_lines` 在 workspace 里没有调用方 |
 | `aimux-provider-utils` | core、stream | 6,400 | 3,171 | 读 core 的录制上下文、下载守卫 |
-| `aimux-providers` | core、stream、provider-utils | 79,776 | 60,279 | 81 个条目，126 个集成测试文件 |
+| `aimux-providers` | core、stream、provider-utils | 79,776 | 60,279 | 48 个厂商实现（另有 282 个 preset 数据行），126 个集成测试文件 |
 | `aimux-ops` | core、providers、provider-utils | 10,934 | 10,319 | 宿主组装层 |
 | `aimux-ffi` | ops | 694 | 426 | |
 | `tools/aimux-cli`、`aimux-replay`、`aimux-web` | core、providers | 896 / 422 / 3,084 | — | |
