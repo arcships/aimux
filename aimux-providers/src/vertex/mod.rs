@@ -25,6 +25,7 @@ use std::sync::OnceLock;
 use crate::google::GoogleSpeechModel;
 use crate::shared::{
     Endpoint, EndpointConfig, ResolveEndpoint, SupportedUrlsSource, TransformRequestBody,
+    is_valid_hostname_part,
 };
 
 mod anthropic_model;
@@ -143,6 +144,19 @@ fn location_host(location: &str) -> String {
     }
 }
 
+/// A location that goes into a host name: one DNS label
+/// (google-vertex-provider-base.ts:230-244).
+pub(crate) fn check_location(location: &str) -> Result<(), AiMuxError> {
+    if !is_valid_hostname_part(location) {
+        return Err(AiMuxError::InvalidArgument(
+            "Invalid Google Vertex location. Expected a single DNS label (letters, digits, and hyphens). \
+             Use `base_url` for custom endpoints."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Which publisher's models a base URL addresses.
 #[derive(Clone, Copy)]
 pub(crate) enum Publisher {
@@ -241,7 +255,9 @@ impl Resolver {
     }
 
     fn location(&self) -> Result<String, AiMuxError> {
-        load_setting(self.location.as_deref(), LOCATION_ENV_VAR, "location")
+        let location = load_setting(self.location.as_deref(), LOCATION_ENV_VAR, "location")?;
+        check_location(&location)?;
+        Ok(location)
     }
 
     fn project(&self) -> Result<String, AiMuxError> {

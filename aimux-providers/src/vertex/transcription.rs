@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::google::options::Namespace;
-use crate::shared::EndpointConfig;
+use crate::shared::{EndpointConfig, is_valid_hostname_part};
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
@@ -194,6 +194,14 @@ impl TranscriptionModel for VertexTranscriptionModel {
                     break;
                 }
             }
+        }
+
+        // google-vertex-transcription-model.ts:113-120
+        if !is_valid_hostname_part(&region) {
+            return Err(AiMuxError::InvalidArgument(
+                "Invalid Google Cloud Speech-to-Text region. Expected a single DNS label (letters, digits, and hyphens)."
+                    .to_string(),
+            ));
         }
 
         let content = audio_input_to_base64(&options.audio)?;

@@ -32,7 +32,7 @@ use crate::openai_compatible::{
 };
 
 use super::auth::{GoogleAuth, GoogleAuthOptions};
-use super::{LOCATION_ENV_VAR, PROJECT_ENV_VAR, location_host};
+use super::{LOCATION_ENV_VAR, PROJECT_ENV_VAR, check_location, location_host};
 
 /// Settings of [`create_google_vertex_maas`] and [`create_google_vertex_xai`]
 /// (the AI SDK's `GoogleVertexMaasProviderSettings` and
@@ -98,12 +98,14 @@ impl ResolveBaseUrl for PartnerBaseUrl {
     ///
     /// # Errors
     ///
-    /// `AiMuxError::LoadSetting` when no project is set.
+    /// `AiMuxError::LoadSetting` when no project is set;
+    /// `AiMuxError::InvalidArgument` when a MaaS location is not one DNS label.
     fn resolve(&self) -> Result<String, AiMuxError> {
         let project = load_setting(self.project.as_deref(), PROJECT_ENV_VAR, "project")?;
         let location = load_optional_setting(self.location.as_deref(), LOCATION_ENV_VAR)
             .unwrap_or_else(|| "global".to_string());
         let host = if self.regional_host {
+            check_location(&location)?;
             location_host(&location)
         } else {
             "aiplatform.googleapis.com".to_string()
