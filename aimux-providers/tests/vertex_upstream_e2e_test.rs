@@ -848,9 +848,9 @@ fn sse(chunks: &[serde_json::Value]) -> Canned {
 }
 
 /// Upstream: the Vertex chat model is `GoogleLanguageModel`
-/// (@ai-sdk/google-vertex src/google-vertex-provider-base.ts:310-312), so ids
-/// come from `generateId` (@ai-sdk/google src/google-language-model.ts:562,
-/// :650, :672, :627, extractSources :1689) and `serviceTier` is always written (:725).
+/// (@ai-sdk/google-vertex@5.0.98 src/google-vertex-provider-base.ts:297-299), so ids
+/// come from `generateId` (@ai-sdk/google@4.0.87 src/google-language-model.ts:506,
+/// :576, :598, :553, extractSources :1457) and `serviceTier` is always written (:651).
 #[tokio::test]
 async fn gemini_generate_takes_ids_and_metadata_from_the_google_model() {
     let response = json!({
@@ -895,9 +895,9 @@ async fn gemini_generate_takes_ids_and_metadata_from_the_google_model() {
 }
 
 /// Upstream: block ids count only text and reasoning blocks
-/// (@ai-sdk/google src/google-language-model.ts:1166, :1190); code
-/// execution and sources take `generateId` (:1105, extractSources); usage is
-/// read from the parsed chunk (:1035).
+/// (@ai-sdk/google@4.0.87 src/google-language-model.ts:977, :1001); code
+/// execution and sources take `generateId` (:916, extractSources); usage is
+/// read from the parsed chunk (:849).
 #[tokio::test]
 async fn gemini_stream_numbers_only_text_blocks_and_takes_ids_from_generate_id() {
     let fetch = MockFetch::new(vec![sse(&[
@@ -947,7 +947,7 @@ async fn gemini_stream_numbers_only_text_blocks_and_takes_ids_from_generate_id()
 }
 
 /// Upstream: request warnings are the option warnings, then the tool warnings
-/// (@ai-sdk/google src/google-language-model.ts:455), the reasoning mapping
+/// (@ai-sdk/google@4.0.87 src/google-language-model.ts:444), the reasoning mapping
 /// included.
 #[tokio::test]
 async fn gemini_keeps_the_request_builder_warnings() {
@@ -972,9 +972,9 @@ async fn gemini_keeps_the_request_builder_warnings() {
 }
 
 /// Upstream: Vertex AI streams function-call arguments when
-/// `streamFunctionCallArguments` is set (@ai-sdk/google
-/// src/google-language-model.ts:369-393), and the stream accumulates
-/// `partialArgs` until the empty chunk that ends the call (:1288-1376).
+/// `streamFunctionCallArguments` is set (@ai-sdk/google@4.0.87
+/// src/google-language-model.ts:361-385), and the stream accumulates
+/// `partialArgs` until the empty chunk that ends the call (:1099-1187).
 #[tokio::test]
 async fn gemini_stream_accumulates_streamed_function_call_arguments() {
     let call = |function_call: serde_json::Value| json!({"candidates": [{"content": {"role": "model", "parts": [{"functionCall": function_call}]}}]});
