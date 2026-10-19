@@ -765,7 +765,9 @@ impl StreamState {
 
             TextStreamPart::FinishStep { response, .. } => {
                 // Response metadata arrives at step end; emitted chunks keep their identity.
-                if !self.started {
+                // With an identity, only what the provider reported counts
+                // (`ensure_started`), not stream_text's generated response id.
+                if !self.started && self.identity.is_none() {
                     self.id.clone_from(&response.id);
                     self.model.clone_from(&response.model_id);
                 }

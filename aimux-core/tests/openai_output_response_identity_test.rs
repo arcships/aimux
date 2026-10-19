@@ -145,3 +145,22 @@ async fn without_a_report_the_chunks_share_a_generated_id_and_the_requested_mode
         assert_eq!(chunk.model, "requested-model");
     }
 }
+
+#[tokio::test]
+async fn without_a_report_or_content_the_chunks_keep_the_generated_id() {
+    let chunks = chunks(ReportingModel {
+        metadata: None,
+        text: "",
+    })
+    .await;
+    assert_eq!(chunks.len(), 2, "{chunks:?}");
+    assert_eq!(
+        chunks[0].choices[0].delta.role.as_deref(),
+        Some("assistant")
+    );
+    assert!(chunks[0].id.starts_with("chatcmpl-"), "{chunks:?}");
+    for chunk in &chunks {
+        assert_eq!(chunk.id, chunks[0].id);
+        assert_eq!(chunk.model, "requested-model");
+    }
+}
