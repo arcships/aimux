@@ -24,6 +24,7 @@
 | L6 | `aimux-providers` 每个厂商一个目录；目录内文件与上游同名包一一对应（命名规则固定，数量随上游） | 删除“同名 `.rs` + 只有 options.rs 的目录”双形态；新增文件对照表并在 CI 校验 |
 | L7 | 单元测试紧挨源文件（`foo.rs` 旁边 `foo_test.rs`，对应上游 `foo.test.ts`）；跨厂商场景测试合成一个集成测试二进制 | `aimux-providers/tests/` 从 126 个测试二进制收成 1 个；#278 能按文件名对照上游测试 |
 | L8 | 一个共享错误枚举放在 `aimux-provider`（对齐文档 §2.2 已定），差异登记 | 每个错误补 `cause` 另开小 PR，不放进本文的拆分步骤 |
+| L9 | `aimux-stream` 并入 `aimux-provider-utils`，删除这个 crate；SSE 适配放进对应上游 `parse-json-event-stream.ts` 的文件，`extract_lines` 放进 `extract_lines.rs`，第三方 `sse-stream` 的位置相当于上游的 `eventsource-parser` | 少一个发布包和体积预算；改写对齐文档 D17“aimux-stream 保持独立”，登记（§7） |
 
 ## 2. 现状
 
@@ -32,7 +33,7 @@
 | crate | 依赖的 aimux crate | src 行数 | tests/ 行数 | 说明 |
 |---|---|---|---|---|
 | `aimux-core` | 无 | 35,958 | 7,710 | 规范 trait、类型、操作、retry、组合模型、录制、回放、trace、session 全在这里 |
-| `aimux-stream` | 无 | 178 | 850 | SSE/行解析，已符合目标 |
+| `aimux-stream` | 无 | 178 | 850 | 约 120 行 SSE 适配（包在第三方 `sse-stream` 外）加 `extract_lines`；唯一调用方是 provider-utils `response_handler.rs:389`；`aimux-providers` 声明了依赖但没有使用；`extract_lines` 在 workspace 里没有调用方 |
 | `aimux-provider-utils` | core、stream | 6,400 | 3,171 | 读 core 的录制上下文、下载守卫 |
 | `aimux-providers` | core、stream、provider-utils | 79,776 | 60,279 | 81 个条目，126 个集成测试文件 |
 | `aimux-ops` | core、providers、provider-utils | 10,934 | 10,319 | 宿主组装层 |
@@ -169,8 +170,7 @@ aimux 现状：
 ```text
 aimux-provider          V4 规范：Provider 与各模态 trait、CallOptions、V4 prompt/content/stream part、共享错误、middleware 规范
    ↑
-aimux-provider-utils ← aimux-stream
-                        Fetch/WS、headers、Resolvable、load_*、单次 HTTP helper、下载守卫与逐跳重定向、
+aimux-provider-utils    SSE 解码（原 aimux-stream）、Fetch/WS、headers、Resolvable、load_*、单次 HTTP helper、下载守卫与逐跳重定向、
                         Fetch 观察点、脱敏、ModelMessage 用户输入、descriptor/catalogue 类型
    ↑
 aimux-providers         厂商工厂与模型实现、preset、catalogue 摄取
@@ -260,13 +260,14 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 | 步骤 | 内容 | 前置 |
 |---|---|---|
 | P1 | provider 目录与测试整理（§5），按厂商家族分批：OpenAI 一族与 compat、Anthropic、Google/Vertex、Bedrock、其余模态厂商、无上游厂商与 preset | 无；#268 只改 providers 的 2 个文件，可以现在开始 |
+| C0 | `aimux-stream` 并入 provider-utils（L9）：源码和 850 行测试搬进 provider-utils，删掉 providers 里没用的依赖，删除 crate，README、`release.yml`、`logging.rs:139` 的 target 列表同步 | 无 |
 | C1 | core 内部按层拆开混合文件，操作函数搬进按操作分的目录（§2.2、§3.2），不新建 crate | #268 合入（它改了 core 的 36 个文件） |
 | C2 | 新建 `aimux-provider`，搬入规范模块；core 改为依赖它 | C1 |
 | C3 | provider-utils 在 `Fetch` 层留观察点，core 的录制改为观察者，HTTP 层不再读 `RecordingContext`；`ModelMessage`、下载守卫、脱敏、catalogue 类型搬入 provider-utils；provider-utils 不再依赖 core | C2 |
 | C4 | 下载归一（§4 下载一行）：video、transcribe、prompt、生成文件都走 provider-utils 的不可信 URL 下载；删除 core 的 reqwest client | C3 |
 | C5 | 等调用观测的后续 RFC：按它把录制、session 归组接到调用上，去掉四个全局量 | C3、后续 RFC |
 | C6 | 新建 `aimux-devtools`，搬入录制、回放、trace、session；`rebuild_provider` 移到 ops；providers 不再依赖 core | C5 |
-| C7 | `aimux-core` 改名 `aimux`；发布顺序改为 provider → stream → provider-utils → providers → aimux → devtools → ops → ffi | C6 |
+| C7 | `aimux-core` 改名 `aimux`；发布顺序改为 provider → provider-utils → providers → aimux → devtools → ops → ffi | C6 |
 
 P1 与 C 系列互不阻塞。P1 先做，C2/C3 改 import 时对着已经整理好的目录一次改完。
 
@@ -291,10 +292,11 @@ P1 与 C 系列互不阻塞。P1 先做，C2/C3 改 import 时对着已经整理
 - 共享错误枚举在 `aimux-provider`，含上游放在 `ai` 包里的 retry、工具调用类错误。原因：ops 错误封装和绑定只认一个联合类型（RFC-0039 D1）。
 - session 归组、前缀推断是 aimux 扩展，上游 `generateText` 没有。它们只影响观测，不改变调用本身（推断出的 ID 不进入请求、不影响返回结果，见 `generate.rs:1129-1139`），所以整体放在 devtools，按上游 devtools 的方式以订阅接入。这改写对齐文档 C8 的 2026-10-13 修订（“推断与 generate 入口一起留在 `aimux`”），在 C5 的 PR 中同步改 C8 与 §3.6。
 - provider 目录下 `aimux_ext/` 中的文件。
+- `aimux-stream` 不再是独立 crate（L9）：对齐文档 D17、§0.3 和 §2.1（含约束 2）写的“aimux-stream 保持独立的 SSE 解析库、保留自己的解析错误”改为 SSE 解码在 provider-utils 内部，`SseError` 仍在边界转换为共享错误，与上游 `parseJsonEventStream` 包住 `eventsource-parser` 的分法一致。
 
 ## 8. 验收
 
-1. 依赖边检查（新增脚本，读 `cargo metadata`，进 CI）：`aimux-provider` 不依赖任何 aimux crate，也不依赖 reqwest、tokio 网络特性；`aimux-provider-utils` 只依赖 `aimux-provider`、`aimux-stream`；`aimux-providers` 不依赖 `aimux`、`aimux-devtools`；`aimux` 不依赖 `aimux-providers`、`aimux-devtools`；`aimux-devtools` 不依赖 `aimux-providers`。
+1. 依赖边检查（新增脚本，读 `cargo metadata`，进 CI）：`aimux-provider` 不依赖任何 aimux crate，也不依赖 reqwest、tokio 网络特性；`aimux-provider-utils` 只依赖 `aimux-provider`；workspace 里没有 `aimux-stream`；`aimux-providers` 不依赖 `aimux`、`aimux-devtools`；`aimux` 不依赖 `aimux-providers`、`aimux-devtools`；`aimux-devtools` 不依赖 `aimux-providers`。
 2. `aimux` 源码里没有 `static` 可变全局（允许列表只含 operation 序号分配器和常量）。
 4. workspace 里任何地方都不出现 `aimux_core`（C7 后）。
 5. 每个 PR 的测试数量前后相等（`cargo test --workspace -- --list`），生成物重新生成后无 diff。
