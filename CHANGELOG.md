@@ -1150,11 +1150,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Presets of vendors with an AI SDK package follow its
   `supportsStructuredOutputs`: Together AI sends a `json_schema` response
-  format only for `deepseek-ai/DeepSeek-V4-Flash-0731` and Vercel never, as
-  `@ai-sdk/togetherai` and `@ai-sdk/vercel` do; other models send
-  `json_object` with an `unsupported` warning. Registry rows declare this in
-  `profile.structured_output_models`; rows without it keep sending a schema
-  to every model.
+  format only for `deepseek-ai/DeepSeek-V4-Flash-0731`, Moonshot (`moonshotai`
+  and `kimi`) only for `kimi-k*` and seven `moonshot-v1-*` models, and Vercel
+  and v0 never, as `@ai-sdk/togetherai`, `@ai-sdk/moonshotai` and
+  `@ai-sdk/vercel` do; other models send `json_object` with an `unsupported`
+  warning. Registry rows declare this in `profile.structured_output_models`
+  (exact ids, or a prefix ending in `*`); rows without it keep sending a
+  schema to every model.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

@@ -139,7 +139,8 @@ pub(crate) struct ChatSettings {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
     /// When set, only these chat models take structured outputs, whatever
-    /// `supports_structured_outputs` says; ids compare exactly. A preset's
+    /// `supports_structured_outputs` says. Ids compare exactly; an entry
+    /// ending in `*` matches every id with that prefix. A preset's
     /// `profile.structured_output_models`, the vendor package's per-model
     /// `supportsStructuredOutputs`.
     pub structured_output_models: Option<&'static [String]>,
@@ -192,7 +193,11 @@ impl ChatSettings {
     /// These settings for the chat model `model_id`.
     pub(crate) fn for_model(mut self, model_id: &str) -> Self {
         if let Some(models) = self.structured_output_models {
-            self.supports_structured_outputs = models.iter().any(|model| model == model_id);
+            self.supports_structured_outputs = models.iter().any(|model| {
+                model
+                    .strip_suffix('*')
+                    .map_or(model == model_id, |prefix| model_id.starts_with(prefix))
+            });
         }
         self
     }
@@ -383,7 +388,7 @@ mod tests {
     use super::*;
 
     static MODELS: std::sync::LazyLock<Vec<String>> =
-        std::sync::LazyLock::new(|| vec!["qwen3.7-plus".to_string()]);
+        std::sync::LazyLock::new(|| vec!["qwen3.7-plus".to_string(), "kimi-k*".to_string()]);
 
     fn supports(model_id: &str) -> bool {
         ChatSettings {
@@ -401,6 +406,14 @@ mod tests {
         assert!(!supports("qwen3.7-plus-2026-09-01"));
         assert!(!supports("qwen3.7-plusplus"));
         assert!(!supports("qwen3.7"));
+    }
+
+    #[test]
+    fn an_entry_ending_in_a_star_matches_a_prefix() {
+        assert!(supports("kimi-k"));
+        assert!(supports("kimi-k2.5"));
+        assert!(!supports("kimi-latest"));
+        assert!(!supports("kimi"));
     }
 
     #[test]

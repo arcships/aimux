@@ -100,7 +100,8 @@ pub struct PresetDescriptor {
     /// the transport, like `@ai-sdk/amazon-bedrock`'s mantle provider.
     pub user_agent: (&'static str, &'static str),
     /// The chat models that take a `json_schema` response format
-    /// (`profile.structured_output_models`, exact ids). `None`: every model; `[]`: none,
+    /// (`profile.structured_output_models`: exact ids, or a prefix ending in
+    /// `*`). `None`: every model; `[]`: none,
     /// which sends `json_object` with a warning for a schema. Rows of vendors
     /// with an AI SDK package follow its `supportsStructuredOutputs`.
     pub structured_output_models: Option<Vec<String>>,

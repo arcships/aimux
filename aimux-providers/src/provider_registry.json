@@ -852,7 +852,18 @@
     "display": "Kimi",
     "base_url": "https://api.moonshot.ai/v1",
     "env_var": "MOONSHOT_API_KEY",
-    "profile": {}
+    "profile": {
+      "structured_output_models": [
+        "kimi-k*",
+        "moonshot-v1-8k",
+        "moonshot-v1-32k",
+        "moonshot-v1-128k",
+        "moonshot-v1-auto",
+        "moonshot-v1-8k-vision-preview",
+        "moonshot-v1-32k-vision-preview",
+        "moonshot-v1-128k-vision-preview"
+      ]
+    }
   },
   {
     "name": "kimi_for_coding",
@@ -1173,7 +1184,17 @@
     "base_url": "https://api.moonshot.cn/v1",
     "env_var": "MOONSHOT_API_KEY",
     "profile": {
-      "convert_usage": "moonshotai"
+      "convert_usage": "moonshotai",
+      "structured_output_models": [
+        "kimi-k*",
+        "moonshot-v1-8k",
+        "moonshot-v1-32k",
+        "moonshot-v1-128k",
+        "moonshot-v1-auto",
+        "moonshot-v1-8k-vision-preview",
+        "moonshot-v1-32k-vision-preview",
+        "moonshot-v1-128k-vision-preview"
+      ]
     }
   },
   {
@@ -1848,7 +1869,9 @@
     "display": "v0 (Vercel)",
     "base_url": "https://api.v0.dev/v1",
     "env_var": "V0_API_KEY",
-    "profile": {}
+    "profile": {
+      "structured_output_models": []
+    }
   },
   {
     "name": "venice",

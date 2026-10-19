@@ -1,10 +1,14 @@
 //! A preset's `profile.structured_output_models` decides which chat models
 //! get a `json_schema` response format, as the vendor package's
-//! `supportsStructuredOutputs` does: Together AI only for
-//! `deepseek-ai/DeepSeek-V4-Flash-0731` (@ai-sdk/togetherai 3.0.72
-//! `togetherai-provider.ts:117-121,160`), Vercel never (@ai-sdk/vercel 3.0.30
-//! `vercel-provider.ts`, no `supportsStructuredOutputs`), rows without the
-//! key every model (Fireworks: `fireworks-provider.ts:149`).
+//! `supportsStructuredOutputs` does. The versions are the ones published
+//! with the locked `ai@7.0.127`: Together AI only for
+//! `deepseek-ai/DeepSeek-V4-Flash-0731` (@ai-sdk/togetherai 3.0.63
+//! `togetherai-provider.ts:117-121,160`); Moonshot for `kimi-k*` and seven
+//! `moonshot-v1-*` ids (@ai-sdk/moonshotai 3.0.62
+//! `moonshotai-provider.ts:58-71,97`); Vercel and v0 never (@ai-sdk/vercel
+//! 2.0.83 `vercel-provider.ts:87-89`, no `supportsStructuredOutputs`; the
+//! package was removed before `ai@7.0.127`); rows without the key every
+//! model (Fireworks: @ai-sdk/fireworks 3.0.65 `fireworks-provider.ts:149`).
 
 #[path = "common/mock_fetch.rs"]
 mod mock_fetch;
@@ -77,10 +81,32 @@ async fn together_ai_sends_a_schema_only_to_its_structured_output_model() {
 }
 
 #[tokio::test]
-async fn vercel_never_sends_a_schema() {
-    let (format, warnings) = response_format("vercel", "v0-1.5-md").await;
-    assert_eq!(format, json!({"type": "json_object"}));
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
+async fn vercel_and_v0_never_send_a_schema() {
+    for name in ["vercel", "v0"] {
+        let (format, warnings) = response_format(name, "v0-1.5-md").await;
+        assert_eq!(format, json!({"type": "json_object"}), "{name}");
+        assert_eq!(warnings.len(), 1, "{name}: {warnings:?}");
+    }
+}
+
+#[tokio::test]
+async fn moonshot_sends_a_schema_only_to_kimi_k_and_its_moonshot_v1_models() {
+    for name in ["moonshotai", "kimi"] {
+        for model_id in [
+            "kimi-k2.5",
+            "moonshot-v1-8k",
+            "moonshot-v1-128k-vision-preview",
+        ] {
+            let (format, warnings) = response_format(name, model_id).await;
+            assert_eq!(format, json_schema(), "{name} {model_id}");
+            assert!(warnings.is_empty(), "{name} {model_id}: {warnings:?}");
+        }
+        for model_id in ["kimi-latest", "moonshot-v1-8k-2026"] {
+            let (format, warnings) = response_format(name, model_id).await;
+            assert_eq!(format, json!({"type": "json_object"}), "{name} {model_id}");
+            assert_eq!(warnings.len(), 1, "{name} {model_id}: {warnings:?}");
+        }
+    }
 }
 
 #[tokio::test]
