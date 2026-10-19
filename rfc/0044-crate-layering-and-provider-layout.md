@@ -1,18 +1,18 @@
-# RFC-0044：crate 拆分、依赖反转与 provider 目录布局
+# RFC-0044：crate 拆分与依赖反转
 
 > **Status**: Draft
 >
 > **Date**: 2026-10-19
 >
-> **Scope**: 把 [docs/aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) 第 2 章 D17 的五层目标落成可以逐步合入的计划：`aimux-core` 按职责拆入 `aimux-provider`、`aimux-provider-utils`、`aimux`、`aimux-devtools`；core 内部直接调用的录制、session、trace、下载改成依赖反转；`aimux-providers` 每个厂商一个目录、文件按上游包对齐、测试放进各自目录。本文不改变公开行为、wire 格式和录制格式。
+> **Scope**: 把 [docs/aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) 第 2 章 D17 的五层目标落成可以逐步合入的计划：`aimux-core` 按职责拆入 `aimux-provider`、`aimux-provider-utils`、`aimux`、`aimux-devtools`；core 内部直接调用的录制、session、trace、下载改成依赖反转；各 crate 的源码和测试目录按上游包组织。`aimux-providers` 内部的厂商目录、测试位置和厂商间复用见 RFC-0046。本文不改变公开行为、wire 格式和录制格式。
 >
 > **Baseline**: `master@5743a40a`（#265 合入后）。上游对照：`vercel/ai` main `fce9210`（目录与文件命名），行为基线仍按对齐文档登记的版本（`ai@7.0.127` 等）。
 >
-> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §2、§8、§9.1（D3、D4、D6、D17、D27、D28、D30）、[RFC-0036](0036-positioning-and-layered-architecture.md) §3、[RFC-0041](0041-replay-governance.md) §3 / §10、[RFC-0042](0042-v4-type-boundaries.md) §1、[RFC-0043](0043-size-performance-budgets.md)、[#276](https://github.com/arcships/aimux/issues/276)、[#270](https://github.com/arcships/aimux/issues/270)、[#273](https://github.com/arcships/aimux/issues/273)、[#278](https://github.com/arcships/aimux/issues/278)、[PR #268](https://github.com/arcships/aimux/pull/268)
+> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §2、§8、§9.1（D3、D4、D6、D17、D27、D28、D30）、[RFC-0036](0036-positioning-and-layered-architecture.md) §3、[RFC-0041](0041-replay-governance.md) §3 / §10、[RFC-0042](0042-v4-type-boundaries.md) §1、[RFC-0043](0043-size-performance-budgets.md)、[#276](https://github.com/arcships/aimux/issues/276)、[#270](https://github.com/arcships/aimux/issues/270)、[#273](https://github.com/arcships/aimux/issues/273)、[#278](https://github.com/arcships/aimux/issues/278)、[PR #268](https://github.com/arcships/aimux/pull/268)、RFC-0046（provider 目录、测试位置与厂商间复用）
 
 ## 1. 决策摘要
 
-对齐文档已经定了目标分层（D17），但没有说怎么从现在的代码走过去，#276 里也只有“provider-utils 不再依赖 aimux-core”一行。本文补上这部分，并新增 provider 目录与测试位置的规则。
+对齐文档已经定了目标分层（D17），但没有说怎么从现在的代码走过去，#276 里也只有“provider-utils 不再依赖 aimux-core”一行。本文补上这部分。
 
 | 编号 | 决定 | 后果 |
 |---|---|---|
@@ -21,8 +21,7 @@
 | L3 | core 不再直接调用录制、session 存储、trace、具体下载实现；下载改为注入接口（§4），录制、session、trace 的接入方式由调用观测的后续 RFC 定（§4.1） | 去掉 4 个进程全局单例；关闭 RFC-0039 G-a |
 | L4 | 下载只保留一份实现：地址校验、重定向逐跳校验在 `aimux-provider-utils`，何时下载、大小上限在 `aimux` 的操作里 | 删除 core 自建的 reqwest client 和第二个重定向循环 |
 | L5 | `aimux` 的源码目录按上游 `ai/src/<操作>/` 组织：每个操作一个目录，trait 只在 `aimux-provider` | `generate_video`、`transcribe`、`decide` 等离开 `*_model.rs` |
-| L6 | `aimux-providers` 每个厂商一个目录；目录内文件与上游同名包一一对应（命名规则固定，数量随上游） | 删除“同名 `.rs` + 只有 options.rs 的目录”双形态；新增文件对照表并在 CI 校验 |
-| L7 | 单元测试紧挨源文件（`foo.rs` 旁边 `foo_test.rs`，对应上游 `foo.test.ts`）；跨厂商场景测试合成一个集成测试二进制 | `aimux-providers/tests/` 从 126 个测试二进制收成 1 个；#278 能按文件名对照上游测试 |
+| L6 | 各 crate 的文件和测试按上游包对照：`aimux-provider-utils` 对 provider-utils，`aimux` 对 `ai/src/<操作>/`，测试紧挨源文件（`foo_test.rs`）；`aimux-providers` 的规则见 RFC-0046 | #278 能按文件名对照上游测试 |
 | L8 | 一个共享错误枚举放在 `aimux-provider`（对齐文档 §2.2 已定），差异登记 | 每个错误补 `cause` 另开小 PR，不放进本文的拆分步骤 |
 | L9 | `aimux-stream` 并入 `aimux-provider-utils`，删除这个 crate；SSE 适配放进对应上游 `parse-json-event-stream.ts` 的文件，`extract_lines` 放进 `extract_lines.rs`，第三方 `sse-stream` 的位置相当于上游的 `eventsource-parser` | 少一个发布包和体积预算；改写对齐文档 D17“aimux-stream 保持独立”，登记（§7） |
 
@@ -130,38 +129,7 @@ aimux_ops replay.live（registry）                   aimux-ops/src/ops/replay.r
 
 ### 2.4 provider 目录与测试
 
-上游不是“每个包文件数相同”，而是命名规则固定、一个模型类一个文件、测试紧挨源文件。13 个与 aimux 同名的上游包：
-
-| 规则 | 出现的包数 |
-|---|---|
-| `<x>-provider.ts`、`*-options.ts`、`version.ts`、`index.ts` | 13 / 13 |
-| `<x>-error.ts`、`*-api-types.ts` 或 `*-api.ts` | 11 / 13 |
-| `<x>-chat-language-model.ts` / `<x>-language-model.ts` | 9 / 13（有文本模型的全部） |
-| `convert-to-<x>-*.ts`、`*prepare-tools.ts` | 9 / 13 |
-| 其余模态：每种模型一个 `<x>-<模态>-model.ts` + `-options.ts` | 有该模态的全部 |
-| 测试 `foo.test.ts` 与 `foo.ts` 同目录 | 13 个包里 6 个全部如此，其余 7 个只有 1–5 个跨文件场景测试例外 |
-
-| 厂商 | 上游源文件 / 测试文件 | aimux 源文件 / 行数 | aimux 测试文件 / 行数（都在 `tests/`） |
-|---|---|---|---|
-| openai | 80 / 34 | 21 / 11,812 | 13 / 9,231 |
-| anthropic | 46 / 15 | 14 / 8,282 | 8 / 2,872 |
-| google | 67 / 34 | 12 / 6,588 | 11 / 4,835 |
-| amazon-bedrock | 35 / 24 | 10 / 5,059 | 6 / 3,737 |
-| xai | 42 / 16 | 9 / 4,596 | 4 / 2,384 |
-| mistral | 24 / 12 | 8 / 2,091 | 4 / 1,300 |
-| deepseek | 17 / 7 | 9 / 1,857 | 2 / 2,636 |
-| cohere | 16 / 5 | 7 / 1,815 | 2 / 742 |
-| groq | 18 / 7 | 11 / 1,608 | 2 / 2,735 |
-| elevenlabs | 13 / 3 | 2 / 1,231 | 3 / 993 |
-| fal | 18 / 6 | 2 / 912 | 3 / 550 |
-| luma | 6 / 2 | 2 / 474 | 1 / 190 |
-| deepgram | 13 / 3 | 2 / 450 | 1 / 322 |
-
-aimux 现状：
-
-- 21 个厂商是“`<name>.rs` 放全部实现 + `<name>/` 目录里只有一个 `options.rs`”的双形态，其余是带 `mod.rs` 的目录。
-- 文件名用通用名（`model.rs`、`convert.rs`、`types.rs`），不对应上游文件，无法按文件比对实现和测试。
-- `tests/` 下 126 个文件，每个都是独立的测试二进制，各自链接整个 `aimux-providers`。其中 101 个能按前缀对应到厂商，8 个对应的厂商在 src 里没有同名条目（preset：alibaba、baseten、cerebras、deepinfra、fireworks、moonshotai、openrouter、perplexity），17 个是跨厂商场景（cassette、conformance、e2e 等）。
+厂商目录、测试文件和厂商之间的引用的现状见 RFC-0046 §2。本文只关心 crate 之间的边：`aimux-providers` 现在依赖 core，C6 之后不再依赖。
 
 ## 3. 目标分层
 
@@ -231,27 +199,11 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 1. 录制、session 归组、缓存审计不再由 core 直接调用，最终落在 `aimux-devtools`（§3.1、上表）。它们接到调用上的方式由后续 RFC 定，本文不先造一套之后要换掉的事件接口（对齐文档 D31 不留过渡代码）。
 2. 因此 C5、C6 中“录制、session、trace 搬进 devtools”这部分等后续 RFC 定稿再做；C1–C4、C7 和 provider 目录整理不受影响。
 
-## 5. provider 目录与文件
+## 5. 目录与测试位置
 
-### 5.1 规则
-
-1. 每个厂商一个目录 `aimux-providers/src/<vendor>/`，入口 `mod.rs` 只做声明和导出（对应上游 `index.ts`）。删除 `<vendor>.rs` 与同名目录并存的形式。
-2. 有上游包的厂商，目录内文件与上游包一一对应，文件名把 kebab-case 换成 snake_case 并去掉重复的厂商前缀：`mistral-chat-language-model.ts` → `mistral/chat_language_model.rs`，`map-mistral-finish-reason.ts` → `mistral/map_finish_reason.rs`，`convert-to-mistral-chat-messages.ts` → `mistral/convert_to_chat_messages.rs`。上游有子目录（如 openai 的 `chat/`、`responses/`、`embedding/`）就照建子目录。
-3. 上游用 zod schema 写在模型文件里的响应类型，aimux 放进 `api_types.rs`（上游 11/13 的包本来就有 `*-api-types.ts` / `*-api.ts`）。
-4. 上游没有、aimux 独有的文件（`list_models` 发现、SigV4 GET 签名等已登记的扩展）放在 `aimux_ext/` 子目录，文件头注明对应的登记差异；不混进上游同名文件。
-5. 没有上游包的厂商（Exa、Tavily、Serper、Jev 等）用同一骨架：`mod.rs`、`provider.rs`、`<模态>_model.rs`、`<模态>_model_options.rs`、`api_types.rs`、`error.rs`。
-6. 多个厂商共用的实现（OpenAI-chat 一族的流处理、轮询）留在 `src/shared/`、`src/stream/`，与 RFC-0042 T2 一致。
-7. 新增 `aimux-providers/layout.toml`：每行写“aimux 文件 ↔ 上游文件”，没有对应时写登记原因。CI 检查两件事：目录里每个 `.rs` 都在表里；表里列的上游文件在基线版本中存在。基线升级时这张表就是待办清单。
-
-### 5.2 测试位置
-
-1. 单元测试紧挨源文件：`chat_language_model.rs` 末尾 `#[cfg(test)] #[path = "chat_language_model_test.rs"] mod tests;`，测试文件 `chat_language_model_test.rs` 对应上游 `mistral-chat-language-model.test.ts`。测试函数名保留上游 `it(...)` 的描述（snake_case），#278 的覆盖统计直接按文件和名字对照。
-2. 上游的 `__fixtures__/`、`__snapshots__/` 对应到厂商目录下的 `fixtures/`、`snapshots/`；大文件（现有 176 MB 的 cassette）留在 crate 根目录的 `fixtures/` 按路径读取，不 `include_str!`。
-3. 测试共用的 mock fetch、回放 helper（现 `tests/common/`）移到 `src/test_support/`，`#[cfg(test)]` 编译，不进发布产物。
-4. 跨厂商场景测试（cassette、conformance、e2e、数据丢失回归等 17 个文件）和 preset 测试合成一个集成测试二进制 `tests/it/main.rs`，每个原文件变成其中一个模块。
-5. 其他 crate 照同样规则：`aimux-provider-utils` 对照上游 provider-utils 文件，`aimux` 对照 `ai/src/<操作>/`。
-
-迁移只搬动测试，不改断言、不删测试；每个 PR 前后用 `cargo test -- --list` 比较测试数量，数量必须相等，PR 描述里附对照。
+1. `aimux-provider-utils` 的文件对照上游 provider-utils，`aimux` 对照 `ai/src/<操作>/`（§3.2），文件名把 kebab-case 换成 snake_case。
+2. 单元测试紧挨源文件：`foo.rs` 末尾 `#[cfg(test)] #[path = "foo_test.rs"] mod tests;`，对应上游 `foo.test.ts`。
+3. 对照表 `layout.toml` 的格式、`aimux-providers` 的目录和测试搬移见 RFC-0046 §3、§4。
 
 ## 6. 实施顺序
 
@@ -259,7 +211,6 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 
 | 步骤 | 内容 | 前置 |
 |---|---|---|
-| P1 | provider 目录与测试整理（§5），按厂商家族分批：OpenAI 一族与 compat、Anthropic、Google/Vertex、Bedrock、其余模态厂商、无上游厂商与 preset | 无；#268 只改 providers 的 2 个文件，可以现在开始 |
 | C0 | `aimux-stream` 并入 provider-utils（L9）：源码和 850 行测试搬进 provider-utils，删掉 providers 里没用的依赖，删除 crate，README、`release.yml`、`logging.rs:139` 的 target 列表同步 | 无 |
 | C1 | core 内部按层拆开混合文件，操作函数搬进按操作分的目录（§2.2、§3.2），不新建 crate | #268 合入（它改了 core 的 36 个文件） |
 | C2 | 新建 `aimux-provider`，搬入规范模块；core 改为依赖它 | C1 |
@@ -269,13 +220,13 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 | C6 | 新建 `aimux-devtools`，搬入录制、回放、trace、session；`rebuild_provider` 移到 ops；providers 不再依赖 core | C5 |
 | C7 | `aimux-core` 改名 `aimux`；发布顺序改为 provider → provider-utils → providers → aimux → devtools → ops → ffi | C6 |
 
-P1 与 C 系列互不阻塞。P1 先做，C2/C3 改 import 时对着已经整理好的目录一次改完。
+RFC-0046 的 provider 整理与 C 系列互不阻塞；它先做的话，C2/C3 改 import 时对着整理好的目录一次改完。
 
 与其他工作的关系：
 
 - #270（schema 3 与传输回放）建在 C5、C6 的订阅接口上。先拆后做，schema 3 直接写进 `aimux-devtools`；反过来做则 schema 3 会先写进 core 再搬一次。
-- #278（测试补齐）按 §5.2 的位置写新测试，避免补完再搬。
-- #273（体积门禁）：providers 是否按厂商加 cargo feature 不在本文范围，见 §9。
+- #278（测试补齐）按 §5 和 RFC-0046 §4 的位置写新测试，避免补完再搬。
+- #273（体积门禁）：providers 是否按厂商加 cargo feature 见 RFC-0046 §9。
 
 ## 7. 文档同步与登记差异
 
@@ -291,21 +242,18 @@ P1 与 C 系列互不阻塞。P1 先做，C2/C3 改 import 时对着已经整理
 
 - 共享错误枚举在 `aimux-provider`，含上游放在 `ai` 包里的 retry、工具调用类错误。原因：ops 错误封装和绑定只认一个联合类型（RFC-0039 D1）。
 - session 归组、前缀推断是 aimux 扩展，上游 `generateText` 没有。它们只影响观测，不改变调用本身（推断出的 ID 不进入请求、不影响返回结果，见 `generate.rs:1129-1139`），所以整体放在 devtools，按上游 devtools 的方式以订阅接入。这改写对齐文档 C8 的 2026-10-13 修订（“推断与 generate 入口一起留在 `aimux`”），在 C5 的 PR 中同步改 C8 与 §3.6。
-- provider 目录下 `aimux_ext/` 中的文件。
 - `aimux-stream` 不再是独立 crate（L9）：对齐文档 D17、§0.3 和 §2.1（含约束 2）写的“aimux-stream 保持独立的 SSE 解析库、保留自己的解析错误”改为 SSE 解码在 provider-utils 内部，`SseError` 仍在边界转换为共享错误，与上游 `parseJsonEventStream` 包住 `eventsource-parser` 的分法一致。
 
 ## 8. 验收
 
 1. 依赖边检查（新增脚本，读 `cargo metadata`，进 CI）：`aimux-provider` 不依赖任何 aimux crate，也不依赖 reqwest、tokio 网络特性；`aimux-provider-utils` 只依赖 `aimux-provider`；workspace 里没有 `aimux-stream`；`aimux-providers` 不依赖 `aimux`、`aimux-devtools`；`aimux` 不依赖 `aimux-providers`、`aimux-devtools`；`aimux-devtools` 不依赖 `aimux-providers`。
 2. `aimux` 源码里没有 `static` 可变全局（允许列表只含 operation 序号分配器和常量）。
-4. workspace 里任何地方都不出现 `aimux_core`（C7 后）。
-5. 每个 PR 的测试数量前后相等（`cargo test --workspace -- --list`），生成物重新生成后无 diff。
-6. `layout.toml` 校验通过；`aimux-providers/tests/` 只剩 `it/` 一个二进制。
-7. 产物体积不超过 RFC-0043 记录的当前值。
+3. workspace 里任何地方都不出现 `aimux_core`（C7 后）。
+4. 每个 PR 的测试数量前后相等（`cargo test --workspace -- --list`），生成物重新生成后无 diff。
+5. 产物体积不超过 RFC-0043 记录的当前值。
 
 ## 9. 开放问题与不采纳
 
-- **按厂商拆 crate 还是加 feature。** 上游每个厂商一个 npm 包。Rust 侧可以一个厂商一个 crate（70 多个 crate，发布与版本管理成本高），也可以一个 `aimux-providers` 加每个厂商一个 cargo feature（体积门禁 #273 受益，绑定按需裁剪）。建议后者，单独决定，不阻塞本文。
 - **`session_id` 的入口。** 本文保留它作为操作设置里的一个字段（绑定已暴露，RFC-0041 §10.2 已落地），`aimux` 只透传。完全照上游可以改成通用的 telemetry metadata，由 devtools 自己读出 session；这会改绑定 API，单独决定。
 - **不采纳：保留 `aimux-core` 作为 re-export 门面。** 违反 D17 约束 6，且会让两个路径长期共存。
 - **不采纳：一次性大 PR 完成全部拆分。** 改动面覆盖整个 workspace 和两个绑定，无法评审，也无法逐步定位回归。
