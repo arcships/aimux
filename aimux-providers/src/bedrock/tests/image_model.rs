@@ -1060,7 +1060,6 @@ mod amazon_bedrock_image {
 
     /// partial: `should extract the generated images`; full port in src/bedrock/tests/image_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_extract_generated_images() {
         let server = MockServer::start().await;
         mock_bedrock(&server, bedrock_response()).await;
@@ -1078,7 +1077,6 @@ mod amazon_bedrock_image {
 
     /// partial: `should pass the model and the settings`; full port in src/bedrock/tests/image_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_pass_prompt() {
         let server = MockServer::start().await;
         mock_bedrock(&server, bedrock_response()).await;
@@ -1093,7 +1091,6 @@ mod amazon_bedrock_image {
 
     /// partial: `should pass the model and the settings`; full port in src/bedrock/tests/image_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_pass_size_and_n() {
         let server = MockServer::start().await;
         mock_bedrock(&server, bedrock_response()).await;
@@ -1112,7 +1109,6 @@ mod amazon_bedrock_image {
 
     /// partial: `should pass the model and the settings`; full port in src/bedrock/tests/image_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_pass_seed() {
         let server = MockServer::start().await;
         mock_bedrock(&server, bedrock_response()).await;
@@ -1129,7 +1125,6 @@ mod amazon_bedrock_image {
 
     /// partial: `should return warnings for unsupported settings`; full port in src/bedrock/tests/image_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_warn_for_aspect_ratio() {
         let server = MockServer::start().await;
         mock_bedrock(&server, bedrock_response()).await;
@@ -1144,7 +1139,6 @@ mod amazon_bedrock_image {
 
     /// partial: `should default to IMAGE_VARIATION when files provided without mask or maskPrompt`; full port in src/bedrock/tests/image_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_support_image_variation() {
         let server = MockServer::start().await;
         mock_bedrock(&server, bedrock_response()).await;
@@ -1165,7 +1159,6 @@ mod amazon_bedrock_image {
 
     /// partial: `should default to INPAINTING when files provided with mask`; full port in src/bedrock/tests/image_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_support_inpainting() {
         let server = MockServer::start().await;
         mock_bedrock(&server, bedrock_response()).await;
@@ -1193,7 +1186,6 @@ mod amazon_bedrock_image {
 
         /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-image-model.test.ts › doGenerate › should throw error when request is moderated
         #[tokio::test]
-        #[serial_test::serial]
         async fn should_handle_moderated_response() {
             let server = MockServer::start().await;
             Mock::given(method("POST"))

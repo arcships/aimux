@@ -565,7 +565,6 @@ mod bedrock_embedding {
 
     /// partial: `should handle single input value and return embeddings`; full port in src/bedrock/tests/embedding_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_handle_titan_single_input() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -601,7 +600,6 @@ mod bedrock_embedding {
 
     /// partial: `should support Cohere embedding models`; full port in src/bedrock/tests/embedding_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_support_cohere_v3() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -636,7 +634,6 @@ mod bedrock_embedding {
 
     /// partial: `should support Cohere v4 embedding models`; full port in src/bedrock/tests/embedding_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_support_cohere_v4() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -666,7 +663,6 @@ mod bedrock_embedding {
 
     /// partial: `should send multiple values for Cohere embedding models`; full port in src/bedrock/tests/embedding_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_send_multiple_values_cohere_v4() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -708,7 +704,6 @@ mod bedrock_embedding {
 
     /// partial: `should support Cohere models behind cross-region inference profile ids`; full port in src/bedrock/tests/embedding_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_support_cross_region_cohere() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -736,7 +731,6 @@ mod bedrock_embedding {
 
     /// partial: `should send SINGLE_EMBEDDING payload for Nova embeddings`; full port in src/bedrock/tests/embedding_model.rs.
     #[tokio::test]
-    #[serial_test::serial]
     async fn should_support_nova_embeddings() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -809,7 +803,6 @@ mod bedrock_embedding {
 
         /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-embedding-model.test.ts › doEmbed › should handle single input value and extract usage
         #[tokio::test]
-        #[serial_test::serial]
         async fn should_extract_titan_usage() {
             let server = MockServer::start().await;
             Mock::given(method("POST"))

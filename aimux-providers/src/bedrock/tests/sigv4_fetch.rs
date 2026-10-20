@@ -1092,8 +1092,11 @@ mod bedrock_remaining {
                 set_default_transport(ReqwestFetch::default());
             }
         }
+        // Loopback bypasses the proxy so the wiremock tests running beside this
+        // one in the lib test binary keep reaching their servers.
         let proxy = |port: u16| ProxyConfig {
             http_url: Some(format!("http://127.0.0.1:{port}")),
+            no_proxy: Some("localhost,127.0.0.1".to_string()),
             ..ProxyConfig::default()
         };
 

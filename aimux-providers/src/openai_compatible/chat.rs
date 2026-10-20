@@ -808,7 +808,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial_test::serial]
     async fn an_error_structure_decides_the_message_and_code() {
         let server = MockServer::start().await;
         serve(
