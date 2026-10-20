@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses resolves the full media type of inline user files, as the
+  AI SDK does: a partial type such as `image` is detected from the bytes,
+  and a call whose type cannot be resolved fails with
+  `UnsupportedFunctionality` before anything is sent.
+
 - Open Responses sends `detail` on user images, as the AI SDK does:
   `providerOptions.<name>.imageDetail` when it is `low`, `high` or `auto`,
   otherwise `auto`. Tool-result images already did.

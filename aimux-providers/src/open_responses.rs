@@ -293,7 +293,7 @@ impl LanguageModel for OpenResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        validate_tool_output_media(&options.prompt)?;
+        validate_file_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
         let body = exchange.transform_body(body);
@@ -433,7 +433,7 @@ impl LanguageModel for OpenResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        validate_tool_output_media(&options.prompt)?;
+        validate_file_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
 
@@ -1299,6 +1299,15 @@ fn convert_user_content(
                 let image = top_level_media_type(media_type) == "image";
                 match data {
                     FileData::Data { data } => {
+                        let media_type = match aimux_provider_utils::resolve_full_media_type(part) {
+                            Ok(media_type) => media_type,
+                            Err(error) => {
+                                warnings.push(Warning::Other {
+                                    message: error.to_string(),
+                                });
+                                continue;
+                            }
+                        };
                         let b64 = match data {
                             FileBytes::Binary(bytes) => {
                                 base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -1348,26 +1357,39 @@ fn convert_user_content(
     json!(parts)
 }
 
-fn validate_tool_output_media(prompt: &LanguageModelPrompt) -> Result<(), AiMuxError> {
+/// Fail before sending when an inline user or tool-result file has a media
+/// type that cannot be resolved, as `resolveFullMediaType` throws upstream.
+fn validate_file_media(prompt: &LanguageModelPrompt) -> Result<(), AiMuxError> {
     for message in prompt {
-        let LanguageModelMessage::Tool { content, .. } = message else {
-            continue;
-        };
-        for part in content {
-            let ToolPart::ToolResult(ToolResultPart {
-                output: ToolResultOutput::Content { value },
-                ..
-            }) = part
-            else {
-                continue;
-            };
-            for item in value {
-                if let ToolResultContent::File(part) = item
-                    && matches!(part.data, FileData::Data { .. })
-                {
-                    aimux_provider_utils::resolve_full_media_type(part)?;
+        match message {
+            LanguageModelMessage::User { content, .. } => {
+                for part in content {
+                    if let UserPart::File(part) = part
+                        && matches!(part.data, FileData::Data { .. })
+                    {
+                        aimux_provider_utils::resolve_full_media_type(part)?;
+                    }
                 }
             }
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
+                        output: ToolResultOutput::Content { value },
+                        ..
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    for item in value {
+                        if let ToolResultContent::File(part) = item
+                            && matches!(part.data, FileData::Data { .. })
+                        {
+                            aimux_provider_utils::resolve_full_media_type(part)?;
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
     Ok(())

@@ -2322,3 +2322,46 @@ fn user_images_carry_the_image_detail() {
         ] }])
     );
 }
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:91-108):
+/// inline user files go out with `resolveFullMediaType`, so a partial media
+/// type such as `image` is detected from the bytes.
+#[test]
+fn inline_user_files_resolve_the_full_media_type() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "user",
+        "content": [{ "type": "file", "mediaType": "image",
+                      "data": { "type": "data", "data": "iVBORw0KGgoAAAANSUhEUg==" } }]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input[0]["content"][0]["image_url"],
+        json!("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==")
+    );
+}
+
+/// TS: `resolveFullMediaType` throws for an inline user file whose subtype
+/// cannot be detected, so the call fails before anything is sent.
+#[tokio::test]
+async fn an_undetectable_user_file_media_type_fails_before_sending() {
+    let server = MockServer::start().await;
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "user",
+        "content": [{ "type": "file", "mediaType": "image/*",
+                      "data": { "type": "data", "data": "AAEC" } }]
+    }]))
+    .unwrap();
+    let error = make_model(&server, "gpt-4o")
+        .do_generate(&default_options(prompt))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            aimux_core::error::AiMuxError::UnsupportedFunctionality(_)
+        ),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
