@@ -80,6 +80,10 @@ class _Wire(BaseModel):
 
 class AiMuxErrorAIAPICallError(_Wire):
     name: Literal["AI_APICallError"] = Field(default="AI_APICallError", alias="name")
+    #: The error this failure was built from (`APICallError.cause`): the
+    #: transport error with its source chain, the body parse error, or the
+    #: aimux error a response handler returned.
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     #: Parsed provider error data.
     data: Optional[Any] = Field(default=None, alias="data")
     #: Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -250,10 +254,17 @@ class AiMuxErrorAIError(_Wire):
 #: Variants are cut by *what the caller does about it*, not by where the
 #: failure came from. `ApiCallError` is boxed only to keep the Rust enum
 #: compact; serde and every binding still observe the same object shape.
+#:
+#: `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+#: retry's last attempt and a repair's `cause`.
 AiMuxError = TypeAliasType("AiMuxError", Annotated[Union["AiMuxErrorAIAPICallError", "AiMuxErrorAIRetryError", "AiMuxErrorAIJSONParseError", "AiMuxErrorAINoOutputGeneratedError", "AiMuxErrorAIInvalidResponseDataError", "AiMuxErrorAIToolCallNotFoundForApprovalError", "AiMuxErrorAINoSuchToolError", "AiMuxErrorAIInvalidToolInputError", "AiMuxErrorAIToolCallRepairError", "AiMuxErrorAIInvalidArgumentError", "AiMuxErrorAIInvalidPromptError", "AiMuxErrorAILoadAPIKeyError", "AiMuxErrorAILoadSettingError", "AiMuxErrorAITokenExpiredError", "AiMuxErrorAIUnsupportedFunctionalityError", "AiMuxErrorAINoSuchModelError", "AiMuxErrorAINoSuchProviderError", "AiMuxErrorAIMissingToolResultsError", "AiMuxErrorAIToolChoiceViolationError", "AiMuxErrorTimeoutError", "AiMuxErrorAbortError", "AiMuxErrorAIError"], Field(discriminator="name")])
 
 class AiMuxErrorInputAIAPICallError(_Wire):
     name: Literal["AI_APICallError"] = Field(default="AI_APICallError", alias="name")
+    #: The error this failure was built from (`APICallError.cause`): the
+    #: transport error with its source chain, the body parse error, or the
+    #: aimux error a response handler returned.
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     #: Parsed provider error data.
     data: Optional[Any] = Field(default=None, alias="data")
     #: Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -426,6 +437,9 @@ class AiMuxErrorInputAIError(_Wire):
 #: Variants are cut by *what the caller does about it*, not by where the
 #: failure came from. `ApiCallError` is boxed only to keep the Rust enum
 #: compact; serde and every binding still observe the same object shape.
+#:
+#: `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+#: retry's last attempt and a repair's `cause`.
 AiMuxErrorInput = TypeAliasType("AiMuxErrorInput", Annotated[Union["AiMuxErrorInputAIAPICallError", "AiMuxErrorInputAIRetryError", "AiMuxErrorInputAIJSONParseError", "AiMuxErrorInputAINoOutputGeneratedError", "AiMuxErrorInputAIInvalidResponseDataError", "AiMuxErrorInputAIToolCallNotFoundForApprovalError", "AiMuxErrorInputAINoSuchToolError", "AiMuxErrorInputAIInvalidToolInputError", "AiMuxErrorInputAIToolCallRepairError", "AiMuxErrorInputAIInvalidArgumentError", "AiMuxErrorInputAIInvalidPromptError", "AiMuxErrorInputAILoadAPIKeyError", "AiMuxErrorInputAILoadSettingError", "AiMuxErrorInputAITokenExpiredError", "AiMuxErrorInputAIUnsupportedFunctionalityError", "AiMuxErrorInputAINoSuchModelError", "AiMuxErrorInputAINoSuchProviderError", "AiMuxErrorInputAIMissingToolResultsError", "AiMuxErrorInputAIToolChoiceViolationError", "AiMuxErrorInputTimeoutError", "AiMuxErrorInputAbortError", "AiMuxErrorInputAIError"], Field(discriminator="name")])
 
 #: What a failed API call observed — the field set of the AI SDK's
@@ -449,6 +463,10 @@ AiMuxErrorInput = TypeAliasType("AiMuxErrorInput", Annotated[Union["AiMuxErrorIn
 #: This keeps transport and response failures self-contained and matches the
 #: AI SDK's `APICallError` contract.
 class ApiCallError(_Wire):
+    #: The error this failure was built from (`APICallError.cause`): the
+    #: transport error with its source chain, the body parse error, or the
+    #: aimux error a response handler returned.
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     #: Parsed provider error data.
     data: Optional[Any] = Field(default=None, alias="data")
     #: Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -505,6 +523,10 @@ class ApiCallError(_Wire):
 #: This keeps transport and response failures self-contained and matches the
 #: AI SDK's `APICallError` contract.
 class ApiCallErrorInput(_Wire):
+    #: The error this failure was built from (`APICallError.cause`): the
+    #: transport error with its source chain, the body parse error, or the
+    #: aimux error a response handler returned.
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     #: Parsed provider error data.
     data: Optional[Any] = Field(default=None, alias="data")
     #: Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -1303,6 +1325,20 @@ class EmbeddingUsage(_Wire):
 class EmptyParams(_Wire):
     model_config = ConfigDict(extra="forbid")
 
+
+#: The error another error was built from: the AI SDK's `cause`.
+#:
+#: An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+#: `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+#: nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+ErrorCause = TypeAliasType("ErrorCause", Annotated[Union["_dto.AiMuxError", "_dto.SourceError"], Field(union_mode="left_to_right")])
+
+#: The error another error was built from: the AI SDK's `cause`.
+#:
+#: An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+#: `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+#: nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+ErrorCauseInput = TypeAliasType("ErrorCauseInput", Annotated[Union["_dto.AiMuxErrorInput", "_dto.SourceError"], Field(union_mode="left_to_right")])
 
 ErrorDomain = TypeAliasType("ErrorDomain", Literal["aimux", "recording", "binding", "protocol"])
 
@@ -3088,6 +3124,18 @@ class SourceDocument(_Wire):
 #: payload of both `GenerateContent::Source` and `StreamPart::Source`, and the
 #: element of the text results' `sources`.
 Source = TypeAliasType("Source", Annotated[Union["SourceUrl", "SourceDocument"], Field(discriminator="source_type")])
+
+#: An error from outside aimux (a transport, parser or I/O error), kept as
+#: its message and the messages of its own sources, so it can be cloned,
+#: serialized and sent across the bindings with the error built from it.
+#:
+#: The JSON form is a JavaScript `Error`'s own `{ message, cause }`.
+class SourceError(_Wire):
+    #: The error's own `source()`, recursively.
+    cause: Optional["_dto.SourceError"] = Field(default=None, alias="cause")
+    #: The error's `Display` text.
+    message: str = Field(alias="message")
+
 
 #: Options passed to [`SpeechModel::do_generate`].
 #:
@@ -5153,6 +5201,7 @@ SessionStoreHandle.model_rebuild(_types_namespace=globals())
 SessionView.model_rebuild(_types_namespace=globals())
 SourceUrl.model_rebuild(_types_namespace=globals())
 SourceDocument.model_rebuild(_types_namespace=globals())
+SourceError.model_rebuild(_types_namespace=globals())
 SpeechCallOptions.model_rebuild(_types_namespace=globals())
 SpeechRequest.model_rebuild(_types_namespace=globals())
 SpeechResponse.model_rebuild(_types_namespace=globals())
@@ -5358,6 +5407,8 @@ DTO_TYPES = {
     "EmbeddingResult": EmbeddingResult,
     "EmbeddingUsage": EmbeddingUsage,
     "EmptyParams": EmptyParams,
+    "ErrorCause": ErrorCause,
+    "ErrorCauseInput": ErrorCauseInput,
     "ErrorDomain": ErrorDomain,
     "ErrorEnvelope": ErrorEnvelope,
     "Fallback": Fallback,
@@ -5508,6 +5559,7 @@ DTO_TYPES = {
     "SessionView": SessionView,
     "Size": Size,
     "Source": Source,
+    "SourceError": SourceError,
     "SpeechCallOptions": SpeechCallOptions,
     "SpeechRequest": SpeechRequest,
     "SpeechResponse": SpeechResponse,
@@ -5749,6 +5801,8 @@ __all__ = [
     "EmbeddingResult",
     "EmbeddingUsage",
     "EmptyParams",
+    "ErrorCause",
+    "ErrorCauseInput",
     "ErrorDomain",
     "ErrorEnvelope",
     "Fallback",
@@ -5953,6 +6007,7 @@ __all__ = [
     "Source",
     "SourceUrl",
     "SourceDocument",
+    "SourceError",
     "SpeechCallOptions",
     "SpeechRequest",
     "SpeechResponse",

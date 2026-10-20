@@ -52,6 +52,8 @@ export interface DtoTypes {
   "EmbeddingResult": T.EmbeddingResult
   "EmbeddingUsage": T.EmbeddingUsage
   "EmptyParams": T.EmptyParams
+  "ErrorCause": T.ErrorCause
+  "ErrorCauseInput": T.ErrorCauseInput
   "ErrorDomain": T.ErrorDomain
   "ErrorEnvelope": T.ErrorEnvelope
   "Fallback": T.Fallback
@@ -202,6 +204,7 @@ export interface DtoTypes {
   "SessionView": T.SessionView
   "Size": T.Size
   "Source": T.Source
+  "SourceError": T.SourceError
   "SpeechCallOptions": T.SpeechCallOptions
   "SpeechRequest": T.SpeechRequest
   "SpeechResponse": T.SpeechResponse
@@ -395,6 +398,8 @@ export const dtoTypeNames = [
   "EmbeddingResult",
   "EmbeddingUsage",
   "EmptyParams",
+  "ErrorCause",
+  "ErrorCauseInput",
   "ErrorDomain",
   "ErrorEnvelope",
   "Fallback",
@@ -545,6 +550,7 @@ export const dtoTypeNames = [
   "SessionView",
   "Size",
   "Source",
+  "SourceError",
   "SpeechCallOptions",
   "SpeechRequest",
   "SpeechResponse",

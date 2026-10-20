@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use futures::{Stream, StreamExt, stream::BoxStream};
 
+use aimux_core::ErrorCause;
 use aimux_core::recording::{
     HttpExchange, HttpRecord, RecordingContext, ResponseRecord, TimingRecord,
 };
@@ -401,9 +402,11 @@ fn redirect_error(
     request: &PreparedRequest,
     message: impl Into<String>,
     status: http::StatusCode,
+    cause: Option<ErrorCause>,
 ) -> AiMuxError {
     AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(status.as_u16()),
+        cause,
         ..api_call_error(request, message)
     }))
 }
@@ -471,15 +474,24 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         let Some(location) = response.headers.get(http::header::LOCATION) else {
             return Ok(response);
         };
-        let location = location
-            .to_str()
-            .map(str::to_owned)
-            .map_err(|_| redirect_error(request, "redirect location is not valid UTF-8", status))?;
+        let location = location.to_str().map(str::to_owned).map_err(|error| {
+            redirect_error(
+                request,
+                "redirect location is not valid UTF-8",
+                status,
+                Some(ErrorCause::source(&error)),
+            )
+        })?;
         let base = url::Url::parse(&current.url)
             .map_err(|e| AiMuxError::InvalidArgument(format!("invalid request URL: {e}")))?;
-        let next = base
-            .join(&location)
-            .map_err(|e| redirect_error(request, format!("invalid redirect URL: {e}"), status))?;
+        let next = base.join(&location).map_err(|e| {
+            redirect_error(
+                request,
+                format!("invalid redirect URL: {e}"),
+                status,
+                Some(ErrorCause::source(&e)),
+            )
+        })?;
         // Fetch treats a redirect to a non-HTTP(S) scheme (data:, file:, ...)
         // as a network error; following one would let the redirecting server
         // fabricate a response outside the transport.
@@ -488,11 +500,12 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
                 request,
                 format!("redirect to non-HTTP scheme: {}", next.scheme()),
                 status,
+                None,
             ));
         }
         let next = next.to_string();
         if redirect_count == MAX_REDIRECTS {
-            return Err(redirect_error(request, "too many redirects", status));
+            return Err(redirect_error(request, "too many redirects", status, None));
         }
         // Dropping the unconsumed 3xx body releases its connection before a
         // potentially slow DNS check for the next hop.

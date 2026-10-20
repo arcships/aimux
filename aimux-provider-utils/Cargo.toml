@@ -50,6 +50,7 @@ ws = ["dep:tokio-tungstenite", "dep:rustls", "dep:webpki-roots", "dep:base64"]
 aimux-core = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt", "time", "net", "io-util"] }
 serial_test = { workspace = true }
+socket2 = "0.6"
 wiremock = "0.6"
 
 [lints]

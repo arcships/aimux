@@ -50,6 +50,7 @@ fn bedrock_event_stream_response_handler()
                 AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
                     response_headers: Some(headers.clone()),
                     is_retryable: true,
+                    cause: Some(aimux_core::ErrorCause::source(&error)),
                     ..aimux_core::ApiCallError::new(
                         error.to_string(),
                         url.clone(),

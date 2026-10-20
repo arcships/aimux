@@ -123,6 +123,11 @@ pub struct ApiCallError {
     /// no status to compute from) sets it to `true` explicitly.
     #[serde(default)]
     pub is_retryable: bool,
+    /// The error this failure was built from (`APICallError.cause`): the
+    /// transport error with its source chain, the body parse error, or the
+    /// aimux error a response handler returned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<ErrorCause>,
 }
 
 impl ApiCallError {
@@ -142,6 +147,16 @@ impl ApiCallError {
             response_headers: None,
             data: None,
             is_retryable: false,
+            cause: None,
+        }
+    }
+
+    /// Set the error this failure was built from.
+    #[must_use]
+    pub fn caused_by(self, cause: impl Into<ErrorCause>) -> Self {
+        Self {
+            cause: Some(cause.into()),
+            ..self
         }
     }
 }
@@ -219,6 +234,19 @@ impl std::fmt::Display for RetryError {
     }
 }
 
+/// The last attempt, like the AI SDK's `RetryError.lastError`.
+impl std::error::Error for RetryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.errors.last().map(|error| error as _)
+    }
+}
+
+impl std::error::Error for ApiCallError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.cause.as_ref().map(|cause| cause as _)
+    }
+}
+
 impl std::fmt::Display for ApiCallError {
     /// `HTTP {status}: {message}` when a status is known (just `HTTP {status}`
     /// if the response had no body), else `{message}`. `provider_code` and
@@ -232,18 +260,143 @@ impl std::fmt::Display for ApiCallError {
     }
 }
 
+/// An error from outside aimux (a transport, parser or I/O error), kept as
+/// its message and the messages of its own sources, so it can be cloned,
+/// serialized and sent across the bindings with the error built from it.
+///
+/// The JSON form is a JavaScript `Error`'s own `{ message, cause }`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceError {
+    /// The error's `Display` text.
+    pub message: String,
+    /// The error's own `source()`, recursively.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<Box<SourceError>>,
+}
+
+impl SourceError {
+    /// Record `error` and its whole `source()` chain.
+    #[must_use]
+    pub fn new(error: &(dyn std::error::Error + 'static)) -> Self {
+        Self {
+            message: error.to_string(),
+            cause: error.source().map(|source| Box::new(Self::new(source))),
+        }
+    }
+
+    /// A failure described by `message`, caused by `source` and its chain.
+    #[must_use]
+    pub fn with_cause(
+        message: impl Into<String>,
+        source: &(dyn std::error::Error + 'static),
+    ) -> Self {
+        Self {
+            message: message.into(),
+            cause: Some(Box::new(Self::new(source))),
+        }
+    }
+}
+
+/// A failure detected in place, with nothing underneath it.
+impl From<String> for SourceError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            cause: None,
+        }
+    }
+}
+
+impl From<&str> for SourceError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+
+impl std::fmt::Display for SourceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for SourceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.cause.as_deref().map(|cause| cause as _)
+    }
+}
+
+/// The error another error was built from: the AI SDK's `cause`.
+///
+/// An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+/// `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+/// nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
+pub enum ErrorCause {
+    AiMux(Box<AiMuxError>),
+    Source(SourceError),
+}
+
+impl ErrorCause {
+    /// The cause for `error`: an aimux error is kept whole, any other error
+    /// is recorded with its whole `source()` chain.
+    #[must_use]
+    pub fn source(error: &(dyn std::error::Error + 'static)) -> Self {
+        match error.downcast_ref::<AiMuxError>() {
+            Some(error) => error.clone().into(),
+            None => Self::Source(SourceError::new(error)),
+        }
+    }
+
+    fn as_error(&self) -> &(dyn std::error::Error + 'static) {
+        match self {
+            Self::AiMux(error) => error.as_ref(),
+            Self::Source(error) => error,
+        }
+    }
+}
+
+impl From<AiMuxError> for ErrorCause {
+    fn from(error: AiMuxError) -> Self {
+        Self::AiMux(Box::new(error))
+    }
+}
+
+impl From<SourceError> for ErrorCause {
+    fn from(error: SourceError) -> Self {
+        Self::Source(error)
+    }
+}
+
+impl std::fmt::Display for ErrorCause {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self.as_error(), f)
+    }
+}
+
+impl std::error::Error for ErrorCause {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.as_error().source()
+    }
+}
+
 /// Unified error type for all aimux operations.
 ///
 /// Variants are cut by *what the caller does about it*, not by where the
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
+///
+/// `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+/// retry's last attempt and a repair's `cause`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Error)]
 #[serde(from = "AiMuxErrorWire", into = "AiMuxErrorWire")]
 pub enum AiMuxError {
     #[error("API call error: {0}")]
-    ApiCall(Box<ApiCallError>),
+    ApiCall(#[source] Box<ApiCallError>),
 
-    #[error("{0}")]
+    #[error(transparent)]
     Retry(RetryError),
 
     #[error("JSON parse error: {0}")]
@@ -289,6 +442,7 @@ pub enum AiMuxError {
     #[error("Error repairing tool call: {cause}")]
     ToolCallRepair {
         original_error: Box<AiMuxError>,
+        #[source]
         cause: Box<AiMuxError>,
     },
 
@@ -936,5 +1090,87 @@ mod tests {
         let back: AiMuxError = serde_json::from_str(&json).unwrap();
         assert_eq!(back.retry_after_hint(), Some(7));
         assert_eq!(back.status_code(), Some(429));
+    }
+
+    fn chain(error: &(dyn std::error::Error + 'static)) -> Vec<String> {
+        std::iter::successors(Some(error), |error| error.source())
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    /// A transport chain survives as `cause`: `source()` walks it in Rust and
+    /// the wire form carries the same chain to every binding.
+    #[test]
+    fn api_call_cause_is_its_source_chain_and_round_trips() {
+        let os = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Connection refused");
+        let transport = SourceError::with_cause("tcp connect error", &os);
+        let err = AiMuxError::ApiCall(Box::new(
+            api_error("Cannot connect to API: tcp connect error").caused_by(transport),
+        ));
+        assert_eq!(
+            chain(&err),
+            [
+                "API call error: Cannot connect to API: tcp connect error",
+                "Cannot connect to API: tcp connect error",
+                "tcp connect error",
+                "Connection refused",
+            ]
+        );
+        let json = serde_json::to_value(&err).unwrap();
+        assert_eq!(
+            json["cause"],
+            serde_json::json!({
+                "message": "tcp connect error",
+                "cause": { "message": "Connection refused" },
+            })
+        );
+        let back: AiMuxError = serde_json::from_value(json).unwrap();
+        assert_eq!(chain(&back), chain(&err));
+    }
+
+    #[test]
+    fn no_cause_stays_off_the_wire() {
+        let json = serde_json::to_value(AiMuxError::ApiCall(Box::new(api_error("bad")))).unwrap();
+        assert!(json.get("cause").is_none(), "{json}");
+        let back: AiMuxError = serde_json::from_value(json).unwrap();
+        assert!(std::error::Error::source(std::error::Error::source(&back).unwrap()).is_none());
+    }
+
+    /// An aimux cause keeps its variant; anything else becomes a `SourceError`.
+    #[test]
+    fn nested_aimux_cause_keeps_its_name() {
+        let inner = AiMuxError::JsonParse("Unexpected end of JSON input".into());
+        let err = AiMuxError::ApiCall(Box::new(
+            api_error("Invalid JSON response").caused_by(ErrorCause::source(&inner)),
+        ));
+        assert!(matches!(
+            &err,
+            AiMuxError::ApiCall(api) if matches!(
+                &api.cause,
+                Some(ErrorCause::AiMux(cause)) if matches!(cause.as_ref(), AiMuxError::JsonParse(_))
+            )
+        ));
+        let json = serde_json::to_value(&err).unwrap();
+        assert_eq!(json["cause"]["name"], "AI_JSONParseError");
+        let back: AiMuxError = serde_json::from_value(json).unwrap();
+        assert_eq!(chain(&back), chain(&err));
+    }
+
+    /// Like the AI SDK's `RetryError.lastError`.
+    #[test]
+    fn retry_source_is_the_last_attempt() {
+        let err = AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![
+                AiMuxError::Other("first".into()),
+                AiMuxError::Other("second".into()),
+            ],
+        });
+        let source = std::error::Error::source(&err).unwrap();
+        assert_eq!(source.to_string(), "second");
+        assert_eq!(
+            err.to_string(),
+            "Failed after 2 attempts. Last error: second"
+        );
     }
 }

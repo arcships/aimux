@@ -205,14 +205,7 @@ pub(crate) async fn post<T>(
     let raw = response.value;
     let headers = response.response_headers;
     convert(raw.clone(), headers.clone()).map_err(|error| {
-        aimux_provider_utils::invalid_response_api_call(
-            error.to_string(),
-            200,
-            url,
-            body,
-            raw,
-            headers,
-        )
+        aimux_provider_utils::invalid_response_api_call(&error, 200, url, body, raw, headers)
     })
 }
 

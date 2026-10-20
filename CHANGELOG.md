@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `ApiCallError` keeps its cause, as the AI SDK's `APICallError.cause`: the
+  transport error with its whole source chain down to the OS error, the body
+  parse error, or the error a response handler returned (`.caused_by(..)`);
+  `invalid_response_api_call` takes that error instead of a message, its text
+  becoming the message. A cause is a nested `AiMuxError` or a `SourceError` chain of an OS, TLS or
+  parser error, and is what `source()` returns; `RetryError::source()` is the
+  last attempt. `FetchError` carries a `SourceError` without the request URL,
+  so transport error messages lose it too: `error sending request for url
+  (…)` is now `error sending request`. Other messages are unchanged.
+
 - aimux's public JSON equals the AI SDK's JSON. Struct fields serialize
   camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
   AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,

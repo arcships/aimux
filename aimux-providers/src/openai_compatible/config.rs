@@ -17,8 +17,8 @@ use std::sync::Arc;
 use aimux_core::types::{ProviderMetadata, Usage};
 use serde_json::Value;
 
-use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
+use aimux_core::{AiMuxError, SourceError};
 use aimux_provider_utils::{
     ExchangeContext, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
     HttpRequest, ProviderErrorParts, combine_headers, normalize_headers,
@@ -372,8 +372,13 @@ struct FetchUserAgent {
 #[async_trait::async_trait]
 impl Fetch for FetchUserAgent {
     async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        let value = reqwest::header::HeaderValue::try_from(self.user_agent.as_str())
-            .map_err(|_| FetchError::Other("invalid header value for user-agent".to_string()))?;
+        let value =
+            reqwest::header::HeaderValue::try_from(self.user_agent.as_str()).map_err(|error| {
+                FetchError::Other(SourceError::with_cause(
+                    "invalid header value for user-agent",
+                    &error,
+                ))
+            })?;
         request.headers.insert(reqwest::header::USER_AGENT, value);
         self.inner
             .clone()

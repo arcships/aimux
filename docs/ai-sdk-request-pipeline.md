@@ -82,7 +82,7 @@ Core user operation
 | crate 依赖方向 | retry primitive 和 Core wrapper 都放进 `aimux-core::retry`，避免 `aimux-core` 反向依赖 `aimux-provider-utils`；函数边界和算法不变 |
 | Rust 错误类型 | AI SDK `RetryError.errors: unknown[]` 对应 `Vec<AiMuxError>`；这是同一错误历史的强类型表达 |
 | enum 尺寸 | `AiMuxError::ApiCall(Box<ApiCallError>)`；`Box` 只解决 Rust enum 尺寸，不改变序列化或 binding 语义 |
-| `cause` | 本轮不加入；AI SDK 用 `cause` 保存的底层错误追加到 message（`{upstream message}: {source}`），或保存在 data/response body，不得静默丢失 |
+| `cause` | `APICallError` 与 AI SDK 一致带可选 `cause`：传输错误连同它的 source 链、2xx/非 2xx handler 自己失败的错误；Rust 里它就是 `Error::source()`，`Retry` 的 source 是最后一次尝试（`lastError`）。差异：非 aimux 的底层错误（OS、TLS、解析器）存成可克隆、可序列化的 `{message, cause?}` 链；message 仍保留原来拼接的底层错误文字，因为 C ABI 的 message getter 只看 message；传输错误先去掉 URL（query 可能带 key）。其他错误类的 `cause` 按 RFC-0047 分步加入，加入前底层错误仍追加到 message |
 | Gateway | 不增加 `GatewayError`；aimux 没有独立 AI Gateway 错误体系 |
 | 既有错误字段 | 保留 Aimux 的 `provider_code`；删除旧路径派生的 `request_id` / `retry_after_ms`，retry hint 的唯一事实源是 `response_headers` |
 | error context 安全 | AI SDK 传原始 request context；Aimux 写入 public error 前使用统一白名单/脱敏/大小限制，binary 与大型 data URL 只保留摘要 |
@@ -225,8 +225,8 @@ non-2xx           → failed_response_handler
 
 2xx 解析失败由 successful handler 产生 `ApiCallError`，不得再调用 failed handler。
 handler 返回的 ApiCall/Timeout/Aborted 原样透传；其他 handler failure 按 AI SDK 的
-`Failed to process successful/error response` 规则包装。由于本轮没有 `cause`，原始信息
-必须保存在 message、data 或受限长度的 response body 中。
+`Failed to process successful/error response` 规则包装，原错误作为 `cause` 保留，其文字
+同时留在 message 中。
 
 标准 handler factory 直接移植 AI SDK `response-handler.ts` 的同名行为。Provider-specific
 协议使用 custom `ResponseHandler`；例如 Bedrock binary event-stream 不是 SSE，不得套
@@ -1041,7 +1041,7 @@ handler 负责分帧和解析，peek 与"错误就 `Err` 返回"仍是 provider 
 
 ## 14. 不做与拒绝方案
 
-本 RFC 不做：`cause`、`GatewayError`、mid-stream reconnect、stream 返回后的任何 retry、
+本 RFC 不做：`GatewayError`、mid-stream reconnect、stream 返回后的任何 retry、
 circuit breaker、tool execution timeout、per-child Router retry policy。
 
 拒绝：

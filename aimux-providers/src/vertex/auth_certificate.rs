@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use aimux_core::AiMuxError;
+use aimux_core::{AiMuxError, SourceError};
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
 use base64::Engine;
 use futures::StreamExt;
@@ -181,14 +181,17 @@ impl Fetch for CertificateFetch {
     }
 }
 
+/// The request URL is reported separately, sanitized, so it is dropped from
+/// reqwest's own text.
 fn fetch_error(error: reqwest::Error) -> FetchError {
+    let error = error.without_url();
     if error.is_builder() {
-        FetchError::Other(error.to_string())
+        FetchError::Other(SourceError::new(&error))
     } else if error.is_timeout() {
         FetchError::Timeout
     } else if error.is_connect() {
-        FetchError::Connect(error.to_string())
+        FetchError::Connect(SourceError::new(&error))
     } else {
-        FetchError::Io(error.to_string())
+        FetchError::Io(SourceError::new(&error))
     }
 }
