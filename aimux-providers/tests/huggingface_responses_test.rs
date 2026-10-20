@@ -1997,6 +1997,33 @@ async fn supports_http_image_urls() {
     assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
 }
 
+/// aimux's own: an `mcp_call` whose `output` is an empty string gives only the
+/// tool-call; upstream pushes the tool-result only `if (part.output)`
+/// (huggingface-responses-language-model.ts:273).
+#[tokio::test]
+async fn mcp_call_with_empty_output_has_no_tool_result() {
+    let server = MockServer::start().await;
+    let mut body = basic_response_body();
+    body["output"] = json!([{
+        "id": "mcp_empty",
+        "type": "mcp_call",
+        "server_label": "web_search",
+        "name": "search",
+        "arguments": "{}",
+        "output": ""
+    }]);
+    mock_json(&server, body).await;
+
+    let result = make_provider(&server)
+        .responses("deepseek-ai/DeepSeek-V3-0324")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    assert_eq!(result.content.len(), 1);
+    assert!(matches!(result.content[0], GenerateContent::ToolCall(_)));
+}
+
 /// aimux's own: an `error` or `response.failed` event after the first one is
 /// an error part, and the finish reason becomes error with the code (else the
 /// event type) as raw (huggingface-responses-language-model.ts:406-419,
@@ -2048,5 +2075,36 @@ async fn reads_mid_stream_error_events() {
             }
             other => panic!("expected Finish last, got {other:?}"),
         }
+    }
+}
+
+/// aimux's own: a chunk that fails to parse is an error part and, when no
+/// later `response.completed` sets it again, the finish reason is error with
+/// no raw value (huggingface-responses-language-model.ts:396-404).
+#[tokio::test]
+async fn malformed_chunk_ends_with_an_error_finish() {
+    let server = MockServer::start().await;
+    let chunks = sse_body(&[
+        sse_event(
+            r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"msg_test","type":"message","role":"assistant"},"sequence_number":1}"#,
+        ),
+        "data:invalid json}\n\n".to_string(),
+    ]);
+    mock_sse(&server, chunks).await;
+
+    let result = make_provider(&server)
+        .responses("deepseek-ai/DeepSeek-V3-0324")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    let outcomes: Vec<_> = result.stream.collect().await;
+    assert!(outcomes.iter().any(Result::is_err), "a parse error item");
+    match outcomes.last() {
+        Some(Ok(StreamPart::Finish { finish_reason, .. })) => {
+            assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+            assert_eq!(finish_reason.raw, None);
+        }
+        other => panic!("expected Finish last, got {other:?}"),
     }
 }
