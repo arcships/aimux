@@ -1,4 +1,5 @@
-//! The OpenAI-compatible image model (`{name}.image`).
+//! The OpenAI-compatible image model (`{name}.image`,
+//! `openai-compatible-image-model.ts`).
 //!
 //! The Rust form of `OpenAICompatibleImageModel`:
 //!
@@ -7,9 +8,6 @@
 //!
 //! Provider-name options are forwarded to the endpoint as given.
 
-use async_trait::async_trait;
-use serde_json::{Map, Value, json};
-
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
@@ -17,14 +15,16 @@ use aimux_core::image_model::{
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::{HttpBody, MultipartForm};
+use async_trait::async_trait;
+use serde_json::{Map, Value, json};
 
-use super::config::CompatModelConfig;
-use super::convert::to_camel_case;
+use crate::openai_compatible::CompatModelConfig;
+use crate::openai_compatible::utils::to_camel_case;
 
 /// An OpenAI-compatible image generation / editing model.
 pub struct OpenAICompatibleImageModel {
     model_id: String,
-    pub(super) config: CompatModelConfig,
+    pub(in crate::openai_compatible) config: CompatModelConfig,
 }
 
 impl OpenAICompatibleImageModel {

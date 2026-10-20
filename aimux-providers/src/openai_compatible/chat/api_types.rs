@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // ── Non-streaming response ──
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct ChatCompletionResponse {
     #[serde(default)]

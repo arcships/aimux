@@ -76,7 +76,7 @@ pub(crate) fn take_images(
 }
 
 use crate::openai::config::OpenAIModelConfig;
-use crate::openai_compatible::config::CompatModelConfig;
+use crate::openai_compatible::CompatModelConfig;
 
 /// The connection a decision adapter borrows from the provider that made it:
 /// native OpenAI, or an OpenAI-compatible preset (a local runtime,

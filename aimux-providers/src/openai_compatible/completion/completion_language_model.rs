@@ -1,31 +1,32 @@
-//! Text-completion endpoint shared by the native and compatible packages.
+//! The text-completion model (`{name}.completion`,
+//! `openai-compatible-completion-language-model.ts`), shared by the native and
+//! the compatible packages.
 
+use aimux_core::AiMuxError;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::options::{CallOptions, ResponseFormat};
+use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
+use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
+use aimux_core::stream_part::StreamPart;
+use aimux_core::types::{FinishReason, Warning};
+use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use aimux_core::AiMuxError;
-use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::language_model_message::{AssistantPart, LanguageModelMessage, UserPart};
-use aimux_core::options::{CallOptions, ResponseFormat};
-use aimux_core::result::StreamResult;
-use aimux_core::result::{GenerateContent, GenerateResult};
-use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
-use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{
-    FinishReason, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage, Warning,
-};
-use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
-
+use crate::openai::config::OpenAIModelConfig;
+use crate::openai_compatible::CompatModelConfig;
+use crate::openai_compatible::chat::parse_finish_reason;
+use crate::openai_compatible::utils::to_camel_case;
 use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
-use super::config::CompatModelConfig;
-use super::convert::{parse_finish_reason, to_camel_case};
-use crate::openai::config::OpenAIModelConfig;
+use super::convert_completion_usage::usage;
+use super::convert_to_completion_prompt::completion_prompt;
+use super::get_response_metadata::metadata;
 
 #[derive(Clone)]
-pub(super) enum CompletionConfig {
+pub(in crate::openai_compatible) enum CompletionConfig {
     Compatible(CompatModelConfig),
     Native(OpenAIModelConfig),
 }
@@ -34,7 +35,7 @@ pub(super) enum CompletionConfig {
 #[derive(Clone)]
 pub struct OpenAICompatibleCompletionModel {
     model_id: String,
-    pub(super) config: CompletionConfig,
+    pub(in crate::openai_compatible) config: CompletionConfig,
 }
 
 impl OpenAICompatibleCompletionModel {
@@ -203,57 +204,11 @@ impl OpenAICompatibleCompletionModel {
     }
 }
 
-fn completion_prompt(options: &CallOptions) -> Result<String, AiMuxError> {
-    let mut text = String::new();
-    for (index, message) in options.prompt.iter().enumerate() {
-        match message {
-            LanguageModelMessage::System { content, .. } if index == 0 => {
-                text.push_str(content);
-                text.push_str("\n\n");
-            }
-            LanguageModelMessage::System { .. } => {
-                return Err(AiMuxError::InvalidPrompt(
-                    "Unexpected system message in prompt".into(),
-                ));
-            }
-            LanguageModelMessage::User { content, .. } => {
-                text.push_str("user:\n");
-                for part in content {
-                    if let UserPart::Text(part) = part {
-                        text.push_str(&part.text);
-                    }
-                }
-                text.push_str("\n\n");
-            }
-            LanguageModelMessage::Assistant { content, .. } => {
-                text.push_str("assistant:\n");
-                for part in content {
-                    match part {
-                        AssistantPart::Text(part) => text.push_str(&part.text),
-                        AssistantPart::ToolCall(_) => {
-                            return Err(AiMuxError::UnsupportedFunctionality(
-                                "tool-call messages".into(),
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
-                text.push_str("\n\n");
-            }
-            LanguageModelMessage::Tool { .. } => {
-                return Err(AiMuxError::UnsupportedFunctionality("tool messages".into()));
-            }
-        }
-    }
-    text.push_str("assistant:\n");
-    Ok(text)
-}
-
 #[derive(Deserialize)]
-struct CompletionResponse {
-    id: Option<String>,
-    created: Option<i64>,
-    model: Option<String>,
+pub(super) struct CompletionResponse {
+    pub(super) id: Option<String>,
+    pub(super) created: Option<i64>,
+    pub(super) model: Option<String>,
     choices: Vec<CompletionChoice>,
     usage: Option<Map<String, Value>>,
 }
@@ -319,59 +274,6 @@ fn parse_response(
         }
     }
     Ok(serde_json::from_value(value)?)
-}
-
-fn metadata(response: &CompletionResponse) -> ResponseMetadata {
-    ResponseMetadata {
-        id: response.id.clone(),
-        timestamp: response
-            .created
-            .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-        model_id: response.model.clone(),
-    }
-}
-
-fn usage(raw: Option<Map<String, Value>>, native: bool) -> Usage {
-    let Some(mut raw) = raw else {
-        return Usage::default();
-    };
-    if native {
-        raw.retain(|key, _| {
-            matches!(
-                key.as_str(),
-                "prompt_tokens" | "completion_tokens" | "total_tokens"
-            )
-        });
-    }
-    let input = raw
-        .get("prompt_tokens")
-        .and_then(Value::as_u64)
-        .map(|n| n as u32);
-    let output = raw
-        .get("completion_tokens")
-        .and_then(Value::as_u64)
-        .map(|n| n as u32);
-    Usage {
-        input_tokens: InputTokenUsage {
-            total: if native {
-                input
-            } else {
-                Some(input.unwrap_or(0))
-            },
-            no_cache: Some(input.unwrap_or(0)),
-            ..Default::default()
-        },
-        output_tokens: OutputTokenUsage {
-            total: if native {
-                output
-            } else {
-                Some(output.unwrap_or(0))
-            },
-            text: Some(output.unwrap_or(0)),
-            ..Default::default()
-        },
-        raw: Some(raw),
-    }
 }
 
 #[async_trait]
@@ -576,7 +478,7 @@ impl Transformer for OpenAICompatibleCompletionStream {
                     self.ctx.request_body.clone(),
                     self.ctx.response_headers.clone(),
                 ),
-                Some(name) => super::chat::stream_error(
+                Some(name) => crate::openai_compatible::chat::stream_error(
                     name,
                     error,
                     &self.ctx.url,
