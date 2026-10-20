@@ -1700,8 +1700,10 @@ mod groq_chat_language_model {
                 .request
                 .and_then(|request| request.body)
                 .expect("should have request body");
-            assert_eq!(request_body["model"], "gemma2-9b-it");
-            assert_eq!(request_body["messages"][0]["content"], "Hello");
+            assert_eq!(
+                serde_json::to_string(&request_body).unwrap(),
+                r#"{"model":"gemma2-9b-it","messages":[{"role":"user","content":"Hello"}]}"#
+            );
         }
     }
 

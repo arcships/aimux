@@ -3,7 +3,8 @@
 //! (fixture `__fixtures__/groq-transcription-text.json`).
 //!
 //! The upstream `_internal.currentDate` hook has no Rust counterpart, so the
-//! two date cases check that the timestamp is set instead of a fixed date.
+//! two date cases check that the timestamp is the clock's time during the call
+//! instead of a fixed date.
 
 use std::collections::HashMap;
 
@@ -11,6 +12,7 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use aimux_core::Timestamp;
 use aimux_core::shared::SharedProviderOptions;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_providers::groq::{GroqProviderSettings, create_groq};
@@ -196,9 +198,12 @@ mod groq_transcription_model {
             .await;
             let model = model_on(&server, None, "whisper-large-v3-turbo");
 
+            let before = Timestamp::now();
             let result = model.do_generate(&call("audio/wav", None)).await.unwrap();
+            let after = Timestamp::now();
 
-            assert!(result.response.timestamp.is_some());
+            let timestamp = result.response.timestamp.unwrap();
+            assert!(before <= timestamp && timestamp <= after);
             assert_eq!(
                 result.response.model_id.as_deref(),
                 Some("whisper-large-v3-turbo")
@@ -215,10 +220,12 @@ mod groq_transcription_model {
             let server = serve(ResponseTemplate::new(200).set_body_json(json_body())).await;
             let model = model_on(&server, None, "whisper-large-v3-turbo");
 
+            let before = Timestamp::now();
             let result = model.do_generate(&call("audio/wav", None)).await.unwrap();
+            let after = Timestamp::now();
 
             let timestamp = result.response.timestamp.unwrap();
-            assert!(chrono::DateTime::parse_from_rfc3339(&timestamp.to_string()).is_ok());
+            assert!(before <= timestamp && timestamp <= after);
             assert_eq!(
                 result.response.model_id.as_deref(),
                 Some("whisper-large-v3-turbo")
