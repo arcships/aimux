@@ -1190,6 +1190,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Google image models `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`
+  and `gemini-3.1-flash-image-preview` report `supports_file_inputs: true`
+  and `supports_mask_inputs: false` (also in the ops capabilities), as
+  `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
+  every id.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not

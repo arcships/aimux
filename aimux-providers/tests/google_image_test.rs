@@ -603,3 +603,25 @@ async fn gemini_should_throw_error_when_mask_is_provided() {
     let err = result.unwrap_err().to_string();
     assert!(err.contains("do not support mask-based image editing"));
 }
+
+/// Upstream lists the Gemini image models that take input files and no masks
+/// (`googleImageModelsWithFileInputSupport`) and leaves the rest undefined.
+#[test]
+fn gemini_image_models_advertise_file_inputs_and_no_masks() {
+    let provider = create_google(GoogleProviderSettings {
+        api_key: Some("test-api-key".to_string()),
+        ..Default::default()
+    })
+    .unwrap();
+    for (model_id, file_inputs, mask_inputs) in [
+        ("gemini-2.5-flash-image", Some(true), Some(false)),
+        ("gemini-3-pro-image-preview", Some(true), Some(false)),
+        ("gemini-3.1-flash-image-preview", Some(true), Some(false)),
+        ("gemini-2.5-pro", None, None),
+        ("gemini-custom", None, None),
+    ] {
+        let model = provider.image_model(model_id).unwrap();
+        assert_eq!(model.supports_file_inputs(), file_inputs, "{model_id}");
+        assert_eq!(model.supports_mask_inputs(), mask_inputs, "{model_id}");
+    }
+}
