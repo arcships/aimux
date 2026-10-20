@@ -1,5 +1,7 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
+
 import ai.arcships.aimux.generated.AimuxOps;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -8,7 +10,6 @@ import com.sun.jna.Memory;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.ptr.PointerByReference;
-import java.math.BigInteger;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,6 +67,10 @@ public final class Aimux {
         return call(0, op, AimuxResult.params(paramsJson), 0);
     }
 
+    public <T> T call(String op, Object params, Class<T> resultType) {
+        return DtoJson.decode(call(op, DtoJson.stringify(params)), resultType);
+    }
+
     JsonNode call(long handle, String op, String params, long abort) {
         Objects.requireNonNull(op, "op");
         if (op.indexOf('\0') >= 0) throw new IllegalArgumentException("NUL in op");
@@ -88,7 +93,7 @@ public final class Aimux {
 
     /** Takes ownership of a handle returned by an op; never wrap the same handle twice. */
     public Resource own(String decimalHandle) {
-        return new Resource(this, AimuxResult.handle(Types.AimuxJson.MAPPER.getNodeFactory().textNode(decimalHandle)));
+        return new Resource(this, AimuxResult.handle(DtoJson.MAPPER.getNodeFactory().textNode(decimalHandle)));
     }
 
     public Future<JsonNode> callAsync(String op, String paramsJson, Executor executor) {
@@ -126,8 +131,11 @@ public final class Aimux {
             error = null;
             AimuxResult.check(ffi, returnedError);
             if (context.terminal == null) throw new IllegalStateException("Native stream returned without End");
-            NativeException terminalError = context.terminal.getError();
-            if (context.terminal.getOutcome() == StreamFrame.Outcome.CANCELLED) {
+            NativeException terminalError = context.terminal.getError() == null ? null : AimuxResult.decode(context.terminal.getError());
+            if (context.terminal.getOutcome() == Outcome.ERROR && terminalError == null) {
+                throw new IllegalStateException("Error End is missing its envelope");
+            }
+            if (context.terminal.getOutcome() == Outcome.CANCELLED) {
                 java.util.concurrent.CancellationException cancelled =
                     new java.util.concurrent.CancellationException("Native stream cancelled");
                 if (terminalError != null) cancelled.initCause(terminalError);
@@ -152,8 +160,8 @@ public final class Aimux {
         private final Consumer<StreamFrame> consumer;
         private final Memory memory = new Memory(1);
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
-        private BigInteger previous;
-        private StreamFrame terminal;
+        private Long previous;
+        private StreamFrame.End terminal;
         private ProtocolException.ResourceLimit resourceLimit;
 
         StreamContext(Aimux aimux, long abort, Consumer<StreamFrame> consumer) {
@@ -170,18 +178,18 @@ public final class Aimux {
                 int length = 0;
                 while (length <= limit && json.getByte(length) != 0) length++;
                 if (length > limit) {
-                    resourceLimit = new ProtocolException.ResourceLimit(AimuxResult.parse(
+                    resourceLimit = new ProtocolException.ResourceLimit(DtoJson.decode(AimuxResult.parse(
                         "{\"kind\":\"protocol\",\"code\":305,\"message\":\"Event exceeds stream budget\","
-                        + "\"error\":{\"name\":\"ResourceLimit\"}}"));
+                        + "\"error\":{\"name\":\"ResourceLimit\"}}"), ErrorEnvelope.class));
                     throw resourceLimit;
                 }
-                StreamFrame frame = StreamFrame.parse(new String(json.getByteArray(0, length),
-                    java.nio.charset.StandardCharsets.UTF_8));
-                if (terminal != null || (previous != null && frame.getSequence().compareTo(previous) <= 0)) {
+                StreamFrame frame = DtoJson.decode(AimuxResult.parse(new String(json.getByteArray(0, length),
+                    java.nio.charset.StandardCharsets.UTF_8)), StreamFrame.class);
+                if (terminal != null || (previous != null && Long.compareUnsigned(DtoJson.u64(frame.getSeq()), previous) <= 0)) {
                     throw new IllegalStateException("Out-of-order frame or frame after End");
                 }
-                previous = frame.getSequence();
-                if (frame.isEnd()) terminal = frame;
+                previous = DtoJson.u64(frame.getSeq());
+                if (frame instanceof StreamFrame.End) terminal = (StreamFrame.End) frame;
                 consumer.accept(frame);
             } catch (Throwable error) {
                 if (failure.compareAndSet(null, error)) {

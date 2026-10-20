@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode as parse};
 use crate::op::{
-    ABI_VERSION, Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope,
+    ABI_VERSION, Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef,
 };
 
 pub(crate) static OPS: &[OpDescriptor] = &[
@@ -16,8 +16,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::runtime::RuntimeDescribeParams",
-        result_type: "serde_json::Value",
+        request_type: TypeRef::of::<RuntimeDescribeParams>(),
+        result_type: TypeRef::of::<serde_json::Value>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -38,8 +38,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::runtime::RuntimeConfigureParams",
-        result_type: "serde_json::Value",
+        request_type: TypeRef::of::<RuntimeConfigureParams>(),
+        result_type: TypeRef::of::<serde_json::Value>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -62,25 +62,26 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     r.push((&OPS[1], Handler::Call(configure)));
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RuntimeDescribeParams {}
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RuntimeConfigureParams {
     logging: Option<LoggingConfig>,
     #[serde(default, deserialize_with = "deserialize_proxy")]
+    #[schemars(with = "Option<super::handles::TransportProxy>")]
     proxy: Option<ProxyConfig>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct LoggingConfig {
     level: LogLevel,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 enum LogLevel {
     Off,
@@ -104,8 +105,6 @@ impl LogLevel {
     }
 }
 
-// Reuse the transport's wire type, adding strict control-key validation only
-// at this boundary. ProxyConfig remains open for its existing Rust consumers.
 fn deserialize_proxy<'de, D>(deserializer: D) -> Result<Option<ProxyConfig>, D::Error>
 where
     D: Deserializer<'de>,
