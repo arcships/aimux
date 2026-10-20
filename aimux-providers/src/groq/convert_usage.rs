@@ -44,6 +44,3 @@ pub(crate) fn convert_groq_usage(usage: Option<&GroqUsage>) -> Usage {
         raw: Some(usage.raw.clone()),
     }
 }
-
-#[cfg(test)]
-mod tests;

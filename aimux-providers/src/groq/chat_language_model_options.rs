@@ -98,6 +98,3 @@ pub(crate) fn parse_groq_options(
     )
     .map(Option::unwrap_or_default)
 }
-
-#[cfg(test)]
-mod tests;

@@ -73,6 +73,3 @@ pub(crate) fn prepare_tools(options: &CallOptions, model_id: &str) -> PreparedTo
     });
     prepared
 }
-
-#[cfg(test)]
-mod tests;

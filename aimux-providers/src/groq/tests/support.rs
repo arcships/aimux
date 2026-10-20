@@ -1,5 +1,6 @@
-//! The wiremock harness shared by the `@ai-sdk/groq` chat ports: every test
-//! builds the model through the Groq package (`create_groq(..).chat(model)`).
+//! The wiremock harness of the older `@ai-sdk/groq` chat ports: every test
+//! builds the model through the Groq package (`create_groq(..).chat(model)`)
+//! against a loopback `MockServer`.
 
 pub(super) use aimux_core::tool::RawToolCall;
 pub(super) use futures::StreamExt;
@@ -12,20 +13,16 @@ pub(super) use serial_test::serial;
 pub(super) use aimux_core::AiMuxError;
 pub(super) use aimux_core::language_model::LanguageModel;
 pub(super) use aimux_core::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, ToolCallPart,
+    ToolPart, ToolResultOutput, ToolResultPart,
 };
-pub(super) use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, Tool};
+pub(super) use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
 pub(super) use aimux_core::provider::Provider;
 pub(super) use aimux_core::result::{GenerateContent, ReasoningOutput};
-pub(super) use aimux_core::shared::{FileBytes, FileData};
 pub(super) use aimux_core::stream_part::StreamPart;
-pub(super) use aimux_core::tool::FunctionTool;
 pub(super) use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
 
-pub(super) use aimux_providers::groq::{
-    GroqChatLanguageModel, GroqProviderSettings, create_groq, groq,
-};
+pub(super) use crate::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq, groq};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -51,7 +48,7 @@ pub(super) fn model_at(server: &MockServer, model_id: &str) -> GroqChatLanguageM
 }
 
 pub(super) fn browser_search_model_ids() -> Vec<&'static str> {
-    include_str!("../../../src/groq/browser_search_models.rs")
+    include_str!("../browser_search_models.rs")
         .split('"')
         .filter(|value| value.starts_with("openai/"))
         .collect()
@@ -231,7 +228,7 @@ pub(super) async fn failed_call(status: u16, body: Value) -> aimux_core::error::
     }
 }
 
-pub(super) fn groq_at(server: &MockServer) -> aimux_providers::groq::GroqProvider {
+pub(super) fn groq_at(server: &MockServer) -> crate::groq::GroqProvider {
     create_groq(GroqProviderSettings {
         base_url: Some(server.uri()),
         api_key: Some("test-api-key".to_string()),

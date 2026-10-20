@@ -12,10 +12,10 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use crate::groq::{GroqProviderSettings, create_groq};
 use aimux_core::Timestamp;
 use aimux_core::shared::SharedProviderOptions;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::groq::{GroqProviderSettings, create_groq};
 
 /// Stand-in for `transcript-test.mp3`.
 const AUDIO: [u8; 4] = [0x49, 0x44, 0x33, 0x04];

@@ -1,10 +1,9 @@
-//! Ports of `src/groq-chat-language-model.test.ts` from `@ai-sdk/groq@4.0.52`
-//! (`doGenerate`, `doStream`, `doStream with raw chunks`), followed by the aimux
-//! cases that have no upstream counterpart.
+//! Ports of `src/groq-chat-language-model.test.ts` from `@ai-sdk/groq@4.0.52`.
 //!
-//! The snapshot, header and response-metadata cases answer from [`MockFetch`]
-//! with the `fixtures/` files; the other cases answer from a local `wiremock`
-//! server (`support.rs`).
+//! Two harnesses share the file: the response-metadata, header,
+//! structured-output, tool-call and reasoning cases use the [`MockFetch`]
+//! transport; the older ones (formerly `tests/groq_test.rs`) a wiremock
+//! `MockServer` from [`super::support`].
 //!
 //! Harness differences from the TypeScript (expectations are unchanged):
 //! - `toMatchSnapshot` values are the `.snap` entries in `snapshots/`, with
@@ -31,17 +30,17 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use crate::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::StreamResult;
 use aimux_core::shared::provider_namespace;
 use aimux_core::tool::FunctionTool;
-use aimux_providers::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch, Seen};
+use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 
 use super::support::*;
 
@@ -1779,11 +1778,10 @@ fn every_entry_point_reports_groq_chat() {
     assert_eq!(groq().call("m").provider(), "groq.chat");
     assert_eq!(groq().language_model("m").unwrap().provider(), "groq.chat");
     // The registry entry point and the preset build the same identity.
-    let model =
-        aimux_providers::create_provider("groq", aimux_providers::PresetSettings::default())
-            .unwrap()
-            .language_model("m")
-            .unwrap();
+    let model = crate::create_provider("groq", crate::PresetSettings::default())
+        .unwrap()
+        .language_model("m")
+        .unwrap();
     assert_eq!(model.provider(), "groq.chat");
 }
 
@@ -1933,4 +1931,38 @@ async fn the_key_is_read_from_the_environment_per_request_not_at_creation() {
             None => std::env::remove_var("GROQ_API_KEY"),
         }
     }
+}
+
+/// aimux's own: `usage.raw` keeps a `null` usage field as `null`, as
+/// `convertGroqUsage` returns the parsed usage object (convert-groq-usage.ts:53);
+/// keys outside the usage schema are dropped (groq-chat-language-model.ts:564-580).
+#[tokio::test]
+async fn usage_raw_keeps_null_fields() {
+    let server = MockServer::start().await;
+    let mut body = groq_text_body();
+    body["usage"] = json!({
+        "prompt_tokens": 45,
+        "completion_tokens": 607,
+        "total_tokens": 652,
+        "prompt_tokens_details": { "cached_tokens": null },
+        "completion_tokens_details": null,
+        "queue_time": 0.01
+    });
+    mock_json(&server, body).await;
+
+    let result = make_provider(&server)
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    assert_eq!(
+        result.usage.raw.map(Value::Object),
+        Some(json!({
+            "prompt_tokens": 45,
+            "completion_tokens": 607,
+            "total_tokens": 652,
+            "prompt_tokens_details": { "cached_tokens": null },
+            "completion_tokens_details": null
+        }))
+    );
 }

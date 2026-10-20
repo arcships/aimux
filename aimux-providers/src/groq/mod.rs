@@ -26,3 +26,6 @@ pub(crate) use chat_language_model::chat_test_stream;
 pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
 pub use provider::{GroqProvider, GroqProviderSettings, create_groq, groq};
 pub use transcription_model::GroqTranscriptionModel;
+
+#[cfg(test)]
+mod tests;
