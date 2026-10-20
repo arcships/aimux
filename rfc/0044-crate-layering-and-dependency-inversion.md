@@ -21,7 +21,7 @@
 | L3 | core 不再直接调用录制、session 存储、trace、具体下载实现；下载改为注入接口（§4）；传输层的调用关联用对齐文档 §3.5 的 `DiagnosticScope`（C3）；录制、session、trace 在调用层的接入方式由调用观测的后续 RFC 定（§4.1） | 去掉 4 个进程全局单例；关闭 RFC-0039 G-a |
 | L4 | 下载只保留一份实现：地址校验、重定向逐跳校验在 `aimux-provider-utils`，何时下载、大小上限在 `aimux` 的操作里 | 删除 core 自建的 reqwest client 和第二个重定向循环 |
 | L5 | `aimux` 的源码目录按上游 `ai/src/<操作>/` 组织：每个操作一个目录，trait 只在 `aimux-provider` | `generate_video`、`transcribe`、`decide` 等离开 `*_model.rs` |
-| L6 | 各 crate 的文件和测试按上游包对照：`aimux-provider-utils` 对 provider-utils，`aimux` 对 `ai/src/<操作>/`，测内部函数的单元测试放在源文件旁边（`foo/tests.rs`），走公开 API 的测试留在 `tests/`；`aimux-providers` 内部另文 | #278 能按文件名对照上游测试 |
+| L6 | 各 crate 的文件和测试按上游包对照：`aimux-provider-utils` 对 provider-utils，`aimux` 对 `ai/src/<操作>/`，每个模块目录一个 `tests/` 子目录，一个上游测试文件对应其中一个同名 Rust 文件，crate 的 `tests/` 只留跨模块的场景测试；`aimux-providers` 内部另文 | #278 能按文件名对照上游测试 |
 | L7 | 一个共享错误枚举放在 `aimux-provider`（对齐文档 §2.2 已定），差异登记 | 每个错误补 `cause` 另开小 PR，不放进本文的拆分步骤 |
 | L8 | `aimux-stream` 并入 `aimux-provider-utils`，删除这个 crate；SSE 适配放进对应上游 `parse-json-event-stream.ts` 的文件，`extract_lines` 放进 `extract_lines.rs`，第三方 `sse-stream` 的位置相当于上游的 `eventsource-parser` | 少一个发布包和体积预算；改写对齐文档 D17“aimux-stream 保持独立”，登记（§7） |
 
@@ -183,7 +183,7 @@ provider-utils 里已有的 `decision_language_model.rs` 随 decide 的规范类
 
 ### 3.2 aimux 的目录
 
-按上游 `ai/src/` 组织，每个操作一个目录，测试放在同一目录：
+按上游 `ai/src/` 组织，每个操作一个目录，测试放在该目录的 `tests/` 子目录（§5）：
 
 ```text
 aimux/src/
@@ -233,7 +233,7 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 ## 5. 目录与测试位置
 
 1. `aimux-provider-utils` 的文件对照上游 provider-utils，`aimux` 对照 `ai/src/<操作>/`（§3.2），文件名把 kebab-case 换成 snake_case。
-2. 测内部函数的单元测试放在源文件旁边：`foo.rs` 里写 `#[cfg(test)] mod tests;`，测试在 `foo/tests.rs`（Rust 默认的模块路径，不用 `#[path]`），对应上游 `foo.test.ts`。走公开 API 的测试留在 `tests/`，按厂商或操作分子目录，合成一个测试程序 `tests/it/main.rs`。
+2. 测试照 RFC-0046 §5 的厂商测试目录：每个模块目录一个 `tests/` 子目录，目录的 `mod.rs`（crate 根目录是 `lib.rs`）末尾一行 `#[cfg(test)] mod tests;`；一个上游测试文件对应 `tests/` 下一个与被测源文件同名的 Rust 文件，如 `ai/src/generate-text/generate-text.test.ts` → `aimux/src/generate_text/tests/generate_text.rs`，上游 provider-utils 的 `src/post-to-api.test.ts` → `aimux-provider-utils/src/tests/post_to_api.rs`。直接调内部函数的和走公开 API 的都放这里，不用 `#[path]`，源文件里不写测试；被测的私有函数改成 `pub(super)`。crate 的 `tests/` 只留跨模块的场景测试。
 3. `aimux-providers` 内部的目录和测试搬移不在本文范围。
 
 ## 6. 实施顺序
