@@ -1023,7 +1023,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     tool_name: name.to_string(),
                     input,
                     provider_executed: Some(true),
-                    dynamic: Some(true),
+                    dynamic: None,
                     provider_metadata: None,
                 }));
 
@@ -1034,7 +1034,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         result: output.clone(),
                         is_error: None,
                         preliminary: None,
-                        dynamic: Some(true),
+                        dynamic: None,
                         provider_metadata: None,
                     }));
                 }
@@ -1048,7 +1048,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     tool_name: "list_tools".to_string(),
                     input: json!({ "server_label": server_label }).to_string(),
                     provider_executed: Some(true),
-                    dynamic: Some(true),
+                    dynamic: None,
                     provider_metadata: None,
                 }));
 
@@ -1059,7 +1059,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         result: json!({ "tools": tools }),
                         is_error: None,
                         preliminary: None,
-                        dynamic: Some(true),
+                        dynamic: None,
                         provider_metadata: None,
                     }));
                 }

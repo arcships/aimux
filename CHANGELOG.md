@@ -1148,6 +1148,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hugging Face MCP calls (`mcp_call`, `mcp_list_tools`) and their results are
+  no longer marked `dynamic`, as in `@ai-sdk/huggingface` 2.0.62. Without a
+  local tool of that name, `generate_text` now returns the call marked invalid
+  (`NoSuchTool`), as the AI SDK's `parseToolCall` does.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now
