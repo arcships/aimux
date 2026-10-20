@@ -232,7 +232,7 @@ fn partner_settings(transport: FetchFunction) -> aimux_providers::VertexPartnerP
 
 /// MaaS calls `createOpenAICompatible` from the `@ai-sdk/openai-compatible`
 /// that google-vertex pins, 3.0.61 (google-vertex-maas-provider.ts:123-130),
-/// which depends on 5.0.51.
+/// which depends on 5.0.53.
 #[tokio::test]
 async fn vertex_maas_names_the_nested_openai_compatible() {
     let (fetch, transport) = transport();
