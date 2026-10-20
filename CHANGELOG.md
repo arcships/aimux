@@ -1210,6 +1210,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses reasoning deltas carry the reasoning item's
+  id as `providerMetadata.<key>.itemId`, as the AI SDK's do and as aimux's
+  reasoning start and end parts already did.
+
 - An OpenAI (and Azure) Responses stream that never sees
   `response.created` finishes with `responseId: null` in its provider
   metadata, as the AI SDK does, instead of an empty string.
