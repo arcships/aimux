@@ -1,0 +1,8 @@
+{
+  "type": "provider",
+  "id": "anthropic.web_search_20250305",
+  "name": "web_search",
+  "args": {
+    "maxUses": 1
+  }
+}

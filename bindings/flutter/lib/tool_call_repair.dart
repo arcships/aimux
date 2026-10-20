@@ -7,10 +7,16 @@ final class ToolCallRepair {
   final Aimux client;
   ToolCallRepair(this.client);
 
-  Future<Object?> context(Map<String, dynamic> params) =>
-      client.call(ops.OP_TOOL_REPAIR_CONTEXT, params: params);
-  Future<Object?> apply(Map<String, dynamic> params) =>
-      client.call(ops.OP_TOOL_REPAIR_APPLY, params: params);
-  Future<Object?> applyResult(Map<String, dynamic> params) =>
-      client.call(ops.OP_TOOL_REPAIR_APPLY_RESULT, params: params);
+  Future<ToolRepairContextResult> context(
+          ToolRepairContextRequest params) async =>
+      ToolRepairContextResult.fromJson(
+          await client.call(ops.OP_TOOL_REPAIR_CONTEXT, params: params));
+  Future<ToolCall> apply(ToolRepairApplyRequest params) async =>
+      ToolCall.fromJson((await client.call(ops.OP_TOOL_REPAIR_APPLY,
+          params: params)) as Map<String, dynamic>);
+  Future<GenerateTextResult> applyResult(
+          ToolRepairApplyResultRequest params) async =>
+      GenerateTextResult.fromJson(
+          (await client.call(ops.OP_TOOL_REPAIR_APPLY_RESULT, params: params))
+              as Map<String, dynamic>);
 }

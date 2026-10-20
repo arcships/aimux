@@ -1,5 +1,9 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.StreamFrame;
+import ai.arcships.aimux.types.DtoJson;
+import ai.arcships.aimux.types.Outcome;
+
 import ai.arcships.aimux.generated.AimuxOps;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.jna.NativeLibrary;
@@ -135,9 +139,9 @@ class NativeLibraryTest {
                 catch (InterruptedException error) { throw new AssertionError(error); }
             })).isInstanceOf(CancellationException.class);
             assertThat(frames).hasSize(1);
-            assertThat(frames.get(0).isEnd()).isTrue();
-            assertThat(frames.get(0).getOutcome()).isEqualTo(StreamFrame.Outcome.CANCELLED);
-            assertThat(frames.get(0).getJson().path("type").asText()).isEqualTo("end");
+            assertThat(frames.get(0) instanceof StreamFrame.End).isTrue();
+            assertThat(((StreamFrame.End) frames.get(0)).getOutcome()).isEqualTo(Outcome.CANCELLED);
+            assertThat(DtoJson.MAPPER.valueToTree(frames.get(0)).path("type").asText()).isEqualTo("end");
         }
     }
 

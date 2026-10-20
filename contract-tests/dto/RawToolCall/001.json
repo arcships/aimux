@@ -1,0 +1,12 @@
+{
+  "toolCallId": "call-1",
+  "toolName": "weather",
+  "input": "{\"town\":\"Tokyo\"}",
+  "providerExecuted": true,
+  "dynamic": true,
+  "providerMetadata": {
+    "openai": {
+      "itemId": "item_1"
+    }
+  }
+}

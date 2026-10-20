@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::ops::operation::EmptyParams;
 
 pub(crate) static OPS: &[OpDescriptor] = &[
@@ -20,8 +20,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::replay::ReplayCreateParams",
-        result_type: "aimux_ops::ops::replay::ReplaySessionHandle",
+        request_type: TypeRef::of::<ReplayCreateParams>(),
+        result_type: TypeRef::of::<ReplaySessionHandle>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -39,8 +39,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::ReplaySession],
-        request_type: "EmptyParams",
-        result_type: "()",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<()>(),
         event_type: None,
         scope: Scope::Future,
         terminal_type: None,
@@ -58,8 +58,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::ReplaySession],
-        request_type: "EmptyParams",
-        result_type: "aimux_ops::ops::replay::ReplayInspection",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<ReplayInspection>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -77,8 +77,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::ReplaySession],
-        request_type: "EmptyParams",
-        result_type: "aimux_ops::ops::replay::ReplayPlan",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<ReplayPlan>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -96,8 +96,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::ReplaySession],
-        request_type: "aimux_ops::ops::replay::ReplayLiveParams",
-        result_type: "aimux_ops::ops::replay::ReplayLiveResult",
+        request_type: TypeRef::of::<ReplayLiveParams>(),
+        result_type: TypeRef::of::<ReplayLiveResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -131,18 +131,18 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplayCreateParams {
     recordings_jsonl: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ReplaySessionHandle {
     handle: HandleId,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReplayLiveParams {
     call_id: String,
@@ -152,19 +152,19 @@ pub struct ReplayLiveParams {
     _abort: Option<HandleId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum LiveTarget {
     Model { handle: HandleId },
     Registry { handle: HandleId },
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ReplayInspection {
     recordings: Vec<ReplayRecordingInfo>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct ReplayRecordingInfo {
     call_id: String,
@@ -175,12 +175,12 @@ struct ReplayRecordingInfo {
     exchange_count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ReplayPlan {
     calls: Vec<ReplayPlannedCall>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct ReplayPlannedCall {
     call_id: String,
@@ -190,8 +190,9 @@ struct ReplayPlannedCall {
     requires_target: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
+#[schemars(extend("x-aimux-codec" = "ordered-untagged"))]
 pub enum ReplayLiveResult {
     Language(aimux_core::generate::GenerateTextResult),
     Decision(aimux_core::decision_model::DecideResult),

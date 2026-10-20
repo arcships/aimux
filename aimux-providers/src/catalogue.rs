@@ -114,7 +114,7 @@ pub fn normalize_provider_name(anya2a_id: &str) -> Option<&'static str> {
 
 /// In-memory catalogue: per-provider model specs, keyed by aimux provider
 /// name then model id.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Catalogue {
     #[serde(default)]
