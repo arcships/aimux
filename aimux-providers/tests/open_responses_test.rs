@@ -2266,3 +2266,35 @@ async fn supports_http_image_urls() {
     assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
     assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
 }
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:279-305):
+/// an assistant text part's `providerOptions.<name>.itemId` becomes the
+/// message `id`, its `url_citation` annotations are replayed, and text parts
+/// with different item ids go out as separate messages.
+#[test]
+fn assistant_text_replays_the_item_id_and_annotations() {
+    let citation = json!({
+        "type": "url_citation", "start_index": 0, "end_index": 7,
+        "url": "https://example.com/source", "title": "Example source"
+    });
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [
+            { "type": "text", "text": "Sourced answer",
+              "providerOptions": { "open-responses": { "itemId": "msg_1", "annotations": [citation] } } },
+            { "type": "text", "text": "Next",
+              "providerOptions": { "open-responses": { "itemId": "msg_2" } } }
+        ]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input,
+        json!([
+            { "type": "message", "role": "assistant", "id": "msg_1",
+              "content": [{ "type": "output_text", "text": "Sourced answer", "annotations": [citation] }] },
+            { "type": "message", "role": "assistant", "id": "msg_2",
+              "content": [{ "type": "output_text", "text": "Next" }] }
+        ])
+    );
+}

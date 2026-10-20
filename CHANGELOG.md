@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses replays an assistant text part's item id and URL
+  citations, as the AI SDK does: `providerOptions.<name>.itemId` becomes the
+  message `id`, `url_citation` annotations go back on the `output_text`, and
+  text parts with different item ids are sent as separate messages.
+
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider

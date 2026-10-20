@@ -1065,14 +1065,37 @@ fn convert_to_open_responses_input_with_namespace(
             }
             LanguageModelMessage::Assistant { content, .. } => {
                 let mut assistant_content: Vec<Value> = Vec::new();
+                let mut assistant_message_id: Option<String> = None;
 
                 for part in content {
                     match part {
-                        AssistantPart::Text(TextPart { text, .. }) => {
-                            assistant_content.push(json!({
-                                "type": "output_text",
-                                "text": text,
-                            }));
+                        AssistantPart::Text(TextPart {
+                            text,
+                            provider_options,
+                        }) => {
+                            let data = provider_options
+                                .as_ref()
+                                .and_then(|options| options.get(provider_options_name));
+                            let item_id = data
+                                .and_then(|data| data.get("itemId"))
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                            if !assistant_content.is_empty() && assistant_message_id != item_id {
+                                flush_assistant_content(
+                                    &mut assistant_content,
+                                    assistant_message_id.take(),
+                                    &mut input,
+                                );
+                            }
+                            assistant_message_id = item_id;
+                            let mut output_text = json!({ "type": "output_text", "text": text });
+                            if let Some(annotations) = data
+                                .and_then(|data| data.get("annotations"))
+                                .and_then(url_citations)
+                            {
+                                output_text["annotations"] = annotations;
+                            }
+                            assistant_content.push(output_text);
                         }
                         AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
@@ -1084,7 +1107,11 @@ fn convert_to_open_responses_input_with_namespace(
                                 Value::String(s) => s.clone(),
                                 other => other.to_string(),
                             };
-                            flush_assistant_content(&mut assistant_content, &mut input);
+                            flush_assistant_content(
+                                &mut assistant_content,
+                                assistant_message_id.take(),
+                                &mut input,
+                            );
                             input.push(json!({
                                 "type": "function_call",
                                 "call_id": tool_call_id,
@@ -1093,7 +1120,11 @@ fn convert_to_open_responses_input_with_namespace(
                             }));
                         }
                         AssistantPart::Reasoning(part) => {
-                            flush_assistant_content(&mut assistant_content, &mut input);
+                            flush_assistant_content(
+                                &mut assistant_content,
+                                assistant_message_id.take(),
+                                &mut input,
+                            );
                             let metadata = part
                                 .provider_options
                                 .as_ref()
@@ -1165,7 +1196,11 @@ fn convert_to_open_responses_input_with_namespace(
                         _ => {}
                     }
                 }
-                flush_assistant_content(&mut assistant_content, &mut input);
+                flush_assistant_content(
+                    &mut assistant_content,
+                    assistant_message_id.take(),
+                    &mut input,
+                );
             }
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
@@ -1198,11 +1233,44 @@ fn convert_to_open_responses_input_with_namespace(
     (json!(input), instructions, warnings)
 }
 
-fn flush_assistant_content(content: &mut Vec<Value>, input: &mut Vec<Value>) {
-    if !content.is_empty() {
-        input
-            .push(json!({"type":"message", "role":"assistant", "content":std::mem::take(content)}));
+/// Push the pending assistant text as one message, with the item id the text
+/// parts replayed (`providerOptions.<name>.itemId`) when they had one.
+fn flush_assistant_content(content: &mut Vec<Value>, id: Option<String>, input: &mut Vec<Value>) {
+    if content.is_empty() {
+        return;
     }
+    let mut message =
+        json!({"type":"message", "role":"assistant", "content":std::mem::take(content)});
+    if let Some(id) = id {
+        message["id"] = json!(id);
+    }
+    input.push(message);
+}
+
+/// The `url_citation` annotations of a replayed output text, or `None` when
+/// the value is not a list of them (parseOutputTextAnnotations).
+fn url_citations(value: &Value) -> Option<Value> {
+    let annotations = value.as_array()?;
+    annotations
+        .iter()
+        .map(|annotation| {
+            (annotation["type"] == "url_citation"
+                && annotation["start_index"].is_number()
+                && annotation["end_index"].is_number()
+                && annotation["url"].is_string()
+                && annotation["title"].is_string())
+            .then(|| {
+                json!({
+                    "type": "url_citation",
+                    "start_index": annotation["start_index"],
+                    "end_index": annotation["end_index"],
+                    "url": annotation["url"],
+                    "title": annotation["title"],
+                })
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(Value::Array)
 }
 
 /// Convert user message content parts to the Open Responses format.
