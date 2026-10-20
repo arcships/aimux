@@ -804,3 +804,31 @@ async fn sends_safeguards_and_their_beta() {
         Some("dangerous-tool-use-2026-09-03")
     );
 }
+
+/// The AI SDK knows Vertex ids such as `claude-sonnet-4@20250514`
+/// (`/claude-sonnet-4(?:-|@)/`) and defaults their `max_tokens` to 64000.
+#[tokio::test]
+async fn knows_vertex_claude_4_model_ids() {
+    for (model_id, max_tokens) in [
+        ("claude-sonnet-4@20250514", 64000),
+        ("claude-opus-4@20250514", 32000),
+    ] {
+        let fetch = mock();
+        let result = create_anthropic(settings(&fetch))
+            .unwrap()
+            .messages(model_id)
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        assert_eq!(
+            fetch.seen()[0].json_body()["max_tokens"],
+            json!(max_tokens),
+            "{model_id}"
+        );
+        assert!(
+            result.warnings.is_empty(),
+            "{model_id}: {:?}",
+            result.warnings
+        );
+    }
+}

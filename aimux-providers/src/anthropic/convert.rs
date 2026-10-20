@@ -1875,9 +1875,9 @@ fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
         caps(64000, false, false, false, false, true, true)
     } else if model_id.contains("claude-opus-4-1") {
         caps(32000, false, false, false, false, true, true)
-    } else if model_id.contains("claude-sonnet-4-") {
+    } else if model_id.contains("claude-sonnet-4-") || model_id.contains("claude-sonnet-4@") {
         caps(64000, false, false, false, false, false, true)
-    } else if model_id.contains("claude-opus-4-") {
+    } else if model_id.contains("claude-opus-4-") || model_id.contains("claude-opus-4@") {
         caps(32000, false, false, false, false, false, true)
     } else if model_id.contains("claude-3-haiku") {
         caps(4096, false, false, false, false, false, true)

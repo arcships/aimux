@@ -1190,6 +1190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic knows the Vertex ids `claude-sonnet-4@…` and `claude-opus-4@…`
+  (64000 and 32000 max output tokens), as the AI SDK does; it took them for
+  unknown models, sending 128000 `max_tokens` with an unknown-model warning.
 - Anthropic sends `providerOptions.anthropic.safeguards` as `safeguards`
   (`classifierContext` as `classifier_context`) with the
   `dangerous-tool-use-2026-09-03` beta, as the AI SDK does; it validated the
