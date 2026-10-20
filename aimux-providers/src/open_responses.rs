@@ -1138,7 +1138,7 @@ fn build_request_body(
                 }
                 Some(format)
             } else {
-                Some(json!({ "type": "json_schema" }))
+                Some(json!({ "type": "json_object" }))
             }
         }
         _ => None,

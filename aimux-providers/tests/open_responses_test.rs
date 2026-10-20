@@ -2731,3 +2731,26 @@ async fn stream_errors_become_error_parts() {
         assert_eq!(finish_reason.raw.as_deref(), Some(code));
     }
 }
+
+/// TS: `getArgs` (open-responses-language-model.ts:304-315): a JSON response
+/// format without a schema is sent as `{ type: "json_object" }`.
+#[tokio::test]
+async fn schema_less_json_is_a_json_object() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let options = CallOptions {
+        response_format: Some(ResponseFormat::Json {
+            schema: None,
+            name: None,
+            description: None,
+        }),
+        ..default_options(test_prompt())
+    };
+    make_model(&server, "m")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let request = &server.received_requests().await.unwrap()[0];
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["text"], json!({ "format": { "type": "json_object" } }));
+}

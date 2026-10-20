@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses sends a JSON response format without a schema as
+  `{ type: "json_object" }`, as the AI SDK does. It was sent as a
+  `json_schema` format with no schema.
+
 - Open Responses turns `response.failed` events that carry an error, and
   `error` events after the first one, into error parts with the event as
   `data`, and finishes with `error`, as the AI SDK does. Both used to end
