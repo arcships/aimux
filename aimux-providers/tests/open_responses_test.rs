@@ -2754,3 +2754,36 @@ async fn schema_less_json_is_a_json_object() {
     let body: Value = serde_json::from_slice(&request.body).unwrap();
     assert_eq!(body["text"], json!({ "format": { "type": "json_object" } }));
 }
+
+/// TS: `getArgs` (open-responses-language-model.ts:166-300): with no
+/// extension to encode them, provider-defined tools are left out with an
+/// `unsupported` warning each, and a tool choice naming one is omitted.
+#[tokio::test]
+async fn provider_defined_tools_are_unsupported() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let options: CallOptions = serde_json::from_value(json!({
+        "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+        "tools": [
+            { "type": "provider", "id": "openai.web_search", "name": "web_search", "args": {} },
+            { "type": "provider", "id": "openai.file_search", "name": "file_search", "args": {} }
+        ],
+        "toolChoice": { "type": "tool", "toolName": "web_search" }
+    }))
+    .unwrap();
+    let result = make_model(&server, "m")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        json!(result.warnings),
+        json!([
+            { "type": "unsupported", "feature": "provider-defined tool openai.web_search" },
+            { "type": "unsupported", "feature": "provider-defined tool openai.file_search" }
+        ])
+    );
+    let request = &server.received_requests().await.unwrap()[0];
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert!(body.get("tools").is_none());
+    assert!(body.get("tool_choice").is_none());
+}

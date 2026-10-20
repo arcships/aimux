@@ -1096,7 +1096,15 @@ fn build_request_body(
                         }
                         Some(t)
                     }
-                    _ => None,
+                    // No extension encodes provider tools here (getArgs
+                    // warns when none does).
+                    Tool::Provider(tool) => {
+                        warnings.push(Warning::Unsupported {
+                            feature: format!("provider-defined tool {}", tool.id),
+                            details: None,
+                        });
+                        None
+                    }
                 })
                 .collect()
         })
@@ -1107,10 +1115,15 @@ fn build_request_body(
         Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
         Some(LanguageModelV4ToolChoice::None) => Some(json!("none")),
         Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
-        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
-            "type": "function",
-            "name": tool_name,
-        })),
+        // A provider tool's choice is omitted, as it has no encoding.
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+            let provider_tool = options
+                .tools
+                .iter()
+                .flatten()
+                .any(|tool| matches!(tool, Tool::Provider(tool) if &tool.name == tool_name));
+            (!provider_tool).then(|| json!({ "type": "function", "name": tool_name }))
+        }
     };
 
     // Convert response format (text format).

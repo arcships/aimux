@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses warns `unsupported` for each provider-defined tool and
+  omits a tool choice that names one, as the AI SDK does when no extension
+  encodes the tool. They were dropped silently, and the tool choice went
+  out as a function choice for a tool the request did not contain.
+
 - Open Responses sends a JSON response format without a schema as
   `{ type: "json_object" }`, as the AI SDK does. It was sent as a
   `json_schema` format with no schema.
