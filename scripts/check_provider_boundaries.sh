@@ -177,7 +177,7 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 # the providerOptions namespace goes through `options::anthropic_options` /
 # `CANONICAL`: a `"anthropic"` literal anywhere else would read or write a key
 # that ignores the provider's custom name.
-anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic_model.rs'
+anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic'
 rule6_hits="$(
     # shellcheck disable=SC2086
     grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \

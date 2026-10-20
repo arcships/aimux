@@ -11,35 +11,35 @@ package = "@ai-sdk/google-vertex"
 
 [[vertex.files]]
 upstream = "src/anthropic/edge/google-vertex-anthropic-provider-edge.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/edge/index.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/google-vertex-anthropic-options.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/google-vertex-anthropic-provider-node.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/google-vertex-anthropic-provider.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -52,23 +52,23 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/anthropic/index.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/mod.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/edge/google-vertex-auth-edge.ts"
-rust = "vertex/auth.rs"
+rust = "vertex/auth_google_auth_library.rs"
 status = "mapped"
 
 [vertex.files.tests]
 sub-feature = [
-  { case = "Google Vertex Edge Auth › should load credentials from environment variables", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should throw error when client email is missing", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should throw error when private key is missing", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should work with or without private key ID", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should handle newlines in private key from env vars", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should load credentials from environment variables", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should throw error when client email is missing", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should throw error when private key is missing", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should work with or without private key ID", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should handle newlines in private key from env vars", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
 ]
 ts-only = [
   { case = "Google Vertex Edge Auth › should throw error with invalid credentials", reason = "the edge auth module's own error text (Token request failed: …); aimux has one auth path, which follows google-auth-library" },
@@ -78,35 +78,35 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/edge/google-vertex-provider-edge.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/edge/index.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/gemini-transcription/google-vertex-gemini-transcription-model-options.ts"
-rust = "vertex/gemini_transcription.rs"
+rust = "vertex/gemini_transcription/gemini_transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/gemini-transcription/google-vertex-gemini-transcription-model.ts"
-rust = "vertex/gemini_transcription.rs"
+rust = "vertex/gemini_transcription/gemini_transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-auth-google-auth-library.ts"
-rust = "vertex/auth.rs"
+rust = "vertex/auth_google_auth_library.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -118,21 +118,21 @@ issue = 275
 
 [[vertex.files]]
 upstream = "src/google-vertex-config.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-embedding-model-options.ts"
-rust = "vertex/embedding.rs"
+rust = "vertex/embedding_model_options.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-embedding-model.ts"
-rust = "vertex/embedding.rs"
+rust = "vertex/embedding_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -146,14 +146,14 @@ status = "mapped"
 
 [[vertex.files]]
 upstream = "src/google-vertex-image-model-options.ts"
-rust = "vertex/image.rs"
+rust = "vertex/image_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-image-model.ts"
-rust = "vertex/image.rs"
+rust = "vertex/image_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -163,21 +163,21 @@ sub-feature = [
 
 [[vertex.files]]
 upstream = "src/google-vertex-image-settings.ts"
-rust = "vertex/image.rs"
+rust = "vertex/image_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-options.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-provider-base.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -195,7 +195,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/google-vertex-provider.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -214,28 +214,28 @@ issue = 275
 
 [[vertex.files]]
 upstream = "src/google-vertex-transcription-model-options.ts"
-rust = "vertex/transcription.rs"
+rust = "vertex/transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-transcription-model.ts"
-rust = "vertex/transcription.rs"
+rust = "vertex/transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-video-model-options.ts"
-rust = "vertex/video.rs"
+rust = "vertex/video_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-video-model.ts"
-rust = "vertex/video.rs"
+rust = "vertex/video_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -245,7 +245,7 @@ sub-feature = [
 
 [[vertex.files]]
 upstream = "src/google-vertex-video-settings.ts"
-rust = "vertex/video.rs"
+rust = "vertex/video_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -259,7 +259,7 @@ status = "mapped"
 
 [[vertex.files]]
 upstream = "src/maas/edge/google-vertex-maas-provider-edge.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -270,21 +270,21 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/maas/edge/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/maas/google-vertex-maas-options.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/maas/google-vertex-maas-provider-node.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -295,7 +295,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/maas/google-vertex-maas-provider.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -307,7 +307,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/maas/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/mod.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -318,7 +318,7 @@ status = "not-applicable"
 
 [[vertex.files]]
 upstream = "src/xai/edge/google-vertex-xai-provider-edge.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -328,21 +328,21 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/xai/edge/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/xai/google-vertex-xai-options.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/xai/google-vertex-xai-provider-node.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -352,7 +352,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/xai/google-vertex-xai-provider.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -364,7 +364,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/xai/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/mod.rs"
 status = "mapped"
 
 [vertex.files.tests]

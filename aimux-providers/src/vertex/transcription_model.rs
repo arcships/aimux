@@ -23,7 +23,7 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 
-use super::ProjectLocationSource;
+use super::provider_base::ProjectLocationSource;
 
 // ── Response schema ─────────────────────────────────────────────────────────
 
