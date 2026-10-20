@@ -19,7 +19,8 @@ use async_trait::async_trait;
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
-    Resolvable, SigV4Fetch, SigV4Signing, combine_headers, load_optional_setting, load_setting,
+    Resolvable, SigV4Fetch, SigV4Signing, combine_headers, default_fetch, load_optional_setting,
+    load_setting,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
@@ -180,11 +181,14 @@ impl Auth {
 /// headers and, on the API-key path, `x-api-key` last, as
 /// anthropic-aws-fetch.ts:132-134 combines it. The transport signs every
 /// request that carries no `x-api-key`: one decision, made by the headers.
+/// With no `inner` transport each request uses the process default current
+/// then.
 pub(super) fn authenticated(
     auth: std::sync::Arc<Auth>,
     user_headers: Option<HeaderMapOpt>,
-    inner: FetchFunction,
+    inner: Option<FetchFunction>,
 ) -> (AwsHeaders, FetchFunction) {
+    let inner = inner.unwrap_or_else(|| std::sync::Arc::new(ProcessDefaultFetch));
     let headers = AwsHeaders {
         auth: auth.clone(),
         user: user_headers,
@@ -231,6 +235,17 @@ impl AwsHeaders {
             None => auth.preflight()?,
         }
         Ok(combine_headers(&[&fixed, &user, &key]))
+    }
+}
+
+/// The process default transport, looked up on every request, as upstream
+/// reads `globalThis.fetch` per call (anthropic-aws-fetch.ts:36, :124).
+struct ProcessDefaultFetch;
+
+#[async_trait]
+impl Fetch for ProcessDefaultFetch {
+    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        default_fetch().fetch(request).await
     }
 }
 

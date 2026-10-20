@@ -34,7 +34,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, default_fetch, validate_base_url,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
@@ -162,11 +162,7 @@ pub fn create_anthropic_aws(
         .as_deref()
         .map_or_else(|| CANONICAL.to_string(), options_name_of);
     let name = settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string());
-    let (headers, fetch) = model::authenticated(
-        auth.clone(),
-        settings.headers,
-        settings.fetch.unwrap_or_else(default_fetch),
-    );
+    let (headers, fetch) = model::authenticated(auth.clone(), settings.headers, settings.fetch);
     Ok(AnthropicAwsProvider {
         name,
         provider_options_name,

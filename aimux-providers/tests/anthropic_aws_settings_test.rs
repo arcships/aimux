@@ -343,3 +343,83 @@ async fn a_failing_credential_producer_is_reported_with_guidance() {
     );
     assert!(fetch.seen().is_empty());
 }
+
+/// With no `fetch` setting each request uses the process default transport
+/// current when it is made, not the one at creation: upstream reads
+/// `globalThis.fetch` per call (anthropic-aws-fetch.ts:36, :124). The
+/// default is pointed at a closed port while the provider is created, then at
+/// a plain-HTTP proxy that answers the request.
+#[serial]
+#[tokio::test]
+async fn the_default_transport_is_looked_up_per_request() {
+    use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            set_default_transport(ReqwestFetch::default());
+        }
+    }
+    let proxy = |port: u16| ProxyConfig {
+        http_url: Some(format!("http://127.0.0.1:{port}")),
+        ..ProxyConfig::default()
+    };
+
+    let _env = clean_environment();
+    let _restore = Restore;
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        closed.local_addr().unwrap().port(),
+    )));
+    drop(closed);
+    let provider = create_anthropic_aws(AnthropicAwsProviderSettings {
+        base_url: Some("http://example.com/v1".into()),
+        workspace_id: Some("ws".into()),
+        auth: api_key(),
+        ..Default::default()
+    })
+    .unwrap();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        listener.local_addr().unwrap().port(),
+    )));
+    let served = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        let mut chunk = [0u8; 4096];
+        while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+            let n = stream.read(&mut chunk).await.unwrap();
+            head.extend_from_slice(&chunk[..n]);
+        }
+        let body = json!({
+            "id": "msg_1", "type": "message", "role": "assistant", "model": "claude",
+            "content": [{"type": "text", "text": "ok"}],
+            "stop_reason": "end_turn", "stop_sequence": null,
+            "usage": {"input_tokens": 1, "output_tokens": 1}
+        })
+        .to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+             connection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+        String::from_utf8_lossy(&head)
+            .lines()
+            .next()
+            .unwrap()
+            .to_string()
+    });
+
+    provider
+        .messages("claude")
+        .do_generate(&options())
+        .await
+        .expect("the request goes through the current default transport");
+    assert_eq!(
+        served.await.unwrap(),
+        "POST http://example.com/v1/messages HTTP/1.1"
+    );
+}

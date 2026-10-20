@@ -1199,6 +1199,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider returns valid AWS credentials …`, the AI SDK's message, instead of
   the producer's error alone.
 
+- Anthropic AWS with no `fetch` setting uses the process default transport
+  current at each request, as its settings document and the AI SDK does with
+  `globalThis.fetch`, instead of the one current when the provider was
+  created; a later `set_default_transport` now reaches existing providers.
+
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider
