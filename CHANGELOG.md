@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses reads `providerOptions.<name>.reasoningEffort`, as the AI
+  SDK does: the value is sent as `reasoning.effort` as given and wins over
+  the top-level `reasoning`. It was ignored.
+
 - Open Responses warns `unsupported` for each provider-defined tool and
   omits a tool choice that names one, as the AI SDK does when no extension
   encodes the tool. They were dropped silently, and the tool choice went

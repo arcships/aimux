@@ -2787,3 +2787,28 @@ async fn provider_defined_tools_are_unsupported() {
     assert!(body.get("tools").is_none());
     assert!(body.get("tool_choice").is_none());
 }
+
+/// TS: `getArgs` (open-responses-language-model.ts:330-347):
+/// `providerOptions.<name>.reasoningEffort` is sent as is and wins over the
+/// top-level `reasoning`.
+#[tokio::test]
+async fn reads_the_reasoning_effort_provider_option() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let options: CallOptions = serde_json::from_value(json!({
+        "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+        "reasoning": "low",
+        "providerOptions": { "lmstudio": { "reasoningEffort": "max", "reasoningSummary": "detailed" } }
+    }))
+    .unwrap();
+    make_model(&server, "m")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let request = &server.received_requests().await.unwrap()[0];
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(
+        body["reasoning"],
+        json!({ "effort": "max", "summary": "detailed" })
+    );
+}

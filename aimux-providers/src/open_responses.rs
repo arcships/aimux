@@ -1157,27 +1157,34 @@ fn build_request_body(
         _ => None,
     };
 
-    // Resolve reasoning effort from top-level reasoning option.
-    let resolved_reasoning_effort: Option<String> =
-        if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
-            match options.reasoning.unwrap() {
-                ReasoningEffort::None => Some("none".to_string()),
-                ReasoningEffort::Minimal => Some("low".to_string()),
-                ReasoningEffort::Low => Some("low".to_string()),
-                ReasoningEffort::Medium => Some("medium".to_string()),
-                ReasoningEffort::High => Some("high".to_string()),
-                ReasoningEffort::Xhigh => Some("xhigh".to_string()),
-                ReasoningEffort::ProviderDefault => None,
-            }
-        } else {
-            None
-        };
-
-    // Resolve reasoning summary from provider options.
-    let reasoning_summary: Option<String> = options
+    let open_responses_options = options
         .provider_options
         .as_ref()
-        .and_then(|m| m.get(provider_options_name))
+        .and_then(|m| m.get(provider_options_name));
+
+    // `providerOptions.<name>.reasoningEffort`, else the top-level reasoning.
+    let provider_reasoning_effort = open_responses_options
+        .and_then(|o| o.get("reasoningEffort"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let resolved_reasoning_effort: Option<String> = if provider_reasoning_effort.is_some() {
+        provider_reasoning_effort
+    } else if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
+        match options.reasoning.unwrap() {
+            ReasoningEffort::None => Some("none".to_string()),
+            ReasoningEffort::Minimal => Some("low".to_string()),
+            ReasoningEffort::Low => Some("low".to_string()),
+            ReasoningEffort::Medium => Some("medium".to_string()),
+            ReasoningEffort::High => Some("high".to_string()),
+            ReasoningEffort::Xhigh => Some("xhigh".to_string()),
+            ReasoningEffort::ProviderDefault => None,
+        }
+    } else {
+        None
+    };
+
+    // Resolve reasoning summary from provider options.
+    let reasoning_summary: Option<String> = open_responses_options
         .and_then(|o| o.get("reasoningSummary"))
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string);
