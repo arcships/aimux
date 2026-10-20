@@ -951,3 +951,33 @@ async fn file_search_sends_max_num_results_as_an_integer() {
         json!(5)
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1587 starts `responseId` at
+/// `null` and only `response.created` sets it, so a stream without that event
+/// finishes with `responseId: null`, not an empty string.
+#[tokio::test]
+async fn a_stream_without_response_created_finishes_with_a_null_response_id() {
+    let fetch = MockFetch::new(vec![sse(vec![json!({
+        "type":"response.completed",
+        "response":{"id":"resp_1","created_at":1,"model":"test-model","status":"completed","output":[],
+            "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}
+    })])]);
+    let parts: Vec<_> = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let Some(StreamPart::Finish {
+        provider_metadata: Some(metadata),
+        ..
+    }) = parts.last()
+    else {
+        panic!("expected a finish part with provider metadata: {parts:?}");
+    };
+    assert_eq!(metadata["openai"]["responseId"], Value::Null);
+}
