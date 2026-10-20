@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The OpenAI (and Azure) file search tool sends `max_num_results` as an
+  integer, as the AI SDK does: `FileSearchArgs::max_num_results` is an
+  `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` no longer
+  goes out as `5.0`.
+
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider

@@ -17,6 +17,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_core::types::FinishReasonUnified;
+use aimux_providers::openai::tools::{FileSearchArgs, file_search};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use mock_fetch::{Canned, MockFetch};
@@ -926,5 +927,27 @@ async fn responses_stream_emits_raw_chunks_when_asked() {
         !without_raw
             .iter()
             .any(|part| matches!(part, StreamPart::Raw { .. }))
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/tool/file-search.ts:29 takes
+/// `maxNumResults` as a JS number and
+/// src/responses/openai-responses-prepare-tools.ts:219 sends it as is, so
+/// `maxNumResults: 5` reaches the API's integer field as `5`, not `5.0`.
+#[tokio::test]
+async fn file_search_sends_max_num_results_as_an_integer() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let args: FileSearchArgs =
+        serde_json::from_value(json!({ "vectorStoreIds": ["vs_1"], "maxNumResults": 5 })).unwrap();
+    let mut options = options();
+    options.tools = Some(vec![Tool::Provider(file_search(args).unwrap())]);
+    provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["tools"][0]["max_num_results"],
+        json!(5)
     );
 }
