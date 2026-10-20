@@ -494,3 +494,6 @@ impl Transformer for MistralChatStream {
         });
     }
 }
+
+#[cfg(test)]
+mod tests;
