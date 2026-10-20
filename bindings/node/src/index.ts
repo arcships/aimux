@@ -1,33 +1,50 @@
 import * as ops from './generated/ops.ts'
-import { Runtime, type Abort as RawAbort, type Manifest } from './native.ts'
-import { AimuxError, protocolError, type ErrorEnvelope } from './error.ts'
+import { Runtime } from './native.ts'
+import type { Abort as RawAbort, Manifest } from './native.ts'
+import { AimuxError, protocolError } from './error.ts'
 import type {
-  DecideOptions, DecideResult, GenerateTextOptions, GenerateTextResult, GenerateObjectResult, ModelPrompt,
-  TextStreamPart, EmbeddingCallOptions, EmbeddingResult, ImageCallOptions, ImageResult, SpeechCallOptions,
-  SpeechResult, TranscriptionCallOptions, TranscriptionResult, RerankingCallOptions, RerankingResult,
-  VideoCallOptions, VideoResult, TranscriptionStreamPart, SearchCallOptions, SearchResult,
-  UploadFileCallOptions, UploadFileResult, TraceFilter, TraceStats, SessionChainView,
-} from './types.ts'
+  DecideOptions,
+  DecideResult,
+  EmbeddingCallOptions,
+  EmbeddingResult,
+  GenerateObjectResult,
+  GenerateTextOptions,
+  GenerateTextResult,
+  HandleKind,
+  HandleResult,
+  ImageCallOptions,
+  ImageResult,
+  ModelInfo,
+  ModelMethod,
+  ModelPrompt,
+  ModelRef,
+  OperationPollResult,
+  ProviderCreateParams,
+  RerankingCallOptions,
+  RerankingResult,
+  SearchCallOptions,
+  SearchResult,
+  SessionChainView,
+  SessionStoreCreateParams,
+  SpeechCallOptions,
+  SpeechResult,
+  StreamFrame,
+  TraceAggregateParams,
+  TraceStats,
+  TranscriptionCallOptions,
+  TranscriptionResult,
+  TranscriptionStreamPart,
+  UploadFileParams,
+  UploadFileResult,
+  VideoCallOptions,
+  VideoResult,
+} from './generated/types.ts'
 
 export * from './error.ts'
 export type * from './types.ts'
 export type { Manifest } from './native.ts'
 
-export type HandleKind = 'Provider' | 'Registry' | 'Language' | 'Embedding' | 'Image' | 'Speech'
-  | 'Transcription' | 'Reranking' | 'Video' | 'Search' | 'Files' | 'Operation' | 'Abort'
-  | 'Fetch' | 'WebSocket' | 'Download' | 'CredentialResolver' | 'Middleware' | 'TraceStore'
-  | 'Recorder' | 'SessionStore' | 'ReplaySession' | 'Decision'
-export interface HandleRef { handle: string; kind: HandleKind }
-export type Frame<T> = { type: 'event'; seq: string; event: T }
-  | { type: 'end'; seq: string; outcome: 'success' | 'error' | 'cancelled'; error?: ErrorEnvelope }
 export interface CallOptions { signal?: AbortSignal; abort?: Abort }
-export type PollResult<T> = { type: 'part'; part: T } | { type: 'ended' } | { type: 'timeout' }
-export interface ProviderSettings { [key: string]: unknown }
-export interface ProviderParams { package: string; settings?: ProviderSettings }
-export type ModelMethod = 'languageModel' | 'embeddingModel' | 'imageModel' | 'speechModel'
-  | 'transcriptionModel' | 'rerankingModel' | 'videoModel' | 'searchModel' | 'decision'
-export interface ModelRef { namespace: string; key: string; method: ModelMethod; modelId: string }
-export interface ModelInfo { provider: string; modelId: string; modality: string; [key: string]: unknown }
 
 function json(value: unknown): string {
   try {
@@ -54,10 +71,10 @@ export class Client {
     return JSON.parse(await this.raw.call(handle, op, json(params), abort)) as T
   }
 
-  async stream<T = unknown>(handle: string, op: string, params: unknown = {}, options: CallOptions = {}): Promise<AsyncIterableIterator<Frame<T>>> {
+  async stream(handle: string, op: string, params: unknown = {}, options: CallOptions = {}): Promise<AsyncIterableIterator<StreamFrame>> {
     const abort = this.bridge(options)
     const inner = await this.raw.stream(handle, op, json(params), abort)
-    return mapIterator(inner, value => JSON.parse(value) as Frame<T>, () => abort?.signal())
+    return mapIterator(inner, value => JSON.parse(value) as StreamFrame, () => abort?.signal())
   }
 
   private bridge(options: CallOptions): RawAbort | undefined {
@@ -68,7 +85,7 @@ export class Client {
     return options.signal ? this.raw.abort(options.signal) : undefined
   }
 
-  async provider(params: ProviderParams): Promise<Provider> { return new Provider(this, await this.call('0', ops.OP_PROVIDER_CREATE, params)) }
+  async provider(params: ProviderCreateParams): Promise<Provider> { return new Provider(this, await this.call('0', ops.OP_PROVIDER_CREATE, params)) }
   async defaultProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', ops.OP_PROVIDER_DEFAULT, params)) }
   async customProvider(params: unknown): Promise<Provider> { return new Provider(this, await this.call('0', ops.OP_PROVIDER_CUSTOM, params)) }
   async registry(entries: Record<string, Provider>, namespace = ''): Promise<Registry> {
@@ -80,7 +97,7 @@ export class Client {
   async describe(): Promise<unknown> { return this.call('0', ops.OP_RUNTIME_DESCRIBE) }
   async trace(params: unknown = {}): Promise<TraceStore> { return new TraceStore(this, handleRef(await this.call('0', ops.OP_TRACE_CREATE, params), 'TraceStore')) }
   async recorder(params: unknown): Promise<Recorder> { return new Recorder(this, handleRef(await this.call('0', ops.OP_RECORDER_CREATE, params), 'Recorder')) }
-  async sessionStore(params: { infer: boolean }): Promise<SessionStore> { return new SessionStore(this, handleRef(await this.call('0', ops.OP_SESSION_STORE_CREATE, params), 'SessionStore')) }
+  async sessionStore(params: SessionStoreCreateParams): Promise<SessionStore> { return new SessionStore(this, handleRef(await this.call('0', ops.OP_SESSION_STORE_CREATE, params), 'SessionStore')) }
   async replay(params: unknown): Promise<ReplaySession> { return new ReplaySession(this, handleRef(await this.call('0', ops.OP_REPLAY_CREATE, params), 'ReplaySession')) }
   async middleware(params: unknown): Promise<Middleware> { return new Middleware(this, await this.call('0', ops.OP_MIDDLEWARE_CREATE, params)) }
   async transport(params: unknown): Promise<Resource> { return new Resource(this, await this.call('0', ops.OP_TRANSPORT_CREATE, params)) }
@@ -99,7 +116,7 @@ export class Resource {
   readonly client: Client
   readonly kind: HandleKind
   #handle: string | undefined
-  constructor(client: Client, ref: HandleRef) {
+  constructor(client: Client, ref: HandleResult) {
     this.client = client
     this.kind = ref.kind
     this.#handle = ref.handle
@@ -154,8 +171,8 @@ export class LanguageModel extends Model {
   async generateObject(params: unknown, call?: CallOptions): Promise<GenerateObjectResult> { return this.call(ops.OP_TEXT_GENERATE_OBJECT, params, call) }
   async consume(params: unknown, call?: CallOptions): Promise<GenerateTextResult> { return this.call(ops.OP_TEXT_CONSUME, params, call) }
   async generateOpenAI(params: unknown, call?: CallOptions): Promise<unknown> { return this.call(ops.OP_TEXT_GENERATE_OPEN_AI, params, call) }
-  async stream(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<AsyncIterableIterator<Frame<TextStreamPart>>> { return this.client.stream(this.handle, ops.OP_TEXT_STREAM, { prompt, options }, call) }
-  async streamOpenAI(params: unknown, call?: CallOptions): Promise<AsyncIterableIterator<Frame<unknown>>> { return this.client.stream(this.handle, ops.OP_TEXT_STREAM_OPEN_AI, params, call) }
+  async stream(prompt: ModelPrompt, options: GenerateTextOptions = {}, call?: CallOptions): Promise<AsyncIterableIterator<StreamFrame>> { return this.client.stream(this.handle, ops.OP_TEXT_STREAM, { prompt, options }, call) }
+  async streamOpenAI(params: unknown, call?: CallOptions): Promise<AsyncIterableIterator<StreamFrame>> { return this.client.stream(this.handle, ops.OP_TEXT_STREAM_OPEN_AI, params, call) }
 }
 export class EmbeddingModel extends Model {
   async embed(params: unknown, call?: CallOptions): Promise<EmbeddingResult> { return this.call(ops.OP_EMBEDDING_EMBED, params, call) }
@@ -165,7 +182,7 @@ export class ImageModel extends Model { async generate(params: ImageCallOptions,
 export class SpeechModel extends Model { async generate(params: SpeechCallOptions, call?: CallOptions): Promise<SpeechResult> { return this.call(ops.OP_SPEECH_GENERATE, params, call) } }
 export class TranscriptionModel extends Model {
   async generate(params: TranscriptionCallOptions, call?: CallOptions): Promise<TranscriptionResult> { return this.call(ops.OP_TRANSCRIPTION_GENERATE, params, call) }
-  async start(params: unknown, call?: CallOptions): Promise<Operation<TranscriptionStreamPart>> { return new Operation(this.client, handleRef(await this.call(ops.OP_TRANSCRIPTION_START, params, call), 'Operation')) }
+  async start(params: unknown, call?: CallOptions): Promise<Operation> { return new Operation(this.client, handleRef(await this.call(ops.OP_TRANSCRIPTION_START, params, call), 'Operation')) }
 }
 export class RerankingModel extends Model { async rerank(params: RerankingCallOptions, call?: CallOptions): Promise<RerankingResult> { return this.call(ops.OP_RERANKING_RERANK, params, call) } }
 export class VideoModel extends Model { async generate(params: VideoCallOptions, call?: CallOptions): Promise<VideoResult> { return this.call(ops.OP_VIDEO_GENERATE, params, call) } }
@@ -174,14 +191,14 @@ export class DecisionModel extends Model {
   async decide(options: DecideOptions, call?: CallOptions): Promise<DecideResult> { return this.call(ops.OP_DECISION_DECIDE, { options }, call) }
   async capabilities(): Promise<unknown> { return this.call(ops.OP_DECISION_CAPABILITIES) }
 }
-export class Files extends Resource { async upload(params: UploadFileCallOptions, call?: CallOptions): Promise<UploadFileResult> { return this.call(ops.OP_FILES_UPLOAD, params, call) } }
+export class Files extends Resource { async upload(params: UploadFileParams, call?: CallOptions): Promise<UploadFileResult> { return this.call(ops.OP_FILES_UPLOAD, params, call) } }
 export class Middleware extends Resource {}
 
-function handleRef(value: string | { handle: string }, kind: HandleKind): HandleRef {
+function handleRef(value: string | HandleResult, kind: HandleKind): HandleResult {
   return { handle: typeof value === 'string' ? value : value.handle, kind }
 }
 
-function model(client: Client, ref: HandleRef): Model {
+function model(client: Client, ref: HandleResult): Model {
   switch (ref.kind) {
     case 'Language': return new LanguageModel(client, ref)
     case 'Embedding': return new EmbeddingModel(client, ref)
@@ -196,13 +213,13 @@ function model(client: Client, ref: HandleRef): Model {
   }
 }
 
-export class Operation<T = unknown> extends Resource {
+export class Operation extends Resource {
   async push(data: Uint8Array): Promise<void> { await this.client.raw.operationPush(this.handle, data) }
   async inputDone(): Promise<void> { await this.call(ops.OP_OPERATION_INPUT_DONE) }
-  async next(timeoutMs: number = 1000): Promise<PollResult<T>> { return this.call(ops.OP_OPERATION_NEXT, { timeoutMs }) }
+  async next(timeoutMs: number = 1000): Promise<OperationPollResult> { return this.call(ops.OP_OPERATION_NEXT, { timeoutMs }) }
   async status(): Promise<unknown> { return this.call(ops.OP_OPERATION_STATUS) }
   async cancel(): Promise<unknown> { return this.call(ops.OP_OPERATION_CANCEL) }
-  events(): AsyncIterableIterator<T> {
+  events(): AsyncIterableIterator<TranscriptionStreamPart> {
     const operation = this
     let ended = false
     return {
@@ -225,7 +242,7 @@ export class Operation<T = unknown> extends Resource {
 }
 
 export class TraceStore extends Resource {
-  async aggregate(filter: TraceFilter = {}): Promise<TraceStats[]> { return this.call(ops.OP_TRACE_AGGREGATE, { filter }) }
+  async aggregate(filter: TraceAggregateParams['filter'] = {}): Promise<TraceStats[]> { return this.call(ops.OP_TRACE_AGGREGATE, { filter }) }
   async sessionChain(sessionId: string): Promise<SessionChainView> { return this.call(ops.OP_TRACE_SESSION_CHAIN, { sessionId }) }
   async sessionTrajectory(sessionId: string): Promise<unknown> { return this.call(ops.OP_TRACE_SESSION_TRAJECTORY, { sessionId }) }
   async export(): Promise<unknown> { return this.call(ops.OP_TRACE_EXPORT) }

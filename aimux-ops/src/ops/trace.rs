@@ -11,14 +11,15 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::ops::operation::EmptyParams;
 
 pub type TraceAggregateResult = Vec<aimux_core::trace::TraceStats>;
 pub type TraceTrajectoryResult = Vec<aimux_core::trace::SessionStepStat>;
 
-#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(rename = "TraceAuditMode")]
 pub enum AuditMode {
     #[default]
     Off,
@@ -26,7 +27,7 @@ pub enum AuditMode {
     Strict,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TraceCreateParams {
     #[serde(default = "default_capacity")]
@@ -45,15 +46,26 @@ fn default_scope_capacity() -> usize {
     DEFAULT_SCOPE_CAP
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TraceAggregateParams {
     #[serde(default, deserialize_with = "deserialize_filter")]
+    #[schemars(with = "TraceAggregateFilter")]
     filter: TraceFilter,
 }
 
 // TraceFilter is the canonical core DTO, whose open deserializer is also used
 // elsewhere. Validate its control keys here without duplicating its fields.
+#[derive(schemars::JsonSchema)]
+#[schemars(schema_with = "trace_filter_schema")]
+struct TraceAggregateFilter;
+
+fn trace_filter_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = <TraceFilter as schemars::JsonSchema>::json_schema(generator);
+    schema.insert("additionalProperties".into(), false.into());
+    schema
+}
+
 fn deserialize_filter<'de, D: serde::Deserializer<'de>>(d: D) -> Result<TraceFilter, D::Error> {
     let value = Value::deserialize(d)?;
     let object = value
@@ -72,7 +84,7 @@ fn deserialize_filter<'de, D: serde::Deserializer<'de>>(d: D) -> Result<TraceFil
     serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TraceSessionParams {
     session_id: String,
@@ -170,8 +182,8 @@ fn clear(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
 const fn descriptor(
     name: &'static str,
     allowed_handle_kinds: &'static [HandleKind],
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     side_effects: bool,
     source_symbols: &'static [&'static str],
 ) -> OpDescriptor {
@@ -200,16 +212,16 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.create",
         &[],
-        "aimux_ops::ops::trace::TraceCreateParams",
-        "HandleId",
+        TypeRef::of::<TraceCreateParams>(),
+        TypeRef::of::<crate::handle::HandleId>(),
         true,
         &["aimux_core::trace::RingTraceStore::with_capacity"],
     ),
     descriptor(
         "trace.aggregate",
         &[HandleKind::TraceStore],
-        "aimux_ops::ops::trace::TraceAggregateParams",
-        "aimux_ops::ops::trace::TraceAggregateResult",
+        TypeRef::of::<TraceAggregateParams>(),
+        TypeRef::of::<TraceAggregateResult>(),
         false,
         &[
             "aimux_trace_aggregate",
@@ -219,8 +231,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.sessionChain",
         &[HandleKind::TraceStore],
-        "aimux_ops::ops::trace::TraceSessionParams",
-        "aimux_core::trace::SessionChainView",
+        TypeRef::of::<TraceSessionParams>(),
+        TypeRef::of::<aimux_core::trace::SessionChainView>(),
         false,
         &[
             "aimux_trace_session_chain",
@@ -230,8 +242,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.sessionTrajectory",
         &[HandleKind::TraceStore],
-        "aimux_ops::ops::trace::TraceSessionParams",
-        "aimux_ops::ops::trace::TraceTrajectoryResult",
+        TypeRef::of::<TraceSessionParams>(),
+        TypeRef::of::<TraceTrajectoryResult>(),
         false,
         &[
             "aimux_trace_session_trajectory",
@@ -241,8 +253,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.export",
         &[HandleKind::TraceStore],
-        "EmptyParams",
-        "String",
+        TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        TypeRef::of::<String>(),
         false,
         &[
             "aimux_trace_export_jsonl",
@@ -252,8 +264,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "trace.clear",
         &[HandleKind::TraceStore],
-        "EmptyParams",
-        "()",
+        TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        TypeRef::of::<()>(),
         true,
         &[
             "aimux_trace_clear",

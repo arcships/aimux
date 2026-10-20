@@ -114,7 +114,8 @@ pub mod prelude {
     };
     pub use crate::openai_output::{
         ChatCompletion, ChatCompletionChunk, ChatCompletionStream, DONE_FRAME, OpenAiStreamOptions,
-        encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
+        ResponseIdentity, encode_chunk_sse, to_chat_completion, to_chat_completion_stream,
+        to_chat_completion_stream_with_identity,
     };
     pub use crate::options::{
         CallOptions, LanguageModelV4ToolChoice, ResponseFormat, ToolChoice, prepare_tool_choice,

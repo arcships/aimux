@@ -872,6 +872,7 @@ mod tests {
                 derive: None,
             }],
             user_agent: ("openai-compatible", "3.0.62"),
+            structured_output_models: None,
         }));
         let lazy = BaseUrl::Preset {
             descriptor,

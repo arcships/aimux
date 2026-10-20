@@ -17,12 +17,9 @@ dependencies:
   flutter:
     sdk: flutter
   ffi: ^2.1.0
-  json_annotation: ^4.9.0
 
 dev_dependencies:
   test: ^1.25.0
-  json_serializable: ^6.8.0
-  build_runner: ^2.4.0
 
 # Flutter plugin — the Rust core (aimux-ffi) ships inside the package:
 #   - Android: libaimux_ffi.so per ABI under android/src/main/jniLibs

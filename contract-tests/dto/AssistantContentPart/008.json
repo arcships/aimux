@@ -1,0 +1,11 @@
+{
+  "type": "tool-result",
+  "toolCallId": "call_1",
+  "toolName": "get_weather",
+  "output": {
+    "type": "json",
+    "value": {
+      "temp": 22
+    }
+  }
+}

@@ -1,26 +1,23 @@
 //! Shared value types: FinishReason, Usage, Warning, ResponseMetadata.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 /// Unified finish reason (why the model stopped generating).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FinishReason {
     /// The unified reason.
     pub unified: FinishReasonUnified,
     /// The raw provider-specific reason string.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
 }
 
 /// Unified finish reason enum (aligned with V4 `LanguageModelV4FinishReason`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum FinishReasonUnified {
     Stop,
     Length,
@@ -31,55 +28,44 @@ pub enum FinishReasonUnified {
 }
 
 /// Token usage statistics.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct Usage {
     pub input_tokens: InputTokenUsage,
     pub output_tokens: OutputTokenUsage,
     /// Raw usage information from the provider (opaque, provider-specific).
-    #[ts(optional, type = "Record<string, unknown>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Map<String, Value>>,
 }
 
 /// Input token usage detail.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputTokenUsage {
     /// Total tokens.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<u32>,
     /// Tokens that were not served from cache.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_cache: Option<u32>,
     /// Tokens served from cache (read).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read: Option<u32>,
     /// Tokens written to cache.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<u32>,
 }
 
 /// Output token usage detail.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutputTokenUsage {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<u32>,
     /// Text (non-reasoning) tokens (output side).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<u32>,
     /// Reasoning tokens (output side).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<u32>,
 }
@@ -92,64 +78,52 @@ pub struct OutputTokenUsage {
 /// across steps with [`add_language_model_usage`]. Unknown counts stay `None`,
 /// never zero, and are absent from the JSON, as `JSON.stringify` drops an
 /// `undefined` count; the detail objects are always present.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct LanguageModelUsage {
     /// Total input (prompt) tokens.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
     /// Breakdown of the input tokens.
     #[serde(default)]
     pub input_token_details: InputTokenDetails,
     /// Total output (completion) tokens.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
     /// Breakdown of the output tokens.
     #[serde(default)]
     pub output_token_details: OutputTokenDetails,
     /// Input plus output tokens, when either is known.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
     /// The provider's raw usage object, passed through unchanged.
-    #[ts(optional, type = "Record<string, unknown>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Map<String, Value>>,
 }
 
 /// `LanguageModelUsage.inputTokenDetails`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct InputTokenDetails {
     /// Input tokens that were not read from or written to a cache.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_cache_tokens: Option<u32>,
     /// Input tokens read from a cache.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read_tokens: Option<u32>,
     /// Input tokens written to a cache.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write_tokens: Option<u32>,
 }
 
 /// `LanguageModelUsage.outputTokenDetails`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct OutputTokenDetails {
     /// Output tokens of text.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_tokens: Option<u32>,
     /// Output tokens spent on reasoning.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
 }
@@ -228,10 +202,9 @@ pub fn add_language_model_usage(
 ///
 /// Controls how much reasoning/thinking the model performs. Maps to
 /// OpenAI `reasoning_effort` and Anthropic `thinking` config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ReasoningEffort {
     /// Provider default — no explicit reasoning config sent.
     #[default]
@@ -293,25 +266,22 @@ impl std::str::FromStr for ReasoningEffort {
 }
 
 /// A warning issued by the provider (e.g. unsupported parameter).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Warning {
     /// A feature is not supported by this provider.
     Unsupported {
         feature: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         details: Option<String>,
     },
     /// A feature has compatibility issues.
     Compatibility {
         feature: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         details: Option<String>,
     },
@@ -322,17 +292,13 @@ pub enum Warning {
 }
 
 /// Metadata about the API response.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ResponseMetadata {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<crate::timestamp::Timestamp>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
 }
@@ -348,10 +314,9 @@ pub type ProviderMetadata = crate::shared::SharedProviderMetadata;
 ///
 /// The TypeScript type admits any string with a `.`; a value without one
 /// does not construct or deserialize.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, JsonSchema)]
 #[serde(transparent)]
-#[ts(type = "`${string}.${string}`")]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[schemars(with = "String", extend("pattern" = "\\."))]
 pub struct NamespacedKind(String);
 
 impl NamespacedKind {
