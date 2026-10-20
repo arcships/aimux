@@ -1210,6 +1210,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The OpenAI (and Azure) file search tool sends `max_num_results` as an
+  integer, as the AI SDK does: `FileSearchArgs::max_num_results` is an
+  `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` no longer
+  goes out as `5.0`.
+
 - OpenAI (and Azure) Responses reasoning deltas carry the reasoning item's
   id as `providerMetadata.<key>.itemId`, as the AI SDK's do and as aimux's
   reasoning start and end parts already did.
