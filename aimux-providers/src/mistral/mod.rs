@@ -36,3 +36,6 @@ pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
 pub use provider::{MistralProvider, MistralProviderSettings, create_mistral, mistral};
 pub use speech_model::MistralSpeechModel;
 pub use transcription_model::MistralTranscriptionModel;
+
+#[cfg(test)]
+mod tests;

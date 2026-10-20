@@ -129,6 +129,3 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
         Ok(json!({"type":"document_url", "document_url":url}))
     }
 }
-
-#[cfg(test)]
-mod tests;

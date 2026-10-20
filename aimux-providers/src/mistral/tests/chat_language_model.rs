@@ -19,6 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, TextPart, ToolCallPart, ToolPart, ToolResultOutput,
@@ -28,11 +29,10 @@ use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
 use aimux_core::result::StreamResult;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{ReasoningEffort, Warning};
-use aimux_providers::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const MODEL: &str = "mistral-small-latest";
 const TEXT_FIXTURE: &str = include_str!("fixtures/mistral-text.json");

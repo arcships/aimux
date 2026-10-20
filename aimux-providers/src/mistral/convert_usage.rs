@@ -99,6 +99,3 @@ pub(super) fn convert_usage(usage: &UsageResponse) -> Usage {
         raw: raw.as_object().cloned(),
     }
 }
-
-#[cfg(test)]
-mod tests;

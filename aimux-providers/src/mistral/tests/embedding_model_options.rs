@@ -4,8 +4,12 @@
 //! `parse_mistral_provider_options`, fed the same options under the `mistral`
 //! provider-options namespace.
 
-use super::*;
-use serde_json::json;
+use crate::mistral::embedding_model_options::{
+    MistralEmbeddingProviderOptions, parse_mistral_provider_options,
+};
+use aimux_core::error::AiMuxError;
+use aimux_core::shared::SharedProviderOptions;
+use serde_json::{Value, json};
 
 /// Parse embedding options given as the upstream `mistral` options object.
 fn parse(options: Value) -> Result<MistralEmbeddingProviderOptions, AiMuxError> {

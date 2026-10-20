@@ -1,6 +1,7 @@
 //! Small end-to-end subset of the pinned Mistral upstream tests.
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
@@ -8,7 +9,6 @@ use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
-use aimux_providers::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
 use futures::StreamExt;
 use serde_json::{Value, json};
 

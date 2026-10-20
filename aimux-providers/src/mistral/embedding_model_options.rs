@@ -50,6 +50,3 @@ pub(super) fn parse_mistral_provider_options(
         output_dtype: output_dtype.and_then(Value::as_str).map(str::to_owned),
     })
 }
-
-#[cfg(test)]
-mod tests;
