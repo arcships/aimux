@@ -59,6 +59,7 @@ async fn mock_predict_and_poll(server: &MockServer, result: &Value) {
         .await;
 }
 
+/// partial: `should return completed with video data when done`; full port in src/google/tests/video_model.rs.
 #[tokio::test]
 async fn should_generate_video() {
     let server = MockServer::start().await;
@@ -96,6 +97,7 @@ async fn should_generate_video() {
     }
 }
 
+/// partial: `should pass correct request body`; full port in src/google/tests/video_model.rs.
 #[tokio::test]
 async fn should_pass_prompt() {
     let server = MockServer::start().await;
@@ -119,6 +121,8 @@ async fn should_pass_prompt() {
     assert_eq!(body["instances"][0]["prompt"], "A cat");
 }
 
+/// partial: `should pass aspect ratio when provided`; full port in src/google/tests/video_model.rs.
+/// partial: `should pass duration as durationSeconds`; full port in src/google/tests/video_model.rs.
 #[tokio::test]
 async fn should_pass_aspect_ratio_and_duration() {
     let server = MockServer::start().await;
@@ -144,6 +148,7 @@ async fn should_pass_aspect_ratio_and_duration() {
     assert_eq!(body["parameters"]["durationSeconds"], 5);
 }
 
+/// partial: `should include timestamp and modelId in response`; full port in src/google/tests/video_model.rs.
 #[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;

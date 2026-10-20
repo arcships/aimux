@@ -72,7 +72,7 @@ fn wav_call(provider_options: Option<SharedProviderOptions>) -> TranscriptionCal
     call
 }
 
-/// TS: transcribes audio via the Interactions API with transcription_config
+/// partial: `transcribes audio via the Interactions API with transcription_config`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn transcribes_audio_via_the_interactions_api_with_transcription_config() {
     let server = interactions_server(hello_world()).await;
@@ -108,30 +108,89 @@ async fn transcribes_audio_via_the_interactions_api_with_transcription_config() 
     );
 }
 
-/// TS: maps diarization and word timestamps into the mode object
-#[tokio::test]
-async fn maps_diarization_and_word_timestamps_into_the_mode_object() {
-    let server = interactions_server(hello_world()).await;
-    model(&server.uri(), "gemini-3.5-transcribe")
-        .do_generate(&wav_call(google_options(
-            json!({"diarization": true, "wordTimestamp": true}),
-        )))
-        .await
-        .unwrap();
-    let body: Value = server.received_requests().await.unwrap()[0]
-        .body_json()
-        .unwrap();
-    assert_eq!(
-        body["generation_config"]["transcription_config"],
-        json!({"mode": {
-            "type": "verbatim",
-            "diarization_mode": "speaker",
-            "timestamp_granularities": ["word"],
-        }})
-    );
+mod do_generate {
+    use super::*;
+
+    /// upstream: @ai-sdk/google src/transcription/google-transcription-model.test.ts › doGenerate › maps diarization and word timestamps into the mode object
+    #[tokio::test]
+    async fn maps_diarization_and_word_timestamps_into_the_mode_object() {
+        let server = interactions_server(hello_world()).await;
+        model(&server.uri(), "gemini-3.5-transcribe")
+            .do_generate(&wav_call(google_options(
+                json!({"diarization": true, "wordTimestamp": true}),
+            )))
+            .await
+            .unwrap();
+        let body: Value = server.received_requests().await.unwrap()[0]
+            .body_json()
+            .unwrap();
+        assert_eq!(
+            body["generation_config"]["transcription_config"],
+            json!({"mode": {
+                "type": "verbatim",
+                "diarization_mode": "speaker",
+                "timestamp_granularities": ["word"],
+            }})
+        );
+    }
+
+    /// upstream: @ai-sdk/google src/transcription/google-transcription-model.test.ts › doGenerate › extracts word segments from word_info annotations
+    #[tokio::test]
+    async fn extracts_word_segments_from_word_info_annotations() {
+        let word = |text: &str, start: &str, end: &str| json!({"type": "word_info", "text": text, "speaker": "spk:0", "start_offset": start, "end_offset": end});
+        let server = interactions_server(json!({
+            "id": "interactions/test",
+            "status": "completed",
+            "steps": [{"type": "model_output", "content": [{
+                "type": "text",
+                "text": "The quick brown fox.",
+                "annotations": [
+                    word("The", "0.100s", "0.100s"),
+                    word("quick", "0.100s", "0.400s"),
+                    word("brown", "0.400s", "0.700s"),
+                    word("fox.", "0.700s", "1s"),
+                ],
+            }]}],
+            "usage": {"total_input_tokens": 64},
+        }))
+        .await;
+        let result = model(&server.uri(), "gemini-3.5-transcribe")
+            .do_generate(&wav_call(google_options(json!({}))))
+            .await
+            .unwrap();
+        assert_eq!(result.text, "The quick brown fox.");
+        let segments: Vec<(String, f64, f64)> = result
+            .segments
+            .into_iter()
+            .map(|s| (s.text, s.start_second, s.end_second))
+            .collect();
+        assert_eq!(
+            segments,
+            [
+                ("The".to_string(), 0.1, 0.1),
+                ("quick".to_string(), 0.1, 0.4),
+                ("brown".to_string(), 0.4, 0.7),
+                ("fox.".to_string(), 0.7, 1.0),
+            ]
+        );
+    }
+
+    /// upstream: @ai-sdk/google src/transcription/google-transcription-model.test.ts › doGenerate › rejects unary transcription on live model ids
+    #[tokio::test]
+    async fn rejects_unary_transcription_on_live_model_ids() {
+        let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe-live")
+            .do_generate(&wav_call(google_options(json!({}))))
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("only supports streaming transcription")
+        );
+    }
 }
 
-/// TS: omits generation_config when no transcription options are set
+/// partial: `omits generation_config when no transcription options are set`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn omits_generation_config_when_no_transcription_options_are_set() {
     let server = interactions_server(hello_world()).await;
@@ -143,61 +202,6 @@ async fn omits_generation_config_when_no_transcription_options_are_set() {
         .body_json()
         .unwrap();
     assert!(body.get("generation_config").is_none());
-}
-
-/// TS: extracts word segments from word_info annotations
-#[tokio::test]
-async fn extracts_word_segments_from_word_info_annotations() {
-    let word = |text: &str, start: &str, end: &str| json!({"type": "word_info", "text": text, "speaker": "spk:0", "start_offset": start, "end_offset": end});
-    let server = interactions_server(json!({
-        "id": "interactions/test",
-        "status": "completed",
-        "steps": [{"type": "model_output", "content": [{
-            "type": "text",
-            "text": "The quick brown fox.",
-            "annotations": [
-                word("The", "0.100s", "0.100s"),
-                word("quick", "0.100s", "0.400s"),
-                word("brown", "0.400s", "0.700s"),
-                word("fox.", "0.700s", "1s"),
-            ],
-        }]}],
-        "usage": {"total_input_tokens": 64},
-    }))
-    .await;
-    let result = model(&server.uri(), "gemini-3.5-transcribe")
-        .do_generate(&wav_call(google_options(json!({}))))
-        .await
-        .unwrap();
-    assert_eq!(result.text, "The quick brown fox.");
-    let segments: Vec<(String, f64, f64)> = result
-        .segments
-        .into_iter()
-        .map(|s| (s.text, s.start_second, s.end_second))
-        .collect();
-    assert_eq!(
-        segments,
-        [
-            ("The".to_string(), 0.1, 0.1),
-            ("quick".to_string(), 0.1, 0.4),
-            ("brown".to_string(), 0.4, 0.7),
-            ("fox.".to_string(), 0.7, 1.0),
-        ]
-    );
-}
-
-/// TS: rejects unary transcription on live model ids
-#[tokio::test]
-async fn rejects_unary_transcription_on_live_model_ids() {
-    let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe-live")
-        .do_generate(&wav_call(google_options(json!({}))))
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("only supports streaming transcription")
-    );
 }
 
 // ── doStream ────────────────────────────────────────────────────────────────
@@ -350,7 +354,7 @@ fn finished(text: &str) -> Value {
     json!({"serverContent": {"inputTranscription": {"text": text, "finished": true}}})
 }
 
-/// TS: streams transcription over the Gemini Live API WebSocket
+/// partial: `streams transcription over the Gemini Live API WebSocket`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn streams_transcription_over_the_gemini_live_api_websocket() {
     let (base_url, captured) = live_server(Script {
@@ -417,7 +421,7 @@ async fn streams_transcription_over_the_gemini_live_api_websocket() {
     );
 }
 
-/// TS: passes the SMART transcription mode into the live setup
+/// partial: `passes the SMART transcription mode into the live setup`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn passes_the_smart_transcription_mode_into_the_live_setup() {
     let (base_url, captured) = live_server(Script {
@@ -446,7 +450,7 @@ async fn passes_the_smart_transcription_mode_into_the_live_setup() {
     );
 }
 
-/// TS: accepts the pre-launch REQUIRES_ACTION interaction status as idle
+/// partial: `accepts the pre-launch REQUIRES_ACTION interaction status as idle`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn accepts_the_pre_launch_requires_action_interaction_status_as_idle() {
     let (base_url, _) = live_server(Script {
@@ -467,7 +471,7 @@ async fn accepts_the_pre_launch_requires_action_interaction_status_as_idle() {
     assert_eq!(described(&parts).last().unwrap(), "finish:hi:-");
 }
 
-/// TS: falls back to the latest interim partial when no final segment arrives
+/// partial: `falls back to the latest interim partial when no final segment arrives`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn falls_back_to_the_latest_interim_partial_when_no_final_segment_arrives() {
     let (base_url, _) = live_server(Script {
@@ -494,7 +498,7 @@ async fn falls_back_to_the_latest_interim_partial_when_no_final_segment_arrives(
     assert_eq!(described[described.len() - 1], "finish:hello world.:-");
 }
 
-/// TS: finishes with accumulated text when the server closes after audio ended
+/// partial: `finishes with accumulated text when the server closes after audio ended`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn finishes_with_accumulated_text_when_the_server_closes_after_audio_ended() {
     let (base_url, _) = live_server(Script {
@@ -512,7 +516,7 @@ async fn finishes_with_accumulated_text_when_the_server_closes_after_audio_ended
     assert_eq!(described(&parts).last().unwrap(), "finish:partial words:-");
 }
 
-/// TS: errors when the socket closes before the audio ended
+/// partial: `errors when the socket closes before the audio ended`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn errors_when_the_socket_closes_before_the_audio_ended() {
     let (base_url, _) = live_server(Script {
@@ -537,7 +541,7 @@ async fn errors_when_the_socket_closes_before_the_audio_ended() {
     );
 }
 
-/// TS: surfaces server error messages
+/// partial: `surfaces server error messages`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn surfaces_server_error_messages() {
     let (base_url, _) = live_server(Script {
@@ -556,37 +560,41 @@ async fn surfaces_server_error_messages() {
     assert!(error.to_string().contains("quota exceeded"));
 }
 
-/// TS: rejects streaming on unary model ids
-#[tokio::test]
-async fn rejects_streaming_on_unary_model_ids() {
-    let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe")
-        .do_stream(stream_options(one_chunk(), Some(16000), None, false))
-        .expect("the model has do_stream")
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("does not support streaming transcription")
-    );
+mod do_stream {
+    use super::*;
+
+    /// upstream: @ai-sdk/google src/transcription/google-transcription-model.test.ts › doStream › rejects streaming on unary model ids
+    #[tokio::test]
+    async fn rejects_streaming_on_unary_model_ids() {
+        let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe")
+            .do_stream(stream_options(one_chunk(), Some(16000), None, false))
+            .expect("the model has do_stream")
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("does not support streaming transcription")
+        );
+    }
+
+    /// upstream: @ai-sdk/google src/transcription/google-transcription-model.test.ts › doStream › rejects non-16kHz PCM input audio
+    #[tokio::test]
+    async fn rejects_non_16khz_pcm_input_audio() {
+        let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe-live")
+            .do_stream(stream_options(one_chunk(), Some(24000), None, false))
+            .expect("the model has do_stream")
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("only supports 16kHz 16-bit PCM input audio")
+        );
+    }
 }
 
-/// TS: rejects non-16kHz PCM input audio
-#[tokio::test]
-async fn rejects_non_16khz_pcm_input_audio() {
-    let error = model("http://127.0.0.1:1", "gemini-3.5-transcribe-live")
-        .do_stream(stream_options(one_chunk(), Some(24000), None, false))
-        .expect("the model has do_stream")
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("only supports 16kHz 16-bit PCM input audio")
-    );
-}
-
-/// TS: emits raw chunks when includeRawChunks is set
+/// partial: `emits raw chunks when includeRawChunks is set`; full port in src/google/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn emits_raw_chunks_when_include_raw_chunks_is_set() {
     let (base_url, _) = live_server(Script {

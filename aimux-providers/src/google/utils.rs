@@ -546,6 +546,7 @@ fn parent_must_be(seg: &Segment) -> AiMuxError {
 mod tests {
     use super::*;
 
+    /// partial: `should accumulate a complete string arg (no willContinue)`; full port in src/google/tests/json_accumulator.rs.
     #[test]
     fn smoke() {
         let mut acc = GoogleJsonAccumulator::new();

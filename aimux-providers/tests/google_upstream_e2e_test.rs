@@ -39,7 +39,7 @@ fn basic_request() -> Value {
     json!({"contents":[{"role":"user","parts":[{"text":"Hello"}]}],"generationConfig":{}})
 }
 
-/// TS: "should preserve complete raw usage metadata" (google/src/google-language-model.test.ts)
+/// partial: `should preserve complete raw usage metadata`; full port in src/google/tests/language_model.rs.
 #[tokio::test]
 async fn generate_preserves_usage_and_metadata() {
     let usage: Value = serde_json::from_str(r##"{"promptTokenCount": 12, "cachedContentTokenCount": 4, "candidatesTokenCount": 71, "toolUsePromptTokenCount": 65, "thoughtsTokenCount": 89, "totalTokenCount": 237, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 12, "nestedSentinel": "prompt"}], "cacheTokensDetails": [{"modality": "TEXT", "tokenCount": 4, "nestedSentinel": "cache"}], "candidatesTokensDetails": [{"modality": "TEXT", "tokenCount": 71, "nestedSentinel": "candidate"}], "toolUsePromptTokensDetails": [{"modality": "TEXT", "tokenCount": 65, "nestedSentinel": "tool"}], "serviceTier": "standard", "topLevelSentinel": "preserve-me"}"##).unwrap();
@@ -76,7 +76,7 @@ async fn generate_preserves_usage_and_metadata() {
     assert_eq!(metadata["google"]["serviceTier"], "standard");
 }
 
-/// TS: "should stream text deltas" (google/src/google-language-model.test.ts)
+/// partial: `should stream text deltas`; full port in src/google/tests/language_model.rs.
 #[tokio::test]
 async fn stream_text_and_finish_usage() {
     let chunks = r##"{"candidates":[{"content":{"parts":[{"text":"There are **3**"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":9,"candidatesTokenCount":5,"totalTokenCount":199,"promptTokensDetails":[{"modality":"TEXT","tokenCount":9}],"thoughtsTokenCount":185},"modelVersion":"gemini-3-pro-preview","responseId":"bH6LaZW8Fp_3nsEPqtaSwQ4"}
@@ -169,7 +169,7 @@ async fn stream_text_and_finish_usage() {
     );
 }
 
-/// TS: "should extract tool calls" (google/src/google-language-model.test.ts)
+/// partial: `should extract tool calls`; full port in src/google/tests/language_model.rs.
 #[tokio::test]
 async fn generate_function_call_with_signature() {
     let body: Value = serde_json::from_str(r##"{
@@ -241,7 +241,7 @@ async fn generate_function_call_with_signature() {
     assert_eq!(result.usage.output_tokens.total, Some(908));
 }
 
-/// TS: "preserves google.rpc.RetryInfo in APICallError.data" (google/src/google-error.test.ts)
+/// partial: `preserves google.rpc.RetryInfo in APICallError.data`; full port in src/google/tests/error.rs.
 #[tokio::test]
 async fn error_preserves_retry_info() {
     let body = json!({"error":{"code":429,"message":"You exceeded your current quota, please check your plan.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"34.4s"}]}});
@@ -267,8 +267,8 @@ async fn error_preserves_retry_info() {
     assert_eq!(error.data, Some(body));
 }
 
-/// TS: "should extract embedding" (google/src/google-embedding-model.test.ts)
-/// TS: "should pass the model and the values" (google/src/google-embedding-model.test.ts)
+/// partial: `should extract embedding`; full port in src/google/tests/embedding_model.rs.
+/// partial: `should pass the model and the values`; full port in src/google/tests/embedding_model.rs.
 #[tokio::test]
 async fn embed_batch_request_and_vectors() {
     let body =
@@ -299,7 +299,7 @@ async fn embed_batch_request_and_vectors() {
     assert_eq!(result.response.unwrap().body, Some(body));
 }
 
-/// TS: "should use the language model endpoint and extract generated images" (google/src/google-image-model.test.ts)
+/// partial: `should use the language model endpoint and extract generated images`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn image_request_and_metadata() {
     let usage = json!({"promptTokenCount":10,"candidatesTokenCount":100,"totalTokenCount":110});
@@ -334,9 +334,9 @@ async fn image_request_and_metadata() {
     assert_eq!(usage.total_tokens, Some(110));
 }
 
-/// TS: "should return operation with operationName" (google/src/google-video-model.test.ts)
-/// TS: "should pass correct request body" (google/src/google-video-model.test.ts)
-/// TS: "should return completed with video data when done" (google/src/google-video-model.test.ts)
+/// partial: `should return operation with operationName`; full port in src/google/tests/video_model.rs.
+/// partial: `should pass correct request body`; full port in src/google/tests/video_model.rs.
+/// partial: `should return completed with video data when done`; full port in src/google/tests/video_model.rs.
 #[tokio::test]
 async fn video_start_and_completed_status() {
     let mock = MockFetch::new(vec![
@@ -380,7 +380,7 @@ async fn video_start_and_completed_status() {
     );
 }
 
-/// TS: "should throw when no videos in response" (google/src/google-video-model.test.ts)
+/// partial: `should throw when no videos in response`; full port in src/google/tests/video_model.rs.
 #[tokio::test]
 async fn video_completed_response_without_videos_errors() {
     let mock = MockFetch::new(vec![Canned::json(
