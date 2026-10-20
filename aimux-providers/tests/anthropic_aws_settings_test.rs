@@ -168,7 +168,12 @@ async fn default_auth_is_the_api_key_variable_else_sigv4_from_the_environment() 
 
     let fetch = MockFetch::new(vec![]);
     let error = generate(&fetch, settings()).await.unwrap_err();
-    assert!(is_missing(&error, "AWS_ACCESS_KEY_ID"), "{error:?}");
+    assert!(
+        error
+            .to_string()
+            .starts_with("AWS SigV4 authentication requires AWS credentials."),
+        "{error:?}"
+    );
     assert!(fetch.seen().is_empty());
 
     let _key_id = EnvVar::set("AWS_ACCESS_KEY_ID", Some("AKIDENV"));
@@ -261,4 +266,50 @@ async fn models_support_http_image_and_pdf_urls() {
     assert!(urls.is_supported("https://example.com/a.png", "image/png"));
     assert!(urls.is_supported("http://example.com/a.pdf", "application/pdf"));
     assert!(!urls.is_supported("ftp://example.com/a.png", "image/png"));
+}
+
+/// A missing SigV4 key fails with upstream's guidance, the setting error
+/// kept as the original error; nothing is sent
+/// (anthropic-aws-provider.ts:183-209).
+#[serial]
+#[tokio::test]
+async fn a_missing_sigv4_key_fails_with_guidance() {
+    let _env = clean_environment();
+    let settings = || AnthropicAwsProviderSettings {
+        region: Some("us-west-2".into()),
+        workspace_id: Some("ws".into()),
+        ..Default::default()
+    };
+
+    let fetch = MockFetch::new(vec![]);
+    let error = generate(&fetch, settings()).await.unwrap_err();
+    let AiMuxError::Other(message) = &error else {
+        panic!("a missing access key is the guidance error: {error:?}");
+    };
+    assert!(
+        message.starts_with(
+            "AWS SigV4 authentication requires AWS credentials. Please provide either:\n"
+        ),
+        "{message}"
+    );
+    assert!(message.contains("\nOriginal error: "), "{message}");
+    assert!(message.contains("AWS_ACCESS_KEY_ID"), "{message}");
+
+    let _key_id = EnvVar::set("AWS_ACCESS_KEY_ID", Some("AKIDENV"));
+    let error = generate(&fetch, settings()).await.unwrap_err();
+    let AiMuxError::Other(message) = &error else {
+        panic!("a missing secret key is the guidance error: {error:?}");
+    };
+    assert!(
+        message.starts_with(
+            "AWS SigV4 authentication requires both AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. \
+             Please ensure both credentials are provided.\nOriginal error: "
+        ),
+        "{message}"
+    );
+    assert!(
+        message.contains("AWS_SECRET_ACCESS_KEY` environment"),
+        "{message}"
+    );
+    assert!(fetch.seen().is_empty());
 }

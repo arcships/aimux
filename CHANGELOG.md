@@ -1188,6 +1188,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`application/pdf`) URLs as supported, as the AI SDK does, so those URLs go
   to the Messages API as they are instead of being downloaded first.
 
+- Anthropic AWS fails a SigV4 request whose `AWS_ACCESS_KEY_ID` or
+  `AWS_SECRET_ACCESS_KEY` is missing with the AI SDK's guidance on providing
+  credentials (an `AiMuxError::Other` that ends with the setting error as
+  `Original error:`), instead of the bare `LoadSetting` error. A missing
+  region is still `LoadSetting`.
+
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider

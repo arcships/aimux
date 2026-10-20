@@ -84,7 +84,8 @@ pub struct AnthropicAwsProviderSettings {
     /// SDK does: `x-api-key` with `ANTHROPIC_AWS_API_KEY` when it is set and
     /// not empty, else SigV4 with `AWS_ACCESS_KEY_ID`,
     /// `AWS_SECRET_ACCESS_KEY` and the optional `AWS_SESSION_TOKEN` (a
-    /// missing one fails the request with `AiMuxError::LoadSetting`).
+    /// missing key fails the request with `AiMuxError::Other`, upstream's
+    /// guidance on providing credentials).
     pub auth: Option<AnthropicAwsAuth>,
     /// Sent as `anthropic-workspace-id`. `None` loads
     /// `ANTHROPIC_AWS_WORKSPACE_ID` when a request is made. Required: with

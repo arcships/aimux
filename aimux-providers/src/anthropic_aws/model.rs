@@ -102,12 +102,34 @@ impl Auth {
     }
 
     /// The `AWS_*` credentials, for SigV4 with no `auth`
-    /// (anthropic-aws-provider.ts:162-181).
+    /// (anthropic-aws-provider.ts:162-209). A missing key fails with
+    /// upstream's guidance and the setting error as the original error; a
+    /// missing region stays the setting error, as upstream loads it first.
     fn environment_credentials(&self) -> Result<AwsCredentials, AiMuxError> {
+        let region = self.region()?;
+        let access_key_id = load_setting(None, ACCESS_KEY_ID_ENV_VAR, "access_key_id")
+            .map_err(|error| {
+                AiMuxError::Other(format!(
+                    "AWS SigV4 authentication requires AWS credentials. Please provide either:\n\
+                     1. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables\n\
+                     2. Provide the credentials as `AnthropicAwsAuth::SigV4(Resolvable::Value(..))`\n\
+                     3. Use a credential producer in `AnthropicAwsAuth::SigV4`\n\
+                     4. Use API key authentication with ANTHROPIC_AWS_API_KEY or `AnthropicAwsAuth::ApiKey`\n\
+                     Original error: {error}"
+                ))
+            })?;
+        let secret_access_key = load_setting(None, SECRET_ACCESS_KEY_ENV_VAR, "secret_access_key")
+            .map_err(|error| {
+                AiMuxError::Other(format!(
+                    "AWS SigV4 authentication requires both AWS_ACCESS_KEY_ID and \
+                     AWS_SECRET_ACCESS_KEY. Please ensure both credentials are provided.\n\
+                     Original error: {error}"
+                ))
+            })?;
         Ok(AwsCredentials {
-            region: self.region()?,
-            access_key_id: load_setting(None, ACCESS_KEY_ID_ENV_VAR, "access_key_id")?,
-            secret_access_key: load_setting(None, SECRET_ACCESS_KEY_ENV_VAR, "secret_access_key")?,
+            region,
+            access_key_id,
+            secret_access_key,
             session_token: load_optional_setting(None, SESSION_TOKEN_ENV_VAR),
         })
     }
@@ -134,9 +156,9 @@ impl Auth {
         }
     }
 
-    /// Fail with the typed setting error before an environment-credential
-    /// request is signed: the transport reports a credential failure as a
-    /// transport error, which would hide which setting is missing.
+    /// Fail before an environment-credential request is signed: the
+    /// transport reports a credential failure as a transport error, which
+    /// would hide which setting is missing.
     fn preflight(&self) -> Result<(), AiMuxError> {
         match &self.auth {
             Some(AnthropicAwsAuth::SigV4(_)) => Ok(()),
