@@ -171,7 +171,7 @@ mod openai_responses_language_model {
 1. 守 `ts-rust-port` 的纪律：逐条搬，只换 harness，不改场景。
 2. harness 对应：上游 mock fetch 对应本地 HTTP 桩，上游 `MockLanguageModelV4` 对应 `ScriptedModel`。共用的 mock fetch 和回放 helper 按 RFC-0046 §5 放在 `src/test_support/`，`src/<vendor>/tests/` 和 crate 根 `tests/` 里的跨厂商测试用同一份。
 3. 快照：`toMatchInlineSnapshot` 写成内联 `serde_json::json!`；`__snapshots__/` 文件快照放在测试所在目录的 `snapshots/`。不引入快照库。
-4. 发现行为和上游不一致：不在测试 PR 里修。每处差异按 `ts-rust-port` 的 `fix` 流程单独开一个 fix PR（标题 `fix: …`，描述写现状和改动两段调用栈，带一个在 master 上失败的 aimux 测试），登记到 #276；测试 PR 叠在它上面，只含测试和 `layout.toml`。属于刻意差异的，登记到对齐文档 §5，用例记进 `registered`。不允许 `#[ignore]`。
+4. 发现行为和上游不一致：不在测试 PR 里修。每处差异按 `ts-rust-port` 的 `fix` 流程单独开一个 fix PR（标题 `fix: …`，描述写现状和改动两段调用栈，带一个在 master 上失败的 aimux 测试），登记到 #275 评论里的 provider 偏差清单；测试 PR 叠在它上面，只含测试和 `layout.toml`。属于刻意差异的，登记到对齐文档 §5，用例记进 `registered`。不允许 `#[ignore]`。
 5. PR 描述写"这个文件 N 个用例：搬 a、差分 b、自动排除 c、手写排除 d（按类别）"。
 
 ## 6. 差分 fixture 扩展
