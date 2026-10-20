@@ -23,7 +23,7 @@
 | V7 | 模态和搜索厂商的机械重复抽成公共结构和函数；各家的请求构造、响应解析不抽 | 约 2,500 行重复，抽掉其中 10 类完全重复（§3.6） |
 | V8 | 按这套分层落目录：每个厂商一个目录 `src/<vendor>/`，`mod.rs` 只做声明和导出（对应上游 `index.ts`）；有上游包的厂商文件与上游包逐个对应，命名规则固定（§4.2） | 文件和测试能按名字对照上游 |
 | V9 | 上游有、我们没实现的文件不建空文件，在 `layout.toml` 里记为未实现并挂 issue | 缺口可见，不制造占位代码 |
-| V10 | 测内部函数的单元测试放在源文件旁边：`foo.rs` 里写 `#[cfg(test)] mod tests;`，测试在 `foo/tests.rs`（Rust 默认的模块路径，Rig 也这样）；走公开 API 的测试留在 `tests/`，按厂商分子目录，合成一个测试程序 | 上游测试能逐个对照，测试和代码一起搬、一起删；`tests/` 下 126 个测试程序合成一个 |
+| V10 | 每个厂商一个测试目录 `src/<vendor>/tests/`，一个上游测试文件对应其中一个同名 Rust 文件，直接调内部函数的和走 provider + mock fetch 的都放这里；crate 的 `tests/` 只留跨厂商的测试 | 上游测试能逐个对照，一家厂商的测试只在一处，和代码一起搬、一起删；厂商测试都编进 lib 的一个测试程序 |
 | V11 | 本文不拆 crate、不加按厂商的 cargo feature，厂商仍在一个 `aimux-providers` 里，以后再考虑；参考做法是只有厂商要引入很重的第三方库时才单独成 crate（Rig 的做法：27 个厂商在 rig-core，只有用 AWS SDK、Google Cloud SDK、gRPC、本地推理的拆出去） | 48 个厂商实现中文本模型占约 5.8 万行，多模态和搜索 31 家只有约 1.4 万行，按厂商开关省不了多少体积 |
 
 ## 2. 现状
@@ -372,7 +372,7 @@ match &config.transform_request_body {
 
 29 个厂商没有上游包，整个目录都是 aimux 自己的。按模态命名：`provider.rs`、`<模态>_model.rs`、`<模态>_model_options.rs`、`api_types.rs`；没有内容的文件不建（§3.6 抽掉公共部分后，大部分厂商只剩 `provider.rs` 和一个模型文件）。
 
-preset 仍是 `provider_registry.json` 里的数据行，不建目录；preset 的测试放在 `preset/` 下。
+preset 仍是 `provider_registry.json` 里的数据行，不建目录；preset 的测试放在 `preset/tests/` 下（§5）。
 
 ### 4.4 `layout.toml`
 
@@ -402,16 +402,35 @@ issue = 275
 
 ## 5. 测试位置
 
-参考的 Rust 项目：Rig 的单元测试一律是 `foo/tests.rs`（`#[cfg(test)] mod tests;`，CI 用 `cargo xtask check-test-layout` 强制），录制回放测试在 `rig-cassette/tests/<厂商>.rs` 和 `tests/providers/<厂商>/`；genai、reqwest、axum 的单元测试写在源文件里，`tests/` 放走公开 API 的测试，genai 按厂商一个文件。Rust 的 `tests/` 只能用公开 API，而上游测试大多测内部函数（消息转换、用量转换、finish reason、工具准备），这些只能放在 crate 里面。
+上游的测试和源文件在同一目录，一个源文件一个 `foo.test.ts`，直接调内部函数的和起假 fetch 走 provider 的都在这里。Rust 的 `tests/` 只能用公开 API，每个文件是一个单独链接的测试程序；上游测试大多测内部函数（消息转换、用量转换、finish reason、工具准备），这些只能放在 crate 里面，而走 mock fetch 的测试放在 crate 里面一样能从公开 API 测。参考的 Rust 项目：Rig 的单元测试是 `foo/tests.rs`（`#[cfg(test)] mod tests;`，CI 用 `cargo xtask check-test-layout` 强制），录制回放测试在 `rig-cassette/tests/<厂商>.rs`；genai、reqwest、axum 的单元测试写在源文件里，`tests/` 放走公开 API 的测试。本文不照 Rig 给每个源文件配一个只放 `tests.rs` 的目录，也不把同一家厂商的测试分到 `src/` 和 `tests/` 两处，而是每个厂商一个测试目录：
 
-1. 测内部函数的单元测试放在源文件旁边：`chat_language_model.rs` 里写 `#[cfg(test)] mod tests;`，测试在 `chat_language_model/tests.rs`，对应上游 `mistral-chat-language-model.test.ts`。不用 `#[path]`；`stream/chat_tool_calls_tests.rs` 改成 `stream/chat_tool_calls/tests.rs`，对齐文档的引用一起改；已有的内联 `mod tests { … }` 搬到对应的 `tests.rs`。
-2. 测试数据照上游的 `__fixtures__/`、`__snapshots__/` 放进厂商目录下的 `fixtures/`、`snapshots/`，大的 cassette 仍留在 crate 根目录按路径读取。
-3. 走公开 API 的测试（provider → 模型 → mock fetch、cassette、conformance、e2e、数据丢失回归）留在 `tests/`，按厂商分子目录 `tests/it/<vendor>/`，跨厂商的放在 `tests/it/` 顶层，preset 的放在 `tests/it/preset/`，整个合成一个测试程序 `tests/it/main.rs`。
-4. 现有 `tests/` 里 101 个按厂商的文件逐个分类：调内部函数、或能对上上游某个内部函数测试文件的，搬进对应的 `foo/tests.rs`；走公开 API 的搬进 `tests/it/<vendor>/`。
-5. 测试共用的 mock fetch、回放 helper（现 `tests/common/`）移到 `src/test_support/`，`#[cfg(any(test, feature = "test-support"))]` 编译，正常构建不带，不进发布产物；`tests/it/` 经自引用的 dev 依赖开启 `test-support` 使用同一份（与 RFC-0044 §3.3 第 4 条相同）。`tests/cassettes/` 原地不动，`exclude` 不变。
-6. 公共层的单元测试不引用厂商：`stream/chat_tool_calls_tests.rs` 里用到 4 个厂商的用例移到 `tests/it/`。
-7. 合成一个测试程序前先去掉对进程环境的依赖：测试显式传设置，不靠 `set_var`；必须读环境变量的用例统一 `#[serial(env)]`。§2.8 列出的冲突、计数器和固定路径在搬移 PR 里修掉。
-8. 依赖录制、回放的测试（`decision_recording_test.rs`、`runtime_decision_test.rs`、`decision_failure_e2e_test.rs` 等）先随厂商搬；RFC-0044 C6 之后 providers 不能依赖 devtools，届时移到 devtools 或 ops 的测试。
+```text
+aimux-providers/src/
+  test_support/mock_fetch.rs         共用的 mock fetch（现 tests/common/）
+  groq/
+    mod.rs                           末尾一行 #[cfg(test)] mod tests;
+    provider.rs
+    chat_language_model.rs           源文件里不写测试
+    convert_to_chat_messages.rs
+    …
+    tests/
+      mod.rs                         只声明子模块
+      chat_language_model.rs         ← groq-chat-language-model.test.ts（provider + mock fetch）
+      convert_to_chat_messages.rs    ← convert-to-groq-chat-messages.test.ts（直接调函数）
+      …
+      fixtures/  snapshots/
+aimux-providers/tests/               只留跨厂商的测试（cassette 回放、conformance 等）
+```
+
+1. 每个厂商一个测试目录 `src/<vendor>/tests/`：`src/<vendor>/mod.rs` 末尾一行 `#[cfg(test)] mod tests;`，`tests/mod.rs` 只声明子模块；不用 `#[path]`，源文件里不写测试，已有的内联 `mod tests { … }` 搬进对应的测试文件。
+2. 一个上游测试文件对应 `tests/` 下一个 Rust 文件，名字与被测源文件相同：`mistral-chat-language-model.test.ts` 测 `src/mistral/chat_language_model.rs`，放在 `src/mistral/tests/chat_language_model.rs`。上游有子目录的照搬（`src/deepseek/tests/chat/convert_to_chat_messages.rs`）。直接调内部函数的、走 provider → 模型 → mock fetch 的都放这里，整包的厂商测试编进 lib 的一个测试程序。aimux 自己的厂商测试按被测文件放进同名文件，跨多个文件的场景测试用描述性名字（如 `upstream_e2e.rs`）。
+3. 测试模块不再是源文件的子模块，被测的私有函数改成 `pub(super)`，函数体不变。
+4. 测试数据照上游的 `__fixtures__/`、`__snapshots__/` 放进 `src/<vendor>/tests/fixtures/`、`snapshots/`；大的 cassette 仍留在 crate 根目录按路径读取。
+5. 测试共用的 mock fetch、回放 helper（现 `tests/common/`）移到 `src/test_support/`（`mock_fetch.rs` 等），`#[cfg(any(test, feature = "test-support"))]` 编译，正常构建不带，不进发布产物；`tests/` 下留下的跨厂商测试经自引用的 dev 依赖开启 `test-support` 使用同一份（与 RFC-0044 §3.3 第 4 条相同）。`tests/cassettes/` 原地不动，`exclude` 不变。
+6. `aimux-providers/tests/` 只留跨厂商的测试（cassette 回放、conformance、跨厂商 e2e）；preset 的测试放在 `src/preset/tests/`。现有 `tests/` 里 101 个按厂商的文件逐个搬进对应厂商的 `tests/` 目录。
+7. 公共层 `stream/`、`shared/` 同样用自己的 `tests/` 目录（`stream/chat_tool_calls_tests.rs` 改成 `stream/tests/chat_tool_calls.rs`），且不引用厂商：其中用到 4 个厂商的用例移到 crate 的 `tests/`。
+8. 合进同一个测试程序前先去掉对进程环境的依赖：测试显式传设置，不靠 `set_var`；必须读环境变量的用例统一 `#[serial(env)]`。§2.8 列出的冲突、计数器和固定路径在搬移 PR 里修掉。
+9. 依赖录制、回放的测试（`decision_recording_test.rs`、`runtime_decision_test.rs`、`decision_failure_e2e_test.rs` 等）先随厂商搬；RFC-0044 C6 之后 providers 不能依赖 devtools，届时移到 devtools 或 ops 的测试。
 
 迁移只搬动测试，不改断言、不删测试。每个 PR 前后比较 `cargo test -p aimux-providers -- --list` 的测试数量（模块路径会变，比数量和函数名多重集，不比完整路径），cassette 文件数不变。
 
@@ -439,7 +458,7 @@ issue = 275
 
 - RFC-0044 已把 provider 目录与测试部分移出（其 §2.4、§3 写“不在本文范围”），本文合入时 RFC-0044 的这几处改为引用本文。
 - 对齐文档 §9.1 的顺序是“core 类型 → provider 工厂与请求层 → 厂商包”；本文的整理不依赖 core 拆分，可以先做，登记这一顺序差异。
-- 对齐文档引用 `stream/chat_tool_calls_tests.rs` 的地方改成 `stream/chat_tool_calls/tests.rs`。
+- 对齐文档引用 `stream/chat_tool_calls_tests.rs` 的地方改成 `stream/tests/chat_tool_calls.rs`。
 - `docs/contributing/adding-a-provider.md` 按 §4、§5 重写。
 - ROADMAP 里“tracker 移入 aimux-provider-utils（#204）”一行已被 RFC-0042 T2 取代，同步删除。
 - 登记：Vertex Gemini 的 ID 生成和流处理改为与 Google 一致（§3.4）；厂商之间内部用的 Config 钩子是枚举而不是回调（§3.5）。
@@ -450,7 +469,7 @@ issue = 275
 2. `layout.toml` 覆盖锁定版本里每个上游源文件，CI 校验：表里的 Rust 文件存在、厂商目录里每个 `.rs` 都在表里（对应上游文件，或记为 `aimux`）、表里的上游文件在锁定版本的发布包里存在（CI 用 `scripts/fetch-aisdk.sh` 取包）。
 3. `check_provider_boundaries.sh` 通过：没有厂商之间的环，跨厂商引用只经过 `internal`。
 4. §2.3 列出的函数在 provider-utils 里各只有一份，厂商目录里没有同名实现。
-5. `aimux-providers/tests/` 只剩 `it/`（按厂商分子目录，一个测试程序）、`cassettes/`、`fixtures/`、`replay_fixtures/`；单元测试都是 `foo/tests.rs`，没有 `#[path]`；测试数量与搬移前相等；cassette 文件数不变。
+5. 厂商测试都在 `src/<vendor>/tests/`，一个上游测试文件对应一个同名 Rust 文件，源文件里没有测试，没有 `#[path]`；`aimux-providers/tests/` 只剩跨厂商的测试、`cassettes/`、`fixtures/`、`replay_fixtures/`；测试数量与搬移前相等；cassette 文件数不变。
 6. 产物体积不超过 RFC-0043 的当前值。
 
 ## 9. 开放问题
