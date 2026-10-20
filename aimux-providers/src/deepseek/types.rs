@@ -41,6 +41,8 @@ pub(crate) struct ChatResponse {
     pub object: Option<String>,
     pub system_fingerprint: Option<String>,
     pub choices: Vec<ResponseChoice>,
+    #[serde(default, deserialize_with = "deserialize_usage")]
+    pub usage: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +85,7 @@ pub(crate) struct ChatChunk {
     pub object: Option<String>,
     pub system_fingerprint: Option<String>,
     pub choices: Vec<ChunkChoice>,
+    #[serde(default, deserialize_with = "deserialize_usage")]
     pub usage: Option<Value>,
 }
 
@@ -139,6 +142,45 @@ fn deserialize_chunk_object<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error> {
     deserialize_literal(deserializer, "chat.completion.chunk")
+}
+
+/// `tokenUsageSchema` (deepseek@3.0.56 `deepseek-chat-api-types.ts:95-113`):
+/// a loose object kept whole as `usage.raw`, whose known counts must still be
+/// numbers or null.
+fn deserialize_usage<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Value>, D::Error> {
+    const COUNTS: [&str; 7] = [
+        "/prompt_tokens",
+        "/completion_tokens",
+        "/prompt_cache_hit_tokens",
+        "/prompt_cache_miss_tokens",
+        "/total_tokens",
+        "/prompt_tokens_details/cached_tokens",
+        "/completion_tokens_details/reasoning_tokens",
+    ];
+    let usage = Option::<Value>::deserialize(deserializer)?.filter(|usage| !usage.is_null());
+    let Some(usage) = usage else {
+        return Ok(None);
+    };
+    let is_object_or_null =
+        |value: Option<&Value>| value.is_none_or(|v| v.is_object() || v.is_null());
+    if !usage.is_object()
+        || !is_object_or_null(usage.get("prompt_tokens_details"))
+        || !is_object_or_null(usage.get("completion_tokens_details"))
+    {
+        return Err(serde::de::Error::custom("usage must be an object"));
+    }
+    if let Some(field) = COUNTS.iter().find(|pointer| {
+        usage
+            .pointer(pointer)
+            .is_some_and(|value| !value.is_number() && !value.is_null())
+    }) {
+        return Err(serde::de::Error::custom(format!(
+            "usage{field} must be a number"
+        )));
+    }
+    Ok(Some(usage))
 }
 
 fn deserialize_role<'de, D: Deserializer<'de>>(

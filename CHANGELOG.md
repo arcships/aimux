@@ -1148,6 +1148,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- DeepSeek rejects a response whose usage counts are not numbers, as
+  `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
+  string such as `"prompt_tokens": "100"` as 0. Applies to generate and
+  stream.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

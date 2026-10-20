@@ -386,7 +386,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
         })?;
 
         let mut metadata = Map::new();
-        let usage_value = raw.get("usage").filter(|usage| !usage.is_null());
+        let usage_value = data.usage.as_ref();
         for (key, name) in [
             ("prompt_cache_hit_tokens", "promptCacheHitTokens"),
             ("prompt_cache_miss_tokens", "promptCacheMissTokens"),
@@ -461,7 +461,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 unified: map_deepseek_finish_reason(choice.finish_reason.as_deref()),
                 raw: choice.finish_reason,
             },
-            usage: convert_deepseek_usage(raw.get("usage")),
+            usage: convert_deepseek_usage(data.usage.as_ref()),
             warnings: built.warnings,
             provider_metadata: Some(provider_namespace(
                 self.provider_options_name(),
