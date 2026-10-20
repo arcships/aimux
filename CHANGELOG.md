@@ -1157,6 +1157,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@ai-sdk/huggingface` 2.0.62 does (`if (part.output)`). `function_call`
   outputs were dropped in `do_generate`, and an empty `output` gave an MCP
   tool-result.
+- Hugging Face streams read in-stream errors as `@ai-sdk/huggingface` 2.0.62
+  does: an `error` event (message on the event or under `error`) or a
+  `response.failed` event (`response.error`) with a string message is an
+  error part, and the finish reason becomes `error` with the code, else the
+  event type, as `raw`. A malformed chunk also makes the finish reason
+  `error`. Before, only a top-level `error` field was read, so `error` events
+  carrying the message on the event and `response.failed` events passed
+  unnoticed, and the finish reason stayed `other`.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

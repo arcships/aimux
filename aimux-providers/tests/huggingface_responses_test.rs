@@ -1996,3 +1996,57 @@ async fn supports_http_image_urls() {
     assert!(urls.0["image/*"][0].is_match("http://example.com/a.png"));
     assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
 }
+
+/// aimux's own: an `error` or `response.failed` event after the first one is
+/// an error part, and the finish reason becomes error with the code (else the
+/// event type) as raw (huggingface-responses-language-model.ts:406-419,
+/// :562-590). Upstream's cases send the error as the first event, which aimux
+/// returns from `do_stream` instead (registered SSE pre-read).
+#[tokio::test]
+async fn reads_mid_stream_error_events() {
+    let created = r#"{"type":"response.created","response":{"id":"resp_test","object":"response","created_at":1741269019,"status":"in_progress","model":"deepseek-ai/DeepSeek-V3-0324"},"sequence_number":0}"#;
+    for (event, message, raw) in [
+        (
+            r#"{"type":"response.failed","response":{"error":{"code":"429","message":"Rate limit reached"}},"sequence_number":1}"#,
+            "Rate limit reached",
+            "429",
+        ),
+        (
+            r#"{"type":"error","message":"Service unavailable","param":null,"sequence_number":1}"#,
+            "Service unavailable",
+            "error",
+        ),
+    ] {
+        let server = MockServer::start().await;
+        mock_sse(&server, sse_body(&[sse_event(created), sse_event(event)])).await;
+
+        let result = make_provider(&server)
+            .responses("deepseek-ai/DeepSeek-V3-0324")
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("the first event is not an error");
+        let parts = collect_stream(result).await;
+
+        let error = parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::Error { error } => Some(error),
+                _ => None,
+            })
+            .expect("an error part");
+        match error {
+            AiMuxError::ApiCall(error) => {
+                assert_eq!(error.message, message);
+                assert_eq!(error.provider_code.as_deref(), Some(raw));
+            }
+            other => panic!("expected ApiCall, got {other:?}"),
+        }
+        match parts.last() {
+            Some(StreamPart::Finish { finish_reason, .. }) => {
+                assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+                assert_eq!(finish_reason.raw.as_deref(), Some(raw));
+            }
+            other => panic!("expected Finish last, got {other:?}"),
+        }
+    }
+}
