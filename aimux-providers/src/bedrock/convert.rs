@@ -1698,9 +1698,11 @@ pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: serde_json::to_value(usage)
-            .ok()
-            .and_then(|value| value.as_object().cloned()),
+        raw: usage.raw.clone().or_else(|| {
+            serde_json::to_value(usage)
+                .ok()
+                .and_then(|value| value.as_object().cloned())
+        }),
     }
 }
 

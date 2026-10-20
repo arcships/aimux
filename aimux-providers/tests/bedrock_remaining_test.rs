@@ -285,6 +285,23 @@ fn usage_raw_preserved() {
     assert_eq!(u.raw, Some(json!({"inputTokens":100,"outputTokens":50,"totalTokens":150,"cacheReadInputTokens":80,"cacheWriteInputTokens":60}).as_object().unwrap().clone()));
 }
 
+/// TS: "should handle null cache tokens" — `raw` is the usage object as
+/// sent, explicit `null`s and unknown keys included.
+#[test]
+fn usage_raw_keeps_null_and_unknown_keys() {
+    let sent = json!({
+        "inputTokens": 100,
+        "outputTokens": 50,
+        "cacheReadInputTokens": null,
+        "cacheWriteInputTokens": null,
+        "serverToolUsage": null
+    });
+    let usage: BedrockUsage = serde_json::from_value(sent.clone()).unwrap();
+    let u = convert_usage(Some(&usage));
+    assert_eq!(u.raw.map(Value::Object), Some(sent));
+    assert_eq!(u.input_tokens.cache_read, Some(0));
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // amazon-bedrock-provider.test.ts — provider configuration / auth
 // ════════════════════════════════════════════════════════════════════════════

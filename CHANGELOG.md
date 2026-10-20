@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock's `convert_usage` keeps `raw` as the usage object Bedrock
+  sent, explicit `null` keys included, as the AI SDK does; it rebuilt it from
+  the parsed fields and dropped them (doGenerate and doStream patched `raw`
+  back from the response JSON afterwards). A usage field of the wrong type is
+  now reported with its name (`totalTokens: invalid type: …`).
 - Amazon Bedrock names unsupported file parts as the AI SDK does: a provider
   reference is `file parts with provider references`, a URL that is not
   `s3:` or not an image or video is `File URL data` (checked for `s3:` before

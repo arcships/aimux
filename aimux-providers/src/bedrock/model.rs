@@ -164,7 +164,6 @@ impl LanguageModel for BedrockModel {
 
         let response_headers = resp.response_headers;
 
-        let raw_data = resp.raw_value;
         let data: BedrockConverseResponse = resp.value;
 
         // Extract content from response.output.message.content
@@ -221,11 +220,7 @@ impl LanguageModel for BedrockModel {
                 .or_insert(serde_json::Value::Null);
             provider_metadata = Some(options::metadata(json!(payload)));
         }
-        let mut usage = convert_usage(data.usage.as_ref());
-        usage.raw = raw_data
-            .as_ref()
-            .and_then(|raw| raw.get("usage"))
-            .and_then(|value| value.as_object().cloned());
+        let usage = convert_usage(data.usage.as_ref());
 
         let request_id = response_headers
             .get("x-amzn-requestid")
@@ -550,7 +545,6 @@ impl AmazonBedrockChatStream {
                     }
                 };
             self.final_usage = convert_usage(Some(&bedrock_usage));
-            self.final_usage.raw = usage.as_object().cloned();
             if let Some(cache_usage) = cache_usage_metadata(Some(&bedrock_usage)) {
                 self.finish_meta.insert("usage".into(), cache_usage);
             }
