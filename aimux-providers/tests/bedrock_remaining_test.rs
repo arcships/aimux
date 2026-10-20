@@ -1077,6 +1077,38 @@ async fn generate_tool_call_empty_input() {
     assert_eq!(input, "{}");
 }
 
+/// TS: "should generate an id when toolUseId is empty" — an empty
+/// `toolUseId` is replaced by a generated id, as
+/// amazon-bedrock-chat-language-model.ts:796-797 does with `||`.
+#[tokio::test]
+async fn generate_tool_call_empty_tool_use_id() {
+    let server = mock_converse_json(
+        200,
+        json!({
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"toolUse": {"toolUseId": "", "name": "test-tool", "input": {"value": "test"}}}
+                    ]
+                }
+            },
+            "stopReason": "tool_use",
+            "usage": { "inputTokens": 1, "outputTokens": 1 }
+        }),
+    );
+
+    let result = make_model(&server)
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    let (id, name, input) = as_tool_call(&result.content[0]);
+    assert!(!id.is_empty(), "expected a generated tool call id");
+    assert_eq!(name, "test-tool");
+    assert_eq!(input, r#"{"value":"test"}"#);
+}
+
 // ── doGenerate: basic text + finish reason (sanity, already covered but
 //    exercised here against the remaining-test helper set) ────────────────────
 

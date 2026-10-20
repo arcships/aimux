@@ -1180,6 +1180,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock `do_generate` gives a tool call whose `toolUseId` is empty a
+  generated id, as the AI SDK does and as aimux's stream already did; it
+  kept the empty id.
 - Amazon Bedrock's `convert_usage` keeps `raw` as the usage object Bedrock
   sent, explicit `null` keys included, as the AI SDK does; it rebuilt it from
   the parsed fields and dropped them (doGenerate and doStream patched `raw`

@@ -717,7 +717,11 @@ fn extract_content(
     if let Some(tool_use) = &block.tool_use {
         content.push(GenerateContent::ToolCall(RawToolCall {
             tool_call_id: normalize_tool_call_id(
-                &tool_use.tool_use_id,
+                &if tool_use.tool_use_id.is_empty() {
+                    aimux_provider_utils::generate_id()
+                } else {
+                    tool_use.tool_use_id.clone()
+                },
                 model_id.contains("mistral."),
             ),
             tool_name: tool_use.name.clone(),
