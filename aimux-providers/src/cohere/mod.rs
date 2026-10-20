@@ -268,3 +268,6 @@ impl ProviderDiscovery for CohereProvider {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

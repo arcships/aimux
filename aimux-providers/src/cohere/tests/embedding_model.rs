@@ -15,12 +15,12 @@
 
 use std::sync::Arc;
 
+use crate::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::shared::SharedProviderOptions;
-use aimux_providers::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const EMBEDDING_FIXTURE: &str = include_str!("fixtures/cohere-embedding.json");
 
