@@ -121,7 +121,7 @@ Exchange {
 }
 ```
 
-- **`seq` 与 `attempt`。** 操作本身是 seq 0；Router 子模型、MoA 的每个 reference 和 aggregator 各占一个新 seq，`parent` 指向发起它的 (seq, attempt)。重试不分配新 seq，只递增 attempt。`stepLabel` 保留现在的 `router[0]:…` 文本，便于阅读。
+- **`seq`、`attempt` 与 `exchangeIndex`。** 取自 RFC-0044 §4.2 的 `DiagnosticScope`（[PR #279](https://github.com/arcships/aimux/pull/279)）：`model_call { seq, attempt, parent }` 和每个 (seq, attempt) 内的交换计数器，分配规则以那里为准，本文不另定。`exchangeId` 是这三个值的拼接。`stepLabel` 保留现在的 `router[0]:…` 文本，便于阅读。
 - **`target`。** `model` 是身份描述；`modelRef` 是操作收到的字符串模型 ID，ops 从 registry 解析出的模型填 `"<key>:<modelId>"`，直接传模型实例时缺省。不从 URL 或 `provider()` 推导。
 - **headers。** 有序，保留重复项。`is_sensitive_key` 判定的头（Authorization、Cookie、各包的 key 头等）只留名字，`value` 缺省；URL 去掉 userinfo 和敏感 query。
 - **请求体。** 存交给传输的原始字节。JSON 体里有敏感字段（`redact_json` 会改动它）时整段记 `forbidden: sensitive-field`，不存半脱敏的字节，这条录制因此不能 mock 回放（RFC-0041 §5 不让两个脱敏占位符判为相等）。
@@ -140,19 +140,19 @@ Exchange {
 ```text
 aimux::generate_text
  └ 调用观测接口：操作开始（callId、operation、target、input）          ← 接法由 RFC-0044 §4.1 的后续 RFC 定
-   └ 每个模型调用 attempt：（seq, attempt, parent?）                  ← 同上；组合模型的子调用各占一个 seq
-     └ DiagnosticScope（task-local，带 callId 与当前 (seq, attempt)）  ← RFC-0044 C3，provider-utils
+   └ 每个模型调用 attempt：retry、router、MoA 设置 (seq, attempt, parent) ← RFC-0044 C3（§4.2）
+     └ DiagnosticScope（task-local：call_id、model_call、交换计数器、observers）← RFC-0044 §4.2，provider-utils
        └ provider 编码 → helper（重定向、超时）
          └ Fetch 观察点（叶子 Fetch 之外最内层）                       ← RFC-0044 C3
            ├ ① 交换开始：请求原始字节、headers，取 Instant 作原点
            ├ ② 叶子 Fetch（ReqwestFetch / 用户的 fetch）
            ├ ③ 响应头：status、headers、responseHeadOffsetUs
            └ ④ body 每个分块：{offsetUs, bytes}；结束时终态 eof / error / abandoned
-             → aimux-devtools Recorder（schema 3 组装、完成屏障、JSONL / Ring）
+             → scope 的 observers 之一：aimux-devtools Recorder（schema 3 组装、完成屏障、JSONL / Ring），取代全局 RECORDER
  └ 调用观测接口：操作结束（outcome）
 ```
 
-调用层事件由谁发出、接口叫什么，由 RFC-0044 §4.1 留给的后续 RFC 定。本文对它的要求只有：带 `callId`；能给出每个模型调用 attempt 的 `(seq, attempt, parent)`，重试不换 seq；能区分 input 未采集（策略禁止）与丢失；操作结束和传输关闭两个信号都能送到 Recorder，供完成屏障使用。重定向的每一跳在观察点是独立的一次交换，回放时按跳匹配。
+调用层事件由谁发出、接口叫什么，由 RFC-0044 §4.1 留给的后续 RFC 定。`(seq, attempt, parent)` 和交换序号已由 RFC-0044 §4.2 在 C3 给出，不靠调用层事件。本文对调用层事件的要求只有：带 `callId`；能区分 input 未采集（策略禁止）与丢失；操作结束和传输关闭两个信号都能送到 Recorder，供完成屏障使用。重定向的每一跳在观察点是独立的一次交换，回放时按跳匹配。
 
 ### 4.2 离线回放
 
@@ -267,7 +267,7 @@ pub fn create_offline_provider(name: &str, fetch: FetchFunction) -> Result<Arc<d
 - **手写绑定代码。** 只有测试和 README 引用录制与回放（Python `tests/gil_ops.py`、`test_ops_integration.py`；Node `__test__/contract.native.ts`、`native_scenarios.rs`；Go `wire_test.go`；Java、Kotlin 的错误码测试），换成 schema 3 数据和新 op。绑定 API 本身不加新方法：新 op 经已有的通用调用入口可用。
 - **aimux-replay。** `--mock` 用 `ReplaySet` + `ReplaySession` + `create_offline_provider`；live 用 `--provider` 或 `modelRef`，都没有就报错；`--dry-run` 打印重算的 replayability。
 - **aimux-web。** mock 模式按聊天输入用 `ReplaySet::select(…, Score)` 选录制，用 Sequential 消费，响应标 `approximate`；`/api/replay` 的 provider 来自请求字段或 `modelRef`，Replay 页面把 `target.model.provider` 的第一段预填进可编辑的 provider 输入框，只是界面默认值。
-- **provider 测试。** `aimux-providers/tests/common/replay.rs` 用 wiremock 喂 schema 2 交换，改为用 `ReplaySession` 当 provider 的 `fetch`。
+- **依赖回放的 provider 测试。** `aimux-providers/tests/common/replay.rs` 用 wiremock 喂 schema 2 交换，改为用 `ReplaySession` 当 provider 的 `fetch`。`ReplaySession` 在 `aimux-devtools`，而 providers 与 devtools 互不依赖（RFC-0044 §8 第 1 条），所以这些测试搬到 `aimux-ops` 的集成测试（ops 两者都依赖），和 RFC-0046 §5.9 第 9 条（[PR #294](https://github.com/arcships/aimux/pull/294)）对录制、回放类 provider 测试的安排一致。
 
 ## 8. 与 RFC-0041、RFC-0044 的关系
 
@@ -275,7 +275,7 @@ pub fn create_offline_provider(name: &str, fetch: FetchFunction) -> Result<Arc<d
 |---|---|---|---|
 | 录制格式 | schema 3 字段与约束（§4） | 不改格式 | 给出完整形状与读取规则（§3） |
 | 采集位置 | `transport_leaf`（§4） | Fetch 观察点 + `DiagnosticScope`（C3） | 建在 C3 的观察点上（§4.1）；待讨论 Q1 |
-| 调用层事件 | operation/child/attempt 事件（§3） | 接法由后续调用观测 RFC 定（§4.1） | 只列要求（§4.1）；待讨论 Q3 |
+| 调用层事件 | operation/child/attempt 事件（§3） | (seq, attempt, parent) 与交换序号在 C3 的 `DiagnosticScope`（§4.2）；操作开始、结束事件由后续调用观测 RFC 定（§4.1） | 引用 §4.2，不另定；只列操作事件的要求（§4.1）；待讨论 Q3 |
 | 回放引擎 | `replay_fetch`、匹配、错误码（§3、§7、§8） | 归 `aimux-devtools`（C6） | 接口（§5）；crate 归属不在本文定 |
 | 离线组装 | 配方由 provider 包/descriptor 提供（§3、§6） | — | `create_offline_provider`（§6） |
 | `rebuild_provider` | 删除（§2、§12） | C6 时暂移到 ops，传输回放后删除 | C6 移入 ops 之后，由 §10 第 3 步随 live 改用 `modelRef` 在 ops 里删除 |
@@ -304,7 +304,7 @@ RFC-0044 C6 先把 `rebuild_provider` 移到 ops，§10 第 3 步排在 C6 之�
 | 1 | RFC-0044 C3 | Fetch 观察点、`DiagnosticScope`；provider-utils 不再读录制上下文 | RFC-0044 | 包拆分 |
 | 2 | 调用观测 RFC → RFC-0044 C5、C6 | 调用层事件接口；新建 `aimux-devtools`，录制、回放搬入 | 1 | 包拆分 |
 | 3 | schema 3 写入侧 | §3 的类型与读取规则，观察者写 schema 3，删除 schema 1/2 读取、`ProviderRecord`、`MockReplayModel`，以及 C6 移到 ops 的 `rebuild_provider`；ops `recorder.create` 策略、`replay.create/inspect/dryRun/live` 改为 schema 3；aimux-replay 与 Web 的 mock 模式在此 PR 中暂时去掉，并在 PR 描述登记，由 4 补回；生成物与 DTO 向量 | 2 | 本线程 |
-| 4 | 传输回放 | §5、§6；ops `replay.offline`、`replay.capabilities`；aimux-replay `--mock` 与 Web mock 模式；provider 测试改用 `ReplaySession`；Jev 录制按 Q4 处理；生成物 | 3 | 本线程 |
+| 4 | 传输回放 | §5、§6；ops `replay.offline`、`replay.capabilities`；aimux-replay `--mock` 与 Web mock 模式；依赖回放的 provider 测试在 ops 集成测试里改用 `ReplaySession`（§7）；Jev 录制按 Q4 处理；生成物 | 3 | 本线程 |
 | 5 | 文档登记 | 关闭 RFC-0039 D12、G-b、G-c、G-k；对齐文档 §9.1 相应各行；§9 的未做项写进已知差距 | 4 | 本线程 |
 | 6 | 发版 | 首个写 schema 3 的发布冻结新增必需字段（RFC-0041 §4） | 5 | — |
 
@@ -318,7 +318,7 @@ RFC-0044 C6 先把 `rebuild_provider` 移到 ops，§10 第 3 步排在 C6 之�
 
 **Q2 schema 类型与 Recorder 的归属。** 原提案：在 `aimux-devtools` 建立之前，schema 3 类型、Recorder、Ring/JSONL 留在 `aimux-core::recording`，回放引擎放在 `aimux-provider-utils` 的独立 `replay` 模块，以后整体搬走。RFC-0044 §3.1 把它们放进 `aimux-devtools`，provider-utils 只放观察记录类型。本文按 RFC-0044 的顺序排（§10 先 C6 后 3）。是否允许先落在临时位置再搬，由维护者决定。
 
-**Q3 调用层事件。** 原提案：沿用 task-local 的 `RecordingContext`，由它分配 `(seq, attempt)`：根是 seq 0，`child(step)` 取下一个 seq 并记下 parent，`start_attempt()` 递增本 seq 的 attempt。RFC-0044 把调用层接法留给后续 RFC。本文只列要求（§4.1），不预先定接口。
+**Q3 调用层事件。** 原提案：沿用 task-local 的 `RecordingContext`，由它分配 `(seq, attempt)`：根是 seq 0，`child(step)` 取下一个 seq 并记下 parent，`start_attempt()` 递增本 seq 的 attempt。RFC-0044 §4.2 已在 C3 定下 (seq, attempt, parent) 由 `aimux` 的 retry 循环和 router、MoA、composite 设置，和原提案的分配规则相同，这部分不再待定。剩下的是操作开始、结束等调用层事件的接法，RFC-0044 留给后续 RFC；本文只列要求（§4.1），不预先定接口。
 
 **Q4 Jev 真实录制。** 两种做法。(a) 维护者用真实 key 重新录一份 schema 3。(b) 用确定性的一次性映射转换现有文件：非流式 JSON 响应各记一个分块，`offsetUs` 取录下的延迟，`[REDACTED]` 头去掉值；转换脚本不进仓库，在 PR 里列出供审核。RFC-0041 §2 不允许偷偷转存历史流量。(b) 是公开转换，是否接受由维护者定。原提案是 (b)。
 
