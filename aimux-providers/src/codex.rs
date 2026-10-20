@@ -525,7 +525,7 @@ impl LanguageModel for CodexModel {
 ///
 /// `Debug` is hand-written so both tokens are redacted from logs and error
 /// output.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CodexTokens {
     /// Access token to pass as the `ChatGptAccount` token of [`CodexProviderSettings`].
     pub access_token: String,

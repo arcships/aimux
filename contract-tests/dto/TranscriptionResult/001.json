@@ -1,0 +1,13 @@
+{
+  "text": "Hello world",
+  "segments": [
+    {
+      "text": "Hello",
+      "startSecond": 0.0,
+      "endSecond": 1.0
+    }
+  ],
+  "language": "en",
+  "warnings": [],
+  "response": {}
+}

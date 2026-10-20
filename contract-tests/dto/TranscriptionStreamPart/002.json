@@ -1,0 +1,8 @@
+{
+  "type": "error",
+  "error": {
+    "name": "AI_APICallError",
+    "message": "boom",
+    "isRetryable": false
+  }
+}

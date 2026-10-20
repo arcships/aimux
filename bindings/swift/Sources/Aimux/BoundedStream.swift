@@ -9,7 +9,10 @@ import Foundation
 /// once. An early `for await` exit releases its iterator even if this sequence
 /// is retained. Retaining an iterator explicitly requires explicit cancellation.
 public struct BoundedStream<Element: Sendable>: AsyncSequence, Sendable {
-    public enum Failure: Error, Equatable {
+    // Swift 6.3 requires this witness; the generic parameter is not enough.
+    public typealias Element = Element
+    // AsyncSequence.Failure is any Error from finish(throwing:).
+    public enum QueueError: Error, Equatable {
         case elementTooLarge
         case invalidElementSize
         case multipleConsumers
@@ -24,7 +27,7 @@ public struct BoundedStream<Element: Sendable>: AsyncSequence, Sendable {
         fileprivate let state: State
 
         /// Blocks the callback thread until space is available or the stream
-        /// terminates. Oversized payloads finish the stream with a Failure.
+        /// terminates. Oversized payloads finish the stream with a QueueError.
         @discardableResult
         public func yield(_ element: Element) -> YieldResult {
             state.yield(element)
@@ -45,8 +48,7 @@ public struct BoundedStream<Element: Sendable>: AsyncSequence, Sendable {
         public mutating func next() async throws -> Element? {
             // Keep the lease alive throughout suspension, including cancellation.
             defer { withExtendedLifetime(lease) {} }
-            // Qualified: inside AsyncIterator, Failure names the protocol associated type.
-            guard lease.admitted else { throw BoundedStream.Failure.multipleConsumers }
+            guard lease.admitted else { throw QueueError.multipleConsumers }
             return try await withTaskCancellationHandler {
                 try await lease.state.next()
             } onCancel: { [state = lease.state] in
@@ -154,7 +156,7 @@ public struct BoundedStream<Element: Sendable>: AsyncSequence, Sendable {
             while case .open = terminal {
                 guard size >= 0, size <= maxElementBytes, size <= byteCapacity else {
                     condition.unlock()
-                    finish(size < 0 ? Failure.invalidElementSize : Failure.elementTooLarge)
+                    finish(size < 0 ? QueueError.invalidElementSize : QueueError.elementTooLarge)
                     return .terminated
                 }
                 if let waiting = waiter {
@@ -239,7 +241,7 @@ public struct BoundedStream<Element: Sendable>: AsyncSequence, Sendable {
                 case .open:
                     guard waiter == nil else {
                         condition.unlock()
-                        continuation.resume(throwing: Failure.multipleConsumers)
+                        continuation.resume(throwing: QueueError.multipleConsumers)
                         return
                     }
                     waiter = continuation

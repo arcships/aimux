@@ -294,46 +294,14 @@ session (idempotent).
 
 ## Types
 
-`bindings/kotlin/src/main/kotlin/ai/arcships/aimux/Types.kt` declares the
-typed model surface. The wire JSON is the AI SDK's and equals the generated
-TypeScript types in `bindings/node/src/types`: camelCase field names (Kotlin
-properties carry the same names), unions tagged on `type` (`Source` on
-`sourceType`), optional fields absent rather than null. An `unknown` value
-(`body`, `inputSchemaInput`) keeps a JSON `null` as `JsonNull`, written back as
-`null`; a missing field is Kotlin `null` and omitted. A response `timestamp`
-is a JavaScript `Date` in the AI SDK's JSON: a `toISOString()` string, UTC with
-milliseconds (`"2025-03-06T13:50:19.000Z"`), which `Instant.parse` reads.
-Decoding is lenient
-(unknown keys ignored).
-
-| Kotlin | Wire |
-|--------|------|
-| `Usage(inputTokens: InputTokenUsage(total, noCache, cacheRead, cacheWrite), outputTokens: OutputTokenUsage(total, text, reasoning), raw)` | `inputTokens` / `noCache` / `cacheRead` / `cacheWrite` |
-| `FinishReason(unified, raw)`, `ResponseMetadata` / `ResponseInfo(id, timestamp, modelId, headers, body)` | `modelId` |
-| `ToolCall(toolCallId, toolName, input, providerExecuted, dynamic, providerMetadata, invalid, error)` | `error` is the `name`-tagged `AiMuxError` JSON; encodes `"type": "tool-call"` (the AI SDK's `TypedToolCall`), as `RawToolCall` does, and `Source` encodes `"type": "source"` |
-| `Tool` (`Function` / `Provider`), `ToolChoice` | `{"type":"function"}`, `inputSchema`, `toolChoice` |
-| `ContentPart` (sealed) | `type`: `text`, `custom`, `reasoning`, `reasoning-file`, `image`, `file`, `tool-call`, `tool-result`, `tool-approval-request` |
-| `FilePartData` | `File.data`: a tagged `FileData`, a bare string (base64 or a URL) or a bare `{provider: id}` reference (`Tagged` / `Bare` / `Reference`); `ReasoningFilePartData` is `Tagged(GeneratedFileData)` / `Bare` |
-| `ContentPart.ToolResult(toolCallId, toolName, output, providerOptions)` | `output` is a `ToolResultOutput`: `text`, `json` (`ToolResultOutput.JsonValue`), `execution-denied`, `error-text`, `error-json`, `content` |
-| `FileBytes` | a base64 string; `Binary` is written as base64 (also audio / image / video file data, image and file part bytes) |
-| `FileData` / `GeneratedFileData` | `type`: `data`, `url`, `reference`, `text` |
-| `GeneratedFile(base64, mediaType, providerMetadata)` | a generated file: `{"base64", "mediaType"}`; `StreamPart.File` / `ReasoningFile(file, providerMetadata)` are `{"type": "file", "file": {...}}` (the provider-level `GenerateResult.content` keeps `mediaType` and tagged `data`) |
-| `GenerateContent` (provider-level `GenerateResult.content`) | `type`: `text`, `tool-call` (`input` is the raw argument text), `source`, `reasoning`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-result` |
-| `StreamPart` (sealed) | `type`: `text-start/delta/end`, `start`, `start-step`, `finish-step`, `finish`, `abort`, `error`, `tool-input-start/delta/end`, `tool-call`, `tool-result`, `tool-error`, `tool-output-denied`, `file`, `reasoning-file`, `custom`, `tool-approval-request`, `tool-approval-response`, `reasoning-start/delta/end`, `source`, `raw` |
-| `Warning` (sealed) | `type`: `unsupported`, `compatibility`, `deprecated`, `other` |
-| `GenerateTextResult`, `GenerateObjectResult` | `toolCalls`, `finishReason` (`FinishReasonUnified`), `usage` / `totalUsage` (`LanguageModelUsage`), `responseMessages`, `reasoningText`, `request`, `response`, `steps`, `output` |
-| `GenerateTextOptions` | `maxOutputTokens`, `stopSequences`, `topP`, `providerOptions`, `output` (the AI SDK's `output` as JSON, e.g. `{"type":"object","schema":{...}}`, tagged by `type`), `maxRetries`, `includeRawChunks`, `sessionId`, ... |
-
-Provider options / metadata are `Map<String, Map<String, JsonElement>>`
-(`ProviderOptions` / `ProviderMetadata`).
-
-`MultimodalTypes.kt` holds the other modalities with the same conventions:
-`AudioData` and `ImageOutputs` are untagged (a string is base64, an array is
-binary); `VideoData` is tagged on `type` (`url`, `base64`, `binary`);
-`Size` and `AspectRatio` serialize as the strings `"WxH"` and `"W:H"`;
-`ImageCallOptions` / `VideoCallOptions` always encode `n` and `providerOptions`
-(required on the wire); `VideoCallOptions.poll: VideoPollOptions?` carries
-`intervalMs` / `timeoutMs` for the Core-owned video status loop.
+Kotlin declares no DTO classes of its own. It uses the Java artifact's DTOs,
+which `aimux-codegen` generates from the Rust types into the package
+`ai.arcships.aimux.types` (`bindings/java/generated/ai/arcships/aimux/types/`;
+do not edit them, run `cargo run -p aimux-codegen`). They pass unchanged between
+Java and Kotlin. The wire JSON is the AI SDK's and equals the generated
+TypeScript types in `bindings/node/src/generated/types.ts`; the shapes, the
+`null` versus missing rules and the multimodal types are described in the
+[Java API](java.md#types).
 
 ## Native library in tests
 
@@ -345,6 +313,6 @@ set `AIMUX_FFI_LIB_DIR` to use a library built elsewhere (for example
 
 Full multimodal surface — text generation, streaming, embedding, TTS, STT
 (incl. streaming `TranscriptionSession`), image, video, rerank, search, and
-file upload (`Multimodal.kt` + `MultimodalTypes.kt`), verified by
+file upload (through the Java artifact and its generated DTOs), verified by
 mock-server end-to-end tests (no real network). See the
 [coverage matrix](../API.md#feature-coverage).

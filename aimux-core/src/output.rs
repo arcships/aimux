@@ -12,9 +12,9 @@
 //! for the same two cases: [`AiMuxError::JsonParse`] for text that is not
 //! JSON and [`AiMuxError::InvalidResponseData`] for JSON of the wrong shape.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::options::ResponseFormat;
@@ -27,23 +27,20 @@ use crate::options::ResponseFormat;
 /// the field `name` stays the schema name), and the arguments of
 /// `Output.object()` / `array()` / `choice()` / `json()` camelCase
 /// (`{"type":"array","element":{...},"minItems":1}`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum Output {
     /// The text itself (`Output.text()`).
     Text {},
     /// A JSON object matching `schema` (`Output.object()`).
     Object {
         schema: Value,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
@@ -51,16 +48,12 @@ pub enum Output {
     /// is asked for `{"elements": [...]}`.
     Array {
         element: Value,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         min_items: Option<u32>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_items: Option<u32>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
@@ -68,19 +61,15 @@ pub enum Output {
     /// `{"result": "<option>"}`.
     Choice {
         options: Vec<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
     /// Any JSON value, unconstrained (`Output.json()`).
     Json {
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         name: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },

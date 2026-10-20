@@ -6,6 +6,7 @@ import { api, callStream, parseStreamPart } from '../api/client'
 import type { WireMessage } from '@/types/generated/WireMessage'
 import type { WireContentPart } from '@/types/generated/WireContentPart'
 import type { WireCallRequest } from '@/types/generated/WireCallRequest'
+import type { WireMeta } from '@/types/generated/WireMeta'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
 import Textarea from '../components/ui/Textarea.vue'
@@ -73,7 +74,7 @@ interface ChatItem {
   text: string
   toolCalls: Array<{ id: string; name: string; input: unknown }>
   final: boolean
-  meta?: { callId?: string; sessionId?: string; step?: number; outcome?: string }
+  meta?: WireMeta
   error?: string
 }
 const chat = ref<ChatItem[]>([])

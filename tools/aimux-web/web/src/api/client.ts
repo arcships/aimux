@@ -2,10 +2,7 @@
 
 import type { WireCallRequest } from '@/types/generated/WireCallRequest'
 import type { WireCallResponse } from '@/types/generated/WireCallResponse'
-import type { Recording } from '@aimux/types/Recording'
-import type { TraceRecord } from '@aimux/types/TraceRecord'
-import type { SessionView } from '@aimux/types/SessionView'
-import type { TextStreamPart } from '@aimux/types/TextStreamPart'
+import type { Recording, TraceRecord, SessionView, TextStreamPart } from '@aimux/types'
 
 const API = '/api'
 
