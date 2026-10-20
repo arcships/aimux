@@ -266,7 +266,7 @@ final class BoundedStreamTests: XCTestCase {
         let first = try await iterator.next()
         XCTAssertEqual(first, "ok")
         do { _ = try await iterator.next(); XCTFail("missing size failure") }
-        catch { XCTAssertEqual(error as? BoundedStream<String>.Failure, .elementTooLarge) }
+        catch { XCTAssertEqual(error as? BoundedStream<String>.QueueError, .elementTooLarge) }
         let end = try await iterator.next()
         XCTAssertNil(end)
     }
@@ -279,7 +279,7 @@ final class BoundedStreamTests: XCTestCase {
             var iterator = stream.makeAsyncIterator()
             do { _ = try await iterator.next(); XCTFail("missing size failure") }
             catch {
-                XCTAssertEqual(error as? BoundedStream<Int>.Failure,
+                XCTAssertEqual(error as? BoundedStream<Int>.QueueError,
                                size < 0 ? .invalidElementSize : .elementTooLarge)
             }
         }
@@ -293,7 +293,7 @@ final class BoundedStreamTests: XCTestCase {
             var second = stream.makeAsyncIterator()
             second.cancel()
             do { _ = try await second.next(); XCTFail("second consumer accepted") }
-            catch { XCTAssertEqual(error as? BoundedStream<Int>.Failure, .multipleConsumers) }
+            catch { XCTAssertEqual(error as? BoundedStream<Int>.QueueError, .multipleConsumers) }
         }
         XCTAssertEqual(aborts.count, 0)
         stream.producer.yield(1)

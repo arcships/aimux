@@ -1,593 +1,224 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
-
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Base64;
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.*;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
-/**
- * Round-trip serialization tests for the typed multimodal types in
- * {@link MultimodalTypes}.
- *
- * <p>Each modality's result is decoded from the same canned wire-format JSON
- * used by the Go binding's {@code Parse*Result} tests (see
- * {@code bindings/go/multimodal_test.go}), its key fields are asserted, then it
- * is re-serialized and decoded again to prove the round-trip is lossless. The
- * re-serialized wire form is also pinned against the expected normalized JSON
- * (the mapper uses {@code NON_NULL} inclusion: only {@code null} fields are
- * omitted on encode, so empty lists, empty strings, zero primitives and zero
- * boxed numbers are all emitted; nothing is lost because the decode defaults
- * match).
- *
- * <p>Special attention is paid to the three hand-written
- * {@code JsonSerializer}/{@code JsonDeserializer} pairs —
- * {@link MultimodalTypes.AudioData} (Base64/Binary, a base64 string),
- * {@link MultimodalTypes.ImageOutputs} (Base64/Binary, base64 strings) and
- * {@link MultimodalTypes.VideoData} (Url/Base64/Binary, tagged on {@code type})
- * — which are the most bug-prone part of the file. Dedicated tests below exercise every
- * variant of each union.
- *
- * <p>These are pure serialization tests: no native library is loaded — the
- * {@link MultimodalTypes.AimuxJson} mapper is configured in Java and round-trips
- * JSON without touching the FFI.
- */
+/** Modality and codec contracts exercised through generated DTOs and Jackson. */
 class MultimodalTypesTest {
+    private static final ObjectMapper M = DtoJson.MAPPER;
 
-    private static final ObjectMapper M = MultimodalTypes.AimuxJson.MAPPER;
-
-    /** Semantic JSON equality — parses both strings and compares the trees. */
-    private static boolean jsonEquals(String a, String b) throws IOException {
-        return M.readTree(a).equals(M.readTree(b));
+    private static <T> T roundTrip(String json, Class<T> type) throws IOException {
+        T value = M.readValue(json, type);
+        String encoded = M.writeValueAsString(value);
+        assertThat(M.readTree(encoded).equals((left, right) -> left.isNumber() && right.isNumber()
+            ? left.decimalValue().compareTo(right.decimalValue()) : (left.equals(right) ? 0 : 1), M.readTree(json))).isTrue();
+        assertThat(M.<JsonNode>valueToTree(M.readValue(encoded, type))).isEqualTo(M.readTree(encoded));
+        return value;
     }
 
-    // ── Embedding ──────────────────────────────────────────────────────────
+    private static void assertSameJson(Object actual, Object expected) {
+        assertThat(M.<JsonNode>valueToTree(actual)).isEqualTo(M.valueToTree(expected));
+    }
 
-    @Test
-    void embeddingResultRoundTrip() throws Exception {
-        // Same shape as Go ParseEmbeddingResult.
-        String json = "{\"embeddings\":[[0.1,0.2,0.3],[0.4,0.5,0.6]],"
-            + "\"usage\":{\"tokens\":5},\"warnings\":[]}";
-
-        MultimodalTypes.EmbeddingResult result =
-            M.readValue(json, MultimodalTypes.EmbeddingResult.class);
-
-        // Decode (mirrors Go: 2 embeddings, 3 dims each, usage.tokens == 5).
+    @Test void embeddingResultRoundTrip() throws Exception {
+        EmbeddingResult result = roundTrip("{\"embeddings\":[[0.1,0.2,0.3],[0.4,0.5,0.6]],\"usage\":{\"tokens\":5},\"warnings\":[]}", EmbeddingResult.class);
         assertThat(result.getEmbeddings()).hasSize(2);
         assertThat(result.getEmbeddings().get(0)).hasSize(3);
-        assertThat(result.getUsage()).isNotNull();
         assertThat(result.getUsage().getTokens()).isEqualTo(5L);
-
-        // Round-trip: serialize → deserialize → equals (lossless).
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.EmbeddingResult rt =
-            M.readValue(out, MultimodalTypes.EmbeddingResult.class);
-        assertThat(rt).isEqualTo(result);
-
-        // Wire form: NON_NULL keeps the empty `warnings` list.
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"embeddings\":[[0.1,0.2,0.3],[0.4,0.5,0.6]],\"usage\":{\"tokens\":5},\"warnings\":[]}"));
     }
 
-    // ── Speech (TTS) ───────────────────────────────────────────────────────
-
-    @Test
-    void speechResultRoundTrip() throws Exception {
-        // Same shape as Go ParseSpeechResult — exercises AudioData.Base64.
-        String json = "{\"audio\":\"aGVsbG8=\","
-            + "\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
-
-        MultimodalTypes.SpeechResult result =
-            M.readValue(json, MultimodalTypes.SpeechResult.class);
-
-        // Decode (mirrors Go: audio is the Base64 variant, value "aGVsbG8=").
-        assertThat(result.getAudio()).isInstanceOf(MultimodalTypes.AudioData.Base64.class);
-        assertThat(((MultimodalTypes.AudioData.Base64) result.getAudio()).getValue())
-            .isEqualTo("aGVsbG8=");
-
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.SpeechResult rt =
-            M.readValue(out, MultimodalTypes.SpeechResult.class);
-        assertThat(rt).isEqualTo(result);
-
-        // The custom AudioData serializer re-emits the bare base64 string.
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"audio\":\"aGVsbG8=\",\"warnings\":[],\"response\":{}}"));
+    @Test void speechResultRoundTrip() throws Exception {
+        SpeechResult result = roundTrip("{\"audio\":\"aGVsbG8=\",\"warnings\":[],\"usage\":null,\"response\":{}}", SpeechResult.class);
+        assertThat(result.getAudio().getValue()).isEqualTo("aGVsbG8=");
     }
 
-    // ── Image ──────────────────────────────────────────────────────────────
-
-    @Test
-    void imageResultRoundTrip() throws Exception {
-        // Same shape as Go ParseImageResult — exercises ImageOutputs.Base64.
-        String json = "{\"images\":[\"aW1hZ2Ux\"],"
-            + "\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
-
-        MultimodalTypes.ImageResult result =
-            M.readValue(json, MultimodalTypes.ImageResult.class);
-
-        // Decode (mirrors Go: 1 base64 image, "aW1hZ2Ux").
-        assertThat(result.getImages()).isInstanceOf(MultimodalTypes.ImageOutputs.Base64.class);
-        List<String> b64 =
-            ((MultimodalTypes.ImageOutputs.Base64) result.getImages()).getValue();
-        assertThat(b64).hasSize(1);
-        assertThat(b64.get(0)).isEqualTo("aW1hZ2Ux");
-
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.ImageResult rt =
-            M.readValue(out, MultimodalTypes.ImageResult.class);
-        assertThat(rt).isEqualTo(result);
-
-        // The custom ImageOutputs serializer re-emits the bare string array.
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"images\":[\"aW1hZ2Ux\"],\"warnings\":[],\"response\":{}}"));
+    @Test void imageResultRoundTrip() throws Exception {
+        ImageResult result = roundTrip("{\"images\":[\"aW1hZ2Ux\"],\"warnings\":[],\"response\":{}}", ImageResult.class);
+        assertThat(result.getImages().getValue()).containsExactly("aW1hZ2Ux");
     }
 
-    // ── Transcription (STT) ────────────────────────────────────────────────
-
-    @Test
-    void transcriptionResultRoundTrip() throws Exception {
-        // Same shape as Go ParseTranscriptionResult.
-        // Timing keys are `startSecond`/`endSecond` — see TranscriptionSegment.ts.
-        String json = "{\"text\":\"Hello world\","
-            + "\"segments\":[{\"text\":\"Hello\",\"startSecond\":0.0,\"endSecond\":1.0}],"
-            + "\"language\":\"en\",\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
-
-        MultimodalTypes.TranscriptionResult result =
-            M.readValue(json, MultimodalTypes.TranscriptionResult.class);
-
-        // Decode (mirrors Go: text, 1 segment, segment text, language).
+    @Test void transcriptionResultRoundTrip() throws Exception {
+        TranscriptionResult result = roundTrip("{\"text\":\"Hello world\",\"segments\":[{\"text\":\"Hello\",\"startSecond\":0.0,\"endSecond\":1.0}],\"language\":\"en\",\"warnings\":[],\"response\":{}}", TranscriptionResult.class);
         assertThat(result.getText()).isEqualTo("Hello world");
-        assertThat(result.getSegments()).hasSize(1);
-        assertThat(result.getSegments().get(0).getText()).isEqualTo("Hello");
-        assertThat(result.getSegments().get(0).getStartSecond()).isEqualTo(0.0);
-        assertThat(result.getSegments().get(0).getEndSecond()).isEqualTo(1.0);
+        assertThat(result.getSegments().get(0).getStartSecond()).isEqualByComparingTo("0");
+        assertThat(result.getSegments().get(0).getEndSecond()).isEqualByComparingTo("1");
         assertThat(result.getLanguage()).isEqualTo("en");
-
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.TranscriptionResult rt =
-            M.readValue(out, MultimodalTypes.TranscriptionResult.class);
-
-        // Round-trip is lossless: the timings are primitive doubles (the core
-        // declares them required), so NON_NULL can never drop them.
-        assertThat(rt).isEqualTo(result);
-        assertThat(rt.getSegments().get(0).getStartSecond()).isEqualTo(0.0);
-        assertThat(rt.getSegments().get(0).getEndSecond()).isEqualTo(1.0);
-        assertThat(rt.getText()).isEqualTo("Hello world");
-        assertThat(rt.getLanguage()).isEqualTo("en");
-
-        // Wire form retains startSecond:0.0 and the empty `warnings` list
-        // (NON_NULL suppresses only null, not zero values or empty collections).
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"text\":\"Hello world\",\"segments\":"
-                + "[{\"text\":\"Hello\",\"startSecond\":0.0,\"endSecond\":1.0}],"
-                + "\"language\":\"en\",\"warnings\":[],\"response\":{}}"));
     }
 
-    // ── Reranking ──────────────────────────────────────────────────────────
-
-    @Test
-    void rerankingResultRoundTrip() throws Exception {
-        // Same shape as Go ParseRerankingResult.
-        String json = "{\"ranking\":["
-            + "{\"index\":1,\"relevanceScore\":0.95},"
-            + "{\"index\":0,\"relevanceScore\":0.30}"
-            + "],\"warnings\":[]}";
-
-        MultimodalTypes.RerankingResult result =
-            M.readValue(json, MultimodalTypes.RerankingResult.class);
-
-        // Decode (mirrors Go: 2 ranks, first index 1 / score 0.95).
-        assertThat(result.getRanking()).hasSize(2);
-        assertThat(result.getRanking().get(0).getIndex()).isEqualTo(1);
-        assertThat(result.getRanking().get(0).getRelevanceScore()).isEqualTo(0.95);
-        assertThat(result.getRanking().get(1).getIndex()).isEqualTo(0);
-        assertThat(result.getRanking().get(1).getRelevanceScore()).isEqualTo(0.30);
-
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.RerankingResult rt =
-            M.readValue(out, MultimodalTypes.RerankingResult.class);
-        assertThat(rt).isEqualTo(result);
-
-        // NON_NULL keeps the primitive `index:0` on the second rank (a primitive
-        // int is never null, so it is not suppressed) and the empty `warnings`
-        // list; it round-trips losslessly either way.
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"ranking\":[{\"index\":1,\"relevanceScore\":0.95},"
-            + "{\"index\":0,\"relevanceScore\":0.3}],\"warnings\":[]}"));
+    @Test void rerankingResultRoundTrip() throws Exception {
+        RerankingResult result = roundTrip("{\"ranking\":[{\"index\":1,\"relevanceScore\":0.95},{\"index\":0,\"relevanceScore\":0.30}],\"warnings\":[]}", RerankingResult.class);
+        assertThat(result.getRanking().get(0).getIndex()).isEqualTo(1L);
+        assertThat(result.getRanking().get(0).getRelevanceScore()).isEqualByComparingTo("0.95");
+        assertThat(result.getRanking().get(1).getIndex()).isEqualTo(0L);
     }
 
-    // ── Video ──────────────────────────────────────────────────────────────
-
-    @Test
-    void videoResultRoundTrip() throws Exception {
-        // Same shape as Go ParseVideoResult — exercises VideoData.Url.
-        String json = "{\"videos\":[{\"type\":\"url\","
-            + "\"url\":\"https://example.com/video.mp4\",\"mediaType\":\"video/mp4\"}],"
-            + "\"warnings\":[],\"response\":{\"id\":\"resp-1\"}}";
-
-        MultimodalTypes.VideoResult result =
-            M.readValue(json, MultimodalTypes.VideoResult.class);
-
-        // Decode (mirrors Go: 1 video, Url variant, url string).
-        assertThat(result.getVideos()).hasSize(1);
-        assertThat(result.getVideos().get(0)).isInstanceOf(MultimodalTypes.VideoData.Url.class);
-        MultimodalTypes.VideoUrlData url =
-            ((MultimodalTypes.VideoData.Url) result.getVideos().get(0)).getValue();
-        assertThat(url.getUrl()).isEqualTo("https://example.com/video.mp4");
-        assertThat(url.getMediaType()).isEqualTo("video/mp4");
-
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.VideoResult rt =
-            M.readValue(out, MultimodalTypes.VideoResult.class);
-        assertThat(rt).isEqualTo(result);
-
-        // The custom VideoData serializer re-emits the {"type":"url",...} tag.
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"videos\":[{\"type\":\"url\",\"url\":\"https://example.com/video.mp4\","
-            + "\"mediaType\":\"video/mp4\"}],\"warnings\":[],\"response\":{}}"));
+    @Test void videoResultRoundTrip() throws Exception {
+        VideoResult result = roundTrip("{\"videos\":[{\"type\":\"url\",\"url\":\"https://example.com/video.mp4\",\"mediaType\":\"video/mp4\"}],\"warnings\":[],\"response\":{}}", VideoResult.class);
+        assertThat(result.getVideos().get(0)).isInstanceOf(VideoData.Url.class);
+        assertThat(((VideoData.Url) result.getVideos().get(0)).getUrl()).isEqualTo("https://example.com/video.mp4");
     }
 
-    @Test
-    void videoPollOptionsRoundTrip() throws Exception {
-        MultimodalTypes.VideoCallOptions options = MultimodalTypes.VideoCallOptions.builder()
-            .prompt("a cat")
-            .poll(MultimodalTypes.VideoPollOptions.builder()
-                .intervalMs(1_000L)
-                .timeoutMs(120_000L)
-                .build())
-            .build();
-
-        String json = M.writeValueAsString(options);
-        assertThat(M.readTree(json).path("poll").path("intervalMs").asLong()).isEqualTo(1_000L);
-        assertThat(M.readTree(json).path("poll").path("timeoutMs").asLong()).isEqualTo(120_000L);
-
-        MultimodalTypes.VideoCallOptions decoded =
-            M.readValue(json, MultimodalTypes.VideoCallOptions.class);
-        assertThat(decoded.getPoll()).isEqualTo(options.getPoll());
-        assertThat(decoded).isEqualTo(options);
+    @Test void videoPollOptionsRoundTrip() throws Exception {
+        VideoCallOptions options = VideoCallOptions.builder().prompt("a cat")
+            .poll(VideoPollOptions.builder().intervalMs(1000L).timeoutMs(120000L).build()).build();
+        assertSameJson(roundTrip(DtoJson.stringify(options), VideoCallOptions.class), options);
+        assertThat(options.getPoll().getIntervalMs()).isEqualTo(1000L);
     }
 
-    @Test
-    void videoFpsIsEmittedAsAnIntegerForRustU32() throws Exception {
-        // `VideoCallOptions.fps` is `Option<u32>` in Rust; a JSON float makes
-        // serde reject the whole options object at the FFI boundary.
-        MultimodalTypes.VideoCallOptions options = MultimodalTypes.VideoCallOptions.builder()
-            .prompt("a cat")
-            .fps(24L)
-            .build();
-
-        String json = M.writeValueAsString(options);
-        assertThat(M.readTree(json).path("fps").isIntegralNumber())
-            .as("wire form: %s", json)
-            .isTrue();
+    @Test void videoFpsIsEmittedAsAnIntegerForRustU32() throws Exception {
+        VideoCallOptions options = VideoCallOptions.builder().prompt("a cat").fps(24L).build();
+        assertThat(M.readTree(DtoJson.stringify(options)).get("fps").isIntegralNumber()).isTrue();
+        assertThatThrownBy(() -> M.readValue("{\"prompt\":\"a cat\",\"fps\":24.5}", VideoCallOptions.class)).isInstanceOf(IOException.class);
     }
 
-    // ── Search ─────────────────────────────────────────────────────────────
-
-    @Test
-    void searchResultRoundTrip() throws Exception {
-        // Same shape as Go ParseSearchResult.
-        String json = "{\"results\":[{\"title\":\"Rust\","
-            + "\"url\":\"https://rust-lang.org\",\"content\":\"Rust is...\"}],"
-            + "\"answer\":\"Rust is a systems language.\",\"warnings\":[]}";
-
-        MultimodalTypes.SearchResult result =
-            M.readValue(json, MultimodalTypes.SearchResult.class);
-
-        // Decode (mirrors Go: 1 result, title "Rust", answer string).
-        assertThat(result.getResults()).hasSize(1);
+    @Test void searchResultRoundTrip() throws Exception {
+        SearchResult result = roundTrip("{\"results\":[{\"title\":\"Rust\",\"url\":\"https://rust-lang.org\",\"content\":\"Rust is...\"}],\"answer\":\"Rust is a systems language.\",\"warnings\":[]}", SearchResult.class);
         assertThat(result.getResults().get(0).getTitle()).isEqualTo("Rust");
-        assertThat(result.getResults().get(0).getUrl()).isEqualTo("https://rust-lang.org");
         assertThat(result.getAnswer()).isEqualTo("Rust is a systems language.");
-
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.SearchResult rt =
-            M.readValue(out, MultimodalTypes.SearchResult.class);
-        assertThat(rt).isEqualTo(result);
-
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"results\":[{\"title\":\"Rust\",\"url\":\"https://rust-lang.org\","
-            + "\"content\":\"Rust is...\"}],\"answer\":\"Rust is a systems language.\",\"warnings\":[]}"));
     }
 
-    // ── Files (upload) ─────────────────────────────────────────────────────
-
-    @Test
-    void uploadFileResultRoundTrip() throws Exception {
-        // Same shape as Go ParseUploadFileResult.
-        String json = "{\"providerReference\":{\"openai\":\"file-abc123\"},"
-            + "\"mediaType\":\"application/pdf\",\"filename\":\"doc.pdf\",\"warnings\":[]}";
-
-        MultimodalTypes.UploadFileResult result =
-            M.readValue(json, MultimodalTypes.UploadFileResult.class);
-
-        // Decode (mirrors Go: providerReference.openai, mediaType).
+    @Test void uploadFileResultRoundTrip() throws Exception {
+        UploadFileResult result = roundTrip("{\"providerReference\":{\"openai\":\"file-abc123\"},\"mediaType\":\"application/pdf\",\"filename\":\"doc.pdf\",\"warnings\":[]}", UploadFileResult.class);
         assertThat(result.getProviderReference()).containsEntry("openai", "file-abc123");
         assertThat(result.getMediaType()).isEqualTo("application/pdf");
         assertThat(result.getFilename()).isEqualTo("doc.pdf");
-
-        String out = M.writeValueAsString(result);
-        MultimodalTypes.UploadFileResult rt =
-            M.readValue(out, MultimodalTypes.UploadFileResult.class);
-        assertThat(rt).isEqualTo(result);
-
-        assertThat(M.readTree(out)).as("wire form: %s", out).isEqualTo(M.readTree(
-            "{\"providerReference\":{\"openai\":\"file-abc123\"},"
-            + "\"mediaType\":\"application/pdf\",\"filename\":\"doc.pdf\",\"warnings\":[]}"));
     }
 
-    // ── Custom serializer focus: the three sealed unions ───────────────────
-    // These directly exercise the hand-written JsonSerializer/JsonDeserializer
-    // pairs across every wire variant — the area most likely to harbor bugs.
-
-    @Test
-    void audioDataSerializerAllVariants() throws Exception {
-        // Base64 variant.
-        MultimodalTypes.AudioData base64 = new MultimodalTypes.AudioData.Base64("aGVsbG8=");
-        String base64Json = M.writeValueAsString(base64);
-        assertThat(base64Json).isEqualTo("\"aGVsbG8=\"");
-        MultimodalTypes.AudioData base64Back =
-            M.readValue(base64Json, MultimodalTypes.AudioData.class);
-        assertThat(base64Back).isInstanceOf(MultimodalTypes.AudioData.Base64.class);
-        assertThat(((MultimodalTypes.AudioData.Base64) base64Back).getValue())
-            .isEqualTo("aGVsbG8=");
-
-        // Binary variant (each element a 0–255 byte value): the AI SDK's
-        // Uint8Array (speech-model-v4-result.ts:16), a base64 string in JSON.
-        MultimodalTypes.AudioData binary =
-            new MultimodalTypes.AudioData.Binary(Arrays.asList(0, 1, 2, 250, 255));
-        String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("\"AAEC+v8=\"");
-        MultimodalTypes.AudioData binaryBack =
-            M.readValue(binaryJson, MultimodalTypes.AudioData.class);
-        assertThat(binaryBack).isEqualTo(new MultimodalTypes.AudioData.Base64("AAEC+v8="));
-        assertThat(Types.Base64Bytes.decode("AAEC-v8"))
-            .isEqualTo(Arrays.asList(0, 1, 2, 250, 255));
-
-        // A number array is not the AI SDK's JSON for bytes.
-        assertThatThrownBy(() -> M.readValue("[72,101]", MultimodalTypes.AudioData.class))
-            .isInstanceOf(IOException.class);
-
-        // Neither a string nor an array → the deserializer rejects it.
-        assertThatThrownBy(() -> M.readValue("{\"Quux\":\"x\"}", MultimodalTypes.AudioData.class))
-            .isInstanceOf(IOException.class);
+    @Test void audioDataSerializerAllVariants() throws Exception {
+        AudioData data = new AudioData("aGVsbG8=");
+        assertSameJson(roundTrip("\"aGVsbG8=\"", AudioData.class), data);
+        String binary = Base64.getEncoder().encodeToString(new byte[] {0, 1, 2, (byte) 250, (byte) 255});
+        assertThat(DtoJson.stringify(new AudioData(binary))).isEqualTo("\"AAEC+v8=\"");
+        assertThat(DtoJson.bytes(binary)).containsExactly(0, 1, 2, (byte) 250, (byte) 255);
+        assertThatThrownBy(() -> M.readValue("[72,101]", AudioData.class)).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> M.readValue("{}", AudioData.class)).isInstanceOf(IOException.class);
     }
 
-    @Test
-    void promptAndFileBytesAreBase64Strings() throws Exception {
-        // ImagePart.image and FilePart.data are DataContent (provider-utils
-        // types/content-part.ts:42, :75) and SharedV4FileDataData.data is
-        // Uint8Array | string (shared-v4-file-data.ts:7-10): base64 strings in
-        // the JSON (uint8-utils.ts:12-23), never arrays of numbers.
-        ObjectMapper t = Types.AimuxJson.MAPPER;
-        Types.ContentPart image = Types.ContentPart.Image.builder()
-            .image(Arrays.asList(137, 80, 78, 71)).mediaType("image/png").build();
-        String imageJson = t.writeValueAsString(image);
-        assertThat(imageJson)
-            .isEqualTo("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}");
-        assertThat(t.readValue(imageJson, Types.ContentPart.class)).isEqualTo(image);
-        assertThatThrownBy(() -> t.readValue(
-                "{\"type\":\"image\",\"image\":[1,2],\"mediaType\":\"image/png\"}",
-                Types.ContentPart.class))
-            .hasMessageContaining("bytes must be a base64 string");
-
-        Types.ContentPart file = Types.ContentPart.File.builder()
-            .data(Arrays.asList(0, 1, 2, 250, 255)).mediaType("application/pdf").build();
-        assertThat(t.writeValueAsString(file)).isEqualTo(
-            "{\"type\":\"file\",\"data\":{\"type\":\"data\",\"data\":\"AAEC+v8=\"},\"mediaType\":\"application/pdf\"}");
-
-        assertThat(t.writeValueAsString(new Types.FileBytes.Binary(Arrays.asList(104, 105))))
-            .isEqualTo("\"aGk=\"");
-        assertThat(t.readValue("\"aGk=\"", Types.FileBytes.class))
-            .isEqualTo(new Types.FileBytes.Base64("aGk="));
-        assertThatThrownBy(() -> t.readValue("[104,105]", Types.FileBytes.class))
-            .isInstanceOf(IOException.class);
+    @Test void promptAndFileBytesAreBase64Strings() throws Exception {
+        UserContentPart image = UserContentPart.Image.builder().image("iVBORw==").mediaType("image/png").build();
+        assertSameJson(roundTrip("{\"type\":\"image\",\"image\":\"iVBORw==\",\"mediaType\":\"image/png\"}", UserContentPart.class), image);
+        assertThatThrownBy(() -> M.readValue("{\"type\":\"image\",\"image\":[1,2],\"mediaType\":\"image/png\"}", UserContentPart.class)).isInstanceOf(IOException.class);
+        FilePartData data = new FilePartData.FileData(FileData.Data.builder().data(new FileBytes("AAEC+v8=")).build());
+        UserContentPart file = UserContentPart.File.builder().data(data).mediaType("application/pdf").build();
+        roundTrip(DtoJson.stringify(file), UserContentPart.class);
+        assertThat(roundTrip("\"aGk=\"", FileBytes.class).getValue()).isEqualTo("aGk=");
+        assertThatThrownBy(() -> M.readValue("[104,105]", FileBytes.class)).isInstanceOf(IOException.class);
     }
 
-    @Test
-    void filePartsAreTheAiSdkFilePart() throws Exception {
-        // FilePart.data is FileData | DataContent | URL | ProviderReference
-        // (provider-utils types/content-part.ts:75, file-data.ts:44-48) and
-        // ReasoningFilePart.data is tagged data or a URL, or a string (:164).
-        // There is no file-base64 / file-url / file-reference part.
-        ObjectMapper t = Types.AimuxJson.MAPPER;
-        String[] wires = {
-            "{\"type\":\"file\",\"data\":{\"type\":\"data\",\"data\":\"aGk=\"},\"mediaType\":\"text/plain\",\"filename\":\"a.txt\"}",
-            "{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.pdf\"},\"mediaType\":\"application/pdf\"}",
-            "{\"type\":\"file\",\"data\":{\"type\":\"reference\",\"reference\":{\"openai\":\"file-abc\"}},\"mediaType\":\"application/pdf\"}",
-            "{\"type\":\"file\",\"data\":{\"type\":\"text\",\"text\":\"hello\"},\"mediaType\":\"text/plain\"}",
-            "{\"type\":\"file\",\"data\":\"aGk=\",\"mediaType\":\"text/plain\"}",
-            "{\"type\":\"file\",\"data\":\"https://example.com/a.pdf\",\"mediaType\":\"application/pdf\"}",
-            "{\"type\":\"file\",\"data\":{\"openai\":\"file-abc\"},\"mediaType\":\"application/pdf\"}",
-            "{\"type\":\"reasoning-file\",\"data\":\"aGk=\",\"mediaType\":\"image/png\"}",
-            "{\"type\":\"reasoning-file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},\"mediaType\":\"image/png\"}",
+    @Test void filePartsAreTheAiSdkFilePart() throws Exception {
+        String[] data = {
+            "{\"type\":\"data\",\"data\":\"aGk=\"}",
+            "{\"type\":\"url\",\"url\":\"https://example.com/a.pdf\"}",
+            "{\"type\":\"reference\",\"reference\":{\"openai\":\"file-abc\"}}",
+            "{\"type\":\"text\",\"text\":\"hello\"}", "\"aGk=\"", "\"https://example.com/a.pdf\"", "{\"openai\":\"file-abc\"}"
         };
-        for (String wire : wires) {
-            assertThat(t.writeValueAsString(t.readValue(wire, Types.ContentPart.class))).isEqualTo(wire);
-        }
-        Types.ContentPart.File bare = (Types.ContentPart.File) t.readValue(wires[6], Types.ContentPart.class);
-        assertThat(bare.getData()).isInstanceOf(Types.FilePartData.Reference.class);
+        for (String value : data) roundTrip("{\"type\":\"file\",\"data\":" + value + ",\"mediaType\":\"text/plain\"}", UserContentPart.class);
+        assertThat(M.readValue(data[6], FilePartData.class)).isInstanceOf(FilePartData.Map.class);
         for (String removed : new String[] {"file-base64", "file-url", "file-reference"}) {
-            assertThatThrownBy(() -> t.readValue(
-                    "{\"type\":\"" + removed + "\",\"data\":\"aGk=\",\"url\":\"https://example.com/a.pdf\","
-                        + "\"mediaType\":\"application/pdf\"}",
-                    Types.ContentPart.class))
-                .hasMessageContaining("Unknown ContentPart type");
+            assertThatThrownBy(() -> M.readValue("{\"type\":\"" + removed + "\"}", UserContentPart.class)).isInstanceOf(IOException.class).hasMessageContaining(removed);
         }
-        Types.ContentPart url = Types.ContentPart.File.builder()
-            .data(Types.FileData.Url.builder().url("https://example.com/a.pdf").build())
-            .mediaType("application/pdf").build();
-        assertThat(t.writeValueAsString(url)).isEqualTo(wires[1]);
+        for (String value : new String[] {"\"aGk=\"", data[1]}) {
+            roundTrip("{\"type\":\"reasoning-file\",\"data\":" + value + ",\"mediaType\":\"image/png\"}", AssistantContentPart.class);
+        }
     }
 
-    @Test
-    void generatedFilesAreBase64AndMediaType() throws Exception {
-        // GeneratedFile is {base64, mediaType, providerMetadata?} (ai
-        // generate-text/generated-file.ts:10-32); a stream file part is
-        // {type, file, providerMetadata?} (stream-language-model-call.ts:569-590);
-        // the provider's LanguageModelV4File keeps {type, data, mediaType}.
-        ObjectMapper t = Types.AimuxJson.MAPPER;
+    @Test void generatedFilesAreBase64AndMediaType() throws Exception {
         for (String tag : new String[] {"file", "reasoning-file"}) {
-            String wire = "{\"type\":\"" + tag + "\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"},"
-                + "\"providerMetadata\":{\"google\":{\"thoughtSignature\":\"sig\"}}}";
-            Types.StreamPart part = t.readValue(wire, Types.StreamPart.class);
-            assertThat(t.writeValueAsString(part)).isEqualTo(wire);
+            TextStreamPart part = roundTrip("{\"type\":\"" + tag + "\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"},\"providerMetadata\":{\"google\":{\"thoughtSignature\":\"sig\"}}}", TextStreamPart.class);
+            assertThat(DtoJson.bytes(part.getFile().getBase64().getValue())).containsExactly(104, 105);
         }
-        Types.StreamPart.File file = (Types.StreamPart.File) t.readValue(
-            "{\"type\":\"file\",\"file\":{\"base64\":\"aGk=\",\"mediaType\":\"text/plain\"}}",
-            Types.StreamPart.class);
-        assertThat(file.getFile().getBase64()).isEqualTo("aGk=");
-        assertThat(file.getFile().getBytes()).containsExactly(104, 105);
-
-        String raw = "{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},"
-            + "\"mediaType\":\"image/png\"}";
-        assertThat(t.writeValueAsString(t.readValue(raw, Types.GenerateContent.class))).isEqualTo(raw);
+        roundTrip("{\"type\":\"file\",\"data\":{\"type\":\"url\",\"url\":\"https://example.com/a.png\"},\"mediaType\":\"image/png\"}", GenerateContent.class);
     }
 
-    @Test
-    void textStreamDeltasAreText() throws Exception {
-        // The text stream's text-delta and reasoning-delta carry `text` (ai
-        // generate-text/stream-text-result.ts:435-440, :466-471); a
-        // tool-input-delta keeps `delta` (:496-501).
-        ObjectMapper t = Types.AimuxJson.MAPPER;
-        String[] wires = {
-            "{\"type\":\"text-delta\",\"id\":\"t1\",\"text\":\"Hello\"}",
-            "{\"type\":\"reasoning-delta\",\"id\":\"t1\",\"text\":\"Hmm\"}",
-            "{\"type\":\"tool-input-delta\",\"id\":\"t1\",\"delta\":\"{\\\"a\\\"\"}",
-        };
-        for (String wire : wires) {
-            assertThat(t.writeValueAsString(t.readValue(wire, Types.StreamPart.class))).isEqualTo(wire);
+    @Test void textStreamDeltasAreText() throws Exception {
+        for (String tag : new String[] {"text-delta", "reasoning-delta"}) {
+            TextStreamPart part = roundTrip("{\"type\":\"" + tag + "\",\"id\":\"t1\",\"text\":\"Hello\"}", TextStreamPart.class);
+            assertThat(part.getText()).isEqualTo("Hello");
         }
-        Types.StreamPart.TextDelta text = (Types.StreamPart.TextDelta) t.readValue(wires[0], Types.StreamPart.class);
-        assertThat(text.getText()).isEqualTo("Hello");
-        assertThat(t.writeValueAsString(Types.StreamPart.ReasoningDelta.builder().id("t1").text("Hmm").build()))
-            .isEqualTo(wires[1]);
+        roundTrip("{\"type\":\"tool-input-delta\",\"id\":\"t1\",\"delta\":\"{}\"}", TextStreamPart.class);
+        assertThat(TextStreamPart.ReasoningDelta.builder().id("t1").text("Hmm").build().getText()).isEqualTo("Hmm");
     }
 
-    @Test
-    void standaloneToolCallsAndSourcesAreTagged() throws Exception {
-        // A result's toolCalls and sources are the AI SDK's TypedToolCall and
-        // Source, tagged {type: 'tool-call'} (ai generate-text/tool-call.ts:8-14)
-        // and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
-        // :36); generate-text-result.ts:73, :78. A repair function's call is a
-        // tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7).
-        ObjectMapper t = Types.AimuxJson.MAPPER;
-        String call = "{\"type\":\"tool-call\",\"toolCallId\":\"call-1\",\"toolName\":\"weather\","
-            + "\"input\":{\"city\":\"SG\"}}";
-        assertThat(t.writeValueAsString(t.readValue(call, Types.ToolCall.class))).isEqualTo(call);
-        String raw = "{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":\"{}\"}";
-        assertThat(t.writeValueAsString(t.readValue(raw, Types.RawToolCall.class))).isEqualTo(raw);
+    @Test void standaloneToolCallsAndSourcesAreTagged() throws Exception {
+        String call = "{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"weather\",\"input\":{\"city\":\"SG\"}}";
+        assertThat(roundTrip(call, TypedToolCall.class).getType()).isEqualTo("tool-call");
+        assertThat(roundTrip("{\"type\":\"tool-call\",\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":\"{}\"}", TaggedRawToolCall.class).getType()).isEqualTo("tool-call");
         String url = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
-        assertThat(t.readTree(t.writeValueAsString(t.readValue(url, Types.Source.class)))).isEqualTo(t.readTree(url));
-
-        Types.GenerateTextResult result = t.readValue(
-            "{\"text\":\"\",\"toolCalls\":[" + call + "],\"sources\":[" + url + "]}", Types.GenerateTextResult.class);
-        JsonNode written = t.readTree(t.writeValueAsString(result));
-        assertThat(written.get("toolCalls").get(0)).isEqualTo(t.readTree(call));
-        assertThat(written.get("sources").get(0)).isEqualTo(t.readTree(url));
-        // In a stream part the union's tag and the source's agree.
-        String part = "{\"type\":\"source\",\"sourceType\":\"url\",\"id\":\"s1\",\"url\":\"https://example.com\"}";
-        assertThat(t.writeValueAsString(t.readValue(part, Types.StreamPart.class))).isEqualTo(part);
-
-        // JSON written before the tag still reads; another tag is rejected.
-        assertThat(t.readValue("{\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":{}}", Types.ToolCall.class)
-            .getType()).isEqualTo("tool-call");
-        assertThatThrownBy(() -> t.readValue("{\"type\":\"source\",\"toolCallId\":\"c\",\"toolName\":\"t\"}",
-            Types.ToolCall.class)).isInstanceOf(IOException.class);
+        roundTrip(url, TextStreamPart.class);
+        roundTrip(url, ContentPart.class);
+        assertThatThrownBy(() -> M.readValue(call.replace("tool-call", "source"), TypedToolCall.class)).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> M.readValue("{\"toolCallId\":\"c\",\"toolName\":\"t\",\"input\":{}}", TypedToolCall.class)).isInstanceOf(IOException.class);
     }
 
-    @Test
-    void unknownFieldsKeepNullApartFromMissing() throws Exception {
-        // body?: unknown (provider language-model-v4-generate-result.ts:41, :56)
-        // and inputSchemaInput?: unknown (provider-utils
-        // types/tool-approval-request.ts:41): the AI SDK's JSON keeps null and
-        // omits undefined, and a parsed value writes back the same JSON.
-        ObjectMapper t = Types.AimuxJson.MAPPER;
-        for (String wire : new String[] {"{}", "{\"body\":null}", "{\"body\":{\"a\":null}}"}) {
-            assertThat(t.writeValueAsString(t.readValue(wire, Types.ResponseInfo.class))).isEqualTo(wire);
-            assertThat(t.writeValueAsString(t.readValue(wire, Types.RequestInfo.class))).isEqualTo(wire);
+    @Test void unknownFieldsKeepNullApartFromMissing() throws Exception {
+        for (String json : new String[] {"{}", "{\"body\":null}", "{\"body\":{\"a\":null}}"}) {
+            roundTrip(json, ResponseInfo.class);
+            roundTrip(json, RequestInfo.class);
         }
-        String approval = "{\"type\":\"tool-approval-request\",\"approvalId\":\"a1\","
-            + "\"toolCallId\":\"c1\",\"inputSchemaInput\":null}";
-        assertThat(t.writeValueAsString(t.readValue(approval, Types.ContentPart.class))).isEqualTo(approval);
+        RequestInfo missing = RequestInfo.builder().build();
+        RequestInfo explicit = RequestInfo.builder().body(M.nullNode()).build();
+        assertThat(missing.hasBody()).isFalse();
+        assertThat(explicit.hasBody()).isTrue();
+        assertThat(explicit.getBody()).isNull();
+        String approval = "{\"type\":\"tool-approval-request\",\"approvalId\":\"a1\",\"toolCallId\":\"c1\",\"inputSchemaInput\":null}";
+        roundTrip(approval, AssistantContentPart.class);
     }
 
-    @Test
-    void imageOutputsSerializerAllVariants() throws Exception {
-        // Base64 variant (list of strings).
-        MultimodalTypes.ImageOutputs base64 =
-            new MultimodalTypes.ImageOutputs.Base64(Arrays.asList("aW1hZ2Ux", "aW1hZ2Uy"));
-        String base64Json = M.writeValueAsString(base64);
-        assertThat(base64Json).isEqualTo("[\"aW1hZ2Ux\",\"aW1hZ2Uy\"]");
-        MultimodalTypes.ImageOutputs base64Back =
-            M.readValue(base64Json, MultimodalTypes.ImageOutputs.class);
-        assertThat(base64Back).isInstanceOf(MultimodalTypes.ImageOutputs.Base64.class);
-        assertThat(((MultimodalTypes.ImageOutputs.Base64) base64Back).getValue())
-            .isEqualTo(Arrays.asList("aW1hZ2Ux", "aW1hZ2Uy"));
-
-        // Binary variant (list of byte arrays): Array<Uint8Array> upstream
-        // (image-model-v4-result.ts:23), base64 strings in JSON.
-        MultimodalTypes.ImageOutputs binary = new MultimodalTypes.ImageOutputs.Binary(
-            Arrays.asList(Arrays.asList(1), Arrays.asList(2, 3)));
-        String binaryJson = M.writeValueAsString(binary);
-        assertThat(binaryJson).isEqualTo("[\"AQ==\",\"AgM=\"]");
-        MultimodalTypes.ImageOutputs binaryBack =
-            M.readValue(binaryJson, MultimodalTypes.ImageOutputs.class);
-        assertThat(binaryBack).isEqualTo(
-            new MultimodalTypes.ImageOutputs.Base64(Arrays.asList("AQ==", "AgM=")));
-        assertThatThrownBy(() -> M.readValue("[[1,2,3]]", MultimodalTypes.ImageOutputs.class))
-            .isInstanceOf(IOException.class);
-
-        assertThatThrownBy(() -> M.readValue("{\"Quux\":[1]}", MultimodalTypes.ImageOutputs.class))
-            .isInstanceOf(IOException.class);
+    @Test void ordinaryOptionalNullIsOmittedAndTypedPresenceKeepsNull() throws Exception {
+        VideoCallOptions options = M.readValue("{\"prompt\":\"a cat\",\"fps\":null}", VideoCallOptions.class);
+        assertThat(M.<JsonNode>valueToTree(options)).isEqualTo(M.readTree("{\"prompt\":\"a cat\"}"));
+        DecisionBooleanCriteria criteria = roundTrip("{\"true\":null}", DecisionBooleanCriteria.class);
+        assertThat(criteria.hasTrue_()).isTrue();
+        assertThat(criteria.hasFalse_()).isFalse();
+        assertThat(criteria.getTrue_()).isNull();
+        assertThat(M.<JsonNode>valueToTree(DecisionBooleanCriteria.builder().false_(null).build()))
+            .isEqualTo(M.readTree("{\"false\":null}"));
     }
 
-    @Test
-    void videoDataSerializerAllVariants() throws Exception {
-        // Url variant.
-        MultimodalTypes.VideoData url = new MultimodalTypes.VideoData.Url(
-            MultimodalTypes.VideoUrlData.of("https://example.com/v.mp4", "video/mp4"));
-        String urlJson = M.writeValueAsString(url);
-        assertThat(urlJson).isEqualTo(
-            "{\"type\":\"url\",\"url\":\"https://example.com/v.mp4\",\"mediaType\":\"video/mp4\"}");
-        MultimodalTypes.VideoData urlBack = M.readValue(urlJson, MultimodalTypes.VideoData.class);
-        assertThat(urlBack).isInstanceOf(MultimodalTypes.VideoData.Url.class);
-        assertThat(((MultimodalTypes.VideoData.Url) urlBack).getValue().getUrl())
-            .isEqualTo("https://example.com/v.mp4");
+    @Test void imageOutputsSerializerAllVariants() throws Exception {
+        ImageOutputs images = new ImageOutputs(Arrays.asList("aW1hZ2Ux", "aW1hZ2Uy"));
+        assertSameJson(roundTrip("[\"aW1hZ2Ux\",\"aW1hZ2Uy\"]", ImageOutputs.class), images);
+        assertThatThrownBy(() -> M.readValue("[[1,2,3]]", ImageOutputs.class)).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> M.readValue("{}", ImageOutputs.class)).isInstanceOf(IOException.class);
+    }
 
-        // Base64 variant.
-        MultimodalTypes.VideoData base64 = new MultimodalTypes.VideoData.Base64(
-            MultimodalTypes.VideoBase64Data.of("AAAA", "video/mp4"));
-        String base64Json = M.writeValueAsString(base64);
-        assertThat(base64Json).isEqualTo(
-            "{\"type\":\"base64\",\"data\":\"AAAA\",\"mediaType\":\"video/mp4\"}");
-        MultimodalTypes.VideoData base64Back =
-            M.readValue(base64Json, MultimodalTypes.VideoData.class);
-        assertThat(base64Back).isInstanceOf(MultimodalTypes.VideoData.Base64.class);
-        assertThat(((MultimodalTypes.VideoData.Base64) base64Back).getValue().getData())
-            .isEqualTo("AAAA");
+    @Test void videoDataSerializerAllVariants() throws Exception {
+        VideoData.Url url = VideoData.Url.builder().url("https://example.com/v.mp4").mediaType("video/mp4").build();
+        assertSameJson(roundTrip(DtoJson.stringify(url), VideoData.class), url);
+        VideoData.Base64 base64 = VideoData.Base64.builder().data("AAAA").mediaType("video/mp4").build();
+        assertSameJson(roundTrip(DtoJson.stringify(base64), VideoData.class), base64);
+        VideoData.Binary binary = VideoData.Binary.builder().data("AQID").mediaType("video/mp4").build();
+        assertSameJson(roundTrip(DtoJson.stringify(binary), VideoData.class), binary);
+        assertThat(DtoJson.bytes(binary.getData())).containsExactly(1, 2, 3);
+        assertThatThrownBy(() -> M.readValue("{\"type\":\"quux\"}", VideoData.class)).isInstanceOf(IOException.class).hasMessageContaining("VideoData").hasMessageContaining("quux");
+    }
 
-        // Binary variant.
-        MultimodalTypes.VideoData binary = new MultimodalTypes.VideoData.Binary(
-            MultimodalTypes.VideoBinaryData.of(Arrays.asList(1, 2, 3), "video/mp4"));
-        String binaryJson = M.writeValueAsString(binary);
-        // video-model-v4-result.ts:28-29: { type: 'binary', data: Uint8Array },
-        // a base64 string in JSON.
-        assertThat(binaryJson).isEqualTo(
-            "{\"type\":\"binary\",\"data\":\"AQID\",\"mediaType\":\"video/mp4\"}");
-        MultimodalTypes.VideoData binaryBack =
-            M.readValue(binaryJson, MultimodalTypes.VideoData.class);
-        assertThat(binaryBack).isInstanceOf(MultimodalTypes.VideoData.Binary.class);
-        assertThat(((MultimodalTypes.VideoData.Binary) binaryBack).getValue().getData())
-            .isEqualTo(Arrays.asList(1, 2, 3));
+    @Test void codecsKeepOpaqueNumbersAndFieldPresence() throws Exception {
+        String json = "{\"body\":{\"integer\":18446744073709551615,\"decimal\":0.12345678901234567890123456789}}";
+        RequestInfo request = roundTrip(json, RequestInfo.class);
+        assertThat(request.getBody().get("integer").bigIntegerValue()).isEqualTo(new BigInteger("18446744073709551615"));
+        assertThat(request.getBody().get("decimal").decimalValue()).isEqualByComparingTo("0.12345678901234567890123456789");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) request.getBody()).removeAll();
+        assertThat(request.getBody().has("integer")).isTrue();
+        assertThat(RequestInfo.builder().body(M.nullNode()).omitBody().build().hasBody()).isFalse();
+    }
 
-        assertThatThrownBy(() -> M.readValue("{\"type\":\"quux\"}", MultimodalTypes.VideoData.class))
-            .isInstanceOf(IOException.class);
+    @Test void generatedReadersHonorClosureAndOrderedBranches() throws Exception {
+        assertThatThrownBy(() -> M.readValue("{\"unexpected\":true}", TimeoutConfiguration.class))
+            .isInstanceOf(IOException.class).hasMessageContaining("TimeoutConfiguration");
+        assertThat(M.<JsonNode>valueToTree(M.readValue("{\"unexpected\":true}", RequestInfo.class))).isEqualTo(M.readTree("{}"));
+        assertThat(M.readValue("\"hello\"", FilePartData.class)).isInstanceOf(FilePartData.Text.class);
+        assertThatThrownBy(() -> M.readValue("{\"type\":\"other\",\"seq\":\"0\"}", StreamFrame.class))
+            .isInstanceOf(IOException.class).hasMessageContaining("StreamFrame").hasMessageContaining("other");
+        assertThatThrownBy(() -> DtoJson.u64("18446744073709551616")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> DtoJson.u64("01")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(VideoCallOptions.builder().fps(4294967296L).build().getFps()).isEqualTo(4294967296L);
     }
 }

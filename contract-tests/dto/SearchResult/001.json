@@ -1,0 +1,11 @@
+{
+  "results": [
+    {
+      "title": "Rust",
+      "url": "https://rust-lang.org",
+      "content": "Rust is..."
+    }
+  ],
+  "answer": "Rust is a systems language.",
+  "warnings": []
+}

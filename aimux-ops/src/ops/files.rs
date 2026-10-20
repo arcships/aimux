@@ -7,10 +7,11 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
 /// Runtime control is lifted separately from the canonical upload options.
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
+#[schemars(deny_unknown_fields)]
 pub struct UploadFileParams {
     #[serde(flatten)]
     pub options: UploadFileCallOptions,
@@ -23,8 +24,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Provider],
-        request_type: "EmptyParams",
-        result_type: "HandleId",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<crate::handle::HandleId>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -46,8 +47,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Files],
-        request_type: "aimux_ops::ops::files::UploadFileParams",
-        result_type: "aimux_core::files_model::UploadFileResult",
+        request_type: TypeRef::of::<UploadFileParams>(),
+        result_type: TypeRef::of::<aimux_core::files_model::UploadFileResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,

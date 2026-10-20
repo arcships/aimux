@@ -9,9 +9,9 @@ use std::future::Future;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 use crate::content::{AssistantContentPart, ToolContentPart};
 use crate::error::AiMuxError;
@@ -449,14 +449,13 @@ fn back_filled_input(text: &str) -> Value {
 /// hands the answer back as this value. Wire shape:
 /// `{"type":"repaired","toolCall":{…}}`, `{"type":"unchanged"}`, or
 /// `{"type":"failed","message":"…"}`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolCallRepairReply {
     /// Re-validate this replacement call, exactly as the closure path does
     /// for a returned `Some(call)`.
@@ -465,6 +464,7 @@ pub enum ToolCallRepairReply {
     /// `LanguageModelV4ToolCall` does.
     Repaired {
         #[serde(deserialize_with = "crate::wire::typed::deserialize")]
+        #[schemars(with = "crate::tool::RepairedToolCall", extend("x-aimux-codec" = "tagged"))]
         tool_call: RawToolCall,
     },
     /// Keep the original failure — the closure path's `None`.

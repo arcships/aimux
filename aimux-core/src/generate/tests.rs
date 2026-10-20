@@ -1080,18 +1080,14 @@ const UPSTREAM_STREAM_PART_TYPES: [&str; 26] = [
     "raw",
 ];
 
-/// NP2-5: `TextStreamPart` has exactly the AI SDK's 26 part types, in the
-/// union's order (stream-text-result.ts:581-607). The variant tags are read
-/// from the exported TypeScript type.
 #[test]
 fn the_stream_part_set_is_the_ai_sdks() {
-    let ts = <TextStreamPart as ts_rs::TS>::inline(&ts_rs::Config::default());
-    let tags: Vec<String> = ts
-        .match_indices("{ \"type\": \"")
-        .filter_map(|(index, tag)| {
-            let rest = &ts[index + tag.len()..];
-            Some(rest[..rest.find('"')?].to_owned())
-        })
+    let schema = schemars::schema_for!(TextStreamPart).to_value();
+    let tags: Vec<_> = schema["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|variant| variant["properties"]["type"]["const"].as_str().unwrap())
         .collect();
     assert_eq!(tags, UPSTREAM_STREAM_PART_TYPES);
 }
