@@ -1327,6 +1327,33 @@ impl AnthropicMessagesStream {
             timestamp: None,
             model_id: Some(message.model.clone()),
         }));
+        // Deferred programmatic tool calls arrive whole in `message_start`
+        // (anthropic-language-model.ts:2905-2955).
+        for part in message.content.iter().flatten() {
+            if part["type"] != "tool_use" {
+                continue;
+            }
+            let id = str_field(part, "id").unwrap_or_default();
+            let name = str_field(part, "name").unwrap_or_default();
+            let input = part
+                .get("input")
+                .filter(|input| !input.is_null())
+                .map_or_else(|| "{}".to_string(), Value::to_string);
+            let caller = part
+                .get("caller")
+                .and_then(|caller| serde_json::from_value::<ToolCallCaller>(caller.clone()).ok());
+            controller.tool_input_start(id.clone(), name.clone());
+            controller.tool_input_delta(id.clone(), input.clone());
+            controller.tool_input_end(id.clone());
+            controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                tool_call_id: id,
+                tool_name: name,
+                input,
+                provider_executed: None,
+                dynamic: None,
+                provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
+            }));
+        }
     }
 
     fn content_block_start(

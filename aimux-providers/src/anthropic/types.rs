@@ -298,6 +298,10 @@ pub struct MessageStartData {
     pub container: Option<Value>,
     #[serde(default)]
     pub stop_reason: Option<String>,
+    /// Blocks the message starts with: the `tool_use` blocks of deferred
+    /// programmatic tool calls (anthropic-api.ts:1143-1157).
+    #[serde(default)]
+    pub content: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Deserialize)]

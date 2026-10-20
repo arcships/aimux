@@ -1190,6 +1190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic streams the `tool_use` blocks a `message_start` already carries
+  (deferred programmatic tool calls) as tool input and tool-call parts with
+  their caller, as the AI SDK does; it dropped them.
 - Anthropic streams keep reading after `message_stop`: each later
   `message_start` … `message_stop` round in the response streams its
   response metadata, parts and own finish, with the output usage carried

@@ -1038,3 +1038,46 @@ async fn stream_continues_after_message_stop_with_the_next_message() {
         ]
     );
 }
+
+/// The AI SDK streams the `tool_use` blocks a `message_start` already
+/// carries (deferred programmatic tool calls) as complete tool calls.
+#[tokio::test]
+async fn stream_emits_the_tool_calls_carried_by_message_start() {
+    let mut start = stream_message_start("msg_1");
+    start["message"]["content"] = json!([{
+        "type": "tool_use", "id": "toolu_1", "name": "rollDie",
+        "input": { "player": "player1" },
+        "caller": { "type": "code_execution_20250825", "tool_id": "srvtoolu_1" }
+    }]);
+    start["message"]["stop_reason"] = json!("tool_use");
+    let fetch = MockFetch::new(vec![sse_response(&[
+        start,
+        json!({ "type": "message_stop" }),
+    ])]);
+    let items = stream_items(&fetch, &default_options(test_prompt())).await;
+    let parts: Vec<Value> = items
+        .iter()
+        .map(|item| serde_json::to_value(item.as_ref().unwrap()).unwrap())
+        .filter(|part| part["type"].as_str().unwrap().starts_with("tool-"))
+        .collect();
+    assert_eq!(
+        parts,
+        [
+            json!({ "type": "tool-input-start", "id": "toolu_1", "toolName": "rollDie" }),
+            json!({
+                "type": "tool-input-delta", "id": "toolu_1",
+                "delta": "{\"player\":\"player1\"}"
+            }),
+            json!({ "type": "tool-input-end", "id": "toolu_1" }),
+            json!({
+                "type": "tool-call", "toolCallId": "toolu_1", "toolName": "rollDie",
+                "input": "{\"player\":\"player1\"}",
+                "providerMetadata": {
+                    "anthropic": {
+                        "caller": { "type": "code_execution_20250825", "toolId": "srvtoolu_1" }
+                    }
+                }
+            }),
+        ]
+    );
+}
