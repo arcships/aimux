@@ -604,3 +604,47 @@ fn advisor_result_with_text_output_warns_with_output_type() {
         }]
     );
 }
+
+/// Upstream sends an MCP tool result back as `mcp_tool_result` and still warns that the provider-executed result is not supported.
+#[test]
+fn mcp_tool_result_round_trip_warns_like_upstream() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [
+            {
+                "type": "tool-call",
+                "toolCallId": "mcptoolu_1",
+                "toolName": "echo",
+                "input": {},
+                "providerExecuted": true,
+                "providerOptions": { "anthropic": { "type": "mcp-tool-use", "serverName": "echo" } },
+            },
+            {
+                "type": "tool-result",
+                "toolCallId": "mcptoolu_1",
+                "toolName": "echo",
+                "output": { "type": "json", "value": [{ "type": "text", "text": "hello" }] },
+            },
+        ],
+    }]))
+    .unwrap();
+    let result = aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full_fallible(
+        &prompt, false,
+    )
+    .unwrap();
+    assert_eq!(
+        result.messages[0]["content"][1],
+        json!({
+            "type": "mcp_tool_result",
+            "tool_use_id": "mcptoolu_1",
+            "is_error": false,
+            "content": [{ "type": "text", "text": "hello" }],
+        })
+    );
+    assert_eq!(
+        result.warnings,
+        vec![Warning::Other {
+            message: "provider executed tool result for tool echo is not supported".into()
+        }]
+    );
+}

@@ -1152,6 +1152,23 @@ fn convert_assistant_tool_result(
     let payload_type = value.get("type").and_then(|t| t.as_str());
 
     let mut block = if mcp_tool_use_ids.contains(tool_call_id.as_str()) {
+        // Upstream's MCP branch does not `break`, so it falls through to the
+        // per-tool checks and ends at the unsupported-result warning
+        // (convert-to-anthropic-prompt.ts:1025-1046, 1435-1438).
+        if !matches!(
+            provider_tool_name,
+            "web_fetch"
+                | "web_search"
+                | "tool_search_tool_regex"
+                | "tool_search_tool_bm25"
+                | "advisor"
+        ) {
+            warnings.push(Warning::Other {
+                message: format!(
+                    "provider executed tool result for tool {tool_name} is not supported"
+                ),
+            });
+        }
         json!({
             "type": "mcp_tool_result",
             "tool_use_id": tool_call_id,

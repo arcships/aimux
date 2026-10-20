@@ -1190,6 +1190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic warns `provider executed tool result for tool <name> is not
+  supported` when it sends an MCP tool result back as `mcp_tool_result`, as
+  the AI SDK does; it sent the block without the warning.
 - Anthropic names the output type when it drops a provider-executed tool
   result it cannot send back (`provider executed tool result output type text
   for tool advisor is not supported`), and reports a result of an unknown
