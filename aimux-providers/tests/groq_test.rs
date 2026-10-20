@@ -2393,3 +2393,37 @@ mod package {
         }
     }
 }
+
+/// aimux's own: `usage.raw` keeps a `null` usage field as `null`, as
+/// `convertGroqUsage` returns the parsed usage object (convert-groq-usage.ts:53);
+/// keys outside the usage schema are dropped (groq-chat-language-model.ts:564-580).
+#[tokio::test]
+async fn usage_raw_keeps_null_fields() {
+    let server = MockServer::start().await;
+    let mut body = groq_text_body();
+    body["usage"] = json!({
+        "prompt_tokens": 45,
+        "completion_tokens": 607,
+        "total_tokens": 652,
+        "prompt_tokens_details": { "cached_tokens": null },
+        "completion_tokens_details": null,
+        "queue_time": 0.01
+    });
+    mock_json(&server, body).await;
+
+    let result = make_provider(&server)
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    assert_eq!(
+        result.usage.raw.map(Value::Object),
+        Some(json!({
+            "prompt_tokens": 45,
+            "completion_tokens": 607,
+            "total_tokens": 652,
+            "prompt_tokens_details": { "cached_tokens": null },
+            "completion_tokens_details": null
+        }))
+    );
+}
