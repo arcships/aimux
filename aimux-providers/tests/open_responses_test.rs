@@ -2583,3 +2583,43 @@ async fn summary_only_reasoning_items_yield_reasoning() {
         ]
     );
 }
+
+/// TS: `doStream` (open-responses-language-model.ts:878-892): reasoning
+/// summary text deltas stream as reasoning deltas, like LM Studio's
+/// `response.reasoning_text.delta`.
+#[tokio::test]
+async fn streams_reasoning_summary_deltas() {
+    let server = MockServer::start().await;
+    let events = [
+        json!({ "type": "response.output_item.added", "item": { "type": "reasoning", "id": "rs_1" } }),
+        json!({ "type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "delta": "Think" }),
+        json!({ "type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "delta": "ing." }),
+    ];
+    mock_sse(
+        &server,
+        events
+            .iter()
+            .map(|event| sse_event(&event.to_string()))
+            .collect(),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let deltas: Vec<(String, String)> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::ReasoningDelta { id, delta, .. } => Some((id, delta)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        deltas,
+        [
+            ("rs_1".into(), "Think".into()),
+            ("rs_1".into(), "ing.".into())
+        ]
+    );
+}

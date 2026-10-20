@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses streams `response.reasoning_summary_text.delta` events as
+  reasoning deltas, as the AI SDK does. Only LM Studio's
+  `response.reasoning_text.delta` was read, so reasoning summaries streamed
+  as an empty reasoning block.
+
 - Open Responses keeps reasoning items that have no reasoning content, as
   the AI SDK does: a summary or encrypted-only item yields one reasoning part
   with the joined summary text and the item's metadata. They were dropped.

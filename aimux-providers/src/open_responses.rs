@@ -770,8 +770,8 @@ impl Transformer for OpenResponsesStream {
                         }
                     }
 
-                    // -- Reasoning text delta (LM Studio extension) --
-                    "response.reasoning_text.delta" => {
+                    // -- Reasoning summary text delta, and reasoning text delta (LM Studio extension) --
+                    "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
                         let id = chunk
                             .get("item_id")
                             .and_then(|v| v.as_str())
