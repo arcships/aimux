@@ -129,13 +129,13 @@ impl EmbeddingModel for MistralEmbeddingModel {
 
 // ── Provider options parsing ─────────────────────────────────────────────────
 
-struct MistralEmbeddingProviderOptions {
+pub(super) struct MistralEmbeddingProviderOptions {
     metadata: Option<Value>,
     output_dimension: Option<Value>,
     output_dtype: Option<String>,
 }
 
-fn parse_mistral_provider_options(
+pub(super) fn parse_mistral_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Result<MistralEmbeddingProviderOptions, AiMuxError> {
     let provider_opts = super::options::mistral_options(options);
@@ -174,6 +174,3 @@ fn parse_mistral_provider_options(
         output_dtype: output_dtype.and_then(Value::as_str).map(str::to_owned),
     })
 }
-
-#[cfg(test)]
-mod tests;

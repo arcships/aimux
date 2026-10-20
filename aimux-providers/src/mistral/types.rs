@@ -139,6 +139,3 @@ pub struct DeltaFunction {
     #[serde(default)]
     pub arguments: Option<String>,
 }
-
-#[cfg(test)]
-mod tests;

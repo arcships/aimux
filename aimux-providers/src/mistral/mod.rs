@@ -300,3 +300,6 @@ impl ProviderDiscovery for MistralProvider {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

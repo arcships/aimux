@@ -455,6 +455,3 @@ pub fn parse_finish_reason(s: &str) -> FinishReason {
         raw: Some(s.to_string()),
     }
 }
-
-#[cfg(test)]
-mod tests;
