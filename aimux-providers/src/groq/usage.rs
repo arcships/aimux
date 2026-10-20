@@ -41,9 +41,7 @@ pub(crate) fn convert_groq_usage(usage: Option<&GroqUsage>) -> Usage {
             text: Some(text_tokens),
             reasoning: reasoning_tokens,
         },
-        raw: serde_json::to_value(usage)
-            .ok()
-            .and_then(|value| value.as_object().cloned()),
+        raw: Some(usage.raw.clone()),
     }
 }
 

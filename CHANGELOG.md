@@ -1148,6 +1148,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Groq's `usage.raw` keeps a `null` usage field as `null`, as `@ai-sdk/groq`
+  4.0.52 does (`convertGroqUsage` returns the parsed object); it used to drop
+  the field. Applies to generate and stream.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now
