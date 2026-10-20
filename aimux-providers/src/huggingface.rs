@@ -216,3 +216,6 @@ impl ProviderDiscovery for HuggingFaceProvider {
         Box::pin(async move { crate::openai::model::list_models_once(&config).await })
     }
 }
+
+#[cfg(test)]
+mod tests;
