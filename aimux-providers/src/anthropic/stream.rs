@@ -23,7 +23,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::provider_namespace;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata};
 use aimux_core::types::{NamespacedKind, ProviderMetadata, Warning};
 use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
 use serde_json::{Value, json};
@@ -1255,12 +1255,15 @@ struct AnthropicMessagesStream {
     citation_documents: Vec<CitationDocument>,
     blocks: HashMap<usize, BlockState>,
     is_json_response_from_tool: bool,
-    final_usage: Usage,
     final_finish_reason: Option<FinishReason>,
     /// Result-level providerMetadata: the raw usage (`message_start`'s,
     /// updated by every `message_delta`'s), the stop sequence, the
     /// container and the context-management edits.
     raw_usage: Value,
+    /// The usage the finish part reports, kept across the messages of the
+    /// stream: `message_start` sets the input side, `message_delta` the rest
+    /// (upstream's `usage`, anthropic-language-model.ts:2871-2877 and
+    /// :2959-2983).
     effective_usage: Value,
     stop_sequence: Option<String>,
     container: Option<Value>,
@@ -1268,11 +1271,8 @@ struct AnthropicMessagesStream {
     stop_details: Option<Value>,
     input_transformations: Option<Value>,
     safeguard_results: Option<Value>,
-    response_meta_emitted: bool,
+    /// The open message, from `message_start` until its `message_stop`.
     active_message_id: Option<String>,
-    /// Set by `message_stop`; later events are ignored and only then does
-    /// `flush` emit the finish part.
-    message_stopped: bool,
     /// id → (tool name, server name), so `mcp_tool_result` can inherit them
     /// from the `mcp_tool_use` it answers.
     mcp_tool_calls: HashMap<String, (String, String)>,
@@ -1305,23 +1305,28 @@ impl AnthropicMessagesStream {
             self.final_finish_reason = Some(parse_stop_reason(reason));
         }
         if let Some(usage) = &message.usage {
-            // RFC-0015 P0-2: full input side incl. cache
-            // fields + raw (Anthropic reports cache only
-            // in message_start).
-            self.final_usage = super::usage::usage_from_anthropic(usage);
-            if let Ok(raw_usage) = serde_json::to_value(usage) {
-                self.raw_usage = raw_usage;
+            // Only the input side is the new message's; the output side
+            // stays until a `message_delta` reports it.
+            if !self.effective_usage.is_object() {
+                self.effective_usage = json!({});
             }
-            self.effective_usage = self.raw_usage.clone();
+            if let Value::Object(effective) = &mut self.effective_usage {
+                for key in [
+                    "input_tokens",
+                    "cache_read_input_tokens",
+                    "cache_creation_input_tokens",
+                ] {
+                    let value = usage.0.get(key).filter(|value| !value.is_null());
+                    effective.insert(key.to_string(), value.cloned().unwrap_or(json!(0)));
+                }
+            }
+            self.raw_usage = usage.0.clone();
         }
-        if !self.response_meta_emitted {
-            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                id: Some(message.id.clone()),
-                timestamp: None,
-                model_id: Some(message.model.clone()),
-            }));
-            self.response_meta_emitted = true;
-        }
+        controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
+            id: Some(message.id.clone()),
+            timestamp: None,
+            model_id: Some(message.model.clone()),
+        }));
     }
 
     fn content_block_start(
@@ -1689,24 +1694,19 @@ impl AnthropicMessagesStream {
         self.stop_details = delta.stop_details;
         self.input_transformations = transformations.or(self.input_transformations.take());
         self.safeguard_results = delta.safeguard_results.or(self.safeguard_results.take());
-        if let Some(u) = usage {
-            if let (Value::Object(raw), Ok(Value::Object(update))) =
+        if let Some(u) = usage
+            && let (Value::Object(raw), Ok(Value::Object(update))) =
                 (&mut self.raw_usage, serde_json::to_value(&u))
-            {
-                if let Value::Object(effective) = &mut self.effective_usage {
-                    effective.extend(
-                        update
-                            .iter()
-                            .filter(|(_, value)| !value.is_null())
-                            .map(|(key, value)| (key.clone(), value.clone())),
-                    );
-                }
-                raw.extend(update);
+        {
+            if let Value::Object(effective) = &mut self.effective_usage {
+                effective.extend(
+                    update
+                        .iter()
+                        .filter(|(_, value)| !value.is_null())
+                        .map(|(key, value)| (key.clone(), value.clone())),
+                );
             }
-            if let Ok(usage) = serde_json::from_value(self.effective_usage.clone()) {
-                self.final_usage = super::usage::usage_from_anthropic(&usage);
-                self.final_usage.raw = self.raw_usage.as_object().cloned();
-            }
+            raw.extend(update);
         }
     }
 }
@@ -1767,10 +1767,10 @@ impl Transformer for AnthropicMessagesStream {
                 input_transformations: transformations,
             } => self.message_delta(delta, usage, edits, transformations),
             StreamEvent::MessageStop => {
-                // The rest of the body is not read: the stream finishes now.
-                self.message_stopped = true;
+                // Each message finishes on its own; a later `message_start`
+                // opens the next one in the same stream.
+                self.active_message_id = None;
                 self.finish(controller);
-                controller.terminate();
             }
             StreamEvent::Error { error } => {
                 controller.enqueue(StreamPart::Error {
@@ -1786,19 +1786,14 @@ impl Transformer for AnthropicMessagesStream {
         }
     }
 
-    fn flush(mut self, controller: &mut Controller) {
-        self.finish(controller);
-    }
+    /// The provider completes a message explicitly with `message_stop`; EOF
+    /// does not synthesize a finish part.
+    fn flush(self, _controller: &mut Controller) {}
 }
 
 impl AnthropicMessagesStream {
-    /// Emit `Finish` once `message_stop` has arrived.
+    /// Emit the `Finish` of the message `message_stop` completed.
     fn finish(&mut self, controller: &mut Controller) {
-        // The provider completes a message explicitly; EOF after an error
-        // does not synthesize a finish event.
-        if !self.message_stopped {
-            return;
-        }
         if self.is_json_response_from_tool
             && let Some(reason) = &mut self.final_finish_reason
             && reason.unified == FinishReasonUnified::ToolCalls
@@ -1819,9 +1814,12 @@ impl AnthropicMessagesStream {
             self.input_transformations.as_ref(),
             self.safeguard_results.as_ref(),
         );
+        let mut usage =
+            super::usage::usage_from_anthropic(&AnthropicUsage(self.effective_usage.clone()));
+        usage.raw = self.raw_usage.as_object().cloned();
         controller.enqueue(StreamPart::Finish {
-            finish_reason: self.final_finish_reason.take().unwrap_or(FINISH_OTHER),
-            usage: std::mem::take(&mut self.final_usage),
+            finish_reason: self.final_finish_reason.clone().unwrap_or(FINISH_OTHER),
+            usage,
             provider_metadata: Some(metadata),
         });
     }
@@ -1898,7 +1896,7 @@ mod stream_tests {
                 "usage": { "output_tokens": 9 }
             })),
             event(json!({ "type": "message_stop" })),
-            // Not read: the stream ended at `message_stop`.
+            // Still read: a later message may follow `message_stop`.
             event(json!({
                 "type": "content_block_start", "index": 2,
                 "content_block": { "type": "text", "text": "" }
@@ -1918,6 +1916,7 @@ mod stream_tests {
                 "tool-input-end toolu_1",
                 "tool-call toolu_1 weather {\"city\":\"Paris\"}",
                 "finish ToolCalls",
+                "text-start 2",
             ]
         );
     }

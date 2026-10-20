@@ -1190,6 +1190,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic streams keep reading after `message_stop`: each later
+  `message_start` … `message_stop` round in the response streams its
+  response metadata, parts and own finish, with the output usage carried
+  over until a `message_delta` reports it, as the AI SDK does; it ended the
+  stream at the first `message_stop`.
 - Anthropic streamed code-execution tool calls keep their input as the
   streamed text, with the `type` injected into the first delta, as the AI SDK
   does; it re-serialized that input as compact JSON.

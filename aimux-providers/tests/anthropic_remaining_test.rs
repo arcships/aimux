@@ -967,3 +967,74 @@ async fn streamed_code_execution_tool_call_keeps_the_streamed_input_text() {
         [r#"{"type": "bash_code_execution","command": "ls -la"}"#]
     );
 }
+
+/// The AI SDK keeps reading after `message_stop`: each later
+/// `message_start … message_stop` round streams its parts and its own finish.
+#[tokio::test]
+async fn stream_continues_after_message_stop_with_the_next_message() {
+    let text_block = |text: &str| {
+        [
+            json!({
+                "type": "content_block_start", "index": 0,
+                "content_block": { "type": "text", "text": "" }
+            }),
+            json!({
+                "type": "content_block_delta", "index": 0,
+                "delta": { "type": "text_delta", "text": text }
+            }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+        ]
+    };
+    let mut chunks = vec![stream_message_start("msg_1")];
+    chunks.extend(text_block("first"));
+    chunks.extend([
+        json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "pause_turn", "stop_sequence": null },
+            "usage": { "output_tokens": 5 }
+        }),
+        json!({ "type": "message_stop" }),
+        stream_message_start("msg_2"),
+    ]);
+    chunks.extend(text_block("second"));
+    chunks.extend([
+        json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+            "usage": { "output_tokens": 7 }
+        }),
+        json!({ "type": "message_stop" }),
+    ]);
+    let fetch = MockFetch::new(vec![sse_response(&chunks)]);
+    let items = stream_items(&fetch, &default_options(test_prompt())).await;
+    let summary: Vec<String> = items
+        .iter()
+        .filter_map(|item| match item.as_ref().unwrap() {
+            StreamPart::ResponseMetadata(metadata) => {
+                Some(format!("response {}", metadata.id.as_deref().unwrap()))
+            }
+            StreamPart::TextDelta { delta, .. } => Some(format!("text {delta}")),
+            StreamPart::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => Some(format!(
+                "finish {:?} {}",
+                finish_reason.raw,
+                usage.output_tokens.total.unwrap()
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            "response msg_1",
+            "text first",
+            r#"finish Some("pause_turn") 5"#,
+            "response msg_2",
+            "text second",
+            r#"finish Some("end_turn") 7"#,
+        ]
+    );
+}
