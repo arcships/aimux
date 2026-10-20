@@ -8,14 +8,14 @@
 >
 > **Tracks**: [#278](https://github.com/arcships/aimux/issues/278)。未实现功能归 [#275](https://github.com/arcships/aimux/issues/275)、[#276](https://github.com/arcships/aimux/issues/276)。
 >
-> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §0.4 Q1（单步 core、不执行宿主工具）、§5（已登记差异）、§9.3（行为验收矩阵）；[RFC-0036](0036-positioning-and-layered-architecture.md) §9.3 协议差分；[RFC-0046](0046-provider-layout-and-reuse.md) §3.4（`layout.toml`）、§4（测试位置）；[RFC-0044](0044-crate-layering-and-provider-layout.md) §5（provider-utils 与 aimux 的目录）；`.agents/skills/ts-rust-port`。
+> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §0.4 Q1（单步 core、不执行宿主工具）、§5（已登记差异）、§9.3（行为验收矩阵）；[RFC-0036](0036-positioning-and-layered-architecture.md) §9.3 协议差分；[RFC-0046](0046-provider-protocol-abstraction.md) §4.4（`layout.toml`）、§5（测试位置）；[RFC-0044](0044-crate-layering-and-dependency-inversion.md) §3.2、§3.3（aimux 的目录与测试归属）；`.agents/skills/ts-rust-port`。
 
 ## 1. 决策摘要
 
 1. **测试跟着代码走。** 只迁 aimux 已经实现的模块对应的上游测试文件。没实现的功能，它的测试不迁；将来实现那个功能的 PR 连同测试一起带进来。
 2. **选了文件再选用例。** 选中的文件里，属于固定排除类别的用例不迁：单步 core 不做的多步、工具执行与审批；还没做的遥测和生命周期回调；TS 专属的实现细节；已登记的差异；本模块没实现的子功能。前两类由脚本按 API 名自动判定，后三类每条手写一行理由。
 3. **按行为选证据形式。** 跨边界的行为（请求、响应、流事件、错误分类）优先用差分 fixture，一个场景覆盖多条上游用例；纯转换函数（prompt 转换、工具准备、工具参数解析）逐条搬上游用例。
-4. **位置按 RFC-0046 §4**，文件状态记在 RFC-0046 §3.4 的 `layout.toml`。每个搬来的测试带一行上游出处标记，标记写完整的 `describe` 链，每层 `describe` 对应一个 Rust `mod`。
+4. **位置按 RFC-0046 §5**，文件状态记在 RFC-0046 §4.4 的 `layout.toml`。每个搬来的测试带一行上游出处标记，标记写完整的 `describe` 链，每层 `describe` 对应一个 Rust `mod`。
 5. **不设全局清零目标，也不设只升不降的限制**，CI 不比较前后的数量。完成标准是"选中的每个文件迁过一遍"：文件里每个用例要么有对应测试，要么被自动规则排除，要么带理由手写排除。
 
 ## 2. 现状
@@ -58,7 +58,7 @@ node scripts/aisdk-tests/inventory.mjs --repo ../vercel-ai --json target/aisdk-t
 
 ### 3.1 选文件
 
-每个上游测试文件对应一个上游源文件（`foo.test.ts` 测 `foo.ts`）。RFC-0046 §3.4 的 `layout.toml` 逐个列上游源文件，`status` 字段已经说明它在 aimux 里的去向（provider-utils 和 aimux 照同样格式各有一张）。选文件直接按 `status`：
+每个上游测试文件对应一个上游源文件（`foo.test.ts` 测 `foo.ts`）。RFC-0046 §4.4 的 `layout.toml` 逐个列上游源文件，`status` 字段已经说明它在 aimux 里的去向（provider-utils 和 aimux 照同样格式各有一张）。选文件直接按 `status`：
 
 | `status` | 测试怎么办 |
 |---|---|
@@ -132,10 +132,10 @@ sub-feature = [
 
 ## 4. 位置与标记
 
-位置按 RFC-0046 §4（provider-utils 和 aimux 按 RFC-0044 §5 的目录照同样规则），按上游用例测的是什么来分：
+位置按 RFC-0046 §5（provider-utils 和 aimux 按 RFC-0044 §3.2 的目录照同样规则），按上游用例测的是什么来分：
 
 - 测内部函数的（prompt 转换、`prepare-tools`、用量换算、finish reason 映射等）放 `foo/tests.rs`，源文件 `foo.rs` 里写一行 `#[cfg(test)] mod tests;`。这是 Rust 的标准写法，不用 `#[path]`。
-- 走公开 API 的（provider → 模型 → mock fetch，例如上游语言模型测试里的 `doGenerate`、`doStream`，以及录制回放和 e2e）放 `tests/` 下按厂商分的子目录，文件名对应上游测试文件，全部合成一个测试程序 `tests/it/main.rs`。
+- 走公开 API 的（provider → 模型 → mock fetch，例如上游语言模型测试里的 `doGenerate`、`doStream`，以及录制回放和 e2e）放 `tests/it/<vendor>/`，文件名对应上游测试文件，全部合成一个测试程序 `tests/it/main.rs`。
 - 同一个上游测试文件两类都有时，按用例分开放，两处的标记都指向同一个上游文件。
 
 只用 `it()` 的描述做函数名分不开用例。`@ai-sdk/openai@4.0.83` 的 `openai-responses-language-model.test.ts` 里有 5 个用例都叫 `should send request body with include and tool`（第 3713、3795、4035、4087、4190 行），只有中间那层 `describe` 不同；同一个 Rust 文件里同名函数也编译不过。所以：
@@ -145,7 +145,7 @@ sub-feature = [
 3. 锁定版本里有 7 处用例的完整链相同（例如 `google-language-model.test.ts › doGenerate › should pass tools and toolChoice` 出现两次）。这种按文件里出现的顺序，标记末尾加 `#2`、`#3`，函数名加 `_2`、`_3`。
 
 ```rust
-// aimux-providers/tests/openai/responses/responses_language_model.rs（走公开 API，进 tests/it/main.rs）
+// aimux-providers/tests/it/openai/responses_language_model.rs（走公开 API）
 mod openai_responses_language_model {
     mod do_generate {
         mod code_interpreter_tool {
@@ -168,7 +168,7 @@ mod openai_responses_language_model {
 ## 5. 移植方法
 
 1. 守 `ts-rust-port` 的纪律：逐条搬，只换 harness，不改场景。
-2. harness 对应：上游 mock fetch 对应本地 HTTP 桩，上游 `MockLanguageModelV4` 对应 `ScriptedModel`。共用的 mock fetch 和回放 helper 按 RFC-0046 §4 放在 crate 里，用 test-only feature 打开，`foo/tests.rs` 和 `tests/` 用同一份。
+2. harness 对应：上游 mock fetch 对应本地 HTTP 桩，上游 `MockLanguageModelV4` 对应 `ScriptedModel`。共用的 mock fetch 和回放 helper 按 RFC-0046 §5 放在 `src/test_support/`，用 `test-support` feature 打开，`foo/tests.rs` 和 `tests/it/` 用同一份。
 3. 快照：`toMatchInlineSnapshot` 写成内联 `serde_json::json!`；`__snapshots__/` 文件快照放在测试所在目录的 `snapshots/`。不引入快照库。
 4. 发现行为和上游不一致：先写失败的测试，再按 `ts-rust-port` 的 `fix` 流程在同一 PR 里修，单独一个提交；属于刻意差异的，登记到对齐文档 §5，用例记进 `registered`。不允许 `#[ignore]`。
 5. PR 描述写"这个文件 N 个用例：搬 a、差分 b、自动排除 c、手写排除 d（按类别）"。
