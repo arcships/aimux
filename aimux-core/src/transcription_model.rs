@@ -47,8 +47,8 @@ impl AudioInput {
     /// only [`transcribe`] downloads a URL.
     #[must_use]
     pub fn url_error() -> AiMuxError {
-        AiMuxError::InvalidArgument(
-            "a transcription model takes audio data; `transcribe` downloads an audio URL".into(),
+        AiMuxError::invalid_argument(
+            "a transcription model takes audio data; `transcribe` downloads an audio URL",
         )
     }
 }
@@ -647,7 +647,7 @@ mod tests {
         );
         let error = transcribe(&model, options).await.unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message)
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
                 if message == "download URL targets a non-public address: 127.0.0.1"),
             "{error:?}"
         );
