@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic AWS models are named `anthropic-aws.messages` by default, the
+  provider name the AI SDK gives them, instead of `anthropic-aws`. A `name`
+  setting still replaces it, and the providerOptions key stays `anthropic`.
+
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider

@@ -229,3 +229,21 @@ async fn the_region_setting_signs_over_the_credentials_region() {
         seen.headers["authorization"].contains("/eu-central-1/aws-external-anthropic/aws4_request")
     );
 }
+
+/// The model's provider name is `anthropic-aws.messages` unless the settings
+/// name it (anthropic-aws-provider.ts:246).
+#[serial]
+#[test]
+fn the_default_provider_name_is_anthropic_aws_messages() {
+    let provider = create_anthropic_aws(AnthropicAwsProviderSettings::default()).unwrap();
+    assert_eq!(
+        provider.messages("claude").provider(),
+        "anthropic-aws.messages"
+    );
+    let named = create_anthropic_aws(AnthropicAwsProviderSettings {
+        name: Some("my-aws".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(named.messages("claude").provider(), "my-aws");
+}

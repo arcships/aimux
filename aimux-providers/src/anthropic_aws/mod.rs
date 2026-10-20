@@ -45,8 +45,9 @@ use crate::anthropic::options::{CANONICAL, options_name_of};
 
 pub use crate::shared::TransformRequestBody;
 
-/// The provider name when the settings give none.
-const DEFAULT_NAME: &str = "anthropic-aws";
+/// The provider name when the settings give none, the `provider` of
+/// upstream's chat model (anthropic-aws-provider.ts:246).
+const DEFAULT_NAME: &str = "anthropic-aws.messages";
 
 /// Authentication method for the Anthropic-AWS provider.
 #[derive(Clone, Debug)]
@@ -94,7 +95,7 @@ pub struct AnthropicAwsProviderSettings {
     /// including one of the fixed ones. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
     /// The provider name, the `provider()` string of the messages model.
-    /// Default `"anthropic-aws"`. The providerOptions key is always
+    /// Default `"anthropic-aws.messages"`. The providerOptions key is always
     /// `anthropic`, plus the first dot-separated segment of a name that was
     /// given here.
     pub name: Option<String>,
@@ -231,7 +232,7 @@ impl AnthropicAwsProvider {
     }
 
     /// A Messages model; `provider()` is the provider name
-    /// (`"anthropic-aws"` by default).
+    /// (`"anthropic-aws.messages"` by default).
     #[must_use]
     pub fn messages(&self, model_id: &str) -> AnthropicAwsModel {
         AnthropicMessagesModel::with_config(model_id.to_string(), self.model_config())
