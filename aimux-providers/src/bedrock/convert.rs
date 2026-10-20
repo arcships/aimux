@@ -1303,9 +1303,9 @@ pub fn build_request_body_checked(
         {
             warn(
                 "maxOutputTokens",
-                Some(
-                    "maxOutputTokens is not supported when high reasoning is enabled and will be ignored",
-                ),
+                Some(&format!(
+                    "maxOutputTokens is not supported by {model_id} when high reasoning is enabled and will be ignored"
+                )),
             );
         }
     }

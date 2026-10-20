@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock's warning for `maxOutputTokens` dropped under Nova 2 high
+  reasoning names the model (`maxOutputTokens is not supported by <model>
+  when high reasoning is enabled and will be ignored`), as the AI SDK does;
+  it left the model out.
 - Amazon Bedrock models that reject sampling parameters warn about
   `temperature`, `topK` and `topP` in that order, as the AI SDK does; aimux
   warned `temperature`, `topP`, `topK`. The thinking and OpenAI warnings keep

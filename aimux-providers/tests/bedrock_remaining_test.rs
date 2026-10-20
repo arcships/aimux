@@ -805,6 +805,29 @@ fn rejected_sampling_parameters_warn_in_upstream_order() {
     assert_eq!(warnings, expected);
 }
 
+/// TS: "should omit maxOutputTokens for Nova 2 high reasoning" — the warning
+/// names the model (amazon-bedrock-chat-language-model.ts:511).
+#[test]
+fn nova_high_reasoning_max_output_tokens_warning_names_the_model() {
+    let model_id = "us.amazon.nova-2-lite-v1:0";
+    let mut opts = default_options(test_prompt());
+    opts.reasoning = Some(aimux_core::types::ReasoningEffort::High);
+    opts.max_output_tokens = Some(1024);
+
+    let (body, warnings, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
+
+    assert_eq!(body["inferenceConfig"].get("maxTokens"), None);
+    assert!(
+        warnings.contains(&aimux_core::types::Warning::Unsupported {
+            feature: "maxOutputTokens".into(),
+            details: Some(format!(
+                "maxOutputTokens is not supported by {model_id} when high reasoning is enabled and will be ignored"
+            )),
+        }),
+        "{warnings:?}"
+    );
+}
+
 // ── guardrails ───────────────────────────────────────────────────────────────
 
 /// TS: "should support guardrails" — `providerOptions.bedrock.guardrailConfig`
