@@ -490,7 +490,7 @@ async fn executable_credential_without_the_opt_in_fails_and_spawns_nothing() {
     assert!(fetch.seen().is_empty(), "a request was sent");
 }
 
-/// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-image-model.ts
+/// Upstream: @ai-sdk/google-vertex 5.0.100 src/google-vertex-image-model.ts
 /// reads the image options under `googleVertex`, then the legacy `vertex`,
 /// hands them to the inner language model under both keys (:190-194) and
 /// writes its metadata under both (:221-224).
@@ -551,7 +551,7 @@ fn partner_settings(
     }
 }
 
-/// Upstream: @ai-sdk/google-vertex 5.0.98 src/maas/google-vertex-maas-provider.ts:77-118
+/// Upstream: @ai-sdk/google-vertex 5.0.100 src/maas/google-vertex-maas-provider.ts:79-130
 /// (the project/location URL, `global` by default, the `vertex.maas` name,
 /// the llama-4 `max_tokens` default at :14-25) and
 /// google-vertex-maas-provider-node.ts:34-58 (the headers, then the bearer token).
@@ -593,7 +593,7 @@ async fn maas_sub_provider_builds_on_openai_compatible() {
     assert_eq!(seen[1].json_body()["max_tokens"], 100);
 }
 
-/// Upstream: @ai-sdk/google-vertex 5.0.98 src/xai/google-vertex-xai-provider.ts:
+/// Upstream: @ai-sdk/google-vertex 5.0.100 src/xai/google-vertex-xai-provider.ts:
 /// the global host whatever the location (:159-164), the `googleVertex.xai`
 /// name with usage in streams and structured outputs (:172-184), no
 /// `reasoning_effort` (:131-134), reasoning tokens on top of
@@ -642,7 +642,7 @@ async fn xai_sub_provider_builds_on_openai_compatible() {
 }
 
 /// Upstream: both sub-providers load the project with `loadSetting`
-/// (google-vertex-maas-provider.ts:83-89): no project, no request.
+/// (google-vertex-maas-provider.ts:95-101): no project, no request.
 #[tokio::test]
 async fn partner_sub_providers_require_a_project() {
     assert!(
@@ -667,7 +667,7 @@ async fn partner_sub_providers_require_a_project() {
     assert!(fetch.seen().is_empty());
 }
 
-/// Upstream: @ai-sdk/google-vertex 5.0.98 maas/google-vertex-maas-provider-node.ts:34-58
+/// Upstream: @ai-sdk/google-vertex 5.0.100 maas/google-vertex-maas-provider-node.ts:34-58
 /// and xai/google-vertex-xai-provider-node.ts:33-55 hand no headers to
 /// `createOpenAICompatible`; their fetch spreads the provider headers, then
 /// `Authorization`, over the request's headers. So a provider header and the
@@ -716,7 +716,7 @@ async fn partner_headers_win_over_per_call_headers() {
         assert_eq!(seen.headers["x-call-only"], "kept", "{}", seen.url);
         assert_eq!(
             seen.headers["user-agent"],
-            "ai-sdk-openai-compatible/3.0.59 ai-sdk-provider-utils/5.0.51",
+            "ai-sdk-openai-compatible/3.0.61 ai-sdk-provider-utils/5.0.53",
             "{}",
             seen.url
         );
@@ -769,10 +769,10 @@ async fn partner_user_agent_header_replaces_the_whole_user_agent() {
     }
 }
 
-/// Upstream: @ai-sdk/google-vertex 5.0.98 src/google-vertex-provider-base.ts:270-276
+/// Upstream: @ai-sdk/google-vertex 5.0.100 src/google-vertex-provider-base.ts:283-289
 /// appends `ai-sdk-google-vertex/<v>` to the Gemini models' headers; the
 /// Anthropic sub-provider hands the caller's headers to the Anthropic model
-/// as they are (anthropic/google-vertex-anthropic-provider.ts:206-210), so
+/// as they are (anthropic/google-vertex-anthropic-provider.ts:216-220), so
 /// only the helper's `ai-sdk-provider-utils/<v>` part is sent.
 #[tokio::test]
 async fn only_gemini_models_send_the_google_vertex_user_agent_part() {

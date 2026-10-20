@@ -1180,6 +1180,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Google Vertex checks that a location going into a host name is one DNS
+  label (letters, digits and hyphens), as the AI SDK does: the Gemini and
+  Claude models, MaaS and the Speech-to-Text models (whose `region` provider
+  option is checked too) fail the request with `InvalidArgument` before
+  anything is sent. Language models with a custom `base_url`, Express mode
+  and the xAI models, which always call the global host, do not check it;
+  transcription models check it with a custom `base_url` too, since they
+  still name the location in their own endpoint. The check came with
+  `@ai-sdk/google-vertex` 5.0.100, so the lock moves there from 5.0.98; that
+  release depends on the locked `@ai-sdk/google` 4.0.87. The Vertex user
+  agent now reads `ai-sdk-google-vertex/5.0.100 ai-sdk-provider-utils/5.0.53`,
+  and the MaaS and xAI models send `ai-sdk-openai-compatible/3.0.61`.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now
