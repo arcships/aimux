@@ -204,3 +204,6 @@ impl ProviderDiscovery for GroqProvider {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

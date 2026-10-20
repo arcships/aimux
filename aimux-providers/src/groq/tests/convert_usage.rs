@@ -6,7 +6,8 @@
 
 use serde_json::{Value, json};
 
-use super::*;
+use crate::groq::types::GroqUsage;
+use crate::groq::usage::convert_groq_usage;
 
 /// `convertGroqUsage(usage)` for a Groq usage object, as its serialized form.
 fn convert_json(usage: Value) -> Value {

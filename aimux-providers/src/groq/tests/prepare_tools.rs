@@ -1,10 +1,11 @@
 //! Upstream `groq-prepare-tools.test.ts` (the cases that are not in the
 //! integration tests).
 
-use aimux_core::tool::{FunctionTool, ProviderTool};
+use aimux_core::options::CallOptions;
+use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, ProviderTool, Tool};
 use serde_json::{Value, json};
 
-use super::*;
+use crate::groq::prepare_tools::prepare_tools;
 
 /// The `groq.browser_search` provider tool, as the caller passes it.
 fn browser_search_tool() -> Tool {
@@ -23,6 +24,10 @@ fn empty_object_schema() -> Value {
     json!({ "type": "object", "properties": {} })
 }
 
+#[allow(
+    clippy::module_inception,
+    reason = "the upstream describe level keeps its name"
+)]
 mod prepare_tools {
     use super::*;
 

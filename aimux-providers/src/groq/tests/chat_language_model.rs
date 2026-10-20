@@ -27,17 +27,17 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use crate::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::{CallOptions, ResponseFormat, Tool};
 use aimux_core::result::StreamResult;
 use aimux_core::shared::provider_namespace;
 use aimux_core::tool::FunctionTool;
-use aimux_providers::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch, Seen};
+use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 
 const MODEL: &str = "gemma2-9b-it";
 const CHAT_COMPLETIONS_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
