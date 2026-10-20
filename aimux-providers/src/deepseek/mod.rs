@@ -16,3 +16,6 @@ mod provider;
 pub use chat::DeepSeekChatLanguageModel;
 pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
 pub use provider::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek, deepseek};
+
+#[cfg(test)]
+mod tests;

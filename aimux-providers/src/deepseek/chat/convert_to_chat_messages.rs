@@ -378,6 +378,3 @@ fn convert_tool_result_content(
     }
     Ok(Value::Array(content))
 }
-
-#[cfg(test)]
-mod tests;

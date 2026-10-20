@@ -1,9 +1,9 @@
 //! The DeepSeek provider (`aimux_providers::deepseek`): `create_deepseek`
 //! settings and the recorded cassette replay. The chat
 //! model's wire behaviour (ported from the `@ai-sdk/deepseek` tests) is in
-//! `chat/`.
+//! `src/deepseek/tests/chat/`.
 
-use crate::common;
+mod common;
 
 use futures::StreamExt;
 use wiremock::MockServer;

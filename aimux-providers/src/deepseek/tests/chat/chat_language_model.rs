@@ -6,7 +6,8 @@
 //! have no upstream counterpart.
 //!
 //! The snapshot cases answer from [`MockFetch`] with the `fixtures/` files; the
-//! other cases answer from a local `wiremock` server (`support.rs`).
+//! other cases answer from a local `wiremock` server (`support.rs`, formerly
+//! `tests/deepseek_chat_test.rs`).
 //!
 //! Harness differences from the TypeScript (expectations are unchanged):
 //! - `toMatchSnapshot()` values are the `.snap` entries in `snapshots/`, as JSON:
@@ -31,16 +32,16 @@
 
 use std::sync::Arc;
 
+use crate::deepseek::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::StreamResult;
 use aimux_core::tool::{FunctionTool, Tool};
-use aimux_providers::deepseek::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 use super::support::*;
 
@@ -180,58 +181,26 @@ async fn fixture_stream_parts(result: StreamResult) -> Value {
 mod deep_seek_chat_language_model {
     use super::*;
 
-    mod model_ids {
-        use super::*;
-
-        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › model IDs › should forward the %s model ID
-        #[tokio::test]
-        async fn should_forward_the_model_id() {
-            for model_id in ["deepseek-v4-flash", "deepseek-v4-pro"] {
-                assert_eq!(generate_body(model_id, &options()).await["model"], model_id);
-            }
-        }
-    }
-
-    mod supported_urls {
-        use super::*;
-
-        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › supportedUrls › should natively support HTTP image URLs
-        #[tokio::test]
-        async fn should_natively_support_http_image_urls() {
-            let server = MockServer::start().await;
-            let urls = chat(&server, "deepseek-chat").supported_urls().await;
-            let patterns = &urls.0["image/*"];
-            assert_eq!(patterns.len(), 1);
-            assert!(patterns[0].is_match("https://example.com/a.png"));
-            assert!(patterns[0].is_match("http://example.com/a.png"));
-            assert!(!patterns[0].is_match("data:image/png;base64,AAAA"));
-        }
-    }
-
     mod do_generate {
         use super::*;
 
-        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › should reject a response without choices
-        #[tokio::test]
-        async fn should_reject_a_response_without_choices() {
-            let server = json_server(json!({
-                "id": "chatcmpl-empty", "object": "chat.completion", "created": 0,
-                "model": "deepseek-chat", "choices": [],
-                "usage": { "prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1 }
-            }))
-            .await;
-            let error = chat(&server, "deepseek-chat")
-                .do_generate(&options())
-                .await
-                .unwrap_err();
-            assert!(
-                matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
-                "{error:?}"
-            );
-        }
-
         mod text {
             use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should extract text content
+            #[tokio::test]
+            async fn should_extract_text_content() {
+                let fetch = json_fetch(&json_value(TEXT_FIXTURE));
+                let result = provider(&fetch)
+                    .chat("deepseek-chat")
+                    .do_generate(&fixture_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(&result).unwrap(),
+                    json_value(SNAPSHOT_DO_GENERATE_TEXT)
+                );
+            }
 
             /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should send correct request body
             #[tokio::test]
@@ -496,11 +465,15 @@ mod deep_seek_chat_language_model {
                     );
                 }
             }
+        }
 
-            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should extract text content
+        mod reasoning {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › reasoning › should extract text content
             #[tokio::test]
             async fn should_extract_text_content() {
-                let fetch = json_fetch(&json_value(TEXT_FIXTURE));
+                let fetch = json_fetch(&json_value(REASONING_FIXTURE));
                 let result = provider(&fetch)
                     .chat("deepseek-chat")
                     .do_generate(&fixture_options())
@@ -508,13 +481,9 @@ mod deep_seek_chat_language_model {
                     .unwrap();
                 assert_eq!(
                     serde_json::to_value(&result).unwrap(),
-                    json_value(SNAPSHOT_DO_GENERATE_TEXT)
+                    json_value(SNAPSHOT_DO_GENERATE_REASONING)
                 );
             }
-        }
-
-        mod reasoning {
-            use super::*;
 
             /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › reasoning › should send correct request body
             #[tokio::test]
@@ -534,21 +503,134 @@ mod deep_seek_chat_language_model {
                     })
                 );
             }
+        }
 
-            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › reasoning › should extract text content
+        mod tool_call {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › should extract tool call content
             #[tokio::test]
-            async fn should_extract_text_content() {
-                let fetch = json_fetch(&json_value(REASONING_FIXTURE));
+            async fn should_extract_tool_call_content() {
+                let fetch = json_fetch(&json_value(TOOL_CALL_FIXTURE));
                 let result = provider(&fetch)
-                    .chat("deepseek-chat")
-                    .do_generate(&fixture_options())
+                    .chat("deepseek-reasoner")
+                    .do_generate(&fixture_tool_options())
                     .await
                     .unwrap();
                 assert_eq!(
                     serde_json::to_value(&result).unwrap(),
-                    json_value(SNAPSHOT_DO_GENERATE_REASONING)
+                    json_value(SNAPSHOT_DO_GENERATE_TOOL_CALL)
                 );
             }
+
+            mod json_response_format {
+                use super::*;
+
+                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should extract text content
+                #[tokio::test]
+                async fn should_extract_text_content() {
+                    let fetch = json_fetch(&json_value(JSON_FIXTURE));
+                    let result = provider(&fetch)
+                        .chat("deepseek-reasoner")
+                        .do_generate(&fixture_json_options())
+                        .await
+                        .unwrap();
+                    assert_eq!(
+                        serde_json::to_value(&result).unwrap(),
+                        json_value(SNAPSHOT_DO_GENERATE_JSON_RESPONSE_FORMAT)
+                    );
+                }
+
+                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should send correct request body without schema
+                #[tokio::test]
+                async fn json_response_format_should_send_correct_request_body_without_schema() {
+                    assert_eq!(
+                        generate_body("deepseek-reasoner", &json_options(None)).await,
+                        json!({
+                            "messages": [
+                                { "content": "Return JSON.", "role": "system" },
+                                { "content": "Hello", "role": "user" }
+                            ],
+                            "model": "deepseek-reasoner",
+                            "response_format": { "type": "json_object" },
+                            "thinking": { "type": "enabled" },
+                            "tools": [weather_wire_tool()]
+                        })
+                    );
+                }
+
+                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should send correct request body with schema
+                #[tokio::test]
+                async fn json_response_format_should_send_correct_request_body_with_schema() {
+                    let schema = json!({
+                        "type": "object",
+                        "properties": { "elements": { "type": "array", "items": { "type": "object",
+                            "properties": { "location": { "type": "string" }, "temperature": { "type": "number" },
+                                            "condition": { "type": "string" } },
+                            "required": ["location", "temperature", "condition"], "additionalProperties": false } } },
+                        "required": ["elements"], "additionalProperties": false,
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    });
+                    let result =
+                        generate_result("deepseek-reasoner", &json_options(Some(schema.clone())))
+                            .await;
+                    let body = result.request.and_then(|r| r.body).unwrap();
+                    assert_eq!(
+                        body["messages"][0],
+                        json!({
+                            "role": "system",
+                            "content": format!("Return JSON that conforms to the following schema: {schema}")
+                        })
+                    );
+                    assert_eq!(
+                        body["messages"][1],
+                        json!({ "role": "user", "content": "Hello" })
+                    );
+                    assert_eq!(body["response_format"], json!({ "type": "json_object" }));
+                    // upstream: supportsStructuredOutputs is false, so the schema is injected
+                    // into the system message with a compatibility warning.
+                    assert_eq!(
+                        warning_values(&result.warnings),
+                        warning_values(&[compatibility(
+                            "responseFormat JSON schema",
+                            "JSON response schema is injected into the system message."
+                        )])
+                    );
+                }
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › should send correct request body
+            #[tokio::test]
+            async fn tool_call_should_send_correct_request_body() {
+                assert_eq!(
+                    generate_body("deepseek-reasoner", &tool_options()).await,
+                    json!({
+                        "messages": [{ "content": "Hello", "role": "user" }],
+                        "model": "deepseek-reasoner",
+                        "thinking": { "type": "enabled" },
+                        "tools": [weather_wire_tool()]
+                    })
+                );
+            }
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › should reject a response without choices
+        #[tokio::test]
+        async fn should_reject_a_response_without_choices() {
+            let server = json_server(json!({
+                "id": "chatcmpl-empty", "object": "chat.completion", "created": 0,
+                "model": "deepseek-chat", "choices": [],
+                "usage": { "prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1 }
+            }))
+            .await;
+            let error = chat(&server, "deepseek-chat")
+                .do_generate(&options())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
+                "{error:?}"
+            );
         }
 
         mod logprobs {
@@ -817,115 +899,6 @@ mod deep_seek_chat_language_model {
             }
         }
 
-        mod tool_call {
-            use super::*;
-
-            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › should send correct request body
-            #[tokio::test]
-            async fn tool_call_should_send_correct_request_body() {
-                assert_eq!(
-                    generate_body("deepseek-reasoner", &tool_options()).await,
-                    json!({
-                        "messages": [{ "content": "Hello", "role": "user" }],
-                        "model": "deepseek-reasoner",
-                        "thinking": { "type": "enabled" },
-                        "tools": [weather_wire_tool()]
-                    })
-                );
-            }
-
-            mod json_response_format {
-                use super::*;
-
-                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should send correct request body without schema
-                #[tokio::test]
-                async fn json_response_format_should_send_correct_request_body_without_schema() {
-                    assert_eq!(
-                        generate_body("deepseek-reasoner", &json_options(None)).await,
-                        json!({
-                            "messages": [
-                                { "content": "Return JSON.", "role": "system" },
-                                { "content": "Hello", "role": "user" }
-                            ],
-                            "model": "deepseek-reasoner",
-                            "response_format": { "type": "json_object" },
-                            "thinking": { "type": "enabled" },
-                            "tools": [weather_wire_tool()]
-                        })
-                    );
-                }
-
-                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should send correct request body with schema
-                #[tokio::test]
-                async fn json_response_format_should_send_correct_request_body_with_schema() {
-                    let schema = json!({
-                        "type": "object",
-                        "properties": { "elements": { "type": "array", "items": { "type": "object",
-                            "properties": { "location": { "type": "string" }, "temperature": { "type": "number" },
-                                            "condition": { "type": "string" } },
-                            "required": ["location", "temperature", "condition"], "additionalProperties": false } } },
-                        "required": ["elements"], "additionalProperties": false,
-                        "$schema": "http://json-schema.org/draft-07/schema#"
-                    });
-                    let result =
-                        generate_result("deepseek-reasoner", &json_options(Some(schema.clone())))
-                            .await;
-                    let body = result.request.and_then(|r| r.body).unwrap();
-                    assert_eq!(
-                        body["messages"][0],
-                        json!({
-                            "role": "system",
-                            "content": format!("Return JSON that conforms to the following schema: {schema}")
-                        })
-                    );
-                    assert_eq!(
-                        body["messages"][1],
-                        json!({ "role": "user", "content": "Hello" })
-                    );
-                    assert_eq!(body["response_format"], json!({ "type": "json_object" }));
-                    // upstream: supportsStructuredOutputs is false, so the schema is injected
-                    // into the system message with a compatibility warning.
-                    assert_eq!(
-                        warning_values(&result.warnings),
-                        warning_values(&[compatibility(
-                            "responseFormat JSON schema",
-                            "JSON response schema is injected into the system message."
-                        )])
-                    );
-                }
-
-                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should extract text content
-                #[tokio::test]
-                async fn should_extract_text_content() {
-                    let fetch = json_fetch(&json_value(JSON_FIXTURE));
-                    let result = provider(&fetch)
-                        .chat("deepseek-reasoner")
-                        .do_generate(&fixture_json_options())
-                        .await
-                        .unwrap();
-                    assert_eq!(
-                        serde_json::to_value(&result).unwrap(),
-                        json_value(SNAPSHOT_DO_GENERATE_JSON_RESPONSE_FORMAT)
-                    );
-                }
-            }
-
-            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › should extract tool call content
-            #[tokio::test]
-            async fn should_extract_tool_call_content() {
-                let fetch = json_fetch(&json_value(TOOL_CALL_FIXTURE));
-                let result = provider(&fetch)
-                    .chat("deepseek-reasoner")
-                    .do_generate(&fixture_tool_options())
-                    .await
-                    .unwrap();
-                assert_eq!(
-                    serde_json::to_value(&result).unwrap(),
-                    json_value(SNAPSHOT_DO_GENERATE_TOOL_CALL)
-                );
-            }
-        }
-
         mod assistant_prefix_completion {
             use super::*;
 
@@ -982,49 +955,23 @@ mod deep_seek_chat_language_model {
     mod do_stream {
         use super::*;
 
-        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should preserve a provider error envelope in stream errors
-        #[tokio::test]
-        async fn stream_should_preserve_a_provider_error_envelope_in_stream_errors() {
-            let data = json!({ "error": {
-        "message": "Rate limit reached", "type": "rate_limit_error", "code": "rate_limit_exceeded"
-    } });
-            let error = stream_error(&data).await;
-            assert_eq!(error.message, "Rate limit reached");
-            assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
-            assert_eq!(error.status_code, Some(429));
-            assert!(error.is_retryable);
-            // upstream: `data` is the whole error envelope.
-            let envelope: Value =
-                serde_json::from_str(error.response_body.as_deref().unwrap()).unwrap();
-            assert_eq!(envelope, data);
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should classify insufficient quota as non-retryable
-        #[tokio::test]
-        async fn stream_should_classify_insufficient_quota_as_non_retryable() {
-            let data = json!({ "error": {
-        "message": "You exceeded your current quota.", "type": "rate_limit_error",
-        "code": "insufficient_quota"
-    } });
-            let error = stream_error(&data).await;
-            assert_eq!(error.status_code, Some(429));
-            assert!(!error.is_retryable);
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should preserve the provider type when code is an HTTP status
-        #[tokio::test]
-        async fn stream_should_preserve_the_provider_type_when_code_is_an_http_status() {
-            let data = json!({ "error": {
-        "message": "Rate limit reached", "type": "rate_limit_error", "code": "429"
-    } });
-            let error = stream_error(&data).await;
-            assert_eq!(error.provider_code.as_deref(), Some("429"));
-            assert_eq!(error.status_code, Some(429));
-            assert!(error.is_retryable);
-        }
-
         mod text {
             use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should stream text
+            #[tokio::test]
+            async fn should_stream_text() {
+                let fetch = chunks_fetch(TEXT_CHUNKS);
+                let result = provider(&fetch)
+                    .chat("deepseek-chat")
+                    .do_stream(&fixture_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    fixture_stream_parts(result).await,
+                    json_value(SNAPSHOT_DO_STREAM_TEXT)
+                );
+            }
 
             /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should send model id, settings, and input
             #[tokio::test]
@@ -1214,25 +1161,25 @@ mod deep_seek_chat_language_model {
                     );
                 }
             }
+        }
 
-            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should stream text
+        mod reasoning {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › reasoning › should stream reasoning
             #[tokio::test]
-            async fn should_stream_text() {
-                let fetch = chunks_fetch(TEXT_CHUNKS);
+            async fn should_stream_reasoning() {
+                let fetch = chunks_fetch(REASONING_CHUNKS);
                 let result = provider(&fetch)
-                    .chat("deepseek-chat")
+                    .chat("deepseek-reasoning")
                     .do_stream(&fixture_options())
                     .await
                     .unwrap();
                 assert_eq!(
                     fixture_stream_parts(result).await,
-                    json_value(SNAPSHOT_DO_STREAM_TEXT)
+                    json_value(SNAPSHOT_DO_STREAM_REASONING)
                 );
             }
-        }
-
-        mod reasoning {
-            use super::*;
 
             /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › reasoning › should keep reasoning active when deltas include empty tool calls
             #[tokio::test]
@@ -1308,21 +1255,66 @@ mod deep_seek_chat_language_model {
                     ])
                 );
             }
+        }
 
-            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › reasoning › should stream reasoning
+        mod tool_call {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › tool call › should stream tool call
             #[tokio::test]
-            async fn should_stream_reasoning() {
-                let fetch = chunks_fetch(REASONING_CHUNKS);
+            async fn should_stream_tool_call() {
+                let fetch = chunks_fetch(TOOL_CALL_CHUNKS);
                 let result = provider(&fetch)
-                    .chat("deepseek-reasoning")
-                    .do_stream(&fixture_options())
+                    .chat("deepseek-reasoner")
+                    .do_stream(&fixture_tool_options())
                     .await
                     .unwrap();
                 assert_eq!(
                     fixture_stream_parts(result).await,
-                    json_value(SNAPSHOT_DO_STREAM_REASONING)
+                    json_value(SNAPSHOT_DO_STREAM_TOOL_CALL)
                 );
             }
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should preserve a provider error envelope in stream errors
+        #[tokio::test]
+        async fn stream_should_preserve_a_provider_error_envelope_in_stream_errors() {
+            let data = json!({ "error": {
+        "message": "Rate limit reached", "type": "rate_limit_error", "code": "rate_limit_exceeded"
+    } });
+            let error = stream_error(&data).await;
+            assert_eq!(error.message, "Rate limit reached");
+            assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
+            assert_eq!(error.status_code, Some(429));
+            assert!(error.is_retryable);
+            // upstream: `data` is the whole error envelope.
+            let envelope: Value =
+                serde_json::from_str(error.response_body.as_deref().unwrap()).unwrap();
+            assert_eq!(envelope, data);
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should classify insufficient quota as non-retryable
+        #[tokio::test]
+        async fn stream_should_classify_insufficient_quota_as_non_retryable() {
+            let data = json!({ "error": {
+        "message": "You exceeded your current quota.", "type": "rate_limit_error",
+        "code": "insufficient_quota"
+    } });
+            let error = stream_error(&data).await;
+            assert_eq!(error.status_code, Some(429));
+            assert!(!error.is_retryable);
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should preserve the provider type when code is an HTTP status
+        #[tokio::test]
+        async fn stream_should_preserve_the_provider_type_when_code_is_an_http_status() {
+            let data = json!({ "error": {
+        "message": "Rate limit reached", "type": "rate_limit_error", "code": "429"
+    } });
+            let error = stream_error(&data).await;
+            assert_eq!(error.provider_code.as_deref(), Some("429"));
+            assert_eq!(error.status_code, Some(429));
+            assert!(error.is_retryable);
         }
 
         mod logprobs {
@@ -1400,24 +1392,33 @@ mod deep_seek_chat_language_model {
                 assert_eq!(body["stream"], true);
             }
         }
+    }
 
-        mod tool_call {
-            use super::*;
+    mod model_ids {
+        use super::*;
 
-            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › tool call › should stream tool call
-            #[tokio::test]
-            async fn should_stream_tool_call() {
-                let fetch = chunks_fetch(TOOL_CALL_CHUNKS);
-                let result = provider(&fetch)
-                    .chat("deepseek-reasoner")
-                    .do_stream(&fixture_tool_options())
-                    .await
-                    .unwrap();
-                assert_eq!(
-                    fixture_stream_parts(result).await,
-                    json_value(SNAPSHOT_DO_STREAM_TOOL_CALL)
-                );
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › model IDs › should forward the %s model ID
+        #[tokio::test]
+        async fn should_forward_the_model_id() {
+            for model_id in ["deepseek-v4-flash", "deepseek-v4-pro"] {
+                assert_eq!(generate_body(model_id, &options()).await["model"], model_id);
             }
+        }
+    }
+
+    mod supported_urls {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › supportedUrls › should natively support HTTP image URLs
+        #[tokio::test]
+        async fn should_natively_support_http_image_urls() {
+            let server = MockServer::start().await;
+            let urls = chat(&server, "deepseek-chat").supported_urls().await;
+            let patterns = &urls.0["image/*"];
+            assert_eq!(patterns.len(), 1);
+            assert!(patterns[0].is_match("https://example.com/a.png"));
+            assert!(patterns[0].is_match("http://example.com/a.png"));
+            assert!(!patterns[0].is_match("data:image/png;base64,AAAA"));
         }
     }
 }

@@ -1,4 +1,4 @@
-//! The wiremock harness shared by the `@ai-sdk/deepseek` chat ports: every
+//! The wiremock harness of the older `@ai-sdk/deepseek` chat ports: every
 //! model is built with `create_deepseek(..).chat(..)` against a local server.
 
 pub(super) use aimux_core::error::AiMuxError;
@@ -8,6 +8,9 @@ pub(super) use serde_json::{Value, json};
 pub(super) use wiremock::matchers::{method, path_regex};
 pub(super) use wiremock::{Mock, MockServer, ResponseTemplate};
 
+pub(super) use crate::deepseek::{
+    DeepSeekChatLanguageModel, DeepSeekProviderSettings, create_deepseek,
+};
 pub(super) use aimux_core::language_model::LanguageModel;
 pub(super) use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
@@ -21,9 +24,6 @@ pub(super) use aimux_core::stream_part::StreamPart;
 pub(super) use aimux_core::tool::FunctionTool;
 pub(super) use aimux_core::types::{
     FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning,
-};
-pub(super) use aimux_providers::deepseek::{
-    DeepSeekChatLanguageModel, DeepSeekProviderSettings, create_deepseek,
 };
 
 pub(super) fn with_options(
