@@ -32,7 +32,7 @@ use crate::stream::{
 /// of `aimux-provider-utils` use the injected or process-default transport.
 pub struct OpenAICompatibleChatModel {
     model_id: String,
-    config: CompatModelConfig,
+    pub(super) config: CompatModelConfig,
 }
 
 impl OpenAICompatibleChatModel {

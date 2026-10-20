@@ -20,7 +20,7 @@ use super::convert::to_camel_case;
 /// An OpenAI-compatible embedding model.
 pub struct OpenAICompatibleEmbeddingModel {
     model_id: String,
-    config: CompatModelConfig,
+    pub(super) config: CompatModelConfig,
 }
 
 impl OpenAICompatibleEmbeddingModel {
