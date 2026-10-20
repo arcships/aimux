@@ -567,3 +567,40 @@ fn omits_orphaned_historical_programmatic_caller_with_warning() {
         }]
     );
 }
+
+/// Upstream names the unsupported output type when an advisor result cannot be sent back.
+#[test]
+fn advisor_result_with_text_output_warns_with_output_type() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [
+            {
+                "type": "tool-call",
+                "toolCallId": "srvtoolu_advisor",
+                "toolName": "advisor",
+                "input": {},
+                "providerExecuted": true,
+            },
+            {
+                "type": "tool-result",
+                "toolCallId": "srvtoolu_advisor",
+                "toolName": "advisor",
+                "output": { "type": "text", "value": "should be json" },
+            },
+        ],
+    }]))
+    .unwrap();
+    let result = aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full_fallible(
+        &prompt, false,
+    )
+    .unwrap();
+    assert_eq!(result.messages[0]["content"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        result.warnings,
+        vec![Warning::Other {
+            message:
+                "provider executed tool result output type text for tool advisor is not supported"
+                    .into()
+        }]
+    );
+}

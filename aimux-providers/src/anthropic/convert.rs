@@ -1113,11 +1113,32 @@ fn convert_assistant_tool_result(
         _ => false,
     };
     if !allowed {
-        warnings.push(Warning::Other {
-            message: format!(
-                "provider executed tool result output for tool {tool_name} is not supported"
-            ),
-        });
+        let known = mcp_tool_use_ids.contains(tool_call_id.as_str())
+            || matches!(
+                provider_tool_name,
+                "code_execution"
+                    | "web_fetch"
+                    | "web_search"
+                    | "tool_search_tool_regex"
+                    | "tool_search_tool_bm25"
+                    | "advisor"
+            );
+        let message = if known {
+            let output_type = match output {
+                ToolResultOutput::Text { .. } => "text",
+                ToolResultOutput::Json { .. } => "json",
+                ToolResultOutput::ExecutionDenied { .. } => "execution-denied",
+                ToolResultOutput::ErrorText { .. } => "error-text",
+                ToolResultOutput::ErrorJson { .. } => "error-json",
+                ToolResultOutput::Content { .. } => "content",
+            };
+            format!(
+                "provider executed tool result output type {output_type} for tool {tool_name} is not supported"
+            )
+        } else {
+            format!("provider executed tool result for tool {tool_name} is not supported")
+        };
+        warnings.push(Warning::Other { message });
         return None;
     }
     let value = &raw_value;

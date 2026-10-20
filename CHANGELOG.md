@@ -1190,6 +1190,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic names the output type when it drops a provider-executed tool
+  result it cannot send back (`provider executed tool result output type text
+  for tool advisor is not supported`), and reports a result of an unknown
+  tool as unsupported whatever its output, as the AI SDK does; it left the
+  type out.
 - Anthropic omits the `caller` of a historical tool call or result whose
   source code execution call is missing from the history (before the last
   user message), with a warning, as the AI SDK does; it sent the orphaned
