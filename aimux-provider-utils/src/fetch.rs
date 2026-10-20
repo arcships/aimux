@@ -31,7 +31,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use aimux_core::AbortSignal;
+use aimux_core::{AbortSignal, SourceError};
 
 /// Proxy routing of one transport: a [`ReqwestFetch`], a [`PinnedFetch`]
 /// hop, or the WebSocket connector. With every field empty, HTTP follows the
@@ -161,11 +161,15 @@ impl fmt::Debug for FetchResponse {
 /// A transport-level failure: no HTTP response was produced, or the body
 /// stream broke. HTTP error statuses are *not* errors here — they come back
 /// as a [`FetchResponse`] and are interpreted by the response handlers.
+///
+/// Each failure keeps the transport's error with its whole `source()` chain
+/// (for a refused connection, the OS error at the bottom of reqwest's chain),
+/// which becomes the `cause` of the resulting `ApiCallError`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FetchError {
     /// The connection could not be established.
-    #[error("{0}")]
-    Connect(String),
+    #[error(transparent)]
+    Connect(SourceError),
     /// The transport's own timeout fired.
     #[error("request timed out")]
     Timeout,
@@ -173,11 +177,11 @@ pub enum FetchError {
     #[error("request aborted")]
     Aborted,
     /// The connection failed while sending the request or reading the body.
-    #[error("{0}")]
-    Io(String),
+    #[error(transparent)]
+    Io(SourceError),
     /// Anything else, including requests the transport refuses to build.
-    #[error("{0}")]
-    Other(String),
+    #[error(transparent)]
+    Other(SourceError),
 }
 
 impl FetchError {
@@ -333,7 +337,10 @@ impl ReqwestFetch {
             return Ok(client.clone());
         }
         let client = build_client(&self.proxy).map_err(|error| {
-            FetchError::Other(format!("HTTP client initialization failed: {error}"))
+            FetchError::Other(SourceError::with_cause(
+                format!("HTTP client initialization failed: {error}"),
+                &error,
+            ))
         })?;
         if clients.len() >= CLIENTS_PER_TRANSPORT {
             // Which entries are dead is unknowable, so evict them all;
@@ -386,12 +393,15 @@ impl PinnedFetch {
         let builder = apply_proxy(builder, &self.proxy);
         if self.addresses.is_empty() {
             return builder.build().map_err(|error| {
-                FetchError::Other(format!("download client initialization failed: {error}"))
+                FetchError::Other(SourceError::with_cause(
+                    format!("download client initialization failed: {error}"),
+                    &error,
+                ))
             });
         }
         let host = url
             .host_str()
-            .ok_or_else(|| FetchError::Other("download url has no host".to_string()))?;
+            .ok_or_else(|| FetchError::Other("download url has no host".into()))?;
         let port = url.port_or_known_default().unwrap_or(80);
         let socket_addresses: Vec<_> = self
             .addresses
@@ -402,8 +412,9 @@ impl PinnedFetch {
             .resolve_to_addrs(host, &socket_addresses)
             .build()
             .map_err(|error| {
-                FetchError::Other(format!(
-                    "pinned download client initialization failed: {error}"
+                FetchError::Other(SourceError::with_cause(
+                    format!("pinned download client initialization failed: {error}"),
+                    &error,
                 ))
             })
     }
@@ -442,15 +453,18 @@ async fn send(client: &Client, request: FetchRequest) -> Result<FetchResponse, F
     })
 }
 
+/// The request URL is reported separately, sanitized, so it is dropped from
+/// reqwest's own text, which would repeat it with its query string.
 fn map_reqwest_error(error: reqwest::Error) -> FetchError {
+    let error = error.without_url();
     if error.is_builder() {
-        FetchError::Other(error.to_string())
+        FetchError::Other(SourceError::new(&error))
     } else if error.is_connect() {
-        FetchError::Connect(error.to_string())
+        FetchError::Connect(SourceError::new(&error))
     } else if error.is_timeout() {
         FetchError::Timeout
     } else {
-        FetchError::Io(error.to_string())
+        FetchError::Io(SourceError::new(&error))
     }
 }
 
@@ -461,16 +475,14 @@ fn map_reqwest_error(error: reqwest::Error) -> FetchError {
 // client on its next request.
 const CLIENTS_PER_TRANSPORT: usize = 8;
 
-fn build_client(proxy: &ProxyConfig) -> Result<Client, String> {
+fn build_client(proxy: &ProxyConfig) -> Result<Client, reqwest::Error> {
     let builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_millis(10_000))
         .pool_max_idle_per_host(10)
         .pool_idle_timeout(Some(Duration::from_secs(30)))
         .tcp_keepalive(Some(Duration::from_secs(20)));
-    apply_proxy(builder, proxy)
-        .build()
-        .map_err(|error| error.to_string())
+    apply_proxy(builder, proxy).build()
 }
 
 fn apply_proxy(mut builder: reqwest::ClientBuilder, proxy: &ProxyConfig) -> reqwest::ClientBuilder {
@@ -557,6 +569,61 @@ mod tests {
         assert_eq!(
             seen.lock().unwrap().as_slice(),
             ["GET http://upstream.invalid/v1/models HTTP/1.1"]
+        );
+    }
+
+    /// A refused connection keeps reqwest's whole chain down to the OS error,
+    /// and drops the URL, whose query may carry an API key.
+    #[tokio::test]
+    async fn a_refused_connection_keeps_its_chain_without_the_url() {
+        // A bound socket that never listens refuses connections, and holding
+        // it keeps the port from being reused while the test runs.
+        let socket =
+            socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
+        socket
+            .bind(&std::net::SocketAddr::from(([127, 0, 0, 1], 0)).into())
+            .unwrap();
+        let address = socket.local_addr().unwrap().as_socket().unwrap();
+        // An explicit proxy turns off the environment's; NO_PROXY then sends
+        // the loopback request directly.
+        let direct = ProxyConfig {
+            all_url: Some("http://127.0.0.1:9".into()),
+            no_proxy: Some("127.0.0.1".into()),
+            ..ProxyConfig::default()
+        };
+        let error = ReqwestFetch::new(direct)
+            .fetch(get(&format!("http://{address}/v1?key=SECRET")))
+            .await
+            .unwrap_err();
+        let FetchError::Connect(source) = &error else {
+            panic!("{error:?}")
+        };
+        let chain: Vec<&str> = std::iter::successors(Some(source), |error| error.cause.as_deref())
+            .map(|error| error.message.as_str())
+            .collect();
+        assert!(chain.len() > 1, "{chain:?}");
+        assert!(
+            chain.iter().all(|message| !message.contains("SECRET")),
+            "{chain:?}"
+        );
+        assert!(
+            chain.last().unwrap().to_lowercase().contains("refused"),
+            "{chain:?}"
+        );
+
+        let api = crate::handle_fetch_error::fetch_error_to_ai_mux_error(
+            error.clone(),
+            "https://api.example/v1",
+            &serde_json::Value::Null,
+        );
+        let aimux_core::AiMuxError::ApiCall(api) = api else {
+            panic!("{api:?}")
+        };
+        assert!(api.is_retryable);
+        assert!(
+            matches!(&api.cause, Some(aimux_core::ErrorCause::Source(cause)) if cause == source),
+            "{:?}",
+            api.cause
         );
     }
 
