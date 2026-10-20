@@ -335,12 +335,15 @@ mod stream {
             &xai,
         )?;
         let ws_url = url.to_string();
-        let request = WebSocketRequest::for_transcription(
+        // Upstream opens the socket while it builds the stream and reports a
+        // connect failure on the stream, not from doStream.
+        let connected = ws_connect(&WebSocketRequest::for_transcription(
             ws_url.clone(),
             exchange.headers(),
             &options,
             model.web_socket.clone(),
-        );
+        ))
+        .await;
 
         let expected_done = if xai.multichannel == Some(true) {
             xai.channels.unwrap_or(1) as usize
@@ -352,9 +355,7 @@ mod stream {
         let mut audio = options.audio;
 
         let stream = async_stream::stream! {
-            // Upstream connects inside the stream: a connect failure errors
-            // the stream and drops the caller's audio.
-            let mut ws = match ws_connect(&request).await {
+            let mut ws = match connected {
                 Ok(ws) => ws,
                 Err(e) => {
                     yield Err(e);
