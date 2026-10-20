@@ -514,3 +514,6 @@ pub(crate) async fn list_models_once(
         })
         .collect())
 }
+
+#[cfg(test)]
+mod tests;
