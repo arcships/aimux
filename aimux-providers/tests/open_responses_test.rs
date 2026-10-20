@@ -2401,3 +2401,23 @@ async fn reference_and_text_user_files_are_unsupported() {
     }
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:306-336):
+/// an assistant tool call's `providerOptions.<name>.itemId` becomes the
+/// `function_call` item `id`.
+#[test]
+fn tool_calls_replay_the_item_id() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [{ "type": "tool-call", "toolCallId": "call_1", "toolName": "weather",
+                      "input": { "city": "Paris" },
+                      "providerOptions": { "open-responses": { "itemId": "fc_1" } } }]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input,
+        json!([{ "type": "function_call", "id": "fc_1", "call_id": "call_1",
+                 "name": "weather", "arguments": "{\"city\":\"Paris\"}" }])
+    );
+}

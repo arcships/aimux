@@ -1102,6 +1102,7 @@ fn convert_to_open_responses_input_with_namespace(
                             tool_call_id,
                             tool_name,
                             input: tool_input,
+                            provider_options,
                             ..
                         }) => {
                             let arguments = match tool_input {
@@ -1113,12 +1114,21 @@ fn convert_to_open_responses_input_with_namespace(
                                 assistant_message_id.take(),
                                 &mut input,
                             );
-                            input.push(json!({
+                            let mut function_call = json!({
                                 "type": "function_call",
                                 "call_id": tool_call_id,
                                 "name": tool_name,
                                 "arguments": arguments,
-                            }));
+                            });
+                            if let Some(item_id) = provider_options
+                                .as_ref()
+                                .and_then(|options| options.get(provider_options_name))
+                                .and_then(|data| data.get("itemId"))
+                                .and_then(Value::as_str)
+                            {
+                                function_call["id"] = json!(item_id);
+                            }
+                            input.push(function_call);
                         }
                         AssistantPart::Reasoning(part) => {
                             flush_assistant_content(
