@@ -1,530 +1,181 @@
-//! The DeepSeek chat model (`aimux_providers::deepseek`), ported from the AI SDK
-//! `@ai-sdk/deepseek` 3.0.56 test suites:
+//! Ports of `src/chat/deepseek-chat-language-model.test.ts` from `@ai-sdk/deepseek@3.0.56`:
+//! `model IDs`, `supportedUrls`, `doGenerate` (`text`, `reasoning`, `logprobs`,
+//! `top-level reasoning`, `tool call`, `json response format`, `assistant prefix
+//! completion`) and `doStream` (stream errors, `text`, `reasoning`, `logprobs`,
+//! `tool call`, `assistant prefix completion`), followed by the aimux cases that
+//! have no upstream counterpart.
 //!
-//! - `chat/deepseek-chat-language-model.test.ts`: `model IDs`, `supportedUrls`,
-//!   `doGenerate` (`text`, `reasoning`, `logprobs`, `top-level reasoning`,
-//!   `tool call`, `json response format`, `assistant prefix completion`) and
-//!   `doStream` (stream errors, `text`, `reasoning`, `logprobs`, `tool call`,
-//!   `assistant prefix completion`).
-//! - `chat/convert-to-deepseek-chat-messages.test.ts`: `message names`,
-//!   `user messages`, `tool calls`, `deepseek-v4 thinking mode` and
-//!   `assistant prefix completion`, observed through the request body.
+//! The snapshot cases answer from [`MockFetch`] with the `fixtures/` files; the
+//! other cases answer from a local `wiremock` server (`support.rs`).
 //!
-//! Left out: the `json response format with structured outputs` block (it needs
-//! a model built with `supportsStructuredOutputs`, which only the Azure wiring
-//! sets and this package does not expose), the tool-result `content` output
-//! cases, and the snapshot fixtures (the responses are inlined here).
+//! Harness differences from the TypeScript (expectations are unchanged):
+//! - `toMatchSnapshot()` values are the `.snap` entries in `snapshots/`, as JSON:
+//!   `undefined` properties are absent (as `JSON.stringify` drops them) and the
+//!   `Date` timestamps are ISO strings. The result, or each stream part, is
+//!   serialized and compared as a `serde_json::Value`.
+//! - The `prepare*FixtureResponse` helpers are the `fixtures/` files, served by
+//!   [`MockFetch`]. The TypeScript test server adds `content-length` to JSON
+//!   responses and `cache-control` / `connection` to event streams; the mock does
+//!   the same.
+//! - A `stream-chunks` response is one `data:` frame per line of the
+//!   `.chunks.txt` fixture, then `data: [DONE]`. Blank lines carry no frame and
+//!   are skipped.
 //!
-//! HTTP is a local `wiremock` server; every model is built with
-//! `create_deepseek(..).chat(..)`.
+//! Not ported: `json response format with structured outputs` (three cases:
+//! `should send json_schema response format and skip schema injection`,
+//! `should honor strictJsonSchema provider option` and `should fall back to
+//! json_object without a schema`). The upstream builds that model directly with
+//! `supportsStructuredOutputs: true`. The public API has no such setting:
+//! `create_deepseek(..).chat(..)` only turns on the beta-endpoint flags, and the
+//! chat model never sends a `json_schema` response format.
 
-use aimux_core::error::AiMuxError;
-use aimux_core::tool::RawToolCall;
-use futures::StreamExt;
-use serde_json::{Value, json};
-use wiremock::matchers::{method, path_regex};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use std::sync::Arc;
 
 use aimux_core::language_model::LanguageModel;
-use aimux_core::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultOutput, ToolResultPart, UserPart,
-};
-use aimux_core::options::{CallOptions, ResponseFormat, Tool};
-use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput};
-use aimux_core::shared::provider_namespace;
-use aimux_core::shared::{FileBytes, FileData};
-use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::FunctionTool;
-use aimux_core::types::{FinishReasonUnified, ReasoningEffort, ResponseMetadata, Warning};
-use aimux_providers::deepseek::{
-    DeepSeekChatLanguageModel, DeepSeekProviderSettings, create_deepseek,
-};
+use aimux_core::language_model_message::LanguageModelMessage;
+use aimux_core::options::{CallOptions, ResponseFormat};
+use aimux_core::result::StreamResult;
+use aimux_core::tool::{FunctionTool, Tool};
+use aimux_providers::deepseek::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek};
+use futures::StreamExt;
+use serde_json::{Value, json};
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+use crate::mock_fetch::{Canned, MockFetch};
 
-fn with_options(mut message: LanguageModelMessage, options: Value) -> LanguageModelMessage {
-    let (LanguageModelMessage::System {
-        provider_options, ..
-    }
-    | LanguageModelMessage::User {
-        provider_options, ..
-    }
-    | LanguageModelMessage::Assistant {
-        provider_options, ..
-    }
-    | LanguageModelMessage::Tool {
-        provider_options, ..
-    }) = &mut message;
-    *provider_options = Some(serde_json::from_value(options).unwrap());
-    message
+use super::support::*;
+
+const TEXT_FIXTURE: &str = include_str!("fixtures/deepseek-text.json");
+const REASONING_FIXTURE: &str = include_str!("fixtures/deepseek-reasoning.json");
+const JSON_FIXTURE: &str = include_str!("fixtures/deepseek-json.json");
+const TOOL_CALL_FIXTURE: &str = include_str!("fixtures/deepseek-tool-call.json");
+const TEXT_CHUNKS: &str = include_str!("fixtures/deepseek-text.chunks.txt");
+const REASONING_CHUNKS: &str = include_str!("fixtures/deepseek-reasoning.chunks.txt");
+const TOOL_CALL_CHUNKS: &str = include_str!("fixtures/deepseek-tool-call.chunks.txt");
+
+const SNAPSHOT_DO_GENERATE_TEXT: &str = include_str!("snapshots/do_generate_text.json");
+const SNAPSHOT_DO_GENERATE_REASONING: &str = include_str!("snapshots/do_generate_reasoning.json");
+const SNAPSHOT_DO_GENERATE_JSON_RESPONSE_FORMAT: &str =
+    include_str!("snapshots/do_generate_json_response_format.json");
+const SNAPSHOT_DO_GENERATE_TOOL_CALL: &str = include_str!("snapshots/do_generate_tool_call.json");
+const SNAPSHOT_DO_STREAM_TEXT: &str = include_str!("snapshots/do_stream_text.json");
+const SNAPSHOT_DO_STREAM_REASONING: &str = include_str!("snapshots/do_stream_reasoning.json");
+const SNAPSHOT_DO_STREAM_TOOL_CALL: &str = include_str!("snapshots/do_stream_tool_call.json");
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+fn json_value(source: &str) -> Value {
+    serde_json::from_str(source).expect("fixture or snapshot is JSON")
 }
 
-/// The upstream `TEST_PROMPT`.
-fn test_prompt() -> LanguageModelPrompt {
-    vec![LanguageModelMessage::user_text("Hello")]
+/// `createDeepSeek({ apiKey })` with a mock transport.
+fn provider(fetch: &Arc<MockFetch>) -> DeepSeekProvider {
+    create_deepseek(DeepSeekProviderSettings {
+        api_key: Some("test-api-key".into()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
-fn options() -> CallOptions {
-    CallOptions::new(test_prompt())
+/// `prompt: TEST_PROMPT`.
+fn fixture_options() -> CallOptions {
+    CallOptions::new(vec![LanguageModelMessage::user_text("Hello")])
 }
 
-fn options_for(prompt: LanguageModelPrompt) -> CallOptions {
-    CallOptions::new(prompt)
-}
-
-fn with_provider_options(mut options: CallOptions, value: Value) -> CallOptions {
-    options.provider_options = Some(serde_json::from_value(value).unwrap());
-    options
-}
-
-fn weather_tool() -> FunctionTool {
-    FunctionTool {
-        name: "weather".to_string(),
-        description: None,
-        input_schema: json!({
+fn fixture_weather_tool() -> Tool {
+    Tool::Function(FunctionTool::new(
+        "weather",
+        json!({
             "type": "object",
             "properties": { "location": { "type": "string" } },
             "required": ["location"],
             "additionalProperties": false,
             "$schema": "http://json-schema.org/draft-07/schema#"
         }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    }
+    ))
 }
 
-fn strict_tool(name: &str, strict: Option<bool>) -> Tool {
-    Tool::Function(FunctionTool {
-        name: name.to_string(),
-        description: None,
-        input_schema: json!({ "type": "object", "properties": {} }),
-        strict,
-        provider_options: None,
-        input_examples: None,
-    })
-}
-
-fn settings(server: &MockServer, base_path: &str) -> DeepSeekProviderSettings {
-    DeepSeekProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        base_url: Some(format!("{}{base_path}", server.uri())),
-        ..Default::default()
-    }
-}
-
-/// `provider.chat(model_id)` of the upstream tests.
-fn chat(server: &MockServer, model_id: &str) -> DeepSeekChatLanguageModel {
-    create_deepseek(settings(server, ""))
-        .unwrap()
-        .chat(model_id)
-}
-
-/// `betaProvider.chat(model_id)` of the upstream tests.
-fn beta_chat(server: &MockServer, model_id: &str) -> DeepSeekChatLanguageModel {
-    create_deepseek(settings(server, "/beta"))
-        .unwrap()
-        .chat(model_id)
-}
-
-async fn json_server(body: Value) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex(".*/chat/completions$"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(body))
-        .mount(&server)
-        .await;
-    server
-}
-
-fn data_event(chunk: &Value) -> String {
-    format!("data: {chunk}\n\n")
-}
-
-async fn sse_server(chunks: Vec<String>) -> MockServer {
-    let mut body = chunks.concat();
-    body.push_str("data: [DONE]\n\n");
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path_regex(".*/chat/completions$"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(body),
-        )
-        .mount(&server)
-        .await;
-    server
-}
-
-async fn request_paths(server: &MockServer) -> Vec<String> {
-    server
-        .received_requests()
-        .await
-        .unwrap()
-        .iter()
-        .map(|request| request.url.path().to_string())
-        .collect()
-}
-
-fn text_response() -> Value {
-    json!({
-        "id": "00f10ecd-60b3-4707-b5db-e4bcadf7aea1",
-        "object": "chat.completion",
-        "created": 1764656316,
-        "model": "deepseek-chat",
-        "choices": [{
-            "index": 0,
-            "message": { "role": "assistant", "content": "Hello, World!" },
-            "logprobs": null,
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": 13,
-            "completion_tokens": 300,
-            "total_tokens": 313,
-            "prompt_cache_hit_tokens": 0,
-            "prompt_cache_miss_tokens": 13
-        },
-        "system_fingerprint": "fp_eaab8d114b_prod0820_fp8_kvcache"
-    })
-}
-
-/// Generate against a canned text response and return the request body.
-async fn generate_body(model_id: &str, options: &CallOptions) -> Value {
-    let server = json_server(text_response()).await;
-    chat(&server, model_id)
-        .do_generate(options)
-        .await
-        .unwrap()
-        .request
-        .and_then(|r| r.body)
-        .unwrap()
-}
-
-async fn generate_result(model_id: &str, options: &CallOptions) -> GenerateResult {
-    let server = json_server(text_response()).await;
-    chat(&server, model_id).do_generate(options).await.unwrap()
-}
-
-/// The wire messages of a generate call.
-async fn wire_messages(model_id: &str, prompt: LanguageModelPrompt) -> Vec<Value> {
-    generate_body(model_id, &options_for(prompt)).await["messages"]
-        .as_array()
-        .unwrap()
-        .clone()
-}
-
-/// Run a generate call that must fail before anything is sent.
-async fn generate_error(model_id: &str, options: &CallOptions) -> String {
-    let server = json_server(text_response()).await;
-    let error = chat(&server, model_id)
-        .do_generate(options)
-        .await
-        .expect_err("the call must be rejected");
-    assert!(
-        request_paths(&server).await.is_empty(),
-        "nothing may be fetched"
+/// The `tools: [weather]` and `providerOptions.deepseek.thinking: enabled` of
+/// the upstream tool-call cases.
+fn fixture_tool_options() -> CallOptions {
+    let mut call = fixture_options();
+    call.tools = Some(vec![fixture_weather_tool()]);
+    call.provider_options = Some(
+        serde_json::from_value(json!({ "deepseek": { "thinking": { "type": "enabled" } } }))
+            .unwrap(),
     );
-    error.to_string()
+    call
 }
 
-fn warning_values(warnings: &[Warning]) -> Vec<Value> {
-    warnings
-        .iter()
-        .map(|warning| serde_json::to_value(warning).unwrap())
-        .collect()
-}
-
-fn deprecated(setting: &str) -> Warning {
-    Warning::Deprecated {
-        setting: setting.to_string(),
-        message: format!(
-            "{setting} is deprecated by DeepSeek and has been omitted. Remove {setting} from the request."
-        ),
-    }
-}
-
-fn thinking_unsupported(feature: &str) -> Warning {
-    Warning::Unsupported {
-        feature: feature.to_string(),
-        details: Some(format!(
-            "{feature} has no effect when DeepSeek thinking is enabled. Set providerOptions.deepseek.thinking.type to 'disabled' to use {feature}."
-        )),
-    }
-}
-
-fn compatibility(feature: &str, details: &str) -> Warning {
-    Warning::Compatibility {
-        feature: feature.to_string(),
-        details: Some(details.to_string()),
-    }
-}
-
-async fn collect(stream: aimux_core::result::StreamResult) -> Vec<StreamPart> {
-    let mut parts = Vec::new();
-    let mut stream = stream.stream;
-    while let Some(part) = stream.next().await {
-        parts.push(part.expect("stream part"));
-    }
-    parts
-}
-
-fn text_chunks() -> Vec<String> {
-    vec![
-        data_event(&json!({
-            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
-            "model": "deepseek-chat", "system_fingerprint": "fp_eaab8d114b_prod0820_fp8_kvcache",
-            "choices": [{ "index": 0, "delta": { "role": "assistant", "content": "" }, "finish_reason": null }]
-        })),
-        data_event(&json!({
-            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
-            "model": "deepseek-chat", "system_fingerprint": "fp_eaab8d114b_prod0820_fp8_kvcache",
-            "choices": [{ "index": 0, "delta": { "content": "Hello" }, "finish_reason": null }]
-        })),
-        data_event(&json!({
-            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
-            "model": "deepseek-chat", "system_fingerprint": "fp_eaab8d114b_prod0820_fp8_kvcache",
-            "choices": [{ "index": 0, "delta": { "content": ", World!" }, "finish_reason": null }]
-        })),
-        data_event(&json!({
-            "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
-            "model": "deepseek-chat", "system_fingerprint": "fp_eaab8d114b_prod0820_fp8_kvcache",
-            "choices": [{ "index": 0, "delta": { "content": "" }, "finish_reason": "stop" }],
-            "usage": {
-                "prompt_tokens": 13, "completion_tokens": 3, "total_tokens": 16,
-                "prompt_cache_hit_tokens": 5, "prompt_cache_miss_tokens": 8
-            }
-        })),
-    ]
-}
-
-fn finish_metadata(parts: &[StreamPart]) -> Value {
-    parts
-        .iter()
-        .find_map(|part| match part {
-            StreamPart::Finish {
-                provider_metadata, ..
-            } => provider_metadata
-                .as_ref()
-                .map(|metadata| serde_json::to_value(metadata).unwrap()),
-            _ => None,
-        })
-        .expect("a finish part")
-}
-
-fn stream_start_warnings(parts: &[StreamPart]) -> Vec<Value> {
-    match &parts[0] {
-        StreamPart::StreamStart { warnings } => warning_values(warnings),
-        other => panic!("expected stream-start, got {other:?}"),
-    }
-}
-
-fn logprob(token: &str, logprob: f64, bytes: Value) -> Value {
-    json!({
-        "token": token, "logprob": logprob, "bytes": bytes,
-        "top_logprobs": [{ "token": token, "logprob": logprob, "bytes": bytes }]
-    })
-}
-
-fn reasoning_response() -> Value {
-    json!({
-        "id": "r1", "object": "chat.completion", "created": 1764656316, "model": "deepseek-reasoner",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "There are 3 r's in strawberry.",
-                "reasoning_content": "Let me count the letters."
-            },
-            "finish_reason": "stop"
-        }],
-        "usage": { "prompt_tokens": 20, "completion_tokens": 30, "total_tokens": 50,
-                   "completion_tokens_details": { "reasoning_tokens": 10 } }
-    })
-}
-
-fn logprobs_response() -> Value {
-    let mut body = text_response();
-    body["choices"][0]["message"] = json!({
-        "role": "assistant", "content": "OK", "reasoning_content": "Reasoning"
-    });
-    body["choices"][0]["logprobs"] = json!({
-        "content": [logprob("OK", -0.00002467602, json!([79, 75]))],
-        "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)]
-    });
-    body
-}
-
-fn reasoning_options(effort: ReasoningEffort) -> CallOptions {
-    CallOptions {
-        reasoning: Some(effort),
-        ..options()
-    }
-}
-
-fn tool_call_response() -> Value {
-    json!({
-        "id": "t1", "object": "chat.completion", "created": 1764656316, "model": "deepseek-reasoner",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant", "content": "",
-                "reasoning_content": "I should look up the weather.",
-                "tool_calls": [{
-                    "id": "call_00_abc", "type": "function",
-                    "function": { "name": "weather", "arguments": "{\"location\":\"San Francisco\"}" }
-                }]
-            },
-            "finish_reason": "tool_calls"
-        }],
-        "usage": { "prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70 }
-    })
-}
-
-fn tool_options() -> CallOptions {
-    let mut options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
-    );
-    options.tools = Some(vec![Tool::Function(weather_tool())]);
-    options
-}
-
-fn weather_wire_tool() -> Value {
-    json!({
-        "type": "function",
-        "function": {
-            "name": "weather",
-            "parameters": {
-                "$schema": "http://json-schema.org/draft-07/schema#",
-                "additionalProperties": false,
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"],
-                "type": "object"
-            }
-        }
-    })
-}
-
-fn json_options(schema: Option<Value>) -> CallOptions {
-    let mut options = tool_options();
-    options.response_format = Some(ResponseFormat::Json {
-        schema,
+/// `responseFormat: { type: 'json' }` (no schema) on top of [`tool_options`].
+fn fixture_json_options() -> CallOptions {
+    let mut call = fixture_tool_options();
+    call.response_format = Some(ResponseFormat::Json {
+        schema: None,
         name: None,
         description: None,
     });
-    options
+    call
 }
 
-fn prefix_prompt(prefix_options: Value) -> LanguageModelPrompt {
-    vec![
-        LanguageModelMessage::user_text("Complete this sentence."),
-        with_options(
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::Text(TextPart {
-                    text: ("The answer is").into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            json!({ "deepseek": prefix_options }),
-        ),
-    ]
-}
-
-// Upstream emits provider error envelopes as error parts, including the first event.
-async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
-    let server = sse_server(vec![data_event(data)]).await;
-    let result = chat(&server, "deepseek-chat")
-        .do_stream(&options())
-        .await
-        .unwrap();
-    collect(result)
-        .await
-        .into_iter()
-        .find_map(|part| match part {
-            StreamPart::Error {
-                error: AiMuxError::ApiCall(error),
-            } => Some(*error),
-            _ => None,
-        })
-        .expect("expected a provider error part")
-}
-
-async fn stream_parts(
-    model_id: &str,
-    options: &CallOptions,
-    chunks: Vec<String>,
-) -> (Value, Vec<StreamPart>) {
-    let server = sse_server(chunks).await;
-    let result = chat(&server, model_id).do_stream(options).await.unwrap();
-    let body = result.request.clone().and_then(|r| r.body).unwrap();
-    (body, collect(result).await)
-}
-
-fn png_data() -> UserPart {
-    UserPart::File(FilePart {
-        data: FileData::Data {
-            data: FileBytes::Base64("AAECAw==".into()),
-        },
-        media_type: "image/png".into(),
-        filename: None,
-        provider_options: None,
-    })
-}
-
-fn file_with_options(mut part: UserPart, options: Value) -> UserPart {
-    if let UserPart::File(file) = &mut part {
-        file.provider_options = Some(serde_json::from_value(options).unwrap());
+/// A non-streaming response with the headers the TypeScript test server sends.
+fn json_response(body: &Value) -> Canned {
+    let bytes = serde_json::to_vec(body).expect("serializable");
+    Canned {
+        status: 200,
+        headers: vec![
+            ("content-type".to_string(), "application/json".to_string()),
+            ("content-length".to_string(), bytes.len().to_string()),
+        ],
+        body: bytes,
     }
-    part
 }
 
-fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
-    let mut assistant = vec![];
-    if reasoning {
-        assistant.push(AssistantPart::Reasoning(ReasoningPart {
-            text: ("I think the tool will return the correct value.").into(),
-            provider_options: None,
-        }));
-    }
-    assistant.push(AssistantPart::ToolCall(ToolCallPart {
-        tool_call_id: ("quux").into(),
-        tool_name: ("thwomp").into(),
-        input: json!({ "foo": "bar123" }),
-        provider_executed: None,
-        provider_options: None,
-    }));
-    vec![
-        LanguageModelMessage::Assistant {
-            content: assistant,
-            provider_options: None,
-        },
-        LanguageModelMessage::Tool {
-            content: vec![ToolPart::ToolResult(ToolResultPart {
-                tool_call_id: ("quux").into(),
-                output: ToolResultOutput::Json {
-                    value: json!({ "oof": "321rab" }),
-                    provider_options: None,
-                },
-                tool_name: "thwomp".into(),
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-    ]
+/// A single-response mock for a JSON body.
+fn json_fetch(body: &Value) -> Arc<MockFetch> {
+    MockFetch::new(vec![json_response(body)])
 }
 
-fn wire_tool_call() -> Value {
-    json!([{
-        "id": "quux", "type": "function",
-        "function": { "name": "thwomp", "arguments": "{\"foo\":\"bar123\"}" }
+/// A single event-stream mock: one `data:` frame per payload, then `[DONE]`.
+fn stream_fetch(payloads: &[String]) -> Arc<MockFetch> {
+    let mut body: String = payloads
+        .iter()
+        .map(|payload| format!("data: {payload}\n\n"))
+        .collect();
+    body.push_str("data: [DONE]\n\n");
+    MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![
+            ("content-type".to_string(), "text/event-stream".to_string()),
+            ("cache-control".to_string(), "no-cache".to_string()),
+            ("connection".to_string(), "keep-alive".to_string()),
+        ],
+        body: body.into_bytes(),
     }])
 }
+
+/// A `stream-chunks` mock from a `.chunks.txt` fixture: one frame per non-blank line.
+fn chunks_fetch(source: &str) -> Arc<MockFetch> {
+    let payloads: Vec<String> = source
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(str::to_string)
+        .collect();
+    stream_fetch(&payloads)
+}
+
+/// All parts of a stream, each serialized as the AI SDK writes it.
+async fn fixture_stream_parts(result: StreamResult) -> Value {
+    Value::Array(
+        result
+            .stream
+            .map(|part| serde_json::to_value(part.expect("stream part")).unwrap())
+            .collect()
+            .await,
+    )
+}
+
+// ── doGenerate and doStream ────────────────────────────────────────────────
 
 mod deep_seek_chat_language_model {
     use super::*;
@@ -845,6 +496,21 @@ mod deep_seek_chat_language_model {
                     );
                 }
             }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should extract text content
+            #[tokio::test]
+            async fn should_extract_text_content() {
+                let fetch = json_fetch(&json_value(TEXT_FIXTURE));
+                let result = provider(&fetch)
+                    .chat("deepseek-chat")
+                    .do_generate(&fixture_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(&result).unwrap(),
+                    json_value(SNAPSHOT_DO_GENERATE_TEXT)
+                );
+            }
         }
 
         mod reasoning {
@@ -866,6 +532,21 @@ mod deep_seek_chat_language_model {
                         "model": "deepseek-reasoner",
                         "thinking": { "type": "enabled" }
                     })
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › reasoning › should extract text content
+            #[tokio::test]
+            async fn should_extract_text_content() {
+                let fetch = json_fetch(&json_value(REASONING_FIXTURE));
+                let result = provider(&fetch)
+                    .chat("deepseek-chat")
+                    .do_generate(&fixture_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(&result).unwrap(),
+                    json_value(SNAPSHOT_DO_GENERATE_REASONING)
                 );
             }
         }
@@ -1212,6 +893,36 @@ mod deep_seek_chat_language_model {
                         )])
                     );
                 }
+
+                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should extract text content
+                #[tokio::test]
+                async fn should_extract_text_content() {
+                    let fetch = json_fetch(&json_value(JSON_FIXTURE));
+                    let result = provider(&fetch)
+                        .chat("deepseek-reasoner")
+                        .do_generate(&fixture_json_options())
+                        .await
+                        .unwrap();
+                    assert_eq!(
+                        serde_json::to_value(&result).unwrap(),
+                        json_value(SNAPSHOT_DO_GENERATE_JSON_RESPONSE_FORMAT)
+                    );
+                }
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › should extract tool call content
+            #[tokio::test]
+            async fn should_extract_tool_call_content() {
+                let fetch = json_fetch(&json_value(TOOL_CALL_FIXTURE));
+                let result = provider(&fetch)
+                    .chat("deepseek-reasoner")
+                    .do_generate(&fixture_tool_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(&result).unwrap(),
+                    json_value(SNAPSHOT_DO_GENERATE_TOOL_CALL)
+                );
             }
         }
 
@@ -1503,6 +1214,21 @@ mod deep_seek_chat_language_model {
                     );
                 }
             }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should stream text
+            #[tokio::test]
+            async fn should_stream_text() {
+                let fetch = chunks_fetch(TEXT_CHUNKS);
+                let result = provider(&fetch)
+                    .chat("deepseek-chat")
+                    .do_stream(&fixture_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    fixture_stream_parts(result).await,
+                    json_value(SNAPSHOT_DO_STREAM_TEXT)
+                );
+            }
         }
 
         mod reasoning {
@@ -1582,6 +1308,21 @@ mod deep_seek_chat_language_model {
                     ])
                 );
             }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › reasoning › should stream reasoning
+            #[tokio::test]
+            async fn should_stream_reasoning() {
+                let fetch = chunks_fetch(REASONING_CHUNKS);
+                let result = provider(&fetch)
+                    .chat("deepseek-reasoning")
+                    .do_stream(&fixture_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    fixture_stream_parts(result).await,
+                    json_value(SNAPSHOT_DO_STREAM_REASONING)
+                );
+            }
         }
 
         mod logprobs {
@@ -1659,642 +1400,25 @@ mod deep_seek_chat_language_model {
                 assert_eq!(body["stream"], true);
             }
         }
-    }
-}
 
-mod convert_to_deep_seek_chat_messages {
-    use super::*;
+        mod tool_call {
+            use super::*;
 
-    mod message_names {
-        use super::*;
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › message names › should ignore a name on a tool message with an unsupported warning
-        #[tokio::test]
-        async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warning() {
-            let options = options_for(vec![with_options(
-                LanguageModelMessage::Tool {
-                    content: vec![ToolPart::ToolResult(ToolResultPart {
-                        tool_call_id: ("call-1").into(),
-                        output: ToolResultOutput::Text {
-                            value: "sunny".into(),
-                            provider_options: None,
-                        },
-                        tool_name: "weather_tool".into(),
-                        provider_options: None,
-                    })],
-                    provider_options: None,
-                },
-                json!({ "deepseek": { "name": "weather_tool" } }),
-            )]);
-            let result = generate_result("deepseek-chat", &options).await;
-            assert_eq!(
-                result.request.and_then(|r| r.body).unwrap()["messages"],
-                json!([{ "role": "tool", "tool_call_id": "call-1", "content": "sunny" }])
-            );
-            assert_eq!(
-                warning_values(&result.warnings),
-                warning_values(&[Warning::Unsupported {
-                    feature: "message name on tool messages".to_string(),
-                    details: None,
-                }])
-            );
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › tool call › should stream tool call
+            #[tokio::test]
+            async fn should_stream_tool_call() {
+                let fetch = chunks_fetch(TOOL_CALL_CHUNKS);
+                let result = provider(&fetch)
+                    .chat("deepseek-reasoner")
+                    .do_stream(&fixture_tool_options())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    fixture_stream_parts(result).await,
+                    json_value(SNAPSHOT_DO_STREAM_TOOL_CALL)
+                );
+            }
         }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › message names › should reject a non-string name
-        #[tokio::test]
-        async fn convert_should_reject_a_non_string_name() {
-            let options = options_for(vec![with_options(
-                LanguageModelMessage::user_text("Hello"),
-                json!({ "deepseek": { "name": 123 } }),
-            )]);
-            let message = generate_error("deepseek-chat", &options).await;
-            assert!(message.contains("invalid provider options"), "{message}");
-        }
-    }
-
-    mod user_messages {
-        use super::*;
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert messages with only a text part to a string content
-        #[tokio::test]
-        async fn convert_should_convert_messages_with_only_a_text_part_to_a_string_content() {
-            let messages = wire_messages(
-                "deepseek-chat",
-                vec![LanguageModelMessage::user_text("Hello")],
-            )
-            .await;
-            assert_eq!(messages, [json!({ "role": "user", "content": "Hello" })]);
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert image data to an image URL content part
-        #[tokio::test]
-        async fn convert_should_convert_image_data_to_an_image_url_content_part() {
-            let messages = wire_messages(
-                "deepseek-chat",
-                vec![LanguageModelMessage::User {
-                    content: vec![
-                        UserPart::Text(TextPart {
-                            text: ("Hello").into(),
-                            provider_options: None,
-                        }),
-                        png_data(),
-                    ],
-                    provider_options: None,
-                }],
-            )
-            .await;
-            assert_eq!(
-                messages,
-                [json!({ "role": "user", "content": [
-            { "type": "text", "text": "Hello" },
-            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AAECAw==" } }
-        ] })]
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert an image URL to an image URL content part
-        #[tokio::test]
-        async fn convert_should_convert_an_image_url_to_an_image_url_content_part() {
-            let messages = wire_messages(
-                "deepseek-chat",
-                vec![LanguageModelMessage::User {
-                    content: vec![
-                        UserPart::Text(TextPart {
-                            text: ("Hello").into(),
-                            provider_options: None,
-                        }),
-                        UserPart::File(FilePart {
-                            data: FileData::Url {
-                                url: ("https://example.com/image.png").into(),
-                                original_url: None,
-                            },
-                            media_type: ("image/png").into(),
-                            filename: None,
-                            provider_options: None,
-                        }),
-                    ],
-                    provider_options: None,
-                }],
-            )
-            .await;
-            assert_eq!(
-                messages,
-                [json!({ "role": "user", "content": [
-            { "type": "text", "text": "Hello" },
-            { "type": "image_url", "image_url": { "url": "https://example.com/image.png" } }
-        ] })]
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should pass imageDetail to image URL content parts
-        #[tokio::test]
-        async fn convert_should_pass_image_detail_to_image_url_content_parts() {
-            let messages = wire_messages(
-                "deepseek-v4-flash-vision-exp",
-                vec![LanguageModelMessage::User {
-                    content: vec![file_with_options(
-                        UserPart::File(FilePart {
-                            data: FileData::Url {
-                                url: ("https://example.com/image.webp").into(),
-                                original_url: None,
-                            },
-                            media_type: ("image/webp").into(),
-                            filename: None,
-                            provider_options: None,
-                        }),
-                        json!({ "deepseek": { "imageDetail": "low" } }),
-                    )],
-                    provider_options: None,
-                }],
-            )
-            .await;
-            assert_eq!(
-                messages,
-                [json!({ "role": "user", "content": [
-            { "type": "image_url", "image_url": { "url": "https://example.com/image.webp", "detail": "low" } }
-        ] })]
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert inline image data to file_data and preserve its filename
-        #[tokio::test]
-        async fn convert_should_convert_inline_image_data_to_file_data_and_preserve_its_filename() {
-            let part = UserPart::File(FilePart {
-                data: FileData::Data {
-                    data: FileBytes::Base64("AAECAw==".to_string()),
-                },
-                media_type: "image/jpg".to_string(),
-                filename: Some("sample.jpg".to_string()),
-                provider_options: Some(
-                    provider_namespace("deepseek", json!({ "fileData": true })).unwrap(),
-                ),
-            });
-            let messages = wire_messages(
-                "deepseek-v4-flash-vision-exp",
-                vec![LanguageModelMessage::User {
-                    content: vec![part],
-                    provider_options: None,
-                }],
-            )
-            .await;
-            assert_eq!(
-                messages,
-                [json!({ "role": "user", "content": [
-            { "type": "file", "file_data": "data:image/jpeg;base64,AAECAw==", "filename": "sample.jpg" }
-        ] })]
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should reject imageDetail together with fileData
-        #[tokio::test]
-        async fn convert_should_reject_image_detail_together_with_file_data() {
-            let part = file_with_options(
-                png_data(),
-                json!({ "deepseek": { "fileData": true, "imageDetail": "high" } }),
-            );
-            let message = generate_error(
-                "deepseek-v4-flash-vision-exp",
-                &options_for(vec![LanguageModelMessage::User {
-                    content: vec![part],
-                    provider_options: None,
-                }]),
-            )
-            .await;
-            assert!(
-                message.contains("DeepSeek `imageDetail` cannot be combined with `fileData`."),
-                "{message}"
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should reject image URLs longer than 8192 characters
-        #[tokio::test]
-        async fn convert_should_reject_image_urls_longer_than_8192_characters() {
-            let url = format!("https://example.com/{}", "a".repeat(8192));
-            let message = generate_error(
-                "deepseek-v4-flash-vision-exp",
-                &options_for(vec![LanguageModelMessage::User {
-                    content: vec![UserPart::File(FilePart {
-                        data: FileData::Url {
-                            url: (url),
-                            original_url: None,
-                        },
-                        media_type: ("image/png").into(),
-                        filename: None,
-                        provider_options: None,
-                    })],
-                    provider_options: None,
-                }]),
-            )
-            .await;
-            assert!(
-                message.contains("DeepSeek image URLs must not exceed 8192 characters."),
-                "{message}"
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should reject unsupported image formats
-        #[tokio::test]
-        async fn convert_should_reject_unsupported_image_formats() {
-            let message = generate_error(
-                "deepseek-v4-flash-vision-exp",
-                &options_for(vec![LanguageModelMessage::User {
-                    content: vec![UserPart::File(FilePart {
-                        data: FileData::Data {
-                            data: FileBytes::Base64(("AAECAw==").into()),
-                        },
-                        media_type: ("image/svg+xml").into(),
-                        filename: None,
-                        provider_options: None,
-                    })],
-                    provider_options: None,
-                }]),
-            )
-            .await;
-            assert!(
-                message.contains("DeepSeek supports JPEG, PNG, GIF, and WebP image inputs."),
-                "{message}"
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert an image provider reference to a file content part
-        #[tokio::test]
-        async fn convert_should_convert_an_image_provider_reference_to_a_file_content_part() {
-            let messages = wire_messages(
-                "deepseek-v4-flash-vision-exp",
-                vec![LanguageModelMessage::User {
-                    content: vec![
-                UserPart::Text(TextPart {
-                    text: ("Hello").into(),
-                    provider_options: None,
-                }),
-                UserPart::File(FilePart {
-                    data: FileData::Reference {
-                        reference: serde_json::from_value(
-                            json!({ "deepseek": "file-api-deepseek", "openai": "file-openai" }),
-                        )
-                        .unwrap(),
-                    },
-                    media_type: ("image/png").into(),
-                    filename: None,
-                    provider_options: None,
-                }),
-            ],
-                    provider_options: None,
-                }],
-            )
-            .await;
-            assert_eq!(
-                messages,
-                [json!({ "role": "user", "content": [
-            { "type": "text", "text": "Hello" },
-            { "type": "file", "file_id": "file-api-deepseek" }
-        ] })]
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should throw when an image reference has no DeepSeek identifier
-        #[tokio::test]
-        async fn convert_should_throw_when_an_image_reference_has_no_deepseek_identifier() {
-            let message = generate_error(
-                "deepseek-v4-flash-vision-exp",
-                &options_for(vec![LanguageModelMessage::User {
-                    content: vec![UserPart::File(FilePart {
-                        data: FileData::Reference {
-                            reference: serde_json::from_value(json!({ "openai": "file-openai" }))
-                                .unwrap(),
-                        },
-                        media_type: ("image/png").into(),
-                        filename: None,
-                        provider_options: None,
-                    })],
-                    provider_options: None,
-                }]),
-            )
-            .await;
-            assert!(message.contains("deepseek"), "{message}");
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should warn about unsupported non-image file parts
-        #[tokio::test]
-        async fn convert_should_warn_about_unsupported_non_image_file_parts() {
-            let result = generate_result(
-                "deepseek-chat",
-                &options_for(vec![LanguageModelMessage::User {
-                    content: vec![
-                        UserPart::Text(TextPart {
-                            text: ("Hello").into(),
-                            provider_options: None,
-                        }),
-                        UserPart::File(FilePart {
-                            data: FileData::Data {
-                                data: FileBytes::Base64(("AAECAw==").into()),
-                            },
-                            media_type: ("application/pdf").into(),
-                            filename: None,
-                            provider_options: None,
-                        }),
-                    ],
-                    provider_options: None,
-                }]),
-            )
-            .await;
-            assert_eq!(
-                result.request.and_then(|r| r.body).unwrap()["messages"],
-                json!([{ "role": "user", "content": "Hello" }])
-            );
-            assert_eq!(
-                warning_values(&result.warnings),
-                warning_values(&[Warning::Unsupported {
-                    feature: "user message part type: file".to_string(),
-                    details: None,
-                }])
-            );
-        }
-    }
-
-    mod tool_calls {
-        use super::*;
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should stringify arguments to tool calls
-        #[tokio::test]
-        async fn convert_should_stringify_arguments_to_tool_calls() {
-            let result = generate_result("deepseek-chat", &options_for(tool_turn(false))).await;
-            assert_eq!(
-                result.request.and_then(|r| r.body).unwrap()["messages"],
-                json!([
-                    // upstream sends the empty text as `content: ""`, not null.
-                    { "role": "assistant", "content": "", "tool_calls": wire_tool_call() },
-                    { "role": "tool", "tool_call_id": "quux", "content": "{\"oof\":\"321rab\"}" }
-                ])
-            );
-            assert!(result.warnings.is_empty());
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should handle text output type in tool results
-        #[tokio::test]
-        async fn convert_should_handle_text_output_type_in_tool_results() {
-            let messages = wire_messages(
-                "deepseek-chat",
-                vec![
-                    LanguageModelMessage::Assistant {
-                        content: vec![AssistantPart::ToolCall(ToolCallPart {
-                            tool_call_id: ("call-1").into(),
-                            tool_name: ("getWeather").into(),
-                            input: json!({ "query": "weather" }),
-                            provider_executed: None,
-                            provider_options: None,
-                        })],
-                        provider_options: None,
-                    },
-                    LanguageModelMessage::Tool {
-                        content: vec![ToolPart::ToolResult(ToolResultPart {
-                            tool_call_id: ("call-1").into(),
-                            output: ToolResultOutput::Text {
-                                value: "It is sunny today".into(),
-                                provider_options: None,
-                            },
-                            tool_name: "getWeather".into(),
-                            provider_options: None,
-                        })],
-                        provider_options: None,
-                    },
-                ],
-            )
-            .await;
-            assert_eq!(
-                messages[1],
-                json!({ "role": "tool", "tool_call_id": "call-1", "content": "It is sunny today" })
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should support reasoning content in tool calls
-        #[tokio::test]
-        async fn convert_should_support_reasoning_content_in_tool_calls() {
-            let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-            prompt.extend(tool_turn(true));
-            let messages = wire_messages("deepseek-chat", prompt).await;
-            assert_eq!(
-                messages[1],
-                json!({
-                    "role": "assistant", "content": "",
-                    "reasoning_content": "I think the tool will return the correct value.",
-                    "tool_calls": wire_tool_call()
-                })
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should filter out reasoning content from turns before the last user message
-        #[tokio::test]
-        async fn convert_should_filter_out_reasoning_content_from_turns_before_the_last_user_message()
-         {
-            let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-            prompt.extend(tool_turn(true));
-            prompt.push(LanguageModelMessage::user_text("Goodbye"));
-            let messages = wire_messages("deepseek-chat", prompt).await;
-            assert_eq!(
-                messages[1],
-                json!({ "role": "assistant", "content": "", "tool_calls": wire_tool_call() })
-            );
-        }
-    }
-
-    mod deepseek_v4_thinking_mode {
-        use super::*;
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › deepseek-v4 thinking mode › should preserve reasoning_content from prior turns for deepseek-v4
-        #[tokio::test]
-        async fn convert_should_preserve_reasoning_content_from_prior_turns_for_deepseek_v4() {
-            let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-            prompt.extend(tool_turn(true));
-            prompt.push(LanguageModelMessage::user_text("Goodbye"));
-            let messages = wire_messages("deepseek-v4-pro", prompt).await;
-            assert_eq!(
-                messages[1],
-                json!({
-                    "role": "assistant", "content": "",
-                    "reasoning_content": "I think the tool will return the correct value.",
-                    "tool_calls": wire_tool_call()
-                })
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › deepseek-v4 thinking mode › should preserve reasoning_content from prior turns for the deepseek-flash alias
-        #[tokio::test]
-        async fn convert_should_preserve_reasoning_content_from_prior_turns_for_the_deepseek_flash_alias()
-         {
-            let messages = wire_messages(
-                "deepseek-flash",
-                vec![
-                    LanguageModelMessage::user_text("Hello"),
-                    LanguageModelMessage::Assistant {
-                        content: vec![
-                            AssistantPart::Reasoning(ReasoningPart {
-                                text: ("Prior-turn reasoning.").into(),
-                                provider_options: None,
-                            }),
-                            AssistantPart::Text(TextPart {
-                                text: ("Hi there").into(),
-                                provider_options: None,
-                            }),
-                        ],
-                        provider_options: None,
-                    },
-                    LanguageModelMessage::user_text("Again"),
-                ],
-            )
-            .await;
-            assert_eq!(
-                messages[1],
-                json!({ "role": "assistant", "content": "Hi there", "reasoning_content": "Prior-turn reasoning." })
-            );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › deepseek-v4 thinking mode › should back-fill empty reasoning_content for deepseek-v4 assistant messages with no reasoning part
-        #[tokio::test]
-        async fn convert_should_back_fill_empty_reasoning_content_for_deepseek_v4_assistant_messages_with_no_reasoning_part()
-         {
-            let messages = wire_messages(
-                "deepseek-v4-pro",
-                vec![
-                    LanguageModelMessage::user_text("Hello"),
-                    LanguageModelMessage::Assistant {
-                        content: vec![AssistantPart::Text(TextPart {
-                            text: ("Hi there").into(),
-                            provider_options: None,
-                        })],
-                        provider_options: None,
-                    },
-                    LanguageModelMessage::user_text("Again"),
-                ],
-            )
-            .await;
-            assert_eq!(
-                messages[1],
-                json!({ "role": "assistant", "content": "Hi there", "reasoning_content": "" })
-            );
-        }
-    }
-
-    mod assistant_prefix_completion {
-        use super::*;
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › assistant prefix completion › should reject prefix completion on a non-assistant message
-        #[tokio::test]
-        async fn convert_should_reject_prefix_completion_on_a_non_assistant_message() {
-            let message = generate_error(
-                "deepseek-chat",
-                &options_for(vec![with_options(
-                    LanguageModelMessage::user_text("Hello"),
-                    json!({ "deepseek": { "prefix": true } }),
-                )]),
-            )
-            .await;
-            assert!(
-        message.contains(
-            "DeepSeek assistant prefix completion requires `prefix: true` on an assistant message."
-        ),
-        "{message}"
-    );
-        }
-
-        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › assistant prefix completion › should reject prefix completion on a non-final assistant message
-        #[tokio::test]
-        async fn convert_should_reject_prefix_completion_on_a_non_final_assistant_message() {
-            let server = json_server(text_response()).await;
-            let prompt = vec![
-                with_options(
-                    LanguageModelMessage::Assistant {
-                        content: vec![AssistantPart::Text(TextPart {
-                            text: ("The answer is").into(),
-                            provider_options: None,
-                        })],
-                        provider_options: None,
-                    },
-                    json!({ "deepseek": { "prefix": true } }),
-                ),
-                LanguageModelMessage::user_text("Continue"),
-            ];
-            let error = beta_chat(&server, "deepseek-chat")
-                .do_generate(&options_for(prompt))
-                .await
-                .unwrap_err();
-            assert!(
-        error.to_string().contains(
-            "DeepSeek assistant prefix completion requires the prefixed assistant message to be the final message."
-        ),
-        "{error}"
-    );
-        }
-    }
-}
-
-mod prepare_tools {
-    use super::*;
-
-    /// A tool with `strict: false` should produce `"strict": false` in the
-    /// serialized tool definition.
-    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should pass through strict mode when strict is false
-    #[tokio::test]
-    async fn should_pass_through_strict_mode_when_strict_is_false() {
-        let tool = FunctionTool {
-            name: "testFunction".to_string(),
-            description: Some("A test function".to_string()),
-            input_schema: json!({ "type": "object", "properties": {} }),
-            strict: Some(false),
-            provider_options: None,
-            input_examples: None,
-        };
-        let mut options = options();
-        options.tools = Some(vec![Tool::from(tool)]);
-        let body = generate_body("deepseek-chat", &options).await;
-
-        assert_eq!(
-            body["tools"],
-            json!([{
-                "type": "function",
-                "function": {
-                    "description": "A test function",
-                    "name": "testFunction",
-                    "parameters": { "type": "object", "properties": {} },
-                    "strict": false
-                }
-            }])
-        );
-    }
-
-    /// A tool without `strict` set should NOT have a `"strict"` field in the
-    /// serialized tool definition.
-    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should not include strict mode when strict is undefined
-    #[tokio::test]
-    async fn should_not_include_strict_mode_when_strict_is_undefined() {
-        let tool = FunctionTool {
-            name: "testFunction".to_string(),
-            description: Some("A test function".to_string()),
-            input_schema: json!({ "type": "object", "properties": {} }),
-            strict: None,
-            provider_options: None,
-            input_examples: None,
-        };
-        let mut options = options();
-        options.tools = Some(vec![Tool::from(tool)]);
-        let body = generate_body("deepseek-chat", &options).await;
-
-        assert_eq!(
-            body["tools"],
-            json!([{
-                "type": "function",
-                "function": {
-                    "description": "A test function",
-                    "name": "testFunction",
-                    "parameters": { "type": "object", "properties": {} }
-                }
-            }])
-        );
-        // Verify strict is absent.
-        assert!(
-            body["tools"][0]["function"].get("strict").is_none(),
-            "strict should be absent"
-        );
     }
 }
 

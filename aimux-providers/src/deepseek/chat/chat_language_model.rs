@@ -15,13 +15,15 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Warning};
 use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
-use super::convert::convert_to_deepseek_chat_messages;
-use super::finish_reason::map_deepseek_finish_reason;
+use super::chat_api_types::{ChatChunk, ChatResponse};
+use super::chat_language_model_options::{
+    ProviderReasoningEffort, ThinkingType, parse_chat_options,
+};
+use super::convert_to_chat_messages::convert_to_deepseek_chat_messages;
+use super::convert_to_usage::convert_deepseek_usage;
 use super::is_v4_model::is_deepseek_v4_model;
-use super::options::{ProviderReasoningEffort, ThinkingType, parse_chat_options};
+use super::map_finish_reason::map_deepseek_finish_reason;
 use super::prepare_tools::prepare_tools;
-use super::types::{ChatChunk, ChatResponse};
-use super::usage::convert_deepseek_usage;
 use crate::shared::EndpointConfig;
 use crate::stream::{
     ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
@@ -373,7 +375,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             exchange.request(exchange.url("/chat/completions"), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<ChatResponse>(),
-            super::types::deepseek_failed_response_handler(),
+            super::chat_api_types::deepseek_failed_response_handler(),
         )
         .await?;
 
@@ -492,7 +494,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            super::types::deepseek_failed_response_handler(),
+            super::chat_api_types::deepseek_failed_response_handler(),
         )
         .await?;
         let response_headers = resp.response_headers;
