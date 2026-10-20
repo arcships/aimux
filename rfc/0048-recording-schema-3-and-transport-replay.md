@@ -10,7 +10,7 @@
 >
 > **Implements**: [RFC-0041](0041-replay-governance.md) §12 的 G1（schema/policy）、G2（leaf/session）、G3（消费闭包）。RFC-0041 已定的格式约束、匹配语义、离线鉴权与错误码不在这里重新设计，本文只定它留给实现的接口、切片和顺序。
 >
-> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §4.3、§4.4、§8.3、§9.1；[RFC-0039](0039-ops-bindings-contract.md) 登记项 D12、G-b、G-c、G-k（[实现说明](../docs/rfc-0039-implementation.md)）；[RFC-0042](0042-v4-type-boundaries.md)（DTO 与 codegen）；RFC-0044（[PR #279](https://github.com/arcships/aimux/pull/279)，草稿：crate 拆分、Fetch 观察点、`aimux-devtools`）。
+> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §4.3、§4.4、§8.3、§9.1；[RFC-0039](0039-ops-bindings-contract.md) 登记项 D12、G-b、G-c、G-k（[实现说明](../docs/rfc-0039-implementation.md)）；[RFC-0042](0042-v4-type-boundaries.md)（DTO 与 codegen）；RFC-0044（[PR #279](https://github.com/arcships/aimux/pull/279)：crate 拆分、Fetch 观察点、`aimux-devtools`）。
 
 ## 1. 决策摘要
 
@@ -259,7 +259,7 @@ pub fn create_offline_provider(name: &str, fetch: FetchFunction) -> Result<Arc<d
 | `replay.capabilities` | 从 Future 改为 Current，返回 `{ http: true, webSocket: false, download: false, matchers, pacing }`，关闭 G-c |
 | `replay.inspect` / `replay.dryRun` | 按 schema 3 返回 `target`、重算的 `replayability` 与原因 |
 | `replay.offline`（新增） | §4.2；返回 `{ result, consumed, total }`，关闭 G-k |
-| `replay.live` | registry 目标改用 `modelRef`（§4.3），删除 `rebuild_provider` |
+| `replay.live` | registry 目标改用 `modelRef`（§4.3），删除 C6 移到 ops 的 `rebuild_provider` |
 
 - **错误。** `ReplayError` 进现有的 `recording` 错误域，编码从 106 起按声明顺序排；payload 的 `name` 是 `code()`。codegen 的错误码范围（`tools/aimux-codegen/src/lib.rs:134`）同步扩大。
 - **modelRef。** ops 的文本与 decision 处理函数在模型句柄带有唯一的 registry 引用（`ops/registry.rs` 的 `Metadata::Sources`）时，把 `"<key>:<modelId>"` 交给调用观测接口。
@@ -271,17 +271,17 @@ pub fn create_offline_provider(name: &str, fetch: FetchFunction) -> Result<Arc<d
 
 ## 8. 与 RFC-0041、RFC-0044 的关系
 
-| 题目 | RFC-0041（已合并） | RFC-0044（草稿） | 本文 |
+| 题目 | RFC-0041（已合并） | RFC-0044 | 本文 |
 |---|---|---|---|
 | 录制格式 | schema 3 字段与约束（§4） | 不改格式 | 给出完整形状与读取规则（§3） |
 | 采集位置 | `transport_leaf`（§4） | Fetch 观察点 + `DiagnosticScope`（C3） | 建在 C3 的观察点上（§4.1）；待讨论 Q1 |
 | 调用层事件 | operation/child/attempt 事件（§3） | 接法由后续调用观测 RFC 定（§4.1） | 只列要求（§4.1）；待讨论 Q3 |
 | 回放引擎 | `replay_fetch`、匹配、错误码（§3、§7、§8） | 归 `aimux-devtools`（C6） | 接口（§5）；crate 归属不在本文定 |
 | 离线组装 | 配方由 provider 包/descriptor 提供（§3、§6） | — | `create_offline_provider`（§6） |
-| `rebuild_provider` | 删除（§2、§12） | C6 时暂移到 ops，传输回放后删除 | 随 live 改用 `modelRef` 一起删除 |
+| `rebuild_provider` | 删除（§2、§12） | C6 时暂移到 ops，传输回放后删除 | C6 移入 ops 之后，由 §10 第 3 步随 live 改用 `modelRef` 在 ops 里删除 |
 | 治理命令、证据台账 | G4、G5 | — | 不在本期 |
 
-RFC-0044 C6 写着暂时把 `rebuild_provider` 移到 ops。如果本文的 PR 先于 C6 合入，这一步就不需要了；顺序见 §10。
+RFC-0044 C6 先把 `rebuild_provider` 移到 ops，§10 第 3 步排在 C6 之后，在 ops 里把它删掉。
 
 ## 9. 本期不做与登记差异
 
@@ -303,7 +303,7 @@ RFC-0044 C6 写着暂时把 `rebuild_provider` 移到 ops。如果本文的 PR �
 | 0 | 本 RFC、RFC-0044 | 维护者接受 | — | eric |
 | 1 | RFC-0044 C3 | Fetch 观察点、`DiagnosticScope`；provider-utils 不再读录制上下文 | RFC-0044 | 包拆分 |
 | 2 | 调用观测 RFC → RFC-0044 C5、C6 | 调用层事件接口；新建 `aimux-devtools`，录制、回放搬入 | 1 | 包拆分 |
-| 3 | schema 3 写入侧 | §3 的类型与读取规则，观察者写 schema 3，删除 schema 1/2 读取、`ProviderRecord`、`MockReplayModel`、`rebuild_provider`；ops `recorder.create` 策略、`replay.create/inspect/dryRun/live` 改为 schema 3；aimux-replay 与 Web 的 mock 模式在此 PR 中暂时去掉，并在 PR 描述登记，由 4 补回；生成物与 DTO 向量 | 2 | 本线程 |
+| 3 | schema 3 写入侧 | §3 的类型与读取规则，观察者写 schema 3，删除 schema 1/2 读取、`ProviderRecord`、`MockReplayModel`，以及 C6 移到 ops 的 `rebuild_provider`；ops `recorder.create` 策略、`replay.create/inspect/dryRun/live` 改为 schema 3；aimux-replay 与 Web 的 mock 模式在此 PR 中暂时去掉，并在 PR 描述登记，由 4 补回；生成物与 DTO 向量 | 2 | 本线程 |
 | 4 | 传输回放 | §5、§6；ops `replay.offline`、`replay.capabilities`；aimux-replay `--mock` 与 Web mock 模式；provider 测试改用 `ReplaySession`；Jev 录制按 Q4 处理；生成物 | 3 | 本线程 |
 | 5 | 文档登记 | 关闭 RFC-0039 D12、G-b、G-c、G-k；对齐文档 §9.1 相应各行；§9 的未做项写进已知差距 | 4 | 本线程 |
 | 6 | 发版 | 首个写 schema 3 的发布冻结新增必需字段（RFC-0041 §4） | 5 | — |
@@ -312,7 +312,9 @@ RFC-0044 C6 写着暂时把 `rebuild_provider` 移到 ops。如果本文的 PR �
 
 ## 11. 待讨论
 
-**Q1 采集位置。** 原提案：采集留在 `aimux-provider-utils/src/http.rs` 把 `FetchRequest` 交给传输的那一处（`http.rs:375`），由 http.rs 继续持有录制上下文。这个方案在本地分支（未推送）上已经实现，`aimux-core`、`aimux-provider-utils` 的测试通过。RFC-0044 的草稿改为在 Fetch 链最内层设观察点，用 `DiagnosticScope` 关联调用，provider-utils 不再认识录制。本文按 RFC-0044 写 §4.1。如果 RFC-0044 不采用观察点，就回到原提案，§3、§5 不受影响。
+**Q1 采集位置。** 原提案：采集留在 `aimux-provider-utils/src/http.rs` 把 `FetchRequest` 交给传输的那一处（`http.rs:375`），由 http.rs 继续持有录制上下文。这个方案在本地分支（未推送）上已经实现，`aimux-core`、`aimux-provider-utils` 的测试通过。RFC-0044 改为在 Fetch 链最内层设观察点：它包住用户或默认的叶子 Fetch，位于鉴权之后、真正发出之前，和回放用的是同一个接口。观察点用 `DiagnosticScope` 关联调用，provider-utils 不再认识录制。本文按 RFC-0044 写 §4.1。
+
+两种位置看到的请求不同，供判断：`http.rs:375` 交出的请求还没经过各包的装饰层，即 `SigV4Fetch`、`AnthropicAwsFetch`、Azure 的 `BearerTokenFetch`，以及 `shared::package_fetch` 的 `UserAgentFetch`。而回放 Fetch 作为 provider 的 `fetch` 设置传入，处在这些装饰层里面。所以按原提案录下的请求，与回放时收到的请求在签名头、`authorization`、`user-agent` 上不一致。§5.2 的 Exact 排除了 `user-agent` 和敏感头，可以掩盖前两项差别，但 SigV4 的 `x-amz-date`、`x-amz-content-sha256` 这类头仍会对不上。观察点放在叶子上时，两边看到的是同一份请求。原提案保留在这里待维护者判断。如果 RFC-0044 不采用观察点，就回到原提案，并把上述头加进 §5.2 的排除集合。
 
 **Q2 schema 类型与 Recorder 的归属。** 原提案：在 `aimux-devtools` 建立之前，schema 3 类型、Recorder、Ring/JSONL 留在 `aimux-core::recording`，回放引擎放在 `aimux-provider-utils` 的独立 `replay` 模块，以后整体搬走。RFC-0044 §3.1 把它们放进 `aimux-devtools`，provider-utils 只放观察记录类型。本文按 RFC-0044 的顺序排（§10 先 C6 后 3）。是否允许先落在临时位置再搬，由维护者决定。
 
