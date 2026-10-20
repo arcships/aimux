@@ -1180,6 +1180,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Mistral with `structuredOutputs: false` and a JSON schema adds the schema
+  instruction to the system prompt and asks for `json_object`, as the AI SDK
+  does; it sent the bare `json_object` mode with no instruction.
+  `aimux-provider-utils` gains `inject_json_instruction` and
+  `inject_json_instruction_into_messages` (the AI SDK's
+  `injectJsonInstruction*`), which Mistral and Bedrock now share. The
+  Mistral pin moves to `@ai-sdk/mistral` 4.0.55, the first release with this
+  behavior: the user-agent reads `ai-sdk-mistral/4.0.55
+  ai-sdk-provider-utils/5.0.52`, and an `error` finish reason maps to
+  `error` instead of `other`.
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider
