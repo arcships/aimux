@@ -8,3 +8,6 @@ pub(crate) fn is_deepseek_v4_model(model_id: &str) -> bool {
         || model_id.starts_with("deepseek-flash")
         || model_id.starts_with("deepseek-pro")
 }
+
+#[cfg(test)]
+mod tests;

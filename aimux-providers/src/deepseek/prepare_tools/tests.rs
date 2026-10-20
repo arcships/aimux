@@ -1,0 +1,133 @@
+//! Port of `src/chat/deepseek-prepare-tools.test.ts` (`@ai-sdk/deepseek` 3.0.56).
+//!
+//! Upstream's `supportsStrictToolCalls` is three-state: `undefined` skips both
+//! strict checks. The chat model always passes a boolean derived from the base
+//! URL (`baseURL.endsWith('/beta')`), so there is no `undefined` to pass. The
+//! upstream case "should pass through strict mode for multiple tools with
+//! different strict settings" depends on that state and is not ported (no
+//! boolean reproduces it; see the report).
+
+use super::*;
+use serde_json::{Value, json};
+
+/// The tools of a request, read as the request path reads them.
+fn tools_from(value: Value) -> Vec<Tool> {
+    serde_json::from_value(value).expect("the tools literal is valid")
+}
+
+mod prepare_tools {
+    use super::*;
+
+    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should pass through strict mode when strict is true
+    #[test]
+    fn should_pass_through_strict_mode_when_strict_is_true() {
+        let tools = tools_from(json!([{
+            "type": "function",
+            "name": "testFunction",
+            "description": "A test function",
+            "inputSchema": { "type": "object", "properties": {} },
+            "strict": true,
+        }]));
+
+        // Upstream passes no endpoint flag. `true` gives the same result here:
+        // an all-strict request raises neither beta-only rejection.
+        let result =
+            prepare_tools(Some(&tools), None, true).expect("all-strict tools are accepted");
+
+        assert_eq!(
+            result.tools,
+            Some(vec![json!({
+                "type": "function",
+                "function": {
+                    "name": "testFunction",
+                    "description": "A test function",
+                    "parameters": { "type": "object", "properties": {} },
+                    "strict": true,
+                },
+            })])
+        );
+        assert_eq!(result.tool_choice, None);
+        assert!(result.tool_warnings.is_empty());
+    }
+
+    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should reject strict tools when the endpoint does not support them
+    #[test]
+    fn should_reject_strict_tools_when_the_endpoint_does_not_support_them() {
+        let tools = tools_from(json!([{
+            "type": "function",
+            "name": "strictTool",
+            "inputSchema": { "type": "object", "properties": {} },
+            "strict": true,
+        }]));
+
+        let error = prepare_tools(Some(&tools), None, false)
+            .err()
+            .expect("strict tools are rejected without the beta endpoint");
+
+        assert!(
+            error
+                .to_string()
+                .contains("DeepSeek strict tool calls require a beta base URL ending in `/beta`."),
+            "{error}"
+        );
+    }
+
+    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should reject mixed strict and non-strict tools on the beta endpoint
+    #[test]
+    fn should_reject_mixed_strict_and_non_strict_tools_on_the_beta_endpoint() {
+        let tools = tools_from(json!([
+            {
+                "type": "function",
+                "name": "strictTool",
+                "inputSchema": { "type": "object", "properties": {} },
+                "strict": true,
+            },
+            {
+                "type": "function",
+                "name": "nonStrictTool",
+                "inputSchema": { "type": "object", "properties": {} },
+            },
+        ]));
+
+        let error = prepare_tools(Some(&tools), None, true)
+            .err()
+            .expect("mixed strictness is rejected on the beta endpoint");
+
+        assert!(
+            error.to_string().contains(
+                "DeepSeek strict mode requires every function tool in the request to set `strict: true`."
+            ),
+            "{error}"
+        );
+    }
+
+    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should accept all-strict tools on the beta endpoint
+    #[test]
+    fn should_accept_all_strict_tools_on_the_beta_endpoint() {
+        let tools = tools_from(json!([
+            {
+                "type": "function",
+                "name": "firstStrictTool",
+                "inputSchema": { "type": "object", "properties": {} },
+                "strict": true,
+            },
+            {
+                "type": "function",
+                "name": "secondStrictTool",
+                "inputSchema": { "type": "object", "properties": {} },
+                "strict": true,
+            },
+        ]));
+
+        let result = prepare_tools(Some(&tools), None, true)
+            .expect("all-strict tools are accepted on the beta endpoint");
+
+        let prepared = result.tools.expect("the tools are present");
+        assert!(
+            prepared
+                .iter()
+                .all(|tool| tool["function"]["strict"] == json!(true)),
+            "every tool keeps strict: true"
+        );
+    }
+}
