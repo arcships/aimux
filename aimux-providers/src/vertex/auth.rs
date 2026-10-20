@@ -98,7 +98,7 @@ struct CachedToken {
 }
 
 pub(super) struct GoogleAuth {
-    options: GoogleAuthOptions,
+    pub(super) options: GoogleAuthOptions,
     token: Mutex<Option<CachedToken>>,
     fetch: Option<FetchFunction>,
 }

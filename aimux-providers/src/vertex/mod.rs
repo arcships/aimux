@@ -609,3 +609,6 @@ impl ProviderDiscovery for VertexProvider {
         Box::pin(async move { crate::google::list_models_once(&config).await })
     }
 }
+
+#[cfg(test)]
+mod tests;
