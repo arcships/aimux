@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock models that reject sampling parameters warn about
+  `temperature`, `topK` and `topP` in that order, as the AI SDK does; aimux
+  warned `temperature`, `topP`, `topK`. The thinking and OpenAI warnings keep
+  their order.
 - Amazon Bedrock `do_generate` gives a tool call whose `toolUseId` is empty a
   generated id, as the AI SDK does and as aimux's stream already did; it
   kept the empty id.

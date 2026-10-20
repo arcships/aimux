@@ -777,6 +777,34 @@ async fn temperature_not_clamped_in_range() {
     assert!(result.warnings.is_empty(), "no warnings expected");
 }
 
+/// TS: "should omit unsupported sampling parameters for …" — a model that
+/// rejects sampling parameters warns temperature, topK, topP in that order
+/// (amazon-bedrock-chat-language-model.ts:204-230) and sends none of them.
+#[test]
+fn rejected_sampling_parameters_warn_in_upstream_order() {
+    let model_id = "global.anthropic.claude-opus-4-7";
+    let mut opts = default_options(test_prompt());
+    opts.temperature = Some(0.5);
+    opts.top_p = Some(0.7);
+    opts.top_k = Some(10.0);
+
+    let (body, warnings, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
+
+    assert_eq!(body["inferenceConfig"].get("temperature"), None);
+    assert_eq!(body["inferenceConfig"].get("topP"), None);
+    assert_eq!(body["inferenceConfig"].get("topK"), None);
+    let expected: Vec<_> = ["temperature", "topK", "topP"]
+        .into_iter()
+        .map(|feature| aimux_core::types::Warning::Unsupported {
+            feature: feature.into(),
+            details: Some(format!(
+                "{feature} is not supported by {model_id} and will be ignored"
+            )),
+        })
+        .collect();
+    assert_eq!(warnings, expected);
+}
+
 // ── guardrails ───────────────────────────────────────────────────────────────
 
 /// TS: "should support guardrails" — `providerOptions.bedrock.guardrailConfig`

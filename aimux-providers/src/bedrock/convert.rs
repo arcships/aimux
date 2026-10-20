@@ -1125,16 +1125,32 @@ pub fn build_request_body_checked(
     if let Some(max) = call.max_output_tokens {
         inference.insert("maxTokens".into(), json!(max));
     }
-    if let Some(temp) = call.temperature {
-        if rejects_sampling || thinking || (openai && !oss) {
-            let details = if rejects_sampling {
-                format!("temperature is not supported by {model_id} and will be ignored")
-            } else if thinking {
-                "temperature is not supported when thinking is enabled".into()
+    let (mut temperature, mut top_p, mut top_k) = (call.temperature, call.top_p, call.top_k);
+    if rejects_sampling {
+        // amazon-bedrock-chat-language-model.ts:204-230: temperature, topK, topP.
+        for (feature, given) in [
+            ("temperature", temperature.take().is_some()),
+            ("topK", top_k.take().is_some()),
+            ("topP", top_p.take().is_some()),
+        ] {
+            if given {
+                warn(
+                    feature,
+                    Some(&format!(
+                        "{feature} is not supported by {model_id} and will be ignored"
+                    )),
+                );
+            }
+        }
+    }
+    if let Some(temp) = temperature {
+        if thinking || (openai && !oss) {
+            let details = if thinking {
+                "temperature is not supported when thinking is enabled"
             } else {
-                "temperature is not supported by this OpenAI model on the Converse API".into()
+                "temperature is not supported by this OpenAI model on the Converse API"
             };
-            warn("temperature", Some(&details));
+            warn("temperature", Some(details));
         } else {
             let temp = if !openai || oss {
                 if temp > 1.0 {
@@ -1162,28 +1178,24 @@ pub fn build_request_body_checked(
             inference.insert("temperature".into(), json!(temp));
         }
     }
-    if let Some(p) = call.top_p {
-        if rejects_sampling || thinking || (openai && !oss) {
-            let details = if rejects_sampling {
-                format!("topP is not supported by {model_id} and will be ignored")
-            } else if thinking {
-                "topP is not supported when thinking is enabled".into()
+    if let Some(p) = top_p {
+        if thinking || (openai && !oss) {
+            let details = if thinking {
+                "topP is not supported when thinking is enabled"
             } else {
-                "topP is not supported by this OpenAI model on the Converse API".into()
+                "topP is not supported by this OpenAI model on the Converse API"
             };
-            warn("topP", Some(&details));
+            warn("topP", Some(details));
         } else {
             inference.insert("topP".into(), json!(p));
         }
     }
-    if let Some(k) = call.top_k {
-        if rejects_sampling || thinking {
-            let details = if rejects_sampling {
-                format!("topK is not supported by {model_id} and will be ignored")
-            } else {
-                "topK is not supported when thinking is enabled".into()
-            };
-            warn("topK", Some(&details));
+    if let Some(k) = top_k {
+        if thinking {
+            warn(
+                "topK",
+                Some("topK is not supported when thinking is enabled"),
+            );
         } else {
             inference.insert("topK".into(), json!(k));
         }
