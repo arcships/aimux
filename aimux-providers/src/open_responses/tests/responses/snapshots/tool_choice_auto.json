@@ -1,0 +1,34 @@
+{
+  "input": [
+    {
+      "content": [
+        {
+          "text": "Hello",
+          "type": "input_text"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    }
+  ],
+  "model": "gemma-7b-it",
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "description": "Get the current weather",
+      "name": "get_weather",
+      "parameters": {
+        "properties": {
+          "location": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "type": "object"
+      },
+      "type": "function"
+    }
+  ]
+}
