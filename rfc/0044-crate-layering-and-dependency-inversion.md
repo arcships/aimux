@@ -48,14 +48,14 @@
 | 文件 | 规范层（去 `aimux-provider`） | 调用层（去 `aimux`） |
 |---|---|---|
 | `result.rs` | `GenerateResult`、`StreamResult`（`LanguageModel` 的返回类型）、`GenerateContent`、`Source`、`ReasoningOutput`、`RawToolApprovalRequest`（约 10 个厂商在用） | `ContentPart`、`TypedToolResult`、`GeneratedFile` 等调用层输出 |
-| `stream_part.rs` | `StreamPart` | `TextStreamPart`（它用到 `step_result` 的类型，`stream_part.rs:19`，随它一起走） |
+| `stream_part.rs` | `StreamPart` | `TextStreamPart`（它用到 `step_result` 的类型，`stream_part.rs:19`，随它一起走）；`StreamPart::into_text_stream_part`（`stream_part.rs:456-461`，inherent impl，调用方是 `generate.rs:1903` 和 `ai_sdk_json_test.rs:488-502`）改成 `aimux` 里的自由函数，放在 stream_text 旁边：`StreamPart` 在 `aimux-provider`，`aimux` 不能给它写 inherent impl |
 | `tool.rs` | `FunctionTool`、`ProviderTool`、`LanguageModelV4ToolChoice`、`RawToolCall`、`ToolResult` | `TypedToolCall`、用户侧 `ToolChoice`、`prepare_tool_choice`（`tool.rs:379`） |
 | `types.rs` | `FinishReason`、`FinishReasonUnified`、`Usage`、`InputTokenUsage`、`OutputTokenUsage`、`Warning`、`ProviderMetadata`、`ReasoningEffort`、`ResponseMetadata`、`NamespacedKind` | `LanguageModelUsage` |
 | `options.rs` | `CallOptions`、`ResponseFormat` | `options.rs:14` 对 `ToolChoice`、`prepare_tool_choice` 的 re-export 删除 |
 | `language_model_message.rs` | V4 prompt 类型 | `convert_to_language_model_prompt`、`download_assets`、`convert_with_downloaded_assets` |
 | `download.rs` | `Download`、`DownloadRequest`、`DownloadedFile`、`DownloadFunction`（`TranscriptionCallOptions.download`、`VideoCallOptions.download` 字段的类型，`transcription_model.rs:154`） | `create_download`、`create_default_download_function`、下载实现 |
 | 11 个 `*_model.rs` | 各模态 trait、CallOptions、结果（含 `decision_model.rs` 的 trait、类型和校验，`files_model.rs`、`skills_model.rs`） | `embed`、`generate_image`、`rerank`、`search`、`generate_speech`、`transcribe`、`stream_transcribe`、`generate_video`、`decide` / `DecideOptions` |
-| `provider.rs` | `Provider`；`list_models` 返回的 `RuntimeModel`（`provider.rs:19`，现在在 `model_catalogue.rs`）一起下移 | `ProviderDiscovery` 去 providers（厂商扩展，对齐文档 §3.4） |
+| `provider.rs` | `Provider`、`ProviderDiscovery`；`list_models` 返回的 `RuntimeModel`（`provider.rs:19`，现在在 `model_catalogue.rs`）一起下移。`Provider::discovery()` 返回 `Option<&dyn ProviderDiscovery>`（`provider.rs:142`），trait 只能和 `Provider` 在同一层，否则 `aimux-provider` 要反过来依赖 `aimux-providers` | — |
 | `message.rs`、`content.rs` | `content.rs` 只依赖 shared/types/wire，V4 prompt 用到它，去 `aimux-provider` | 用户输入 `ModelMessage`（`message.rs`）按 RFC-0042 去 `aimux-provider-utils` |
 
 上游对应关系：trait 在 `@ai-sdk/provider` 的 `<模态>-model/v4/`，操作在 `ai/src/<操作>/`（如 `generate-video/`、`transcribe/`、`decide/`），两者从不在同一个文件。
@@ -171,12 +171,12 @@ aimux-ops / FFI / 绑定 / 工具   宿主组装
 
 | 去向 | 模块 |
 |---|---|
-| `aimux-provider` | `abort_signal`、`error`、`language_model`、`language_model_middleware`、`image_model_middleware` 的规范部分、`provider`（只留 `Provider`）、11 个 `*_model.rs` 的 trait/选项/结果部分、§2.2 表中规范层一列的类型（含下载接口类型和 `RuntimeModel`）、`content`、`language_model_message` 的 V4 prompt 类型、`options`、`shared`、`timestamp`、`wire` |
+| `aimux-provider` | `abort_signal`、`error`、`language_model`、`language_model_middleware`、`image_model_middleware` 的规范部分、`provider`（`Provider` 和 `ProviderDiscovery`）、11 个 `*_model.rs` 的 trait/选项/结果部分、§2.2 表中规范层一列的类型（含下载接口类型和 `RuntimeModel`）、`content`、`language_model_message` 的 V4 prompt 类型、`options`、`shared`、`timestamp`、`wire` |
 | `aimux-provider-utils` | `message`（RFC-0042）、`download_guard`、`recording::is_sensitive_key` 与 `redact_json`（`recording.rs:802`、`:821`，脱敏是传输层和录制共用的）、`model_catalogue` 除 `RuntimeModel` 外的 descriptor 类型（对齐文档 §2.2 “无运行时依赖的注册条目与 descriptor 类型”）、Fetch 观察点交出的请求与响应记录类型（现在的 `HttpExchange` 等，`http.rs:15-16`；录制 schema 本身在 devtools） |
 | `aimux` | `generate` 及其测试、`output`、`parse_tool_call`、`json_repair`、`math`（`cosine_similarity`，上游在 `ai`）、`openai_output`、`response_messages`、`step_result`、§2.2 表中调用层一列、`download`（下载策略，传输改用 provider-utils）、`retry`、`timeout`、`operation`、`router`、`moa`、`composite`、`custom_provider`、`wrap_provider`、`wrap_language_model` / `wrap_image_model`、`provider_registry` |
 | `aimux-devtools` | `recording`（schema、Recorder 实现、`RingRecorder`）、`replay`（含 `MockReplayModel`）、`decision_replay`（含 `MockDecisionReplayModel`）、`trace/*`、整个 `session`（`resolve_session_id`、前缀推断 `SessionInferer`、`SessionStore`、`list_sessions`、`session_calls`）。ops、CLI、Web 现在用的这几个公开类型由 devtools 导出 |
 | `aimux-ops` | `aimux-providers/src/replay.rs` 的 `rebuild_provider` 和 `rebuild_decision_provider`，连同它们的测试（测试调 `create_provider_registry` 并读 core 的录制样例，`replay.rs:90`、`:101`、`:107`）；宿主才有 registry，#270 的传输回放落地后删除（对齐文档 §8.3） |
-| 留在 `aimux-providers` | `default_providers.rs`：它只按名字调各厂商工厂、返回 provider 表，不依赖运行时；它唯一调 `create_provider_registry` 的测试随 C2 挪到 aimux 的集成测试。`ProviderDiscovery`（厂商扩展，对齐文档 §3.4） |
+| 留在 `aimux-providers` | `default_providers.rs`：它只按名字调各厂商工厂、返回 provider 表，不依赖运行时；它唯一调 `create_provider_registry` 的测试随 C2 挪到 aimux 的集成测试 |
 | 拆掉 | `util.rs`（只是 re-export 门面）；`lib.rs` 的根 re-export 和 `prelude` 各 crate 按自己的内容重写 |
 
 provider-utils 里已有的 `decision_language_model.rs` 随 decide 的规范类型改 import，位置不变。
@@ -203,14 +203,14 @@ aimux/src/
 
 1. 测试跟着被测代码走；一个测试同时用到上下两层时，放到较上面那个 crate。
 2. 不允许下层 crate 的测试 dev-depend 上层 crate：dev 依赖造成的环会让同一个类型在测试里出现两份。现在 providers、provider-utils 的测试用到 download、operation、openai_output、generate、replay、`RingRecorder`，这些测试搬到 `aimux`、`aimux-devtools` 或 ops 的集成测试。
-3. 只测录制、trace、缓存审计的（`cache_probe_test`、`trace_stream_text_test`、`trace_recording_correlation_test`、`master_recording_test`）去 devtools；`operation_settings_test` 按内容拆成 aimux 和 devtools 两份；`ai_sdk_json_test` 按类型族拆；`custom_provider_test` 用到 `ProviderDiscovery`，去 ops 的集成测试。
+3. 只测录制、trace、缓存审计的（`cache_probe_test`、`trace_stream_text_test`、`trace_recording_correlation_test`、`master_recording_test`）去 devtools；`operation_settings_test` 按内容拆成 aimux 和 devtools 两份；`ai_sdk_json_test` 按类型族拆；`custom_provider_test` 随 `custom_provider` 去 `aimux`（`ProviderDiscovery` 在 `aimux-provider`，它不需要 providers）。
 4. 各 crate 自己的测试辅助（mock model、脚本模型）放在本 crate 的 `test_support` 模块，`#[cfg(any(test, feature = "test-support"))]` 编译：只用 `#[cfg(test)]` 的话，`tests/` 下的集成测试和下游 crate 的测试都看不到它。本 crate 的集成测试经自引用的 dev 依赖（`[dev-dependencies] aimux-x = { path = ".", features = ["test-support"] }`）开启，下游 crate 在自己的 dev 依赖里开启；正常构建不带这个 feature；core 测试里重复 3 次的 `ScriptedModel` 合成一份。providers 的 `tests/common/replay.rs:93` 用到录制类型，C6 前改成用 provider-utils 的观察记录类型。
 
 ## 4. 依赖反转
 
 | 现在 | 反转后 | 接口所在 | 实现所在 |
 |---|---|---|---|
-| provider-utils 读 `RecordingContext::current()` 并直接写 `Recorder`（`http.rs:126`、`:861`） | provider-utils 不再认识录制：在 Fetch 链最内层留观察点，包住用户或默认的叶子 Fetch，鉴权之后、真正发出之前（对齐文档 §3.2 的顺序、D4 的叶子位置），请求、响应、分块、错误都经过它；和 D5 的 `replay_fetch` 是同一个接口（RFC-0041 §3）。exchange 归属哪个调用，用对齐文档 D3、§3.5 已定的传输可见 scope（`DiagnosticScope`，task-local，放在 provider-utils，带 `call_id`）：`aimux` 的操作在调用模型前建立它，观察点从当前 scope 取 `call_id` 交给观察者；流式响应的 body 在发出时就拿到关联，不依赖之后 poll 所在的 task-local（§3.5）。这对应上游每个 telemetry 事件都带的 `callId`（`ai/src/generate-text/generate-text.ts:669` 生成，`ai/src/telemetry/telemetry.ts:332-337` 的 `executeLanguageModelCall` 让模型调用跑在集成提供的上下文里）。C3 就按这个做，C3 到 C5 之间录制不丢调用关联 | `aimux-provider-utils` | `aimux-devtools` 的 Recorder |
+| provider-utils 读 `RecordingContext::current()` 并直接写 `Recorder`（`http.rs:126`、`:861`） | provider-utils 不再认识录制：在 Fetch 链最内层留观察点，包住用户或默认的叶子 Fetch，鉴权之后、真正发出之前（对齐文档 §3.2 的顺序、D4 的叶子位置），请求、响应、分块、错误都经过它；和 D5 的 `replay_fetch` 是同一个接口（RFC-0041 §3）。exchange 归属哪个调用，用对齐文档 D3、§3.5 已定的传输可见 scope（`DiagnosticScope`，task-local，放在 provider-utils，内容见 §4.2）：`aimux` 的操作在调用模型前建立它，观察点从当前 scope 取调用关联交给观察者；流式响应的 body 在发出时就拿到关联，不依赖之后 poll 所在的 task-local（§3.5）。这对应上游每个 telemetry 事件都带的 `callId`（`ai/src/generate-text/generate-text.ts:669` 生成，`ai/src/telemetry/telemetry.ts:332-337` 的 `executeLanguageModelCall` 让模型调用跑在集成提供的上下文里）。C3 就按这个做，C3 到 C5 之间录制不丢调用关联 | `aimux-provider-utils` | `aimux-devtools` 的 Recorder |
 | generate / decide / router / MoA / composite 读全局 `RECORDER` 并自己建 `RecordingContext` | `aimux` 不再认识录制；录制在 `aimux-devtools`，接入方式由调用观测的后续 RFC 定（§4.1） | 后续 RFC | `aimux-devtools` |
 | generate 解析 session、读全局 `SESSION_STORE` 并 `append`，再写进录制（`generate.rs:1129-1139`） | generate 不再认识 session：调用方给的 `session_id` 只是操作设置里的一个字符串，原样交给观测层；推断、索引、与录制的关联全部在 devtools（§4.1） | 后续 RFC | `aimux-devtools` |
 | 前缀推断是全局 `SESSION_INFERER` + 环境变量 `AIMUX_SESSION_INFER` | 推断器是 devtools 里 session 归组的配置项，宿主开启，默认关闭；删除环境变量开关 | `aimux-devtools` | `aimux-devtools` |
@@ -230,6 +230,33 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 2. 调用层（模型调用开始与结束、session 归组、缓存审计）不再由 core 直接调用，最终落在 `aimux-devtools`（§3.1、上表）。它们接到调用上的方式由后续 RFC 定，本文不先造一套之后要换掉的调用层事件接口（对齐文档 D31 不留过渡代码）。
 3. 因此 C5、C6 中“session、trace 搬进 devtools”这部分等后续 RFC 定稿再做；C1–C4、C7 不受影响。
 
+### 4.2 `DiagnosticScope` 的内容
+
+只带 `call_id` 不够：录制要知道一次交换属于哪个模型调用的第几次尝试、是这次尝试里的第几次交换、交给哪个观察者（RFC-0048 §3 的 `exchangeId: "<seq>.<attempt>.<index>"`、§4.1 的要求，[PR #325](https://github.com/arcships/aimux/pull/325)）。C3 定下的 scope：
+
+| 字段 | 谁设置 | 用途 |
+|---|---|---|
+| `call_id` | `aimux` 的操作入口 | 对应上游 telemetry 事件的 `callId` |
+| `model_call: { seq, attempt, parent }` | 操作是 seq 0；router 子模型、MoA 的每个 reference 和 aggregator 进入子 scope，取新 seq 并记下 `parent`；retry 每次尝试递增 `attempt`，不换 seq | 区分组合模型的子调用和重试 |
+| 交换序号 | 观察点在每个 `(seq, attempt)` 内从 1 递增，scope 里只放计数器 | 同一次尝试里的多次交换（重定向每一跳单独计一次） |
+| `observers` | 宿主经操作设置装上（devtools 的 Recorder 是其中一个）；为空时观察点直接透传，不复制 body | 取代全局 `RECORDER`：交换只交给本次操作的观察者 |
+
+seq 和 attempt 在 C3 就由 `aimux` 的 retry 循环和 router、MoA、composite 设置（它们是传输可见的关联，不是调用层事件）；调用开始、结束等调用层事件仍由后续 RFC 定（§4.1）。流式响应在发出时就把这一组值交给观察者，之后 poll 的 task 不需要 scope。
+
+### 4.3 下载归一的对等要求
+
+C4 是重构，不改各条下载路径现在可观察的行为。两份实现现在的差别（master@`c0622ea4`）：
+
+| 项 | 操作的下载（video、transcribe、prompt，`download.rs`） | provider 下载自家 URL（`http.rs:429-520`） | C4 之后 |
+|---|---|---|---|
+| 代理 | `no_proxy()`，只连校验过的地址（`download.rs:259-263`） | 走默认传输的代理设置（D26，`http.rs:458-466`） | 各自保持：不可信 URL 下载带一个连接策略参数（直连 / 默认传输的代理），操作用直连 |
+| User-Agent | `aimux/<版本>`（`download.rs:266-269`） | 请求自带的 UA，跨源只留 UA（`http.rs:515`） | 各自保持 |
+| 错误 | `Other`（状态码、大小）、`InvalidArgument`（地址）；RFC-0047（#290）之后带 cause、不带 URL | 状态与重定向错误是 `ApiCall`（`http.rs:400-406`） | 各自保持现有变体和消息 |
+| 重定向 | 最多 10 跳，逐跳校验 | 最多 10 跳，逐跳校验，跨源去掉调用方 header | 同一个循环 |
+| 大小上限 | 默认 2 GiB | 默认 2 GiB（`read_response_with_size_limit.rs:12`） | 同一个常量 |
+
+上游 `ai/src/util/download/download.ts:33-71` 用 `ai-sdk/<版本>` 加运行时 UA、经 `fetchUntrustedUrl` 下载、失败抛 `DownloadError`（带 url、状态码）。是否把操作下载的 UA 和错误改成上游的样子，见 §9，不在 C4 里顺带改。
+
 ## 5. 目录与测试位置
 
 1. `aimux-provider-utils` 的文件对照上游 provider-utils，`aimux` 对照 `ai/src/<操作>/`（§3.2），文件名把 kebab-case 换成 snake_case。
@@ -242,16 +269,16 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 
 | 步骤 | 内容 | 前置 |
 |---|---|---|
-| C0 | `aimux-stream` 并入 provider-utils（L8）：源码和 850 行测试搬进 provider-utils，删掉 providers 里没用的依赖，删除 crate，README、`release.yml`、`logging.rs:139` 的 target 列表同步 | 无 |
+| C0 | `aimux-stream` 并入 provider-utils（L8）：源码和 850 行测试搬进 provider-utils，删掉 providers 里没用的依赖，删除 crate，README、`release.yml`、`logging.rs:139` 的 target 列表同步。`aimux-stream` 0.5.0 已发布到 crates.io，处理方式和 `aimux-core` 一样（§9）：删除前用它当前的代码发最后一个版本，README 和 crate 文档第一行写明已并入 `aimux-provider-utils`、不再维护，不撤回旧版本；CHANGELOG 记一条 | 无 |
 | C1 | core 内部按层拆开混合文件，操作函数搬进按操作分的目录（§2.2、§3.2），不新建 crate | #268 合入（它改了 core 的 36 个文件） |
 | C2 | 新建 `aimux-provider`，搬入规范模块；core 改为依赖它。先断掉规范层往上的三条边：`RuntimeModel` 下移、下载接口类型下移、`options.rs:14` 的 re-export 删除（§2.2） | C1 |
-| C3 | provider-utils 在 `Fetch` 层留观察点，core 的录制改为观察者；HTTP 层不再读 `RecordingContext`，文本生成和 decide 两条路径（`http.rs:118-128`、`:130-140`）以及写录制（`:861-867`）都改为从 `DiagnosticScope` 取 `call_id`（§4 第一行），router、MoA、composite 同样建立 scope；`ModelMessage`、下载守卫、脱敏、catalogue 类型搬入 provider-utils；provider-utils 不再依赖 core | C2 |
-| C4 | 下载归一（§4 下载一行）：video、transcribe、prompt、生成文件都走 provider-utils 的不可信 URL 下载；删除 core 的 reqwest client | C3 |
+| C3 | provider-utils 在 `Fetch` 层留观察点，core 的录制改为观察者；HTTP 层不再读 `RecordingContext`，文本生成和 decide 两条路径（`http.rs:118-128`、`:130-140`）以及写录制（`:861-867`）都改为从 `DiagnosticScope` 取调用关联（§4 第一行、§4.2），retry 设置 attempt，router、MoA、composite 建立子 scope；`ModelMessage`、下载守卫、脱敏、catalogue 类型搬入 provider-utils；provider-utils 不再依赖 core | C2 |
+| C4 | 下载归一（§4 下载一行）：video、transcribe、prompt、生成文件都走 provider-utils 的不可信 URL 下载，各路径的代理、UA、错误照 §4.3 保持；删除 core 的 reqwest client | C3 |
 | C5 | 等调用观测的后续 RFC：按它把录制、session 归组接到调用上，去掉四个全局量 | C3、后续 RFC |
 | C6 | 新建 `aimux-devtools`，搬入录制、回放、trace、session；`rebuild_provider` 移到 ops；providers 不再依赖 core | C5 |
-| C7 | `aimux-core` 改名 `aimux`；发布顺序改为 provider → provider-utils → providers → aimux → devtools → ops → ffi；`schema/ops` 里 33 处 `x-aimux-type` 的类型路径（由 `aimux-ops/src/manifest/controls.rs` 生成）重新生成；CLI 的二进制也叫 `aimux`，给它设 `doc = false`，避免和库的文档目录冲突 | C6 |
+| C7 | `aimux-core` 改名 `aimux`；发布顺序改为 provider → provider-utils → providers → aimux → ops → ffi（C6 之后在 aimux 和 ops 之间加 devtools）；生成物重新生成后检查不含 `aimux_core`（#268 删掉了 `aimux-ops/src/manifest/controls.rs` 和 `schema/ops/type-*.json`，master@`c0622ea4` 的 `schema/` 里已经没有 `aimux_core` 路径；ops 里 30 处 `TypeRef::of::<aimux_core::…>` 是 Rust 路径，随改名一起改）；CLI 的二进制也叫 `aimux`，给它设 `doc = false`，避免和库的文档目录冲突 | C4 |
 
-`aimux-providers` 内部的目录整理与 C 系列互不阻塞；它先做的话，C2/C3 改 import 时对着整理好的目录一次改完。
+C5、C6 要等调用观测的后续 RFC（§4.1）；改名 C7 不依赖它们，C4 之后就可以做，`aimux` 里暂时留着的录制、session、trace 在 C5、C6 再搬出。`aimux-providers` 内部的目录整理与 C 系列互不阻塞；它先做的话，C2/C3 改 import 时对着整理好的目录一次改完。
 
 与其他工作的关系：
 
@@ -294,7 +321,8 @@ trace、日志和 telemetry 怎么统一（倾向 Rig 的 span 方案）单独�
 - **`session_id` 的入口。** 本文保留它作为操作设置里的一个字段（绑定已暴露，RFC-0041 §10.2 已落地），`aimux` 只透传。完全照上游可以改成通用的 telemetry metadata，由 devtools 自己读出 session；这会改绑定 API，单独决定。
 - **不装 devtools 时要不要 session 归组。** 本文的方案是不要（ops 默认装上）；对齐文档 §3.5 写的是关闭观测也照样归组。
 - **重试错误放在哪。** 本文放在 `aimux-provider` 的共享错误里（绑定只认一个联合类型），与对齐文档 §2.1 约束 1 冲突，需要登记或改放 `aimux`。
-- **crates.io 上的 `aimux-core`。** 建议改名后发最后一个版本说明已改名，不撤回旧版本。
+- **crates.io 上的 `aimux-core`、`aimux-stream`。** 建议删除前各发最后一个版本说明去向（`aimux-core` 改名 `aimux`，`aimux-stream` 并入 `aimux-provider-utils`），不撤回旧版本。
+- **操作下载的 UA 和错误（待讨论）。** C4 保持现状（§4.3）。上游下载用 `ai-sdk/<版本>` 加运行时 UA，失败抛带 url 和状态码的 `DownloadError`；照上游改要新增一个错误变体，且和 RFC-0047 “传输错误不带 URL” 冲突，单独决定。
 - **不采纳：保留 `aimux-core` 作为 re-export 门面。** 违反对齐文档 §2.1 约束 6，且会让两个路径长期共存。
 - **不采纳：一次性大 PR 完成全部拆分。** 改动面覆盖整个 workspace 和两个绑定，无法评审，也无法逐步定位回归。
 - 每个错误补 `cause`（错误链）另开小 PR，与本文的搬移互不依赖；若先于 C2 合入，C2 原样搬移。
