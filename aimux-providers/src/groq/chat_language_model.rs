@@ -24,13 +24,15 @@ use crate::stream::{
     ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
 };
 
-use super::convert::convert_to_groq_chat_messages;
+use super::api_types::{GroqChatChunk, GroqChatResponse, GroqUsage};
+use super::chat_language_model_options::{
+    self as options, GroqLanguageModelChatOptions, parse_groq_options,
+};
+use super::convert_to_chat_messages::convert_to_groq_chat_messages;
+use super::convert_usage::convert_groq_usage;
 use super::error::{GroqErrorData, groq_failed_response_handler};
-use super::finish_reason::map_groq_finish_reason;
-use super::options::{self, GroqLanguageModelChatOptions, parse_groq_options};
+use super::map_finish_reason::map_groq_finish_reason;
 use super::prepare_tools::prepare_tools;
-use super::types::{GroqChatChunk, GroqChatResponse, GroqUsage};
-use super::usage::convert_groq_usage;
 
 /// A Groq chat language model.
 pub struct GroqChatLanguageModel {

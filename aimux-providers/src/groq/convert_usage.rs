@@ -2,7 +2,7 @@
 
 use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 
-use super::types::GroqUsage;
+use super::api_types::GroqUsage;
 
 /// Convert Groq usage to the core `Usage`. A missing object is the null usage
 /// (every count unknown).

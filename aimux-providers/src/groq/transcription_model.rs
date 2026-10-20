@@ -19,7 +19,7 @@ use aimux_provider_utils::{HttpBody, MultipartForm, media_type_to_extension};
 use crate::shared::EndpointConfig;
 
 use super::error::groq_failed_response_handler;
-use super::options::parse_groq_transcription_options;
+use super::transcription_model_options::parse_groq_transcription_options;
 
 /// `groqTranscriptionResponseSchema`. Every field the schema requires is
 /// required here; the ones the model does not read are only validated.
