@@ -229,10 +229,46 @@ mod stream {
         AudioChunk, TranscriptionRequest, TranscriptionStreamOptions, TranscriptionStreamPart,
         TranscriptionStreamResult,
     };
-    use aimux_provider_utils::ws::{WebSocketRequest, WsMessage, ws_connect};
+    use aimux_provider_utils::ws::{WebSocketRequest, WsConnection, WsMessage, ws_connect};
     use futures::StreamExt;
 
     use super::*;
+
+    /// The open socket. Dropping it before [`Socket::close`] sends the close
+    /// frame on the runtime, as upstream's `cancel` closes the connection.
+    struct Socket(Option<WsConnection>);
+
+    impl Socket {
+        async fn close(&mut self) {
+            if let Some(mut ws) = self.0.take() {
+                ws.close().await;
+            }
+        }
+    }
+
+    impl std::ops::Deref for Socket {
+        type Target = WsConnection;
+
+        fn deref(&self) -> &WsConnection {
+            self.0.as_ref().expect("the socket is open until closed")
+        }
+    }
+
+    impl std::ops::DerefMut for Socket {
+        fn deref_mut(&mut self) -> &mut WsConnection {
+            self.0.as_mut().expect("the socket is open until closed")
+        }
+    }
+
+    impl Drop for Socket {
+        fn drop(&mut self) {
+            if let (Some(mut ws), Ok(runtime)) =
+                (self.0.take(), tokio::runtime::Handle::try_current())
+            {
+                runtime.spawn(async move { ws.close().await });
+            }
+        }
+    }
 
     fn append<T: url::form_urlencoded::Target>(
         query: &mut url::form_urlencoded::Serializer<'_, T>,
@@ -355,7 +391,7 @@ mod stream {
             // Upstream connects inside the stream: a connect failure errors
             // the stream and drops the caller's audio.
             let mut ws = match ws_connect(&request).await {
-                Ok(ws) => ws,
+                Ok(ws) => Socket(Some(ws)),
                 Err(e) => {
                     yield Err(e);
                     return;

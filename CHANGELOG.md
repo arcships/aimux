@@ -1184,6 +1184,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@ai-sdk/xai` 5.0.12 does: a connect failure no longer fails `do_stream`
   but arrives as the stream's error, and the caller's audio stream is
   dropped.
+- Dropping an xAI streaming transcription before it finishes sends the
+  WebSocket close frame, as cancelling the stream does in `@ai-sdk/xai`
+  5.0.12; before, only the transport was released.
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider

@@ -781,3 +781,52 @@ async fn a_connect_failure_errors_the_stream() {
     assert_eq!(parts.len(), 1, "{parts:?}");
     assert!(parts[0].is_err(), "{parts:?}");
 }
+
+/// Dropping the stream closes the socket: upstream's `cancel` calls
+/// `connection.close()`.
+#[tokio::test]
+async fn dropping_the_stream_closes_the_socket() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        ws.send(Message::Text(
+            json!({"type": "transcript.created"}).to_string(),
+        ))
+        .await
+        .unwrap();
+        let mut closed = false;
+        while let Some(Ok(message)) = ws.next().await {
+            if message.is_close() {
+                closed = true;
+                break;
+            }
+        }
+        let _ = closed_tx.send(closed);
+    });
+
+    let mut options = stream_options(None, "audio/pcm", Some(16000));
+    options.audio = Box::pin(futures::stream::pending());
+    let mut result = model(&base_url, None)
+        .do_stream(options)
+        .expect("the model has do_stream")
+        .await
+        .expect("do_stream");
+    let first = result.stream.next().await;
+    assert!(
+        matches!(first, Some(Ok(TranscriptionStreamPart::StreamStart { .. }))),
+        "{first:?}"
+    );
+    drop(result);
+
+    let closed = tokio::time::timeout(Duration::from_secs(5), closed_rx)
+        .await
+        .expect("the server saw the socket end")
+        .unwrap();
+    assert!(
+        closed,
+        "no close frame was sent when the stream was dropped"
+    );
+}
