@@ -1168,14 +1168,22 @@ mod do_generate_tests {
             result.content[0],
             GenerateContent::Reasoning(ReasoningOutput {
                 text: "reasoning content".to_string(),
-                provider_metadata: None,
+                provider_metadata: serde_json::from_value(json!({ "lmstudio": {
+                    "itemId": "rs_3l1z5wpifxkwxhj459ya7",
+                    "reasoningSummary": [],
+                    "reasoningContent": [{ "type": "reasoning_text", "text": "reasoning content" }],
+                } }))
+                .unwrap(),
             })
         );
         assert_eq!(
             result.content[1],
             GenerateContent::Text {
                 text: "text content".to_string(),
-                provider_metadata: None,
+                provider_metadata: serde_json::from_value(
+                    json!({ "lmstudio": { "itemId": "msg_p1y190hl7hj1xyfqr1cir" } })
+                )
+                .unwrap(),
             }
         );
     }
@@ -1889,7 +1897,10 @@ provider_options: None
             result.content[0],
             GenerateContent::Text {
                 text: "Dummy PDF file".to_string(),
-                provider_metadata: None,
+                provider_metadata: serde_json::from_value(json!({ "lmstudio": {
+                    "itemId": "msg_048edf44633e41ae0069d4fea0d1a08194af1e491c093df1d9"
+                } }))
+                .unwrap(),
             }
         );
     }
@@ -2419,5 +2430,108 @@ fn tool_calls_replay_the_item_id() {
         input,
         json!([{ "type": "function_call", "id": "fc_1", "call_id": "call_1",
                  "name": "weather", "arguments": "{\"city\":\"Paris\"}" }])
+    );
+}
+
+/// TS: `OpenResponsesLanguageModel` (open-responses-language-model.ts:446-505,
+/// :757-779, :876-917): generated and streamed output carries
+/// `{ <name>: { itemId } }`, text adds its `url_citation` annotations, and
+/// reasoning adds its summary, content and encrypted content.
+#[tokio::test]
+async fn output_parts_carry_the_item_metadata() {
+    let citation = json!({
+        "type": "url_citation", "start_index": 0, "end_index": 4,
+        "url": "https://example.com", "title": "Example"
+    });
+    let server = MockServer::start().await;
+    mock_json(
+        &server,
+        json!({
+            "id": "resp_1", "created_at": 1, "model": "m", "status": "completed",
+            "output": [
+                { "type": "reasoning", "id": "rs_1", "summary": [],
+                  "content": [{ "type": "reasoning_text", "text": "Think" }],
+                  "encrypted_content": "enc" },
+                { "type": "message", "id": "msg_1", "role": "assistant",
+                  "content": [{ "type": "output_text", "text": "Done", "annotations": [citation] }] },
+                { "type": "function_call", "id": "fc_1", "call_id": "call_1",
+                  "name": "weather", "arguments": "{}" }
+            ]
+        }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let metadata: Vec<Value> = result
+        .content
+        .iter()
+        .map(|part| match part {
+            GenerateContent::Reasoning(part) => json!(part.provider_metadata),
+            GenerateContent::Text {
+                provider_metadata, ..
+            } => json!(provider_metadata),
+            GenerateContent::ToolCall(call) => json!(call.provider_metadata),
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        metadata,
+        vec![
+            json!({ "lmstudio": { "itemId": "rs_1", "reasoningSummary": [],
+                "reasoningContent": [{ "type": "reasoning_text", "text": "Think" }],
+                "reasoningEncryptedContent": "enc" } }),
+            json!({ "lmstudio": { "itemId": "msg_1", "annotations": [citation] } }),
+            json!({ "lmstudio": { "itemId": "fc_1" } }),
+        ]
+    );
+
+    let server = MockServer::start().await;
+    let events = [
+        json!({ "type": "response.output_item.added", "item": { "type": "message", "id": "msg_1" } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "message", "id": "msg_1",
+                "content": [{ "type": "output_text", "text": "Done", "annotations": [citation] }] } }),
+        json!({ "type": "response.output_item.added", "item": { "type": "reasoning", "id": "rs_1" } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "reasoning", "id": "rs_1",
+                "summary": [{ "type": "summary_text", "text": "Sum" }] } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "function_call", "id": "fc_1",
+                "call_id": "call_1", "name": "weather", "arguments": "{}" } }),
+    ];
+    mock_sse(
+        &server,
+        events
+            .iter()
+            .map(|event| sse_event(&event.to_string()))
+            .collect(),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let metadata: Vec<Value> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::TextEnd {
+                provider_metadata, ..
+            }
+            | StreamPart::ReasoningEnd {
+                provider_metadata, ..
+            } => Some(json!(provider_metadata)),
+            StreamPart::ToolCall(call) => Some(json!(call.provider_metadata)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        metadata,
+        vec![
+            json!({ "lmstudio": { "itemId": "msg_1", "annotations": [citation] } }),
+            json!({ "lmstudio": { "itemId": "rs_1",
+                "reasoningSummary": [{ "type": "summary_text", "text": "Sum" }],
+                "reasoningContent": null } }),
+            json!({ "lmstudio": { "itemId": "fc_1" } }),
+        ]
     );
 }

@@ -23,11 +23,13 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Usage, Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ReasoningEffort, ResponseMetadata, Usage,
+    Warning,
 };
 
 use aimux_core::embedding_model::EmbeddingModel;
@@ -340,7 +342,11 @@ impl LanguageModel for OpenResponsesModel {
                                 if let Some(text) = cp.get("text").and_then(|t| t.as_str()) {
                                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                                         text: text.to_string(),
-                                        provider_metadata: None,
+                                        provider_metadata: reasoning_metadata(
+                                            &self.provider_options_name,
+                                            part,
+                                            &json!([cp]),
+                                        ),
                                     }));
                                 }
                             }
@@ -353,7 +359,11 @@ impl LanguageModel for OpenResponsesModel {
                                 if let Some(text) = cp.get("text").and_then(|t| t.as_str()) {
                                     content.push(GenerateContent::Text {
                                         text: text.to_string(),
-                                        provider_metadata: None,
+                                        provider_metadata: message_metadata(
+                                            &self.provider_options_name,
+                                            part,
+                                            output_text_annotations(std::slice::from_ref(cp)),
+                                        ),
                                     });
                                 }
                             }
@@ -382,7 +392,7 @@ impl LanguageModel for OpenResponsesModel {
                             input,
                             provider_executed: None,
                             dynamic: None,
-                            provider_metadata: None,
+                            provider_metadata: item_id_metadata(&self.provider_options_name, part),
                         }));
                     }
                     _ => {}
@@ -495,6 +505,7 @@ impl LanguageModel for OpenResponsesModel {
         let stream = pipe_through(
             futures::stream::iter(first_event).chain(sse_stream),
             OpenResponsesStream {
+                provider_options_name: self.provider_options_name.clone(),
                 warnings,
                 final_usage: Usage::default(),
                 has_tool_calls: false,
@@ -516,6 +527,7 @@ impl LanguageModel for OpenResponsesModel {
 
 /// The `TransformStream` of `OpenResponsesLanguageModel.doStream`.
 struct OpenResponsesStream {
+    provider_options_name: String,
     warnings: Vec<Warning>,
     final_usage: Usage,
     has_tool_calls: bool,
@@ -537,6 +549,7 @@ impl Transformer for OpenResponsesStream {
 
     fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let Self {
+            ref provider_options_name,
             ref mut final_usage,
             ref mut has_tool_calls,
             ref mut finish_reason,
@@ -689,7 +702,10 @@ impl Transformer for OpenResponsesStream {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        provider_metadata: None,
+                                        provider_metadata: item_id_metadata(
+                                            provider_options_name,
+                                            item,
+                                        ),
                                     }));
                                     *has_tool_calls = true;
                                 }
@@ -699,7 +715,14 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.reasoning_end(id);
+                                    controller.enqueue(StreamPart::ReasoningEnd {
+                                        id,
+                                        provider_metadata: reasoning_metadata(
+                                            provider_options_name,
+                                            item,
+                                            &item["content"],
+                                        ),
+                                    });
                                     *is_active_reasoning = false;
                                 }
                                 "message" => {
@@ -708,7 +731,18 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.text_end(id);
+                                    let annotations = item["content"]
+                                        .as_array()
+                                        .map(|parts| output_text_annotations(parts))
+                                        .unwrap_or_default();
+                                    controller.enqueue(StreamPart::TextEnd {
+                                        id,
+                                        provider_metadata: message_metadata(
+                                            provider_options_name,
+                                            item,
+                                            annotations,
+                                        ),
+                                    });
                                 }
                                 _ => {}
                             }
@@ -804,6 +838,76 @@ impl Transformer for OpenResponsesStream {
             provider_metadata: None,
         });
     }
+}
+
+// == Output provider metadata ==
+
+/// `{ <name>: { itemId } }` of a tool call item.
+fn item_id_metadata(provider_options_name: &str, item: &Value) -> Option<ProviderMetadata> {
+    provider_namespace(provider_options_name, json!({ "itemId": item["id"] })).ok()
+}
+
+/// `{ <name>: { itemId, annotations? } }` of a message's text, with the
+/// annotations only when there are any.
+fn message_metadata(
+    provider_options_name: &str,
+    item: &Value,
+    annotations: Vec<Value>,
+) -> Option<ProviderMetadata> {
+    let mut metadata = json!({ "itemId": item["id"] });
+    if !annotations.is_empty() {
+        metadata["annotations"] = json!(annotations);
+    }
+    provider_namespace(provider_options_name, metadata).ok()
+}
+
+/// The `url_citation` annotations of output text parts, flattened
+/// (getOutputTextAnnotations): a part whose annotations are not all valid
+/// citations contributes none.
+fn output_text_annotations(parts: &[Value]) -> Vec<Value> {
+    parts
+        .iter()
+        .filter_map(|part| part.get("annotations").and_then(url_citations))
+        .flat_map(|annotations| match annotations {
+            Value::Array(annotations) => annotations,
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+/// createReasoningProviderMetadata: the item id, its summary, the given
+/// reasoning content (`null` when absent) and the encrypted content.
+fn reasoning_metadata(
+    provider_options_name: &str,
+    item: &Value,
+    reasoning_content: &Value,
+) -> Option<ProviderMetadata> {
+    let texts = |parts: &Value, kind: &str| {
+        json!(
+            parts
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|part| json!({ "type": kind, "text": part["text"] }))
+                .collect::<Vec<_>>()
+        )
+    };
+    let mut metadata = json!({
+        "itemId": item["id"],
+        "reasoningSummary": texts(&item["summary"], "summary_text"),
+        "reasoningContent": if reasoning_content.is_array() {
+            texts(reasoning_content, "reasoning_text")
+        } else {
+            Value::Null
+        },
+    });
+    if let Some(encrypted) = item
+        .get("encrypted_content")
+        .filter(|value| !value.is_null())
+    {
+        metadata["reasoningEncryptedContent"] = encrypted.clone();
+    }
+    provider_namespace(provider_options_name, metadata).ok()
 }
 
 // == Tool call accumulator ==

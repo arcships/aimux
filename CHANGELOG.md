@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses output carries the item metadata, as the AI SDK does: text
+  parts and `text-end` carry `{ <name>: { itemId, annotations? } }`, tool
+  calls `{ itemId }`, and reasoning parts and `reasoning-end` the item id,
+  summary, content and encrypted content, so the output can be replayed.
+
 - Open Responses replays an assistant tool call's item id, as the AI SDK
   does: `providerOptions.<name>.itemId` becomes the `function_call` `id`.
 
