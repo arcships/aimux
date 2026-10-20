@@ -4,7 +4,7 @@
 >
 > **Date**: 2026-10-19
 >
-> **Scope**: 把 [docs/aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) 第 2 章 D17 的五层目标落成可以逐步合入的计划：`aimux-core` 按职责拆入 `aimux-provider`、`aimux-provider-utils`、`aimux`、`aimux-devtools`；core 内部直接调用的录制、session、trace、下载改成依赖反转；各 crate 的源码和测试目录按上游包组织。`aimux-providers` 内部的厂商目录、测试位置和厂商间复用不在本文范围，见 RFC-0046（[PR #294](https://github.com/arcships/aimux/pull/294)，草稿），本文的步骤不依赖它。本文不改变 wire 格式和录制格式；公开行为只有一处变化：删除环境变量 `AIMUX_SESSION_INFER`（§7 登记）。
+> **Scope**: 把 [docs/aisdk-architecture-alignment.md](../docs/aisdk-architecture-alignment.md) 第 2 章 D17 的五层目标落成可以逐步合入的计划：`aimux-core` 按职责拆入 `aimux-provider`、`aimux-provider-utils`、`aimux`、`aimux-devtools`；core 内部直接调用的录制、session、trace、下载改成依赖反转；各 crate 的源码和测试目录按上游包组织。`aimux-providers` 内部的厂商目录、测试位置和厂商间复用不在本文范围，见 RFC-0046（[PR #294](https://github.com/arcships/aimux/pull/294)），本文的步骤不依赖它。本文不改变 wire 格式和录制格式；公开行为只有一处变化：删除环境变量 `AIMUX_SESSION_INFER`（§7 登记）。
 >
 > **Baseline**: `master@5743a40a`（#265 合入后）。上游对照：`vercel/ai` main `fce9210`（目录与文件命名），行为基线仍按对齐文档登记的版本（`ai@7.0.127` 等）。
 >
