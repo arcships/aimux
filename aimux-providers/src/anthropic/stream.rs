@@ -274,26 +274,23 @@ pub(crate) fn server_tool_provider_name(name: &str) -> &str {
 }
 
 /// Finalize a streamed tool-call input accumulated from `input_json_delta`s:
-/// empty input normalizes to `"{}"` per the upstream provider, and 2025
-/// code-execution variants re-wrap under their wire name so the transcript
-/// replays verbatim.
+/// empty input normalizes to `"{}"`, and a code-execution `{ code }` input
+/// without a `type` gains `"type": "programmatic-tool-call"`. Any other input
+/// stays the streamed text as is (anthropic-language-model.ts:2638-2657).
 pub(crate) fn finalize_streamed_tool_input(
     mut accumulated_json: String,
     provider_tool_name: Option<&str>,
-    provider_tool_input_type: Option<&str>,
 ) -> String {
     if accumulated_json.is_empty() {
         accumulated_json = "{}".to_string();
     }
     if provider_tool_name == Some("code_execution")
         && let Ok(parsed) = serde_json::from_str::<Value>(&accumulated_json)
+        && !contains_forbidden_prototype(&parsed)
+        && parsed.get("code").is_some()
+        && parsed.get("type").is_none()
     {
-        // Only the two known operation names ride through; anything else
-        // collapses to the caller's single code_execution tool.
-        let wire_name = provider_tool_input_type
-            .filter(|name| matches!(*name, "text_editor_code_execution" | "bash_code_execution"))
-            .unwrap_or("code_execution");
-        accumulated_json = normalized_server_tool_input(wire_name, &parsed).to_string();
+        accumulated_json = normalized_server_tool_input("code_execution", &parsed).to_string();
     }
     accumulated_json
 }
@@ -1642,7 +1639,6 @@ impl AnthropicMessagesStream {
                 provider_executed,
                 dynamic,
                 provider_tool_name,
-                provider_tool_input_type,
                 provider_metadata,
                 toolset_member_name,
                 ..
@@ -1663,11 +1659,8 @@ impl AnthropicMessagesStream {
                     controller.tool_input_delta(id.clone(), accumulated_json.clone());
                 }
                 controller.tool_input_end(id.clone());
-                let input = finalize_streamed_tool_input(
-                    accumulated_json,
-                    provider_tool_name.as_deref(),
-                    provider_tool_input_type.as_deref(),
-                );
+                let input =
+                    finalize_streamed_tool_input(accumulated_json, provider_tool_name.as_deref());
                 controller.enqueue(StreamPart::ToolCall(RawToolCall {
                     tool_call_id: id,
                     tool_name: name,

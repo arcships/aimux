@@ -19,12 +19,14 @@ use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelProm
 use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateContent;
 use aimux_core::shared::provider_namespace;
+use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::Warning;
 use aimux_providers::anthropic::sanitize_json_schema::sanitize_json_schema;
 use aimux_providers::anthropic::{
     AnthropicMessagesModel, AnthropicProviderSettings, create_anthropic,
 };
+use futures::StreamExt;
 use mock_fetch::{Canned, EnvVar, MockFetch};
 use serde_json::{Value, json};
 use serial_test::serial;
@@ -879,5 +881,89 @@ async fn joins_beta_headers_in_insertion_order() {
         "mcp-client-2025-04-04,code-execution-2025-08-25,skills-2025-10-02,\
          files-api-2025-04-14,fast-mode-2026-02-01,server-side-fallback-2026-07-01,\
          web-fetch-2025-09-10,zz-config,bb-request,aa-option"
+    );
+}
+
+/// A `text/event-stream` response of one `data:` event per chunk.
+fn sse_response(chunks: &[Value]) -> Canned {
+    Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "text/event-stream".into())],
+        body: chunks
+            .iter()
+            .map(|chunk| format!("data: {chunk}\n\n"))
+            .collect::<String>()
+            .into_bytes(),
+    }
+}
+
+fn stream_message_start(id: &str) -> Value {
+    json!({
+        "type": "message_start",
+        "message": {
+            "id": id, "type": "message", "role": "assistant", "content": [],
+            "model": "claude-3-haiku-20240307", "stop_reason": null, "stop_sequence": null,
+            "usage": { "input_tokens": 17, "output_tokens": 1 }
+        }
+    })
+}
+
+/// `doStream`, then every stream item.
+async fn stream_items(
+    fetch: &Arc<MockFetch>,
+    options: &CallOptions,
+) -> Vec<Result<StreamPart, AiMuxError>> {
+    make_model_with_config(settings(fetch))
+        .do_stream(options)
+        .await
+        .unwrap()
+        .stream
+        .collect()
+        .await
+}
+
+/// The AI SDK keeps a streamed code-execution call's input as the streamed
+/// text with its `type` injected; it does not re-serialize it.
+#[tokio::test]
+async fn streamed_code_execution_tool_call_keeps_the_streamed_input_text() {
+    let fetch = MockFetch::new(vec![sse_response(&[
+        stream_message_start("msg_1"),
+        json!({
+            "type": "content_block_start", "index": 0,
+            "content_block": {
+                "type": "server_tool_use", "id": "srvtoolu_1",
+                "name": "bash_code_execution", "input": {}
+            }
+        }),
+        json!({
+            "type": "content_block_delta", "index": 0,
+            "delta": { "type": "input_json_delta", "partial_json": "{\"command\": \"ls -la\"}" }
+        }),
+        json!({ "type": "content_block_stop", "index": 0 }),
+        json!({
+            "type": "message_delta",
+            "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+            "usage": { "output_tokens": 5 }
+        }),
+        json!({ "type": "message_stop" }),
+    ])]);
+    let mut options = default_options(test_prompt());
+    options.tools = Some(vec![Tool::Provider(ProviderTool {
+        id: "anthropic.code_execution_20250825".parse().unwrap(),
+        name: "code_execution".to_string(),
+        args: serde_json::Map::new(),
+        supports_deferred_results: None,
+    })]);
+    let items = stream_items(&fetch, &options).await;
+    let inputs: Vec<_> = items
+        .iter()
+        .filter_map(|item| match item {
+            Ok(StreamPart::ToolCall(call)) => Some(call.input.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        inputs,
+        [r#"{"type": "bash_code_execution","command": "ls -la"}"#]
     );
 }

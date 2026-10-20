@@ -1190,6 +1190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic streamed code-execution tool calls keep their input as the
+  streamed text, with the `type` injected into the first delta, as the AI SDK
+  does; it re-serialized that input as compact JSON.
 - Anthropic joins the `anthropic-beta` header in insertion order (the
   prompt's betas, the provider options', the tools', the provider and call
   headers', then `anthropicBeta`), as the AI SDK does; it sorted the list.
