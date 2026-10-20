@@ -723,7 +723,12 @@ CapturePolicy = TypeAliasType("CapturePolicy", Literal["full"])
 #: name then model id.
 class Catalogue(_Wire):
     specs: Dict[str, Dict[str, "_dto.ModelSpec"]] = Field(alias="specs")
+    #: Specs of source providers with no aimux provider, keyed by the
+    #: source's own provider id then model id. The host maps them, if it
+    #: wants them.
+    unmapped: Optional[Dict[str, Dict[str, "_dto.ModelSpec"]]] = Field(default=None, alias="unmapped")
     updated_at: U64 = Field(alias="updatedAt")
+    _omit_null: ClassVar[frozenset[str]] = frozenset(["unmapped"])
 
 
 class CatalogueFetchRequest(_Wire):

@@ -2265,9 +2265,15 @@ enum CapturePolicy {
 /// name then model id.
 final class Catalogue {
   final Map<String, Map<String, ModelSpec>> specs;
+
+  /// Specs of source providers with no aimux provider, keyed by the
+  /// source's own provider id then model id. The host maps them, if it
+  /// wants them.
+  final Map<String, Map<String, ModelSpec>>? unmapped;
   final int updatedAt;
   const Catalogue({
     required this.specs,
+    this.unmapped,
     required this.updatedAt,
   });
   factory Catalogue.fromJson(Map<String, dynamic> json) {
@@ -2276,6 +2282,12 @@ final class Catalogue {
           key as String,
           (item as Map).map((key, item) => MapEntry(key as String,
               ModelSpec.fromJson(item as Map<String, dynamic>))))),
+      unmapped: json['unmapped'] == null
+          ? null
+          : (json['unmapped'] as Map).map((key, item) => MapEntry(
+              key as String,
+              (item as Map).map((key, item) => MapEntry(key as String,
+                  ModelSpec.fromJson(item as Map<String, dynamic>))))),
       updatedAt: json['updatedAt'] as int,
     );
   }
@@ -2283,6 +2295,9 @@ final class Catalogue {
   Map<String, dynamic> toJson() => {
         'specs': specs.map((key, item) => MapEntry(
             key, item.map((key, item) => MapEntry(key, item.toJson())))),
+        if (unmapped != null)
+          'unmapped': unmapped!.map((key, item) => MapEntry(
+              key, item.map((key, item) => MapEntry(key, item.toJson())))),
         'updatedAt': updatedAt,
       };
 }
