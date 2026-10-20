@@ -132,11 +132,12 @@ sub-feature = [
 
 ## 4. 位置与标记
 
-位置按 RFC-0046 §5（provider-utils 和 aimux 按 RFC-0044 §3.2 的目录照同样规则），按上游用例测的是什么来分：
+位置按 RFC-0046 §5（provider-utils 和 aimux 按 RFC-0044 §3.2 的目录照同样规则）：一家厂商的测试全部放在这家的 `src/<vendor>/tests/` 里，和上游一样一个测试文件对应一个 Rust 文件。
 
-- 测内部函数的（prompt 转换、`prepare-tools`、用量换算、finish reason 映射等）放 `foo/tests.rs`，源文件 `foo.rs` 里写一行 `#[cfg(test)] mod tests;`。这是 Rust 的标准写法，不用 `#[path]`。
-- 走公开 API 的（provider → 模型 → mock fetch，例如上游语言模型测试里的 `doGenerate`、`doStream`，以及录制回放和 e2e）放 `tests/it/<vendor>/`，文件名对应上游测试文件，全部合成一个测试程序 `tests/it/main.rs`。
-- 同一个上游测试文件两类都有时，按用例分开放，两处的标记都指向同一个上游文件。
+- `src/<vendor>/mod.rs` 末尾写一行 `#[cfg(test)] mod tests;`，`tests/mod.rs` 逐个声明测试文件。源文件里不放测试，也不为测试另建 `foo/` 目录，不用 `#[path]`。
+- 文件名取上游测试文件名，去掉 `.test.ts` 和厂商名，转 snake_case：`groq-chat-language-model.test.ts` → `chat_language_model.rs`，`convert-to-groq-chat-messages.test.ts` → `convert_to_chat_messages.rs`。上游有子目录的照搬（`src/chat/…` → `tests/chat/…`）。
+- 直接调内部函数的用例（prompt 转换、`prepare-tools`、用量换算等）和走公开 API 的用例（provider → 模型 → mock fetch，例如 `doGenerate`、`doStream`）都在同一个文件里，跟上游一致。上游的 `__fixtures__/`、`__snapshots__/` 对应放在旁边的 `fixtures/`、`snapshots/`。
+- 整个 crate 的厂商测试都编进 lib 的测试程序，不再在 `tests/` 下一家一个程序。crate 根的 `tests/` 只留跨厂商的测试（录制回放、conformance 等）。
 
 只用 `it()` 的描述做函数名分不开用例。`@ai-sdk/openai@4.0.83` 的 `openai-responses-language-model.test.ts` 里有 5 个用例都叫 `should send request body with include and tool`（第 3713、3795、4035、4087、4190 行），只有中间那层 `describe` 不同；同一个 Rust 文件里同名函数也编译不过。所以：
 
@@ -145,7 +146,7 @@ sub-feature = [
 3. 锁定版本里有 7 处用例的完整链相同（例如 `google-language-model.test.ts › doGenerate › should pass tools and toolChoice` 出现两次）。这种按文件里出现的顺序，标记末尾加 `#2`、`#3`，函数名加 `_2`、`_3`。
 
 ```rust
-// aimux-providers/tests/it/openai/responses_language_model.rs（走公开 API）
+// aimux-providers/src/openai/tests/responses/responses_language_model.rs
 mod openai_responses_language_model {
     mod do_generate {
         mod code_interpreter_tool {
@@ -168,7 +169,7 @@ mod openai_responses_language_model {
 ## 5. 移植方法
 
 1. 守 `ts-rust-port` 的纪律：逐条搬，只换 harness，不改场景。
-2. harness 对应：上游 mock fetch 对应本地 HTTP 桩，上游 `MockLanguageModelV4` 对应 `ScriptedModel`。共用的 mock fetch 和回放 helper 按 RFC-0046 §5 放在 `src/test_support/`，用 `test-support` feature 打开，`foo/tests.rs` 和 `tests/it/` 用同一份。
+2. harness 对应：上游 mock fetch 对应本地 HTTP 桩，上游 `MockLanguageModelV4` 对应 `ScriptedModel`。共用的 mock fetch 和回放 helper 按 RFC-0046 §5 放在 `src/test_support/`，`src/<vendor>/tests/` 和 crate 根 `tests/` 里的跨厂商测试用同一份。
 3. 快照：`toMatchInlineSnapshot` 写成内联 `serde_json::json!`；`__snapshots__/` 文件快照放在测试所在目录的 `snapshots/`。不引入快照库。
 4. 发现行为和上游不一致：先写失败的测试，再按 `ts-rust-port` 的 `fix` 流程在同一 PR 里修，单独一个提交；属于刻意差异的，登记到对齐文档 §5，用例记进 `registered`。不允许 `#[ignore]`。
 5. PR 描述写"这个文件 N 个用例：搬 a、差分 b、自动排除 c、手写排除 d（按类别）"。
