@@ -7,14 +7,18 @@
 //! different strict settings" depends on that state and is not ported (no
 //! boolean reproduces it; see the report).
 
-use super::*;
+use aimux_core::tool::Tool;
 use serde_json::{Value, json};
+
+use crate::deepseek::prepare_tools::prepare_tools;
 
 /// The tools of a request, read as the request path reads them.
 fn tools_from(value: Value) -> Vec<Tool> {
     serde_json::from_value(value).expect("the tools literal is valid")
 }
 
+// The describe level `prepareTools` keeps its name; the file is `prepare_tools.rs`.
+#[allow(clippy::module_inception)]
 mod prepare_tools {
     use super::*;
 

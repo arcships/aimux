@@ -8,8 +8,15 @@
 //! `FileBytes::Binary` directly: JSON can only carry base64, which parses to the
 //! other variant.
 
-use super::*;
+use aimux_core::error::AiMuxError;
+use aimux_core::language_model_message::{
+    FilePart, LanguageModelMessage, LanguageModelPrompt, ToolPart, ToolResultContent,
+    ToolResultOutput, ToolResultPart,
+};
+use aimux_core::shared::{FileBytes, FileData};
 use serde_json::{Value, json};
+
+use crate::deepseek::convert::convert_to_deepseek_chat_messages;
 
 /// A prompt, read as the request path reads it.
 fn prompt_from(value: Value) -> LanguageModelPrompt {

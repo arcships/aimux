@@ -12,15 +12,15 @@
 
 use std::sync::Arc;
 
+use crate::deepseek::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::CallOptions;
 use aimux_core::stream_part::StreamPart;
-use aimux_providers::deepseek::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const MODEL: &str = "deepseek-v4-flash";
 

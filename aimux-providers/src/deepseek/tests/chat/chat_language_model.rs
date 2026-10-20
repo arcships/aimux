@@ -26,16 +26,16 @@
 
 use std::sync::Arc;
 
+use crate::deepseek::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::StreamResult;
 use aimux_core::tool::{FunctionTool, Tool};
-use aimux_providers::deepseek::{DeepSeekProvider, DeepSeekProviderSettings, create_deepseek};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const TEXT_FIXTURE: &str = include_str!("fixtures/deepseek-text.json");
 const REASONING_FIXTURE: &str = include_str!("fixtures/deepseek-reasoning.json");

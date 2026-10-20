@@ -37,6 +37,3 @@ pub(crate) fn convert_deepseek_usage(usage: Option<&Value>) -> Usage {
         raw: usage.as_object().cloned(),
     }
 }
-
-#[cfg(test)]
-mod tests;

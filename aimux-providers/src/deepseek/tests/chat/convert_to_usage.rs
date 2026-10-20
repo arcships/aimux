@@ -1,7 +1,8 @@
 //! Port of `src/chat/convert-to-deepseek-usage.test.ts` (`@ai-sdk/deepseek` 3.0.56).
 
-use super::*;
 use serde_json::{Value, json};
+
+use crate::deepseek::usage::convert_deepseek_usage;
 
 mod convert_deep_seek_usage {
     use super::*;
