@@ -330,130 +330,1975 @@ fn logprob(token: &str, logprob: f64, bytes: Value) -> Value {
     })
 }
 
-// ===========================================================================
-// describe('model IDs') / describe('supportedUrls')
-// ===========================================================================
+fn reasoning_response() -> Value {
+    json!({
+        "id": "r1", "object": "chat.completion", "created": 1764656316, "model": "deepseek-reasoner",
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "There are 3 r's in strawberry.",
+                "reasoning_content": "Let me count the letters."
+            },
+            "finish_reason": "stop"
+        }],
+        "usage": { "prompt_tokens": 20, "completion_tokens": 30, "total_tokens": 50,
+                   "completion_tokens_details": { "reasoning_tokens": 10 } }
+    })
+}
 
-#[tokio::test]
-async fn should_forward_the_model_id() {
-    for model_id in ["deepseek-v4-flash", "deepseek-v4-pro"] {
-        assert_eq!(generate_body(model_id, &options()).await["model"], model_id);
+fn logprobs_response() -> Value {
+    let mut body = text_response();
+    body["choices"][0]["message"] = json!({
+        "role": "assistant", "content": "OK", "reasoning_content": "Reasoning"
+    });
+    body["choices"][0]["logprobs"] = json!({
+        "content": [logprob("OK", -0.00002467602, json!([79, 75]))],
+        "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)]
+    });
+    body
+}
+
+fn reasoning_options(effort: ReasoningEffort) -> CallOptions {
+    CallOptions {
+        reasoning: Some(effort),
+        ..options()
     }
 }
 
-#[tokio::test]
-async fn should_natively_support_http_image_urls() {
-    let server = MockServer::start().await;
-    let urls = chat(&server, "deepseek-chat").supported_urls().await;
-    let patterns = &urls.0["image/*"];
-    assert_eq!(patterns.len(), 1);
-    assert!(patterns[0].is_match("https://example.com/a.png"));
-    assert!(patterns[0].is_match("http://example.com/a.png"));
-    assert!(!patterns[0].is_match("data:image/png;base64,AAAA"));
+fn tool_call_response() -> Value {
+    json!({
+        "id": "t1", "object": "chat.completion", "created": 1764656316, "model": "deepseek-reasoner",
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant", "content": "",
+                "reasoning_content": "I should look up the weather.",
+                "tool_calls": [{
+                    "id": "call_00_abc", "type": "function",
+                    "function": { "name": "weather", "arguments": "{\"location\":\"San Francisco\"}" }
+                }]
+            },
+            "finish_reason": "tool_calls"
+        }],
+        "usage": { "prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70 }
+    })
 }
 
-// ===========================================================================
-// describe('doGenerate')
-// ===========================================================================
-
-#[tokio::test]
-async fn should_reject_a_response_without_choices() {
-    let server = json_server(json!({
-        "id": "chatcmpl-empty", "object": "chat.completion", "created": 0,
-        "model": "deepseek-chat", "choices": [],
-        "usage": { "prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1 }
-    }))
-    .await;
-    let error = chat(&server, "deepseek-chat")
-        .do_generate(&options())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
-        "{error:?}"
-    );
-}
-
-// ---- describe('text') ------------------------------------------------------
-
-#[tokio::test]
-async fn text_should_send_correct_request_body() {
-    let mut options = options_for(vec![
-        LanguageModelMessage::System {
-            content: ("You are a helpful assistant.").into(),
-            provider_options: None,
-        },
-        LanguageModelMessage::user_text("Hello"),
-    ]);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-    assert_eq!(
-        generate_body("deepseek-chat", &options).await,
-        json!({
-            "messages": [
-                { "content": "You are a helpful assistant.", "role": "system" },
-                { "content": "Hello", "role": "user" }
-            ],
-            "model": "deepseek-chat",
-            "temperature": 0.5,
-            "top_p": 0.3
-        })
-    );
-}
-
-#[tokio::test]
-async fn text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
-{
-    let mut options = options();
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let result = generate_result("deepseek-v4-flash", &options).await;
-    assert_eq!(
-        result.request.and_then(|request| request.body).unwrap(),
-        json!({ "model": "deepseek-v4-flash", "messages": [{ "role": "user", "content": "Hello" }] })
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty"),
-            thinking_unsupported("temperature"),
-            thinking_unsupported("topP"),
-        ])
-    );
-}
-
-#[tokio::test]
-async fn text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled() {
+fn tool_options() -> CallOptions {
     let mut options = with_provider_options(
         options(),
-        json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
+        json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
     );
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let result = generate_result("deepseek-v4-flash", &options).await;
-    assert_eq!(
-        result.request.and_then(|request| request.body).unwrap(),
-        json!({
-            "model": "deepseek-v4-flash",
-            "messages": [{ "role": "user", "content": "Hello" }],
-            "temperature": 0.2,
-            "top_p": 0.4,
-            "thinking": { "type": "disabled" }
-        })
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty")
-        ])
-    );
+    options.tools = Some(vec![Tool::Function(weather_tool())]);
+    options
 }
+
+fn weather_wire_tool() -> Value {
+    json!({
+        "type": "function",
+        "function": {
+            "name": "weather",
+            "parameters": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": false,
+                "properties": { "location": { "type": "string" } },
+                "required": ["location"],
+                "type": "object"
+            }
+        }
+    })
+}
+
+fn json_options(schema: Option<Value>) -> CallOptions {
+    let mut options = tool_options();
+    options.response_format = Some(ResponseFormat::Json {
+        schema,
+        name: None,
+        description: None,
+    });
+    options
+}
+
+fn prefix_prompt(prefix_options: Value) -> LanguageModelPrompt {
+    vec![
+        LanguageModelMessage::user_text("Complete this sentence."),
+        with_options(
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::Text(TextPart {
+                    text: ("The answer is").into(),
+                    provider_options: None,
+                })],
+                provider_options: None,
+            },
+            json!({ "deepseek": prefix_options }),
+        ),
+    ]
+}
+
+// Upstream emits provider error envelopes as error parts, including the first event.
+async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
+    let server = sse_server(vec![data_event(data)]).await;
+    let result = chat(&server, "deepseek-chat")
+        .do_stream(&options())
+        .await
+        .unwrap();
+    collect(result)
+        .await
+        .into_iter()
+        .find_map(|part| match part {
+            StreamPart::Error {
+                error: AiMuxError::ApiCall(error),
+            } => Some(*error),
+            _ => None,
+        })
+        .expect("expected a provider error part")
+}
+
+async fn stream_parts(
+    model_id: &str,
+    options: &CallOptions,
+    chunks: Vec<String>,
+) -> (Value, Vec<StreamPart>) {
+    let server = sse_server(chunks).await;
+    let result = chat(&server, model_id).do_stream(options).await.unwrap();
+    let body = result.request.clone().and_then(|r| r.body).unwrap();
+    (body, collect(result).await)
+}
+
+fn png_data() -> UserPart {
+    UserPart::File(FilePart {
+        data: FileData::Data {
+            data: FileBytes::Base64("AAECAw==".into()),
+        },
+        media_type: "image/png".into(),
+        filename: None,
+        provider_options: None,
+    })
+}
+
+fn file_with_options(mut part: UserPart, options: Value) -> UserPart {
+    if let UserPart::File(file) = &mut part {
+        file.provider_options = Some(serde_json::from_value(options).unwrap());
+    }
+    part
+}
+
+fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
+    let mut assistant = vec![];
+    if reasoning {
+        assistant.push(AssistantPart::Reasoning(ReasoningPart {
+            text: ("I think the tool will return the correct value.").into(),
+            provider_options: None,
+        }));
+    }
+    assistant.push(AssistantPart::ToolCall(ToolCallPart {
+        tool_call_id: ("quux").into(),
+        tool_name: ("thwomp").into(),
+        input: json!({ "foo": "bar123" }),
+        provider_executed: None,
+        provider_options: None,
+    }));
+    vec![
+        LanguageModelMessage::Assistant {
+            content: assistant,
+            provider_options: None,
+        },
+        LanguageModelMessage::Tool {
+            content: vec![ToolPart::ToolResult(ToolResultPart {
+                tool_call_id: ("quux").into(),
+                output: ToolResultOutput::Json {
+                    value: json!({ "oof": "321rab" }),
+                    provider_options: None,
+                },
+                tool_name: "thwomp".into(),
+                provider_options: None,
+            })],
+            provider_options: None,
+        },
+    ]
+}
+
+fn wire_tool_call() -> Value {
+    json!([{
+        "id": "quux", "type": "function",
+        "function": { "name": "thwomp", "arguments": "{\"foo\":\"bar123\"}" }
+    }])
+}
+
+mod deep_seek_chat_language_model {
+    use super::*;
+
+    mod model_ids {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › model IDs › should forward the %s model ID
+        #[tokio::test]
+        async fn should_forward_the_model_id() {
+            for model_id in ["deepseek-v4-flash", "deepseek-v4-pro"] {
+                assert_eq!(generate_body(model_id, &options()).await["model"], model_id);
+            }
+        }
+    }
+
+    mod supported_urls {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › supportedUrls › should natively support HTTP image URLs
+        #[tokio::test]
+        async fn should_natively_support_http_image_urls() {
+            let server = MockServer::start().await;
+            let urls = chat(&server, "deepseek-chat").supported_urls().await;
+            let patterns = &urls.0["image/*"];
+            assert_eq!(patterns.len(), 1);
+            assert!(patterns[0].is_match("https://example.com/a.png"));
+            assert!(patterns[0].is_match("http://example.com/a.png"));
+            assert!(!patterns[0].is_match("data:image/png;base64,AAAA"));
+        }
+    }
+
+    mod do_generate {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › should reject a response without choices
+        #[tokio::test]
+        async fn should_reject_a_response_without_choices() {
+            let server = json_server(json!({
+                "id": "chatcmpl-empty", "object": "chat.completion", "created": 0,
+                "model": "deepseek-chat", "choices": [],
+                "usage": { "prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1 }
+            }))
+            .await;
+            let error = chat(&server, "deepseek-chat")
+                .do_generate(&options())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
+                "{error:?}"
+            );
+        }
+
+        mod text {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should send correct request body
+            #[tokio::test]
+            async fn text_should_send_correct_request_body() {
+                let mut options = options_for(vec![
+                    LanguageModelMessage::System {
+                        content: ("You are a helpful assistant.").into(),
+                        provider_options: None,
+                    },
+                    LanguageModelMessage::user_text("Hello"),
+                ]);
+                options.temperature = Some(0.5);
+                options.top_p = Some(0.3);
+                assert_eq!(
+                    generate_body("deepseek-chat", &options).await,
+                    json!({
+                        "messages": [
+                            { "content": "You are a helpful assistant.", "role": "system" },
+                            { "content": "Hello", "role": "user" }
+                        ],
+                        "model": "deepseek-chat",
+                        "temperature": 0.5,
+                        "top_p": 0.3
+                    })
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should omit deprecated and ineffective sampling options in default V4 thinking mode
+            #[tokio::test]
+            async fn text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
+             {
+                let mut options = options();
+                options.temperature = Some(0.2);
+                options.top_p = Some(0.4);
+                options.frequency_penalty = Some(0.5);
+                options.presence_penalty = Some(0.6);
+                let result = generate_result("deepseek-v4-flash", &options).await;
+                assert_eq!(
+                    result.request.and_then(|request| request.body).unwrap(),
+                    json!({ "model": "deepseek-v4-flash", "messages": [{ "role": "user", "content": "Hello" }] })
+                );
+                assert_eq!(
+                    warning_values(&result.warnings),
+                    warning_values(&[
+                        deprecated("frequencyPenalty"),
+                        deprecated("presencePenalty"),
+                        thinking_unsupported("temperature"),
+                        thinking_unsupported("topP"),
+                    ])
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should preserve supported sampling options when V4 thinking is disabled
+            #[tokio::test]
+            async fn text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled()
+            {
+                let mut options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
+                );
+                options.temperature = Some(0.2);
+                options.top_p = Some(0.4);
+                options.frequency_penalty = Some(0.5);
+                options.presence_penalty = Some(0.6);
+                let result = generate_result("deepseek-v4-flash", &options).await;
+                assert_eq!(
+                    result.request.and_then(|request| request.body).unwrap(),
+                    json!({
+                        "model": "deepseek-v4-flash",
+                        "messages": [{ "role": "user", "content": "Hello" }],
+                        "temperature": 0.2,
+                        "top_p": 0.4,
+                        "thinking": { "type": "disabled" }
+                    })
+                );
+                assert_eq!(
+                    warning_values(&result.warnings),
+                    warning_values(&[
+                        deprecated("frequencyPenalty"),
+                        deprecated("presencePenalty")
+                    ])
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should send message names
+            #[tokio::test]
+            async fn text_should_send_message_names() {
+                let name = |value: &str| json!({ "deepseek": { "name": value } });
+                let messages = wire_messages(
+                    "deepseek-chat",
+                    vec![
+                        with_options(
+                            LanguageModelMessage::System {
+                                content: ("You are a helpful assistant.").into(),
+                                provider_options: None,
+                            },
+                            name("guide"),
+                        ),
+                        with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
+                        with_options(
+                            LanguageModelMessage::Assistant {
+                                content: vec![AssistantPart::Text(TextPart {
+                                    text: ("Hello, Alice.").into(),
+                                    provider_options: None,
+                                })],
+                                provider_options: None,
+                            },
+                            name("assistant"),
+                        ),
+                        with_options(
+                            LanguageModelMessage::user_text("How are you?"),
+                            name("alice"),
+                        ),
+                    ],
+                )
+                .await;
+                assert_eq!(
+                    messages,
+                    [
+                        json!({ "content": "You are a helpful assistant.", "name": "guide", "role": "system" }),
+                        json!({ "content": "Hello", "name": "alice", "role": "user" }),
+                        json!({ "content": "Hello, Alice.", "name": "assistant", "role": "assistant" }),
+                        json!({ "content": "How are you?", "name": "alice", "role": "user" }),
+                    ]
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should pass providerOptions userId as user_id
+            #[tokio::test]
+            async fn text_should_pass_provider_options_user_id_as_user_id() {
+                let options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "userId": "tenant_123-user" } }),
+                );
+                assert_eq!(
+                    generate_body("deepseek-chat", &options).await["user_id"],
+                    "tenant_123-user"
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should omit user_id when userId is not provided
+            #[tokio::test]
+            async fn text_should_omit_user_id_when_user_id_is_not_provided() {
+                assert!(
+                    generate_body("deepseek-chat", &options())
+                        .await
+                        .get("user_id")
+                        .is_none()
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should reject strict tools on the standard endpoint before fetching
+            #[tokio::test]
+            async fn text_should_reject_strict_tools_on_the_standard_endpoint_before_fetching() {
+                let mut options = options();
+                options.tools = Some(vec![strict_tool("getWeather", Some(true))]);
+                let message = generate_error("deepseek-chat", &options).await;
+                assert!(
+                    message.contains(
+                        "DeepSeek strict tool calls require a beta base URL ending in `/beta`."
+                    ),
+                    "{message}"
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should send all-strict tools on the beta endpoint
+            #[tokio::test]
+            async fn text_should_send_all_strict_tools_on_the_beta_endpoint() {
+                let server = json_server(text_response()).await;
+                let mut options = options();
+                options.tools = Some(vec![strict_tool("getWeather", Some(true))]);
+                let body = beta_chat(&server, "deepseek-chat")
+                    .do_generate(&options)
+                    .await
+                    .unwrap()
+                    .request
+                    .and_then(|r| r.body)
+                    .unwrap();
+                assert_eq!(body["tools"][0]["type"], "function");
+                assert_eq!(body["tools"][0]["function"]["name"], "getWeather");
+                assert_eq!(body["tools"][0]["function"]["strict"], true);
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should reject mixed strict tools in streaming requests
+            #[tokio::test]
+            async fn text_should_reject_mixed_strict_tools_in_streaming_requests() {
+                let server = sse_server(text_chunks()).await;
+                let mut options = options();
+                options.tools = Some(vec![
+                    strict_tool("strictTool", Some(true)),
+                    strict_tool("nonStrictTool", None),
+                ]);
+                let Err(error) = beta_chat(&server, "deepseek-chat")
+                    .do_stream(&options)
+                    .await
+                else {
+                    panic!("the call must be rejected");
+                };
+                assert!(
+        error.to_string().contains(
+            "DeepSeek strict mode requires every function tool in the request to set `strict: true`."
+        ),
+        "{error}"
+    );
+                assert!(request_paths(&server).await.is_empty());
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should reject invalid userId %j before making an API request
+            #[tokio::test]
+            async fn text_should_reject_invalid_user_id_before_making_an_api_request() {
+                for (user_id, expected) in [
+                    ("".to_string(), "userId must match /^[a-zA-Z0-9_-]+$/"),
+                    (
+                        "contains space".to_string(),
+                        "userId must match /^[a-zA-Z0-9_-]+$/",
+                    ),
+                    (
+                        "a".repeat(513),
+                        "userId must be at most 512 characters long",
+                    ),
+                ] {
+                    let options = with_provider_options(
+                        options(),
+                        json!({ "deepseek": { "userId": user_id } }),
+                    );
+                    let message = generate_error("deepseek-chat", &options).await;
+                    assert!(message.contains("invalid provider options"), "{message}");
+                    assert!(message.contains(expected), "{message}");
+                }
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should include the system fingerprint in provider metadata
+            #[tokio::test]
+            async fn text_should_include_the_system_fingerprint_in_provider_metadata() {
+                let result = generate_result("deepseek-chat", &options()).await;
+                assert_eq!(
+                    result.provider_metadata.unwrap()["deepseek"]["systemFingerprint"],
+                    "fp_eaab8d114b_prod0820_fp8_kvcache"
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › text › should tolerate a %s system fingerprint
+            #[tokio::test]
+            async fn text_should_tolerate_a_null_or_missing_system_fingerprint() {
+                for fingerprint in [Some(Value::Null), None] {
+                    let mut body = text_response();
+                    match fingerprint {
+                        Some(value) => body["system_fingerprint"] = value,
+                        None => {
+                            body.as_object_mut().unwrap().remove("system_fingerprint");
+                        }
+                    }
+                    let server = json_server(body).await;
+                    let result = chat(&server, "deepseek-chat")
+                        .do_generate(&options())
+                        .await
+                        .unwrap();
+                    assert!(
+                        result.provider_metadata.unwrap()["deepseek"]
+                            .get("systemFingerprint")
+                            .is_none()
+                    );
+                }
+            }
+        }
+
+        mod reasoning {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › reasoning › should send correct request body
+            #[tokio::test]
+            async fn reasoning_should_send_correct_request_body() {
+                let options = with_provider_options(
+                    options_for(vec![LanguageModelMessage::user_text(
+                        "How many \"r\"s are in the word \"strawberry\"?",
+                    )]),
+                    json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
+                );
+                assert_eq!(
+                    generate_body("deepseek-reasoner", &options).await,
+                    json!({
+                        "messages": [{ "content": "How many \"r\"s are in the word \"strawberry\"?", "role": "user" }],
+                        "model": "deepseek-reasoner",
+                        "thinking": { "type": "enabled" }
+                    })
+                );
+            }
+        }
+
+        mod logprobs {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › logprobs › should send logprobs provider options
+            #[tokio::test]
+            async fn logprobs_should_send_logprobs_provider_options() {
+                let options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "logprobs": true, "topLogprobs": 1 } }),
+                );
+                assert_eq!(
+                    generate_body("deepseek-v4-flash", &options).await,
+                    json!({
+                        "logprobs": true,
+                        "messages": [{ "content": "Hello", "role": "user" }],
+                        "model": "deepseek-v4-flash",
+                        "top_logprobs": 1
+                    })
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › logprobs › should enable logprobs when topLogprobs is set
+            #[tokio::test]
+            async fn logprobs_should_enable_logprobs_when_top_logprobs_is_set() {
+                let options =
+                    with_provider_options(options(), json!({ "deepseek": { "topLogprobs": 1 } }));
+                let body = generate_body("deepseek-v4-flash", &options).await;
+                assert_eq!(body["logprobs"], true);
+                assert_eq!(body["top_logprobs"], 1);
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › logprobs › should extract content and reasoning logprobs
+            #[tokio::test]
+            async fn logprobs_should_extract_content_and_reasoning_logprobs() {
+                let server = json_server(logprobs_response()).await;
+                let options =
+                    with_provider_options(options(), json!({ "deepseek": { "logprobs": true } }));
+                let result = chat(&server, "deepseek-v4-flash")
+                    .do_generate(&options)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    result.provider_metadata.unwrap()["deepseek"]["logprobs"],
+                    json!({
+                        "content": [logprob("OK", -0.00002467602, json!([79, 75]))],
+                        "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)]
+                    })
+                );
+            }
+        }
+
+        mod top_level_reasoning {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map top-level reasoning to thinking enabled
+            #[tokio::test]
+            async fn top_level_reasoning_should_map_to_thinking_enabled() {
+                let body = generate_body(
+                    "deepseek-reasoner",
+                    &reasoning_options(ReasoningEffort::High),
+                )
+                .await;
+                assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map top-level reasoning none to thinking disabled
+            #[tokio::test]
+            async fn top_level_reasoning_none_should_map_to_thinking_disabled() {
+                let body = generate_body(
+                    "deepseek-reasoner",
+                    &reasoning_options(ReasoningEffort::None),
+                )
+                .await;
+                assert_eq!(body["thinking"], json!({ "type": "disabled" }));
+                assert!(body.get("reasoning_effort").is_none());
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map top-level reasoning xhigh to reasoning_effort max
+            #[tokio::test]
+            async fn top_level_reasoning_xhigh_should_map_to_reasoning_effort_max() {
+                let result = generate_result(
+                    "deepseek-reasoner",
+                    &reasoning_options(ReasoningEffort::Xhigh),
+                )
+                .await;
+                assert_eq!(
+                    result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
+                    "max"
+                );
+                assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
+        "reasoning",
+        "reasoning \"xhigh\" is not directly supported by this model. mapped to effort \"max\"."
+    ))
+    .unwrap()));
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map top-level reasoning low to reasoning_effort low without a compatibility warning
+            #[tokio::test]
+            async fn top_level_reasoning_low_should_map_to_reasoning_effort_low_without_a_compatibility_warning()
+             {
+                let result = generate_result(
+                    "deepseek-reasoner",
+                    &reasoning_options(ReasoningEffort::Low),
+                )
+                .await;
+                assert_eq!(
+                    result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
+                    "low"
+                );
+                assert!(
+        !result
+            .warnings
+            .iter()
+            .any(|w| matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning"))
+    );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map top-level reasoning medium to reasoning_effort high with a compatibility warning
+            #[tokio::test]
+            async fn top_level_reasoning_medium_should_map_to_reasoning_effort_high_with_a_compatibility_warning()
+             {
+                let result = generate_result(
+                    "deepseek-reasoner",
+                    &reasoning_options(ReasoningEffort::Medium),
+                )
+                .await;
+                assert_eq!(
+                    result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
+                    "high"
+                );
+                assert_eq!(
+                    warning_values(&result.warnings),
+                    warning_values(&[compatibility(
+                        "reasoning",
+                        "reasoning \"medium\" is not directly supported by this model. mapped to effort \"high\"."
+                    )])
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map top-level reasoning minimal to reasoning_effort low with compatibility warning
+            #[tokio::test]
+            async fn top_level_reasoning_minimal_should_map_to_reasoning_effort_low_with_compatibility_warning()
+             {
+                let result = generate_result(
+                    "deepseek-reasoner",
+                    &reasoning_options(ReasoningEffort::Minimal),
+                )
+                .await;
+                assert_eq!(
+                    result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
+                    "low"
+                );
+                assert_eq!(
+                    warning_values(&result.warnings),
+                    warning_values(&[compatibility(
+                        "reasoning",
+                        "reasoning \"minimal\" is not directly supported by this model. mapped to effort \"low\"."
+                    )])
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map providerOptions reasoningEffort $input to $output
+            #[tokio::test]
+            async fn top_level_reasoning_should_map_provider_options_reasoning_effort() {
+                for (input, output, warns) in [
+                    ("low", "low", false),
+                    ("medium", "high", true),
+                    ("xhigh", "max", true),
+                ] {
+                    let options = with_provider_options(
+                        options(),
+                        json!({ "deepseek": { "reasoningEffort": input } }),
+                    );
+                    let result = generate_result("deepseek-reasoner", &options).await;
+                    assert_eq!(
+                        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
+                        output
+                    );
+                    let expected = if warns {
+                        vec![compatibility(
+                            "reasoningEffort",
+                            &format!(
+                                "reasoningEffort \"{input}\" is not a canonical DeepSeek value. mapped to \"{output}\"."
+                            ),
+                        )]
+                    } else {
+                        vec![]
+                    };
+                    assert_eq!(warning_values(&result.warnings), warning_values(&expected));
+                }
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should map legacy providerOptions thinking.type=adaptive to enabled with a compatibility warning
+            #[tokio::test]
+            async fn top_level_reasoning_should_map_legacy_thinking_type_adaptive_to_enabled_with_a_compatibility_warning()
+             {
+                let options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "thinking": { "type": "adaptive" } } }),
+                );
+                let result = generate_result("deepseek-reasoner", &options).await;
+                assert_eq!(
+                    result.request.and_then(|r| r.body).unwrap()["thinking"],
+                    json!({ "type": "enabled" })
+                );
+                assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
+        "thinking.type",
+        "thinking.type \"adaptive\" is not a canonical DeepSeek value. mapped to \"enabled\"."
+    ))
+    .unwrap()));
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should pass providerOptions reasoningEffort
+            #[tokio::test]
+            async fn top_level_reasoning_should_pass_provider_options_reasoning_effort() {
+                let options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "reasoningEffort": "max" } }),
+                );
+                let body = generate_body("deepseek-reasoner", &options).await;
+                assert_eq!(body["reasoning_effort"], "max");
+                // When only reasoningEffort is set without thinking, thinking stays unset.
+                assert!(body.get("thinking").is_none());
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should prefer providerOptions thinking over top-level reasoning
+            #[tokio::test]
+            async fn top_level_reasoning_should_prefer_provider_options_thinking_over_top_level_reasoning()
+             {
+                let options = with_provider_options(
+                    reasoning_options(ReasoningEffort::None),
+                    json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
+                );
+                assert_eq!(
+                    generate_body("deepseek-reasoner", &options).await["thinking"],
+                    json!({ "type": "enabled" })
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should prefer providerOptions reasoningEffort over top-level reasoning
+            #[tokio::test]
+            async fn top_level_reasoning_should_prefer_provider_options_reasoning_effort_over_top_level_reasoning()
+             {
+                let options = with_provider_options(
+                    reasoning_options(ReasoningEffort::High),
+                    json!({ "deepseek": { "reasoningEffort": "max" } }),
+                );
+                assert_eq!(
+                    generate_body("deepseek-reasoner", &options).await["reasoning_effort"],
+                    "max"
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › top-level reasoning › should not set thinking when reasoning is not specified
+            #[tokio::test]
+            async fn top_level_reasoning_should_not_set_thinking_when_reasoning_is_not_specified() {
+                assert!(
+                    generate_body("deepseek-reasoner", &options())
+                        .await
+                        .get("thinking")
+                        .is_none()
+                );
+            }
+        }
+
+        mod tool_call {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › should send correct request body
+            #[tokio::test]
+            async fn tool_call_should_send_correct_request_body() {
+                assert_eq!(
+                    generate_body("deepseek-reasoner", &tool_options()).await,
+                    json!({
+                        "messages": [{ "content": "Hello", "role": "user" }],
+                        "model": "deepseek-reasoner",
+                        "thinking": { "type": "enabled" },
+                        "tools": [weather_wire_tool()]
+                    })
+                );
+            }
+
+            mod json_response_format {
+                use super::*;
+
+                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should send correct request body without schema
+                #[tokio::test]
+                async fn json_response_format_should_send_correct_request_body_without_schema() {
+                    assert_eq!(
+                        generate_body("deepseek-reasoner", &json_options(None)).await,
+                        json!({
+                            "messages": [
+                                { "content": "Return JSON.", "role": "system" },
+                                { "content": "Hello", "role": "user" }
+                            ],
+                            "model": "deepseek-reasoner",
+                            "response_format": { "type": "json_object" },
+                            "thinking": { "type": "enabled" },
+                            "tools": [weather_wire_tool()]
+                        })
+                    );
+                }
+
+                /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › tool call › json response format › should send correct request body with schema
+                #[tokio::test]
+                async fn json_response_format_should_send_correct_request_body_with_schema() {
+                    let schema = json!({
+                        "type": "object",
+                        "properties": { "elements": { "type": "array", "items": { "type": "object",
+                            "properties": { "location": { "type": "string" }, "temperature": { "type": "number" },
+                                            "condition": { "type": "string" } },
+                            "required": ["location", "temperature", "condition"], "additionalProperties": false } } },
+                        "required": ["elements"], "additionalProperties": false,
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    });
+                    let result =
+                        generate_result("deepseek-reasoner", &json_options(Some(schema.clone())))
+                            .await;
+                    let body = result.request.and_then(|r| r.body).unwrap();
+                    assert_eq!(
+                        body["messages"][0],
+                        json!({
+                            "role": "system",
+                            "content": format!("Return JSON that conforms to the following schema: {schema}")
+                        })
+                    );
+                    assert_eq!(
+                        body["messages"][1],
+                        json!({ "role": "user", "content": "Hello" })
+                    );
+                    assert_eq!(body["response_format"], json!({ "type": "json_object" }));
+                    // upstream: supportsStructuredOutputs is false, so the schema is injected
+                    // into the system message with a compatibility warning.
+                    assert_eq!(
+                        warning_values(&result.warnings),
+                        warning_values(&[compatibility(
+                            "responseFormat JSON schema",
+                            "JSON response schema is injected into the system message."
+                        )])
+                    );
+                }
+            }
+        }
+
+        mod assistant_prefix_completion {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › assistant prefix completion › should send name and prefix on the final assistant message
+            #[tokio::test]
+            async fn prefix_should_send_name_and_prefix_on_the_final_assistant_message() {
+                let server = json_server(text_response()).await;
+                let body = beta_chat(&server, "deepseek-chat")
+                    .do_generate(&options_for(prefix_prompt(
+                        json!({ "name": "assistant", "prefix": true }),
+                    )))
+                    .await
+                    .unwrap()
+                    .request
+                    .and_then(|r| r.body)
+                    .unwrap();
+                assert_eq!(
+                    body["messages"],
+                    json!([
+                        { "role": "user", "content": "Complete this sentence." },
+                        { "role": "assistant", "content": "The answer is", "name": "assistant", "prefix": true }
+                    ])
+                );
+                assert_eq!(body["model"], "deepseek-chat");
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doGenerate › assistant prefix completion › should reject prefix completion with the default base URL
+            #[tokio::test]
+            async fn prefix_should_reject_prefix_completion_with_the_default_base_url() {
+                let message = generate_error(
+                    "deepseek-chat",
+                    &options_for(vec![with_options(
+                        LanguageModelMessage::Assistant {
+                            content: vec![AssistantPart::Text(TextPart {
+                                text: ("The answer is").into(),
+                                provider_options: None,
+                            })],
+                            provider_options: None,
+                        },
+                        json!({ "deepseek": { "prefix": true } }),
+                    )]),
+                )
+                .await;
+                assert!(
+        message.contains(
+            "DeepSeek assistant prefix completion requires a beta base URL ending in `/beta`."
+        ),
+        "{message}"
+    );
+            }
+        }
+    }
+
+    mod do_stream {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should preserve a provider error envelope in stream errors
+        #[tokio::test]
+        async fn stream_should_preserve_a_provider_error_envelope_in_stream_errors() {
+            let data = json!({ "error": {
+        "message": "Rate limit reached", "type": "rate_limit_error", "code": "rate_limit_exceeded"
+    } });
+            let error = stream_error(&data).await;
+            assert_eq!(error.message, "Rate limit reached");
+            assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
+            assert_eq!(error.status_code, Some(429));
+            assert!(error.is_retryable);
+            // upstream: `data` is the whole error envelope.
+            let envelope: Value =
+                serde_json::from_str(error.response_body.as_deref().unwrap()).unwrap();
+            assert_eq!(envelope, data);
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should classify insufficient quota as non-retryable
+        #[tokio::test]
+        async fn stream_should_classify_insufficient_quota_as_non_retryable() {
+            let data = json!({ "error": {
+        "message": "You exceeded your current quota.", "type": "rate_limit_error",
+        "code": "insufficient_quota"
+    } });
+            let error = stream_error(&data).await;
+            assert_eq!(error.status_code, Some(429));
+            assert!(!error.is_retryable);
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › should preserve the provider type when code is an HTTP status
+        #[tokio::test]
+        async fn stream_should_preserve_the_provider_type_when_code_is_an_http_status() {
+            let data = json!({ "error": {
+        "message": "Rate limit reached", "type": "rate_limit_error", "code": "429"
+    } });
+            let error = stream_error(&data).await;
+            assert_eq!(error.provider_code.as_deref(), Some("429"));
+            assert_eq!(error.status_code, Some(429));
+            assert!(error.is_retryable);
+        }
+
+        mod text {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should send model id, settings, and input
+            #[tokio::test]
+            async fn stream_text_should_send_model_id_settings_and_input() {
+                let mut options = options_for(vec![
+                    LanguageModelMessage::System {
+                        content: ("You are a helpful assistant.").into(),
+                        provider_options: None,
+                    },
+                    LanguageModelMessage::user_text("Hello"),
+                ]);
+                options.temperature = Some(0.5);
+                options.top_p = Some(0.3);
+                let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
+                assert_eq!(
+                    body,
+                    json!({
+                        "messages": [
+                            { "content": "You are a helpful assistant.", "role": "system" },
+                            { "content": "Hello", "role": "user" }
+                        ],
+                        "model": "deepseek-chat",
+                        "stream": true,
+                        "stream_options": { "include_usage": true },
+                        "temperature": 0.5,
+                        "top_p": 0.3
+                    })
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should omit deprecated and ineffective sampling options in default V4 thinking mode
+            #[tokio::test]
+            async fn stream_text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
+             {
+                let mut options = options();
+                options.temperature = Some(0.2);
+                options.top_p = Some(0.4);
+                options.frequency_penalty = Some(0.5);
+                options.presence_penalty = Some(0.6);
+                let (body, parts) =
+                    stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
+                assert_eq!(
+                    body,
+                    json!({
+                        "model": "deepseek-v4-flash",
+                        "messages": [{ "role": "user", "content": "Hello" }],
+                        "stream": true,
+                        "stream_options": { "include_usage": true }
+                    })
+                );
+                assert_eq!(
+                    stream_start_warnings(&parts),
+                    warning_values(&[
+                        deprecated("frequencyPenalty"),
+                        deprecated("presencePenalty"),
+                        thinking_unsupported("temperature"),
+                        thinking_unsupported("topP"),
+                    ])
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should preserve supported sampling options when V4 thinking is disabled
+            #[tokio::test]
+            async fn stream_text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled()
+             {
+                let mut options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
+                );
+                options.temperature = Some(0.2);
+                options.top_p = Some(0.4);
+                options.frequency_penalty = Some(0.5);
+                options.presence_penalty = Some(0.6);
+                let (body, parts) =
+                    stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
+                assert_eq!(
+                    body,
+                    json!({
+                        "model": "deepseek-v4-flash",
+                        "messages": [{ "role": "user", "content": "Hello" }],
+                        "temperature": 0.2,
+                        "top_p": 0.4,
+                        "thinking": { "type": "disabled" },
+                        "stream": true,
+                        "stream_options": { "include_usage": true }
+                    })
+                );
+                assert_eq!(
+                    stream_start_warnings(&parts),
+                    warning_values(&[
+                        deprecated("frequencyPenalty"),
+                        deprecated("presencePenalty")
+                    ])
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should send message names
+            #[tokio::test]
+            async fn stream_text_should_send_message_names() {
+                let name = |value: &str| json!({ "deepseek": { "name": value } });
+                let options = options_for(vec![
+                    with_options(
+                        LanguageModelMessage::System {
+                            content: ("You are a helpful assistant.").into(),
+                            provider_options: None,
+                        },
+                        name("guide"),
+                    ),
+                    with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
+                    with_options(
+                        LanguageModelMessage::Assistant {
+                            content: vec![AssistantPart::Text(TextPart {
+                                text: ("Hello, Alice.").into(),
+                                provider_options: None,
+                            })],
+                            provider_options: None,
+                        },
+                        name("assistant"),
+                    ),
+                ]);
+                let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
+                assert_eq!(
+                    body["messages"],
+                    json!([
+                        { "content": "You are a helpful assistant.", "name": "guide", "role": "system" },
+                        { "content": "Hello", "name": "alice", "role": "user" },
+                        { "content": "Hello, Alice.", "name": "assistant", "role": "assistant" }
+                    ])
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should pass providerOptions userId as user_id
+            #[tokio::test]
+            async fn stream_text_should_pass_provider_options_user_id_as_user_id() {
+                let options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "userId": "tenant_123-user" } }),
+                );
+                let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
+                assert_eq!(body["user_id"], "tenant_123-user");
+                assert_eq!(body["stream"], true);
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should include the repeated system fingerprint in provider metadata
+            #[tokio::test]
+            async fn stream_text_should_include_the_repeated_system_fingerprint_in_provider_metadata()
+             {
+                let (_, parts) = stream_parts("deepseek-chat", &options(), text_chunks()).await;
+                assert_eq!(
+                    finish_metadata(&parts)["deepseek"]["systemFingerprint"],
+                    "fp_eaab8d114b_prod0820_fp8_kvcache"
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should keep the latest non-null system fingerprint
+            #[tokio::test]
+            async fn stream_text_should_keep_the_latest_non_null_system_fingerprint() {
+                let chunks = vec![
+        "data: {\"system_fingerprint\":\"fp_initial\",\"choices\":[{\"delta\":{\"content\":\"OK\"},\"finish_reason\":null}],\"usage\":null}\n\n".to_string(),
+        "data: {\"system_fingerprint\":null,\"choices\":[{\"delta\":{},\"finish_reason\":null}],\"usage\":null}\n\n".to_string(),
+        "data: {\"system_fingerprint\":\"fp_latest\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n".to_string(),
+    ];
+                let (_, parts) = stream_parts("deepseek-chat", &options(), chunks).await;
+                assert_eq!(
+                    finish_metadata(&parts)["deepseek"]["systemFingerprint"],
+                    "fp_latest"
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › text › should tolerate a %s system fingerprint
+            #[tokio::test]
+            async fn stream_text_should_tolerate_a_null_or_missing_system_fingerprint() {
+                for fingerprint in [Some(Value::Null), None] {
+                    let mut chunk = json!({
+                        "choices": [{ "delta": { "content": "OK" }, "finish_reason": "stop" }],
+                        "usage": null
+                    });
+                    if let Some(value) = fingerprint {
+                        chunk["system_fingerprint"] = value;
+                    }
+                    let (_, parts) =
+                        stream_parts("deepseek-chat", &options(), vec![data_event(&chunk)]).await;
+                    assert!(
+                        finish_metadata(&parts)["deepseek"]
+                            .get("systemFingerprint")
+                            .is_none()
+                    );
+                }
+            }
+        }
+
+        mod reasoning {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › reasoning › should keep reasoning active when deltas include empty tool calls
+            #[tokio::test]
+            async fn stream_reasoning_should_keep_reasoning_active_when_deltas_include_empty_tool_calls()
+             {
+                let chunk = |delta: Value, finish: Value| {
+                    data_event(&json!({
+                        "id": "chatcmpl-test", "object": "chat.completion.chunk", "created": 1,
+                        "model": "test-model",
+                        "choices": [{ "index": 0, "delta": delta, "finish_reason": finish }]
+                    }))
+                };
+                let chunks = vec![
+                    chunk(
+                        json!({ "role": "assistant", "content": "", "reasoning_content": "Think ", "tool_calls": [] }),
+                        Value::Null,
+                    ),
+                    chunk(
+                        json!({ "content": "", "reasoning_content": "more...", "tool_calls": [] }),
+                        Value::Null,
+                    ),
+                    chunk(
+                        json!({ "content": "Hello", "reasoning_content": "", "tool_calls": [] }),
+                        json!("stop"),
+                    ),
+                ];
+                let (_, parts) = stream_parts("deepseek-reasoner", &options(), chunks).await;
+                let reasoning: Vec<String> = parts
+                    .iter()
+                    .filter_map(|part| match part {
+                        StreamPart::ReasoningStart { id, .. } => Some(format!("start {id}")),
+                        StreamPart::ReasoningDelta { id, delta, .. } => {
+                            Some(format!("delta {id} {delta}"))
+                        }
+                        StreamPart::ReasoningEnd { id, .. } => Some(format!("end {id}")),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(
+                    reasoning,
+                    [
+                        "start reasoning-0",
+                        "delta reasoning-0 Think ",
+                        "delta reasoning-0 more...",
+                        "end reasoning-0"
+                    ]
+                );
+            }
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › reasoning › should map legacy thinking and generic reasoning to canonical request values
+            #[tokio::test]
+            async fn stream_reasoning_should_map_legacy_thinking_and_generic_reasoning_to_canonical_request_values()
+             {
+                let options = with_provider_options(
+                    reasoning_options(ReasoningEffort::Medium),
+                    json!({ "deepseek": { "thinking": { "type": "adaptive" } } }),
+                );
+                let (body, parts) =
+                    stream_parts("deepseek-reasoner", &options, text_chunks()).await;
+                assert_eq!(body["thinking"], json!({ "type": "enabled" }));
+                assert_eq!(body["reasoning_effort"], "high");
+                assert_eq!(
+                    stream_start_warnings(&parts),
+                    warning_values(&[
+                        compatibility(
+                            "thinking.type",
+                            "thinking.type \"adaptive\" is not a canonical DeepSeek value. mapped to \"enabled\"."
+                        ),
+                        compatibility(
+                            "reasoning",
+                            "reasoning \"medium\" is not directly supported by this model. mapped to effort \"high\"."
+                        ),
+                    ])
+                );
+            }
+        }
+
+        mod logprobs {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › logprobs › should send logprobs provider options and collect streamed logprobs
+            #[tokio::test]
+            async fn stream_logprobs_should_send_logprobs_provider_options_and_collect_streamed_logprobs()
+             {
+                let chunk = |choice: Value, usage: Value| {
+                    data_event(&json!({
+                        "id": "c", "object": "chat.completion.chunk", "created": 1, "model": "deepseek-v4-flash",
+                        "choices": [choice], "usage": usage
+                    }))
+                };
+                let chunks = vec![
+                    chunk(
+                        json!({ "index": 0, "delta": { "role": "assistant", "reasoning_content": "Reasoning" },
+                    "logprobs": { "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)] },
+                    "finish_reason": null }),
+                        Value::Null,
+                    ),
+                    chunk(
+                        json!({ "index": 0, "delta": { "content": "OK" },
+                    "logprobs": { "content": [logprob("OK", -0.00002467602, json!([79, 75]))] },
+                    "finish_reason": "stop" }),
+                        json!({ "prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11,
+                    "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 9 }),
+                    ),
+                ];
+                let options = with_provider_options(
+                    options(),
+                    json!({ "deepseek": { "logprobs": true, "topLogprobs": 1 } }),
+                );
+                let (body, parts) = stream_parts("deepseek-v4-flash", &options, chunks).await;
+                assert_eq!(body["logprobs"], true);
+                assert_eq!(body["top_logprobs"], 1);
+                assert_eq!(
+                    finish_metadata(&parts),
+                    json!({ "deepseek": {
+            "choiceIndex": 0,
+            "logprobs": {
+                "content": [logprob("OK", -0.00002467602, json!([79, 75]))],
+                "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)]
+            },
+            "messageRole": "assistant",
+            "promptCacheHitTokens": 0,
+            "promptCacheMissTokens": 9,
+            "responseObject": "chat.completion.chunk"
+        } })
+                );
+            }
+        }
+
+        mod assistant_prefix_completion {
+            use super::*;
+
+            /// upstream: @ai-sdk/deepseek src/chat/deepseek-chat-language-model.test.ts › DeepSeekChatLanguageModel › doStream › assistant prefix completion › should send prefix true on the final assistant message
+            #[tokio::test]
+            async fn stream_prefix_should_send_prefix_true_on_the_final_assistant_message() {
+                let server = sse_server(text_chunks()).await;
+                let result = beta_chat(&server, "deepseek-chat")
+                    .do_stream(&options_for(prefix_prompt(json!({ "prefix": true }))))
+                    .await
+                    .unwrap();
+                let body = result.request.and_then(|r| r.body).unwrap();
+                assert_eq!(
+                    body["messages"],
+                    json!([
+                        { "role": "user", "content": "Complete this sentence." },
+                        { "role": "assistant", "content": "The answer is", "prefix": true }
+                    ])
+                );
+                assert_eq!(body["model"], "deepseek-chat");
+                assert_eq!(body["stream"], true);
+            }
+        }
+    }
+}
+
+mod convert_to_deep_seek_chat_messages {
+    use super::*;
+
+    mod message_names {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › message names › should ignore a name on a tool message with an unsupported warning
+        #[tokio::test]
+        async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warning() {
+            let options = options_for(vec![with_options(
+                LanguageModelMessage::Tool {
+                    content: vec![ToolPart::ToolResult(ToolResultPart {
+                        tool_call_id: ("call-1").into(),
+                        output: ToolResultOutput::Text {
+                            value: "sunny".into(),
+                            provider_options: None,
+                        },
+                        tool_name: "weather_tool".into(),
+                        provider_options: None,
+                    })],
+                    provider_options: None,
+                },
+                json!({ "deepseek": { "name": "weather_tool" } }),
+            )]);
+            let result = generate_result("deepseek-chat", &options).await;
+            assert_eq!(
+                result.request.and_then(|r| r.body).unwrap()["messages"],
+                json!([{ "role": "tool", "tool_call_id": "call-1", "content": "sunny" }])
+            );
+            assert_eq!(
+                warning_values(&result.warnings),
+                warning_values(&[Warning::Unsupported {
+                    feature: "message name on tool messages".to_string(),
+                    details: None,
+                }])
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › message names › should reject a non-string name
+        #[tokio::test]
+        async fn convert_should_reject_a_non_string_name() {
+            let options = options_for(vec![with_options(
+                LanguageModelMessage::user_text("Hello"),
+                json!({ "deepseek": { "name": 123 } }),
+            )]);
+            let message = generate_error("deepseek-chat", &options).await;
+            assert!(message.contains("invalid provider options"), "{message}");
+        }
+    }
+
+    mod user_messages {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert messages with only a text part to a string content
+        #[tokio::test]
+        async fn convert_should_convert_messages_with_only_a_text_part_to_a_string_content() {
+            let messages = wire_messages(
+                "deepseek-chat",
+                vec![LanguageModelMessage::user_text("Hello")],
+            )
+            .await;
+            assert_eq!(messages, [json!({ "role": "user", "content": "Hello" })]);
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert image data to an image URL content part
+        #[tokio::test]
+        async fn convert_should_convert_image_data_to_an_image_url_content_part() {
+            let messages = wire_messages(
+                "deepseek-chat",
+                vec![LanguageModelMessage::User {
+                    content: vec![
+                        UserPart::Text(TextPart {
+                            text: ("Hello").into(),
+                            provider_options: None,
+                        }),
+                        png_data(),
+                    ],
+                    provider_options: None,
+                }],
+            )
+            .await;
+            assert_eq!(
+                messages,
+                [json!({ "role": "user", "content": [
+            { "type": "text", "text": "Hello" },
+            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AAECAw==" } }
+        ] })]
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert an image URL to an image URL content part
+        #[tokio::test]
+        async fn convert_should_convert_an_image_url_to_an_image_url_content_part() {
+            let messages = wire_messages(
+                "deepseek-chat",
+                vec![LanguageModelMessage::User {
+                    content: vec![
+                        UserPart::Text(TextPart {
+                            text: ("Hello").into(),
+                            provider_options: None,
+                        }),
+                        UserPart::File(FilePart {
+                            data: FileData::Url {
+                                url: ("https://example.com/image.png").into(),
+                                original_url: None,
+                            },
+                            media_type: ("image/png").into(),
+                            filename: None,
+                            provider_options: None,
+                        }),
+                    ],
+                    provider_options: None,
+                }],
+            )
+            .await;
+            assert_eq!(
+                messages,
+                [json!({ "role": "user", "content": [
+            { "type": "text", "text": "Hello" },
+            { "type": "image_url", "image_url": { "url": "https://example.com/image.png" } }
+        ] })]
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should pass imageDetail to image URL content parts
+        #[tokio::test]
+        async fn convert_should_pass_image_detail_to_image_url_content_parts() {
+            let messages = wire_messages(
+                "deepseek-v4-flash-vision-exp",
+                vec![LanguageModelMessage::User {
+                    content: vec![file_with_options(
+                        UserPart::File(FilePart {
+                            data: FileData::Url {
+                                url: ("https://example.com/image.webp").into(),
+                                original_url: None,
+                            },
+                            media_type: ("image/webp").into(),
+                            filename: None,
+                            provider_options: None,
+                        }),
+                        json!({ "deepseek": { "imageDetail": "low" } }),
+                    )],
+                    provider_options: None,
+                }],
+            )
+            .await;
+            assert_eq!(
+                messages,
+                [json!({ "role": "user", "content": [
+            { "type": "image_url", "image_url": { "url": "https://example.com/image.webp", "detail": "low" } }
+        ] })]
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert inline image data to file_data and preserve its filename
+        #[tokio::test]
+        async fn convert_should_convert_inline_image_data_to_file_data_and_preserve_its_filename() {
+            let part = UserPart::File(FilePart {
+                data: FileData::Data {
+                    data: FileBytes::Base64("AAECAw==".to_string()),
+                },
+                media_type: "image/jpg".to_string(),
+                filename: Some("sample.jpg".to_string()),
+                provider_options: Some(
+                    provider_namespace("deepseek", json!({ "fileData": true })).unwrap(),
+                ),
+            });
+            let messages = wire_messages(
+                "deepseek-v4-flash-vision-exp",
+                vec![LanguageModelMessage::User {
+                    content: vec![part],
+                    provider_options: None,
+                }],
+            )
+            .await;
+            assert_eq!(
+                messages,
+                [json!({ "role": "user", "content": [
+            { "type": "file", "file_data": "data:image/jpeg;base64,AAECAw==", "filename": "sample.jpg" }
+        ] })]
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should reject imageDetail together with fileData
+        #[tokio::test]
+        async fn convert_should_reject_image_detail_together_with_file_data() {
+            let part = file_with_options(
+                png_data(),
+                json!({ "deepseek": { "fileData": true, "imageDetail": "high" } }),
+            );
+            let message = generate_error(
+                "deepseek-v4-flash-vision-exp",
+                &options_for(vec![LanguageModelMessage::User {
+                    content: vec![part],
+                    provider_options: None,
+                }]),
+            )
+            .await;
+            assert!(
+                message.contains("DeepSeek `imageDetail` cannot be combined with `fileData`."),
+                "{message}"
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should reject image URLs longer than 8192 characters
+        #[tokio::test]
+        async fn convert_should_reject_image_urls_longer_than_8192_characters() {
+            let url = format!("https://example.com/{}", "a".repeat(8192));
+            let message = generate_error(
+                "deepseek-v4-flash-vision-exp",
+                &options_for(vec![LanguageModelMessage::User {
+                    content: vec![UserPart::File(FilePart {
+                        data: FileData::Url {
+                            url: (url),
+                            original_url: None,
+                        },
+                        media_type: ("image/png").into(),
+                        filename: None,
+                        provider_options: None,
+                    })],
+                    provider_options: None,
+                }]),
+            )
+            .await;
+            assert!(
+                message.contains("DeepSeek image URLs must not exceed 8192 characters."),
+                "{message}"
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should reject unsupported image formats
+        #[tokio::test]
+        async fn convert_should_reject_unsupported_image_formats() {
+            let message = generate_error(
+                "deepseek-v4-flash-vision-exp",
+                &options_for(vec![LanguageModelMessage::User {
+                    content: vec![UserPart::File(FilePart {
+                        data: FileData::Data {
+                            data: FileBytes::Base64(("AAECAw==").into()),
+                        },
+                        media_type: ("image/svg+xml").into(),
+                        filename: None,
+                        provider_options: None,
+                    })],
+                    provider_options: None,
+                }]),
+            )
+            .await;
+            assert!(
+                message.contains("DeepSeek supports JPEG, PNG, GIF, and WebP image inputs."),
+                "{message}"
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should convert an image provider reference to a file content part
+        #[tokio::test]
+        async fn convert_should_convert_an_image_provider_reference_to_a_file_content_part() {
+            let messages = wire_messages(
+                "deepseek-v4-flash-vision-exp",
+                vec![LanguageModelMessage::User {
+                    content: vec![
+                UserPart::Text(TextPart {
+                    text: ("Hello").into(),
+                    provider_options: None,
+                }),
+                UserPart::File(FilePart {
+                    data: FileData::Reference {
+                        reference: serde_json::from_value(
+                            json!({ "deepseek": "file-api-deepseek", "openai": "file-openai" }),
+                        )
+                        .unwrap(),
+                    },
+                    media_type: ("image/png").into(),
+                    filename: None,
+                    provider_options: None,
+                }),
+            ],
+                    provider_options: None,
+                }],
+            )
+            .await;
+            assert_eq!(
+                messages,
+                [json!({ "role": "user", "content": [
+            { "type": "text", "text": "Hello" },
+            { "type": "file", "file_id": "file-api-deepseek" }
+        ] })]
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should throw when an image reference has no DeepSeek identifier
+        #[tokio::test]
+        async fn convert_should_throw_when_an_image_reference_has_no_deepseek_identifier() {
+            let message = generate_error(
+                "deepseek-v4-flash-vision-exp",
+                &options_for(vec![LanguageModelMessage::User {
+                    content: vec![UserPart::File(FilePart {
+                        data: FileData::Reference {
+                            reference: serde_json::from_value(json!({ "openai": "file-openai" }))
+                                .unwrap(),
+                        },
+                        media_type: ("image/png").into(),
+                        filename: None,
+                        provider_options: None,
+                    })],
+                    provider_options: None,
+                }]),
+            )
+            .await;
+            assert!(message.contains("deepseek"), "{message}");
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › user messages › should warn about unsupported non-image file parts
+        #[tokio::test]
+        async fn convert_should_warn_about_unsupported_non_image_file_parts() {
+            let result = generate_result(
+                "deepseek-chat",
+                &options_for(vec![LanguageModelMessage::User {
+                    content: vec![
+                        UserPart::Text(TextPart {
+                            text: ("Hello").into(),
+                            provider_options: None,
+                        }),
+                        UserPart::File(FilePart {
+                            data: FileData::Data {
+                                data: FileBytes::Base64(("AAECAw==").into()),
+                            },
+                            media_type: ("application/pdf").into(),
+                            filename: None,
+                            provider_options: None,
+                        }),
+                    ],
+                    provider_options: None,
+                }]),
+            )
+            .await;
+            assert_eq!(
+                result.request.and_then(|r| r.body).unwrap()["messages"],
+                json!([{ "role": "user", "content": "Hello" }])
+            );
+            assert_eq!(
+                warning_values(&result.warnings),
+                warning_values(&[Warning::Unsupported {
+                    feature: "user message part type: file".to_string(),
+                    details: None,
+                }])
+            );
+        }
+    }
+
+    mod tool_calls {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should stringify arguments to tool calls
+        #[tokio::test]
+        async fn convert_should_stringify_arguments_to_tool_calls() {
+            let result = generate_result("deepseek-chat", &options_for(tool_turn(false))).await;
+            assert_eq!(
+                result.request.and_then(|r| r.body).unwrap()["messages"],
+                json!([
+                    // upstream sends the empty text as `content: ""`, not null.
+                    { "role": "assistant", "content": "", "tool_calls": wire_tool_call() },
+                    { "role": "tool", "tool_call_id": "quux", "content": "{\"oof\":\"321rab\"}" }
+                ])
+            );
+            assert!(result.warnings.is_empty());
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should handle text output type in tool results
+        #[tokio::test]
+        async fn convert_should_handle_text_output_type_in_tool_results() {
+            let messages = wire_messages(
+                "deepseek-chat",
+                vec![
+                    LanguageModelMessage::Assistant {
+                        content: vec![AssistantPart::ToolCall(ToolCallPart {
+                            tool_call_id: ("call-1").into(),
+                            tool_name: ("getWeather").into(),
+                            input: json!({ "query": "weather" }),
+                            provider_executed: None,
+                            provider_options: None,
+                        })],
+                        provider_options: None,
+                    },
+                    LanguageModelMessage::Tool {
+                        content: vec![ToolPart::ToolResult(ToolResultPart {
+                            tool_call_id: ("call-1").into(),
+                            output: ToolResultOutput::Text {
+                                value: "It is sunny today".into(),
+                                provider_options: None,
+                            },
+                            tool_name: "getWeather".into(),
+                            provider_options: None,
+                        })],
+                        provider_options: None,
+                    },
+                ],
+            )
+            .await;
+            assert_eq!(
+                messages[1],
+                json!({ "role": "tool", "tool_call_id": "call-1", "content": "It is sunny today" })
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should support reasoning content in tool calls
+        #[tokio::test]
+        async fn convert_should_support_reasoning_content_in_tool_calls() {
+            let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
+            prompt.extend(tool_turn(true));
+            let messages = wire_messages("deepseek-chat", prompt).await;
+            assert_eq!(
+                messages[1],
+                json!({
+                    "role": "assistant", "content": "",
+                    "reasoning_content": "I think the tool will return the correct value.",
+                    "tool_calls": wire_tool_call()
+                })
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › tool calls › should filter out reasoning content from turns before the last user message
+        #[tokio::test]
+        async fn convert_should_filter_out_reasoning_content_from_turns_before_the_last_user_message()
+         {
+            let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
+            prompt.extend(tool_turn(true));
+            prompt.push(LanguageModelMessage::user_text("Goodbye"));
+            let messages = wire_messages("deepseek-chat", prompt).await;
+            assert_eq!(
+                messages[1],
+                json!({ "role": "assistant", "content": "", "tool_calls": wire_tool_call() })
+            );
+        }
+    }
+
+    mod deepseek_v4_thinking_mode {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › deepseek-v4 thinking mode › should preserve reasoning_content from prior turns for deepseek-v4
+        #[tokio::test]
+        async fn convert_should_preserve_reasoning_content_from_prior_turns_for_deepseek_v4() {
+            let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
+            prompt.extend(tool_turn(true));
+            prompt.push(LanguageModelMessage::user_text("Goodbye"));
+            let messages = wire_messages("deepseek-v4-pro", prompt).await;
+            assert_eq!(
+                messages[1],
+                json!({
+                    "role": "assistant", "content": "",
+                    "reasoning_content": "I think the tool will return the correct value.",
+                    "tool_calls": wire_tool_call()
+                })
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › deepseek-v4 thinking mode › should preserve reasoning_content from prior turns for the deepseek-flash alias
+        #[tokio::test]
+        async fn convert_should_preserve_reasoning_content_from_prior_turns_for_the_deepseek_flash_alias()
+         {
+            let messages = wire_messages(
+                "deepseek-flash",
+                vec![
+                    LanguageModelMessage::user_text("Hello"),
+                    LanguageModelMessage::Assistant {
+                        content: vec![
+                            AssistantPart::Reasoning(ReasoningPart {
+                                text: ("Prior-turn reasoning.").into(),
+                                provider_options: None,
+                            }),
+                            AssistantPart::Text(TextPart {
+                                text: ("Hi there").into(),
+                                provider_options: None,
+                            }),
+                        ],
+                        provider_options: None,
+                    },
+                    LanguageModelMessage::user_text("Again"),
+                ],
+            )
+            .await;
+            assert_eq!(
+                messages[1],
+                json!({ "role": "assistant", "content": "Hi there", "reasoning_content": "Prior-turn reasoning." })
+            );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › deepseek-v4 thinking mode › should back-fill empty reasoning_content for deepseek-v4 assistant messages with no reasoning part
+        #[tokio::test]
+        async fn convert_should_back_fill_empty_reasoning_content_for_deepseek_v4_assistant_messages_with_no_reasoning_part()
+         {
+            let messages = wire_messages(
+                "deepseek-v4-pro",
+                vec![
+                    LanguageModelMessage::user_text("Hello"),
+                    LanguageModelMessage::Assistant {
+                        content: vec![AssistantPart::Text(TextPart {
+                            text: ("Hi there").into(),
+                            provider_options: None,
+                        })],
+                        provider_options: None,
+                    },
+                    LanguageModelMessage::user_text("Again"),
+                ],
+            )
+            .await;
+            assert_eq!(
+                messages[1],
+                json!({ "role": "assistant", "content": "Hi there", "reasoning_content": "" })
+            );
+        }
+    }
+
+    mod assistant_prefix_completion {
+        use super::*;
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › assistant prefix completion › should reject prefix completion on a non-assistant message
+        #[tokio::test]
+        async fn convert_should_reject_prefix_completion_on_a_non_assistant_message() {
+            let message = generate_error(
+                "deepseek-chat",
+                &options_for(vec![with_options(
+                    LanguageModelMessage::user_text("Hello"),
+                    json!({ "deepseek": { "prefix": true } }),
+                )]),
+            )
+            .await;
+            assert!(
+        message.contains(
+            "DeepSeek assistant prefix completion requires `prefix: true` on an assistant message."
+        ),
+        "{message}"
+    );
+        }
+
+        /// upstream: @ai-sdk/deepseek src/chat/convert-to-deepseek-chat-messages.test.ts › convertToDeepSeekChatMessages › assistant prefix completion › should reject prefix completion on a non-final assistant message
+        #[tokio::test]
+        async fn convert_should_reject_prefix_completion_on_a_non_final_assistant_message() {
+            let server = json_server(text_response()).await;
+            let prompt = vec![
+                with_options(
+                    LanguageModelMessage::Assistant {
+                        content: vec![AssistantPart::Text(TextPart {
+                            text: ("The answer is").into(),
+                            provider_options: None,
+                        })],
+                        provider_options: None,
+                    },
+                    json!({ "deepseek": { "prefix": true } }),
+                ),
+                LanguageModelMessage::user_text("Continue"),
+            ];
+            let error = beta_chat(&server, "deepseek-chat")
+                .do_generate(&options_for(prompt))
+                .await
+                .unwrap_err();
+            assert!(
+        error.to_string().contains(
+            "DeepSeek assistant prefix completion requires the prefixed assistant message to be the final message."
+        ),
+        "{error}"
+    );
+        }
+    }
+}
+
+mod prepare_tools {
+    use super::*;
+
+    /// A tool with `strict: false` should produce `"strict": false` in the
+    /// serialized tool definition.
+    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should pass through strict mode when strict is false
+    #[tokio::test]
+    async fn should_pass_through_strict_mode_when_strict_is_false() {
+        let tool = FunctionTool {
+            name: "testFunction".to_string(),
+            description: Some("A test function".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+            strict: Some(false),
+            provider_options: None,
+            input_examples: None,
+        };
+        let mut options = options();
+        options.tools = Some(vec![Tool::from(tool)]);
+        let body = generate_body("deepseek-chat", &options).await;
+
+        assert_eq!(
+            body["tools"],
+            json!([{
+                "type": "function",
+                "function": {
+                    "description": "A test function",
+                    "name": "testFunction",
+                    "parameters": { "type": "object", "properties": {} },
+                    "strict": false
+                }
+            }])
+        );
+    }
+
+    /// A tool without `strict` set should NOT have a `"strict"` field in the
+    /// serialized tool definition.
+    /// upstream: @ai-sdk/deepseek src/chat/deepseek-prepare-tools.test.ts › prepareTools › should not include strict mode when strict is undefined
+    #[tokio::test]
+    async fn should_not_include_strict_mode_when_strict_is_undefined() {
+        let tool = FunctionTool {
+            name: "testFunction".to_string(),
+            description: Some("A test function".to_string()),
+            input_schema: json!({ "type": "object", "properties": {} }),
+            strict: None,
+            provider_options: None,
+            input_examples: None,
+        };
+        let mut options = options();
+        options.tools = Some(vec![Tool::from(tool)]);
+        let body = generate_body("deepseek-chat", &options).await;
+
+        assert_eq!(
+            body["tools"],
+            json!([{
+                "type": "function",
+                "function": {
+                    "description": "A test function",
+                    "name": "testFunction",
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            }])
+        );
+        // Verify strict is absent.
+        assert!(
+            body["tools"][0]["function"].get("strict").is_none(),
+            "strict should be absent"
+        );
+    }
+}
+
+// ---- Tests without a matching upstream case (aimux-own, or a partial port) ----
 
 #[tokio::test]
 async fn text_should_send_max_tokens_and_stop_sequences() {
@@ -467,70 +2312,6 @@ async fn text_should_send_max_tokens_and_stop_sequences() {
 }
 
 #[tokio::test]
-async fn text_should_send_message_names() {
-    let name = |value: &str| json!({ "deepseek": { "name": value } });
-    let messages = wire_messages(
-        "deepseek-chat",
-        vec![
-            with_options(
-                LanguageModelMessage::System {
-                    content: ("You are a helpful assistant.").into(),
-                    provider_options: None,
-                },
-                name("guide"),
-            ),
-            with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
-            with_options(
-                LanguageModelMessage::Assistant {
-                    content: vec![AssistantPart::Text(TextPart {
-                        text: ("Hello, Alice.").into(),
-                        provider_options: None,
-                    })],
-                    provider_options: None,
-                },
-                name("assistant"),
-            ),
-            with_options(
-                LanguageModelMessage::user_text("How are you?"),
-                name("alice"),
-            ),
-        ],
-    )
-    .await;
-    assert_eq!(
-        messages,
-        [
-            json!({ "content": "You are a helpful assistant.", "name": "guide", "role": "system" }),
-            json!({ "content": "Hello", "name": "alice", "role": "user" }),
-            json!({ "content": "Hello, Alice.", "name": "assistant", "role": "assistant" }),
-            json!({ "content": "How are you?", "name": "alice", "role": "user" }),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn text_should_pass_provider_options_user_id_as_user_id() {
-    let options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "userId": "tenant_123-user" } }),
-    );
-    assert_eq!(
-        generate_body("deepseek-chat", &options).await["user_id"],
-        "tenant_123-user"
-    );
-}
-
-#[tokio::test]
-async fn text_should_omit_user_id_when_user_id_is_not_provided() {
-    assert!(
-        generate_body("deepseek-chat", &options())
-            .await
-            .get("user_id")
-            .is_none()
-    );
-}
-
-#[tokio::test]
 async fn text_should_not_send_unknown_provider_options() {
     // upstream: `deepseekLanguageModelChatOptions` is a zod object, which
     // strips keys it does not declare.
@@ -538,146 +2319,6 @@ async fn text_should_not_send_unknown_provider_options() {
         with_provider_options(options(), json!({ "deepseek": { "user": "u1", "foo": 1 } }));
     let body = generate_body("deepseek-chat", &options).await;
     assert!(body.get("user").is_none() && body.get("foo").is_none());
-}
-
-/// TS: "should pass through strict mode when strict is false" (line ~40).
-///
-/// A tool with `strict: false` should produce `"strict": false` in the
-/// serialized tool definition.
-#[tokio::test]
-async fn should_pass_through_strict_mode_when_strict_is_false() {
-    let tool = FunctionTool {
-        name: "testFunction".to_string(),
-        description: Some("A test function".to_string()),
-        input_schema: json!({ "type": "object", "properties": {} }),
-        strict: Some(false),
-        provider_options: None,
-        input_examples: None,
-    };
-    let mut options = options();
-    options.tools = Some(vec![Tool::from(tool)]);
-    let body = generate_body("deepseek-chat", &options).await;
-
-    assert_eq!(
-        body["tools"],
-        json!([{
-            "type": "function",
-            "function": {
-                "description": "A test function",
-                "name": "testFunction",
-                "parameters": { "type": "object", "properties": {} },
-                "strict": false
-            }
-        }])
-    );
-}
-
-/// TS: "should not include strict mode when strict is undefined" (line ~75).
-///
-/// A tool without `strict` set should NOT have a `"strict"` field in the
-/// serialized tool definition.
-#[tokio::test]
-async fn should_not_include_strict_mode_when_strict_is_undefined() {
-    let tool = FunctionTool {
-        name: "testFunction".to_string(),
-        description: Some("A test function".to_string()),
-        input_schema: json!({ "type": "object", "properties": {} }),
-        strict: None,
-        provider_options: None,
-        input_examples: None,
-    };
-    let mut options = options();
-    options.tools = Some(vec![Tool::from(tool)]);
-    let body = generate_body("deepseek-chat", &options).await;
-
-    assert_eq!(
-        body["tools"],
-        json!([{
-            "type": "function",
-            "function": {
-                "description": "A test function",
-                "name": "testFunction",
-                "parameters": { "type": "object", "properties": {} }
-            }
-        }])
-    );
-    // Verify strict is absent.
-    assert!(
-        body["tools"][0]["function"].get("strict").is_none(),
-        "strict should be absent"
-    );
-}
-
-#[tokio::test]
-async fn text_should_reject_strict_tools_on_the_standard_endpoint_before_fetching() {
-    let mut options = options();
-    options.tools = Some(vec![strict_tool("getWeather", Some(true))]);
-    let message = generate_error("deepseek-chat", &options).await;
-    assert!(
-        message.contains("DeepSeek strict tool calls require a beta base URL ending in `/beta`."),
-        "{message}"
-    );
-}
-
-#[tokio::test]
-async fn text_should_send_all_strict_tools_on_the_beta_endpoint() {
-    let server = json_server(text_response()).await;
-    let mut options = options();
-    options.tools = Some(vec![strict_tool("getWeather", Some(true))]);
-    let body = beta_chat(&server, "deepseek-chat")
-        .do_generate(&options)
-        .await
-        .unwrap()
-        .request
-        .and_then(|r| r.body)
-        .unwrap();
-    assert_eq!(body["tools"][0]["type"], "function");
-    assert_eq!(body["tools"][0]["function"]["name"], "getWeather");
-    assert_eq!(body["tools"][0]["function"]["strict"], true);
-}
-
-#[tokio::test]
-async fn text_should_reject_mixed_strict_tools_in_streaming_requests() {
-    let server = sse_server(text_chunks()).await;
-    let mut options = options();
-    options.tools = Some(vec![
-        strict_tool("strictTool", Some(true)),
-        strict_tool("nonStrictTool", None),
-    ]);
-    let Err(error) = beta_chat(&server, "deepseek-chat")
-        .do_stream(&options)
-        .await
-    else {
-        panic!("the call must be rejected");
-    };
-    assert!(
-        error.to_string().contains(
-            "DeepSeek strict mode requires every function tool in the request to set `strict: true`."
-        ),
-        "{error}"
-    );
-    assert!(request_paths(&server).await.is_empty());
-}
-
-#[tokio::test]
-async fn text_should_reject_invalid_user_id_before_making_an_api_request() {
-    for (user_id, expected) in [
-        ("".to_string(), "userId must match /^[a-zA-Z0-9_-]+$/"),
-        (
-            "contains space".to_string(),
-            "userId must match /^[a-zA-Z0-9_-]+$/",
-        ),
-        (
-            "a".repeat(513),
-            "userId must be at most 512 characters long",
-        ),
-    ] {
-        let options =
-            with_provider_options(options(), json!({ "deepseek": { "userId": user_id } }));
-        let message = generate_error("deepseek-chat", &options).await;
-        assert!(message.contains("invalid provider options"), "{message}");
-        assert!(message.contains(expected), "{message}");
-    }
 }
 
 #[tokio::test]
@@ -744,75 +2385,6 @@ async fn text_should_report_the_provider_metadata() {
 }
 
 #[tokio::test]
-async fn text_should_include_the_system_fingerprint_in_provider_metadata() {
-    let result = generate_result("deepseek-chat", &options()).await;
-    assert_eq!(
-        result.provider_metadata.unwrap()["deepseek"]["systemFingerprint"],
-        "fp_eaab8d114b_prod0820_fp8_kvcache"
-    );
-}
-
-#[tokio::test]
-async fn text_should_tolerate_a_null_or_missing_system_fingerprint() {
-    for fingerprint in [Some(Value::Null), None] {
-        let mut body = text_response();
-        match fingerprint {
-            Some(value) => body["system_fingerprint"] = value,
-            None => {
-                body.as_object_mut().unwrap().remove("system_fingerprint");
-            }
-        }
-        let server = json_server(body).await;
-        let result = chat(&server, "deepseek-chat")
-            .do_generate(&options())
-            .await
-            .unwrap();
-        assert!(
-            result.provider_metadata.unwrap()["deepseek"]
-                .get("systemFingerprint")
-                .is_none()
-        );
-    }
-}
-
-// ---- describe('reasoning') ---------------------------------------------------
-
-fn reasoning_response() -> Value {
-    json!({
-        "id": "r1", "object": "chat.completion", "created": 1764656316, "model": "deepseek-reasoner",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "There are 3 r's in strawberry.",
-                "reasoning_content": "Let me count the letters."
-            },
-            "finish_reason": "stop"
-        }],
-        "usage": { "prompt_tokens": 20, "completion_tokens": 30, "total_tokens": 50,
-                   "completion_tokens_details": { "reasoning_tokens": 10 } }
-    })
-}
-
-#[tokio::test]
-async fn reasoning_should_send_correct_request_body() {
-    let options = with_provider_options(
-        options_for(vec![LanguageModelMessage::user_text(
-            "How many \"r\"s are in the word \"strawberry\"?",
-        )]),
-        json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
-    );
-    assert_eq!(
-        generate_body("deepseek-reasoner", &options).await,
-        json!({
-            "messages": [{ "content": "How many \"r\"s are in the word \"strawberry\"?", "role": "user" }],
-            "model": "deepseek-reasoner",
-            "thinking": { "type": "enabled" }
-        })
-    );
-}
-
-#[tokio::test]
 async fn reasoning_should_extract_reasoning_before_text() {
     let server = json_server(reasoning_response()).await;
     let result = chat(&server, "deepseek-reasoner")
@@ -846,93 +2418,6 @@ async fn reasoning_should_not_read_the_reasoning_field() {
     assert!(matches!(&result.content[0], GenerateContent::Text { .. }));
 }
 
-// ---- describe('logprobs') ----------------------------------------------------
-
-fn logprobs_response() -> Value {
-    let mut body = text_response();
-    body["choices"][0]["message"] = json!({
-        "role": "assistant", "content": "OK", "reasoning_content": "Reasoning"
-    });
-    body["choices"][0]["logprobs"] = json!({
-        "content": [logprob("OK", -0.00002467602, json!([79, 75]))],
-        "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)]
-    });
-    body
-}
-
-#[tokio::test]
-async fn logprobs_should_send_logprobs_provider_options() {
-    let options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "logprobs": true, "topLogprobs": 1 } }),
-    );
-    assert_eq!(
-        generate_body("deepseek-v4-flash", &options).await,
-        json!({
-            "logprobs": true,
-            "messages": [{ "content": "Hello", "role": "user" }],
-            "model": "deepseek-v4-flash",
-            "top_logprobs": 1
-        })
-    );
-}
-
-#[tokio::test]
-async fn logprobs_should_enable_logprobs_when_top_logprobs_is_set() {
-    let options = with_provider_options(options(), json!({ "deepseek": { "topLogprobs": 1 } }));
-    let body = generate_body("deepseek-v4-flash", &options).await;
-    assert_eq!(body["logprobs"], true);
-    assert_eq!(body["top_logprobs"], 1);
-}
-
-#[tokio::test]
-async fn logprobs_should_extract_content_and_reasoning_logprobs() {
-    let server = json_server(logprobs_response()).await;
-    let options = with_provider_options(options(), json!({ "deepseek": { "logprobs": true } }));
-    let result = chat(&server, "deepseek-v4-flash")
-        .do_generate(&options)
-        .await
-        .unwrap();
-    assert_eq!(
-        result.provider_metadata.unwrap()["deepseek"]["logprobs"],
-        json!({
-            "content": [logprob("OK", -0.00002467602, json!([79, 75]))],
-            "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)]
-        })
-    );
-}
-
-// ---- describe('top-level reasoning') -------------------------------------------
-
-fn reasoning_options(effort: ReasoningEffort) -> CallOptions {
-    CallOptions {
-        reasoning: Some(effort),
-        ..options()
-    }
-}
-
-#[tokio::test]
-async fn top_level_reasoning_should_map_to_thinking_enabled() {
-    let body = generate_body(
-        "deepseek-reasoner",
-        &reasoning_options(ReasoningEffort::High),
-    )
-    .await;
-    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
-    assert_eq!(body["reasoning_effort"], "high");
-}
-
-#[tokio::test]
-async fn top_level_reasoning_none_should_map_to_thinking_disabled() {
-    let body = generate_body(
-        "deepseek-reasoner",
-        &reasoning_options(ReasoningEffort::None),
-    )
-    .await;
-    assert_eq!(body["thinking"], json!({ "type": "disabled" }));
-    assert!(body.get("reasoning_effort").is_none());
-}
-
 #[tokio::test]
 async fn top_level_reasoning_none_should_keep_the_temperature() {
     // thinking is disabled, so temperature applies and is not warned about.
@@ -947,182 +2432,6 @@ async fn top_level_reasoning_none_should_keep_the_temperature() {
 }
 
 #[tokio::test]
-async fn top_level_reasoning_xhigh_should_map_to_reasoning_effort_max() {
-    let result = generate_result(
-        "deepseek-reasoner",
-        &reasoning_options(ReasoningEffort::Xhigh),
-    )
-    .await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
-        "max"
-    );
-    assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
-        "reasoning",
-        "reasoning \"xhigh\" is not directly supported by this model. mapped to effort \"max\"."
-    ))
-    .unwrap()));
-}
-
-#[tokio::test]
-async fn top_level_reasoning_low_should_map_to_reasoning_effort_low_without_a_compatibility_warning()
- {
-    let result = generate_result(
-        "deepseek-reasoner",
-        &reasoning_options(ReasoningEffort::Low),
-    )
-    .await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
-        "low"
-    );
-    assert!(
-        !result
-            .warnings
-            .iter()
-            .any(|w| matches!(w, Warning::Compatibility { feature, .. } if feature == "reasoning"))
-    );
-}
-
-#[tokio::test]
-async fn top_level_reasoning_medium_should_map_to_reasoning_effort_high_with_a_compatibility_warning()
- {
-    let result = generate_result(
-        "deepseek-reasoner",
-        &reasoning_options(ReasoningEffort::Medium),
-    )
-    .await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
-        "high"
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[compatibility(
-            "reasoning",
-            "reasoning \"medium\" is not directly supported by this model. mapped to effort \"high\"."
-        )])
-    );
-}
-
-#[tokio::test]
-async fn top_level_reasoning_minimal_should_map_to_reasoning_effort_low_with_compatibility_warning()
-{
-    let result = generate_result(
-        "deepseek-reasoner",
-        &reasoning_options(ReasoningEffort::Minimal),
-    )
-    .await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
-        "low"
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[compatibility(
-            "reasoning",
-            "reasoning \"minimal\" is not directly supported by this model. mapped to effort \"low\"."
-        )])
-    );
-}
-
-#[tokio::test]
-async fn top_level_reasoning_should_map_provider_options_reasoning_effort() {
-    for (input, output, warns) in [
-        ("low", "low", false),
-        ("medium", "high", true),
-        ("xhigh", "max", true),
-    ] {
-        let options = with_provider_options(
-            options(),
-            json!({ "deepseek": { "reasoningEffort": input } }),
-        );
-        let result = generate_result("deepseek-reasoner", &options).await;
-        assert_eq!(
-            result.request.and_then(|r| r.body).unwrap()["reasoning_effort"],
-            output
-        );
-        let expected = if warns {
-            vec![compatibility(
-                "reasoningEffort",
-                &format!(
-                    "reasoningEffort \"{input}\" is not a canonical DeepSeek value. mapped to \"{output}\"."
-                ),
-            )]
-        } else {
-            vec![]
-        };
-        assert_eq!(warning_values(&result.warnings), warning_values(&expected));
-    }
-}
-
-#[tokio::test]
-async fn top_level_reasoning_should_map_legacy_thinking_type_adaptive_to_enabled_with_a_compatibility_warning()
- {
-    let options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "thinking": { "type": "adaptive" } } }),
-    );
-    let result = generate_result("deepseek-reasoner", &options).await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["thinking"],
-        json!({ "type": "enabled" })
-    );
-    assert!(warning_values(&result.warnings).contains(&serde_json::to_value(compatibility(
-        "thinking.type",
-        "thinking.type \"adaptive\" is not a canonical DeepSeek value. mapped to \"enabled\"."
-    ))
-    .unwrap()));
-}
-
-#[tokio::test]
-async fn top_level_reasoning_should_pass_provider_options_reasoning_effort() {
-    let options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "reasoningEffort": "max" } }),
-    );
-    let body = generate_body("deepseek-reasoner", &options).await;
-    assert_eq!(body["reasoning_effort"], "max");
-    // When only reasoningEffort is set without thinking, thinking stays unset.
-    assert!(body.get("thinking").is_none());
-}
-
-#[tokio::test]
-async fn top_level_reasoning_should_prefer_provider_options_thinking_over_top_level_reasoning() {
-    let options = with_provider_options(
-        reasoning_options(ReasoningEffort::None),
-        json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
-    );
-    assert_eq!(
-        generate_body("deepseek-reasoner", &options).await["thinking"],
-        json!({ "type": "enabled" })
-    );
-}
-
-#[tokio::test]
-async fn top_level_reasoning_should_prefer_provider_options_reasoning_effort_over_top_level_reasoning()
- {
-    let options = with_provider_options(
-        reasoning_options(ReasoningEffort::High),
-        json!({ "deepseek": { "reasoningEffort": "max" } }),
-    );
-    assert_eq!(
-        generate_body("deepseek-reasoner", &options).await["reasoning_effort"],
-        "max"
-    );
-}
-
-#[tokio::test]
-async fn top_level_reasoning_should_not_set_thinking_when_reasoning_is_not_specified() {
-    assert!(
-        generate_body("deepseek-reasoner", &options())
-            .await
-            .get("thinking")
-            .is_none()
-    );
-}
-
-#[tokio::test]
 async fn top_level_reasoning_provider_default_sends_neither_thinking_nor_effort() {
     let body = generate_body(
         "deepseek-reasoner",
@@ -1130,65 +2439,6 @@ async fn top_level_reasoning_provider_default_sends_neither_thinking_nor_effort(
     )
     .await;
     assert!(body.get("thinking").is_none() && body.get("reasoning_effort").is_none());
-}
-
-// ---- describe('tool call') ---------------------------------------------------
-
-fn tool_call_response() -> Value {
-    json!({
-        "id": "t1", "object": "chat.completion", "created": 1764656316, "model": "deepseek-reasoner",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant", "content": "",
-                "reasoning_content": "I should look up the weather.",
-                "tool_calls": [{
-                    "id": "call_00_abc", "type": "function",
-                    "function": { "name": "weather", "arguments": "{\"location\":\"San Francisco\"}" }
-                }]
-            },
-            "finish_reason": "tool_calls"
-        }],
-        "usage": { "prompt_tokens": 50, "completion_tokens": 20, "total_tokens": 70 }
-    })
-}
-
-fn tool_options() -> CallOptions {
-    let mut options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "thinking": { "type": "enabled" } } }),
-    );
-    options.tools = Some(vec![Tool::Function(weather_tool())]);
-    options
-}
-
-fn weather_wire_tool() -> Value {
-    json!({
-        "type": "function",
-        "function": {
-            "name": "weather",
-            "parameters": {
-                "$schema": "http://json-schema.org/draft-07/schema#",
-                "additionalProperties": false,
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"],
-                "type": "object"
-            }
-        }
-    })
-}
-
-#[tokio::test]
-async fn tool_call_should_send_correct_request_body() {
-    assert_eq!(
-        generate_body("deepseek-reasoner", &tool_options()).await,
-        json!({
-            "messages": [{ "content": "Hello", "role": "user" }],
-            "model": "deepseek-reasoner",
-            "thinking": { "type": "enabled" },
-            "tools": [weather_wire_tool()]
-        })
-    );
 }
 
 #[tokio::test]
@@ -1274,71 +2524,6 @@ async fn tool_call_should_generate_an_id_when_the_server_sends_none() {
     ));
 }
 
-// ---- describe('json response format') -------------------------------------------
-
-fn json_options(schema: Option<Value>) -> CallOptions {
-    let mut options = tool_options();
-    options.response_format = Some(ResponseFormat::Json {
-        schema,
-        name: None,
-        description: None,
-    });
-    options
-}
-
-#[tokio::test]
-async fn json_response_format_should_send_correct_request_body_without_schema() {
-    assert_eq!(
-        generate_body("deepseek-reasoner", &json_options(None)).await,
-        json!({
-            "messages": [
-                { "content": "Return JSON.", "role": "system" },
-                { "content": "Hello", "role": "user" }
-            ],
-            "model": "deepseek-reasoner",
-            "response_format": { "type": "json_object" },
-            "thinking": { "type": "enabled" },
-            "tools": [weather_wire_tool()]
-        })
-    );
-}
-
-#[tokio::test]
-async fn json_response_format_should_send_correct_request_body_with_schema() {
-    let schema = json!({
-        "type": "object",
-        "properties": { "elements": { "type": "array", "items": { "type": "object",
-            "properties": { "location": { "type": "string" }, "temperature": { "type": "number" },
-                            "condition": { "type": "string" } },
-            "required": ["location", "temperature", "condition"], "additionalProperties": false } } },
-        "required": ["elements"], "additionalProperties": false,
-        "$schema": "http://json-schema.org/draft-07/schema#"
-    });
-    let result = generate_result("deepseek-reasoner", &json_options(Some(schema.clone()))).await;
-    let body = result.request.and_then(|r| r.body).unwrap();
-    assert_eq!(
-        body["messages"][0],
-        json!({
-            "role": "system",
-            "content": format!("Return JSON that conforms to the following schema: {schema}")
-        })
-    );
-    assert_eq!(
-        body["messages"][1],
-        json!({ "role": "user", "content": "Hello" })
-    );
-    assert_eq!(body["response_format"], json!({ "type": "json_object" }));
-    // upstream: supportsStructuredOutputs is false, so the schema is injected
-    // into the system message with a compatibility warning.
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[compatibility(
-            "responseFormat JSON schema",
-            "JSON response schema is injected into the system message."
-        )])
-    );
-}
-
 #[tokio::test]
 async fn json_response_format_should_extract_text_content() {
     let mut body = text_response();
@@ -1351,89 +2536,6 @@ async fn json_response_format_should_extract_text_content() {
     assert!(
         matches!(&result.content[0], GenerateContent::Text { text, .. } if text == "{\"elements\":[]}")
     );
-}
-
-// ---- describe('assistant prefix completion') --------------------------------------
-
-fn prefix_prompt(prefix_options: Value) -> LanguageModelPrompt {
-    vec![
-        LanguageModelMessage::user_text("Complete this sentence."),
-        with_options(
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::Text(TextPart {
-                    text: ("The answer is").into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            json!({ "deepseek": prefix_options }),
-        ),
-    ]
-}
-
-#[tokio::test]
-async fn prefix_should_send_name_and_prefix_on_the_final_assistant_message() {
-    let server = json_server(text_response()).await;
-    let body = beta_chat(&server, "deepseek-chat")
-        .do_generate(&options_for(prefix_prompt(
-            json!({ "name": "assistant", "prefix": true }),
-        )))
-        .await
-        .unwrap()
-        .request
-        .and_then(|r| r.body)
-        .unwrap();
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "role": "user", "content": "Complete this sentence." },
-            { "role": "assistant", "content": "The answer is", "name": "assistant", "prefix": true }
-        ])
-    );
-    assert_eq!(body["model"], "deepseek-chat");
-}
-
-#[tokio::test]
-async fn prefix_should_reject_prefix_completion_with_the_default_base_url() {
-    let message = generate_error(
-        "deepseek-chat",
-        &options_for(vec![with_options(
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::Text(TextPart {
-                    text: ("The answer is").into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            json!({ "deepseek": { "prefix": true } }),
-        )]),
-    )
-    .await;
-    assert!(
-        message.contains(
-            "DeepSeek assistant prefix completion requires a beta base URL ending in `/beta`."
-        ),
-        "{message}"
-    );
-}
-
-// Upstream emits provider error envelopes as error parts, including the first event.
-async fn stream_error(data: &Value) -> aimux_core::error::ApiCallError {
-    let server = sse_server(vec![data_event(data)]).await;
-    let result = chat(&server, "deepseek-chat")
-        .do_stream(&options())
-        .await
-        .unwrap();
-    collect(result)
-        .await
-        .into_iter()
-        .find_map(|part| match part {
-            StreamPart::Error {
-                error: AiMuxError::ApiCall(error),
-            } => Some(*error),
-            _ => None,
-        })
-        .expect("expected a provider error part")
 }
 
 /// `deepSeekErrorSchema` as the chat model's failed-response handler
@@ -1457,188 +2559,6 @@ async fn a_failed_response_reads_deepseeks_error_schema() {
     assert_eq!(error.message, "Insufficient Balance");
     assert_eq!(error.provider_code.as_deref(), Some("4020"));
     assert_eq!(error.status_code, Some(402));
-}
-
-#[tokio::test]
-async fn stream_should_preserve_a_provider_error_envelope_in_stream_errors() {
-    let data = json!({ "error": {
-        "message": "Rate limit reached", "type": "rate_limit_error", "code": "rate_limit_exceeded"
-    } });
-    let error = stream_error(&data).await;
-    assert_eq!(error.message, "Rate limit reached");
-    assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
-    assert_eq!(error.status_code, Some(429));
-    assert!(error.is_retryable);
-    // upstream: `data` is the whole error envelope.
-    let envelope: Value = serde_json::from_str(error.response_body.as_deref().unwrap()).unwrap();
-    assert_eq!(envelope, data);
-}
-
-#[tokio::test]
-async fn stream_should_classify_insufficient_quota_as_non_retryable() {
-    let data = json!({ "error": {
-        "message": "You exceeded your current quota.", "type": "rate_limit_error",
-        "code": "insufficient_quota"
-    } });
-    let error = stream_error(&data).await;
-    assert_eq!(error.status_code, Some(429));
-    assert!(!error.is_retryable);
-}
-
-#[tokio::test]
-async fn stream_should_preserve_the_provider_type_when_code_is_an_http_status() {
-    let data = json!({ "error": {
-        "message": "Rate limit reached", "type": "rate_limit_error", "code": "429"
-    } });
-    let error = stream_error(&data).await;
-    assert_eq!(error.provider_code.as_deref(), Some("429"));
-    assert_eq!(error.status_code, Some(429));
-    assert!(error.is_retryable);
-}
-
-async fn stream_parts(
-    model_id: &str,
-    options: &CallOptions,
-    chunks: Vec<String>,
-) -> (Value, Vec<StreamPart>) {
-    let server = sse_server(chunks).await;
-    let result = chat(&server, model_id).do_stream(options).await.unwrap();
-    let body = result.request.clone().and_then(|r| r.body).unwrap();
-    (body, collect(result).await)
-}
-
-#[tokio::test]
-async fn stream_text_should_send_model_id_settings_and_input() {
-    let mut options = options_for(vec![
-        LanguageModelMessage::System {
-            content: ("You are a helpful assistant.").into(),
-            provider_options: None,
-        },
-        LanguageModelMessage::user_text("Hello"),
-    ]);
-    options.temperature = Some(0.5);
-    options.top_p = Some(0.3);
-    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
-    assert_eq!(
-        body,
-        json!({
-            "messages": [
-                { "content": "You are a helpful assistant.", "role": "system" },
-                { "content": "Hello", "role": "user" }
-            ],
-            "model": "deepseek-chat",
-            "stream": true,
-            "stream_options": { "include_usage": true },
-            "temperature": 0.5,
-            "top_p": 0.3
-        })
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_omit_deprecated_and_ineffective_sampling_options_in_default_v4_thinking_mode()
- {
-    let mut options = options();
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let (body, parts) = stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
-    assert_eq!(
-        body,
-        json!({
-            "model": "deepseek-v4-flash",
-            "messages": [{ "role": "user", "content": "Hello" }],
-            "stream": true,
-            "stream_options": { "include_usage": true }
-        })
-    );
-    assert_eq!(
-        stream_start_warnings(&parts),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty"),
-            thinking_unsupported("temperature"),
-            thinking_unsupported("topP"),
-        ])
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_preserve_supported_sampling_options_when_v4_thinking_is_disabled() {
-    let mut options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "thinking": { "type": "disabled" } } }),
-    );
-    options.temperature = Some(0.2);
-    options.top_p = Some(0.4);
-    options.frequency_penalty = Some(0.5);
-    options.presence_penalty = Some(0.6);
-    let (body, parts) = stream_parts("deepseek-v4-flash", &options, text_chunks()).await;
-    assert_eq!(
-        body,
-        json!({
-            "model": "deepseek-v4-flash",
-            "messages": [{ "role": "user", "content": "Hello" }],
-            "temperature": 0.2,
-            "top_p": 0.4,
-            "thinking": { "type": "disabled" },
-            "stream": true,
-            "stream_options": { "include_usage": true }
-        })
-    );
-    assert_eq!(
-        stream_start_warnings(&parts),
-        warning_values(&[
-            deprecated("frequencyPenalty"),
-            deprecated("presencePenalty")
-        ])
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_send_message_names() {
-    let name = |value: &str| json!({ "deepseek": { "name": value } });
-    let options = options_for(vec![
-        with_options(
-            LanguageModelMessage::System {
-                content: ("You are a helpful assistant.").into(),
-                provider_options: None,
-            },
-            name("guide"),
-        ),
-        with_options(LanguageModelMessage::user_text("Hello"), name("alice")),
-        with_options(
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::Text(TextPart {
-                    text: ("Hello, Alice.").into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            name("assistant"),
-        ),
-    ]);
-    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "content": "You are a helpful assistant.", "name": "guide", "role": "system" },
-            { "content": "Hello", "name": "alice", "role": "user" },
-            { "content": "Hello, Alice.", "name": "assistant", "role": "assistant" }
-        ])
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_pass_provider_options_user_id_as_user_id() {
-    let options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "userId": "tenant_123-user" } }),
-    );
-    let (body, _) = stream_parts("deepseek-chat", &options, text_chunks()).await;
-    assert_eq!(body["user_id"], "tenant_123-user");
-    assert_eq!(body["stream"], true);
 }
 
 #[tokio::test]
@@ -1698,119 +2618,6 @@ async fn stream_text_should_stream_text() {
 }
 
 #[tokio::test]
-async fn stream_text_should_include_the_repeated_system_fingerprint_in_provider_metadata() {
-    let (_, parts) = stream_parts("deepseek-chat", &options(), text_chunks()).await;
-    assert_eq!(
-        finish_metadata(&parts)["deepseek"]["systemFingerprint"],
-        "fp_eaab8d114b_prod0820_fp8_kvcache"
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_keep_the_latest_non_null_system_fingerprint() {
-    let chunks = vec![
-        "data: {\"system_fingerprint\":\"fp_initial\",\"choices\":[{\"delta\":{\"content\":\"OK\"},\"finish_reason\":null}],\"usage\":null}\n\n".to_string(),
-        "data: {\"system_fingerprint\":null,\"choices\":[{\"delta\":{},\"finish_reason\":null}],\"usage\":null}\n\n".to_string(),
-        "data: {\"system_fingerprint\":\"fp_latest\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n".to_string(),
-    ];
-    let (_, parts) = stream_parts("deepseek-chat", &options(), chunks).await;
-    assert_eq!(
-        finish_metadata(&parts)["deepseek"]["systemFingerprint"],
-        "fp_latest"
-    );
-}
-
-#[tokio::test]
-async fn stream_text_should_tolerate_a_null_or_missing_system_fingerprint() {
-    for fingerprint in [Some(Value::Null), None] {
-        let mut chunk = json!({
-            "choices": [{ "delta": { "content": "OK" }, "finish_reason": "stop" }],
-            "usage": null
-        });
-        if let Some(value) = fingerprint {
-            chunk["system_fingerprint"] = value;
-        }
-        let (_, parts) = stream_parts("deepseek-chat", &options(), vec![data_event(&chunk)]).await;
-        assert!(
-            finish_metadata(&parts)["deepseek"]
-                .get("systemFingerprint")
-                .is_none()
-        );
-    }
-}
-
-// ---- describe('reasoning') -------------------------------------------------------------
-
-#[tokio::test]
-async fn stream_reasoning_should_keep_reasoning_active_when_deltas_include_empty_tool_calls() {
-    let chunk = |delta: Value, finish: Value| {
-        data_event(&json!({
-            "id": "chatcmpl-test", "object": "chat.completion.chunk", "created": 1,
-            "model": "test-model",
-            "choices": [{ "index": 0, "delta": delta, "finish_reason": finish }]
-        }))
-    };
-    let chunks = vec![
-        chunk(
-            json!({ "role": "assistant", "content": "", "reasoning_content": "Think ", "tool_calls": [] }),
-            Value::Null,
-        ),
-        chunk(
-            json!({ "content": "", "reasoning_content": "more...", "tool_calls": [] }),
-            Value::Null,
-        ),
-        chunk(
-            json!({ "content": "Hello", "reasoning_content": "", "tool_calls": [] }),
-            json!("stop"),
-        ),
-    ];
-    let (_, parts) = stream_parts("deepseek-reasoner", &options(), chunks).await;
-    let reasoning: Vec<String> = parts
-        .iter()
-        .filter_map(|part| match part {
-            StreamPart::ReasoningStart { id, .. } => Some(format!("start {id}")),
-            StreamPart::ReasoningDelta { id, delta, .. } => Some(format!("delta {id} {delta}")),
-            StreamPart::ReasoningEnd { id, .. } => Some(format!("end {id}")),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        reasoning,
-        [
-            "start reasoning-0",
-            "delta reasoning-0 Think ",
-            "delta reasoning-0 more...",
-            "end reasoning-0"
-        ]
-    );
-}
-
-#[tokio::test]
-async fn stream_reasoning_should_map_legacy_thinking_and_generic_reasoning_to_canonical_request_values()
- {
-    let options = with_provider_options(
-        reasoning_options(ReasoningEffort::Medium),
-        json!({ "deepseek": { "thinking": { "type": "adaptive" } } }),
-    );
-    let (body, parts) = stream_parts("deepseek-reasoner", &options, text_chunks()).await;
-    assert_eq!(body["thinking"], json!({ "type": "enabled" }));
-    assert_eq!(body["reasoning_effort"], "high");
-    assert_eq!(
-        stream_start_warnings(&parts),
-        warning_values(&[
-            compatibility(
-                "thinking.type",
-                "thinking.type \"adaptive\" is not a canonical DeepSeek value. mapped to \"enabled\"."
-            ),
-            compatibility(
-                "reasoning",
-                "reasoning \"medium\" is not directly supported by this model. mapped to effort \"high\"."
-            ),
-        ])
-    );
-}
-
-#[tokio::test]
 async fn stream_reasoning_should_stream_reasoning_before_text() {
     let chunk = |delta: Value, finish: Value| {
         data_event(&json!({
@@ -1856,56 +2663,6 @@ async fn stream_reasoning_should_stream_reasoning_before_text() {
         ]
     );
 }
-
-// ---- describe('logprobs') ----------------------------------------------------------------
-
-#[tokio::test]
-async fn stream_logprobs_should_send_logprobs_provider_options_and_collect_streamed_logprobs() {
-    let chunk = |choice: Value, usage: Value| {
-        data_event(&json!({
-            "id": "c", "object": "chat.completion.chunk", "created": 1, "model": "deepseek-v4-flash",
-            "choices": [choice], "usage": usage
-        }))
-    };
-    let chunks = vec![
-        chunk(
-            json!({ "index": 0, "delta": { "role": "assistant", "reasoning_content": "Reasoning" },
-                    "logprobs": { "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)] },
-                    "finish_reason": null }),
-            Value::Null,
-        ),
-        chunk(
-            json!({ "index": 0, "delta": { "content": "OK" },
-                    "logprobs": { "content": [logprob("OK", -0.00002467602, json!([79, 75]))] },
-                    "finish_reason": "stop" }),
-            json!({ "prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11,
-                    "prompt_cache_hit_tokens": 0, "prompt_cache_miss_tokens": 9 }),
-        ),
-    ];
-    let options = with_provider_options(
-        options(),
-        json!({ "deepseek": { "logprobs": true, "topLogprobs": 1 } }),
-    );
-    let (body, parts) = stream_parts("deepseek-v4-flash", &options, chunks).await;
-    assert_eq!(body["logprobs"], true);
-    assert_eq!(body["top_logprobs"], 1);
-    assert_eq!(
-        finish_metadata(&parts),
-        json!({ "deepseek": {
-            "choiceIndex": 0,
-            "logprobs": {
-                "content": [logprob("OK", -0.00002467602, json!([79, 75]))],
-                "reasoning_content": [logprob("Reasoning", -0.1, Value::Null)]
-            },
-            "messageRole": "assistant",
-            "promptCacheHitTokens": 0,
-            "promptCacheMissTokens": 9,
-            "responseObject": "chat.completion.chunk"
-        } })
-    );
-}
-
-// ---- describe('tool call') ------------------------------------------------------------------
 
 #[tokio::test]
 async fn stream_tool_call_should_stream_tool_call() {
@@ -1970,617 +2727,5 @@ async fn stream_tool_call_should_stream_tool_call() {
     assert_eq!(
         finish_metadata(&parts)["deepseek"]["toolCallTypes"],
         json!(["function"])
-    );
-}
-
-// ---- describe('assistant prefix completion') -----------------------------------------------------
-
-#[tokio::test]
-async fn stream_prefix_should_send_prefix_true_on_the_final_assistant_message() {
-    let server = sse_server(text_chunks()).await;
-    let result = beta_chat(&server, "deepseek-chat")
-        .do_stream(&options_for(prefix_prompt(json!({ "prefix": true }))))
-        .await
-        .unwrap();
-    let body = result.request.and_then(|r| r.body).unwrap();
-    assert_eq!(
-        body["messages"],
-        json!([
-            { "role": "user", "content": "Complete this sentence." },
-            { "role": "assistant", "content": "The answer is", "prefix": true }
-        ])
-    );
-    assert_eq!(body["model"], "deepseek-chat");
-    assert_eq!(body["stream"], true);
-}
-
-// ===========================================================================
-// convert-to-deepseek-chat-messages.test.ts (through the request body)
-// ===========================================================================
-
-fn png_data() -> UserPart {
-    UserPart::File(FilePart {
-        data: FileData::Data {
-            data: FileBytes::Base64("AAECAw==".into()),
-        },
-        media_type: "image/png".into(),
-        filename: None,
-        provider_options: None,
-    })
-}
-
-fn file_with_options(mut part: UserPart, options: Value) -> UserPart {
-    if let UserPart::File(file) = &mut part {
-        file.provider_options = Some(serde_json::from_value(options).unwrap());
-    }
-    part
-}
-
-// ---- describe('message names') -------------------------------------------------------------
-
-#[tokio::test]
-async fn convert_should_ignore_a_name_on_a_tool_message_with_an_unsupported_warning() {
-    let options = options_for(vec![with_options(
-        LanguageModelMessage::Tool {
-            content: vec![ToolPart::ToolResult(ToolResultPart {
-                tool_call_id: ("call-1").into(),
-                output: ToolResultOutput::Text {
-                    value: "sunny".into(),
-                    provider_options: None,
-                },
-                tool_name: "weather_tool".into(),
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-        json!({ "deepseek": { "name": "weather_tool" } }),
-    )]);
-    let result = generate_result("deepseek-chat", &options).await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["messages"],
-        json!([{ "role": "tool", "tool_call_id": "call-1", "content": "sunny" }])
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[Warning::Unsupported {
-            feature: "message name on tool messages".to_string(),
-            details: None,
-        }])
-    );
-}
-
-#[tokio::test]
-async fn convert_should_reject_a_non_string_name() {
-    let options = options_for(vec![with_options(
-        LanguageModelMessage::user_text("Hello"),
-        json!({ "deepseek": { "name": 123 } }),
-    )]);
-    let message = generate_error("deepseek-chat", &options).await;
-    assert!(message.contains("invalid provider options"), "{message}");
-}
-
-// ---- describe('user messages') ---------------------------------------------------------------
-
-#[tokio::test]
-async fn convert_should_convert_messages_with_only_a_text_part_to_a_string_content() {
-    let messages = wire_messages(
-        "deepseek-chat",
-        vec![LanguageModelMessage::user_text("Hello")],
-    )
-    .await;
-    assert_eq!(messages, [json!({ "role": "user", "content": "Hello" })]);
-}
-
-#[tokio::test]
-async fn convert_should_convert_image_data_to_an_image_url_content_part() {
-    let messages = wire_messages(
-        "deepseek-chat",
-        vec![LanguageModelMessage::User {
-            content: vec![
-                UserPart::Text(TextPart {
-                    text: ("Hello").into(),
-                    provider_options: None,
-                }),
-                png_data(),
-            ],
-            provider_options: None,
-        }],
-    )
-    .await;
-    assert_eq!(
-        messages,
-        [json!({ "role": "user", "content": [
-            { "type": "text", "text": "Hello" },
-            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AAECAw==" } }
-        ] })]
-    );
-}
-
-#[tokio::test]
-async fn convert_should_convert_an_image_url_to_an_image_url_content_part() {
-    let messages = wire_messages(
-        "deepseek-chat",
-        vec![LanguageModelMessage::User {
-            content: vec![
-                UserPart::Text(TextPart {
-                    text: ("Hello").into(),
-                    provider_options: None,
-                }),
-                UserPart::File(FilePart {
-                    data: FileData::Url {
-                        url: ("https://example.com/image.png").into(),
-                        original_url: None,
-                    },
-                    media_type: ("image/png").into(),
-                    filename: None,
-                    provider_options: None,
-                }),
-            ],
-            provider_options: None,
-        }],
-    )
-    .await;
-    assert_eq!(
-        messages,
-        [json!({ "role": "user", "content": [
-            { "type": "text", "text": "Hello" },
-            { "type": "image_url", "image_url": { "url": "https://example.com/image.png" } }
-        ] })]
-    );
-}
-
-#[tokio::test]
-async fn convert_should_pass_image_detail_to_image_url_content_parts() {
-    let messages = wire_messages(
-        "deepseek-v4-flash-vision-exp",
-        vec![LanguageModelMessage::User {
-            content: vec![file_with_options(
-                UserPart::File(FilePart {
-                    data: FileData::Url {
-                        url: ("https://example.com/image.webp").into(),
-                        original_url: None,
-                    },
-                    media_type: ("image/webp").into(),
-                    filename: None,
-                    provider_options: None,
-                }),
-                json!({ "deepseek": { "imageDetail": "low" } }),
-            )],
-            provider_options: None,
-        }],
-    )
-    .await;
-    assert_eq!(
-        messages,
-        [json!({ "role": "user", "content": [
-            { "type": "image_url", "image_url": { "url": "https://example.com/image.webp", "detail": "low" } }
-        ] })]
-    );
-}
-
-#[tokio::test]
-async fn convert_should_convert_inline_image_data_to_file_data_and_preserve_its_filename() {
-    let part = UserPart::File(FilePart {
-        data: FileData::Data {
-            data: FileBytes::Base64("AAECAw==".to_string()),
-        },
-        media_type: "image/jpg".to_string(),
-        filename: Some("sample.jpg".to_string()),
-        provider_options: Some(
-            provider_namespace("deepseek", json!({ "fileData": true })).unwrap(),
-        ),
-    });
-    let messages = wire_messages(
-        "deepseek-v4-flash-vision-exp",
-        vec![LanguageModelMessage::User {
-            content: vec![part],
-            provider_options: None,
-        }],
-    )
-    .await;
-    assert_eq!(
-        messages,
-        [json!({ "role": "user", "content": [
-            { "type": "file", "file_data": "data:image/jpeg;base64,AAECAw==", "filename": "sample.jpg" }
-        ] })]
-    );
-}
-
-#[tokio::test]
-async fn convert_should_reject_image_detail_together_with_file_data() {
-    let part = file_with_options(
-        png_data(),
-        json!({ "deepseek": { "fileData": true, "imageDetail": "high" } }),
-    );
-    let message = generate_error(
-        "deepseek-v4-flash-vision-exp",
-        &options_for(vec![LanguageModelMessage::User {
-            content: vec![part],
-            provider_options: None,
-        }]),
-    )
-    .await;
-    assert!(
-        message.contains("DeepSeek `imageDetail` cannot be combined with `fileData`."),
-        "{message}"
-    );
-}
-
-#[tokio::test]
-async fn convert_should_reject_image_urls_longer_than_8192_characters() {
-    let url = format!("https://example.com/{}", "a".repeat(8192));
-    let message = generate_error(
-        "deepseek-v4-flash-vision-exp",
-        &options_for(vec![LanguageModelMessage::User {
-            content: vec![UserPart::File(FilePart {
-                data: FileData::Url {
-                    url: (url),
-                    original_url: None,
-                },
-                media_type: ("image/png").into(),
-                filename: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        }]),
-    )
-    .await;
-    assert!(
-        message.contains("DeepSeek image URLs must not exceed 8192 characters."),
-        "{message}"
-    );
-}
-
-#[tokio::test]
-async fn convert_should_reject_unsupported_image_formats() {
-    let message = generate_error(
-        "deepseek-v4-flash-vision-exp",
-        &options_for(vec![LanguageModelMessage::User {
-            content: vec![UserPart::File(FilePart {
-                data: FileData::Data {
-                    data: FileBytes::Base64(("AAECAw==").into()),
-                },
-                media_type: ("image/svg+xml").into(),
-                filename: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        }]),
-    )
-    .await;
-    assert!(
-        message.contains("DeepSeek supports JPEG, PNG, GIF, and WebP image inputs."),
-        "{message}"
-    );
-}
-
-#[tokio::test]
-async fn convert_should_convert_an_image_provider_reference_to_a_file_content_part() {
-    let messages = wire_messages(
-        "deepseek-v4-flash-vision-exp",
-        vec![LanguageModelMessage::User {
-            content: vec![
-                UserPart::Text(TextPart {
-                    text: ("Hello").into(),
-                    provider_options: None,
-                }),
-                UserPart::File(FilePart {
-                    data: FileData::Reference {
-                        reference: serde_json::from_value(
-                            json!({ "deepseek": "file-api-deepseek", "openai": "file-openai" }),
-                        )
-                        .unwrap(),
-                    },
-                    media_type: ("image/png").into(),
-                    filename: None,
-                    provider_options: None,
-                }),
-            ],
-            provider_options: None,
-        }],
-    )
-    .await;
-    assert_eq!(
-        messages,
-        [json!({ "role": "user", "content": [
-            { "type": "text", "text": "Hello" },
-            { "type": "file", "file_id": "file-api-deepseek" }
-        ] })]
-    );
-}
-
-#[tokio::test]
-async fn convert_should_throw_when_an_image_reference_has_no_deepseek_identifier() {
-    let message = generate_error(
-        "deepseek-v4-flash-vision-exp",
-        &options_for(vec![LanguageModelMessage::User {
-            content: vec![UserPart::File(FilePart {
-                data: FileData::Reference {
-                    reference: serde_json::from_value(json!({ "openai": "file-openai" })).unwrap(),
-                },
-                media_type: ("image/png").into(),
-                filename: None,
-                provider_options: None,
-            })],
-            provider_options: None,
-        }]),
-    )
-    .await;
-    assert!(message.contains("deepseek"), "{message}");
-}
-
-#[tokio::test]
-async fn convert_should_warn_about_unsupported_non_image_file_parts() {
-    let result = generate_result(
-        "deepseek-chat",
-        &options_for(vec![LanguageModelMessage::User {
-            content: vec![
-                UserPart::Text(TextPart {
-                    text: ("Hello").into(),
-                    provider_options: None,
-                }),
-                UserPart::File(FilePart {
-                    data: FileData::Data {
-                        data: FileBytes::Base64(("AAECAw==").into()),
-                    },
-                    media_type: ("application/pdf").into(),
-                    filename: None,
-                    provider_options: None,
-                }),
-            ],
-            provider_options: None,
-        }]),
-    )
-    .await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["messages"],
-        json!([{ "role": "user", "content": "Hello" }])
-    );
-    assert_eq!(
-        warning_values(&result.warnings),
-        warning_values(&[Warning::Unsupported {
-            feature: "user message part type: file".to_string(),
-            details: None,
-        }])
-    );
-}
-
-// ---- describe('tool calls') ------------------------------------------------------------------
-
-fn tool_turn(reasoning: bool) -> Vec<LanguageModelMessage> {
-    let mut assistant = vec![];
-    if reasoning {
-        assistant.push(AssistantPart::Reasoning(ReasoningPart {
-            text: ("I think the tool will return the correct value.").into(),
-            provider_options: None,
-        }));
-    }
-    assistant.push(AssistantPart::ToolCall(ToolCallPart {
-        tool_call_id: ("quux").into(),
-        tool_name: ("thwomp").into(),
-        input: json!({ "foo": "bar123" }),
-        provider_executed: None,
-        provider_options: None,
-    }));
-    vec![
-        LanguageModelMessage::Assistant {
-            content: assistant,
-            provider_options: None,
-        },
-        LanguageModelMessage::Tool {
-            content: vec![ToolPart::ToolResult(ToolResultPart {
-                tool_call_id: ("quux").into(),
-                output: ToolResultOutput::Json {
-                    value: json!({ "oof": "321rab" }),
-                    provider_options: None,
-                },
-                tool_name: "thwomp".into(),
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-    ]
-}
-
-fn wire_tool_call() -> Value {
-    json!([{
-        "id": "quux", "type": "function",
-        "function": { "name": "thwomp", "arguments": "{\"foo\":\"bar123\"}" }
-    }])
-}
-
-#[tokio::test]
-async fn convert_should_stringify_arguments_to_tool_calls() {
-    let result = generate_result("deepseek-chat", &options_for(tool_turn(false))).await;
-    assert_eq!(
-        result.request.and_then(|r| r.body).unwrap()["messages"],
-        json!([
-            // upstream sends the empty text as `content: ""`, not null.
-            { "role": "assistant", "content": "", "tool_calls": wire_tool_call() },
-            { "role": "tool", "tool_call_id": "quux", "content": "{\"oof\":\"321rab\"}" }
-        ])
-    );
-    assert!(result.warnings.is_empty());
-}
-
-#[tokio::test]
-async fn convert_should_handle_text_output_type_in_tool_results() {
-    let messages = wire_messages(
-        "deepseek-chat",
-        vec![
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::ToolCall(ToolCallPart {
-                    tool_call_id: ("call-1").into(),
-                    tool_name: ("getWeather").into(),
-                    input: json!({ "query": "weather" }),
-                    provider_executed: None,
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            LanguageModelMessage::Tool {
-                content: vec![ToolPart::ToolResult(ToolResultPart {
-                    tool_call_id: ("call-1").into(),
-                    output: ToolResultOutput::Text {
-                        value: "It is sunny today".into(),
-                        provider_options: None,
-                    },
-                    tool_name: "getWeather".into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-        ],
-    )
-    .await;
-    assert_eq!(
-        messages[1],
-        json!({ "role": "tool", "tool_call_id": "call-1", "content": "It is sunny today" })
-    );
-}
-
-#[tokio::test]
-async fn convert_should_support_reasoning_content_in_tool_calls() {
-    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-    prompt.extend(tool_turn(true));
-    let messages = wire_messages("deepseek-chat", prompt).await;
-    assert_eq!(
-        messages[1],
-        json!({
-            "role": "assistant", "content": "",
-            "reasoning_content": "I think the tool will return the correct value.",
-            "tool_calls": wire_tool_call()
-        })
-    );
-}
-
-#[tokio::test]
-async fn convert_should_filter_out_reasoning_content_from_turns_before_the_last_user_message() {
-    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-    prompt.extend(tool_turn(true));
-    prompt.push(LanguageModelMessage::user_text("Goodbye"));
-    let messages = wire_messages("deepseek-chat", prompt).await;
-    assert_eq!(
-        messages[1],
-        json!({ "role": "assistant", "content": "", "tool_calls": wire_tool_call() })
-    );
-}
-
-// ---- describe('deepseek-v4 thinking mode') -------------------------------------------------------
-
-#[tokio::test]
-async fn convert_should_preserve_reasoning_content_from_prior_turns_for_deepseek_v4() {
-    let mut prompt = vec![LanguageModelMessage::user_text("Hello")];
-    prompt.extend(tool_turn(true));
-    prompt.push(LanguageModelMessage::user_text("Goodbye"));
-    let messages = wire_messages("deepseek-v4-pro", prompt).await;
-    assert_eq!(
-        messages[1],
-        json!({
-            "role": "assistant", "content": "",
-            "reasoning_content": "I think the tool will return the correct value.",
-            "tool_calls": wire_tool_call()
-        })
-    );
-}
-
-#[tokio::test]
-async fn convert_should_preserve_reasoning_content_from_prior_turns_for_the_deepseek_flash_alias() {
-    let messages = wire_messages(
-        "deepseek-flash",
-        vec![
-            LanguageModelMessage::user_text("Hello"),
-            LanguageModelMessage::Assistant {
-                content: vec![
-                    AssistantPart::Reasoning(ReasoningPart {
-                        text: ("Prior-turn reasoning.").into(),
-                        provider_options: None,
-                    }),
-                    AssistantPart::Text(TextPart {
-                        text: ("Hi there").into(),
-                        provider_options: None,
-                    }),
-                ],
-                provider_options: None,
-            },
-            LanguageModelMessage::user_text("Again"),
-        ],
-    )
-    .await;
-    assert_eq!(
-        messages[1],
-        json!({ "role": "assistant", "content": "Hi there", "reasoning_content": "Prior-turn reasoning." })
-    );
-}
-
-#[tokio::test]
-async fn convert_should_back_fill_empty_reasoning_content_for_deepseek_v4_assistant_messages_with_no_reasoning_part()
- {
-    let messages = wire_messages(
-        "deepseek-v4-pro",
-        vec![
-            LanguageModelMessage::user_text("Hello"),
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::Text(TextPart {
-                    text: ("Hi there").into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            LanguageModelMessage::user_text("Again"),
-        ],
-    )
-    .await;
-    assert_eq!(
-        messages[1],
-        json!({ "role": "assistant", "content": "Hi there", "reasoning_content": "" })
-    );
-}
-
-// ---- describe('assistant prefix completion') -----------------------------------------------------
-
-#[tokio::test]
-async fn convert_should_reject_prefix_completion_on_a_non_assistant_message() {
-    let message = generate_error(
-        "deepseek-chat",
-        &options_for(vec![with_options(
-            LanguageModelMessage::user_text("Hello"),
-            json!({ "deepseek": { "prefix": true } }),
-        )]),
-    )
-    .await;
-    assert!(
-        message.contains(
-            "DeepSeek assistant prefix completion requires `prefix: true` on an assistant message."
-        ),
-        "{message}"
-    );
-}
-
-#[tokio::test]
-async fn convert_should_reject_prefix_completion_on_a_non_final_assistant_message() {
-    let server = json_server(text_response()).await;
-    let prompt = vec![
-        with_options(
-            LanguageModelMessage::Assistant {
-                content: vec![AssistantPart::Text(TextPart {
-                    text: ("The answer is").into(),
-                    provider_options: None,
-                })],
-                provider_options: None,
-            },
-            json!({ "deepseek": { "prefix": true } }),
-        ),
-        LanguageModelMessage::user_text("Continue"),
-    ];
-    let error = beta_chat(&server, "deepseek-chat")
-        .do_generate(&options_for(prompt))
-        .await
-        .unwrap_err();
-    assert!(
-        error.to_string().contains(
-            "DeepSeek assistant prefix completion requires the prefixed assistant message to be the final message."
-        ),
-        "{error}"
     );
 }
