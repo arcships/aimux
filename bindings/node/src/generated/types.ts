@@ -7,8 +7,9 @@
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
  *
- * `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
- * retry's last attempt and a repair's `cause`.
+ * A variant has a `cause` exactly where its AI SDK class takes one; it is
+ * what `source()` returns. `Retry` reports its
+ * last attempt and `ToolCallRepair` its `cause` the same way.
  */
 export type AiMuxError =
   | {
@@ -78,15 +79,24 @@ export type AiMuxError =
   }
   | {
     name: "AI_JSONParseError"
+    cause?: ErrorCause | null
     message: string
   }
   | {
     name: "AI_NoOutputGeneratedError"
+    cause?: ErrorCause | null
     message: string
   }
   | {
     name: "AI_InvalidResponseDataError"
+    cause?: ErrorCause | null
     message: string
+  }
+  | {
+    name: "AI_TypeValidationError"
+    cause?: ErrorCause | null
+    message: string
+    value: unknown
   }
   | {
     name: "AI_ToolCallNotFoundForApprovalError"
@@ -101,7 +111,7 @@ export type AiMuxError =
   }
   | {
     name: "AI_InvalidToolInputError"
-    cause: string
+    cause: ErrorCause
     toolInput: string
     toolName: string
   }
@@ -112,10 +122,12 @@ export type AiMuxError =
   }
   | {
     name: "AI_InvalidArgumentError"
+    cause?: ErrorCause | null
     message: string
   }
   | {
     name: "AI_InvalidPromptError"
+    cause?: ErrorCause | null
     message: string
   }
   | {
@@ -190,6 +202,7 @@ export type AiMuxError =
   }
   | {
     name: "AI_Error"
+    cause?: ErrorCause | null
     message: string
   }
 
@@ -200,8 +213,9 @@ export type AiMuxError =
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
  *
- * `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
- * retry's last attempt and a repair's `cause`.
+ * A variant has a `cause` exactly where its AI SDK class takes one; it is
+ * what `source()` returns. `Retry` reports its
+ * last attempt and `ToolCallRepair` its `cause` the same way.
  */
 export type AiMuxErrorInput =
   | {
@@ -271,15 +285,24 @@ export type AiMuxErrorInput =
   }
   | {
     name: "AI_JSONParseError"
+    cause?: ErrorCauseInput | null
     message: string
   }
   | {
     name: "AI_NoOutputGeneratedError"
+    cause?: ErrorCauseInput | null
     message: string
   }
   | {
     name: "AI_InvalidResponseDataError"
+    cause?: ErrorCauseInput | null
     message: string
+  }
+  | {
+    name: "AI_TypeValidationError"
+    cause?: ErrorCauseInput | null
+    message: string
+    value: unknown
   }
   | {
     name: "AI_ToolCallNotFoundForApprovalError"
@@ -294,7 +317,7 @@ export type AiMuxErrorInput =
   }
   | {
     name: "AI_InvalidToolInputError"
-    cause: string
+    cause: ErrorCauseInput
     toolInput: string
     toolName: string
   }
@@ -305,10 +328,12 @@ export type AiMuxErrorInput =
   }
   | {
     name: "AI_InvalidArgumentError"
+    cause?: ErrorCauseInput | null
     message: string
   }
   | {
     name: "AI_InvalidPromptError"
+    cause?: ErrorCauseInput | null
     message: string
   }
   | {
@@ -383,6 +408,7 @@ export type AiMuxErrorInput =
   }
   | {
     name: "AI_Error"
+    cause?: ErrorCauseInput | null
     message: string
   }
 
