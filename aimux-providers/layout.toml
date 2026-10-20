@@ -26,8 +26,8 @@ status = "mapped"
 
 [huggingface.files.tests]
 sub-feature = [
-  { case = "HuggingFaceProvider › unsupported functionality › should throw for text embedding models", issue = 276, reason = "the NoSuchModelError carries no custom message in aimux-core yet; the core error type changes in #268" },
-  { case = "HuggingFaceProvider › unsupported functionality › should throw for image models", issue = 276, reason = "the NoSuchModelError carries no custom message in aimux-core yet; the core error type changes in #268" },
+  { case = "HuggingFaceProvider › unsupported functionality › should throw for text embedding models", issue = 276, reason = "aimux-core NoSuchModel carries only model_id and model_type and formats as \"no such model: …\", without the provider's own message" },
+  { case = "HuggingFaceProvider › unsupported functionality › should throw for image models", issue = 276, reason = "aimux-core NoSuchModel carries only model_id and model_type and formats as \"no such model: …\", without the provider's own message" },
 ]
 
 [[huggingface.files]]
@@ -68,7 +68,7 @@ registered = [
   { case = "HuggingFaceResponsesLanguageModel › doStream › preserves $expectedType stream errors", ref = "SSE 预读", reason = "an error as the first SSE event is returned by do_stream as Err, not as an error part of the stream" },
 ]
 sub-feature = [
-  { case = "HuggingFaceResponsesLanguageModel › message conversion › should throw for file parts with provider references", issue = 276, reason = "aimux-core formats UnsupportedFunctionalityError as \"unsupported functionality: …\", not upstream's \"'…' functionality not supported.\"; the core error type changes in #268" },
+  { case = "HuggingFaceResponsesLanguageModel › message conversion › should throw for file parts with provider references", issue = 276, reason = "aimux-core formats UnsupportedFunctionalityError as \"unsupported functionality: …\", not upstream's \"'…' functionality not supported.\"" },
 ]
 
 [[huggingface.files]]
