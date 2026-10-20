@@ -4,8 +4,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use chrono::{DateTime, Datelike, SecondsFormat, TimeZone, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use ts_rs::TS;
 
 /// A point in time: a `Date` in the AI SDK, whose JSON is
 /// `Date.prototype.toISOString()` (`2024-03-01T12:00:00.000Z`).
@@ -15,8 +15,9 @@ use ts_rs::TS;
 /// Serializing writes that form; parsing reads any RFC 3339 date-time (any
 /// offset, any fraction) and fails on anything else. Parsing and writing back
 /// therefore gives `new Date(text).toISOString()`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, TS)]
-#[ts(type = "string")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, JsonSchema)]
+#[schemars(with = "String")]
+#[schemars(extend("x-aimux-codec" = "timestamp", "format" = "date-time"))]
 pub struct Timestamp(DateTime<Utc>);
 
 /// The text is not an RFC 3339 date-time, or its time is outside 0000-9999.

@@ -1,5 +1,7 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
+
 import ai.arcships.aimux.generated.AimuxOps;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -9,10 +11,9 @@ public final class ProviderHandle extends NativeHandle {
     ProviderHandle(Aimux aimux, long id) { super(aimux, id); }
 
     private long modelId(String method, String modelId) {
-        com.fasterxml.jackson.databind.node.ObjectNode request = Types.AimuxJson.MAPPER.createObjectNode();
-        request.put("method", method);
-        request.put("modelId", java.util.Objects.requireNonNull(modelId, "modelId"));
-        return AimuxResult.handle(call(AimuxOps.OP_PROVIDER_MODEL, request.toString()));
+        ProviderModelParams request = ProviderModelParams.builder()
+            .method(method).modelId(java.util.Objects.requireNonNull(modelId, "modelId")).build();
+        return AimuxResult.handle(call(AimuxOps.OP_PROVIDER_MODEL, DtoJson.stringify(request)));
     }
 
     public Model languageModel(String modelId) { return new Model(aimux, modelId("languageModel", modelId)); }

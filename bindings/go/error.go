@@ -10,16 +10,6 @@ var (
 	ErrClosed = errors.New("aimux: use of closed handle")
 )
 
-// ErrorEnvelope is the canonical envelope. Error preserves the complete
-// AI SDK payload, including nested errors, provider data and isRetryable.
-type ErrorEnvelope struct {
-	Kind         string          `json:"kind"`
-	Code         int32           `json:"code"`
-	Message      string          `json:"message"`
-	Error        json.RawMessage `json:"error"`
-	RetryAfterMs *uint64         `json:"retryAfterMs,omitempty"`
-}
-
 // Error supports errors.As across all four domains. RawEnvelope retains all
 // fields, including fields unknown to this version of the Go binding.
 type Error struct {
@@ -39,14 +29,6 @@ func decodeError(data []byte) (*Error, error) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return nil, err
 	}
-	switch envelope.Kind {
-	case "aimux", "recording", "binding", "protocol":
-	default:
-		return nil, fmt.Errorf("aimux: invalid error domain %q", envelope.Kind)
-	}
-	if envelope.Code == 0 || len(envelope.Error) == 0 || string(envelope.Error) == "null" {
-		return nil, errors.New("aimux: incomplete error envelope")
-	}
 	return &Error{Envelope: envelope, RawEnvelope: append(json.RawMessage(nil), data...)}, nil
 }
 
@@ -55,7 +37,7 @@ func localError(kind string, code int32, name, message string) *Error {
 		Name    string `json:"name"`
 		Message string `json:"message"`
 	}{name, message})
-	envelope := ErrorEnvelope{Kind: kind, Code: code, Message: message, Error: payload}
+	envelope := ErrorEnvelope{Kind: ErrorDomain(kind), Code: code, Message: message, Error: payload}
 	raw, _ := json.Marshal(envelope)
 	return &Error{Envelope: envelope, RawEnvelope: raw}
 }

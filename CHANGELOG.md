@@ -1103,6 +1103,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ToolApprovalResponse` are decoded. Tool-call
   repair reads the top-level `tool_calls` only.
 
+- Every binding's DTO types and codecs are generated from the Rust types
+  (#268). `aimux-codegen` reads the manifest's `typeDefs` (the `schemars`
+  schemas of the Rust types) and writes the business JSON schemas
+  (`schema/types/*.json`) and the DTOs of Node, Go, Java, Swift, Dart and
+  Python (Kotlin uses Java's), and the web console's types; the hand-written
+  DTO types are deleted and the generated ones take the Rust type names, so
+  hand-written names that Rust does not have (for example Go's `Role` and
+  `MessageContent`, Java's `TokenUsage`) are gone. Where the types moved:
+  Node `bindings/node/src/types/*.ts` (one ts-rs file per type) becomes
+  `bindings/node/src/generated/types.ts`, re-exported by `src/types.ts`; Go
+  `types.go`, `multimodal_types.go` and `repair_types.go` become
+  `types_gen.go`; Java's nested `Types.X` and `MultimodalTypes.X` become
+  top-level classes in the package `ai.arcships.aimux.types`
+  (`bindings/java/generated/`), which Kotlin uses directly; Swift `Types.swift`,
+  `Multimodal.swift` and `ToolCallRepair.swift` become `generated/Types.swift`;
+  Dart `types.dart` and `types.g.dart` (`json_serializable`) become
+  `lib/src/generated/types.dart`, which `types.dart` re-exports, and an absent
+  field is told from an explicit `null` by `Field<T>` (replacing `hasBody` and
+  `hasInputSchemaInput`); the Python models of `wrapper.py` become
+  `aimux/_types.py` and `_error_payloads.py`, which `aimux.wrapper`
+  re-exports. The web console imports core types from the Node file through
+  `@aimux/types` and its own `Wire*` types from
+  `tools/aimux-web/web/src/types/generated/`, both written by `aimux-codegen`.
+  Generated Dart and Java hold integers as signed 64-bit values and cannot
+  represent a `u64` above 2^63-1; Node decodes numbers as doubles and rounds
+  integers above 2^53; Go accepts any string for a single-value tag where the
+  other languages reject other values; Node, which has declarations but no
+  codec, keeps an explicit `null` that the other languages fold to an omitted
+  key. These are registered in `docs/rfc-0039-implementation.md` (D13 to D16). `cargo run -p aimux-codegen
+  -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
+  files and the codecs.
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
@@ -1152,6 +1184,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
   string such as `"prompt_tokens": "100"` as 0. Applies to generate and
   stream.
+- Google Vertex checks that a location going into a host name is one DNS
+  label (letters, digits and hyphens), as the AI SDK does: the Gemini and
+  Claude models, MaaS and the Speech-to-Text models (whose `region` provider
+  option is checked too) fail the request with `InvalidArgument` before
+  anything is sent. Language models with a custom `base_url`, Express mode
+  and the xAI models, which always call the global host, do not check it;
+  transcription models check it with a custom `base_url` too, since they
+  still name the location in their own endpoint. The check came with
+  `@ai-sdk/google-vertex` 5.0.100, so the lock moves there from 5.0.98; that
+  release depends on the locked `@ai-sdk/google` 4.0.87. The Vertex user
+  agent now reads `ai-sdk-google-vertex/5.0.100 ai-sdk-provider-utils/5.0.53`,
+  and the MaaS and xAI models send `ai-sdk-openai-compatible/3.0.61`.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now
@@ -1202,11 +1246,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model no longer match each other's prefix history. The trace
   scope isolates by provider name and model id; `TraceLayer::with_scope_name`
   names a scope for a host that calls one provider at several endpoints.
-- Gated aimux-core's ts-rs exports behind `ts-export`, so plain `cargo test`
-  no longer rewrites tracked TypeScript types. `scripts/gen_ts_types.py`
-  enables exports and rejects ungated export attributes with `--check`.
 
 ### Removed
+
+- ts-rs is retired (#268): the `ts-rs` dependency, the `TS` derives and the
+  `ts-export` feature, `scripts/gen_ts_types.py` and its CI step are deleted,
+  along with the generated `bindings/node/src/types/*.ts` and
+  `tools/aimux-web/web/src/types/generated/serde_json/JsonValue.ts`.
+  `aimux-codegen` replaces them (see the entry under Breaking).
 
 - The cross-language contract fixtures are retired (#249):
   `contract-tests/fixtures/wire-format.json` (a record of Rust's own serde
@@ -1225,9 +1272,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   master layer by layer, each layer CI-green with all its consumers updated,
   instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
   §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
-  migration come last; until then the existing C constructors keep their
-  signatures and call the new factories, and ts-rs stays as the interim
-  generator. No release is cut from master until every layer is merged;
+  migration come last; the existing C constructors kept their
+  signatures and called the new factories until the new C ABI landed (#265),
+  and ts-rs stayed as the interim generator until `aimux-codegen` generated
+  the DTOs (#268). Recording schema 3 follows as a separate PR before the
+  release. No release is cut from master until every layer is merged;
   fixes for released versions ship from a maintenance branch. `ROADMAP.md`
   defers the ops protocol schema and L0 passthrough and no longer fixes C1
   at nine exports.

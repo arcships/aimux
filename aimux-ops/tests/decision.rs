@@ -519,7 +519,7 @@ fn descriptors_publish_decision_controls_and_canonical_types() {
     );
     assert_eq!(descriptor.retry_owner, "core");
     assert_eq!(
-        descriptor.result_type,
+        (descriptor.result_type.id)().into_owned(),
         "aimux_core::decision_model::DecideResult"
     );
     let manifest = manifest();
@@ -527,7 +527,7 @@ fn descriptors_publish_decision_controls_and_canonical_types() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|ty| ty["id"] == descriptor.request_type)
+        .find(|ty| ty["id"] == (descriptor.request_type.id)().into_owned())
         .unwrap();
     assert_eq!(
         ty["rustPath"],

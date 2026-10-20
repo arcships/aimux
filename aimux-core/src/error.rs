@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use ts_rs::TS;
 
 /// Projects response retry headers to milliseconds using a caller-supplied clock.
 ///
@@ -76,9 +76,8 @@ pub fn retry_after_ms_from_headers(
 /// Every producer must provide the sanitized request URL and request values.
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ApiCallError {
     /// Sanitized request URL. Required for every API-derived failure.
     pub url: String,
@@ -91,13 +90,11 @@ pub struct ApiCallError {
     /// stream errors do (OpenAI infers one from the frame's `code`/`type`,
     /// Anthropic from its error type); errors built without an HTTP exchange
     /// leave it `None`.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_code: Option<u16>,
     /// Provider's machine-readable code (OpenAI's `code`/`type`,
     /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     /// status. Our normalized take on `APICallError.data`.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_code: Option<String>,
     /// Human-readable failure text. Provider text is verbatim when available;
@@ -107,20 +104,18 @@ pub struct ApiCallError {
     /// The raw response body, verbatim (`APICallError.responseBody`) — the
     /// lossless evidence when `message`/`provider_code` are extractions.
     /// `None` when the error did not come from a response body.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_body: Option<String>,
     /// Sanitized response headers.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_headers: Option<HashMap<String, String>>,
     /// Parsed provider error data.
-    #[ts(optional)]
     #[serde(
         default,
         deserialize_with = "crate::wire::present",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schemars(extend("x-aimux-codec" = "presence"))]
     pub data: Option<serde_json::Value>,
     /// Whether retrying can help (`APICallError.isRetryable`) — stored at
     /// construction, exactly like the AI SDK: the response path computes it
@@ -152,9 +147,8 @@ impl ApiCallError {
 }
 
 /// Why the retry wrapper stopped retrying.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum RetryErrorReason {
     /// Every permitted retry attempt failed with a retryable error.
     MaxRetriesExceeded,
@@ -163,9 +157,8 @@ pub enum RetryErrorReason {
 }
 
 /// Complete error history for a retried model operation.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RetryError {
     pub reason: RetryErrorReason,
     pub errors: Vec<AiMuxError>,
@@ -244,10 +237,8 @@ impl std::fmt::Display for ApiCallError {
 /// Variants are cut by *what the caller does about it*, not by where the
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Error)]
 #[serde(from = "AiMuxErrorWire", into = "AiMuxErrorWire")]
-#[ts(as = "AiMuxErrorWire")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AiMuxError {
     #[error("API call error: {0}")]
     ApiCall(Box<ApiCallError>),
@@ -278,12 +269,10 @@ pub enum AiMuxError {
     #[error("Model tried to call unavailable tool '{tool_name}'. {}", no_such_tool_availability(.available_tools))]
     NoSuchTool {
         tool_name: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
         /// Original argument text, when supplied by the provider. Absent in
         /// older serialized errors and errors constructed without a call.
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_input: Option<String>,
     },
@@ -401,7 +390,7 @@ pub enum AiMuxError {
 /// The JSON form of [`AiMuxError`]: internally tagged by `name`, with the AI
 /// SDK's error names (`AI_APICallError`, ...). `AiMuxError` serializes through
 /// this mirror because its tuple variants cannot carry an internal tag.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "name", rename_all_fields = "camelCase")]
 pub enum AiMuxErrorWire {
     #[serde(rename = "AI_APICallError")]
@@ -422,10 +411,8 @@ pub enum AiMuxErrorWire {
     #[serde(rename = "AI_NoSuchToolError")]
     NoSuchTool {
         tool_name: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         available_tools: Option<Vec<String>>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_input: Option<String>,
     },
@@ -606,9 +593,8 @@ fn missing_tool_results_message(tool_call_ids: &[String]) -> String {
 
 /// What [`AiMuxError::ToolChoiceViolation`] carries: the field set of the AI
 /// SDK's `ToolChoiceViolationError` (`ai` `error/tool-choice-violation-error.ts`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS, Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Error)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 #[error("{}", tool_choice_violation_message(.tool_choice))]
 pub struct ToolChoiceViolationError {
     /// The enforced tool choice (`required`, or `tool` with a name) that the

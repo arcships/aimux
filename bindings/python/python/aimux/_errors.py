@@ -4,6 +4,8 @@ Headers and retry policy are projected by Rust, never recalculated here.
 """
 import re
 
+from ._error_payloads import ErrorEnvelope, payload_fields
+
 
 class AimuxError(Exception):
     """Base for failures in the aimux domain."""
@@ -83,11 +85,7 @@ def _payload_exception(payload, domain="aimux", message=None):
     cls = _AIMUX_TYPES.get(payload.get("name"), AimuxError) if domain == "aimux" else _DOMAINS[domain]
     error = cls(message if message is not None else payload.get("message", payload.get("name", "")))
     error.error = payload
-    for field, value in payload.items():
-        if field == "errors" and isinstance(value, list):
-            value = [from_envelope(item) if "kind" in item else _payload_exception(item) for item in value]
-        elif field in ("cause", "originalError") and isinstance(value, dict):
-            value = from_envelope(value) if "kind" in value else _payload_exception(value)
+    for field, value in payload_fields(payload, _payload_exception, from_envelope):
         setattr(error, _snake(field), value)
     if isinstance(getattr(error, "cause", None), BaseException):
         error.__cause__ = error.cause
@@ -98,11 +96,12 @@ def _payload_exception(payload, domain="aimux", message=None):
 
 def from_envelope(envelope):
     """Preserve the envelope and every payload field, including nested errors."""
-    error = _payload_exception(envelope["error"], envelope["kind"], envelope["message"])
+    view = ErrorEnvelope.from_json(envelope)
+    error = _payload_exception(view.error, view.kind, view.message)
     error.envelope = envelope
-    error.kind = envelope["kind"]
-    error.code = envelope["code"]
-    error.retry_after_ms = envelope.get("retryAfterMs")
+    error.kind = view.kind
+    error.code = view.code
+    error.retry_after_ms = view.retry_after_ms
     return error
 
 

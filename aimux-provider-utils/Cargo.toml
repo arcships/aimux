@@ -9,6 +9,7 @@ categories = ["api-bindings", "asynchronous"]
 documentation = "https://docs.rs/aimux-provider-utils"
 
 [dependencies]
+schemars = { workspace = true }
 aimux-core = { workspace = true }
 aimux-stream = { workspace = true }
 

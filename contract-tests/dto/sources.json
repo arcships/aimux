@@ -1,0 +1,1122 @@
+[
+  {
+    "file": "AiMuxError/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 36/error"
+  },
+  {
+    "file": "AiMuxError/002.json",
+    "source": "fixtures/aisdk/provider-utils/t3-unattributable-deltas.json",
+    "pointer": "/cases/3/aisdk/error"
+  },
+  {
+    "file": "AiMuxError/003.json",
+    "source": "contract-tests/ops/scenarios/recoverable-error-part.json",
+    "pointer": "/script/0/event/error"
+  },
+  {
+    "file": "AiMuxErrorInput/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 36/error"
+  },
+  {
+    "file": "AiMuxErrorInput/002.json",
+    "source": "fixtures/aisdk/provider-utils/t3-unattributable-deltas.json",
+    "pointer": "/cases/3/aisdk/error"
+  },
+  {
+    "file": "AiMuxErrorInput/003.json",
+    "source": "contract-tests/ops/scenarios/recoverable-error-part.json",
+    "pointer": "/script/0/event/error"
+  },
+  {
+    "file": "AnyValue/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 10"
+  },
+  {
+    "file": "AssistantContent/001.json",
+    "source": "contract-tests/ops/scenarios/preflight-failure.json",
+    "pointer": "/expected/frames"
+  },
+  {
+    "file": "AssistantContent/002.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "AssistantContent/003.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content"
+  },
+  {
+    "file": "AssistantContentPart/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "AssistantContentPart/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/4"
+  },
+  {
+    "file": "AssistantContentPart/003.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 405"
+  },
+  {
+    "file": "AssistantContentPart/004.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 408"
+  },
+  {
+    "file": "AssistantContentPart/005.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/toolCalls/0"
+  },
+  {
+    "file": "AssistantContentPart/006.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/8"
+  },
+  {
+    "file": "AssistantContentPart/007.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 516"
+  },
+  {
+    "file": "AssistantContentPart/008.json",
+    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
+    "pointer": "line 162/responseMessages/1/content/0"
+  },
+  {
+    "file": "AudioData/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "AudioData/002.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0/seq"
+  },
+  {
+    "file": "AudioInput/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "AudioInput/002.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0/seq"
+  },
+  {
+    "file": "ContentPart/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "ContentPart/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/4"
+  },
+  {
+    "file": "ContentPart/003.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/2"
+  },
+  {
+    "file": "ContentPart/004.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 272"
+  },
+  {
+    "file": "ContentPart/005.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/toolCalls/0"
+  },
+  {
+    "file": "ContentPart/006.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/18"
+  },
+  {
+    "file": "ContentPart/007.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/14"
+  },
+  {
+    "file": "ContentPart/008.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/3"
+  },
+  {
+    "file": "ContentPart/009.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/15"
+  },
+  {
+    "file": "ContentPart/010.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/20"
+  },
+  {
+    "file": "ContentPart/011.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/21"
+  },
+  {
+    "file": "ContentPartInput/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "ContentPartInput/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/4"
+  },
+  {
+    "file": "ContentPartInput/003.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/2"
+  },
+  {
+    "file": "ContentPartInput/004.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 272"
+  },
+  {
+    "file": "ContentPartInput/005.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/toolCalls/0"
+  },
+  {
+    "file": "ContentPartInput/006.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/18"
+  },
+  {
+    "file": "ContentPartInput/007.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/14"
+  },
+  {
+    "file": "ContentPartInput/008.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/3"
+  },
+  {
+    "file": "ContentPartInput/009.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/15"
+  },
+  {
+    "file": "ContentPartInput/010.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/20"
+  },
+  {
+    "file": "ContentPartInput/011.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/21"
+  },
+  {
+    "file": "DecideOptions/001.json",
+    "source": "contract-tests/fixtures/decision-openai-full.json",
+    "pointer": "/options"
+  },
+  {
+    "file": "DecideUsage/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "DecisionBooleanCriteria/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "DecisionInput/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "DecisionInput/002.json",
+    "source": "contract-tests/ops/scenarios/preflight-failure.json",
+    "pointer": "/expected/frames"
+  },
+  {
+    "file": "DecisionInput/003.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "DecisionInput/004.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 547/Quux"
+  },
+  {
+    "file": "DecisionInput/005.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512/body"
+  },
+  {
+    "file": "DecisionQuestion/001.json",
+    "source": "contract-tests/fixtures/decision-openai-full.json",
+    "pointer": "/options/questions/choice"
+  },
+  {
+    "file": "DecisionQuestion/002.json",
+    "source": "contract-tests/fixtures/decision-native.json",
+    "pointer": "/request/questions/severity"
+  },
+  {
+    "file": "DecisionQuestion/003.json",
+    "source": "contract-tests/fixtures/decision-native.json",
+    "pointer": "/request/questions/urgent"
+  },
+  {
+    "file": "DecisionRounding/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "EmbeddingCallOptions/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/AbiContractTest.java",
+    "pointer": "line 340"
+  },
+  {
+    "file": "EmbeddingResponse/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "EmbeddingResponse/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "EmbeddingUsage/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 54/usage"
+  },
+  {
+    "file": "ErrorEnvelope/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/AbiContractTest.java",
+    "pointer": "line 157"
+  },
+  {
+    "file": "FileBytes/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "FileBytes/002.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0/seq"
+  },
+  {
+    "file": "FileData/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "FileData/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 14/data"
+  },
+  {
+    "file": "FileData/003.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 402/data"
+  },
+  {
+    "file": "FileData/004.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 403/data"
+  },
+  {
+    "file": "FilePartData/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "FilePartData/002.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "FilePartData/003.json",
+    "source": "aimux-core/tests/ai_sdk_json_test.rs",
+    "pointer": "line 905"
+  },
+  {
+    "file": "FilePartData/008.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "FilePartData/011.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 14/data"
+  },
+  {
+    "file": "FilePartData/024.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 402/data"
+  },
+  {
+    "file": "FilePartData/028.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 403/data"
+  },
+  {
+    "file": "FinishReasonUnified/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/finishReason"
+  },
+  {
+    "file": "FinishReasonUnified/002.json",
+    "source": "contract-tests/ops/scenarios/recoverable-error-part.json",
+    "pointer": "/script/0/event/type"
+  },
+  {
+    "file": "GenerateContent/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "GenerateContent/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/4"
+  },
+  {
+    "file": "GenerateContent/003.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/2"
+  },
+  {
+    "file": "GenerateContent/004.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/8"
+  },
+  {
+    "file": "GenerateContent/005.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 80"
+  },
+  {
+    "file": "GenerateContent/006.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/5"
+  },
+  {
+    "file": "GenerateContent/007.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/6"
+  },
+  {
+    "file": "GenerateContent/008.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/3"
+  },
+  {
+    "file": "GenerateContent/009.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/9"
+  },
+  {
+    "file": "GenerateObjectResponse/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 362/response"
+  },
+  {
+    "file": "GenerateObjectResult/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 362"
+  },
+  {
+    "file": "GenerateTextOptions/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "GeneratedFile/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 21"
+  },
+  {
+    "file": "GeneratedFileData/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 14/data"
+  },
+  {
+    "file": "GeneratedFileData/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 402/data"
+  },
+  {
+    "file": "HandleId/001.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0/seq"
+  },
+  {
+    "file": "HandleId/002.json",
+    "source": "contract-tests/ops/scenarios/cancel.json",
+    "pointer": "/expected/frames/1/seq"
+  },
+  {
+    "file": "HandleIdInput/001.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0/seq"
+  },
+  {
+    "file": "HandleIdInput/002.json",
+    "source": "contract-tests/ops/scenarios/cancel.json",
+    "pointer": "/expected/frames/1/seq"
+  },
+  {
+    "file": "ImageFile/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 402/data"
+  },
+  {
+    "file": "ImageFile/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 405"
+  },
+  {
+    "file": "ImageFileData/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "ImageFileData/002.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0/seq"
+  },
+  {
+    "file": "ImageOutputs/001.json",
+    "source": "contract-tests/ops/scenarios/preflight-failure.json",
+    "pointer": "/expected/frames"
+  },
+  {
+    "file": "ImageOutputs/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 280"
+  },
+  {
+    "file": "ImageResponse/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "ImageResult/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 128"
+  },
+  {
+    "file": "ImageUsage/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "InputTokenDetails/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "LanguageModelFile/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 14"
+  },
+  {
+    "file": "LanguageModelUsage/001.json",
+    "source": "bindings/go/roundtrip_test.go",
+    "pointer": "line 246/totalUsage"
+  },
+  {
+    "file": "LanguageModelUsageInput/001.json",
+    "source": "bindings/go/roundtrip_test.go",
+    "pointer": "line 246/totalUsage"
+  },
+  {
+    "file": "LanguageModelV4ToolChoice/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 290/toolChoice"
+  },
+  {
+    "file": "ModelCost/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "ModelLimits/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "ModelMessage/001.json",
+    "source": "bindings/go/roundtrip_test.go",
+    "pointer": "line 95"
+  },
+  {
+    "file": "ModelMessage/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/responseMessages/0"
+  },
+  {
+    "file": "ModelMessage/003.json",
+    "source": "fixtures/aisdk/openai/chat-system-and-settings.json",
+    "pointer": "/request/body/messages/0"
+  },
+  {
+    "file": "ModelMessage/004.json",
+    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
+    "pointer": "line 162/responseMessages/1"
+  },
+  {
+    "file": "ModelModalities/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "ModelPrompt/001.json",
+    "source": "contract-tests/ops/scenarios/preflight-failure.json",
+    "pointer": "/expected/frames"
+  },
+  {
+    "file": "ModelPrompt/002.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "ModelPrompt/003.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/responseMessages"
+  },
+  {
+    "file": "NamespacedKind/001.json",
+    "source": "bindings/go/wire_test.go",
+    "pointer": "line 24"
+  },
+  {
+    "file": "NamespacedKind/002.json",
+    "source": "fixtures/aisdk/openai/chat-system-and-settings.json",
+    "pointer": "/response/body/choices/0/message/content"
+  },
+  {
+    "file": "Output/001.json",
+    "source": "bindings/go/wire_test.go",
+    "pointer": "line 81/output"
+  },
+  {
+    "file": "OutputTokenDetails/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "RawToolCall/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 93"
+  },
+  {
+    "file": "ReasoningFilePartData/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "ReasoningFilePartData/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 14/data"
+  },
+  {
+    "file": "ReasoningFilePartData/003.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 402/data"
+  },
+  {
+    "file": "ReasoningOutput/001.json",
+    "source": "bindings/go/wire_test.go",
+    "pointer": "line 146"
+  },
+  {
+    "file": "ReasoningPart/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/4"
+  },
+  {
+    "file": "ReasoningPart/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/18"
+  },
+  {
+    "file": "RequestInfo/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "RequestInfo/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "RerankingRank/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 177/ranking/1"
+  },
+  {
+    "file": "RerankingResponse/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "RerankingResponse/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "RerankingResult/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 177"
+  },
+  {
+    "file": "ResponseInfo/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "ResponseInfo/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "RuntimeModel/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/response"
+  },
+  {
+    "file": "SearchResponse/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "SearchResponse/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "SearchResult/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 276"
+  },
+  {
+    "file": "SearchResultItem/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "SpeechCallOptions/001.json",
+    "source": "bindings/go/wire_test.go",
+    "pointer": "line 146"
+  },
+  {
+    "file": "SpeechRequest/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "SpeechRequest/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "SpeechResponse/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "SpeechResponse/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "StepModel/001.json",
+    "source": "fixtures/aisdk/openai/chat-custom-name.json",
+    "pointer": "/model"
+  },
+  {
+    "file": "StepResponse/001.json",
+    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
+    "pointer": "line 162/response"
+  },
+  {
+    "file": "StepResponseInput/001.json",
+    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
+    "pointer": "line 162/response"
+  },
+  {
+    "file": "StepResponseMetadata/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 362/response"
+  },
+  {
+    "file": "StreamFrame/001.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0"
+  },
+  {
+    "file": "StreamFrame/002.json",
+    "source": "contract-tests/ops/scenarios/cancel.json",
+    "pointer": "/expected/frames/0"
+  },
+  {
+    "file": "TextStreamPart/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
+    "pointer": "/result/parts/0"
+  },
+  {
+    "file": "TextStreamPart/002.json",
+    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
+    "pointer": "/result/parts/5"
+  },
+  {
+    "file": "TextStreamPart/003.json",
+    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
+    "pointer": "/result/parts/2"
+  },
+  {
+    "file": "TextStreamPart/004.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/7"
+  },
+  {
+    "file": "TextStreamPart/005.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/24"
+  },
+  {
+    "file": "TextStreamPart/006.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/11"
+  },
+  {
+    "file": "TextStreamPart/007.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/22"
+  },
+  {
+    "file": "TextStreamPart/008.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/26"
+  },
+  {
+    "file": "TextStreamPart/009.json",
+    "source": "bindings/swift/Tests/AimuxTests/ContractTests.swift",
+    "pointer": "line 346"
+  },
+  {
+    "file": "TextStreamPart/010.json",
+    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
+    "pointer": "/result/parts/1"
+  },
+  {
+    "file": "TextStreamPart/011.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/23"
+  },
+  {
+    "file": "TextStreamPart/012.json",
+    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
+    "pointer": "line 99"
+  },
+  {
+    "file": "TextStreamPart/013.json",
+    "source": "fixtures/aisdk/provider-utils/t3-unattributable-deltas.json",
+    "pointer": "/cases/11/aisdk/steps/1/parts/0"
+  },
+  {
+    "file": "TextStreamPart/014.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/16"
+  },
+  {
+    "file": "TextStreamPart/015.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/2"
+  },
+  {
+    "file": "TextStreamPart/016.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 272"
+  },
+  {
+    "file": "TextStreamPart/017.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/toolCalls/0"
+  },
+  {
+    "file": "TextStreamPart/018.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/18"
+  },
+  {
+    "file": "TextStreamPart/019.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/14"
+  },
+  {
+    "file": "TextStreamPart/020.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/3"
+  },
+  {
+    "file": "TextStreamPart/021.json",
+    "source": "bindings/go/roundtrip_test.go",
+    "pointer": "line 246"
+  },
+  {
+    "file": "TextStreamPart/022.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/15"
+  },
+  {
+    "file": "TextStreamPart/023.json",
+    "source": "contract-tests/ops/scenarios/recoverable-error-part.json",
+    "pointer": "/script/0/event"
+  },
+  {
+    "file": "TextStreamPart/024.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/20"
+  },
+  {
+    "file": "TextStreamPart/025.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/21"
+  },
+  {
+    "file": "TimeoutConfiguration/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "Timestamp/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-stream-basic.json",
+    "pointer": "/result/parts/6/response/timestamp"
+  },
+  {
+    "file": "Timestamp/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 362/response/timestamp"
+  },
+  {
+    "file": "Tool/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 290/tools/0"
+  },
+  {
+    "file": "Tool/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 306"
+  },
+  {
+    "file": "ToolCall/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 83"
+  },
+  {
+    "file": "ToolCallInput/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 83"
+  },
+  {
+    "file": "ToolChoice/001.json",
+    "source": "fixtures/aisdk/openai/chat-provider-options.json",
+    "pointer": "/request/body/tool_choice"
+  },
+  {
+    "file": "ToolChoice/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 290/toolChoice"
+  },
+  {
+    "file": "ToolContentPart/001.json",
+    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
+    "pointer": "line 162/responseMessages/1/content/0"
+  },
+  {
+    "file": "ToolResultContentPart/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "ToolResultContentPart/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 114/5"
+  },
+  {
+    "file": "ToolResultFileId/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "ToolResultFileId/002.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "ToolResultOutput/001.json",
+    "source": "bindings/swift/Tests/AimuxTests/WireTests.swift",
+    "pointer": "line 162/responseMessages/1/content/0/output"
+  },
+  {
+    "file": "TranscriptionRequest/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "TranscriptionResponse/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "TranscriptionResponse/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 512"
+  },
+  {
+    "file": "TranscriptionResult/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 167"
+  },
+  {
+    "file": "TranscriptionSegment/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 137/segments/0"
+  },
+  {
+    "file": "TranscriptionStreamPart/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/26"
+  },
+  {
+    "file": "TranscriptionStreamPart/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/8"
+  },
+  {
+    "file": "UploadFileData/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "UploadFileData/002.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 14/data"
+  },
+  {
+    "file": "UploadFileResult/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 304"
+  },
+  {
+    "file": "UserContent/001.json",
+    "source": "contract-tests/ops/scenarios/preflight-failure.json",
+    "pointer": "/expected/frames"
+  },
+  {
+    "file": "UserContent/002.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "UserContent/003.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content"
+  },
+  {
+    "file": "UserContentPart/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 316/content/0"
+  },
+  {
+    "file": "UserContentPart/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 405"
+  },
+  {
+    "file": "UserContentPart/003.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 373"
+  },
+  {
+    "file": "VideoData/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 569"
+  },
+  {
+    "file": "VideoData/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 583"
+  },
+  {
+    "file": "VideoData/003.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 558"
+  },
+  {
+    "file": "VideoFile/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 402/data"
+  },
+  {
+    "file": "VideoFile/002.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 405"
+  },
+  {
+    "file": "VideoFileData/001.json",
+    "source": "fixtures/aisdk/anthropic/messages-system-tools.json",
+    "pointer": "/result/text"
+  },
+  {
+    "file": "VideoFileData/002.json",
+    "source": "contract-tests/ops/scenarios/accepted.json",
+    "pointer": "/expected/frames/0/seq"
+  },
+  {
+    "file": "VideoPollOptions/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "VideoResponse/001.json",
+    "source": "contract-tests/ops/scenarios/duplicate-finish.json",
+    "pointer": "/script/0/event/totalUsage/inputTokens"
+  },
+  {
+    "file": "VideoResult/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 232"
+  },
+  {
+    "file": "Warning/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 173/4/warnings/0"
+  },
+  {
+    "file": "_uint8_/001.json",
+    "source": "bindings/flutter/test/typed_round_trip_test.dart",
+    "pointer": "line 270"
+  },
+  {
+    "file": "null/001.json",
+    "source": "contract-tests/fixtures/decision-native.json",
+    "pointer": "/request/questions/department/criteria/technical"
+  },
+  {
+    "file": "string/001.json",
+    "source": "bindings/java/src/test/java/ai/arcships/aimux/MultimodalTypesTest.java",
+    "pointer": "line 404/data/text"
+  }
+]

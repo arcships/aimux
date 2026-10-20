@@ -407,8 +407,11 @@ fn six_trace_descriptors_publish_concrete_types_and_a5_fields() {
             matches!(name, "trace.create" | "trace.clear")
         );
         assert!(!descriptor.source_symbols.is_empty());
-        for ty in [descriptor.request_type, descriptor.result_type] {
-            assert_ne!(ty, "serde_json::Value");
+        for ty in [
+            (descriptor.request_type.id)().into_owned(),
+            (descriptor.result_type.id)().into_owned(),
+        ] {
+            assert_ne!(ty, "AnyValue");
             assert!(
                 manifest["types"]
                     .as_array()

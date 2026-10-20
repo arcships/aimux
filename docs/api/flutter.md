@@ -307,7 +307,7 @@ fields survive the repair.
 
 The JSON that crosses the C ABI is the AI SDK's JSON, and `types.dart` reads
 and writes exactly the shapes of the generated TypeScript types
-(`bindings/node/src/types/*.ts`):
+(`bindings/node/src/generated/types.ts`):
 
 - field names are camelCase (`toolCalls`, `finishReason`, `providerOptions`,
   `maxOutputTokens`, ...); `config_json` / router / moa settings follow suit
@@ -325,8 +325,8 @@ and writes exactly the shapes of the generated TypeScript types
   `{type: 'file', file: {...}}`, while the provider-level `GenerateResult.content` keeps
   a `LanguageModelFile` (`mediaType` and tagged `data`);
 - optional fields are absent, never `null`, except an `unknown` value
-  (`body`, `inputSchemaInput`): a JSON `null` there is kept, and `hasBody` /
-  `hasInputSchemaInput` tell it apart from a missing field;
+  (`body`, `inputSchemaInput`): a JSON `null` there is kept, and the `Field<T>`
+  wrapper (`isPresent`) tells it apart from a missing field;
 - a response `timestamp` is a JavaScript `Date` in the AI SDK's JSON: a
   `toISOString()` string, UTC with milliseconds (`"2025-03-06T13:50:19.000Z"`),
   which `DateTime.parse` reads;
@@ -356,19 +356,17 @@ so is `registerProviders`. Use `Model.provider` / `createProvider` with a
 
 ## Types
 
-`bindings/flutter/lib/types.dart` declares the typed model surface (with
-`toJson` / `fromJson` on each): `Role`, `FinishReasonUnified`,
-`ReasoningEffort`, `InputTokenUsage` / `OutputTokenUsage` / `Usage`,
-`FinishReason`, `ToolCall`, `FunctionTool`, `Tool`, `ToolChoice`,
-`RequestInfo` / `ResponseInfo` / `ResponseMetadata`, `GeneratedFile`,
-`Source`, `ToolResult`, `GenerateContent` (sealed), `GenerateResult`,
-`LanguageModelUsage`, `GenerateTextResult`, `GenerateObjectResult`,
-`GenerateTextOptions`, `ModelMessage`, `StreamPart` (sealed; the
-`TextStreamPart` shapes the stream emits), `FileBytes`, `FileData`,
-`ContentPart` (sealed), `ToolResultOutput`, and `RawToolCall` /
-`ToolCallRepairContext` / `RepairToolCall` (tool-call repair). A `type` the
-binding does not model decodes to the `...Unknown` fallback of each union and
-re-encodes verbatim.
+`bindings/flutter/lib/types.dart` re-exports `lib/src/generated/types.dart`,
+which `aimux-codegen` generates from the Rust types (do not edit it; run
+`cargo run -p aimux-codegen`). It declares an immutable class (with `toJson` /
+`fromJson`) or an enum for every DTO, for example `GenerateTextOptions`,
+`GenerateTextResult`, `ModelMessage`, `ContentPart` (sealed), `TextStreamPart`
+(sealed), `Tool`, `ToolChoice`, `ToolCall`, `RawToolCall`, `GeneratedFile`,
+`LanguageModelUsage`, `FileBytes` and `FileData`, and the multimodal DTOs. An
+unknown `type` or `name` tag raises a `FormatException` naming the type and the
+tag. Fields that Rust leaves out when missing but keeps when `null` (`body`,
+`inputSchemaInput`, `data`) are `Field<T>`, so an absent field stays distinct
+from an explicit JSON `null`.
 
 `ToolCall` carries `providerMetadata` plus `invalid` (set by Core when tool
 lookup, input parse, or schema validation fails, even after repair) and `error`

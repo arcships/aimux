@@ -1,6 +1,6 @@
 # aimux-go
 
-Go bindings for the operation C ABI. Requires cgo, Go 1.23+, the matching
+Go bindings for the operation C ABI. Requires cgo, Go 1.24+, the matching
 generated `aimux-ffi/include/aimux.h`, and a matching Rust library.
 Provider-specific constructors have been replaced by operation calls.
 
@@ -33,10 +33,12 @@ to callers; per-type schema revision/hash metadata is not currently generated.
 
 Calls accept typed values or `json.RawMessage` and return canonical raw JSON.
 `CallInto[T]` decodes a typed result. `Params` preserves absent keys versus
-explicit null. `WireDTO[T]` retains the complete immutable JSON document,
-including unknown fields and large integers; `Value()` decodes a separate
-typed view and `Field()` reports presence. For example,
-`CallInto[aimux.WireDTO[aimux.GenerateTextResult]]` provides lossless storage.
+explicit null. Optional scalars and structs use pointers; optional slices and
+maps omit nil and retain empty values. Only Presence fields use `Field[T]` to
+distinguish absence, explicit null and a typed value through `Present`, `Null`
+and `Value`. Set `Present: true` when constructing a Presence field. Opaque JSON
+uses `json.RawMessage` and retains large integers.
+Tagged unions expose a sealed `Value` variant and reject unknown tags.
 Nil parameters encode `null`; use `struct{}{}` for `{}`. Handle IDs encode as
 decimal strings, including above 2^53. Never adopt an ID twice.
 
@@ -88,5 +90,5 @@ copies, malformed callbacks, full-queue cancellation, operation lifetime,
 large handle IDs and callback-token cleanup. These tests skip against Rust;
 Rust integration tests skip against the double. Both suites include bridge
 race tests and typed DTO round trips. Live provider calls, successful audio
-transport, cross-platform packaging and Go 1.23 itself require separate
+transport, cross-platform packaging and Go 1.24 itself require separate
 verification.
