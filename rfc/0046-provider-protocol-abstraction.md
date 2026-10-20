@@ -8,7 +8,7 @@
 >
 > **Baseline**: `master@5743a40a`。上游对照：`fixtures/aisdk/VERSIONS.json` 锁定的包版本（`scripts/fetch-aisdk.sh` 取得的发布包），目录与命名另参考 `vercel/ai` main `fce9210`。
 >
-> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §2（D17 五层）、§3.2（fetch 链）、§9.1；[RFC-0042](0042-v4-type-boundaries.md) T2（共享流处理留在 providers）；[RFC-0044](0044-crate-layering-and-dependency-inversion.md)（crate 拆分与依赖反转，PR #279；`aimux-providers` 内部的目录和测试由本文定）；RFC-0045（上游测试迁移，引用本文的测试位置和 `layout.toml`）；[#275](https://github.com/arcships/aimux/issues/275)、[#276](https://github.com/arcships/aimux/issues/276)、[#278](https://github.com/arcships/aimux/issues/278)。
+> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §2（D17 五层）、§3.2（fetch 链）、§9.1；[RFC-0042](0042-v4-type-boundaries.md) T2（共享流处理留在 providers）；[RFC-0044](0044-crate-layering-and-dependency-inversion.md)（crate 拆分与依赖反转，PR #279；`aimux-providers` 内部的目录和测试由本文定）；[RFC-0045](0045-upstream-test-parity.md)（上游测试迁移，引用本文的测试位置和 `layout.toml`）；[#275](https://github.com/arcships/aimux/issues/275)、[#276](https://github.com/arcships/aimux/issues/276)、[#278](https://github.com/arcships/aimux/issues/278)。
 
 ## 1. 决策摘要
 
