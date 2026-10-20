@@ -312,7 +312,9 @@ RFC-0044 C6 先把 `rebuild_provider` 移到 ops，§10 第 3 步排在 C6 之�
 
 ## 11. 待讨论
 
-**Q1 采集位置。** 原提案：采集留在 `aimux-provider-utils/src/http.rs` 把 `FetchRequest` 交给传输的那一处（`http.rs:375`），由 http.rs 继续持有录制上下文。这个方案在本地分支（未推送）上已经实现，`aimux-core`、`aimux-provider-utils` 的测试通过。RFC-0044 改为在 Fetch 链最内层设观察点，用 `DiagnosticScope` 关联调用，provider-utils 不再认识录制。本文按 RFC-0044 写 §4.1。如果 RFC-0044 不采用观察点，就回到原提案，§3、§5 不受影响。
+**Q1 采集位置。** 原提案：采集留在 `aimux-provider-utils/src/http.rs` 把 `FetchRequest` 交给传输的那一处（`http.rs:375`），由 http.rs 继续持有录制上下文。这个方案在本地分支（未推送）上已经实现，`aimux-core`、`aimux-provider-utils` 的测试通过。RFC-0044 改为在 Fetch 链最内层设观察点：它包住用户或默认的叶子 Fetch，位于鉴权之后、真正发出之前，和回放用的是同一个接口。观察点用 `DiagnosticScope` 关联调用，provider-utils 不再认识录制。本文按 RFC-0044 写 §4.1。
+
+两种位置看到的请求不同，供判断：`http.rs:375` 交出的请求还没经过各包的装饰层，即 `SigV4Fetch`、`AnthropicAwsFetch`、Azure 的 `BearerTokenFetch`，以及 `shared::package_fetch` 的 `UserAgentFetch`。而回放 Fetch 作为 provider 的 `fetch` 设置传入，处在这些装饰层里面。所以按原提案录下的请求，与回放时收到的请求在签名头、`authorization`、`user-agent` 上不一致。§5.2 的 Exact 排除了 `user-agent` 和敏感头，可以掩盖前两项差别，但 SigV4 的 `x-amz-date`、`x-amz-content-sha256` 这类头仍会对不上。观察点放在叶子上时，两边看到的是同一份请求。原提案保留在这里待维护者判断。如果 RFC-0044 不采用观察点，就回到原提案，并把上述头加进 §5.2 的排除集合。
 
 **Q2 schema 类型与 Recorder 的归属。** 原提案：在 `aimux-devtools` 建立之前，schema 3 类型、Recorder、Ring/JSONL 留在 `aimux-core::recording`，回放引擎放在 `aimux-provider-utils` 的独立 `replay` 模块，以后整体搬走。RFC-0044 §3.1 把它们放进 `aimux-devtools`，provider-utils 只放观察记录类型。本文按 RFC-0044 的顺序排（§10 先 C6 后 3）。是否允许先落在临时位置再搬，由维护者决定。
 
