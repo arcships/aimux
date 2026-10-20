@@ -153,11 +153,608 @@ fn basic_response_body() -> Value {
     })
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// doGenerate — basic text response
-// ════════════════════════════════════════════════════════════════════════════
+/// Helper: mount a stub response so do_generate succeeds and we can inspect
+/// the request body.
+async fn stub_empty_response(server: &MockServer) {
+    mock_json(
+        server,
+        json!({
+            "id": "resp_test",
+            "model": "moonshotai/Kimi-K2-Instruct",
+            "object": "response",
+            "created_at": 1741257730,
+            "status": "completed",
+            "error": null,
+            "instructions": null,
+            "max_output_tokens": null,
+            "metadata": null,
+            "tool_choice": "auto",
+            "tools": [],
+            "temperature": 1.0,
+            "top_p": 1.0,
+            "incomplete_details": null,
+            "usage": null,
+            "output": [],
+            "output_text": "Test response"
+        }),
+    )
+    .await;
+}
 
-/// TS: doGenerate › basic text response › "should generate text"
+const PNG_BASE64: &str = "iVBORw0KGgo=";
+
+mod hugging_face_responses_language_model {
+    use super::*;
+
+    mod do_stream {
+        use super::*;
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › doStream › should handle non-message item types
+        #[tokio::test]
+        async fn should_handle_non_message_item_types() {
+            let server = MockServer::start().await;
+            let chunks = sse_body(&[
+                sse_event(
+                    r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"mcp_test","type":"mcp_list_tools","server_label":"test"},"sequence_number":1}"#,
+                ),
+                sse_event(
+                    r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"mcp_test","type":"mcp_list_tools","server_label":"test"},"sequence_number":2}"#,
+                ),
+                sse_event(
+                    r#"{"type":"response.completed","response":{"id":"resp_test","status":"completed","incomplete_details":null},"sequence_number":3}"#,
+                ),
+            ]);
+            mock_sse(&server, chunks).await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
+
+            let result = model
+                .do_stream(&default_options(test_prompt()))
+                .await
+                .expect("should succeed");
+
+            let parts = collect_stream(result).await;
+
+            // Should only have stream-start and finish events (no text events for
+            // non-message items).
+            let types: Vec<&str> = parts
+                .iter()
+                .map(|p| match p {
+                    StreamPart::StreamStart { .. } => "stream-start",
+                    StreamPart::Finish { .. } => "finish",
+                    _ => "other",
+                })
+                .collect();
+            assert_eq!(types, vec!["stream-start", "finish"]);
+        }
+    }
+
+    mod message_conversion {
+        use super::*;
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › message conversion › should convert user messages with images
+        #[tokio::test]
+        async fn should_convert_user_messages_with_images() {
+            let server = MockServer::start().await;
+            stub_empty_response(&server).await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
+
+            let prompt = vec![LanguageModelMessage::User {
+                content: vec![
+                    UserPart::Text(TextPart {
+                        text: "What do you see?".into(),
+                        provider_options: None,
+                    }),
+                    UserPart::File(FilePart {
+                        data: FileData::Data {
+                            data: FileBytes::Base64("AQIDBA==".into()),
+                        },
+                        media_type: "image/jpeg".into(),
+                        filename: None,
+                        provider_options: None,
+                    }),
+                ],
+                provider_options: None,
+            }];
+
+            let result = model
+                .do_generate(&default_options(prompt))
+                .await
+                .expect("ok");
+            let body = result
+                .request
+                .and_then(|request| request.body)
+                .expect("body");
+
+            assert_eq!(
+                body["input"][0]["content"],
+                json!([
+                    { "text": "What do you see?", "type": "input_text" },
+                    { "image_url": "data:image/jpeg;base64,AQIDBA==", "type": "input_image" }
+                ])
+            );
+        }
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › message conversion › should handle assistant messages
+        #[tokio::test]
+        async fn should_handle_assistant_messages() {
+            let server = MockServer::start().await;
+            stub_empty_response(&server).await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
+
+            let prompt = vec![
+                LanguageModelMessage::user_text("Hello"),
+                LanguageModelMessage::Assistant {
+                    content: vec![AssistantPart::Text(TextPart {
+                        text: "Hi there!".into(),
+                        provider_options: None,
+                    })],
+                    provider_options: None,
+                },
+                LanguageModelMessage::user_text("How are you?"),
+            ];
+
+            let result = model
+                .do_generate(&default_options(prompt))
+                .await
+                .expect("ok");
+            let body = result
+                .request
+                .and_then(|request| request.body)
+                .expect("body");
+
+            assert_eq!(
+                body["input"],
+                json!([
+                    { "content": [{ "text": "Hello", "type": "input_text" }], "role": "user" },
+                    { "content": [{ "text": "Hi there!", "type": "output_text" }], "role": "assistant" },
+                    { "content": [{ "text": "How are you?", "type": "input_text" }], "role": "user" }
+                ])
+            );
+        }
+
+        /// Tool-call, tool-result, and reasoning in assistant messages produce NO
+        /// warnings (they are silently skipped).
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › message conversion › should warn about unsupported assistant content types
+        #[tokio::test]
+        async fn should_not_warn_about_assistant_content_types() {
+            let server = MockServer::start().await;
+            stub_empty_response(&server).await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
+
+            let prompt = vec![LanguageModelMessage::Assistant {
+                content: vec![
+                    AssistantPart::ToolCall(ToolCallPart {
+                        tool_call_id: "test".into(),
+                        tool_name: "test".into(),
+                        input: json!({}),
+                        provider_executed: None,
+                        provider_options: None,
+                    }),
+                    AssistantPart::ToolResult(ToolResultPart {
+                        tool_call_id: "test".into(),
+                        tool_name: "test".into(),
+                        output: ToolResultOutput::Text {
+                            value: "test".into(),
+                            provider_options: None,
+                        },
+
+                        provider_options: None,
+                    }),
+                    AssistantPart::Reasoning(ReasoningPart {
+                        text: "thinking...".into(),
+
+                        provider_options: None,
+                    }),
+                ],
+                provider_options: None,
+            }];
+
+            let result = model
+                .do_generate(&default_options(prompt))
+                .await
+                .expect("ok");
+
+            // TS expects no warnings (tool calls/results/reasoning are silently
+            // skipped, reasoning is included as output_text).
+            assert!(
+                result.warnings.is_empty(),
+                "expected no warnings, got: {:?}",
+                result.warnings
+            );
+        }
+    }
+
+    mod structured_output {
+        use super::*;
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › structured output › should handle structured output with custom name and description
+        #[tokio::test]
+        async fn should_handle_structured_output_with_custom_name_and_description() {
+            let server = MockServer::start().await;
+            mock_json(
+                &server,
+                json!({
+                    "id": "resp_structured",
+                    "model": "moonshotai/Kimi-K2-Instruct",
+                    "object": "response",
+                    "created_at": 1741257730,
+                    "status": "completed",
+                    "error": null,
+                    "instructions": null,
+                    "max_output_tokens": null,
+                    "metadata": null,
+                    "tool_choice": "auto",
+                    "tools": [],
+                    "temperature": 1.0,
+                    "top_p": 1.0,
+                    "incomplete_details": null,
+                    "usage": null,
+                    "output": [],
+                    "output_text": "{}"
+                }),
+            )
+            .await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("moonshotai/Kimi-K2-Instruct");
+
+            let mut options = default_options(test_prompt());
+            options.response_format = Some(ResponseFormat::Json {
+                schema: Some(
+                    json!({ "type": "object", "properties": { "name": { "type": "string" } } }),
+                ),
+                name: Some("person_profile".to_string()),
+                description: Some("A person profile with basic information".to_string()),
+            });
+
+            let result = model.do_generate(&options).await.expect("should succeed");
+            let body = result
+                .request
+                .and_then(|request| request.body)
+                .expect("body");
+
+            assert_eq!(body["text"]["format"]["name"], json!("person_profile"));
+            assert_eq!(
+                body["text"]["format"]["description"],
+                json!("A person profile with basic information")
+            );
+        }
+    }
+
+    mod provider_options {
+        use super::*;
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › provider options › should send provider-specific options
+        #[tokio::test]
+        async fn should_send_provider_specific_options() {
+            let server = MockServer::start().await;
+            mock_json(
+                &server,
+                json!({
+                    "id": "resp_provider_options",
+                    "model": "deepseek-ai/DeepSeek-V3-0324",
+                    "object": "response",
+                    "created_at": 1741257730,
+                    "status": "completed",
+                    "error": null,
+                    "instructions": null,
+                    "max_output_tokens": null,
+                    "metadata": null,
+                    "tool_choice": "auto",
+                    "tools": [],
+                    "temperature": 1.0,
+                    "top_p": 1.0,
+                    "incomplete_details": null,
+                    "usage": null,
+                    "output": [],
+                    "output_text": "Test"
+                }),
+            )
+            .await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
+
+            let mut options = default_options(test_prompt());
+            let mut po = aimux_core::shared::SharedProviderOptions::new();
+            po.insert(
+                "huggingface".to_string(),
+                serde_json::from_value(json!({
+                    "metadata": { "key": "value" },
+                    "instructions": "Be concise",
+                    "strictJsonSchema": true
+                }))
+                .unwrap(),
+            );
+            options.provider_options = Some(po);
+            options.response_format = Some(ResponseFormat::Json {
+                schema: Some(json!({ "type": "object" })),
+                name: None,
+                description: None,
+            });
+
+            let result = model.do_generate(&options).await.expect("should succeed");
+            let body = result
+                .request
+                .and_then(|request| request.body)
+                .expect("body");
+
+            assert_eq!(body["metadata"], json!({ "key": "value" }));
+            assert_eq!(body["instructions"], json!("Be concise"));
+            assert_eq!(body["text"]["format"]["strict"], json!(true));
+        }
+    }
+
+    mod tool_preparation {
+        use super::*;
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › tool preparation › should prepare tools correctly
+        #[tokio::test]
+        async fn should_prepare_tools_correctly() {
+            let server = MockServer::start().await;
+            mock_json(
+                &server,
+                json!({
+                    "id": "resp_tools",
+                    "model": "deepseek-ai/DeepSeek-V3-0324",
+                    "object": "response",
+                    "created_at": 1741257730,
+                    "status": "completed",
+                    "error": null,
+                    "instructions": null,
+                    "max_output_tokens": null,
+                    "metadata": null,
+                    "tool_choice": "auto",
+                    "tools": [],
+                    "temperature": 1.0,
+                    "top_p": 1.0,
+                    "incomplete_details": null,
+                    "usage": null,
+                    "output": [],
+                    "output_text": "Test"
+                }),
+            )
+            .await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
+
+            let mut options = default_options(test_prompt());
+            options.tools = Some(vec![Tool::from(
+                FunctionTool::new(
+                    "getWeather",
+                    json!({
+                        "type": "object",
+                        "properties": { "location": { "type": "string" } },
+                        "required": ["location"]
+                    }),
+                )
+                .with_description("Get weather information"),
+            )]);
+            options.tool_choice = Some(LanguageModelV4ToolChoice::Tool {
+                tool_name: "getWeather".to_string(),
+            });
+
+            let result = model.do_generate(&options).await.expect("should succeed");
+            let body = result
+                .request
+                .and_then(|request| request.body)
+                .expect("body");
+
+            assert_eq!(
+                body["tools"],
+                json!([{
+                    "type": "function",
+                    "name": "getWeather",
+                    "description": "Get weather information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": { "location": { "type": "string" } },
+                        "required": ["location"]
+                    }
+                }])
+            );
+            assert_eq!(
+                body["tool_choice"],
+                json!({ "type": "function", "function": { "name": "getWeather" } })
+            );
+        }
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › tool preparation › should handle auto and required tool choices
+        #[tokio::test]
+        async fn should_handle_auto_and_required_tool_choices() {
+            let server = MockServer::start().await;
+            mock_json(
+                &server,
+                json!({
+                    "id": "resp_tools",
+                    "model": "deepseek-ai/DeepSeek-V3-0324",
+                    "object": "response",
+                    "created_at": 1741257730,
+                    "status": "completed",
+                    "error": null,
+                    "instructions": null,
+                    "max_output_tokens": null,
+                    "metadata": null,
+                    "tool_choice": "auto",
+                    "tools": [],
+                    "temperature": 1.0,
+                    "top_p": 1.0,
+                    "incomplete_details": null,
+                    "usage": null,
+                    "output": [],
+                    "output_text": "Test"
+                }),
+            )
+            .await;
+
+            let provider = make_provider(&server);
+            let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
+
+            // Test auto
+            let mut options = default_options(test_prompt());
+            options.tools = Some(vec![Tool::from(FunctionTool::new(
+                "test",
+                json!({ "type": "object" }),
+            ))]);
+            options.tool_choice = Some(LanguageModelV4ToolChoice::Auto);
+
+            let result = model.do_generate(&options).await.expect("should succeed");
+            let body = result
+                .request
+                .and_then(|request| request.body)
+                .expect("body");
+            assert_eq!(body["tool_choice"], json!("auto"));
+
+            // Test required
+            let mut options = default_options(test_prompt());
+            options.tools = Some(vec![Tool::from(FunctionTool::new(
+                "test",
+                json!({ "type": "object" }),
+            ))]);
+            options.tool_choice = Some(LanguageModelV4ToolChoice::Required);
+
+            let result = model.do_generate(&options).await.expect("should succeed");
+            let body = result
+                .request
+                .and_then(|request| request.body)
+                .expect("body");
+            assert_eq!(body["tool_choice"], json!("required"));
+        }
+    }
+
+    mod top_level_only_media_type_resolution {
+        use super::*;
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › top-level-only media type resolution › passes full image/png through unchanged for inline data
+        #[test]
+        fn passes_full_image_png_through_unchanged_for_inline_data() {
+            let prompt = vec![LanguageModelMessage::User {
+                content: vec![UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64(PNG_BASE64.into()),
+                    },
+                    media_type: "image/png".into(),
+                    filename: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            }];
+
+            let (input, warnings) =
+                convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
+
+            assert!(warnings.is_empty());
+            let content = &input[0]["content"][0];
+            assert_eq!(
+                content,
+                &json!({
+                    "type": "input_image",
+                    "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
+                })
+            );
+        }
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › top-level-only media type resolution › detects image subtype from inline bytes for top-level "image"
+        #[test]
+        fn detects_image_subtype_from_inline_bytes_for_top_level_image() {
+            let prompt = vec![LanguageModelMessage::User {
+                content: vec![UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64(PNG_BASE64.into()),
+                    },
+                    media_type: "image".into(),
+                    filename: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            }];
+
+            let (input, warnings) =
+                convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
+
+            assert!(warnings.is_empty());
+            let content = &input[0]["content"][0];
+            assert_eq!(
+                content,
+                &json!({
+                    "type": "input_image",
+                    "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
+                })
+            );
+        }
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › top-level-only media type resolution › passes through URL source for top-level-only image
+        #[test]
+        fn passes_through_url_source_for_top_level_only_image() {
+            let prompt = vec![LanguageModelMessage::User {
+                content: vec![UserPart::File(FilePart {
+                    data: FileData::Url {
+                        original_url: None,
+                        url: "https://example.com/x.png".into(),
+                    },
+                    media_type: "image".into(),
+                    filename: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            }];
+
+            let (input, warnings) =
+                convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
+
+            assert!(warnings.is_empty());
+            let content = &input[0]["content"][0];
+            assert_eq!(
+                content,
+                &json!({
+                    "type": "input_image",
+                    "image_url": "https://example.com/x.png"
+                })
+            );
+        }
+
+        /// upstream: @ai-sdk/huggingface src/responses/huggingface-responses-language-model.test.ts › HuggingFaceResponsesLanguageModel › top-level-only media type resolution › normalizes image/* wildcard via detection
+        #[test]
+        fn normalizes_image_wildcard_via_detection() {
+            let prompt = vec![LanguageModelMessage::User {
+                content: vec![UserPart::File(FilePart {
+                    data: FileData::Data {
+                        data: FileBytes::Base64(PNG_BASE64.into()),
+                    },
+                    media_type: "image/*".into(),
+                    filename: None,
+                    provider_options: None,
+                })],
+                provider_options: None,
+            }];
+
+            let (input, warnings) =
+                convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
+
+            assert!(warnings.is_empty());
+            let content = &input[0]["content"][0];
+            assert_eq!(
+                content,
+                &json!({
+                    "type": "input_image",
+                    "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
+                })
+            );
+        }
+    }
+}
+
+/// Partial port of upstream `should generate text`: checks the text but not
+/// the providerMetadata itemId. Full case: src/huggingface/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn should_generate_text() {
     let server = MockServer::start().await;
@@ -180,7 +777,8 @@ async fn should_generate_text() {
     }
 }
 
-/// TS: doGenerate › basic text response › "should extract usage"
+/// Partial port of upstream `should extract usage`: checks the token counts
+/// but not the raw usage object. Full case: src/huggingface/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn should_extract_usage() {
     let server = MockServer::start().await;
@@ -204,8 +802,8 @@ async fn should_extract_usage() {
     assert_eq!(result.usage.output_tokens.reasoning, Some(0));
 }
 
-/// TS: doGenerate › basic text response › "should extract text from output
-/// array when output_text is missing"
+/// Partial port of upstream `should extract text from output array when
+/// output_text is missing`: checks the text but not the providerMetadata itemId.
 #[tokio::test]
 async fn should_extract_text_from_output_array_when_output_text_missing() {
     let server = MockServer::start().await;
@@ -260,8 +858,8 @@ async fn should_extract_text_from_output_array_when_output_text_missing() {
     }
 }
 
-/// TS: doGenerate › basic text response › "should handle missing usage
-/// gracefully"
+/// Partial port of upstream `should handle missing usage gracefully`: checks
+/// the token counts but not the raw usage (undefined upstream).
 #[tokio::test]
 async fn should_handle_missing_usage_gracefully() {
     let server = MockServer::start().await;
@@ -307,8 +905,8 @@ async fn should_handle_missing_usage_gracefully() {
     assert_eq!(result.usage.output_tokens.reasoning, None);
 }
 
-/// TS: doGenerate › basic text response › "should send model id, settings, and
-/// input"
+/// Partial port of upstream `should send model id, settings, and input`:
+/// checks each body field, not the whole body (upstream uses toStrictEqual).
 #[tokio::test]
 async fn should_send_model_id_settings_and_input() {
     let server = MockServer::start().await;
@@ -349,8 +947,8 @@ async fn should_send_model_id_settings_and_input() {
     );
 }
 
-/// TS: doGenerate › basic text response › "should handle unsupported settings
-/// with warnings"
+/// Partial port of upstream `should handle unsupported settings with warnings`:
+/// compares only the feature names of Unsupported warnings, not the array.
 #[tokio::test]
 async fn should_handle_unsupported_settings_with_warnings() {
     let server = MockServer::start().await;
@@ -389,8 +987,8 @@ async fn should_handle_unsupported_settings_with_warnings() {
     );
 }
 
-/// TS: doGenerate › basic text response › "should generate text and sources
-/// from annotations"
+/// Different input from upstream `should generate text and sources from
+/// annotations` (shorter text, no markdown links). Upstream case: src/huggingface/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn should_generate_text_and_sources_from_annotations() {
     let server = MockServer::start().await;
@@ -469,8 +1067,8 @@ async fn should_generate_text_and_sources_from_annotations() {
     }
 }
 
-/// TS: doGenerate › basic text response › "should handle MCP tools with
-/// annotations"
+/// Different input from upstream `should handle MCP tools with annotations`
+/// (shorter text). Upstream case: src/huggingface/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn should_handle_mcp_tools_with_annotations() {
     let server = MockServer::start().await;
@@ -586,11 +1184,8 @@ async fn should_handle_mcp_tools_with_annotations() {
     assert_eq!(call.input, json!({ "query": "San Francisco tech events" }));
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// doStream
-// ════════════════════════════════════════════════════════════════════════════
-
-/// TS: doStream › "should stream text deltas"
+/// Partial port of upstream `should stream text deltas`: checks part kinds,
+/// ids, deltas and token counts, not the timestamp, metadata or raw usage.
 #[tokio::test]
 async fn should_stream_text_deltas() {
     let server = MockServer::start().await;
@@ -680,7 +1275,8 @@ async fn should_stream_text_deltas() {
     }
 }
 
-/// TS: doStream › "should handle streaming without usage"
+/// Partial port of upstream `should handle streaming without usage`: checks
+/// only the total token counts, not every usage field.
 #[tokio::test]
 async fn should_handle_streaming_without_usage() {
     let server = MockServer::start().await;
@@ -723,47 +1319,9 @@ async fn should_handle_streaming_without_usage() {
     }
 }
 
-/// TS: doStream › "should handle non-message item types"
-#[tokio::test]
-async fn should_handle_non_message_item_types() {
-    let server = MockServer::start().await;
-    let chunks = sse_body(&[
-        sse_event(
-            r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"mcp_test","type":"mcp_list_tools","server_label":"test"},"sequence_number":1}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"mcp_test","type":"mcp_list_tools","server_label":"test"},"sequence_number":2}"#,
-        ),
-        sse_event(
-            r#"{"type":"response.completed","response":{"id":"resp_test","status":"completed","incomplete_details":null},"sequence_number":3}"#,
-        ),
-    ]);
-    mock_sse(&server, chunks).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
-
-    let result = model
-        .do_stream(&default_options(test_prompt()))
-        .await
-        .expect("should succeed");
-
-    let parts = collect_stream(result).await;
-
-    // Should only have stream-start and finish events (no text events for
-    // non-message items).
-    let types: Vec<&str> = parts
-        .iter()
-        .map(|p| match p {
-            StreamPart::StreamStart { .. } => "stream-start",
-            StreamPart::Finish { .. } => "finish",
-            _ => "other",
-        })
-        .collect();
-    assert_eq!(types, vec!["stream-start", "finish"]);
-}
-
-/// TS: doStream › "should handle streaming errors"
+/// aimux's own: a malformed frame followed by more events. Asserts the stream
+/// keeps going and ends with a Stop finish. Upstream's case ends with an error
+/// finish; full case: src/huggingface/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn should_handle_streaming_errors() {
     let server = MockServer::start().await;
@@ -813,7 +1371,8 @@ async fn should_handle_streaming_errors() {
     )));
 }
 
-/// TS: doStream › "should send correct streaming request"
+/// Partial port of upstream `should send correct streaming request`: checks
+/// each body field, not the whole body (upstream uses toStrictEqual).
 #[tokio::test]
 async fn should_send_correct_streaming_request() {
     let server = MockServer::start().await;
@@ -843,85 +1402,8 @@ async fn should_send_correct_streaming_request() {
     );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Message conversion
-// ════════════════════════════════════════════════════════════════════════════
-
-/// Helper: mount a stub response so do_generate succeeds and we can inspect
-/// the request body.
-async fn stub_empty_response(server: &MockServer) {
-    mock_json(
-        server,
-        json!({
-            "id": "resp_test",
-            "model": "moonshotai/Kimi-K2-Instruct",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test response"
-        }),
-    )
-    .await;
-}
-
-/// TS: message conversion › "should convert user messages with images"
-#[tokio::test]
-async fn should_convert_user_messages_with_images() {
-    let server = MockServer::start().await;
-    stub_empty_response(&server).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
-
-    let prompt = vec![LanguageModelMessage::User {
-        content: vec![
-            UserPart::Text(TextPart {
-                text: "What do you see?".into(),
-                provider_options: None,
-            }),
-            UserPart::File(FilePart {
-                data: FileData::Data {
-                    data: FileBytes::Base64("AQIDBA==".into()),
-                },
-                media_type: "image/jpeg".into(),
-                filename: None,
-                provider_options: None,
-            }),
-        ],
-        provider_options: None,
-    }];
-
-    let result = model
-        .do_generate(&default_options(prompt))
-        .await
-        .expect("ok");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(
-        body["input"][0]["content"],
-        json!([
-            { "text": "What do you see?", "type": "input_text" },
-            { "image_url": "data:image/jpeg;base64,AQIDBA==", "type": "input_image" }
-        ])
-    );
-}
-
-/// TS: message conversion › "should throw for file parts with provider
-/// references"
+/// Partial port of upstream `should throw for file parts with provider
+/// references`: checks the error and the feature name, not the full message.
 #[tokio::test]
 async fn should_throw_for_file_parts_with_provider_references() {
     let server = MockServer::start().await;
@@ -953,100 +1435,8 @@ async fn should_throw_for_file_parts_with_provider_references() {
     );
 }
 
-/// TS: message conversion › "should handle assistant messages"
-#[tokio::test]
-async fn should_handle_assistant_messages() {
-    let server = MockServer::start().await;
-    stub_empty_response(&server).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
-
-    let prompt = vec![
-        LanguageModelMessage::user_text("Hello"),
-        LanguageModelMessage::Assistant {
-            content: vec![AssistantPart::Text(TextPart {
-                text: "Hi there!".into(),
-                provider_options: None,
-            })],
-            provider_options: None,
-        },
-        LanguageModelMessage::user_text("How are you?"),
-    ];
-
-    let result = model
-        .do_generate(&default_options(prompt))
-        .await
-        .expect("ok");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(
-        body["input"],
-        json!([
-            { "content": [{ "text": "Hello", "type": "input_text" }], "role": "user" },
-            { "content": [{ "text": "Hi there!", "type": "output_text" }], "role": "assistant" },
-            { "content": [{ "text": "How are you?", "type": "input_text" }], "role": "user" }
-        ])
-    );
-}
-
-/// TS: message conversion › "should warn about unsupported assistant content
-/// types" — tool-call, tool-result, and reasoning in assistant messages
-/// produce NO warnings (they are silently skipped).
-#[tokio::test]
-async fn should_not_warn_about_assistant_content_types() {
-    let server = MockServer::start().await;
-    stub_empty_response(&server).await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
-
-    let prompt = vec![LanguageModelMessage::Assistant {
-        content: vec![
-            AssistantPart::ToolCall(ToolCallPart {
-                tool_call_id: "test".into(),
-                tool_name: "test".into(),
-                input: json!({}),
-                provider_executed: None,
-                provider_options: None,
-            }),
-            AssistantPart::ToolResult(ToolResultPart {
-                tool_call_id: "test".into(),
-                tool_name: "test".into(),
-                output: ToolResultOutput::Text {
-                    value: "test".into(),
-                    provider_options: None,
-                },
-
-                provider_options: None,
-            }),
-            AssistantPart::Reasoning(ReasoningPart {
-                text: "thinking...".into(),
-
-                provider_options: None,
-            }),
-        ],
-        provider_options: None,
-    }];
-
-    let result = model
-        .do_generate(&default_options(prompt))
-        .await
-        .expect("ok");
-
-    // TS expects no warnings (tool calls/results/reasoning are silently
-    // skipped, reasoning is included as output_text).
-    assert!(
-        result.warnings.is_empty(),
-        "expected no warnings, got: {:?}",
-        result.warnings
-    );
-}
-
-/// TS: message conversion › "should warn about tool messages"
+/// Partial port of upstream `should warn about tool messages`: compares only
+/// the Unsupported feature names, not the warnings array.
 #[tokio::test]
 async fn should_warn_about_tool_messages() {
     let server = MockServer::start().await;
@@ -1086,11 +1476,9 @@ async fn should_warn_about_tool_messages() {
     assert_eq!(features, vec!["tool messages"]);
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Tool calls
-// ════════════════════════════════════════════════════════════════════════════
-
-/// TS: tool calls › "should handle function_call tool responses"
+/// Not the upstream expectation: for a function_call with an output, asserts
+/// two content items and no tool-result. Upstream expects a tool-result too;
+/// full case: src/huggingface/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn should_handle_function_call_tool_responses() {
     let server = MockServer::start().await;
@@ -1168,7 +1556,8 @@ async fn should_handle_function_call_tool_responses() {
     }
 }
 
-/// TS: tool calls › "should stream tool calls"
+/// Partial port of upstream `should stream tool calls`: checks ids, names,
+/// input and token counts, not the tool-result name, timestamp or metadata.
 #[tokio::test]
 async fn should_stream_tool_calls() {
     let server = MockServer::start().await;
@@ -1270,11 +1659,8 @@ async fn should_stream_tool_calls() {
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Structured output
-// ════════════════════════════════════════════════════════════════════════════
-
-/// TS: structured output › "should send text.format for structured output"
+/// Partial port of upstream `should send text.format for structured output`:
+/// checks text.format, not the whole text object.
 #[tokio::test]
 async fn should_send_text_format_for_structured_output() {
     let server = MockServer::start().await;
@@ -1358,63 +1744,8 @@ async fn should_send_text_format_for_structured_output() {
     );
 }
 
-/// TS: structured output › "should handle structured output with custom name
-/// and description"
-#[tokio::test]
-async fn should_handle_structured_output_with_custom_name_and_description() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_structured",
-            "model": "moonshotai/Kimi-K2-Instruct",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "{}"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("moonshotai/Kimi-K2-Instruct");
-
-    let mut options = default_options(test_prompt());
-    options.response_format = Some(ResponseFormat::Json {
-        schema: Some(json!({ "type": "object", "properties": { "name": { "type": "string" } } })),
-        name: Some("person_profile".to_string()),
-        description: Some("A person profile with basic information".to_string()),
-    });
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(body["text"]["format"]["name"], json!("person_profile"));
-    assert_eq!(
-        body["text"]["format"]["description"],
-        json!("A person profile with basic information")
-    );
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Reasoning
-// ════════════════════════════════════════════════════════════════════════════
-
-/// TS: reasoning › "should handle reasoning content in responses"
+/// Partial port of upstream `should handle reasoning content in responses`:
+/// the text part's providerMetadata itemId is not checked.
 #[tokio::test]
 async fn should_handle_reasoning_content_in_responses() {
     let server = MockServer::start().await;
@@ -1493,7 +1824,8 @@ async fn should_handle_reasoning_content_in_responses() {
     }
 }
 
-/// TS: reasoning › "should stream reasoning content"
+/// Partial port of upstream `should stream reasoning content`: checks part
+/// kinds, ids and deltas, not the timestamp, text-start or finish metadata.
 #[tokio::test]
 async fn should_stream_reasoning_content() {
     let server = MockServer::start().await;
@@ -1632,333 +1964,9 @@ async fn should_stream_reasoning_content() {
     }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Provider options
-// ════════════════════════════════════════════════════════════════════════════
-
-/// TS: provider options › "should send provider-specific options"
-#[tokio::test]
-async fn should_send_provider_specific_options() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_provider_options",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
-
-    let mut options = default_options(test_prompt());
-    let mut po = aimux_core::shared::SharedProviderOptions::new();
-    po.insert(
-        "huggingface".to_string(),
-        serde_json::from_value(json!({
-            "metadata": { "key": "value" },
-            "instructions": "Be concise",
-            "strictJsonSchema": true
-        }))
-        .unwrap(),
-    );
-    options.provider_options = Some(po);
-    options.response_format = Some(ResponseFormat::Json {
-        schema: Some(json!({ "type": "object" })),
-        name: None,
-        description: None,
-    });
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(body["metadata"], json!({ "key": "value" }));
-    assert_eq!(body["instructions"], json!("Be concise"));
-    assert_eq!(body["text"]["format"]["strict"], json!(true));
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Tool preparation
-// ════════════════════════════════════════════════════════════════════════════
-
-/// TS: tool preparation › "should prepare tools correctly"
-#[tokio::test]
-async fn should_prepare_tools_correctly() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_tools",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
-
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(
-        FunctionTool::new(
-            "getWeather",
-            json!({
-                "type": "object",
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"]
-            }),
-        )
-        .with_description("Get weather information"),
-    )]);
-    options.tool_choice = Some(LanguageModelV4ToolChoice::Tool {
-        tool_name: "getWeather".to_string(),
-    });
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-
-    assert_eq!(
-        body["tools"],
-        json!([{
-            "type": "function",
-            "name": "getWeather",
-            "description": "Get weather information",
-            "parameters": {
-                "type": "object",
-                "properties": { "location": { "type": "string" } },
-                "required": ["location"]
-            }
-        }])
-    );
-    assert_eq!(
-        body["tool_choice"],
-        json!({ "type": "function", "function": { "name": "getWeather" } })
-    );
-}
-
-/// TS: tool preparation › "should handle auto and required tool choices"
-#[tokio::test]
-async fn should_handle_auto_and_required_tool_choices() {
-    let server = MockServer::start().await;
-    mock_json(
-        &server,
-        json!({
-            "id": "resp_tools",
-            "model": "deepseek-ai/DeepSeek-V3-0324",
-            "object": "response",
-            "created_at": 1741257730,
-            "status": "completed",
-            "error": null,
-            "instructions": null,
-            "max_output_tokens": null,
-            "metadata": null,
-            "tool_choice": "auto",
-            "tools": [],
-            "temperature": 1.0,
-            "top_p": 1.0,
-            "incomplete_details": null,
-            "usage": null,
-            "output": [],
-            "output_text": "Test"
-        }),
-    )
-    .await;
-
-    let provider = make_provider(&server);
-    let model = provider.responses("deepseek-ai/DeepSeek-V3-0324");
-
-    // Test auto
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(FunctionTool::new(
-        "test",
-        json!({ "type": "object" }),
-    ))]);
-    options.tool_choice = Some(LanguageModelV4ToolChoice::Auto);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-    assert_eq!(body["tool_choice"], json!("auto"));
-
-    // Test required
-    let mut options = default_options(test_prompt());
-    options.tools = Some(vec![Tool::from(FunctionTool::new(
-        "test",
-        json!({ "type": "object" }),
-    ))]);
-    options.tool_choice = Some(LanguageModelV4ToolChoice::Required);
-
-    let result = model.do_generate(&options).await.expect("should succeed");
-    let body = result
-        .request
-        .and_then(|request| request.body)
-        .expect("body");
-    assert_eq!(body["tool_choice"], json!("required"));
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Top-level-only media type resolution
-// ════════════════════════════════════════════════════════════════════════════
-
-const PNG_BASE64: &str = "iVBORw0KGgo=";
-
-/// TS: "passes full image/png through unchanged for inline data"
-#[test]
-fn passes_full_image_png_through_unchanged_for_inline_data() {
-    let prompt = vec![LanguageModelMessage::User {
-        content: vec![UserPart::File(FilePart {
-            data: FileData::Data {
-                data: FileBytes::Base64(PNG_BASE64.into()),
-            },
-            media_type: "image/png".into(),
-            filename: None,
-            provider_options: None,
-        })],
-        provider_options: None,
-    }];
-
-    let (input, warnings) =
-        convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
-
-    assert!(warnings.is_empty());
-    let content = &input[0]["content"][0];
-    assert_eq!(
-        content,
-        &json!({
-            "type": "input_image",
-            "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
-        })
-    );
-}
-
-/// TS: "detects image subtype from inline bytes for top-level 'image'"
-#[test]
-fn detects_image_subtype_from_inline_bytes_for_top_level_image() {
-    let prompt = vec![LanguageModelMessage::User {
-        content: vec![UserPart::File(FilePart {
-            data: FileData::Data {
-                data: FileBytes::Base64(PNG_BASE64.into()),
-            },
-            media_type: "image".into(),
-            filename: None,
-            provider_options: None,
-        })],
-        provider_options: None,
-    }];
-
-    let (input, warnings) =
-        convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
-
-    assert!(warnings.is_empty());
-    let content = &input[0]["content"][0];
-    assert_eq!(
-        content,
-        &json!({
-            "type": "input_image",
-            "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
-        })
-    );
-}
-
-/// TS: "passes through URL source for top-level-only image"
-#[test]
-fn passes_through_url_source_for_top_level_only_image() {
-    let prompt = vec![LanguageModelMessage::User {
-        content: vec![UserPart::File(FilePart {
-            data: FileData::Url {
-                original_url: None,
-                url: "https://example.com/x.png".into(),
-            },
-            media_type: "image".into(),
-            filename: None,
-            provider_options: None,
-        })],
-        provider_options: None,
-    }];
-
-    let (input, warnings) =
-        convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
-
-    assert!(warnings.is_empty());
-    let content = &input[0]["content"][0];
-    assert_eq!(
-        content,
-        &json!({
-            "type": "input_image",
-            "image_url": "https://example.com/x.png"
-        })
-    );
-}
-
-/// TS: "normalizes image/* wildcard via detection"
-#[test]
-fn normalizes_image_wildcard_via_detection() {
-    let prompt = vec![LanguageModelMessage::User {
-        content: vec![UserPart::File(FilePart {
-            data: FileData::Data {
-                data: FileBytes::Base64(PNG_BASE64.into()),
-            },
-            media_type: "image/*".into(),
-            filename: None,
-            provider_options: None,
-        })],
-        provider_options: None,
-    }];
-
-    let (input, warnings) =
-        convert_to_huggingface_responses_messages(&prompt).expect("should succeed");
-
-    assert!(warnings.is_empty());
-    let content = &input[0]["content"][0];
-    assert_eq!(
-        content,
-        &json!({
-            "type": "input_image",
-            "image_url": format!("data:image/png;base64,{}", PNG_BASE64)
-        })
-    );
-}
-
-/// TS: `supportedUrls` (huggingface-responses-language-model.ts:67-69): image
-/// URLs go to the API as they are; other URLs are downloaded by the operation.
+/// aimux's own: supported_urls accepts HTTP(S) image URLs and no others. It
+/// mirrors supportedUrls (huggingface-responses-language-model.ts:67-69); no
+/// upstream test case covers it.
 #[tokio::test]
 async fn supports_http_image_urls() {
     let server = MockServer::start().await;
