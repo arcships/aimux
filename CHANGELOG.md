@@ -1189,6 +1189,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of a name guessed from the spelling. `normalize_provider_name`
   returns `None` for them, and each mapped `ModelSpec` carries its
   `provider`.
+- Vertex AI Gemini models are the Google model reading the Vertex
+  namespaces, as `@ai-sdk/google-vertex` reuses `GoogleLanguageModel`; the
+  separate Vertex copy is removed (`VertexModel` is now an alias of
+  `GoogleModel`). Code execution, server tool calls and sources take their
+  ids from `generate_id` (new on `VertexProviderSettings`); stream text and
+  reasoning ids count only text and reasoning blocks; code execution carries
+  no server-tool metadata; an empty `thoughtSignature` adds no metadata;
+  `serviceTier: null` stays in the provider metadata; stream usage comes from
+  the parsed chunk; and the request builder's warnings (reasoning mapping,
+  thought-signature sentinel) are no longer dropped. Both models now read
+  `"candidates": null` as no candidates, stream function-call arguments
+  sent as `partialArgs`, and leave an empty `thoughtSignature` out of server
+  tool metadata.
 - Open Responses and the Codex subscription stream honor
   `include_raw_chunks`: each SSE chunk is sent as `StreamPart::Raw` before
   the parts made from it, as the AI SDK's Open Responses model and aimux's

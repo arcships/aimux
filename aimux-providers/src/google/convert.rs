@@ -1025,7 +1025,7 @@ pub fn build_request_body_with_warnings(
     build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
 }
 
-fn build_request_body_with_warnings_for_namespace(
+pub(crate) fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: Namespace,
@@ -1427,7 +1427,7 @@ pub(crate) fn validate_call_options_for_namespace(
             _ => {}
         }
     }
-    let Some(values) = Namespace::Google.read_in(options.provider_options.as_ref()) else {
+    let Some(values) = namespace.read_in(options.provider_options.as_ref()) else {
         return Ok(());
     };
     let invalid =
