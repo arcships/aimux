@@ -1,0 +1,123 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "msg_01RNdvgjHoLmx2THF9AVj3KK",
+    "modelId": "claude-sonnet-4-5-20250929",
+    "type": "response-metadata"
+  },
+  {
+    "dynamic": true,
+    "input": "{}",
+    "providerExecuted": true,
+    "providerMetadata": {
+      "anthropic": {
+        "serverName": "echo",
+        "type": "mcp-tool-use"
+      }
+    },
+    "toolCallId": "mcptoolu_017CuqaJcXe5ZHJjaz3KS1AT",
+    "toolName": "echo",
+    "type": "tool-call"
+  },
+  {
+    "dynamic": true,
+    "isError": false,
+    "providerMetadata": {
+      "anthropic": {
+        "serverName": "echo",
+        "type": "mcp-tool-use"
+      }
+    },
+    "result": [
+      {
+        "text": "Tool echo: hello world",
+        "type": "text"
+      }
+    ],
+    "toolCallId": "mcptoolu_017CuqaJcXe5ZHJjaz3KS1AT",
+    "toolName": "echo",
+    "type": "tool-result"
+  },
+  {
+    "id": "2",
+    "type": "text-start"
+  },
+  {
+    "delta": "The echo tool responde",
+    "id": "2",
+    "type": "text-delta"
+  },
+  {
+    "delta": "d back with: **hello world**\n\nIt simply echoed back",
+    "id": "2",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the exact message that was sent to it.",
+    "id": "2",
+    "type": "text-delta"
+  },
+  {
+    "id": "2",
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "raw": "end_turn",
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "anthropic": {
+        "container": null,
+        "contextManagement": null,
+        "iterations": null,
+        "stopSequence": null,
+        "usage": {
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 1250,
+          "output_tokens": 83,
+          "server_tool_use": {
+            "web_fetch_requests": 0,
+            "web_search_requests": 0
+          },
+          "service_tier": "standard"
+        }
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "noCache": 1250,
+        "total": 1250
+      },
+      "outputTokens": {
+        "total": 83
+      },
+      "raw": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 1250,
+        "output_tokens": 83,
+        "server_tool_use": {
+          "web_fetch_requests": 0,
+          "web_search_requests": 0
+        },
+        "service_tier": "standard"
+      }
+    }
+  }
+]

@@ -1,0 +1,324 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "msg_011bqgzot9grwdetCByUmXRP",
+    "modelId": "claude-sonnet-4-5-20250929",
+    "type": "response-metadata"
+  },
+  {
+    "id": "0",
+    "type": "text-start"
+  },
+  {
+    "delta": "I'll search for a",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " weather",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": "related tool",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to help",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " you get the weather",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " information for San Francisco.",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "id": "0",
+    "type": "text-end"
+  },
+  {
+    "id": "srvtoolu_01Gj33J3YUAAxF9TWRAThxtu",
+    "providerExecuted": true,
+    "toolName": "tool_search",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"query\": \"weather forecast current",
+    "id": "srvtoolu_01Gj33J3YUAAxF9TWRAThxtu",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " conditions",
+    "id": "srvtoolu_01Gj33J3YUAAxF9TWRAThxtu",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\"}",
+    "id": "srvtoolu_01Gj33J3YUAAxF9TWRAThxtu",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "srvtoolu_01Gj33J3YUAAxF9TWRAThxtu",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"query\": \"weather forecast current conditions\"}",
+    "providerExecuted": true,
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "type": "direct"
+        }
+      }
+    },
+    "toolCallId": "srvtoolu_01Gj33J3YUAAxF9TWRAThxtu",
+    "toolName": "tool_search",
+    "type": "tool-call"
+  },
+  {
+    "result": [
+      {
+        "toolName": "get_weather",
+        "type": "tool_reference"
+      }
+    ],
+    "toolCallId": "srvtoolu_01Gj33J3YUAAxF9TWRAThxtu",
+    "toolName": "tool_search",
+    "type": "tool-result"
+  },
+  {
+    "id": "3",
+    "type": "text-start"
+  },
+  {
+    "delta": "Great",
+    "id": "3",
+    "type": "text-delta"
+  },
+  {
+    "delta": "! I found a weather tool.",
+    "id": "3",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Let me get the current weather for",
+    "id": "3",
+    "type": "text-delta"
+  },
+  {
+    "delta": " San Francisco.",
+    "id": "3",
+    "type": "text-delta"
+  },
+  {
+    "id": "3",
+    "type": "text-end"
+  },
+  {
+    "id": "toolu_019nRrfqqXcU5NPTUSYfEMAY",
+    "toolName": "get_weather",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"location\": \"San",
+    "id": "toolu_019nRrfqqXcU5NPTUSYfEMAY",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " Francisco, CA",
+    "id": "toolu_019nRrfqqXcU5NPTUSYfEMAY",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\"}",
+    "id": "toolu_019nRrfqqXcU5NPTUSYfEMAY",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "toolu_019nRrfqqXcU5NPTUSYfEMAY",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"location\": \"San Francisco, CA\"}",
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "type": "direct"
+        }
+      }
+    },
+    "toolCallId": "toolu_019nRrfqqXcU5NPTUSYfEMAY",
+    "toolName": "get_weather",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "raw": "tool_use",
+      "unified": "tool-calls"
+    },
+    "providerMetadata": {
+      "anthropic": {
+        "container": null,
+        "contextManagement": null,
+        "iterations": null,
+        "stopSequence": null,
+        "usage": {
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 1630,
+          "output_tokens": 158,
+          "server_tool_use": {
+            "web_search_requests": 0
+          },
+          "service_tier": "standard"
+        }
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "noCache": 1630,
+        "total": 1630
+      },
+      "outputTokens": {
+        "total": 158
+      },
+      "raw": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 1630,
+        "output_tokens": 158,
+        "server_tool_use": {
+          "web_search_requests": 0
+        },
+        "service_tier": "standard"
+      }
+    }
+  },
+  {
+    "id": "msg_0132hQ7tpsGJhdPtEBhmKA2R",
+    "modelId": "claude-sonnet-4-5-20250929",
+    "type": "response-metadata"
+  },
+  {
+    "id": "0",
+    "type": "text-start"
+  },
+  {
+    "delta": "The",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " current",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " weather in San Francisco,",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " CA is:\n- **Temperature:**",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": " 64°F",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n- **Condition:** Partly clou",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": "dy\n- **Humidity:** ",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "delta": "65%",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "id": "0",
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "raw": "end_turn",
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "anthropic": {
+        "container": null,
+        "contextManagement": null,
+        "iterations": null,
+        "stopSequence": null,
+        "usage": {
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 0,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 1040,
+          "output_tokens": 41,
+          "service_tier": "standard"
+        }
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "noCache": 1040,
+        "total": 1040
+      },
+      "outputTokens": {
+        "total": 41
+      },
+      "raw": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "input_tokens": 1040,
+        "output_tokens": 41,
+        "service_tier": "standard"
+      }
+    }
+  }
+]

@@ -1,0 +1,8 @@
+[
+  {
+    "input": "{\"command\":\"view\",\"path\":\"/memories\"}",
+    "toolCallId": "toolu_01TvNvpwszD4hKeudmbfyWiV",
+    "toolName": "memory",
+    "type": "tool-call"
+  }
+]

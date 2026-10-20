@@ -1,0 +1,39 @@
+[
+  {
+    "dynamic": true,
+    "input": "{\"message\":\"hello world\"}",
+    "providerExecuted": true,
+    "providerMetadata": {
+      "anthropic": {
+        "serverName": "echo",
+        "type": "mcp-tool-use"
+      }
+    },
+    "toolCallId": "mcptoolu_015oTj2fXVKLrDohFetJd5UL",
+    "toolName": "echo",
+    "type": "tool-call"
+  },
+  {
+    "dynamic": true,
+    "isError": false,
+    "providerMetadata": {
+      "anthropic": {
+        "serverName": "echo",
+        "type": "mcp-tool-use"
+      }
+    },
+    "result": [
+      {
+        "text": "Tool echo: hello world",
+        "type": "text"
+      }
+    ],
+    "toolCallId": "mcptoolu_015oTj2fXVKLrDohFetJd5UL",
+    "toolName": "echo",
+    "type": "tool-result"
+  },
+  {
+    "text": "The echo tool responded back with: **\"hello world\"**\n\nAs expected, it simply echoes back the exact message that was sent to it!",
+    "type": "text"
+  }
+]

@@ -187,7 +187,9 @@ violation 'Anthropic family reads builder-era AnthropicConfig state' "$rule6_hit
 rule6b_hits="$(
     # shellcheck disable=SC2086
     { grep -rnE '"anthropic"' $anthropic_family --include='*.rs' || true; } |
-        grep -v '^aimux-providers/src/anthropic/options\.rs:' ||
+        grep -v '^aimux-providers/src/anthropic/options\.rs:' |
+        # Comments may quote it (upstream test names do).
+        grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' ||
         true
 )"
 violation '"anthropic" literal outside aimux-providers/src/anthropic/options.rs (use options::CANONICAL / anthropic_options)' "$rule6b_hits"
@@ -214,7 +216,7 @@ rule7b_hits="$(
 violation 'bedrock::sigv4 is back (use SigV4Fetch)' "$rule7b_hits"
 rule7c_hits="$(
     # Non-test, non-comment lines of every file but the two helpers.
-    find $gvb_family -name '*.rs' ! -name options.rs -print0 |
+    find $gvb_family -name '*.rs' ! -name options.rs ! -path '*/tests/*' -print0 |
         xargs -0 awk '
             FNR == 1 { in_tests = 0 }
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
@@ -245,7 +247,7 @@ rule8_hits="$(
 violation 'Azure / xAI / Mistral / Cohere / Hugging Face / Codex / Open Responses / Voyage / ElevenLabs reads builder-era config state' "$rule8_hits"
 rule8b_hits="$(
     # Non-test, non-comment lines of every file but the options helpers.
-    find $vendor_family -name '*.rs' ! -name options.rs -print0 |
+    find $vendor_family -name '*.rs' ! -name options.rs ! -path '*/tests/*' -print0 |
         xargs -0 awk '
             FNR == 1 { in_tests = 0 }
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
