@@ -2,7 +2,7 @@
 //! cases of `@ai-sdk/anthropic-aws` 2.0.63 (`src/anthropic-aws-fetch.test.ts`).
 //!
 //! aimux has no `createSigV4FetchFunction` / `createApiKeyFetchFunction`. Its
-//! transport is `authenticated(..)` in `model.rs`: it adds the
+//! transport is `authenticated(..)` in `fetch.rs`: it adds the
 //! `ai-sdk-anthropic-aws/<v>` user-agent part, then signs with `SigV4Fetch`
 //! unless the request carries `x-api-key`. The API key is put into the provider
 //! headers (`AwsHeaders::resolve`), not by the transport, so the cases about
@@ -36,7 +36,7 @@ use aimux_provider_utils::{
     ProxyConfig, RequestCredentials, ReqwestFetch, Resolvable, set_default_transport,
 };
 
-use crate::anthropic_aws::model::{Auth, authenticated};
+use crate::anthropic_aws::fetch::{Auth, authenticated};
 use crate::anthropic_aws::{
     AnthropicAwsAuth, AnthropicAwsProvider, AnthropicAwsProviderSettings, create_anthropic_aws,
 };
