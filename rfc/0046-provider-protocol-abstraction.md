@@ -4,7 +4,7 @@
 >
 > **Date**: 2026-10-20
 >
-> **Scope**: `aimux-providers` 里各家协议实现（OpenAI Chat、OpenAI Responses、Anthropic Messages、Google generateContent、Bedrock Converse 等）怎么分层、怎么被别的厂商复用：通用函数下沉到 `aimux-provider-utils`，每种协议一个实现、用 `XxxConfig` 承载变体差异，托管变体只换配置和鉴权，厂商之间只经过 `internal` 入口单向依赖。目录、文件名和测试位置按这套分层落地，能逐个对照上游包。是对现有代码的小重构：不改变 wire 行为，crate 根和厂商模块根的导出不变；厂商目录里现在公开的子模块（`openai::model`、`mistral::convert` 等）会改名或收为私有，是破坏性变更，按 §4.5 发布；第 3.4 节 Vertex Gemini 的合并会修正已经走样的行为，单独登记。crate 怎么拆见 RFC-0044，两份互不依赖。
+> **Scope**: `aimux-providers` 里各家协议实现（OpenAI Chat、OpenAI Responses、Anthropic Messages、Google generateContent、Bedrock Converse 等）怎么分层、怎么被别的厂商复用：通用函数下沉到 `aimux-provider-utils`，每种协议一个实现、用 `XxxConfig` 承载变体差异，托管变体只换配置和鉴权，厂商之间只经过 `internal` 入口单向依赖。目录、文件名和测试位置按这套分层落地，能逐个对照上游包。是对现有代码的小重构：不改变 wire 行为，厂商模块根的导出和公开设置不变；厂商目录里现在公开的子模块（`openai::model`、`mistral::convert` 等）会改名或收为私有，provider-utils 删掉两个只有测试在用的公开函数，都是破坏性变更，按 §4.5 发布；第 3.4 节 Vertex Gemini 的合并会修正已经走样的行为，单独登记。crate 怎么拆见 RFC-0044，两份互不依赖。
 >
 > **Baseline**: `master@5743a40a`。上游对照：`fixtures/aisdk/VERSIONS.json` 锁定的包版本（`scripts/fetch-aisdk.sh` 取得的发布包），目录与命名另参考 `vercel/ai` main `fce9210`。
 >
@@ -18,7 +18,7 @@
 | V2 | 上游放在 provider-utils 的通用函数，我们也放在 `aimux-provider-utils`；厂商代码不再自带一份，也不再去别的厂商目录拿 | 补齐 parseProviderOptions、流错误、响应元数据、推理强度映射等（§3.2） |
 | V3 | 厂商之间只允许单向依赖，只能用对方 `internal` 模块导出的东西（对应上游 `@ai-sdk/<vendor>/internal`），CI 检查 | 解开现有 7 个环（§3.3） |
 | V4 | 托管变体复用协议实现，只换配置：Anthropic 的模型 + `AnthropicConfig`，Google 的模型 + `GoogleConfig`，兼容层 + `OpenAICompatibleConfig`；类型名和字段名照上游 | Vertex Gemini 删掉复制的流处理和结果解析；AWS、Vertex 上的 Claude 不再有自己的模型（§3.4） |
-| V5 | 厂商之间内部用的 Config 钩子是封闭枚举，每个变体是一种已知改写，逻辑在厂商目录的普通函数里，由 `match` 分发；用户能填的设置照上游保留回调（只有兼容层有）；鉴权和签名走 Fetch 层 | 配置可以打印、比较、写进录制，绑定和 preset 按名字选（§3.5） |
+| V5 | 厂商之间内部用的请求体、URL 钩子是封闭枚举，每个变体是一种已知改写，枚举和改写函数都在协议目录，由 `match` 分发，协议目录不 `use` 厂商；用户在 10 个公开设置里传的 `transform_request_body` 回调保留，在协议 Config 里有自己的字段；鉴权和签名走 Fetch 层 | 内部改写可以打印、比较、写进录制，绑定和 preset 按名字选；公开设置不变（§3.5） |
 | V6 | 有独立上游包的厂商（Groq、DeepSeek、Mistral、Cohere、xAI、HuggingFace、Open Responses）保留自己的转换代码，和上游一样 | 不为了去重把它们硬并进兼容层或 OpenAI（§3.7） |
 | V7 | 模态和搜索厂商的机械重复抽成公共结构和函数；各家的请求构造、响应解析不抽 | 约 2,500 行重复，抽掉其中 10 类完全重复（§3.6） |
 | V8 | 按这套分层落目录：每个厂商一个目录 `src/<vendor>/`，`mod.rs` 只做声明和导出（对应上游 `index.ts`）；有上游包的厂商文件与上游包逐个对应，命名规则固定（§4.2） | 文件和测试能按名字对照上游；现有的公开子模块路径会变，随下一个 minor 版本发布（§4.5） |
@@ -252,7 +252,7 @@ Vertex 上的 Claude：vertex 工厂
 | `ToolNameMapping` | `anthropic/tool_name_mapping.rs` |
 | 主机名校验、base URL 设置、凭据、UA 组装 | `shared/mod.rs:35-300` |
 
-名字是上游函数的 snake_case。provider-utils 的死代码一并删除：`headers.rs:38` `with_user_agent_suffix_fn`、`url.rs:16` `without_trailing_slash_opt`（只有测试用）。
+名字是上游函数的 snake_case。provider-utils 的死代码一并删除：`headers.rs:38` `with_user_agent_suffix_fn`、`url.rs:16` `without_trailing_slash_opt`（只有测试用）。两者都是 provider-utils 的公开 API（`headers` 是 `pub mod`，`without_trailing_slash_opt` 在 `lib.rs:68` re-export），删除算破坏性变更，登记见 §4.5。
 
 ### 3.3 协议实现之间的依赖
 
@@ -275,7 +275,7 @@ Vertex 上的 Claude：vertex 工厂
 | 变体 | 做法 |
 |---|---|
 | Anthropic AWS | Anthropic 的模型 + `AnthropicConfig`：`build_request_url` 指向区域端点，SigV4 或 key 在 Fetch 层 |
-| Vertex 上的 Claude | Anthropic 的模型 + `AnthropicConfig`：`:rawPredict` 路径、`transform_request_body` 去掉 `model` 加 `anthropic_version`、不支持原生结构化输出和 strict tools；Google 令牌在 Fetch 层 |
+| Vertex 上的 Claude | Anthropic 的模型 + `AnthropicConfig`：`build_request_url` 选 `:rawPredict` 路径、`body_rewrite` 选去掉 `model` 加 `anthropic_version` 的改写、不支持原生结构化输出和 strict tools；Google 令牌在 Fetch 层 |
 | Vertex 上的 Gemini | 删掉 `vertex/model.rs` 里复制的流处理和结果解析，改用 Google 的模型 + `GoogleConfig`：端点解析、命名空间、一张字段剥离表；`sharedRequestType` 等 header 和 `streamFunctionCallArguments` 是 Config 字段。ID 生成改用注入的 `generate_id`（现在是计数器），这会改变 Vertex 输出的 ID，登记为修正 |
 | Bedrock Converse | 另一种协议，保持独立；能力表改为调用 Anthropic 的 `get_model_capabilities`（`anthropic/convert.rs:1674-1720`） |
 | Azure | OpenAI 的模型 + 配置，和上游一样 |
@@ -284,11 +284,23 @@ Vertex 上的 Claude：vertex 工厂
 
 ### 3.5 Config 的写法
 
-类型名和字段名照上游：`OpenAICompatibleConfig`（`include_usage`、`supports_structured_outputs`、`error_structure`、`metadata_extractor`、`transform_request_body`）、`AnthropicConfig`（`build_request_url`、`transform_request_body`、`transform_request_headers`、`supports_native_structured_output`、`supports_strict_tools`）、`GoogleConfig`（`provider`、`base_url`、`headers`、`fetch`、`generate_id`、`supported_urls`）。aimux 自己加的字段放进同一个 Config。
+类型名和字段名照上游：`OpenAICompatibleConfig`（`include_usage`、`supports_structured_outputs`、`error_structure`、`metadata_extractor`、`transform_request_body`）、`AnthropicConfig`（`build_request_url`、`transform_request_body`、`transform_request_headers`、`supports_native_structured_output`、`supports_strict_tools`；上游的 `transform_request_body` 是厂商之间用的，在这里叫 `body_rewrite`，见下文）、`GoogleConfig`（`provider`、`base_url`、`headers`、`fetch`、`generate_id`、`supported_urls`）。aimux 自己加的字段放进同一个 Config。
 
 上游这些钩子是回调函数，分两种：
 
-- 用户能填的：只有兼容层，`createOpenAICompatible` 的设置里可以传 `transformRequestBody`、`metadataExtractor`、`supportedUrls`、`convertUsage` 这些函数。Rust 版 `OpenAICompatibleProviderSettings`（`openai_compatible/mod.rs:64`）已经照样开放，保留不动；绑定传不了函数，只能用 preset 里按名字选的改写。
+- 用户能填的：上游只有兼容层，`createOpenAICompatible` 的设置里可以传 `transformRequestBody`、`metadataExtractor`、`supportedUrls`、`convertUsage` 这些函数，Rust 版 `OpenAICompatibleProviderSettings`（`openai_compatible/mod.rs:64`）照样开放。aimux 还在另外 9 个公开设置里加了同一个 `transform_request_body: Option<TransformRequestBody>`（aimux 扩展），共 10 个，全部保留，回调在协议 Config 里有自己的字段，原样调用：
+
+  | 公开设置 | 字段位置 | 回调现在落到 | 改完后 |
+  |---|---|---|---|
+  | `OpenAICompatibleProviderSettings` | `openai_compatible/mod.rs:93` | 兼容层模型配置 | 兼容层 Config 的 `transform_request_body` |
+  | `PresetSettings` | `preset.rs:124` | 经兼容层，同上 | 同上 |
+  | `AnthropicAwsProviderSettings` | `anthropic_aws/mod.rs:106` | Anthropic 模型配置（`anthropic/config.rs:135`） | `AnthropicConfig.transform_request_body`（R3） |
+  | `VertexProviderSettings` | `vertex/mod.rs:113` | Vertex Gemini（`vertex/mod.rs:436`）和 Vertex 上的 Claude（`vertex/anthropic_provider.rs:89`） | `GoogleConfig.transform_request_body`（R4）、`AnthropicConfig.transform_request_body`（R3） |
+  | `CodexProviderSettings` | `codex.rs:141` | OpenAI 配置（`openai/config.rs:85`） | 不变 |
+  | `AmazonBedrockProviderSettings` | `bedrock/mod.rs:203` | Bedrock 自己的模型 | 不变 |
+  | `ElevenLabsProviderSettings`、`HuggingFaceProviderSettings`、`OpenResponsesProviderSettings`、`VoyageProviderSettings` | `elevenlabs.rs:113`、`huggingface.rs:76`、`open_responses.rs:123`、`voyage/mod.rs:79` | 各自的模型 | 不变 |
+
+  绑定传不了函数（`default_providers.rs:141,157` 对它报不支持），只能用 preset 里按名字选的改写。把这些回调也删掉是 §9 的另一种做法。
 - 厂商之间内部用的：Anthropic、Google 的 `transformRequestBody`、`buildRequestUrl` 等只给上游自己的 Bedrock、Vertex 包用，用户设置里没有（上游 `AnthropicProviderSettings` 只开放 `baseURL`、`apiKey`、`authToken`、`headers`、`fetch`、`generateId`、`name`）。这一类我们写成封闭枚举，每种协议一个，放在协议实现的目录里：
 
 ```rust
@@ -308,31 +320,32 @@ pub struct AnthropicConfig {
     pub provider: String,
     pub endpoint: Arc<dyn ResolveEndpoint>,
     pub build_request_url: AnthropicRequestUrl,
-    pub transform_request_body: Option<AnthropicBodyRewrite>,
+    pub body_rewrite: Option<AnthropicBodyRewrite>,            // 厂商之间：Vertex、Bedrock 选一种
+    pub transform_request_body: Option<TransformRequestBody>,  // 用户在公开设置里传的回调
     pub supports_native_structured_output: bool,
     pub supports_strict_tools: bool,
 }
 
-// 模型里只有一个 match，改写函数也在 anthropic/request_rewrite.rs
-match &config.transform_request_body {
-    Some(AnthropicBodyRewrite::VertexRawPredict) => request_rewrite::vertex_raw_predict(&mut body),
-    …
+// 模型里先跑内部改写，再跑用户回调，和现在的 transform_body
+//（anthropic/config.rs:285-293，先 hooks.prepare_body 再 transform_request_body）顺序一样
+if let Some(rewrite) = &config.body_rewrite {
+    body = request_rewrite::apply(rewrite, body);
+}
+if let Some(callback) = &config.transform_request_body {
+    body = callback(body);
 }
 
 // openai_compatible/request_rewrite.rs（aimux 扩展）
 pub enum CompatibleBodyRewrite { VertexMaas, VertexXai }
 ```
 
-改写的是协议自己的请求体，所以函数和枚举都在协议目录，Vertex、Bedrock 只选变体，依赖方向仍是托管变体到协议实现（§3.3 第 2 条），协议目录不 `use` 任何厂商。
+改写的是协议自己的请求体，所以函数和枚举都在协议目录，Vertex、Bedrock 只选变体，依赖方向仍是托管变体到协议实现（§3.3 第 2 条），协议目录不 `use` 任何厂商。上游 `AnthropicConfig.transformRequestBody` 是厂商之间用的回调，对应这里的 `body_rewrite`；同名的 `transform_request_body` 留给用户回调，因为公开设置里已经叫这个名字。
 
-枚举不叫 `TransformRequestBody`：这个名字已经是公开的回调别名 `Arc<dyn Fn(Value) -> Value + Send + Sync>`（`shared/mod.rs:75`，在 `openai`、`openai_compatible`、`anthropic`、`anthropic_aws`、`codex`、`huggingface`、`voyage` 7 个模块 re-export），照旧保留给用户回调。兼容层内部的模型配置（`CompatModelConfig`）的这个字段是两种来源之一：
+兼容层的 Config 同样是两个字段：`body_rewrite: Option<CompatibleBodyRewrite>` 给 Vertex 上的合作模型（它们现在借公开设置的回调字段传进去，`vertex/partner_provider.rs:219,310`），`transform_request_body` 只放用户传的回调。Google 只有用户回调（Vertex Gemini 从 `VertexProviderSettings` 带来），`GoogleConfig` 只加 `transform_request_body`。
 
-```rust
-pub enum CompatibleRequestBody {
-    Callback(TransformRequestBody),      // 用户在 OpenAICompatibleProviderSettings 里传的，原样调用
-    Rewrite(CompatibleBodyRewrite),      // 我们自己的厂商：Vertex 上的合作模型（vertex/partner_provider.rs:219,310,311）
-}
-```端点解析 `ResolveEndpoint` 保留为接口，因为它要在请求时读区域、项目和令牌，这是行为不是配置。
+枚举不叫 `TransformRequestBody`：这个名字已经是公开的回调别名 `Arc<dyn Fn(Value) -> Value + Send + Sync>`（`shared/mod.rs:75`，在 `openai`、`openai_compatible`、`anthropic`、`anthropic_aws`、`codex`、`huggingface`、`voyage` 7 个模块 re-export），照旧给用户回调。
+
+端点解析 `ResolveEndpoint` 保留为接口，因为它要在请求时读区域、项目和令牌，这是行为不是配置。
 
 鉴权、签名不进 Config，在 Fetch 链里（对齐文档 §3.2 的 auth fetch 位置）。
 
@@ -350,7 +363,7 @@ pub enum CompatibleRequestBody {
 | 生成结果下载（走 RFC-0044 的单一下载路径） | 5 处相同代码 |
 | `Warning::unsupported`、任务失败错误、响应尾部的构造函数 | 147 处手拼告警等 |
 | 音频、图片、视频输入上的转换方法 | 12 处 |
-| 完全相同的小函数合并 | `black_forest_labs.rs:230` 与 `stability.rs:245`、`you_com.rs:178` 与 `tinyfish.rs:177` |
+| 完全相同的小函数合并 | `black_forest_labs.rs:230` 与 `stability.rs:250`、`black_forest_labs.rs:240` 与 `stability.rs:245`、`you_com.rs:178` 与 `tinyfish.rs:177` |
 
 ### 3.7 不抽象的
 
@@ -413,11 +426,14 @@ issue = 275
 
 ### 4.5 公开路径
 
-crate 根（`lib.rs` 的 `pub use`）和厂商模块根（`aimux_providers::mistral::MistralModel` 这类 `mod.rs` 里的 `pub use`）是文档里写的入口，搬移后不变。厂商目录里现在声明成 `pub mod` 的子模块有 55 个（master@`c0622ea4`，含嵌套：openai 14、anthropic 11、google 9、bedrock 5、xai 4、openai_compatible 3、cohere 3、voyage 2、mistral 2、vertex 1、huggingface 1），文件按上游改名后，`aimux_providers::openai::model::…`、`aimux_providers::mistral::convert::…` 这类路径会断。
+本节管本文各步骤带来的公开路径变化。crate 根（`lib.rs` 的 `pub use`）和厂商模块根（`aimux_providers::mistral::MistralModel` 这类 `mod.rs` 里的 `pub use`）是文档里写的入口，R7 搬移后不变；10 个公开设置里的 `transform_request_body` 也不变（§3.5）。厂商目录里现在声明成 `pub mod` 的子模块有 55 个（基线 master@`5743a40a`，含嵌套：openai 14、anthropic 11、google 9、bedrock 5、xai 4、openai_compatible 3、cohere 3、voyage 2、mistral 2、vertex 1、huggingface 1），文件按上游改名后，`aimux_providers::openai::model::…`、`aimux_providers::mistral::convert::…` 这类路径会断。
 
 1. 搬移 PR 里新文件的可见性照上游：上游 `index.ts` 导出的经厂商模块根 `pub use`；其余子模块是私有的 `mod`，别家要用的经 `internal`（§3.3）。
 2. 旧的子模块路径不留兼容 shim，算破坏性变更，随下一个 minor 版本发布（0.x 里 minor 就是破坏性版本）；每个搬移 PR 在 CHANGELOG 的 Unreleased 里列出本家的旧路径和替代入口。workspace 里（ops、FFI、工具、两个绑定）用到旧路径的地方在同一个 PR 里改掉。
-3. 另一种做法见 §9。
+3. 例外有两处，不属于 R7：
+   - R1 删除 provider-utils 的 `with_user_agent_suffix_fn`（`headers.rs:38`，经 `pub mod headers` 公开）和 `without_trailing_slash_opt`（`lib.rs:68` re-export），同样算破坏性变更，R1 的 PR 在 CHANGELOG 写替代写法：前者用 `with_user_agent_suffix`，后者用 `url.map(without_trailing_slash)`。
+   - `aimux-providers` 的 `replay` 模块和它在 crate 根的 `rebuild_provider`、`rebuild_decision_provider`（`lib.rs:146-148`）按 RFC-0044 C6 移到 ops，在那份 RFC 里登记，本文不动。
+4. 另一种做法见 §9。
 
 ## 5. 测试位置
 
@@ -461,9 +477,9 @@ aimux-providers/tests/               只留跨厂商的测试（cassette 回放�
 |---|---|---|
 | R1 | provider-utils 补齐通用函数（§3.2），各厂商改用；删除死代码 | 无 |
 | R2 | 解开七个环（§3.3 第 3 条），其中两个 Anthropic 的环靠引入只有 `endpoint` 字段的 `AnthropicConfig`；加 `internal` 模块和 CI 检查 | R1 |
-| R3 | 托管变体：`AnthropicConfig` 补齐其余字段（§3.5），Anthropic AWS、Vertex Claude 的 URL、请求体改写、能力开关改用它；两个 SigV4 外层合并；Bedrock 能力表 | R2 |
+| R3 | 托管变体：`AnthropicConfig` 补齐其余字段（§3.5），URL 和请求体改写一开始就是枚举（`AnthropicRequestUrl`、`AnthropicBodyRewrite`），用户回调进 `transform_request_body`；Anthropic AWS、Vertex Claude 的 URL、请求体改写、能力开关改用它；两个 SigV4 外层合并；Bedrock 能力表 | R2 |
 | R4 | Vertex Gemini 改用 Google 模型 + `GoogleConfig`（行为修正，单独评审） | R2 |
-| R5 | Config 钩子改成枚举（§3.5） | R3、R4 |
+| R5 | 兼容层的钩子：Vertex 上合作模型的两种改写从公开的回调字段挪到 `body_rewrite`（`CompatibleBodyRewrite`，§3.5）；Anthropic 的在 R3、Google 的在 R4 已经按 §3.5 写，这一步不再改它们 | R2 |
 | R6 | 模态与搜索厂商去重（§3.6） | R1 |
 | R7 | 目录、文件名、测试位置（§4、§5），`layout.toml`，按厂商家族分批：OpenAI 一族与兼容层、Anthropic、Google、Bedrock、其余有上游包的、没有上游包的与 preset | 可与 R1–R6 交错；同一厂商先去重再搬，避免搬两次 |
 
@@ -495,5 +511,5 @@ aimux-providers/tests/               只留跨厂商的测试（cassette 回放�
 
 - **厂商目录名（待讨论）。** 本文的方案是保留现有名字（`bedrock/`、`vertex/` 等，§4.1 第 2 条），对应的上游包写在 `layout.toml`。另一种做法是改成上游包名（`amazon_bedrock/`、`google_vertex/`），名字完全一致，但公开模块路径会变。
 - **旧子模块路径（待讨论）。** 本文的方案是不留 shim，作为破坏性变更随下一个 minor 版本发布（§4.5）。另一种做法是每家留一个 `#[deprecated]` 的同名 `pub mod`，只 `pub use` 新位置的内容，保留一个 minor 版本后删除；代价是 55 个过渡模块和一次之后的删除。
-- **Config 钩子的写法（待讨论）。** 本文的方案是厂商之间内部用的钩子改成封闭枚举，用户能填的兼容层回调照上游保留（§3.5）。另一种做法是全部保留回调，和上游写法一致，但配置不能打印、比较、写进录制，绑定也选不了；回调可以由 Vertex、Bedrock 自己的目录提供，也不会形成反向边。
+- **Config 钩子的写法（待讨论）。** 本文的方案是厂商之间内部用的改写写成封闭枚举（`body_rewrite`、`build_request_url`），10 个公开设置里的用户回调保留（§3.5）。另外两种做法：一是全部保留回调，和上游写法一致，但配置不能打印、比较、写进录制，绑定也选不了；回调可以由 Vertex、Bedrock 自己的目录提供，也不会形成反向边。二是公开设置里的回调也删掉，用户改用自定义 fetch 或中间件改请求体；10 个字段和 7 处 `TransformRequestBody` re-export 删除，算破坏性变更，按 §4.5 第 2 条随下一个 minor 版本发布。
 - **扫描中发现的行为偏差**由单独的线程核实和修复，不放进搬移 PR。原列 6 处，其中 xAI 拒绝文本、Anthropic 显式 `outputFormat` 两处核对后与上游一致，不是偏差；剩下 4 处：HuggingFace 丢掉 `ToolChoice::None`、Vertex 上的 Grok 用量 total、preset 强制 `supports_structured_outputs`、Vertex Gemini 的 ID 规则（§3.4）。
