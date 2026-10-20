@@ -1152,6 +1152,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer marked `dynamic`, as in `@ai-sdk/huggingface` 2.0.62. Without a
   local tool of that name, `generate_text` now returns the call marked invalid
   (`NoSuchTool`), as the AI SDK's `parseToolCall` does.
+- A Hugging Face `function_call` or `mcp_call` output item with a non-empty
+  `output` string now also yields a tool-result holding that string, as
+  `@ai-sdk/huggingface` 2.0.62 does (`if (part.output)`). `function_call`
+  outputs were dropped in `do_generate`, and an empty `output` gave an MCP
+  tool-result.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

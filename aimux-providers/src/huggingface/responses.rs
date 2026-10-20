@@ -446,9 +446,7 @@ impl HuggingFaceResponsesStream {
                                         provider_metadata: None,
                                     }));
 
-                                    if let Some(output) =
-                                        item.get("output").and_then(|v| v.as_str())
-                                    {
+                                    if let Some(output) = non_empty_output(item) {
                                         controller.enqueue(StreamPart::ToolResult(ToolResult {
                                             tool_call_id: call_id,
                                             tool_name: name.clone(),
@@ -1008,6 +1006,18 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     dynamic: None,
                     provider_metadata: None,
                 }));
+
+                if let Some(output) = non_empty_output(part) {
+                    content.push(GenerateContent::ToolResult(ToolResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: name.to_string(),
+                        result: Value::String(output.to_string()),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    }));
+                }
             }
 
             "mcp_call" => {
@@ -1027,11 +1037,11 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     provider_metadata: None,
                 }));
 
-                if let Some(output) = part.get("output").filter(|v| !v.is_null()) {
+                if let Some(output) = non_empty_output(part) {
                     content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: id.to_string(),
                         tool_name: name.to_string(),
-                        result: output.clone(),
+                        result: Value::String(output.to_string()),
                         is_error: None,
                         preliminary: None,
                         dynamic: None,
@@ -1070,6 +1080,14 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
     }
 
     Ok(content)
+}
+
+/// `part.output` when JavaScript reads it as true (`if (part.output)`): a
+/// non-empty string.
+fn non_empty_output(part: &Value) -> Option<&str> {
+    part.get("output")
+        .and_then(Value::as_str)
+        .filter(|output| !output.is_empty())
 }
 
 /// Parse the finish reason from a Responses API JSON body.

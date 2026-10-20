@@ -1146,9 +1146,8 @@ async fn should_handle_function_call_tool_responses() {
         .await
         .expect("should succeed");
 
-    // content: tool-call, text — a client-executed `function_call` carries no
-    // output, so there is no paired ToolResult.
-    assert_eq!(result.content.len(), 2);
+    // content: tool-call, tool-result (the item has an output), text.
+    assert_eq!(result.content.len(), 3);
     match &result.content[0] {
         GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
@@ -1163,10 +1162,26 @@ async fn should_handle_function_call_tool_responses() {
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
     match &result.content[1] {
+        GenerateContent::ToolResult(ToolResult {
+            tool_call_id,
+            tool_name,
+            result,
+            ..
+        }) => {
+            assert_eq!(tool_call_id, "call_123");
+            assert_eq!(tool_name, "getWeather");
+            assert_eq!(
+                result,
+                &Value::String(r#"{"temperature": "72°F", "condition": "sunny"}"#.into())
+            );
+        }
+        other => panic!("expected ToolResult at [1], got {other:?}"),
+    }
+    match &result.content[2] {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "The weather in New York is 72°F and sunny.");
         }
-        other => panic!("expected Text at [1], got {other:?}"),
+        other => panic!("expected Text at [2], got {other:?}"),
     }
 }
 
@@ -1972,4 +1987,31 @@ async fn supports_http_image_urls() {
     assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
     assert!(urls.0["image/*"][0].is_match("http://example.com/a.png"));
     assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
+}
+
+/// aimux's own: an `mcp_call` whose `output` is an empty string gives only the
+/// tool-call; upstream pushes the tool-result only `if (part.output)`
+/// (huggingface-responses-language-model.ts:273).
+#[tokio::test]
+async fn mcp_call_with_empty_output_has_no_tool_result() {
+    let server = MockServer::start().await;
+    let mut body = basic_response_body();
+    body["output"] = json!([{
+        "id": "mcp_empty",
+        "type": "mcp_call",
+        "server_label": "web_search",
+        "name": "search",
+        "arguments": "{}",
+        "output": ""
+    }]);
+    mock_json(&server, body).await;
+
+    let result = make_provider(&server)
+        .responses("deepseek-ai/DeepSeek-V3-0324")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    assert_eq!(result.content.len(), 1);
+    assert!(matches!(result.content[0], GenerateContent::ToolCall(_)));
 }
