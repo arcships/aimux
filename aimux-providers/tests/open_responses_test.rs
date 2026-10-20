@@ -2647,3 +2647,39 @@ async fn unfinished_reasoning_ends_with_its_item_id() {
         .collect();
     assert_eq!(ends, ["rs_open"]);
 }
+
+/// TS: `doStream` (open-responses-language-model.ts:758-781): a streamed tool
+/// call takes the completed item's `arguments` unless they are empty, so a
+/// stream without argument events still has the input.
+#[tokio::test]
+async fn stream_tool_calls_take_the_completed_arguments() {
+    let server = MockServer::start().await;
+    let events = [
+        json!({ "type": "response.output_item.added", "item": { "type": "function_call",
+                "id": "fc_1", "call_id": "call_1", "name": "write_svg", "arguments": "" } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "function_call",
+                "id": "fc_1", "call_id": "call_1", "name": "write_svg",
+                "arguments": "{\"path\":\"icon.svg\"}" } }),
+    ];
+    mock_sse(
+        &server,
+        events
+            .iter()
+            .map(|event| sse_event(&event.to_string()))
+            .collect(),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let inputs: Vec<String> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolCall(call) => Some(call.input),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inputs, [r#"{"path":"icon.svg"}"#]);
+}

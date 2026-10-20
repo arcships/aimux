@@ -708,13 +708,14 @@ impl Transformer for OpenResponsesStream {
                                                 .map(std::string::ToString::to_string)
                                         })
                                         .unwrap_or_default();
-                                    let arguments = accum
-                                        .as_ref()
-                                        .and_then(|a| a.arguments.clone())
+                                    // The completed item's arguments win unless empty.
+                                    let arguments = item
+                                        .get("arguments")
+                                        .and_then(Value::as_str)
+                                        .filter(|arguments| !arguments.is_empty())
+                                        .map(str::to_string)
                                         .or_else(|| {
-                                            item.get("arguments")
-                                                .and_then(|v| v.as_str())
-                                                .map(std::string::ToString::to_string)
+                                            accum.as_ref().and_then(|a| a.arguments.clone())
                                         })
                                         .unwrap_or_default();
                                     let input = arguments;

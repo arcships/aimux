@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses streamed tool calls take the completed item's arguments
+  unless they are empty, as the AI SDK does. An empty `arguments` from
+  `response.output_item.added` used to win, so a stream without argument
+  events produced a tool call with empty input.
+
 - Open Responses ends a reasoning item that never finished with its own
   item id when the stream ends, as the AI SDK does, instead of
   `reasoning-0`.
