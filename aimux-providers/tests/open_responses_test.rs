@@ -435,7 +435,7 @@ mod convert_tests {
             json!([{
                 "type": "message",
                 "role": "user",
-                "content": [{"type": "input_image", "image_url": "data:image/png;base64,ZmFrZS1kYXRh"}]
+                "content": [{"type": "input_image", "image_url": "data:image/png;base64,ZmFrZS1kYXRh", "detail": "auto"}]
             }])
         );
         assert!(warnings.is_empty());
@@ -461,7 +461,7 @@ mod convert_tests {
             json!([{
                 "type": "message",
                 "role": "user",
-                "content": [{"type": "input_image", "image_url": "https://example.com/image.png"}]
+                "content": [{"type": "input_image", "image_url": "https://example.com/image.png", "detail": "auto"}]
             }])
         );
     }
@@ -2296,5 +2296,29 @@ fn assistant_text_replays_the_item_id_and_annotations() {
             { "type": "message", "role": "assistant", "id": "msg_2",
               "content": [{ "type": "output_text", "text": "Next" }] }
         ])
+    );
+}
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:88-98):
+/// a user image carries `detail` from `providerOptions.<name>.imageDetail`,
+/// `auto` when it is not set.
+#[test]
+fn user_images_carry_the_image_detail() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "user",
+        "content": [
+            { "type": "file", "mediaType": "image/png", "data": { "type": "data", "data": "AAEC" },
+              "providerOptions": { "open-responses": { "imageDetail": "low" } } },
+            { "type": "file", "mediaType": "image/jpeg", "data": { "type": "url", "url": "https://example.com/a.jpg" } }
+        ]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input,
+        json!([{ "type": "message", "role": "user", "content": [
+            { "type": "input_image", "image_url": "data:image/png;base64,AAEC", "detail": "low" },
+            { "type": "input_image", "image_url": "https://example.com/a.jpg", "detail": "auto" }
+        ] }])
     );
 }

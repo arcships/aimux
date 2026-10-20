@@ -1056,7 +1056,8 @@ fn convert_to_open_responses_input_with_namespace(
                 system_messages.push(content.clone());
             }
             LanguageModelMessage::User { content, .. } => {
-                let user_content = convert_user_content(content, &mut warnings);
+                let user_content =
+                    convert_user_content(content, provider_options_name, &mut warnings);
                 input.push(json!({
                     "type": "message",
                     "role": "user",
@@ -1274,7 +1275,11 @@ fn url_citations(value: &Value) -> Option<Value> {
 }
 
 /// Convert user message content parts to the Open Responses format.
-fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Value {
+fn convert_user_content(
+    content: &[UserPart],
+    provider_options_name: &str,
+    warnings: &mut Vec<Warning>,
+) -> Value {
     use base64::Engine;
 
     let mut parts: Vec<Value> = Vec::new();
@@ -1283,12 +1288,14 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
             UserPart::Text(TextPart { text, .. }) => {
                 parts.push(json!({ "type": "input_text", "text": text }));
             }
-            UserPart::File(FilePart {
-                data,
-                media_type,
-                filename,
-                ..
-            }) => {
+            UserPart::File(
+                part @ FilePart {
+                    data,
+                    media_type,
+                    filename,
+                    ..
+                },
+            ) => {
                 let image = top_level_media_type(media_type) == "image";
                 match data {
                     FileData::Data { data } => {
@@ -1300,7 +1307,11 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
                         };
                         let data_url = format!("data:{media_type};base64,{b64}");
                         parts.push(if image {
-                            json!({ "type": "input_image", "image_url": data_url })
+                            json!({
+                                "type": "input_image",
+                                "image_url": data_url,
+                                "detail": image_detail(part, provider_options_name),
+                            })
                         } else {
                             json!({
                                 "type": "input_file",
@@ -1311,7 +1322,11 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
                     }
                     FileData::Url { url, .. } => {
                         parts.push(if image {
-                            json!({ "type": "input_image", "image_url": url })
+                            json!({
+                                "type": "input_image",
+                                "image_url": url,
+                                "detail": image_detail(part, provider_options_name),
+                            })
                         } else {
                             json!({ "type": "input_file", "file_url": url })
                         });
@@ -1423,15 +1438,7 @@ fn resolve_tool_result_output(
                     }
                 };
                 if image {
-                    let detail = part
-                        .provider_options
-                        .as_ref()
-                        .and_then(|options| options.get(provider_options_name))
-                        .and_then(|options| options.get("imageDetail"))
-                        .and_then(Value::as_str)
-                        .filter(|detail| matches!(*detail, "low" | "high" | "auto"))
-                        .unwrap_or("auto");
-                    converted["detail"] = json!(detail);
+                    converted["detail"] = json!(image_detail(part, provider_options_name));
                 }
                 parts.push(converted);
             }
@@ -1441,6 +1448,18 @@ fn resolve_tool_result_output(
         }
     }
     json!(parts)
+}
+
+/// The `detail` of an input image: `providerOptions.<name>.imageDetail` when
+/// it is `low`, `high` or `auto`, else `auto` (getImageDetail).
+fn image_detail<'a>(part: &'a FilePart, provider_options_name: &str) -> &'a str {
+    part.provider_options
+        .as_ref()
+        .and_then(|options| options.get(provider_options_name))
+        .and_then(|options| options.get("imageDetail"))
+        .and_then(Value::as_str)
+        .filter(|detail| matches!(*detail, "low" | "high" | "auto"))
+        .unwrap_or("auto")
 }
 
 /// Extract the top-level media type (e.g. "image" from "image/png").

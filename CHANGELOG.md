@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses sends `detail` on user images, as the AI SDK does:
+  `providerOptions.<name>.imageDetail` when it is `low`, `high` or `auto`,
+  otherwise `auto`. Tool-result images already did.
+
 - Open Responses replays an assistant text part's item id and URL
   citations, as the AI SDK does: `providerOptions.<name>.itemId` becomes the
   message `id`, `url_citation` annotations go back on the `output_text`, and
