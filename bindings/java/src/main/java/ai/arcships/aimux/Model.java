@@ -1,5 +1,7 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
+
 import ai.arcships.aimux.generated.AimuxOps;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -9,6 +11,21 @@ import java.util.concurrent.Future;
 /** Typed resource facade; request JSON uses the existing core wire DTO. */
 public final class Model extends NativeHandle {
     Model(Aimux aimux, long id) { super(aimux, id); }
+    public GenerateTextResult generate(TextRequest request) {
+        return call(AimuxOps.OP_TEXT_GENERATE, request, GenerateTextResult.class);
+    }
+    public GenerateObjectResult generateObject(TextRequest request) {
+        return call(AimuxOps.OP_TEXT_GENERATE_OBJECT, request, GenerateObjectResult.class);
+    }
+    public GenerateTextResult consume(TextRequest request) {
+        return call(AimuxOps.OP_TEXT_CONSUME, request, GenerateTextResult.class);
+    }
+    public ChatCompletion generateOpenAI(OpenAiTextRequest request) {
+        return call(AimuxOps.OP_TEXT_GENERATE_OPEN_AI, request, ChatCompletion.class);
+    }
+    public void stream(TextRequest request, java.util.function.Consumer<StreamFrame> consumer) {
+        stream(DtoJson.stringify(request), consumer);
+    }
     public JsonNode info() { return call(AimuxOps.OP_MODEL_INFO, "{}"); }
     public JsonNode generate(String paramsJson) { return call(AimuxOps.OP_TEXT_GENERATE, paramsJson); }
     public Future<JsonNode> generateAsync(String paramsJson, Executor executor) {

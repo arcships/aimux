@@ -1,13 +1,5 @@
-import type { AiMuxError } from './types/AiMuxError'
-
-export type ErrorDomain = 'aimux' | 'recording' | 'binding' | 'protocol'
-export interface ErrorEnvelope {
-  kind: ErrorDomain
-  code: number
-  message: string
-  error: AiMuxError | ({ name: string } & Record<string, unknown>)
-  retryAfterMs?: number
-}
+import type { ErrorDomain, ErrorEnvelope } from './generated/types.ts'
+export type { ErrorDomain, ErrorEnvelope } from './generated/types.ts'
 
 /** The exact shared ErrorEnvelope, including the AI SDK payload in `error`. */
 export class AimuxError extends Error implements ErrorEnvelope {
@@ -39,7 +31,7 @@ export function isEnvelope(value: unknown): value is ErrorEnvelope {
   const e = value as Partial<ErrorEnvelope>
   return ['aimux', 'recording', 'binding', 'protocol'].includes(e.kind as string)
     && typeof e.code === 'number' && typeof e.message === 'string'
-    && e.error !== null && typeof e.error === 'object' && typeof e.error.name === 'string'
+    && e.error !== null && typeof e.error === 'object' && 'name' in e.error && typeof e.error.name === 'string'
 }
 
 export function protocolError(code: number, name: string, message: string): AimuxError {

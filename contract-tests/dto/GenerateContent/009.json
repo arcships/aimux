@@ -1,0 +1,11 @@
+{
+  "type": "tool-result",
+  "toolCallId": "c1",
+  "toolName": "web_search",
+  "result": {
+    "count": 3
+  },
+  "isError": false,
+  "preliminary": true,
+  "dynamic": false
+}

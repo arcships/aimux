@@ -1,24 +1,25 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.ErrorEnvelope;
+import ai.arcships.aimux.types.DtoJson;
+
 import com.fasterxml.jackson.databind.JsonNode;
-import java.math.BigInteger;
 
 /** Structured error envelope, retaining the complete AI SDK or domain payload. */
 public abstract class NativeException extends RuntimeException {
-    private final JsonNode envelope;
+    private final ErrorEnvelope envelope;
 
-    NativeException(JsonNode envelope) {
-        super(envelope.path("message").asText());
-        this.envelope = envelope.deepCopy();
+    NativeException(ErrorEnvelope envelope) {
+        super(envelope.getMessage());
+        this.envelope = envelope;
     }
 
-    public final String getKind() { return envelope.path("kind").asText(); }
-    public final int getCode() { return envelope.path("code").intValue(); }
-    public final String getErrorName() { return envelope.path("error").path("name").asText(); }
-    public final JsonNode getError() { return envelope.path("error").deepCopy(); }
-    public final JsonNode getEnvelope() { return envelope.deepCopy(); }
-    public final BigInteger getRetryAfterMs() {
-        JsonNode hint = envelope.get("retryAfterMs");
-        return hint == null ? null : hint.bigIntegerValue();
+    public final String getKind() { return DtoJson.MAPPER.convertValue(envelope.getKind(), String.class); }
+    public final int getCode() { return envelope.getCode(); }
+    public final String getErrorName() { return envelope.getError().path("name").asText(); }
+    public final JsonNode getError() { return envelope.getError(); }
+    public final JsonNode getEnvelope() { return DtoJson.MAPPER.valueToTree(envelope); }
+    public final Long getRetryAfterMs() {
+        return envelope.getRetryAfterMs();
     }
 }

@@ -8,7 +8,11 @@ constants are part of the Swift module.
 handle. Native dispatch validates operation names, handle kinds and control
 fields. `handle.id` provides a borrowed ID for secondary handle fields; encode
 it as a decimal string and retain its owner until the call returns. `open` accepts the native handle record or the decimal string returned
-by `transcription.start`. Existing Codable wire values remain available.
+by `transcription.start`. Codable DTOs in `generated/Types.swift` use the Rust
+type names. Structs and associated-value enums conform to `Sendable`.
+`FieldPresence` distinguishes absent keys, explicit nulls and values where the
+wire contract requires it. `JSONValue` retains integral numbers as `Int64` or
+`UInt64` and other numbers as `Decimal`.
 
 ```swift
 let manifest = try await AimuxRuntime.manifest()
@@ -93,3 +97,9 @@ AIMUX_SWIFT_SDK=/path/to/MacOSX.sdk \
 Direct runners use Swift 6 strict concurrency. iOS linking requires the iOS
 native artifact and a full Xcode SDK; the macOS and synthetic checks do not
 verify simulator linkage.
+
+Run the shared DTO vectors from the repository root without a native library:
+
+```sh
+python3 scripts/check_dto_vectors.py swift
+```

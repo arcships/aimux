@@ -15,7 +15,7 @@
     "@ai-sdk/cohere": "4.0.52",
     "@ai-sdk/deepseek": "3.0.56",
     "@ai-sdk/google": "4.0.87",
-    "@ai-sdk/google-vertex": "5.0.98",
+    "@ai-sdk/google-vertex": "5.0.100",
     "@ai-sdk/groq": "4.0.52",
     "@ai-sdk/huggingface": "2.0.62",
     "@ai-sdk/mistral": "4.0.54",

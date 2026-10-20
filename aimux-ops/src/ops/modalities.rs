@@ -10,13 +10,13 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
 const fn operation(
     name: &'static str,
     kinds: &'static [HandleKind],
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     request_byte_policy: RequestBytePolicy,
     source_symbols: &'static [&'static str],
 ) -> OpDescriptor {
@@ -45,24 +45,24 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     operation(
         "embedding.embed",
         &[HandleKind::Embedding],
-        "aimux_core::embedding_model::EmbeddingCallOptions",
-        "aimux_core::embedding_model::EmbeddingResult",
+        TypeRef::of::<aimux_core::embedding_model::EmbeddingCallOptions>(),
+        TypeRef::of::<aimux_core::embedding_model::EmbeddingResult>(),
         RequestBytePolicy::Json,
         &["aimux_embed", "aimux_core::embedding_model::embed"],
     ),
     operation(
         "embedding.embedMany",
         &[HandleKind::Embedding],
-        "aimux_core::embedding_model::EmbeddingCallOptions",
-        "aimux_core::embedding_model::EmbeddingResult",
+        TypeRef::of::<aimux_core::embedding_model::EmbeddingCallOptions>(),
+        TypeRef::of::<aimux_core::embedding_model::EmbeddingResult>(),
         RequestBytePolicy::Json,
         &["aimux_embed", "aimux_core::embedding_model::embed"],
     ),
     operation(
         "image.generate",
         &[HandleKind::Image],
-        "aimux_core::image_model::ImageCallOptions",
-        "aimux_core::image_model::ImageResult",
+        TypeRef::of::<aimux_core::image_model::ImageCallOptions>(),
+        TypeRef::of::<aimux_core::image_model::ImageResult>(),
         RequestBytePolicy::JsonWithBase64,
         &[
             "aimux_image_generate",
@@ -72,8 +72,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     operation(
         "speech.generate",
         &[HandleKind::Speech],
-        "aimux_core::speech_model::SpeechCallOptions",
-        "aimux_core::speech_model::SpeechResult",
+        TypeRef::of::<aimux_core::speech_model::SpeechCallOptions>(),
+        TypeRef::of::<aimux_core::speech_model::SpeechResult>(),
         RequestBytePolicy::Json,
         &[
             "aimux_speech_generate",
@@ -83,8 +83,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     operation(
         "transcription.generate",
         &[HandleKind::Transcription],
-        "aimux_core::transcription_model::TranscriptionCallOptions",
-        "aimux_core::transcription_model::TranscriptionResult",
+        TypeRef::of::<aimux_core::transcription_model::TranscriptionCallOptions>(),
+        TypeRef::of::<aimux_core::transcription_model::TranscriptionResult>(),
         RequestBytePolicy::JsonWithBase64,
         &[
             "aimux_transcription_generate",
@@ -94,16 +94,16 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     operation(
         "reranking.rerank",
         &[HandleKind::Reranking],
-        "aimux_core::reranking_model::RerankingCallOptions",
-        "aimux_core::reranking_model::RerankingResult",
+        TypeRef::of::<aimux_core::reranking_model::RerankingCallOptions>(),
+        TypeRef::of::<aimux_core::reranking_model::RerankingResult>(),
         RequestBytePolicy::Json,
         &["aimux_rerank", "aimux_core::reranking_model::rerank"],
     ),
     operation(
         "video.generate",
         &[HandleKind::Video],
-        "aimux_core::video_model::VideoCallOptions",
-        "aimux_core::video_model::VideoResult",
+        TypeRef::of::<aimux_core::video_model::VideoCallOptions>(),
+        TypeRef::of::<aimux_core::video_model::VideoResult>(),
         RequestBytePolicy::JsonWithBase64,
         &[
             "aimux_video_generate",
@@ -113,8 +113,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     operation(
         "search.search",
         &[HandleKind::Search],
-        "aimux_core::search_model::SearchCallOptions",
-        "aimux_core::search_model::SearchResult",
+        TypeRef::of::<aimux_core::search_model::SearchCallOptions>(),
+        TypeRef::of::<aimux_core::search_model::SearchResult>(),
         RequestBytePolicy::Json,
         &["aimux_search", "aimux_core::search_model::search"],
     ),

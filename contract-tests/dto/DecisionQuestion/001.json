@@ -1,0 +1,8 @@
+{
+  "type": "choice",
+  "instructions": "Select a native value",
+  "criteria": {
+    "boolean_true": null,
+    "text_true": null
+  }
+}
