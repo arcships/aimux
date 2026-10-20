@@ -46,3 +46,6 @@ pub(crate) fn convert_groq_usage(usage: Option<&GroqUsage>) -> Usage {
             .and_then(|value| value.as_object().cloned()),
     }
 }
+
+#[cfg(test)]
+mod tests;

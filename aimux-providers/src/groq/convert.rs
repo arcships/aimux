@@ -155,3 +155,6 @@ pub(crate) fn convert_to_groq_chat_messages(
 
     Ok(messages)
 }
+
+#[cfg(test)]
+mod tests;

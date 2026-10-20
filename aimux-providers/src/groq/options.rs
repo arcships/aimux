@@ -141,3 +141,6 @@ pub(crate) fn parse_groq_transcription_options(
         Ok(parsed)
     })
 }
+
+#[cfg(test)]
+mod tests;
