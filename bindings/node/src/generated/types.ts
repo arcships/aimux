@@ -6,10 +6,19 @@
  * Variants are cut by *what the caller does about it*, not by where the
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
+ *
+ * `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+ * retry's last attempt and a repair's `cause`.
  */
 export type AiMuxError =
   | {
     name: "AI_APICallError"
+    /**
+     * The error this failure was built from (`APICallError.cause`): the
+     * transport error with its source chain, the body parse error, or the
+     * aimux error a response handler returned.
+     */
+    cause?: ErrorCause | null
     /**
      * Parsed provider error data.
      */
@@ -190,10 +199,19 @@ export type AiMuxError =
  * Variants are cut by *what the caller does about it*, not by where the
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
+ *
+ * `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+ * retry's last attempt and a repair's `cause`.
  */
 export type AiMuxErrorInput =
   | {
     name: "AI_APICallError"
+    /**
+     * The error this failure was built from (`APICallError.cause`): the
+     * transport error with its source chain, the body parse error, or the
+     * aimux error a response handler returned.
+     */
+    cause?: ErrorCauseInput | null
     /**
      * Parsed provider error data.
      */
@@ -392,6 +410,12 @@ export type AiMuxErrorInput =
  */
 export interface ApiCallError {
   /**
+   * The error this failure was built from (`APICallError.cause`): the
+   * transport error with its source chain, the body parse error, or the
+   * aimux error a response handler returned.
+   */
+  cause?: ErrorCause | null
+  /**
    * Parsed provider error data.
    */
   data?: unknown
@@ -467,6 +491,12 @@ export interface ApiCallError {
  * AI SDK's `APICallError` contract.
  */
 export interface ApiCallErrorInput {
+  /**
+   * The error this failure was built from (`APICallError.cause`): the
+   * transport error with its source chain, the body parse error, or the
+   * aimux error a response handler returned.
+   */
+  cause?: ErrorCauseInput | null
   /**
    * Parsed provider error data.
    */
@@ -1403,6 +1433,24 @@ export interface EmbeddingUsage {
 
 export interface EmptyParams {
 }
+
+/**
+ * The error another error was built from: the AI SDK's `cause`.
+ *
+ * An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+ * `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+ * nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+ */
+export type ErrorCause = AiMuxError | SourceError
+
+/**
+ * The error another error was built from: the AI SDK's `cause`.
+ *
+ * An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+ * `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+ * nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+ */
+export type ErrorCauseInput = AiMuxErrorInput | SourceError
 
 export type ErrorDomain = "aimux" | "recording" | "binding" | "protocol"
 
@@ -3697,6 +3745,24 @@ export type Source =
     providerMetadata?: Record<string, Record<string, unknown>> | null
     title: string
   }
+
+/**
+ * An error from outside aimux (a transport, parser or I/O error), kept as
+ * its message and the messages of its own sources, so it can be cloned,
+ * serialized and sent across the bindings with the error built from it.
+ *
+ * The JSON form is a JavaScript `Error`'s own `{ message, cause }`.
+ */
+export interface SourceError {
+  /**
+   * The error's own `source()`, recursively.
+   */
+  cause?: SourceError | null
+  /**
+   * The error's `Display` text.
+   */
+  message: string
+}
 
 /**
  * Options passed to [`SpeechModel::do_generate`].

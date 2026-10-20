@@ -12,6 +12,14 @@
     "file": "AiMuxError/003.json"
   },
   {
+    "type": "AiMuxError",
+    "file": "AiMuxError/004.json"
+  },
+  {
+    "type": "AiMuxError",
+    "file": "AiMuxError/005.json"
+  },
+  {
     "type": "AiMuxErrorInput",
     "file": "AiMuxErrorInput/001.json"
   },
@@ -22,6 +30,14 @@
   {
     "type": "AiMuxErrorInput",
     "file": "AiMuxErrorInput/003.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/004.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/005.json"
   },
   {
     "type": "AssistantContent",

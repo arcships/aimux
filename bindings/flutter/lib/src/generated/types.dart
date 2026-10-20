@@ -45,6 +45,9 @@ String _timestamp(String text) {
 /// Variants are cut by *what the caller does about it*, not by where the
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
+///
+/// `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+/// retry's last attempt and a repair's `cause`.
 sealed class AiMuxError {
   const AiMuxError();
   String get name;
@@ -103,6 +106,11 @@ sealed class AiMuxError {
 }
 
 final class AiMuxErrorAIAPICallError extends AiMuxError {
+  /// The error this failure was built from (`APICallError.cause`): the
+  /// transport error with its source chain, the body parse error, or the
+  /// aimux error a response handler returned.
+  final ErrorCause? cause;
+
   /// Parsed provider error data.
   final Field<Object?> data;
 
@@ -145,6 +153,7 @@ final class AiMuxErrorAIAPICallError extends AiMuxError {
   /// Sanitized request URL. Required for every API-derived failure.
   final String url;
   const AiMuxErrorAIAPICallError({
+    this.cause,
     this.data = const Field.absent(),
     required this.isRetryable,
     required this.message,
@@ -159,6 +168,7 @@ final class AiMuxErrorAIAPICallError extends AiMuxError {
   String get name => 'AI_APICallError';
   factory AiMuxErrorAIAPICallError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorAIAPICallError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       data: json.containsKey('data')
           ? Field.of(json['data'])
           : const Field.absent(),
@@ -177,6 +187,7 @@ final class AiMuxErrorAIAPICallError extends AiMuxError {
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_APICallError',
+        if (cause != null) 'cause': cause!.toJson(),
         if (data.isPresent) 'data': data.value,
         'isRetryable': isRetryable,
         'message': message,
@@ -689,6 +700,9 @@ final class AiMuxErrorAIError extends AiMuxError {
 /// Variants are cut by *what the caller does about it*, not by where the
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
+///
+/// `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+/// retry's last attempt and a repair's `cause`.
 sealed class AiMuxErrorInput {
   const AiMuxErrorInput();
   String get name;
@@ -747,6 +761,11 @@ sealed class AiMuxErrorInput {
 }
 
 final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
+  /// The error this failure was built from (`APICallError.cause`): the
+  /// transport error with its source chain, the body parse error, or the
+  /// aimux error a response handler returned.
+  final ErrorCauseInput? cause;
+
   /// Parsed provider error data.
   final Field<Object?> data;
 
@@ -789,6 +808,7 @@ final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
   /// Sanitized request URL. Required for every API-derived failure.
   final String url;
   const AiMuxErrorInputAIAPICallError({
+    this.cause,
     this.data = const Field.absent(),
     this.isRetryable,
     required this.message,
@@ -803,6 +823,9 @@ final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
   String get name => 'AI_APICallError';
   factory AiMuxErrorInputAIAPICallError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorInputAIAPICallError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       data: json.containsKey('data')
           ? Field.of(json['data'])
           : const Field.absent(),
@@ -821,6 +844,7 @@ final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_APICallError',
+        if (cause != null) 'cause': cause!.toJson(),
         if (data.isPresent) 'data': data.value,
         if (isRetryable != null) 'isRetryable': isRetryable,
         'message': message,
@@ -1358,6 +1382,11 @@ final class AiMuxErrorInputAIError extends AiMuxErrorInput {
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
 final class ApiCallError {
+  /// The error this failure was built from (`APICallError.cause`): the
+  /// transport error with its source chain, the body parse error, or the
+  /// aimux error a response handler returned.
+  final ErrorCause? cause;
+
   /// Parsed provider error data.
   final Field<Object?> data;
 
@@ -1400,6 +1429,7 @@ final class ApiCallError {
   /// Sanitized request URL. Required for every API-derived failure.
   final String url;
   const ApiCallError({
+    this.cause,
     this.data = const Field.absent(),
     required this.isRetryable,
     required this.message,
@@ -1412,6 +1442,7 @@ final class ApiCallError {
   });
   factory ApiCallError.fromJson(Map<String, dynamic> json) {
     return ApiCallError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       data: json.containsKey('data')
           ? Field.of(json['data'])
           : const Field.absent(),
@@ -1429,6 +1460,7 @@ final class ApiCallError {
   }
 
   Map<String, dynamic> toJson() => {
+        if (cause != null) 'cause': cause!.toJson(),
         if (data.isPresent) 'data': data.value,
         'isRetryable': isRetryable,
         'message': message,
@@ -1462,6 +1494,11 @@ final class ApiCallError {
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
 final class ApiCallErrorInput {
+  /// The error this failure was built from (`APICallError.cause`): the
+  /// transport error with its source chain, the body parse error, or the
+  /// aimux error a response handler returned.
+  final ErrorCauseInput? cause;
+
   /// Parsed provider error data.
   final Field<Object?> data;
 
@@ -1504,6 +1541,7 @@ final class ApiCallErrorInput {
   /// Sanitized request URL. Required for every API-derived failure.
   final String url;
   const ApiCallErrorInput({
+    this.cause,
     this.data = const Field.absent(),
     this.isRetryable,
     required this.message,
@@ -1516,6 +1554,9 @@ final class ApiCallErrorInput {
   });
   factory ApiCallErrorInput.fromJson(Map<String, dynamic> json) {
     return ApiCallErrorInput(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       data: json.containsKey('data')
           ? Field.of(json['data'])
           : const Field.absent(),
@@ -1533,6 +1574,7 @@ final class ApiCallErrorInput {
   }
 
   Map<String, dynamic> toJson() => {
+        if (cause != null) 'cause': cause!.toJson(),
         if (data.isPresent) 'data': data.value,
         if (isRetryable != null) 'isRetryable': isRetryable,
         'message': message,
@@ -4468,6 +4510,80 @@ final class EmptyParams {
   }
 
   Map<String, dynamic> toJson() => {};
+}
+
+/// The error another error was built from: the AI SDK's `cause`.
+///
+/// An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+/// `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+/// nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+sealed class ErrorCause {
+  const ErrorCause();
+  factory ErrorCause.fromJson(Object? value) {
+    try {
+      return ErrorCauseBranchAiMuxError.fromJson(value);
+    } catch (_) {
+      // Try the next branch in declaration order.
+    }
+    return ErrorCauseBranchSourceError.fromJson(value);
+  }
+
+  Object? toJson();
+}
+
+final class ErrorCauseBranchAiMuxError extends ErrorCause {
+  final AiMuxError value;
+  const ErrorCauseBranchAiMuxError(this.value);
+  factory ErrorCauseBranchAiMuxError.fromJson(Object? value) =>
+      ErrorCauseBranchAiMuxError(
+          AiMuxError.fromJson(value as Map<String, dynamic>));
+  Object? toJson() => value.toJson();
+}
+
+final class ErrorCauseBranchSourceError extends ErrorCause {
+  final SourceError value;
+  const ErrorCauseBranchSourceError(this.value);
+  factory ErrorCauseBranchSourceError.fromJson(Object? value) =>
+      ErrorCauseBranchSourceError(
+          SourceError.fromJson(value as Map<String, dynamic>));
+  Object? toJson() => value.toJson();
+}
+
+/// The error another error was built from: the AI SDK's `cause`.
+///
+/// An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+/// `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+/// nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+sealed class ErrorCauseInput {
+  const ErrorCauseInput();
+  factory ErrorCauseInput.fromJson(Object? value) {
+    try {
+      return ErrorCauseInputBranchAiMuxErrorInput.fromJson(value);
+    } catch (_) {
+      // Try the next branch in declaration order.
+    }
+    return ErrorCauseInputBranchSourceError.fromJson(value);
+  }
+
+  Object? toJson();
+}
+
+final class ErrorCauseInputBranchAiMuxErrorInput extends ErrorCauseInput {
+  final AiMuxErrorInput value;
+  const ErrorCauseInputBranchAiMuxErrorInput(this.value);
+  factory ErrorCauseInputBranchAiMuxErrorInput.fromJson(Object? value) =>
+      ErrorCauseInputBranchAiMuxErrorInput(
+          AiMuxErrorInput.fromJson(value as Map<String, dynamic>));
+  Object? toJson() => value.toJson();
+}
+
+final class ErrorCauseInputBranchSourceError extends ErrorCauseInput {
+  final SourceError value;
+  const ErrorCauseInputBranchSourceError(this.value);
+  factory ErrorCauseInputBranchSourceError.fromJson(Object? value) =>
+      ErrorCauseInputBranchSourceError(
+          SourceError.fromJson(value as Map<String, dynamic>));
+  Object? toJson() => value.toJson();
 }
 
 enum ErrorDomain {
@@ -10805,6 +10921,36 @@ final class SourceDocument extends Source {
         'mediaType': mediaType,
         if (providerMetadata != null) 'providerMetadata': providerMetadata,
         'title': title,
+      };
+}
+
+/// An error from outside aimux (a transport, parser or I/O error), kept as
+/// its message and the messages of its own sources, so it can be cloned,
+/// serialized and sent across the bindings with the error built from it.
+///
+/// The JSON form is a JavaScript `Error`'s own `{ message, cause }`.
+final class SourceError {
+  /// The error's own `source()`, recursively.
+  final SourceError? cause;
+
+  /// The error's `Display` text.
+  final String message;
+  const SourceError({
+    this.cause,
+    required this.message,
+  });
+  factory SourceError.fromJson(Map<String, dynamic> json) {
+    return SourceError(
+      cause: json['cause'] == null
+          ? null
+          : SourceError.fromJson(json['cause'] as Map<String, dynamic>),
+      message: json['message'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (cause != null) 'cause': cause!.toJson(),
+        'message': message,
       };
 }
 

@@ -13,6 +13,9 @@ import java.util.*;
  * Variants are cut by *what the caller does about it*, not by where the
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
+ *
+ * `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+ * retry's last attempt and a repair's `cause`.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "name")
 // clang-format off
@@ -105,6 +108,13 @@ public abstract class AiMuxError {
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIAPICallError extends AiMuxError {
         /**
+         * The error this failure was built from (`APICallError.cause`): the
+         * transport error with its source chain, the body parse error, or the
+         * aimux error a response handler returned.
+         */
+        @JsonProperty("cause")
+        private final ErrorCause cause;
+        /**
          * Parsed provider error data.
          */
         @JsonProperty("data")
@@ -168,6 +178,7 @@ public abstract class AiMuxError {
 
         @JsonCreator
         public AIAPICallError(
+            @JsonProperty(value = "cause") ErrorCause cause,
             @JsonProperty(value = "data") FieldPresence<JsonNode> data,
             @JsonProperty(value = "isRetryable", required = true) Boolean isRetryable,
             @JsonProperty(value = "message", required = true) String message,
@@ -177,6 +188,7 @@ public abstract class AiMuxError {
             @JsonProperty(value = "responseHeaders") Map<String, String> responseHeaders,
             @JsonProperty(value = "statusCode") Integer statusCode,
             @JsonProperty(value = "url", required = true) String url) {
+            this.cause = cause;
             this.data = data == null ? FieldPresence.absent() : data;
             this.isRetryable = isRetryable;
             this.message = message;
@@ -193,6 +205,7 @@ public abstract class AiMuxError {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_APICallError"; }
+        public ErrorCause getCause() { return cause; }
         public JsonNode getData() { return data.getValue() == null ? null : data.getValue().deepCopy(); }
         public boolean hasData() { return data.isPresent(); }
         public Boolean getIsRetryable() { return isRetryable; }
@@ -205,6 +218,7 @@ public abstract class AiMuxError {
         public String getUrl() { return url; }
 
         public static final class Builder {
+            private ErrorCause cause;
             private FieldPresence<JsonNode> data = FieldPresence.absent();
             private Boolean isRetryable;
             private String message;
@@ -214,6 +228,11 @@ public abstract class AiMuxError {
             private Map<String, String> responseHeaders;
             private Integer statusCode;
             private String url;
+
+            public Builder cause(ErrorCause value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder data(JsonNode value) {
                 this.data = FieldPresence.of(value == null ? null : value.deepCopy());
@@ -265,7 +284,7 @@ public abstract class AiMuxError {
                 return this;
             }
 
-            public AIAPICallError build() { return new AIAPICallError(data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
+            public AIAPICallError build() { return new AIAPICallError(cause, data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
         }
     }
 

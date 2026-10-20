@@ -127,6 +127,17 @@ public struct WireUInt64: Codable, Equatable, Sendable {
         try c.encode(rawValue)
     }
 }
+/// The boxed storage of a struct's optional field of its own type.
+indirect enum WireIndirect<Value> {
+    case boxed(Value)
+    var value: Value {
+        switch self {
+        case .boxed(let value): return value
+        }
+    }
+}
+extension WireIndirect: Equatable where Value: Equatable {}
+extension WireIndirect: Sendable where Value: Sendable {}
 private struct WireKey: CodingKey {
     let stringValue: String
     let intValue: Int? = nil
@@ -139,7 +150,13 @@ private struct WireKey: CodingKey {
 /// Variants are cut by *what the caller does about it*, not by where the
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
+///
+/// `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+/// retry's last attempt and a repair's `cause`.
 public indirect enum AiMuxError: Codable, Equatable, Sendable {
+    /// cause: The error this failure was built from (`APICallError.cause`): the
+    /// transport error with its source chain, the body parse error, or the
+    /// aimux error a response handler returned.
     /// data: Parsed provider error data.
     /// isRetryable: Whether retrying can help (`APICallError.isRetryable`) — stored at
     /// construction, exactly like the AI SDK: the response path computes it
@@ -164,7 +181,7 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
     /// Anthropic from its error type); errors built without an HTTP exchange
     /// leave it `None`.
     /// url: Sanitized request URL. Required for every API-derived failure.
-    case aiapiCallError(data: FieldPresence<JSONValue>, isRetryable: Bool, message: String, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
+    case aiapiCallError(cause: ErrorCause?, data: FieldPresence<JSONValue>, isRetryable: Bool, message: String, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
     case aiRetryError(errors: [AiMuxError], reason: RetryErrorReason)
     case aijsonParseError(message: String)
     case aiNoOutputGeneratedError(message: String)
@@ -232,7 +249,7 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
         let tag = try c.decode(String.self, forKey: .name)
         switch tag {
         case "AI_APICallError":
-            self = .aiapiCallError(data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decode(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
+            self = .aiapiCallError(cause: try c.decodeIfPresent(ErrorCause.self, forKey: .cause), data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decode(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
             return
         case "AI_Error":
             self = .aiError(message: try c.decode(String.self, forKey: .message))
@@ -303,17 +320,18 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8):
+        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8, let v9):
             try c.encode("AI_APICallError", forKey: .name)
-            try c.encodePresence(v0, forKey: .data)
-            try c.encode(v1, forKey: .isRetryable)
-            try c.encode(v2, forKey: .message)
-            try c.encodeIfPresent(v3, forKey: .providerCode)
-            try c.encode(v4, forKey: .requestBodyValues)
-            try c.encodeIfPresent(v5, forKey: .responseBody)
-            try c.encodeIfPresent(v6, forKey: .responseHeaders)
-            try c.encodeIfPresent(v7, forKey: .statusCode)
-            try c.encode(v8, forKey: .url)
+            try c.encodeIfPresent(v0, forKey: .cause)
+            try c.encodePresence(v1, forKey: .data)
+            try c.encode(v2, forKey: .isRetryable)
+            try c.encode(v3, forKey: .message)
+            try c.encodeIfPresent(v4, forKey: .providerCode)
+            try c.encode(v5, forKey: .requestBodyValues)
+            try c.encodeIfPresent(v6, forKey: .responseBody)
+            try c.encodeIfPresent(v7, forKey: .responseHeaders)
+            try c.encodeIfPresent(v8, forKey: .statusCode)
+            try c.encode(v9, forKey: .url)
         case .aiRetryError(let v0, let v1):
             try c.encode("AI_RetryError", forKey: .name)
             try c.encode(v0, forKey: .errors)
@@ -403,7 +421,13 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
 /// Variants are cut by *what the caller does about it*, not by where the
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
+///
+/// `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
+/// retry's last attempt and a repair's `cause`.
 public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
+    /// cause: The error this failure was built from (`APICallError.cause`): the
+    /// transport error with its source chain, the body parse error, or the
+    /// aimux error a response handler returned.
     /// data: Parsed provider error data.
     /// isRetryable: Whether retrying can help (`APICallError.isRetryable`) — stored at
     /// construction, exactly like the AI SDK: the response path computes it
@@ -428,7 +452,7 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
     /// Anthropic from its error type); errors built without an HTTP exchange
     /// leave it `None`.
     /// url: Sanitized request URL. Required for every API-derived failure.
-    case aiapiCallError(data: FieldPresence<JSONValue>, isRetryable: Bool?, message: String, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
+    case aiapiCallError(cause: ErrorCauseInput?, data: FieldPresence<JSONValue>, isRetryable: Bool?, message: String, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
     case aiRetryError(errors: [AiMuxErrorInput], reason: RetryErrorReason)
     case aijsonParseError(message: String)
     case aiNoOutputGeneratedError(message: String)
@@ -496,7 +520,7 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
         let tag = try c.decode(String.self, forKey: .name)
         switch tag {
         case "AI_APICallError":
-            self = .aiapiCallError(data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decodeIfPresent(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
+            self = .aiapiCallError(cause: try c.decodeIfPresent(ErrorCauseInput.self, forKey: .cause), data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decodeIfPresent(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
             return
         case "AI_Error":
             self = .aiError(message: try c.decode(String.self, forKey: .message))
@@ -567,17 +591,18 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8):
+        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8, let v9):
             try c.encode("AI_APICallError", forKey: .name)
-            try c.encodePresence(v0, forKey: .data)
-            try c.encodeIfPresent(v1, forKey: .isRetryable)
-            try c.encode(v2, forKey: .message)
-            try c.encodeIfPresent(v3, forKey: .providerCode)
-            try c.encode(v4, forKey: .requestBodyValues)
-            try c.encodeIfPresent(v5, forKey: .responseBody)
-            try c.encodeIfPresent(v6, forKey: .responseHeaders)
-            try c.encodeIfPresent(v7, forKey: .statusCode)
-            try c.encode(v8, forKey: .url)
+            try c.encodeIfPresent(v0, forKey: .cause)
+            try c.encodePresence(v1, forKey: .data)
+            try c.encodeIfPresent(v2, forKey: .isRetryable)
+            try c.encode(v3, forKey: .message)
+            try c.encodeIfPresent(v4, forKey: .providerCode)
+            try c.encode(v5, forKey: .requestBodyValues)
+            try c.encodeIfPresent(v6, forKey: .responseBody)
+            try c.encodeIfPresent(v7, forKey: .responseHeaders)
+            try c.encodeIfPresent(v8, forKey: .statusCode)
+            try c.encode(v9, forKey: .url)
         case .aiRetryError(let v0, let v1):
             try c.encode("AI_RetryError", forKey: .name)
             try c.encode(v0, forKey: .errors)
@@ -683,6 +708,10 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
 public struct ApiCallError: Codable, Equatable, Sendable {
+    /// The error this failure was built from (`APICallError.cause`): the
+    /// transport error with its source chain, the body parse error, or the
+    /// aimux error a response handler returned.
+    public var cause: ErrorCause?
     /// Parsed provider error data.
     public var data: FieldPresence<JSONValue>
     /// Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -717,7 +746,8 @@ public struct ApiCallError: Codable, Equatable, Sendable {
     /// Sanitized request URL. Required for every API-derived failure.
     public var url: String
 
-    public init(data: FieldPresence<JSONValue> = .missing, isRetryable: Bool, message: String, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
+    public init(cause: ErrorCause? = nil, data: FieldPresence<JSONValue> = .missing, isRetryable: Bool, message: String, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
+        self.cause = cause
         self.data = data
         self.isRetryable = isRetryable
         self.message = message
@@ -729,6 +759,7 @@ public struct ApiCallError: Codable, Equatable, Sendable {
         self.url = url
     }
     private enum CodingKeys: String, CodingKey {
+        case cause = "cause"
         case data = "data"
         case isRetryable = "isRetryable"
         case message = "message"
@@ -741,6 +772,7 @@ public struct ApiCallError: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.cause = try c.decodeIfPresent(ErrorCause.self, forKey: .cause)
         self.data = try c.decodePresence(JSONValue.self, forKey: .data)
         self.isRetryable = try c.decode(Bool.self, forKey: .isRetryable)
         self.message = try c.decode(String.self, forKey: .message)
@@ -753,6 +785,7 @@ public struct ApiCallError: Codable, Equatable, Sendable {
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.cause, forKey: .cause)
         try c.encodePresence(self.data, forKey: .data)
         try c.encode(self.isRetryable, forKey: .isRetryable)
         try c.encode(self.message, forKey: .message)
@@ -786,6 +819,10 @@ public struct ApiCallError: Codable, Equatable, Sendable {
 /// This keeps transport and response failures self-contained and matches the
 /// AI SDK's `APICallError` contract.
 public struct ApiCallErrorInput: Codable, Equatable, Sendable {
+    /// The error this failure was built from (`APICallError.cause`): the
+    /// transport error with its source chain, the body parse error, or the
+    /// aimux error a response handler returned.
+    public var cause: ErrorCauseInput?
     /// Parsed provider error data.
     public var data: FieldPresence<JSONValue>
     /// Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -820,7 +857,8 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
     /// Sanitized request URL. Required for every API-derived failure.
     public var url: String
 
-    public init(data: FieldPresence<JSONValue> = .missing, isRetryable: Bool? = nil, message: String, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
+    public init(cause: ErrorCauseInput? = nil, data: FieldPresence<JSONValue> = .missing, isRetryable: Bool? = nil, message: String, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
+        self.cause = cause
         self.data = data
         self.isRetryable = isRetryable
         self.message = message
@@ -832,6 +870,7 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
         self.url = url
     }
     private enum CodingKeys: String, CodingKey {
+        case cause = "cause"
         case data = "data"
         case isRetryable = "isRetryable"
         case message = "message"
@@ -844,6 +883,7 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.cause = try c.decodeIfPresent(ErrorCauseInput.self, forKey: .cause)
         self.data = try c.decodePresence(JSONValue.self, forKey: .data)
         self.isRetryable = try c.decodeIfPresent(Bool.self, forKey: .isRetryable)
         self.message = try c.decode(String.self, forKey: .message)
@@ -856,6 +896,7 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.cause, forKey: .cause)
         try c.encodePresence(self.data, forKey: .data)
         try c.encodeIfPresent(self.isRetryable, forKey: .isRetryable)
         try c.encode(self.message, forKey: .message)
@@ -2286,6 +2327,50 @@ public struct EmptyParams: Codable, Equatable, Sendable {
     }
     public func encode(to encoder: any Encoder) throws {
         _ = encoder.container(keyedBy: WireKey.self)
+    }
+}
+
+/// The error another error was built from: the AI SDK's `cause`.
+///
+/// An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+/// `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+/// nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+public indirect enum ErrorCause: Codable, Equatable, Sendable {
+    case aiMuxError(AiMuxError)
+    case sourceError(SourceError)
+
+    public init(from decoder: any Decoder) throws {
+        do { let value = try decoder.singleValueContainer().decode(AiMuxError.self); self = .aiMuxError(value); return } catch {}
+        do { let value = try decoder.singleValueContainer().decode(SourceError.self); self = .sourceError(value); return } catch {}
+        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "No matching ErrorCause branch"))
+    }
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .aiMuxError(let value): try value.encode(to: encoder)
+        case .sourceError(let value): try value.encode(to: encoder)
+        }
+    }
+}
+
+/// The error another error was built from: the AI SDK's `cause`.
+///
+/// An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+/// `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+/// nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+public indirect enum ErrorCauseInput: Codable, Equatable, Sendable {
+    case aiMuxErrorInput(AiMuxErrorInput)
+    case sourceError(SourceError)
+
+    public init(from decoder: any Decoder) throws {
+        do { let value = try decoder.singleValueContainer().decode(AiMuxErrorInput.self); self = .aiMuxErrorInput(value); return } catch {}
+        do { let value = try decoder.singleValueContainer().decode(SourceError.self); self = .sourceError(value); return } catch {}
+        throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "No matching ErrorCauseInput branch"))
+    }
+    public func encode(to encoder: any Encoder) throws {
+        switch self {
+        case .aiMuxErrorInput(let value): try value.encode(to: encoder)
+        case .sourceError(let value): try value.encode(to: encoder)
+        }
     }
 }
 
@@ -5584,6 +5669,41 @@ public indirect enum Source: Codable, Equatable, Sendable {
             try c.encodeIfPresent(v3, forKey: .providerMetadata)
             try c.encode(v4, forKey: .title)
         }
+    }
+}
+
+/// An error from outside aimux (a transport, parser or I/O error), kept as
+/// its message and the messages of its own sources, so it can be cloned,
+/// serialized and sent across the bindings with the error built from it.
+///
+/// The JSON form is a JavaScript `Error`'s own `{ message, cause }`.
+public struct SourceError: Codable, Equatable, Sendable {
+    /// The error's own `source()`, recursively.
+    public var cause: SourceError? {
+        get { _cause?.value }
+        set { _cause = newValue.map(WireIndirect.boxed) }
+    }
+    private var _cause: WireIndirect<SourceError>?
+    /// The error's `Display` text.
+    public var message: String
+
+    public init(cause: SourceError? = nil, message: String) {
+        self._cause = cause.map(WireIndirect.boxed)
+        self.message = message
+    }
+    private enum CodingKeys: String, CodingKey {
+        case cause = "cause"
+        case message = "message"
+    }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self._cause = try c.decodeIfPresent(SourceError.self, forKey: .cause).map(WireIndirect.boxed)
+        self.message = try c.decode(String.self, forKey: .message)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(self.cause, forKey: .cause)
+        try c.encode(self.message, forKey: .message)
     }
 }
 
