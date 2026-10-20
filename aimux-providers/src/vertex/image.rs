@@ -26,6 +26,13 @@ fn is_gemini_model(model_id: &str) -> bool {
     model_id.starts_with("gemini-")
 }
 
+/// `googleVertexImageModelsWithFileInputSupport` (google-vertex-image-model.ts:29).
+const MODELS_WITH_FILE_INPUTS: [&str; 3] = [
+    "gemini-2.5-flash-image",
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+];
+
 /// A Google Vertex AI image generation model.
 ///
 /// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the process-wide shared
@@ -220,6 +227,14 @@ impl ImageModel for VertexImageModel {
     }
     fn max_images_per_call(&self) -> Option<u32> {
         Some(1)
+    }
+    fn supports_file_inputs(&self) -> Option<bool> {
+        MODELS_WITH_FILE_INPUTS
+            .contains(&self.model_id.as_str())
+            .then_some(true)
+    }
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        self.supports_file_inputs().map(|_| false)
     }
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {

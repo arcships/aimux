@@ -1193,6 +1193,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"candidates": null` as no candidates, stream function-call arguments
   sent as `partialArgs`, and leave an empty `thoughtSignature` out of server
   tool metadata.
+- Vertex image models `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`
+  and `gemini-3.1-flash-image-preview` report `supports_file_inputs: true`
+  and `supports_mask_inputs: false` (also in the ops capabilities), as
+  `@ai-sdk/google-vertex` 5.0.100 does; other ids stay unknown. Both were
+  unknown for every id.
 - Gemini Live transcription (Google and Vertex) closed by the server before
   the input audio ended fails with `InvalidResponseData` reading
   `… Live transcription WebSocket closed unexpectedly before finishing (code
