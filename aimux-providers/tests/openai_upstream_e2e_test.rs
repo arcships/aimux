@@ -981,3 +981,41 @@ async fn a_stream_without_response_created_finishes_with_a_null_response_id() {
     };
     assert_eq!(metadata["openai"]["responseId"], Value::Null);
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:2735-2749 gives every
+/// `reasoning-delta` the reasoning item's id as `providerMetadata.<key>.itemId`,
+/// as it does for `reasoning-start` and `reasoning-end`.
+#[tokio::test]
+async fn reasoning_deltas_carry_the_item_id() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.output_item.added","output_index":0,
+            "item":{"id":"rs_1","type":"reasoning","summary":[]}}),
+        json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,
+            "summary_index":0,"part":{"type":"summary_text","text":""}}),
+        json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,
+            "summary_index":0,"delta":"Thinking"}),
+    ])]);
+    let parts: Vec<_> = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let delta = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::ReasoningDelta {
+                provider_metadata, ..
+            } => Some(provider_metadata),
+            _ => None,
+        })
+        .expect("a reasoning delta");
+    assert_eq!(
+        serde_json::to_value(delta).unwrap(),
+        json!({ "openai": { "itemId": "rs_1" } })
+    );
+}

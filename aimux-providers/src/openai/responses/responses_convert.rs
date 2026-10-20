@@ -1056,7 +1056,14 @@ impl Transformer for OpenAIResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.reasoning_delta(format!("{item_id}:{summary_index}"), delta);
+                        controller.enqueue(StreamPart::ReasoningDelta {
+                            id: format!("{item_id}:{summary_index}"),
+                            delta,
+                            provider_metadata: Some(
+                                provider_namespace(provider_key, json!({ "itemId": item_id }))
+                                    .expect("provider metadata must be an object"),
+                            ),
+                        });
                     }
 
                     // ── reasoning_summary_part.done ───────────────────────────
