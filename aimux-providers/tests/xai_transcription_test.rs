@@ -760,3 +760,24 @@ async fn url_audio_is_refused_before_any_request() {
     assert_eq!(error.to_string(), AudioInput::url_error().to_string());
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+/// A refused connection errors the stream: upstream connects inside the
+/// stream, so `doStream` resolves and the stream carries the failure.
+#[tokio::test]
+async fn a_connect_failure_errors_the_stream() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    drop(listener);
+
+    let result = model(&base_url, None)
+        .do_stream(stream_options(None, "audio/pcm", Some(16000)))
+        .expect("the model has do_stream")
+        .await
+        .expect("do_stream resolves; the connect failure arrives on the stream");
+    let parts = tokio::time::timeout(Duration::from_secs(10), result.stream.collect::<Vec<_>>())
+        .await
+        .expect("stream timed out");
+
+    assert_eq!(parts.len(), 1, "{parts:?}");
+    assert!(parts[0].is_err(), "{parts:?}");
+}
