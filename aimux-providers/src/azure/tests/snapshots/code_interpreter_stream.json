@@ -1,0 +1,1750 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "resp_0ad69c3c5fcb01f60068eba78cacd08193bf9a57724aa55ab8",
+    "modelId": "gpt-5-mini",
+    "timestamp": "2025-10-12T13:05:16.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "rs_0ad69c3c5fcb01f60068eba78f12588193872253fcce2ef954:0",
+    "providerMetadata": {
+      "azure": {
+        "itemId": "rs_0ad69c3c5fcb01f60068eba78f12588193872253fcce2ef954",
+        "reasoningEncryptedContent": null
+      }
+    },
+    "type": "reasoning-start"
+  },
+  {
+    "id": "rs_0ad69c3c5fcb01f60068eba78f12588193872253fcce2ef954:0",
+    "providerMetadata": {
+      "azure": {
+        "itemId": "rs_0ad69c3c5fcb01f60068eba78f12588193872253fcce2ef954",
+        "reasoningEncryptedContent": null
+      }
+    },
+    "type": "reasoning-end"
+  },
+  {
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "providerExecuted": true,
+    "toolName": "code_interpreter",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"containerId\":\"cntr_68eba78d6dc081908116b7ad7a32f52d0050b146e60e47a9\",\"code\":\"",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "#",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " Program",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": ":",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " generate",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " five",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " random",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " between",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " ",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "1",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " and",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " ",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "100",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " with",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " two",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " decimal",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " places",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\\n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "import",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " random",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\\n\\n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "#",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " Generate",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " five",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " random",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " and",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " round",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " to",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " two",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " decimals",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\\n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "numbers",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " =",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " [",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "round",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "(random",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": ".uniform",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "(",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "1",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": ",",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " ",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "100",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "),",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " ",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "2",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": ")",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " for",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " _",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " in",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " range",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "(",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "5",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": ")]\\n\\n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "#",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " Print",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " the",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " list",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " and",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " a",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " nicely",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " formatted",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " string",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\\n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "print",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "(\\\"",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "Generated",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " (",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "as",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " floats",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "):",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\\\",",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": ")\\n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "print",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "(\\\"",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "Generated",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " (",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "formatted",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " to",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " ",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "2",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " decimal",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " places",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "):",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\\\",",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " \\\",",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " \\\".",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "join",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "(f",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\\\"{",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": ":.",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "2",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "f",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "}\\\"",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " for",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " n",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " in",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "))",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\"}",
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"code\":\"# Program: generate five random numbers between 1 and 100 with two decimal places\\nimport random\\n\\n# Generate five random numbers and round to two decimals\\nnumbers = [round(random.uniform(1, 100), 2) for _ in range(5)]\\n\\n# Print the list and a nicely formatted string\\nprint(\\\"Generated numbers (as floats):\\\", numbers)\\nprint(\\\"Generated numbers (formatted to 2 decimal places):\\\", \\\", \\\".join(f\\\"{n:.2f}\\\" for n in numbers))\",\"containerId\":\"cntr_68eba78d6dc081908116b7ad7a32f52d0050b146e60e47a9\"}",
+    "providerExecuted": true,
+    "toolCallId": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "toolName": "code_interpreter",
+    "type": "tool-call"
+  },
+  {
+    "result": {
+      "outputs": [
+        {
+          "logs": "Generated numbers (as floats): [88.99, 51.21, 89.85, 88.97, 7.73]\nGenerated numbers (formatted to 2 decimal places): 88.99, 51.21, 89.85, 88.97, 7.73\n",
+          "type": "logs"
+        }
+      ]
+    },
+    "toolCallId": "ci_0ad69c3c5fcb01f60068eba7939b2c8193b42d4d517ca5d25f",
+    "toolName": "code_interpreter",
+    "type": "tool-result"
+  },
+  {
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "providerMetadata": {
+      "azure": {
+        "itemId": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6"
+      }
+    },
+    "type": "text-start"
+  },
+  {
+    "delta": "Here's",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " a",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " simple",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Python",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " program",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " that",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " generates",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " five",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " random",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " between",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "1",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " and",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "100",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " with",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " two",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " decimal",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " places",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " and",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " execution",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " result",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " from",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " running",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " it",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".\n\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Program",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ":\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "```",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "python",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "import",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " random",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "#",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Generate",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " five",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " random",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " and",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " round",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " two",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " decimals",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " =",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " [",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "round",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "(random",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".uniform",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "(",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "1",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "100",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "),",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "2",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ")",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " for",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " _",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " in",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " range",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "(",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "5",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ")]\n\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "#",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Print",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " list",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " and",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " a",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " nicely",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " formatted",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " string",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "print",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "(\"",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Generated",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " (",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "as",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " floats",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "):",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ")\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "print",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "(\"",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Generated",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " (",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "formatted",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "2",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " decimal",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " places",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "):",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " \",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " \".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "join",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "(f",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\"{",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ":.",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "2",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "f",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "}\"",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " for",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " in",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "))\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "``",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "`\n\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Execution",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " result",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " (",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "from",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " this",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " run",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "):\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Generated",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " (",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "as",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " floats",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "):",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " [",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "88",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "99",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "51",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "21",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "89",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "85",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "88",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "97",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "7",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "73",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "]\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Generated",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " numbers",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " (",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "formatted",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "2",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " decimal",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " places",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "):",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "88",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "99",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "51",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "21",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "89",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "85",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "88",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "97",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "7",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "73",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n\n",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "If",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " you",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " want",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " a",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " reproduc",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "ible",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " result",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " I",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " can",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " add",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " a",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " fixed",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " random",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " seed",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " or",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " save",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " program",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " a",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " file",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " for",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " you",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Want",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": " that",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "delta": "?",
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "type": "text-delta"
+  },
+  {
+    "id": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6",
+    "providerMetadata": {
+      "azure": {
+        "itemId": "msg_0ad69c3c5fcb01f60068eba7956c948193be6ab573376051d6"
+      }
+    },
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "azure": {
+        "responseId": "resp_0ad69c3c5fcb01f60068eba78cacd08193bf9a57724aa55ab8",
+        "serviceTier": "default"
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 1280,
+        "noCache": 863,
+        "total": 2143
+      },
+      "outputTokens": {
+        "reasoning": 576,
+        "text": 343,
+        "total": 919
+      },
+      "raw": {
+        "input_tokens": 2143,
+        "input_tokens_details": {
+          "cached_tokens": 1280
+        },
+        "output_tokens": 919,
+        "output_tokens_details": {
+          "reasoning_tokens": 576
+        },
+        "total_tokens": 3062
+      }
+    }
+  }
+]

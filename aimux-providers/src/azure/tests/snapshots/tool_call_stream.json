@@ -1,0 +1,97 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "resp_04041325ab8ae30400698c519fb7fc81979972618138fc336d",
+    "modelId": "gpt-5.1",
+    "timestamp": "2026-02-11T09:53:35.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "toolName": "weather",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"",
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "location",
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\":\"",
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "San",
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " Francisco",
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\"}",
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"location\":\"San Francisco\"}",
+    "providerMetadata": {
+      "azure": {
+        "itemId": "fc_04041325ab8ae30400698c51c5468c8197a395f18875a5339f"
+      }
+    },
+    "toolCallId": "call_H5DxLSFnsGhiROnUiDHmgyc8",
+    "toolName": "weather",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "unified": "tool-calls"
+    },
+    "providerMetadata": {
+      "azure": {
+        "responseId": "resp_04041325ab8ae30400698c519fb7fc81979972618138fc336d",
+        "serviceTier": "default"
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "noCache": 45,
+        "total": 45
+      },
+      "outputTokens": {
+        "reasoning": 0,
+        "text": 24,
+        "total": 24
+      },
+      "raw": {
+        "input_tokens": 45,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 69
+      }
+    }
+  }
+]
