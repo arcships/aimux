@@ -1,0 +1,65 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "a4e29c5b82f94d67b23e108a7c9df6e1",
+    "modelId": "magistral-medium-2507",
+    "timestamp": "2026-01-22T13:35:12.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "id-0",
+    "type": "reasoning-start"
+  },
+  {
+    "delta": "The user is asking",
+    "id": "id-0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " for 2+2. This is basic arithmetic. 2+2=4.",
+    "id": "id-0",
+    "type": "reasoning-delta"
+  },
+  {
+    "id": "id-0",
+    "type": "reasoning-end"
+  },
+  {
+    "id": "0",
+    "type": "text-start"
+  },
+  {
+    "delta": "2 + 2 = 4",
+    "id": "0",
+    "type": "text-delta"
+  },
+  {
+    "id": "0",
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "raw": "stop",
+      "unified": "stop"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "noCache": 10,
+        "total": 10
+      },
+      "outputTokens": {
+        "text": 46,
+        "total": 46
+      },
+      "raw": {
+        "completion_tokens": 46,
+        "prompt_tokens": 10,
+        "total_tokens": 56
+      }
+    }
+  }
+]
