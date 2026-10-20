@@ -9,9 +9,10 @@ use serde_json::json;
 
 /// Parse embedding options given as the upstream `mistral` options object.
 fn parse(options: Value) -> Result<MistralEmbeddingProviderOptions, AiMuxError> {
-    let provider_options: SharedProviderOptions =
-        serde_json::from_value(json!({ crate::mistral::options::NAMESPACE: options }))
-            .expect("namespace map");
+    let provider_options: SharedProviderOptions = serde_json::from_value(
+        json!({ crate::mistral::chat_language_model_options::NAMESPACE: options }),
+    )
+    .expect("namespace map");
     parse_mistral_provider_options(Some(&provider_options))
 }
 

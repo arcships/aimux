@@ -1,9 +1,12 @@
-//! Mistral API request/response types.
+//! The response and chunk schemas of `mistral-chat-language-model.ts`
+//! (`mistralChatResponseSchema`, `mistralChatChunkSchema`).
 
 #![allow(dead_code)]
 
 use serde::Deserialize;
 use serde_json::Value;
+
+use super::convert_usage::UsageResponse;
 
 // ── Non-streaming response ──
 
@@ -48,46 +51,6 @@ pub struct FunctionCallResponse {
     pub name: String,
     #[serde(default)]
     pub arguments: String,
-}
-
-#[derive(Debug)]
-pub struct UsageResponse {
-    pub fields: UsageFields,
-    pub raw: Value,
-}
-
-impl<'de> Deserialize<'de> for UsageResponse {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = Value::deserialize(deserializer)?;
-        let fields = serde_json::from_value(raw.clone()).map_err(serde::de::Error::custom)?;
-        Ok(Self { fields, raw })
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UsageFields {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-    pub prompt_audio_seconds: Option<f64>,
-    pub request_count: Option<f64>,
-    pub service_tier: Option<String>,
-    pub num_cached_tokens: Option<u32>,
-    pub prompt_tokens_details: Option<PromptTokensDetails>,
-    pub prompt_token_details: Option<PromptTokensDetails>,
-    pub completion_tokens_details: Option<CompletionTokensDetails>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PromptTokensDetails {
-    pub cached_tokens: Option<u32>,
-    pub audio_tokens: Option<f64>,
-    pub messages: Option<Vec<Value>>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CompletionTokensDetails {
-    pub reasoning_tokens: Option<f64>,
 }
 
 // ── Streaming response ──
@@ -139,6 +102,3 @@ pub struct DeltaFunction {
     #[serde(default)]
     pub arguments: Option<String>,
 }
-
-#[cfg(test)]
-mod tests;
