@@ -8,7 +8,7 @@
 >
 > **Baseline**: `master@42208472413a9b157428924e3f4785bb009bc27f`（#268 合并后，DTO 由生成器生成，ts-rs 已删除）。
 >
-> **Related**: [RFC-0039](0039-ops-bindings-contract.md) §6 错误信封、[RFC-0042](0042-v4-type-boundaries.md) 错误联合归属、`docs/error-model.md`、`docs/ai-sdk-request-pipeline.md` §3、#268、#280（本 RFC 的原型实现，拆分后关闭）。
+> **Related**: [RFC-0039](0039-ops-bindings-contract.md) §6 错误信封、[RFC-0042](0042-v4-type-boundaries.md) 错误联合归属、RFC-0044（#279）共享错误枚举的归属、RFC-0048（#325）录制 schema 3、#349（信封去掉 `retryAfterMs`）、`docs/error-model.md`、`docs/ai-sdk-request-pipeline.md` §3、#268、#280（本 RFC 的原型实现，拆分后关闭）。
 >
 > **Amends**: `docs/ai-sdk-request-pipeline.md` §3 与 §14 “`cause` 本轮不加入”。
 
@@ -382,42 +382,69 @@ cargo run -p aimux-codegen                 tools/aimux-codegen/src/main.rs:32
 3. Python 的 `_NESTED_ERROR_FIELDS` 由 `emit/python.rs:391` 的 `contains_error` 推出，要让它把 `ErrorCause` 也算作错误类型，每个带 cause 的变体都含 `cause`，嵌套的 aimux 错误还原成对应异常类，`SourceError` 还原成 `aimux.SourceError`。
 4. DTO 向量新增三类：带传输链的 `ApiCall`、cause 是嵌套 aimux 错误、没有 cause；每种语言的生成 codec 都要往返通过（`scripts/check_dto_vectors.py`）。
 5. 输入方向（`AiMuxErrorInput`）接受并保留 `cause`，规则与输出相同。
+6. `SourceError.cause` 的类型是 `SourceError` 自己。Swift 的 struct 不能内联存放自身类型，生成器为这种“可选、类型是所在 struct 本身”的字段生成 `WireIndirect` 盒子，属性名和 JSON 不变（#289，`tools/aimux-codegen/src/emit/swift.rs` 的 `boxed`）。其他语言的生成物没有这个问题。
 
 ## 7. 各语言
 
 | 语言 | 原生入口 |
 |---|---|
 | Rust | `source()` 链 |
-| Node | 标准 `error.cause`；嵌套 aimux 错误是对应的错误类 |
+| Node | 标准 `error.cause`：嵌套 aimux 错误是 `AimuxCauseError`（`name` 是 AI SDK 名字，`error` 是整个 payload），外部错误是 `AimuxSourceError`；两者都继承 `Error`，有自己的 `cause` 和 stack |
 | Python | `__cause__`；嵌套错误是对应子类，外部错误是 `SourceError` |
 | Java / Kotlin | `getCause()` 链上的 `ErrorCause`（`getErrorName()` 对外部错误为空）；Kotlin 跟随 Java |
 | Go | `(*Error).Unwrap()` 返回 `*aimux.Cause`，`errors.Unwrap` / `errors.As` 可用 |
 | Swift / Flutter | `cause` 属性 |
 | C / C++ | JSON 的 `error.cause`；C++ `aimux::NativeError::json()` |
 
+`Retry` 没有 `cause` 字段，wire 上只有 `errors`。它的 Rust `source()` 是最后一次尝试（AI SDK 的 `lastError`），所以每个绑定从 `errors` 的最后一个合成原生 cause：Node `error.cause`、Python `__cause__`（同 `last_error`）、Java / Kotlin `getCause()`、Go `Unwrap()`、Swift / Flutter `cause`；`errors` 为空时没有 cause。嵌套在别处的 `Retry` 同样处理。每种绑定都有这条测试（#293）。
+
+Java 有两个同名类型，分工不同：`ai.arcships.aimux.types.ErrorCause` 是生成的 DTO，用在 `RetryError.errors`、事件里的错误等数据字段，按 §6 的有序无标签联合解码；`ai.arcships.aimux.ErrorCause` 是手写的 `RuntimeException`，只为挂在 `getCause()` 上，包住同一段 JSON（`getErrorName()`、`getError()`），不重新解码。Node 的 `AimuxCauseError`、`AimuxSourceError`，Python 的 `SourceError`，Go 的 `Cause` 是同样的手写异常层；生成的 DTO 类型名不变。
+
 ## 8. 录制与回放
 
-`Outcome::from_error` 把整个 `AiMuxError` 写进 `error_value`，所以 cause 链会进录制文件。这是可选字段：schema 2 的旧文件没有它照样能读，旧读取器遇到它会忽略（错误类型没有 `deny_unknown_fields`）。不需要等 schema 3（#270）。回放出来的错误带着录下来的 cause。
+`Outcome::from_error` 把整个 `AiMuxError` 写进 `error_value`，所以 cause 链会进录制文件。在 master 上（schema 2）这是可选字段：没有它的旧文件照样能读，旧读取器遇到它会忽略（错误类型没有 `deny_unknown_fields`）。
+
+RFC-0048（#325）落地后录制只有 schema 3，schema 1、2 的读取删除（RFC-0048 §1 第 1 条），上一段的“旧文件可读”随之只适用于 RFC-0048 之前。schema 3 的 `outcome.errorValue` 仍是 `AiMuxError` 的 JSON，`cause` 照样在里面，且只在 `payload` 策略下存（RFC-0048 §3）；这条不依赖 schema 3，也不需要等它。回放出来的错误带着录下来的 cause。
+
+RFC-0048 的回放引擎把录下的传输终态映射回 `FetchError`，并用 `FetchError::Other("<Code>: …")` 报引擎错误。本 RFC 之后 `FetchError` 的连接、I/O、其他三类携带 `SourceError`（§4.3），所以那里写成 `FetchError::Other(SourceError::from("<Code>: …"))`；录下的终态只有 `kind` 和 `message`，回放出来的是一层没有下级的 `SourceError`。
 
 ## 9. 安全
 
-- 传输错误一律用 `without_url()` 构造，消息和 cause 都不带 URL。
-- `SourceError` 只抄 `Display` 文字。serde_json、url、base64、io 的错误文字不含输入内容；新增外部错误类型时要确认这一点。
-- 错误上下文白名单、脱敏和大小上限照旧作用于整个 payload，包括 cause。
+- 传输和下载错误一律用 `without_url()` 构造，消息和 cause 都不带 URL（URL 的 query 里可能有 API key）。
+- `SourceError` 抄的是外部错误的 `Display` 文字，可能包含数据。serde_json 的 data 类错误会引用违规的值（如 ``invalid type: string "…", expected u32``、``unknown variant `…` ``），值来自调用方的参数或模型的响应。这些文字在本 RFC 之前就在消息里（`dispatch.rs:221`、`abi.rs:63` 的 `error.to_string()`），cause 不新增暴露面，但也没有减少它。url、base64、io 的错误文字不含输入内容；新增外部错误类型时要确认这一点。
+- `TypeValidation.value` 是不符合 schema 的整个值，和 AI SDK 一样，没有大小上限，也不脱敏。
+- 信封现在没有大小上限，也不对值脱敏。录制对 `error_value` 做按键名的脱敏（`recording.rs` 的 `redact_json`，凭据类键名的值被替换），会作用到 cause 里的同名键，但不处理文字里引用的值。
+
+因此错误 JSON（包括 cause 和 `value`）和请求、响应体同样敏感：写日志、发往第三方前由调用方决定是否保留。是否在 aimux 里加大小和脱敏边界见 §10 问题 5。
 
 ## 10. 待讨论
 
 1. **cause 链要不要设深度上限。** 现在由 `source()` 链自然决定，`Retry` 的每次尝试各自带链。倾向不设：网络错误一般三四层，重试只有几次尝试，整条链也就几十行文字。
-2. **`recording` 域的 `source` 字符串改名为 `cause`。** 倾向改（四个域同一个形状）；代价是 `recording-*.json` 黄金样例变化，属于发布前的破坏性变更。
-3. **`binding`、`protocol` 域要不要带 cause。** 倾向有 serde 错误时带，没有就不带。另一种是这两个域完全不带，只在 `aimux`、`recording` 带。
+2. **`recording` 域的 `source` 字符串改名为 `cause`。** 已采纳（维护者 review 建议标为已采纳，#293 已实现）：四个域同一个形状；`recording-*.json` 黄金样例随之改变，属于发布前的破坏性变更（§11）。
+3. **`binding`、`protocol` 域要不要带 cause。** 已采纳（同上，#293 已实现）：有 serde 错误时带，没有就不带；`BindingError`、`ProtocolError` 的 `source()` 也返回它。
 4. **C++ 要不要提供解析 cause 的辅助函数。** 倾向不提供，C++ 没有 JSON 依赖，调用方自己解析 `json()`。
+5. **错误 JSON 要不要加大小和脱敏边界（§9）。** 两种做法：
+   - A（倾向）：只限大小，不改文字。`SourceError` 每层 `message` 最多 1 KiB（按字符边界截断，末尾加 `…`）；`TypeValidation.value` 序列化后超过 16 KiB 时写 `null`，`message` 末尾注明原大小。消息里已有的 serde 文字不变，调用方按 §9 把错误 JSON 当作请求、响应体看待。
+   - B：在 A 之外，serde_json 的 data 类错误（`classify() == Category::Data`）构造 `SourceError` 和消息时只留类别和位置（`invalid data at line L column C`），不留引用的值。代价是 `InvalidParams`、`InvalidWireJson`、响应解析失败的消息文字改变，丢掉 `expected u32` 这类提示。
 
 ## 11. 兼容性
 
-- 错误名、错误码不变；消息文字只有一处变化：传输错误先去掉 URL，reqwest 原来的 `for url (…)` 不再出现在消息里（§9）。
-- JSON 新增可选字段 `cause`：按 `docs/error-model.md` 属于兼容扩展。
-- Rust API 是破坏性变更：六个字符串变体改为结构体变体，`InvalidToolInput.cause` 类型变化，`FetchError` 的载荷类型变化，新增变体 `TypeValidation`（对 `AiMuxError` 穷尽匹配的代码要加一支）。写入 CHANGELOG 的 Breaking。
-- `recording` 域 payload 的 `source` → `cause`（若采纳 §10 问题 2）。
+不只是新增可选字段，下面每一条都写入 CHANGELOG 的 Breaking：
+
+- **错误名、错误码不变。** 新增 `AI_TypeValidationError`，与 `InvalidResponseData` 共用错误码 3，只作为 cause 出现。
+- **消息文字**：只有传输和下载错误变化，reqwest 原来的 `for url (…)` 不再出现（§9）。只按消息匹配的调用方要改。
+- **wire JSON 的形状变化**：
+  - `InvalidToolInput.cause` 从字符串变为错误对象（`AI_JSONParseError` 或 `AI_TypeValidationError`），按字符串读它的代码要改。
+  - `recording` 域 `Init`、`OpenFile`、`Spawn` 的 `source` 字符串改为 `cause: { message, cause? }`（§10 问题 2），`recording-*.json` 黄金样例随之改变。
+  - 其余是新增可选字段 `cause`，按 `docs/error-model.md` 属于兼容扩展；旧绑定读到它会保留或忽略。
+- **Rust API**：六个字符串变体改为结构体变体；`InvalidToolInput.cause` 类型变化；`FetchError` 的载荷类型变化；新增变体 `TypeValidation`（对 `AiMuxError` 穷尽匹配的代码要加一支）；`BindingError::InvalidWireJson`、`ResultSerialization`、`ProtocolError::InvalidParams` 改为带 `cause` 的结构体变体。
+- **绑定**：Node 的 `error.cause`、Python 的 `__cause__`、Java 的 `getCause()`、Go 的 `Unwrap()` 从空变为有值，`Retry` 的是最后一次尝试（§7）；C++ `aimux::check` 改抛 `aimux::NativeError`（`std::runtime_error` 的子类，原来的 `catch` 仍然有效）。
+
+### 11.1 与其他 RFC 的关系
+
+- **RFC-0044（#279）**：L7 把共享错误枚举放进 `aimux-provider`。`ErrorCause`、`SourceError` 和 `AiMuxError` 在同一个文件（`aimux-core/src/error.rs`），随它一起搬，不单独定归属；本文写 `aimux-core` 只是因为基线还没拆分。RFC-0044 也写明每个错误补 `cause` 另开小 PR，不放进拆分步骤，与本文的三个 PR 一致。
+- **RFC-0048（#325）**：schema 1、2 读取删除，见 §8；回放引擎的 `FetchError::Other` 载荷随 §4.3 变为 `SourceError`。
+- **#349**：信封去掉 `retryAfterMs` 和时钟（`project_with_clock`、`Projected`）。§5.1 的信封结构和 §5.4 以它合并前的 master 为准；#349 合并后信封是 `{kind, code, message, error}`，cause 的规则不变。#293 和 #349 都改 `aimux-ops/src/envelope.rs`，后合并的一个解决冲突。
 
 ## 12. 实施
 
