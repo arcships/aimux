@@ -3,7 +3,7 @@ import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import { api } from '../api/client'
-import type { Recording } from '@aimux/types/Recording'
+import type { Recording } from '@aimux/types'
 import Button from '../components/ui/Button.vue'
 import Input from '../components/ui/Input.vue'
 import Textarea from '../components/ui/Textarea.vue'
@@ -138,8 +138,8 @@ async function doImport() {
 function traceMetaOf(r: Recording): WireMeta {
   return {
     callId: r.callId,
-    sessionId: r.sessionId,
-    step: r.step,
+    sessionId: r.sessionId ?? undefined,
+    step: r.step ?? undefined,
     outcome: String(r.outcome?.status ?? '').toLowerCase(),
   }
 }

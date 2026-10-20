@@ -9,6 +9,8 @@
 #   go        go vet + go test (needs local-ci-setup.sh)
 #   java      gradle test (needs local-ci-setup.sh; LD_LIBRARY_PATH set)
 #   flutter   flutter test + analyze (needs --with-flutter setup)
+#   codegen   generated files and manifest digest check
+#   dto       DTO vectors for installed language toolchains
 #
 # Usage:
 #   scripts/local-ci.sh                 # everything installed
@@ -56,6 +58,44 @@ need() { # need <cmd> <hint>
 }
 
 cd "$REPO"
+
+# ── generated contracts ────────────────────────────────────────────────────
+if want codegen; then
+  section "codegen: generated files + manifest digest"
+  if cargo run -p aimux-codegen -- --check; then
+    pass "codegen"
+  else
+    fail "codegen"
+  fi
+fi
+
+if want dto; then
+  section "dto: installed language toolchains"
+  languages=()
+  for language in node python go java dart swift; do
+    tool="$language"
+    [ "$language" = python ] && tool=python3
+    if ! command -v "$tool" >/dev/null 2>&1 \
+       || { [ "$language" = java ] && ! command -v javac >/dev/null 2>&1; }; then
+      printf 'skip dto %s (missing toolchain)\n' "$language"
+      continue
+    fi
+    languages+=("$language")
+  done
+  dto_ready=1
+  case " ${languages[*]} " in
+    *" go "*)
+      cargo build -p aimux-ffi --release --quiet || dto_ready=0
+      export CGO_LDFLAGS="${CGO_LDFLAGS:--L${CARGO_TARGET_DIR:-$REPO/target}/release}"
+      ;;
+  esac
+  if [ "$dto_ready" -eq 1 ] && need python3 "dto" \
+     && python3 scripts/check_dto_vectors.py "${languages[@]}"; then
+    pass "dto"
+  else
+    fail "dto"
+  fi
+fi
 
 # ── rust ───────────────────────────────────────────────────────────────────
 if want rust; then

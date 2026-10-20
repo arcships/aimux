@@ -1,13 +1,14 @@
 """Envelope-only tests run without a native extension or provider transport."""
-import importlib.util
+import importlib
 from pathlib import Path
+import sys
+import types
 import unittest
 
-spec = importlib.util.spec_from_file_location(
-    'ops_errors', Path(__file__).parents[1] / 'python/aimux/_errors.py',
-)
-e = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(e)
+package = types.ModuleType('_aimux_error_tests')
+package.__path__ = [str(Path(__file__).parents[1] / 'python/aimux')]
+sys.modules[package.__name__] = package
+e = importlib.import_module(package.__name__ + '._errors')
 
 
 def envelope(payload, kind='aimux', code=1, **extra):
@@ -86,6 +87,11 @@ class Errors(unittest.TestCase):
         error = e.from_envelope(envelope(payload))
         self.assertIs(type(error), e.AimuxError)
         self.assertIs(error.error, payload)
+
+    def test_opaque_provider_data_is_not_an_exception(self):
+        data = {'name': 'provider-object', 'value': 18446744073709551615}
+        error = e.from_envelope(envelope(dict(API, data=data)))
+        self.assertIs(error.data, data)
 
 
 if __name__ == '__main__':

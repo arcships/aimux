@@ -51,7 +51,7 @@ pub enum ProtocolError {
     HandleExhausted,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ErrorDomain {
     AiMux,
@@ -62,14 +62,16 @@ pub enum ErrorDomain {
 
 /// Keep the payload open so newer error variants, provider data, and explicit
 /// JSON nulls survive decoding and re-encoding by an older adapter.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
 pub struct ErrorEnvelope {
     pub kind: ErrorDomain,
     pub code: i32,
     pub message: String,
     pub error: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "u64")]
     pub retry_after_ms: Option<u64>,
 }
 

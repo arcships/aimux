@@ -163,10 +163,8 @@ its own, ...), it is case 2: add its own package next to `groq/` and
 - **A generator may stay in `scripts/` only if its output carries a
   "GENERATED — do not edit" header and CI runs it with `--check`.** Today
   that is `gen_providers_doc.py` (the `contract-tests`
-  job).
-  `gen_ts_types.py` regenerates the ts-rs TypeScript
-  types through `cargo test -p aimux-core --lib export` (the export tests
-  are the gate).
+  job). Binding DTOs are written by `cargo run -p aimux-codegen`; CI
+  checks them with `--check` and `python3 scripts/check_dto_vectors.py`.
 - `docs/api/providers.md` is the single source of truth for provider counts
   (#177). Never hand-write a provider count anywhere else — link to the
   page (the README states the total once, with a date, next to that link).

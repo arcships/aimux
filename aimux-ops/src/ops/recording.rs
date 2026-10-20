@@ -21,29 +21,29 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode as params};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 enum CapturePolicy {
     Full,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum BackendConfig {
     Ring { capacity: Option<usize> },
     Jsonl { directory: PathBuf },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateRecorderParams {
     backend: BackendConfig,
     capture_policy: CapturePolicy,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct EmptyParams {}
 
@@ -191,17 +191,17 @@ fn invalid(message: impl Into<String>) -> OpsError {
     OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 struct RecorderHandleResult {
     handle: HandleId,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 struct RecorderExport {
     jsonl: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -336,8 +336,8 @@ fn export(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
 const fn descriptor(
     name: &'static str,
     global: bool,
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     side_effects: bool,
     source_symbols: &'static [&'static str],
 ) -> OpDescriptor {
@@ -366,8 +366,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "recorder.create",
         true,
-        "aimux_ops::ops::recording::CreateRecorderParams",
-        "aimux_ops::ops::recording::RecorderHandleResult",
+        TypeRef::of::<CreateRecorderParams>(),
+        TypeRef::of::<RecorderHandleResult>(),
         true,
         &[
             "aimux_init_recording",
@@ -378,32 +378,32 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "recorder.attach",
         false,
-        "aimux_ops::ops::recording::EmptyParams",
-        "()",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<()>(),
         true,
         &["aimux_init_recording"],
     ),
     descriptor(
         "recorder.stop",
         false,
-        "aimux_ops::ops::recording::EmptyParams",
-        "()",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<()>(),
         true,
         &["aimux_recording_stop"],
     ),
     descriptor(
         "recorder.flush",
         false,
-        "aimux_ops::ops::recording::EmptyParams",
-        "()",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<()>(),
         true,
         &["aimux_recording_flush", "aimux_recording_try_flush"],
     ),
     descriptor(
         "recorder.stats",
         false,
-        "aimux_ops::ops::recording::EmptyParams",
-        "aimux_ops::ops::recording::RecorderStats",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<RecorderStats>(),
         false,
         &[
             "RingRecorder::len",
@@ -414,8 +414,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "recorder.export",
         false,
-        "aimux_ops::ops::recording::EmptyParams",
-        "aimux_ops::ops::recording::RecorderExport",
+        TypeRef::of::<EmptyParams>(),
+        TypeRef::of::<RecorderExport>(),
         true,
         &["RingRecorder::export_jsonl", "JsonlRecorder::path"],
     ),

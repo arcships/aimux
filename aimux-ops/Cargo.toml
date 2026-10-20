@@ -6,6 +6,7 @@ license.workspace = true
 description = "Transport-independent operation dispatch for aimux bindings"
 
 [dependencies]
+schemars = { workspace = true }
 aimux-core = { workspace = true }
 aimux-providers = { workspace = true }
 aimux-provider-utils = { workspace = true, features = ["ws"] }

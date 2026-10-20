@@ -1,0 +1,36 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o",
+  "requestId": "req-dto-1",
+  "sessionId": "session-dto",
+  "callId": "call-dto-1",
+  "sentAtUnixMs": 1767225600000,
+  "lcpTokenUpper": 32,
+  "ttftMs": 125,
+  "fingerprint": {
+    "bodyHash": "a3d1",
+    "lenBytes": 128,
+    "blockSize": 4096,
+    "blockHashes": [
+      "a3d1"
+    ],
+    "tokenEstimate": 32
+  },
+  "usage": {
+    "inputTotal": 120,
+    "inputNoCache": 20,
+    "cacheRead": 100,
+    "outputTotal": 3,
+    "outputText": 3,
+    "raw": {
+      "cached_tokens": 100,
+      "extra": null
+    }
+  },
+  "responseCacheHeaders": {
+    "x-cache-status": "hit"
+  },
+  "requestCacheHints": {
+    "requestedWrite": false
+  }
+}

@@ -1,15 +1,17 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.ErrorEnvelope;
+
 import com.fasterxml.jackson.databind.JsonNode;
 
 /** AI SDK-aligned errors, selected by error.name in the envelope. */
 public abstract class AimuxException extends NativeException {
-    AimuxException(JsonNode envelope) { super(envelope); }
+    AimuxException(ErrorEnvelope envelope) { super(envelope); }
     public final boolean isRetryable() { return getError().path("isRetryable").asBoolean(false); }
     public final int getStatusCode() { return getError().path("statusCode").asInt(-1); }
 
-    static AimuxException decode(JsonNode envelope) {
-        switch (envelope.path("error").path("name").asText()) {
+    static AimuxException decode(ErrorEnvelope envelope) {
+        switch (envelope.getError().path("name").asText()) {
             case "AI_Error": return new OtherError(envelope);
             case "AI_JSONParseError": return new JSONParseError(envelope);
             case "AI_InvalidResponseDataError": return new InvalidResponseDataError(envelope);
@@ -37,73 +39,73 @@ public abstract class AimuxException extends NativeException {
     }
 
     public static final class OtherError extends AimuxException {
-        OtherError(JsonNode envelope) { super(envelope); }
+        OtherError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class JSONParseError extends AimuxException {
-        JSONParseError(JsonNode envelope) { super(envelope); }
+        JSONParseError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidResponseDataError extends AimuxException {
-        InvalidResponseDataError(JsonNode envelope) { super(envelope); }
+        InvalidResponseDataError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ToolCallNotFoundForApprovalError extends AimuxException {
-        ToolCallNotFoundForApprovalError(JsonNode envelope) { super(envelope); }
+        ToolCallNotFoundForApprovalError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidArgumentError extends AimuxException {
-        InvalidArgumentError(JsonNode envelope) { super(envelope); }
+        InvalidArgumentError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidPromptError extends AimuxException {
-        InvalidPromptError(JsonNode envelope) { super(envelope); }
+        InvalidPromptError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class TokenExpiredError extends AimuxException {
-        TokenExpiredError(JsonNode envelope) { super(envelope); }
+        TokenExpiredError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class UnsupportedFunctionalityError extends AimuxException {
-        UnsupportedFunctionalityError(JsonNode envelope) { super(envelope); }
+        UnsupportedFunctionalityError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class NoSuchModelError extends AimuxException {
-        NoSuchModelError(JsonNode envelope) { super(envelope); }
+        NoSuchModelError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class NoSuchProviderError extends AimuxException {
-        NoSuchProviderError(JsonNode envelope) { super(envelope); }
+        NoSuchProviderError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class APICallError extends AimuxException {
-        APICallError(JsonNode envelope) { super(envelope); }
+        APICallError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class TimeoutError extends AimuxException {
-        TimeoutError(JsonNode envelope) { super(envelope); }
+        TimeoutError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class RequestAbortedError extends AimuxException {
-        RequestAbortedError(JsonNode envelope) { super(envelope); }
+        RequestAbortedError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class RetryError extends AimuxException {
-        RetryError(JsonNode envelope) { super(envelope); }
+        RetryError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class NoSuchToolError extends AimuxException {
-        NoSuchToolError(JsonNode envelope) { super(envelope); }
+        NoSuchToolError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class InvalidToolInputError extends AimuxException {
-        InvalidToolInputError(JsonNode envelope) { super(envelope); }
+        InvalidToolInputError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ToolCallRepairError extends AimuxException {
-        ToolCallRepairError(JsonNode envelope) { super(envelope); }
+        ToolCallRepairError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class NoOutputGeneratedError extends AimuxException {
-        NoOutputGeneratedError(JsonNode envelope) { super(envelope); }
+        NoOutputGeneratedError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class LoadAPIKeyError extends AimuxException {
-        LoadAPIKeyError(JsonNode envelope) { super(envelope); }
+        LoadAPIKeyError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class LoadSettingError extends AimuxException {
-        LoadSettingError(JsonNode envelope) { super(envelope); }
+        LoadSettingError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class MissingToolResultsError extends AimuxException {
-        MissingToolResultsError(JsonNode envelope) { super(envelope); }
+        MissingToolResultsError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ToolChoiceViolationError extends AimuxException {
-        ToolChoiceViolationError(JsonNode envelope) { super(envelope); }
+        ToolChoiceViolationError(ErrorEnvelope envelope) { super(envelope); }
     }
     /** An unrecognized variant, retaining its complete envelope. */
     public static final class Unknown extends AimuxException {
-        Unknown(JsonNode envelope) { super(envelope); }
+        Unknown(ErrorEnvelope envelope) { super(envelope); }
     }
 }

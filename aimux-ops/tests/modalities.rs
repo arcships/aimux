@@ -176,11 +176,11 @@ fn manifest_uses_canonical_paths_and_complete_modality_metadata() {
         let descriptor = dispatch::descriptor(name).unwrap();
         assert_eq!(descriptor.allowed_handle_kinds, &[kind]);
         assert_eq!(
-            descriptor.request_type,
+            (descriptor.request_type.id)().into_owned(),
             format!("aimux_core::{module}_model::{prefix}CallOptions")
         );
         assert_eq!(
-            descriptor.result_type,
+            (descriptor.result_type.id)().into_owned(),
             format!("aimux_core::{module}_model::{prefix}Result")
         );
         assert_eq!(
@@ -203,7 +203,10 @@ fn manifest_uses_canonical_paths_and_complete_modality_metadata() {
         assert_eq!(descriptor.result_ownership, "owned");
         assert_eq!(descriptor.retry_owner, "core");
         let manifest = aimux_ops::manifest::manifest();
-        for ty in [descriptor.request_type, descriptor.result_type] {
+        for ty in [
+            (descriptor.request_type.id)().into_owned(),
+            (descriptor.result_type.id)().into_owned(),
+        ] {
             let found = manifest["types"]
                 .as_array()
                 .unwrap()
