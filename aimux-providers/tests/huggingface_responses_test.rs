@@ -1478,9 +1478,9 @@ async fn should_warn_about_tool_messages() {
     assert_eq!(features, vec!["tool messages"]);
 }
 
-/// Not the upstream expectation: for a function_call with an output, asserts
-/// two content items and no tool-result. Upstream expects a tool-result too;
-/// full case: src/huggingface/tests/responses/responses_language_model.rs.
+/// Checks the content kinds and values of upstream `should handle function
+/// call tool responses`; full case:
+/// src/huggingface/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn should_handle_function_call_tool_responses() {
     let server = MockServer::start().await;
@@ -1534,9 +1534,8 @@ async fn should_handle_function_call_tool_responses() {
         .await
         .expect("should succeed");
 
-    // content: tool-call, text — a client-executed `function_call` carries no
-    // output, so there is no paired ToolResult.
-    assert_eq!(result.content.len(), 2);
+    // content: tool-call, tool-result (the item has an output), text.
+    assert_eq!(result.content.len(), 3);
     match &result.content[0] {
         GenerateContent::ToolCall(RawToolCall {
             tool_call_id,
@@ -1551,10 +1550,26 @@ async fn should_handle_function_call_tool_responses() {
         other => panic!("expected ToolCall at [0], got {other:?}"),
     }
     match &result.content[1] {
+        GenerateContent::ToolResult(ToolResult {
+            tool_call_id,
+            tool_name,
+            result,
+            ..
+        }) => {
+            assert_eq!(tool_call_id, "call_123");
+            assert_eq!(tool_name, "getWeather");
+            assert_eq!(
+                result,
+                &Value::String(r#"{"temperature": "72°F", "condition": "sunny"}"#.into())
+            );
+        }
+        other => panic!("expected ToolResult at [1], got {other:?}"),
+    }
+    match &result.content[2] {
         GenerateContent::Text { text, .. } => {
             assert_eq!(text, "The weather in New York is 72°F and sunny.");
         }
-        other => panic!("expected Text at [1], got {other:?}"),
+        other => panic!("expected Text at [2], got {other:?}"),
     }
 }
 
