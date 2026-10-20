@@ -15,7 +15,7 @@ use aimux_core::shared::FileBytes;
 use aimux_provider_utils::HttpBody;
 
 use super::config::AnthropicModelConfig;
-use super::options::CANONICAL;
+use super::language_model_options::CANONICAL;
 
 /// The beta header value for the Anthropic Files API.
 const FILES_BETA_HEADER: &str = "files-api-2025-04-14";

@@ -10,7 +10,7 @@ package = "@ai-sdk/anthropic"
 
 [[anthropic.files]]
 upstream = "src/anthropic-api.ts"
-rust = "anthropic/types.rs"
+rust = "anthropic/api.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -23,7 +23,7 @@ reason = "no Message Batches API (#275 Anthropic Message Batches)"
 
 [[anthropic.files]]
 upstream = "src/anthropic-error.ts"
-rust = "anthropic/mod.rs"
+rust = "anthropic/error.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -46,14 +46,14 @@ ts-only = [
 
 [[anthropic.files]]
 upstream = "src/anthropic-language-model-options.ts"
-rust = "anthropic/options.rs"
+rust = "anthropic/language_model_options.rs"
 status = "mapped"
 
 [anthropic.files.tests]
 
 [[anthropic.files]]
 upstream = "src/anthropic-language-model.ts"
-rust = "anthropic/model.rs"
+rust = "anthropic/language_model.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -63,7 +63,7 @@ sub-feature = [
 
 [[anthropic.files]]
 upstream = "src/anthropic-message-metadata.ts"
-rust = "anthropic/types.rs"
+rust = "anthropic/message_metadata.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -87,7 +87,7 @@ sub-feature = [
 
 [[anthropic.files]]
 upstream = "src/anthropic-provider.ts"
-rust = "anthropic/mod.rs"
+rust = "anthropic/provider.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -100,14 +100,14 @@ reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工�
 
 [[anthropic.files]]
 upstream = "src/convert-anthropic-usage.ts"
-rust = "anthropic/usage.rs"
+rust = "anthropic/convert_usage.rs"
 status = "mapped"
 
 [anthropic.files.tests]
 
 [[anthropic.files]]
 upstream = "src/convert-to-anthropic-prompt.ts"
-rust = "anthropic/convert.rs"
+rust = "anthropic/convert_to_prompt.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -119,7 +119,7 @@ reason = "a prepareStep helper for multi-step calls; aimux core is single-step (
 
 [[anthropic.files]]
 upstream = "src/get-cache-control.ts"
-rust = "anthropic/cache_control.rs"
+rust = "anthropic/get_cache_control.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -140,7 +140,7 @@ status = "mapped"
 
 [[anthropic.files]]
 upstream = "src/map-anthropic-stop-reason.ts"
-rust = "anthropic/convert.rs"
+rust = "anthropic/map_stop_reason.rs"
 status = "mapped"
 
 [anthropic.files.tests]
@@ -154,14 +154,14 @@ status = "mapped"
 
 [[anthropic.files]]
 upstream = "src/skills/anthropic-skills-api.ts"
-rust = "anthropic/skills.rs"
+rust = "anthropic/skills/skills_api.rs"
 status = "mapped"
 
 [anthropic.files.tests]
 
 [[anthropic.files]]
 upstream = "src/skills/anthropic-skills.ts"
-rust = "anthropic/skills.rs"
+rust = "anthropic/skills/skills.rs"
 status = "mapped"
 
 [anthropic.files.tests]

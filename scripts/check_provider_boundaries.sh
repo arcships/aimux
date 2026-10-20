@@ -13,7 +13,8 @@
 #   5. The builder-era compat types and the placeholder key stay removed.
 #   6. The Anthropic family (anthropic, anthropic_aws, anthropic on Vertex)
 #      keeps no builder-era `AnthropicConfig` state, and the canonical
-#      providerOptions key is spelled once, in `anthropic/options.rs`.
+#      providerOptions key is spelled once, in
+#      `anthropic/language_model_options.rs`.
 #   7. Google, Vertex and Bedrock keep no builder-era config state, the SigV4
 #      shim stays deleted, and their providerOptions / providerMetadata keys
 #      are spelled once, in `google/options.rs` and `bedrock/options.rs`.
@@ -174,25 +175,28 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 # ── Rule 6: the Anthropic family reads its settings only through the model config ─
 #
 # No `AnthropicConfig` / `body_overrides` / `api_key_source` / `from_env`, and
-# the providerOptions namespace goes through `options::anthropic_options` /
+# the providerOptions namespace goes through
+# `language_model_options::anthropic_options` /
 # `CANONICAL`: a `"anthropic"` literal anywhere else would read or write a key
 # that ignores the provider's custom name.
 anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic_model.rs'
 rule6_hits="$(
     # shellcheck disable=SC2086
+    # The vendor tests are skipped: test names say `from_env`, and the older
+    # ports spell the key as upstream's fixtures do.
     grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
-        $anthropic_family --include='*.rs' || true
+        $anthropic_family --include='*.rs' --exclude-dir=tests || true
 )"
 violation 'Anthropic family reads builder-era AnthropicConfig state' "$rule6_hits"
 rule6b_hits="$(
     # shellcheck disable=SC2086
-    { grep -rnE '"anthropic"' $anthropic_family --include='*.rs' || true; } |
-        grep -v '^aimux-providers/src/anthropic/options\.rs:' |
+    { grep -rnE '"anthropic"' $anthropic_family --include='*.rs' --exclude-dir=tests || true; } |
+        grep -v '^aimux-providers/src/anthropic/language_model_options\.rs:' |
         # Comments may quote it (upstream test names do).
         grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' ||
         true
 )"
-violation '"anthropic" literal outside aimux-providers/src/anthropic/options.rs (use options::CANONICAL / anthropic_options)' "$rule6b_hits"
+violation '"anthropic" literal outside aimux-providers/src/anthropic/language_model_options.rs (use language_model_options::CANONICAL / anthropic_options)' "$rule6b_hits"
 
 # ── Rule 7: Google, Vertex and Bedrock read their settings through the model config ─
 #
