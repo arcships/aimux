@@ -14,7 +14,7 @@
 //! Cases that are not here (`should extract text response`,
 //! `should extract tool calls`, `should stream text deltas` and
 //! `should handle unparsable stream parts`) are ported in
-//! `tests/cohere_upstream_e2e_test.rs`.
+//! `tests/it/cohere/upstream_e2e.rs`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;

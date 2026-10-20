@@ -1,8 +1,6 @@
 //! Selected end-to-end cases from @ai-sdk/cohere 4.0.52.
 
-#[path = "common/mock_fetch.rs"]
-mod mock_fetch;
-
+use crate::mock_fetch::{Canned, MockFetch};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
@@ -15,7 +13,6 @@ use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, Usage};
 use aimux_providers::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use futures::StreamExt;
-use mock_fetch::{Canned, MockFetch};
 use serde_json::{Value, json};
 
 fn provider(fetch: &std::sync::Arc<MockFetch>) -> CohereProvider {
@@ -407,7 +404,7 @@ mod do_stream {
     }
 }
 
-/// Embed request body, float vectors, usage and raw response of one call; the upstream case itself is in cohere_embedding_test.rs.
+/// Embed request body, float vectors, usage and raw response of one call; the upstream case itself is in embedding_model.rs.
 #[tokio::test]
 async fn embed_values() {
     let fixture = embedding_fixture();

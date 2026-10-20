@@ -4,7 +4,6 @@
 //! (`reference/ai/packages/cohere/src/reranking/cohere-reranking-model.ts`).
 
 use async_trait::async_trait;
-use serde::Deserialize;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -12,50 +11,12 @@ use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
-use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 
 use crate::shared::EndpointConfig;
 
-/// Cohere provider-specific reranking options.
-#[derive(Debug, Clone, Default)]
-struct CohereRerankingOptions {
-    max_tokens_per_doc: Option<serde_json::Number>,
-    priority: Option<serde_json::Number>,
-}
-
-fn parse_cohere_reranking_options(
-    provider_options: Option<&SharedProviderOptions>,
-) -> Result<CohereRerankingOptions, AiMuxError> {
-    let cohere = super::options::cohere_options(provider_options);
-    let number_option = |key: &str| -> Result<Option<serde_json::Number>, AiMuxError> {
-        cohere
-            .and_then(|options| options.get(key))
-            .map(|value| match value {
-                Value::Number(number) => Ok(number.clone()),
-                _ => Err(AiMuxError::InvalidArgument(format!("Invalid cohere.{key}"))),
-            })
-            .transpose()
-    };
-    Ok(CohereRerankingOptions {
-        max_tokens_per_doc: number_option("maxTokensPerDoc")?,
-        priority: number_option("priority")?,
-    })
-}
-
-/// The response from the Cohere `/rerank` endpoint.
-#[derive(Debug, Deserialize)]
-struct CohereRerankingResponse {
-    #[serde(default)]
-    id: Option<String>,
-    results: Vec<CohereRerankingResult>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CohereRerankingResult {
-    index: u32,
-    relevance_score: f64,
-}
+use super::reranking_api::CohereRerankingResponse;
+use super::reranking_model_options::parse_cohere_reranking_options;
 
 /// A Cohere reranking model.
 pub struct CohereRerankingModel {
@@ -125,7 +86,7 @@ impl RerankingModel for CohereRerankingModel {
             exchange.request(exchange.url("/rerank"), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<CohereRerankingResponse>(),
-            super::cohere_failed_response_handler(),
+            super::super::error::cohere_failed_response_handler(),
         )
         .await?;
 
