@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses and the Codex subscription stream honor
+  `include_raw_chunks`: each SSE chunk is sent as `StreamPart::Raw` before
+  the parts made from it, as the AI SDK's Open Responses model and aimux's
+  OpenAI Responses stream do. Both ignored the option.
 - Presets of vendors with an AI SDK package follow its
   `supportsStructuredOutputs`: Together AI sends a `json_schema` response
   format only for `deepseek-ai/DeepSeek-V4-Flash-0731`, Moonshot (`moonshotai`
