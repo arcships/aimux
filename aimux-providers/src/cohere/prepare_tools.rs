@@ -97,6 +97,3 @@ pub fn prepare_tools(
         tool_warnings,
     }
 }
-
-#[cfg(test)]
-mod tests;

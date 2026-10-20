@@ -1,7 +1,7 @@
 //! Ports of `src/reranking/cohere-reranking-model.test.ts` from
 //! `@ai-sdk/cohere@4.0.52`.
 //!
-//! Only the cases that `tests/it/cohere/upstream_e2e.rs` does not already
+//! Only the cases that `upstream_e2e.rs` does not already
 //! cover are here: the first request case of each describe is ported there.
 //!
 //! Harness differences from the TypeScript (expectations are unchanged):
@@ -13,14 +13,14 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingResult,
 };
 use aimux_core::shared::{SharedProviderOptions, Warning};
-use aimux_providers::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const RERANKING_FIXTURE: &str = include_str!("fixtures/cohere-reranking.1.json");
 

@@ -14,11 +14,12 @@
 //! Cases that are not here (`should extract text response`,
 //! `should extract tool calls`, `should stream text deltas` and
 //! `should handle unparsable stream parts`) are ported in
-//! `tests/it/cohere/upstream_e2e.rs`.
+//! `upstream_e2e.rs`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use crate::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{FilePart, LanguageModelMessage, TextPart, UserPart};
 use aimux_core::options::{CallOptions, ResponseFormat};
@@ -27,11 +28,10 @@ use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, LanguageModelV4ToolChoice, Tool};
 use aimux_core::types::ReasoningEffort;
 use aimux_provider_utils::HeaderMapOpt;
-use aimux_providers::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const MODEL: &str = "command-r-plus";
 const TEXT_FIXTURE: &str = include_str!("fixtures/cohere-text.json");

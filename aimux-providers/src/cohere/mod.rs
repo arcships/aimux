@@ -28,3 +28,6 @@ pub use embedding_model::CohereEmbeddingModel;
 pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
 pub use provider::{CohereProvider, CohereProviderSettings, cohere, create_cohere};
 pub use reranking::CohereRerankingModel;
+
+#[cfg(test)]
+mod tests;

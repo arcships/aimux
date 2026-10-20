@@ -225,6 +225,3 @@ fn join_text_parts(content: &[AssistantPart]) -> String {
         .collect::<Vec<_>>()
         .join("")
 }
-
-#[cfg(test)]
-mod tests;

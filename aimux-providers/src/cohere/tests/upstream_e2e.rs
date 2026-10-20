@@ -1,6 +1,7 @@
 //! Selected end-to-end cases from @ai-sdk/cohere 4.0.52.
 
-use crate::mock_fetch::{Canned, MockFetch};
+use crate::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
@@ -11,7 +12,6 @@ use aimux_core::shared::Warning;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::FunctionTool;
 use aimux_core::types::{FinishReasonUnified, Usage};
-use aimux_providers::cohere::{CohereProvider, CohereProviderSettings, create_cohere};
 use futures::StreamExt;
 use serde_json::{Value, json};
 
