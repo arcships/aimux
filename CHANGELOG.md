@@ -1195,6 +1195,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `supports_mask_inputs: false` (also in the ops capabilities), as
   `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
   every id.
+- Gemini Live transcription (Google and Vertex) closed by the server before
+  the input audio ended fails with `InvalidResponseData` reading
+  `… Live transcription WebSocket closed unexpectedly before finishing (code
+  1011, reason: internal error).`, as `@ai-sdk/google` 4.0.87 and
+  `@ai-sdk/google-vertex` 5.0.100 do; it used to pass on the socket's
+  `websocket closed by peer (…)` API call error.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not

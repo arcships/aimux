@@ -155,6 +155,28 @@ fn abort_error(abort: &Option<AbortSignal>) -> AiMuxError {
         .unwrap_or_else(|| AiMuxError::Aborted("request aborted".into()))
 }
 
+/// Start of the error [`WsConnection::next`] yields for a close frame.
+const PEER_CLOSE: &str = "websocket closed by peer";
+
+/// The close frame behind a [`WsConnection::next`] error: `Some(Some((code,
+/// reason)))` for a close frame with a payload, `Some(None)` for one without,
+/// `None` for any other error.
+#[must_use]
+pub fn peer_close(error: &AiMuxError) -> Option<Option<(u16, String)>> {
+    let AiMuxError::ApiCall(error) = error else {
+        return None;
+    };
+    let detail = error.message.strip_prefix(PEER_CLOSE)?;
+    if detail.is_empty() {
+        return Some(None);
+    }
+    let (code, reason) = detail
+        .strip_prefix(" (code ")?
+        .strip_suffix(')')?
+        .split_once(": ")?;
+    Some(Some((code.parse().ok()?, reason.to_owned())))
+}
+
 fn ws_error(
     url: &str,
     msg: impl std::fmt::Display,
@@ -767,7 +789,7 @@ impl WsConnection {
                             .unwrap_or_default();
                         return Some(Err(ws_error(
                             &self.url,
-                            format!("websocket closed by peer{detail}"),
+                            format!("{PEER_CLOSE}{detail}"),
                             None,
                         )));
                     }
