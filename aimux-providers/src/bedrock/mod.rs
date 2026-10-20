@@ -389,6 +389,17 @@ impl Fetch for BedrockAuthFetch {
     }
 }
 
+/// The process default transport, looked up on every request, as upstream
+/// reads `globalThis.fetch` per call (amazon-bedrock-sigv4-fetch.ts:38, :129).
+struct ProcessDefaultFetch;
+
+#[async_trait]
+impl Fetch for ProcessDefaultFetch {
+    async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, FetchError> {
+        default_fetch().fetch(request).await
+    }
+}
+
 /// Create an Amazon Bedrock provider.
 ///
 /// # Errors
@@ -414,7 +425,9 @@ pub fn create_amazon_bedrock(
     });
 
     let credentials_auth = auth.clone();
-    let inner = settings.fetch.unwrap_or_else(default_fetch);
+    let inner = settings
+        .fetch
+        .unwrap_or_else(|| Arc::new(ProcessDefaultFetch));
     let fetch: FetchFunction = Arc::new(BedrockAuthFetch {
         signing: SigV4Fetch::new(
             inner.clone(),

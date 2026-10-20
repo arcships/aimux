@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock with no `fetch` setting uses the process default transport
+  current at each request, as its settings document and the AI SDK does with
+  `globalThis.fetch`, instead of the one current when the provider was
+  created; a later `set_default_transport` now reaches existing providers and
+  their chat, embedding, image and reranking models.
 - Amazon Bedrock's warning for `maxOutputTokens` dropped under Nova 2 high
   reasoning names the model (`maxOutputTokens is not supported by <model>
   when high reasoning is enabled and will be ignored`), as the AI SDK does;

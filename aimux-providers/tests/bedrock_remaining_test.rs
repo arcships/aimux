@@ -1422,3 +1422,75 @@ fn convert_unsupported_file_functionality_names() {
         "tool result file data of type \"text\""
     );
 }
+
+/// With no `fetch` setting each request uses the process default transport
+/// current when it is made, not the one at creation: upstream reads
+/// `globalThis.fetch` per call (amazon-bedrock-sigv4-fetch.ts:38, :129). The
+/// default is pointed at a closed port while the provider is created, then at
+/// a plain-HTTP proxy that answers the request.
+#[serial]
+#[tokio::test]
+async fn provider_default_transport_is_looked_up_per_request() {
+    use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            set_default_transport(ReqwestFetch::default());
+        }
+    }
+    let proxy = |port: u16| ProxyConfig {
+        http_url: Some(format!("http://127.0.0.1:{port}")),
+        ..ProxyConfig::default()
+    };
+
+    let _restore = Restore;
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        closed.local_addr().unwrap().port(),
+    )));
+    drop(closed);
+    let model = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some("http://example.com".into()),
+        api_key: Some(Resolvable::Value("test-token".into())),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat("anthropic.claude-3-5-sonnet-20240620-v1:0");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        listener.local_addr().unwrap().port(),
+    )));
+    let served = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        let mut chunk = [0u8; 4096];
+        while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+            let n = stream.read(&mut chunk).await.unwrap();
+            head.extend_from_slice(&chunk[..n]);
+        }
+        let body = ok_converse_body().to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+             connection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+        String::from_utf8_lossy(&head)
+            .lines()
+            .next()
+            .unwrap()
+            .to_string()
+    });
+
+    model
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("the request goes through the current default transport");
+    assert_eq!(
+        served.await.unwrap(),
+        "POST http://example.com/model/anthropic.claude-3-5-sonnet-20240620-v1%3A0/converse HTTP/1.1"
+    );
+}
