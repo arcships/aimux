@@ -2836,3 +2836,29 @@ async fn response_errors_report_status_400() {
     assert!(!api_error.is_retryable);
     assert_eq!(api_error.data, Some(error));
 }
+
+/// TS: `doGenerate` (open-responses-language-model.ts:428-441): a response
+/// without `output` fails as an API call error with status 500, not
+/// retryable.
+#[tokio::test]
+async fn missing_output_is_an_api_call_error() {
+    let server = MockServer::start().await;
+    mock_json(
+        &server,
+        json!({ "id": "resp_1", "status": "incomplete",
+                "incomplete_details": { "reason": "content_filter" } }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await;
+    let Err(aimux_core::error::AiMuxError::ApiCall(api_error)) = result else {
+        panic!("expected an API call error, got {result:?}");
+    };
+    assert_eq!(
+        api_error.message,
+        "Responses API returned no output (content_filter)"
+    );
+    assert_eq!(api_error.status_code, Some(500));
+    assert!(!api_error.is_retryable);
+}

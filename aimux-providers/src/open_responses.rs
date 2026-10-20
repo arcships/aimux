@@ -301,8 +301,9 @@ impl LanguageModel for OpenResponsesModel {
             build_request_body(&self.model_id, options, &self.provider_options_name);
         let body = exchange.transform_body(body);
 
+        let url = exchange.url("/responses");
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(exchange.url("/responses"), options),
+            exchange.request(url.clone(), options),
             body.clone(),
             open_responses_successful_response_handler(),
             open_responses_failed_response_handler(),
@@ -325,7 +326,13 @@ impl LanguageModel for OpenResponsesModel {
                 Some(d) => format!("Responses API returned no output ({d})"),
                 None => "Responses API returned no output".to_string(),
             };
-            return Err(AiMuxError::InvalidResponseData(message));
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(500),
+                response_body: Some(raw.to_string()),
+                response_headers: Some(response_headers),
+                is_retryable: false,
+                ..ApiCallError::new(message, url, body)
+            })));
         }
 
         // Build content array from output items.

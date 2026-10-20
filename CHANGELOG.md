@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses fails a response without `output` as an API call error
+  with status 500, not retryable, as the AI SDK does. It was an
+  `InvalidResponseData` error.
+
 - Open Responses fails a successful response whose body carries an `error`
   with status 400 and the error object as `data`, as the AI SDK does when
   no `getResponseErrorMetadata` is configured. It reported the HTTP status
