@@ -48,7 +48,7 @@ pub fn convert_prompt_to_bedrock(
     convert_prompt(prompt, false)
 }
 
-fn convert_prompt(
+pub(super) fn convert_prompt(
     prompt: &LanguageModelPrompt,
     is_mistral: bool,
 ) -> Result<(Vec<Value>, Vec<Value>), aimux_core::AiMuxError> {
