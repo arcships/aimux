@@ -145,7 +145,7 @@ fn location_host(location: &str) -> String {
 }
 
 /// A location that goes into a host name: one DNS label
-/// (google-vertex-provider-base.ts:230-244).
+/// (@ai-sdk/google-vertex@5.0.100 google-vertex-provider-base.ts:230-245).
 pub(crate) fn check_location(location: &str) -> Result<(), AiMuxError> {
     if !is_valid_hostname_part(location) {
         return Err(AiMuxError::InvalidArgument(
@@ -333,7 +333,7 @@ impl Resolver {
         let base_url = self.base_url(express_key.is_some(), publisher)?;
         let headers = self.headers(express_key.as_deref()).await?;
         let headers = match publisher {
-            // google-vertex-provider-base.ts:270-276 appends the package part.
+            // google-vertex-provider-base.ts:283-289 appends the package part.
             Publisher::Google => {
                 let package = crate::shared::aisdk_pins::GOOGLE_VERTEX;
                 let mut headers = normalize_headers(headers).into_iter().collect();
@@ -347,7 +347,7 @@ impl Resolver {
                     .collect()
             }
             // The Anthropic sub-provider passes the caller's headers as they
-            // are (google-vertex-anthropic-provider.ts:206-210).
+            // are (google-vertex-anthropic-provider.ts:216-220).
             Publisher::Anthropic => headers,
         };
         Ok(Endpoint { base_url, headers })

@@ -1,6 +1,6 @@
 //! Partner and open models on Vertex AI through its OpenAI-compatible
 //! endpoint: the `maas` and `xai` sub-providers of `@ai-sdk/google-vertex`
-//! 5.0.98 (`src/maas/google-vertex-maas-provider.ts`,
+//! 5.0.100 (`src/maas/google-vertex-maas-provider.ts`,
 //! `src/xai/google-vertex-xai-provider.ts` and their `-node` wrappers).
 //!
 //! Each is `createOpenAICompatible` over
@@ -88,7 +88,7 @@ impl std::fmt::Debug for VertexPartnerProviderSettings {
 struct PartnerBaseUrl {
     project: Option<String>,
     location: Option<String>,
-    /// MaaS picks the location's host (google-vertex-maas-provider.ts:91-106);
+    /// MaaS picks the location's host (google-vertex-maas-provider.ts:79-93, :103-118);
     /// xAI always calls the global host (google-vertex-xai-provider.ts:159-164).
     regional_host: bool,
 }
@@ -183,7 +183,7 @@ fn partner_parts(
     Ok((base_url, headers))
 }
 
-/// Upstream's `maxOutputTokensByModel` (google-vertex-maas-provider.ts:14-25):
+/// Upstream's `maxOutputTokensByModel` (google-vertex-maas-provider.ts:16-27):
 /// a default `max_tokens` for the models that need one.
 fn maas_request_body(mut body: Value) -> Value {
     let default = match body.get("model").and_then(Value::as_str) {

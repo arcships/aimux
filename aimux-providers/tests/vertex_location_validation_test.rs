@@ -1,5 +1,5 @@
 //! Port of @ai-sdk/google-vertex `src/google-vertex-location-validation.test.ts`
-//! (vercel/ai fce9210): a location that goes into a host name is one DNS
+//! (tag `@ai-sdk/google-vertex@5.0.100`, the locked version): a location that goes into a host name is one DNS
 //! label. Upstream throws when the model is created; aimux resolves the
 //! location per request, so the request fails before anything is fetched.
 //! Tests that set `GOOGLE_VERTEX_LOCATION` are serial.
