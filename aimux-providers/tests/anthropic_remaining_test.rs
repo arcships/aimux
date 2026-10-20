@@ -832,3 +832,52 @@ async fn knows_vertex_claude_4_model_ids() {
         );
     }
 }
+
+/// The AI SDK joins `anthropic-beta` in insertion order: prompt betas, then
+/// provider-option betas, tool betas, header betas, and `anthropicBeta`.
+#[tokio::test]
+async fn joins_beta_headers_in_insertion_order() {
+    let fetch = mock();
+    let model = create_anthropic(AnthropicProviderSettings {
+        headers: Some(
+            [("anthropic-beta".to_string(), Some("zz-config".to_string()))]
+                .into_iter()
+                .collect(),
+        ),
+        ..settings(&fetch)
+    })
+    .unwrap()
+    .messages("claude-3-haiku-20240307");
+    let mut opts = default_options(test_prompt());
+    opts.headers = Some(
+        [("anthropic-beta".to_string(), "bb-request".to_string())]
+            .into_iter()
+            .collect(),
+    );
+    opts.provider_options = Some(
+        provider_namespace(
+            "anthropic",
+            json!({
+                "fallbacks": "default",
+                "speed": "fast",
+                "container": { "skills": [{ "type": "anthropic", "skillId": "pptx" }] },
+                "mcpServers": [{ "type": "url", "name": "echo", "url": "https://example.com/mcp" }],
+                "anthropicBeta": ["aa-option"]
+            }),
+        )
+        .unwrap(),
+    );
+    opts.tools = Some(vec![Tool::Provider(ProviderTool {
+        id: "anthropic.web_fetch_20250910".parse().unwrap(),
+        name: "web_fetch".to_string(),
+        args: serde_json::Map::new(),
+        supports_deferred_results: None,
+    })]);
+    model.do_generate(&opts).await.unwrap();
+    assert_eq!(
+        fetch.seen()[0].headers["anthropic-beta"],
+        "mcp-client-2025-04-04,code-execution-2025-08-25,skills-2025-10-02,\
+         files-api-2025-04-14,fast-mode-2026-02-01,server-side-fallback-2026-07-01,\
+         web-fetch-2025-09-10,zz-config,bb-request,aa-option"
+    );
+}

@@ -14,7 +14,8 @@
 //! assistant message, reasoning/thinking parts, URL & base64 file parts (with
 //! PDF beta and top-level media-type sniffing), and provider-referenced files.
 
-use std::collections::{BTreeSet, HashSet};
+use indexmap::IndexSet;
+use std::collections::HashSet;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
@@ -54,7 +55,7 @@ pub struct AnthropicPromptConversion {
     /// Anthropic `messages` array.
     pub messages: Vec<Value>,
     /// Beta headers required by the conversion (e.g. `pdfs-2024-09-25`).
-    pub betas: BTreeSet<String>,
+    pub betas: IndexSet<String>,
     /// Warnings emitted while converting (e.g. unsupported reasoning metadata).
     pub warnings: Vec<Warning>,
 }
@@ -146,7 +147,7 @@ fn convert_prompt_with_validator(
 
     let mut system: Vec<Value> = Vec::new();
     let mut messages: Vec<Value> = Vec::new();
-    let mut betas: BTreeSet<String> = BTreeSet::new();
+    let mut betas: IndexSet<String> = IndexSet::new();
     let mut warnings: Vec<Warning> = Vec::new();
 
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -289,6 +290,10 @@ fn convert_prompt_with_validator(
                     betas.insert(BETA_MID_CONVERSATION_SYSTEM.to_string());
                     for (blocks, clear_at, effort, changes) in converted {
                         let mut message = json!({ "role": "system", "content": blocks });
+                        // Beta order of convert-to-anthropic-prompt.ts:273-282.
+                        if changes > 0 {
+                            betas.insert("mid-conversation-tool-changes-2026-07-01".into());
+                        }
                         if let Some(clear_at) = clear_at {
                             message["clear_at"] = clear_at;
                             betas.insert("mid-conversation-system-clear-at-2026-08-21".into());
@@ -296,9 +301,6 @@ fn convert_prompt_with_validator(
                         if let Some(effort) = effort {
                             message["output_config"] = json!({ "effort": effort });
                             betas.insert("mid-conversation-output-config-2026-07-01".into());
-                        }
-                        if changes > 0 {
-                            betas.insert("mid-conversation-tool-changes-2026-07-01".into());
                         }
                         messages.push(message);
                     }
@@ -536,7 +538,7 @@ fn apply_cc(mut block: Value, cc: Option<Value>) -> Value {
 #[allow(clippy::too_many_arguments)]
 fn convert_file_part(
     file: &FilePart,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
     validator: &mut CacheControlValidator,
     message_options: Option<&SharedProviderOptions>,
     is_last_part: bool,
@@ -676,7 +678,7 @@ fn convert_file_part(
 fn convert_tool_result(
     part: &ToolResultPart,
     validator: &mut CacheControlValidator,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
     warnings: &mut Vec<Warning>,
     is_last_part: bool,
     message_provider_options: Option<&SharedProviderOptions>,
@@ -734,7 +736,7 @@ fn convert_assistant_part(
     part: &AssistantPart,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
     is_last_part: bool,
@@ -1497,7 +1499,7 @@ fn route_file_bytes(
     full_media_type: &str,
     bytes: &[u8],
     title: Option<&str>,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
 ) -> Result<Value, AiMuxError> {
     use base64::Engine;
     match get_top_level_media_type(full_media_type) {
@@ -1546,7 +1548,7 @@ fn route_file_base64(
     b64: &str,
     bytes: &[u8],
     title: Option<&str>,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
 ) -> Result<Value, AiMuxError> {
     match get_top_level_media_type(full_media_type) {
         "image" => Ok(json!({
@@ -1588,7 +1590,7 @@ fn route_file_base64(
 fn route_file_url(
     media_type: &str,
     url: &str,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
 ) -> Result<Value, AiMuxError> {
     match get_top_level_media_type(media_type) {
         "image" => Ok(json!({ "type": "image", "source": { "type": "url", "url": url } })),
@@ -1685,7 +1687,7 @@ fn resolve_anthropic_reference(
 /// Serialize a unified tool-result payload into the Anthropic content string.
 fn resolve_tool_result_output(
     output: &ToolResultOutput,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
     warnings: &mut Vec<Warning>,
     options_name: &str,
 ) -> Result<(Value, bool), AiMuxError> {
@@ -2030,8 +2032,13 @@ pub struct RequestBodyResult {
     pub body: Value,
     pub warnings: Vec<Warning>,
     /// Beta headers (e.g. `code-execution-2025-08-25`, `mcp-client-2025-04-04`)
-    /// that must be sent on the request via the `anthropic-beta` header.
-    pub betas: BTreeSet<String>,
+    /// that must be sent on the request via the `anthropic-beta` header, in
+    /// the AI SDK's insertion order: the prompt's, the provider options', then
+    /// the tools'.
+    pub betas: IndexSet<String>,
+    /// `providerOptions.anthropic.anthropicBeta`, which the `anthropic-beta`
+    /// header carries after `betas` and the betas of the request headers.
+    pub option_betas: Vec<String>,
 }
 
 fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
@@ -2692,7 +2699,7 @@ fn apply_anthropic_tools(
     stream: bool,
     json_schema: Option<&Value>,
     caps: &ModelCapabilities,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
     warnings: &mut Vec<Warning>,
     cache_validator: &mut CacheControlValidator,
 ) -> Result<(), AiMuxError> {
@@ -2799,14 +2806,9 @@ fn apply_anthropic_tools(
     Ok(())
 }
 
-/// `providerOptions.anthropic.mcpServers` → `mcp_servers` + the
-/// `mcp-client-2025-04-04` beta header.
-fn append_anthropic_mcp_servers(
-    body: &mut Value,
-    options: &CallOptions,
-    profile: &RequestProfile,
-    betas: &mut BTreeSet<String>,
-) {
+/// `providerOptions.anthropic.mcpServers` → `mcp_servers` (its beta is
+/// added by [`provider_option_betas`]).
+fn append_anthropic_mcp_servers(body: &mut Value, options: &CallOptions, profile: &RequestProfile) {
     let Some(mcp) = anthropic_option(&options.provider_options, profile, "mcpServers") else {
         return;
     };
@@ -2850,7 +2852,6 @@ fn append_anthropic_mcp_servers(
         })
         .collect();
     body["mcp_servers"] = json!(mapped);
-    betas.insert("mcp-client-2025-04-04".to_string());
 }
 
 /// `providerOptions.anthropic.container` — programmatic tool calling (string
@@ -2861,7 +2862,6 @@ fn append_anthropic_container(
     body: &mut Value,
     options: &CallOptions,
     profile: &RequestProfile,
-    betas: &mut BTreeSet<String>,
     warnings: &mut Vec<Warning>,
 ) -> Result<(), AiMuxError> {
     let Some(container) = anthropic_option(&options.provider_options, profile, "container") else {
@@ -2905,9 +2905,6 @@ fn append_anthropic_container(
         }
         container_obj.insert("skills".to_string(), json!(skills_mapped));
         body["container"] = json!(container_obj);
-        betas.insert("code-execution-2025-08-25".to_string());
-        betas.insert("skills-2025-10-02".to_string());
-        betas.insert("files-api-2025-04-14".to_string());
 
         // Warn when skills are configured without a code execution tool.
         let has_code_exec = options
@@ -2989,7 +2986,7 @@ pub(crate) fn build_request_body_for(
     }
     let options = &parsed_options;
     let mut warnings: Vec<Warning> = Vec::new();
-    let mut betas: BTreeSet<String> = BTreeSet::new();
+    let mut betas: IndexSet<String> = IndexSet::new();
     let caps = get_model_capabilities(model_id);
 
     // Unknown-model max output tokens warning (TS L305-314): for models we do
@@ -3063,7 +3060,6 @@ pub(crate) fn build_request_body_for(
         }
         body["thinking"]["block_binding"] =
             json!({ "prefix_mismatch_behavior": binding.get("prefixMismatchBehavior") });
-        betas.insert("thinking-binding-controls-2026-08-01".to_string());
     }
 
     // Thinking-enabled post-processing (TS L651-696): default budget,
@@ -3169,6 +3165,7 @@ pub(crate) fn build_request_body_for(
 
     // Tools — provider-defined tools alongside function tools, plus the
     // required beta headers / tool warnings.
+    let mut tool_betas = IndexSet::new();
     apply_anthropic_tools(
         &mut body,
         options,
@@ -3176,17 +3173,17 @@ pub(crate) fn build_request_body_for(
         stream,
         json_tool_schema,
         &caps,
-        &mut betas,
+        &mut tool_betas,
         &mut warnings,
         &mut cache_validator,
     )?;
     warnings.extend(cache_validator.take_warnings());
 
     // providerOptions.anthropic.mcpServers → mcp_servers + beta header.
-    append_anthropic_mcp_servers(&mut body, options, profile, &mut betas);
+    append_anthropic_mcp_servers(&mut body, options, profile);
 
     // providerOptions.anthropic.container — programmatic tool calling / skills.
-    append_anthropic_container(&mut body, options, profile, &mut betas, &mut warnings)?;
+    append_anthropic_container(&mut body, options, profile, &mut warnings)?;
 
     let provider_options =
         anthropic_options_in(options.provider_options.as_ref(), &profile.options_name);
@@ -3215,14 +3212,6 @@ pub(crate) fn build_request_body_for(
             v.as_str() == Some("default") || v.as_array().is_some_and(|a| !a.is_empty())
         }) {
             body["fallbacks"] = value.clone();
-            betas.insert(
-                if value.as_str() == Some("default") {
-                    "server-side-fallback-2026-07-01"
-                } else {
-                    "server-side-fallback-2026-06-01"
-                }
-                .to_string(),
-            );
         }
         if let Some(safeguards) = provider_options
             .get("safeguards")
@@ -3240,20 +3229,12 @@ pub(crate) fn build_request_body_for(
                 })
                 .collect();
             body["safeguards"] = json!(mapped);
-            betas.insert("dangerous-tool-use-2026-09-03".to_string());
         }
         if let Some(value) = provider_options.get("taskBudget").filter(|v| !v.is_null()) {
             if body.get("output_config").is_none() {
                 body["output_config"] = json!({});
             }
             body["output_config"]["task_budget"] = value.clone();
-            betas.insert("task-budgets-2026-03-13".to_string());
-        }
-        if body.get("speed").and_then(Value::as_str) == Some("fast") {
-            betas.insert("fast-mode-2026-02-01".to_string());
-        }
-        if body.get("compaction").is_some() {
-            betas.insert("compact-2026-09-04".to_string());
         }
         if let Some(edits) = provider_options
             .get("contextManagement")
@@ -3272,14 +3253,11 @@ pub(crate) fn build_request_body_for(
                         ("excludeTools", "exclude_tools"),
                     ],
                     "clear_thinking_20251015" => &[("keep", "keep")],
-                    "compact_20260112" => {
-                        betas.insert("compact-2026-01-12".to_string());
-                        &[
-                            ("trigger", "trigger"),
-                            ("pauseAfterCompaction", "pause_after_compaction"),
-                            ("instructions", "instructions"),
-                        ]
-                    }
+                    "compact_20260112" => &[
+                        ("trigger", "trigger"),
+                        ("pauseAfterCompaction", "pause_after_compaction"),
+                        ("instructions", "instructions"),
+                    ],
                     _ => {
                         warnings.push(Warning::Other {
                             message: format!("Unknown context management strategy: {strategy}"),
@@ -3296,24 +3274,74 @@ pub(crate) fn build_request_body_for(
                 mapped.push(mapped_edit);
             }
             body["context_management"] = json!({ "edits": mapped });
-            betas.insert("context-management-2025-06-27".to_string());
         }
     }
-    if let Some(values) = anthropic_option(&options.provider_options, profile, "anthropicBeta")
+    betas.extend(
+        provider_option_betas(&body, &thinking_display)
+            .into_iter()
+            .map(str::to_string),
+    );
+    betas.extend(tool_betas);
+    let option_betas = anthropic_option(&options.provider_options, profile, "anthropicBeta")
         .and_then(|value| value.as_array().cloned())
-    {
-        betas.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
-    }
-    if thinking_display.as_ref().and_then(Value::as_str) == Some("updates") {
-        betas.insert("thinking-display-updates-2026-08-18".to_string());
-    }
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
 
     Ok(RequestBodyResult {
         uses_json_response_tool: json_tool_schema.is_some(),
         body,
         warnings,
         betas,
+        option_betas,
     })
+}
+
+/// The betas the provider options in `body` need, in the order
+/// `anthropic-language-model.ts` adds them (L963-1037).
+fn provider_option_betas(body: &Value, thinking_display: &Option<Value>) -> Vec<&'static str> {
+    let has = |key: &str| body.get(key).is_some_and(|value| !value.is_null());
+    let compact_edit = body
+        .pointer("/context_management/edits")
+        .and_then(Value::as_array)
+        .is_some_and(|edits| edits.iter().any(|edit| edit["type"] == "compact_20260112"));
+    let skills = body.get("container").is_some_and(Value::is_object);
+    let fallbacks = body
+        .get("fallbacks")
+        .map(|value| value.as_str() == Some("default"));
+    [
+        (has("mcp_servers"), "mcp-client-2025-04-04"),
+        (has("safeguards"), "dangerous-tool-use-2026-09-03"),
+        (has("compaction"), "compact-2026-09-04"),
+        (has("context_management"), "context-management-2025-06-27"),
+        (compact_edit, "compact-2026-01-12"),
+        (skills, "code-execution-2025-08-25"),
+        (skills, "skills-2025-10-02"),
+        (skills, "files-api-2025-04-14"),
+        (
+            body.pointer("/output_config/task_budget").is_some(),
+            "task-budgets-2026-03-13",
+        ),
+        (body["speed"] == "fast", "fast-mode-2026-02-01"),
+        (
+            thinking_display.as_ref().and_then(Value::as_str) == Some("updates"),
+            "thinking-display-updates-2026-08-18",
+        ),
+        (
+            body.pointer("/thinking/block_binding").is_some(),
+            "thinking-binding-controls-2026-08-01",
+        ),
+        (fallbacks == Some(true), "server-side-fallback-2026-07-01"),
+        (fallbacks == Some(false), "server-side-fallback-2026-06-01"),
+    ]
+    .into_iter()
+    .filter_map(|(needed, beta)| needed.then_some(beta))
+    .collect()
 }
 
 /// Parse Anthropic stop_reason into `FinishReason`.

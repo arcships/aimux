@@ -1,6 +1,6 @@
 //! Skill uploads and version metadata from the Anthropic Skills API.
 
-use std::collections::BTreeSet;
+use indexmap::IndexSet;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -125,7 +125,11 @@ impl Skills for AnthropicSkills {
         body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
         let config = self.config.resolved().await?;
         let mut headers = config
-            .request_headers(None, &BTreeSet::from(["skills-2025-10-02".to_string()]))
+            .request_headers(
+                None,
+                &IndexSet::from(["skills-2025-10-02".to_string()]),
+                &[],
+            )
             .await?;
         headers.retain(|(name, _)| !name.eq_ignore_ascii_case("anthropic-beta"));
         headers.push((

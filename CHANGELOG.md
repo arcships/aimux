@@ -1190,6 +1190,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic joins the `anthropic-beta` header in insertion order (the
+  prompt's betas, the provider options', the tools', the provider and call
+  headers', then `anthropicBeta`), as the AI SDK does; it sorted the list.
+  `AnthropicPromptConversion::betas`, `PreparedTools::betas` and
+  `RequestBodyResult::betas` are `IndexSet`s, and `anthropicBeta` moves to
+  `RequestBodyResult::option_betas`.
 - Anthropic knows the Vertex ids `claude-sonnet-4@…` and `claude-opus-4@…`
   (64000 and 32000 max output tokens), as the AI SDK does; it took them for
   unknown models, sending 128000 `max_tokens` with an unknown-model warning.
