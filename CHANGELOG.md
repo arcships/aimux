@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock streams that fail an event-stream checksum end with
+  `@smithy/eventstream-codec`'s message, as the AI SDK does: `The prelude
+  checksum specified in the message (…) does not match the calculated CRC32
+  checksum (…)` or `The message checksum (…) did not match the expected value
+  of …`. Both were reported as `Invalid Amazon Bedrock event-stream frame`.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not

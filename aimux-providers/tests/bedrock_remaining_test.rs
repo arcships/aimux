@@ -1213,3 +1213,47 @@ async fn stream_request_body_available() {
     assert_eq!(body["messages"][0]["role"], "user");
     assert_eq!(body["inferenceConfig"]["maxTokens"], 256);
 }
+
+/// TS: "surfaces event stream decoding failures" — a frame whose message
+/// checksum does not match fails the stream with `@smithy/eventstream-codec`'s
+/// message.
+#[tokio::test]
+async fn stream_message_checksum_mismatch_error() {
+    let mut body_bytes = aimux_providers::bedrock::event_stream::encode_message(
+        "event",
+        "contentBlockDelta",
+        r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+    );
+    let last = body_bytes.len() - 4;
+    let computed = u32::from_be_bytes(body_bytes[last..].try_into().unwrap());
+    body_bytes[last..].copy_from_slice(&(computed ^ 0xff).to_be_bytes());
+    let server = MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![(
+            "content-type".into(),
+            "application/vnd.amazon.eventstream".into(),
+        )],
+        body: body_bytes,
+    }]);
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let items: Vec<_> = result.stream.collect().await;
+    let error = items
+        .iter()
+        .find_map(|item| item.as_ref().err())
+        .expect("the stream fails");
+    assert!(
+        matches!(
+            error,
+            aimux_core::AiMuxError::InvalidResponseData(message)
+                if *message == format!(
+                    "The message checksum ({computed}) did not match the expected value of {}",
+                    computed ^ 0xff
+                )
+        ),
+        "{error:?}"
+    );
+}
