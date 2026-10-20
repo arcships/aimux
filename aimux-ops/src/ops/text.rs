@@ -476,7 +476,7 @@ mod tests {
     use aimux_core::options::CallOptions;
     use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
     use aimux_core::stream_part::StreamPart;
-    use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
+    use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
     use serde_json::json;
     use std::sync::Mutex;
     use std::time::SystemTime;
@@ -786,6 +786,29 @@ mod tests {
                 .any(|v| v["choices"][0]["delta"]["content"] == "after")
         );
         assert!(events.iter().all(|v| v.get("usage").is_none()));
+    }
+
+    #[tokio::test]
+    async fn openai_stream_carries_the_reported_response_id_and_model() {
+        let mut model = MockModel::new("hi");
+        model.parts.insert(
+            1,
+            Ok(StreamPart::ResponseMetadata(ResponseMetadata {
+                id: Some("chatcmpl-upstream".into()),
+                timestamp: None,
+                model_id: Some("gpt-4o-2026-08-06".into()),
+            })),
+        );
+        let events = stream_openai(ctx(), model.entry(), request())
+            .unwrap()
+            .collect::<Vec<_>>()
+            .await;
+        let events = events.into_iter().map(Result::unwrap).collect::<Vec<_>>();
+        assert!(!events.is_empty());
+        for event in &events {
+            assert_eq!(event["id"], "chatcmpl-upstream");
+            assert_eq!(event["model"], "gpt-4o-2026-08-06");
+        }
     }
 
     #[tokio::test]
