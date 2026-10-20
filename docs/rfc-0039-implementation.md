@@ -40,7 +40,7 @@ Jev construction uses the existing public `JevConfig`/`JevProvider` constructors
    exact descriptor/mode → object controls → primary and secondary owner/kind checks
 ③ ops::<family>::handler(Ctx, Target, params)
    canonical Rust call → canonical result or business event
-④ cached ErrorEnvelope or FrameStream(event*, end) → language projection
+④ ErrorEnvelope or FrameStream(event*, end) → language projection
 ```
 
 `Target::Global` is separate from `Target::Handle(Entry)`. Only ID 0 selects
@@ -201,7 +201,7 @@ an owned `aimux_error_t*` on failure. Outputs are reset before validation.
 | `aimux_error_free(aimux_error_t*)` | Frees an owned error; NULL-safe. |
 | `aimux_error_code(const aimux_error_t*)` | Reads saved code; NULL gives 0. |
 | `aimux_error_message(const aimux_error_t*)` | Allocates saved message; embedded NUL is replaced in this display accessor. |
-| `aimux_error_json(const aimux_error_t*)` | Allocates saved full envelope; JSON preserves escaped NUL and cached hint. |
+| `aimux_error_json(const aimux_error_t*)` | Allocates saved full envelope; JSON preserves escaped NUL. |
 
 The pointer-encoded finalizer token is limited to uintptr_t width. Dart uses
 its own allocated uint64 token and native queue trampoline on 32-bit targets.
@@ -227,15 +227,15 @@ missing/null distinctions. A payload name discriminates variants sharing a
 code. AI_APICallError uses code 11, not 1; no HTTP status is invented for local
 configuration/parse failures. Unknown payloads remain available to consumers.
 
-`OpsError::Projected(Box<ProjectedError>)` caches the envelope at the first
-dispatch crossing with `Ctx.now`. C getters, stream terminals and Operation
-status reuse it. Only a direct ApiCall error derives `retryAfterMs`; a Retry
-aggregate retains its attempts without copying a hint to the outer object.
-Absent hint differs from zero. The sole core parser checks case-insensitive
-retry-after-ms, retry-after seconds and HTTP dates with checked finite,
-nonnegative conversion and truncation toward zero. Parsed invalid preferred
-numeric values stop fallback; malformed text permits the next header. The
-core legacy delegate rejects values above i64::MAX. Hints never authorize a
+`OpsError::envelope()` is a pure function of the error, so C getters, stream
+terminals and Operation status each project it on demand and agree. The envelope
+carries no derived retry hint and nothing in ops reads a clock for errors; a
+caller that needs a delay reads `error.responseHeaders`. The sole parser in core
+(case-insensitive retry-after-ms, retry-after seconds, HTTP dates, with checked
+finite, nonnegative conversion and truncation toward zero) is used by core retry
+and provider polling at the moment they wait; a parsed invalid preferred numeric
+value stops fallback, malformed text permits the next header, and the legacy
+`retry_after_hint()` rejects values above i64::MAX. Hints never authorize a
 retry; generation policy stays in core and bindings add no retry loop.
 
 | Protocol payload | Code |
@@ -354,7 +354,7 @@ are configured in `.github/workflows/release.yml` but do not establish G-e closu
 These register implementation differences against the RFC examples and original
 inventory; the canonical business error union remains owned by RFC-0042.
 
-- **D1 — Error envelope (§6.1 example):** The implementation follows RFC-0042: the outer object is `kind`, `code`, `message`, `error` and optional `retryAfterMs`; `error` is AI SDK error JSON with `name` and, where defined, `isRetryable`, with no top-level `retryable` or `type`, because RFC-0042 owns the canonical error union. The RFC-0039 §6.1 example still shows `type`; it is to be corrected to `name` when this branch is merged up with master, since the RFC file is not on this branch's base.
+- **D1 — Error envelope (§6.1 example):** The implementation follows RFC-0042: the outer object is `kind`, `code`, `message` and `error`, with no derived retry hint (read `error.responseHeaders`, as with the AI SDK; #334); `error` is AI SDK error JSON with `name` and, where defined, `isRetryable`, with no top-level `retryable` or `type`, because RFC-0042 owns the canonical error union. The RFC-0039 §6.1 example still shows `type`; it is to be corrected to `name` when this branch is merged up with master, since the RFC file is not on this branch's base.
 - **D2 — Decision (§3.1–§3.2):** `Decision`, `decision.decide` and `decision.capabilities` extend the original eight-model, 70-operation table to nine model kinds and 72 operations because the source baseline already exposes Decision and its Jev constructors.
 - **D3 — Error registrations (§6.1):** Protocol errors use fixed codes 300..306, AiMux codes extend through 20, code 4 stays reserved, code 3 aliases three variants and code 6 aliases two variants, because existing numeric meanings must survive the ABI replacement.
 - **D4 — Finalizer ABI (§4.1):** `aimux_handle_finalizer(void *token)` is the fourteenth export because GC cleanup needs a nonblocking pointer-signature entry rather than a cast of `aimux_drop(uint64_t)`.
@@ -362,15 +362,15 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **D6 — Operation polling (§3.2), resolved:** `operation.next` is registered as `poll`, matching the RFC. JSON dispatch and the native polling primitive still use the same Operation service and part/ended/timeout results.
 - **D7 — Binary input (§3.2):** `operation.push` is BinaryPush-only and the synchronous native admission path returns ResourceLimit when full, because it must reserve input capacity before copying without waiting on an async queue; Rust `Operation::push` retains asynchronous backpressure.
 - **D8 — Foreign handles (§3.3):** Foreign-owner lookup returns InvalidHandle with no `actual` kind and the same message as an unknown ID, while foreign `handle.drop` succeeds without effect, because the owner boundary must not disclose resources.
-- **D9 — Retry-hint parser (§6.2):** The single parser lives in `aimux_core::error::retry_after_ms_from_headers` and is re-exported by ops because core retry policy cannot depend on an adapter-layer crate; a parsed invalid preferred number blocks fallback, while malformed text permits it.
+- **D9 — Retry-hint parser (§6.2):** The single parser lives in `aimux_core::error::retry_after_ms_from_headers` and is used by core retry and provider polling; ops neither re-exports it nor derives a hint, because the envelope carries none (#334). A parsed invalid preferred number blocks fallback, while malformed text permits it.
 - **D10 — Current capability scope (§11.4):** Stdio, host fetch/token/model/telemetry callbacks, raw one-shot binary upload, native passthrough and skills/Batch/Evaluation operations are not exposed because they require separate capabilities beyond the existing engine.
 
 - **D11 — D8 delivery order (§0.1.7), delivered:** The maintainer accepted business Schema/DTO generation after the ops/ABI switch, with ts-rs and `scripts/gen_ts_types.py` retained as the transitional business generation chain. This was a delivery-order exception. #268 delivered D8: `aimux-codegen` generates the business schemas and every binding's DTOs, and ts-rs, `scripts/gen_ts_types.py` and their drift gate are removed. Generated types are checked by `cargo run -p aimux-codegen -- --check` (CI step "Ops manifest and generated artifact drift") and by `python3 scripts/check_dto_vectors.py <languages>`.
 - **D12 — Schema-2 retention (§7.1):** The maintainer accepted schema-2 read/write retention until a separate follow-up PR after #268. That PR migrates to schema 3 and removes schema-2 and earlier reading under RFC-0041, and it lands before the release; the switch must not remove it early or turn it into a permanent compatibility path.
-- **D13 — Integers above 2^53 in Node (RFC-0042 §7.2):** RFC-0042 §7.2 says a binding must not silently round an arbitrary JSON number to a float and that convenience projections validate explicitly. JavaScript numbers are IEEE doubles, so Node rounds integers above 2^53 when it decodes and re-encodes a DTO and does not validate them. The DTO vector checker therefore compares Node values as doubles (`DOUBLE_NUMBERS` in `scripts/check_dto_vectors.py`); `contract-tests/dto/ErrorEnvelope/001.json` holds 2^64-1 in `retryAfterMs`, which Node re-encodes as 18446744073709552000. Handle and sequence ids are decimal strings and are not affected.
+- **D13 — Integers above 2^53 in Node (RFC-0042 §7.2):** RFC-0042 §7.2 says a binding must not silently round an arbitrary JSON number to a float and that convenience projections validate explicitly. JavaScript numbers are IEEE doubles, so Node rounds integers above 2^53 when it decodes and re-encodes a DTO and does not validate them. The DTO vector checker therefore compares Node values as doubles (`DOUBLE_NUMBERS` in `scripts/check_dto_vectors.py`). No current DTO vector holds an integer above 2^53 (the only one, 2^64-1 in the envelope's former retry hint, left with that field in #334), so the carve-out is dormant until one is added. Handle and sequence ids are decimal strings and are not affected.
 - **D14 — Single-value tags in Go:** Go decodes a single-value (literal) tag field as an ordinary string and accepts any value, while Java, Dart, Swift and Python reject any other value.
-- **D15 — u64 above 2^63-1 in Java and Dart:** Java and Dart hold integers as signed 64-bit values and cannot represent u64 above 2^63-1. The vector `ErrorEnvelope/001.json` is excluded for them (`INT64_NUMBERS` in `scripts/check_dto_vectors.py`); every other vector runs in all six checked languages.
-- **D16 — Explicit nulls in Node:** The Node binding exposes TypeScript declarations without a codec, so a value keeps exactly what `JSON.parse` produced: an explicit `null` on an ordinary optional field stays `null`, while the Rust types and the Go, Java, Swift, Dart and Python codecs fold it to an omitted key. The DTO vector checker compares Node with the input vector instead of a vector's `expect` file (`DECLARATION_ONLY` in `scripts/check_dto_vectors.py`); `contract-tests/dto/ErrorEnvelope/002.json` covers the case.
+- **D15 — u64 above 2^63-1 in Java and Dart:** Java and Dart hold integers as signed 64-bit values and cannot represent u64 above 2^63-1. The checker excludes any vector holding such a value for them (`INT64_NUMBERS` in `scripts/check_dto_vectors.py`); no current vector does, so every vector runs in all six checked languages.
+- **D16 — Explicit nulls in Node:** The Node binding exposes TypeScript declarations without a codec, so a value keeps exactly what `JSON.parse` produced: an explicit `null` on an ordinary optional field stays `null`, while the Rust types and the Go, Java, Swift, Dart and Python codecs fold it to an omitted key. The DTO vector checker compares Node with the input vector instead of a vector's `expect` file (`DECLARATION_ONLY` in `scripts/check_dto_vectors.py`). No current vector covers the case: `ErrorEnvelope/002.json` did, through the envelope's former optional retry hint, and was removed with it in #334.
 - **D17 — Untagged unions are ordered (§7.3):** Tagged unions are disjoint `oneOf` branches keyed by a literal tag, but unions that serde decodes untagged (for example `ToolChoice`, a mode string or a tool object) are `anyOf` marked `x-aimux-codec: ordered-untagged`, and every codec takes the first branch that decodes, in schema order, exactly as serde does. Making them disjoint would change the wire shape the AI SDK defines.
 - **D18 — JNA declarations (§9.3):** The Java binding's JNA declarations for the 14 C ABI primitives (`bindings/java/src/main/java/ai/arcships/aimux/AimuxFFI.java`) are written by hand; `AbiContractTest` pins the exact set of 14 primitives and the portable `size_t` width and exercises them against the C fixture library; the generator owns the header, constants and DTOs. The primitive set is small and frozen with the ABI version, so a generated copy would add an emitter without removing a source of drift.
 - **D19 — Reference docs (§10.1, §10.2):** API reference pages under `docs/api/` are handwritten prose that links to the generated type files; only `docs/api/providers.md` is generated, by `scripts/gen_providers_doc.py`, and checked by the CI step "Providers doc generator drift". `aimux-codegen --check` therefore covers every generated code, schema and constant file but no document table.

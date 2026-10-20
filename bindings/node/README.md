@@ -42,9 +42,9 @@ cancel the underlying work. Explicit cancellation can interrupt pending reads
 and capacity waits. A forgotten live iterator can retain its bounded queue;
 close it explicitly when it is no longer needed.
 
-Errors expose the shared `kind`, numeric `code`, `message`, `error` payload and
-optional `retryAfterMs`. The AI SDK payload retains `name`, `isRetryable` and
-other variant fields. Data error events and end-frame error envelopes stay
+Errors expose the shared `kind`, numeric `code`, `message` and `error` payload.
+The AI SDK payload retains `name`, `isRetryable`, `responseHeaders` (read
+`retry-after` there, as with the AI SDK) and other variant fields. Data error events and end-frame error envelopes stay
 plain DTOs. Raw and typed call/next rejections use `AimuxError`.
 
 `close()` is idempotent. Recorder persistence is explicit: await `flush()` and

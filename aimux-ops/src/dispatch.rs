@@ -2,7 +2,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::OnceLock;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use futures::{Stream, StreamExt};
 use serde_json::Value;
@@ -16,7 +16,6 @@ use crate::op::{Cancellation, OpDescriptor, OpMode};
 pub struct Ctx {
     pub owner: Owner,
     pub abort: Option<aimux_core::AbortSignal>,
-    pub now: fn() -> SystemTime,
 }
 
 #[derive(Clone)]
@@ -111,7 +110,7 @@ impl<'a> Dispatcher<'a> {
     }
 
     /// # Errors
-    /// Returns a cached projection for validation, ownership, mode or runtime failure.
+    /// Returns the error for validation, ownership, mode or runtime failure.
     pub async fn call(
         &self,
         ctx: Ctx,
@@ -119,14 +118,9 @@ impl<'a> Dispatcher<'a> {
         name: &str,
         params: Value,
     ) -> Result<Value, OpsError> {
-        let now = ctx.now;
-        let result = async {
-            let (descriptor, handler) = self.registration(name)?;
-            self.call_registered(ctx, handle, descriptor, handler, params)
-                .await
-        }
-        .await;
-        result.map_err(|error| error.project_with_clock(now))
+        let (descriptor, handler) = self.registration(name)?;
+        self.call_registered(ctx, handle, descriptor, handler, params)
+            .await
     }
 
     async fn call_registered(
@@ -177,8 +171,7 @@ impl<'a> Dispatcher<'a> {
         name: &str,
         params: Value,
     ) -> Result<FrameStream, OpsError> {
-        let now = ctx.now;
-        let result = (|| {
+        (|| {
             let (descriptor, handler) = self.registration(name)?;
             if descriptor.mode != OpMode::Stream {
                 return Err(invalid_op(name));
@@ -194,9 +187,8 @@ impl<'a> Dispatcher<'a> {
                 .get_or_insert_with(aimux_core::AbortSignal::new)
                 .clone();
             let events = handler(ctx, target, params)?;
-            Ok(FrameStream::new(events, Some(abort), now))
-        })();
-        result.map_err(|error: OpsError| error.project_with_clock(now))
+            Ok(FrameStream::new(events, Some(abort)))
+        })()
     }
 }
 
@@ -325,17 +317,14 @@ pub enum PollResult {
 
 /// Admit raw input without a JSON/base64 round trip or an allocation on rejection.
 /// # Errors
-/// Returns InvalidHandle, InvalidState or ResourceLimit, projected once.
+/// Returns InvalidHandle, InvalidState or ResourceLimit.
 pub fn operation_push(ctx: &Ctx, op: HandleId, data: &[u8]) -> Result<(), OpsError> {
-    let result = (|| {
-        let Entry::Operation(operation) =
-            HandleRegistry::global().get(ctx.owner, op, &[HandleKind::Operation])?
-        else {
-            return Err(invalid_op("operation.push"));
-        };
-        operation.try_push(data)
-    })();
-    result.map_err(|error| error.project_with_clock(ctx.now))
+    let Entry::Operation(operation) =
+        HandleRegistry::global().get(ctx.owner, op, &[HandleKind::Operation])?
+    else {
+        return Err(invalid_op("operation.push"));
+    };
+    operation.try_push(data)
 }
 
 /// Poll the same service used by JSON operation.next.
@@ -346,16 +335,12 @@ pub async fn operation_next(
     op: HandleId,
     timeout: Duration,
 ) -> Result<PollResult, OpsError> {
-    let result = async {
-        let Entry::Operation(operation) =
-            HandleRegistry::global().get(ctx.owner, op, &[HandleKind::Operation])?
-        else {
-            return Err(invalid_op("operation.next"));
-        };
-        next_operation(&operation, timeout).await
-    }
-    .await;
-    result.map_err(|error| error.project_with_clock(ctx.now))
+    let Entry::Operation(operation) =
+        HandleRegistry::global().get(ctx.owner, op, &[HandleKind::Operation])?
+    else {
+        return Err(invalid_op("operation.next"));
+    };
+    next_operation(&operation, timeout).await
 }
 pub(crate) async fn next_operation(
     operation: &crate::operation::Operation,

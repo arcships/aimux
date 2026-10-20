@@ -60,8 +60,9 @@ copy/decode failures are latched once, signal abort, and are reported after nati
 return. No callback exception crosses the C boundary.
 
 `OpsException` preserves the complete error envelope, including unknown payload
-names/fields and optional `retryAfterMs`. AI SDK payloads keep their `name`, flat
-fields and `isRetryable`; the binding does not invent HTTP status or retry policy.
+names/fields. AI SDK payloads keep their `name`, flat fields, `isRetryable` and
+`responseHeaders`; read `retry-after` there, as with the AI SDK. The binding does
+not invent HTTP status or retry policy.
 `TranscriptionOperation` wraps the new push/next primitives and typed
 part/ended/timeout states. `ToolCallRepair` exposes the three pure DTO ops.
 `DecisionModel` exposes `decision.decide` and `decision.capabilities` over an

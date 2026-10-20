@@ -1,6 +1,6 @@
 //! Built-in handle capabilities exercised through shared dispatch.
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use aimux_core::download::PlannedDownload;
 use aimux_core::trace::RingTraceStore;
@@ -38,11 +38,7 @@ impl Drop for TestOwner {
 }
 
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 fn id(value: &Value) -> HandleId {
     serde_json::from_value(value["handle"].clone()).unwrap()
@@ -50,17 +46,16 @@ fn id(value: &Value) -> HandleId {
 fn invalid_params(result: Result<Value, OpsError>) {
     let error = result.unwrap_err();
     assert!(matches!(
-        error.unprojected(),
+        &error,
         OpsError::Protocol(ProtocolError::InvalidParams(_))
     ));
-    assert!(matches!(error, OpsError::Projected(_)));
 }
 fn invalid_handle(result: Result<Value, OpsError>, actual: Option<HandleKind>) -> Value {
     let error = result.unwrap_err();
     assert!(
-        matches!(error.unprojected(), OpsError::Binding(BindingError::InvalidHandle { actual: found, .. }) if *found == actual)
+        matches!(&error, OpsError::Binding(BindingError::InvalidHandle { actual: found, .. }) if *found == actual)
     );
-    serde_json::to_value(error.envelope(SystemTime::UNIX_EPOCH)).unwrap()
+    serde_json::to_value(error.envelope()).unwrap()
 }
 
 #[tokio::test]
@@ -298,12 +293,12 @@ async fn credential_creation_is_future_and_never_exports_supplied_material() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error.unprojected(),
+        &error,
         OpsError::AiMux(AiMuxError::UnsupportedFunctionality(_))
     ));
     assert_eq!(error.code(), 8);
     assert!(
-        !serde_json::to_string(&error.envelope(SystemTime::UNIX_EPOCH))
+        !serde_json::to_string(&error.envelope())
             .unwrap()
             .contains("secret-sentinel")
     );
@@ -317,7 +312,7 @@ async fn credential_creation_is_future_and_never_exports_supplied_material() {
         .unwrap_err();
     assert_eq!(error.code(), 301);
     assert!(
-        !serde_json::to_string(&error.envelope(SystemTime::UNIX_EPOCH))
+        !serde_json::to_string(&error.envelope())
             .unwrap()
             .contains("secret-sentinel")
     );
@@ -386,7 +381,7 @@ async fn middleware_validates_control_fields_and_handle_wire_format() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error.unprojected(),
+        &error,
         OpsError::AiMux(AiMuxError::UnsupportedFunctionality(_))
     ));
 }

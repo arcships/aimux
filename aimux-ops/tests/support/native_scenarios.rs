@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use aimux_core::error::ApiCallError;
 use aimux_core::{AbortSignal, AiMuxError};
@@ -152,7 +152,6 @@ pub(super) async fn observe(mut input: Value) -> Observation {
     let ctx = Ctx {
         owner: Owner::CProcess,
         abort: Some(abort.clone()),
-        now: SystemTime::now,
     };
     let registry = HandleRegistry::default();
     let table = [(&DESCRIPTOR, Handler::Stream(accept))];
@@ -172,8 +171,7 @@ pub(super) async fn observe(mut input: Value) -> Observation {
     let mut frames = match result {
         Ok(frames) => frames,
         Err(error) => {
-            observed.preflight_error =
-                Some(serde_json::to_value(error.envelope(SystemTime::UNIX_EPOCH)).unwrap());
+            observed.preflight_error = Some(serde_json::to_value(error.envelope()).unwrap());
             SOURCE.lock().unwrap().take();
             return observed;
         }

@@ -14,26 +14,26 @@ migration is separate. Decision coverage is provided by `decision.decide` /
 | `aimux_error_free` | Same-name RFC §4.1 primitive, implemented only in abi.rs | abi_primitives; tests/c/primitives.c and tests/c/raii.cpp |
 | `aimux_error_code` | Same-name RFC §4.1 primitive, implemented only in abi.rs | abi_primitives; tests/c/primitives.c and tests/c/raii.cpp |
 | `aimux_error_message` | Same-name RFC §4.1 primitive, implemented only in abi.rs | abi_primitives; tests/c/primitives.c and tests/c/raii.cpp |
-| `aimux_error_status` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_retry_ms` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_retryable` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_provider_code` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_provider_message` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_response_body` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_url` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_request_body_values` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_response_headers` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_provider_data` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_retry_reason` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_retry_count` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_retry_error_at` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_model_id` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_model_type` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_provider_id` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_tool_name` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_available_tools` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_tool_input` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_original_error` | aimux_error_json: ErrorEnvelope.error / retryAfterMs; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_status` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_retry_ms` | aimux_error_json: ErrorEnvelope.error.responseHeaders (`retry-after`, as with the AI SDK); no derived hint, no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_retryable` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_provider_code` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_provider_message` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_response_body` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_url` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_request_body_values` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_response_headers` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_provider_data` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_retry_reason` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_retry_count` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_retry_error_at` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_model_id` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_model_type` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_provider_id` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_tool_name` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_available_tools` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_tool_input` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_original_error` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
 | `aimux_openai_new` | provider.create → provider.model (or provider.files for Files) | ops/provider.rs tests; ops_matrix; handle_lifecycle |
 | `aimux_openai_new_with_base` | provider.create → provider.model (or provider.files for Files) | ops/provider.rs tests; ops_matrix; handle_lifecycle |
 | `aimux_anthropic_new` | provider.create → provider.model (or provider.files for Files) | ops/provider.rs tests; ops_matrix; handle_lifecycle |

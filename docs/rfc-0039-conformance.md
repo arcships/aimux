@@ -45,7 +45,7 @@ unless explicitly labelled as a file-level reference.
 | dart | `bindings/flutter/test/native_runtime_test.dart#provider/model handles retain children after provider close` |
 | dartcredit | `bindings/flutter/test/stream_bridge_test.dart#pause exhausts credits, resume preserves every event` |
 | dartfinalizer | `bindings/flutter/test/aimux_test.dart#typed token trampoline queues cleanup off the finalizer thread` |
-| date | `aimux-ops/tests/retry_hint.rs#fixed_clock_http_date_golden_vectors` |
+| date | `aimux-core/src/error.rs#retry_after_ms_golden_vectors` |
 | digest | `aimux-ops/tests/manifest_contract.rs#digest_is_stable_and_hashes_the_complete_canonical_manifest` |
 | dispatch | `aimux-ops/tests/dispatch_contract.rs#global_target_and_mode_preflight_are_explicit_and_projected` |
 | error | `aimux-ops/tests/error_envelope_golden.rs#codes_preserve_existing_groups_and_have_disjoint_ranges` |
@@ -71,7 +71,7 @@ unless explicitly labelled as a file-level reference.
 | matrix | `aimux-ops/tests/ops_matrix.rs#every_manifest_op_crosses_every_kind_and_invalid_handle_state` |
 | metadata | `aimux-ops/tests/manifest_contract.rs#metadata_and_owned_control_schemas_are_complete` |
 | names | `aimux-ops/tests/manifest_contract.rs#names_are_case_sensitive_and_have_no_implicit_aliases` |
-| nested | `aimux-ops/tests/retry_hint.rs#retry_nesting_has_no_top_level_hint_and_retains_attempt_hints` |
+| nested | `aimux-core/src/error.rs#hint_is_checked_and_belongs_to_the_api_call` |
 | node | `bindings/node/__test__/event_loop.spec.ts#event loop: timers advance with bounded drift during a native call` |
 | noderealm | `bindings/node/__test__/contract.native.ts` (file-level reference: foreign-Env rejection and environment teardown test) |
 | null | `aimux-ops/tests/error_envelope_golden.rs#optional_payload_fields_distinguish_absent_and_explicit_null` |
@@ -99,14 +99,14 @@ unless explicitly labelled as a file-level reference.
 | replaycapabilities | `aimux-ops/tests/replay.rs#future_capabilities_return_projected_unsupported_even_with_complete_http_data` |
 | replaylive | `aimux-ops/tests/replay.rs#language_live_matches_the_existing_core_result_twice` |
 | repair | `aimux-ops/src/ops/misc.rs#context_matches_core_and_preserves_no_tools_null` |
-| auth | `aimux-ops/tests/misc.rs#invalid_auth_request_is_projected_once_without_token_values` |
+| auth | `aimux-ops/tests/misc.rs#invalid_auth_request_error_has_no_token_values` |
 | drop | `aimux-ops/tests/ops_matrix.rs#every_manifest_op_crosses_every_kind_and_invalid_handle_state` |
 | runtimeinfo | `aimux-ops/tests/runtime.rs#description_matches_the_real_manifest_and_digest` |
 | registryresolve | `aimux-ops/src/ops/registry.rs#resolution_preserves_exact_ids_and_reports_safe_source` |
 | operation | `aimux-ops/tests/operation.rs#native_binary_and_json_poll_share_the_registered_operation_service` |
 | ownership | `aimux-ops/tests/handle_lifecycle.rs#every_owner_pair_is_isolated_and_foreign_errors_reveal_nothing` |
 | poll | `aimux-ops/tests/operation.rs#a_concurrent_reader_fails_and_timeout_keeps_operation_running` |
-| projection | `aimux-ops/tests/dispatch_contract.rs#the_dispatch_projection_keeps_the_original_clock_and_cause` |
+| projection | `aimux-ops/tests/dispatch_contract.rs#the_dispatch_projection_keeps_the_cause_and_response_headers` |
 | python | `bindings/python/tests/test_ops_native.py#test_gil_heartbeat_every_blocking_call_family` |
 | pythonstream | `bindings/python/tests/test_ops_native.py#test_full_queue_close_does_not_deadlock` |
 | pythonwire | `bindings/python/tests/test_ops_native.py#test_python_serialization_errors_use_binding_domain` |
@@ -114,7 +114,7 @@ unless explicitly labelled as a file-level reference.
 | recordingschema | `aimux-core/src/recording.rs#schema_two_is_written_and_released_schemas_are_read` |
 | reserve | `aimux-ops/tests/limits.rs#oversize_is_rejected_before_payload_allocation_even_when_full` |
 | retired | `aimux-ffi/tests/exports_smoke_test.rs#retired_headers_and_session_are_absent` |
-| retry | `aimux-ops/tests/retry_hint.rs#header_precedence_golden_vectors` |
+| retry | `aimux-core/src/error.rs#retry_after_ms_golden_vectors` |
 | schema | `tools/aimux-codegen/tests/generation.rs#schemas_resolve_locally_and_validate_as_draft_2020_12` |
 | secondary | `aimux-ops/tests/dispatch_contract.rs#secondary_handles_use_the_same_owner_resolver_before_handler_entry` |
 | stream | `aimux-ops/tests/stream_terminal.rs#run_native_shared_vectors` |
@@ -227,17 +227,17 @@ unless explicitly labelled as a file-level reference.
 | R087 | §5.3 | Abort/drop never require data capacity; independent terminal slot preserves outcome; explicit consumer close ends cancelled/consumerClosed and may discard pending data. | fullcancel | met |
 | R088 | §5.3 | Swift implements lossless awaitable/bounded or background-blocking bridge; no AsyncThrowingStream drop-oldest/newest policy. | swift | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Bounded Swift implementation/tests exist; full Swift runtime/platform evidence is not established here. |
 | R089 | §5.3 | Flutter cross-isolate bridge uses credit/ack; an unbounded SendPort is not backpressure. | dartcredit | met |
-| R090 | §6.1 | Use kind/code/message/error plus optional retryAfterMs and camelCase; RFC-0039 §6.1 still shows a type payload discriminator. | error, unknown, null | met — [D1](rfc-0039-implementation.md#registered-differences-from-rfc-0039): RFC-0042 uses name and isRetryable where defined, with no top-level retryable or type; correct the RFC example to name when merged up with master (the RFC file is absent from this branch base). |
+| R090 | §6.1 | Use kind/code/message/error with no derived retry hint, and camelCase; RFC-0039 §6.1 still shows a type payload discriminator. | error, unknown, null | met — [D1](rfc-0039-implementation.md#registered-differences-from-rfc-0039): RFC-0042 uses name and isRetryable where defined, with no top-level retryable or type; correct the RFC example to name when merged up with master (the RFC file is absent from this branch base). |
 | R091 | §6.1 | Keep aimux/recording/binding/protocol domains with discriminated payloads; Node/Python parameter/serialization failures use binding, not provider API failure. | error, unknown, null | met |
 | R092 | §6.1 | Preserve current code meanings/ranges: AiMux 1–20, Recording 100–105, binding 200–206; protocol 300–306; do not reassign historic code slots. | error, unknown, null | met — registered differences D1–D4/D6–D9 apply where relevant. |
 | R093 | §6.1 | Preserve LoadApiKey/LoadSetting/provider/model/unsupported errors, Retry history, repair original/cause chains, RecordingError::Write and FFI parameter fields; never collapse to string Other. | error, unknown, null | met |
 | R094 | §6.1 | Expose HTTP status only when a response was observed; no fabricated 401/500 for key, parse or offline auth failures; preserve token-expired meaning. | error, unknown, null | met |
-| R095 | §6.1 | Preserve absent versus explicit null and missing hint versus 0; unknown errors keep their raw object/code without guessing a known subtype. | error, unknown, null | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Shared envelopes preserve unknown variants; exhaustive unknown-error preservation by every language is incomplete; no common unknown-error class is supplied. |
-| R096 | §6.1 | Project an error once with captured time; C/Node/Python share it; repeated getters must not recompute HTTP-date hint. | projection, date | met |
-| R097 | §6.2 | Capture injectable now once at first shared-dispatch error crossing. | projection, date | met |
-| R098 | §6.2 | Only ApiCall response headers derive hints; try retry-after-ms numeric, retry-after fractional seconds, then HTTP-date minus now, case-insensitively. | retry, date | met — registered differences D1–D4/D6–D9 apply where relevant. |
+| R095 | §6.1 | Preserve absent versus explicit null; unknown errors keep their raw object/code without guessing a known subtype. | error, unknown, null | gap — [G-i](rfc-0039-implementation.md#registered-gaps): Shared envelopes preserve unknown variants; exhaustive unknown-error preservation by every language is incomplete; no common unknown-error class is supplied. |
+| R096 | §6.1 | The envelope is a pure function of the error (no clock, no cached projection); C/Node/Python share it. | projection, date | met |
+| R097 | §6.2 | The envelope carries no derived retry hint; `error.responseHeaders` is the source, as in the AI SDK ([#334](https://github.com/arcships/aimux/issues/334)). | projection, date | met |
+| R098 | §6.2 | Core derives delays only from ApiCall response headers, when it retries or polls: retry-after-ms numeric, retry-after fractional seconds, then HTTP-date minus now, case-insensitively. | retry, date | met — registered differences D1–D4/D6–D9 apply where relevant. |
 | R099 | §6.2 | Accept finite nonnegative checked values, truncate milliseconds toward zero; NaN/Infinity/overflow/past dates yield no hint, never saturate; freeze negative-ms precedence by upstream golden. | retry, date | met — registered differences D1–D4/D6–D9 apply where relevant. |
-| R100 | §6.2 | Retry aggregate keeps attempt errors/hints, has no aggregate hint, and is nonretryable under existing AI SDK payload semantics; never copy the final attempt hint to the top. | nested, retry | met |
+| R100 | §6.2 | Retry aggregate keeps attempt errors and their headers, has no aggregate hint, and is nonretryable under existing AI SDK payload semantics; never copy the final attempt hint to the top. | nested, retry | met |
 | R101 | §6.2 | Hint never authorizes automatic retry; Abort/timeout do not retry; operation policy checks budget, attempts, semantic output and duplicate-charge risk. | nested, retry | met |
 | R102 | §6.2 | Use one normalized parser shared from core; no eight language-specific parsers; fixed-clock tests cover all listed numeric/date/header/nesting cases. | nested, retry | met — registered differences D1–D4/D6–D9 apply where relevant. |
 | R103 | §6.3 | Record boundary-specific classification: preflight proves no provider execution; runtime failure retains classification/attempts and prior data. | stream | met |

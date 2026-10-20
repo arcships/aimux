@@ -6,7 +6,6 @@ export class AimuxError extends Error implements ErrorEnvelope {
   readonly kind: ErrorDomain
   readonly code: number
   readonly error: ErrorEnvelope['error']
-  declare readonly retryAfterMs?: number
 
   constructor(envelope: ErrorEnvelope) {
     super(envelope.message)
@@ -14,7 +13,6 @@ export class AimuxError extends Error implements ErrorEnvelope {
     this.kind = envelope.kind
     this.code = envelope.code
     this.error = envelope.error
-    if (envelope.retryAfterMs !== undefined) this.retryAfterMs = envelope.retryAfterMs
   }
 }
 

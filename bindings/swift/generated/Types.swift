@@ -2422,14 +2422,12 @@ public struct ErrorEnvelope: Codable, Equatable, Sendable {
     public var error: JSONValue
     public var kind: ErrorDomain
     public var message: String
-    public var retryAfterMs: UInt64?
 
-    public init(code: Int32, error: JSONValue, kind: ErrorDomain, message: String, retryAfterMs: UInt64? = nil) {
+    public init(code: Int32, error: JSONValue, kind: ErrorDomain, message: String) {
         self.code = code
         self.error = error
         self.kind = kind
         self.message = message
-        self.retryAfterMs = retryAfterMs
     }
 }
 

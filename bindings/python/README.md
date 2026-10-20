@@ -73,11 +73,12 @@ interpreter; monkeypatching Python modules cannot forge an owner. Handle GC
 queues teardown, and owner teardown queues release of remaining resources.
 PyO3 0.22 limits subinterpreter imports; this package does not extend support.
 
-`AimuxError` subclasses preserve the shared `envelope`, `error`, `kind`, `code`
-and optional `retry_after_ms`. Payload attributes use snake_case. Retry
+`AimuxError` subclasses preserve the shared `envelope`, `error`, `kind` and
+`code`. Payload attributes use snake_case; a retry delay is read from
+`error.response_headers` (for example `retry-after`), as with the AI SDK. Retry
 `errors` retain typed attempts in order; `last_error` is the last attempt.
 Typed causes also appear as `__cause__`. Recording, binding and protocol errors
-have separate bases. Python never recomputes retry hints or performs retries.
+have separate bases. Python never performs retries.
 
 `ABI_VERSION`, `OPS_VERSION`, `manifest` and `manifest_digest()` are public.
 Import checks the exact ABI/ops versions and digest pinned in the generated

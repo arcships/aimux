@@ -1378,8 +1378,6 @@ class ErrorEnvelope(_Wire):
     error: Any = Field(alias="error")
     kind: "_dto.ErrorDomain" = Field(alias="kind")
     message: str = Field(alias="message")
-    retry_after_ms: Optional[U64] = Field(default=None, alias="retryAfterMs")
-    _omit_null: ClassVar[frozenset[str]] = frozenset(["retry_after_ms"])
 
 
 Fallback = TypeAliasType("Fallback", Literal["on-error", "none"])

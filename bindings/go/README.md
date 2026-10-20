@@ -60,9 +60,9 @@ A late cancellation preserves the recorded native outcome. Always close an
 abandoned stream.
 
 Native errors support `errors.As` with `*aimux.Error`. `Envelope` contains the
-domain, code, message, complete error payload and optional retry hint;
-`RawEnvelope` also retains unknown envelope fields. The binding adds no retry
-policy. Handles support concurrent calls and idempotent Close. Use Close for
+domain, code, message and complete error payload; a retry delay is read from
+`error.responseHeaders`, as with the AI SDK. `RawEnvelope` also retains unknown
+envelope fields. The binding adds no retry policy. Handles support concurrent calls and idempotent Close. Use Close for
 normal cleanup; the fallback finalizer only enqueues native cleanup.
 
 ## Build and test

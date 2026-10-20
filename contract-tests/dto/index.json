@@ -288,11 +288,6 @@
     "file": "ErrorEnvelope/001.json"
   },
   {
-    "type": "ErrorEnvelope",
-    "file": "ErrorEnvelope/002.json",
-    "expect": "ErrorEnvelope/002.expect.json"
-  },
-  {
     "type": "FileBytes",
     "file": "FileBytes/001.json"
   },

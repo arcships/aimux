@@ -1,7 +1,5 @@
 //! Family gates use real dispatch, owner resolution and canonical core queries.
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime};
 
 use aimux_core::trace::{RingTraceStore, TraceFilter, TraceRecord, TraceSink};
 use aimux_ops::dispatch::{self, Ctx};
@@ -11,11 +9,7 @@ use aimux_ops::op::{Cancellation, OpMode, RequestBytePolicy, Scope};
 use serde_json::{Value, json};
 
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 
 struct Trace {
@@ -155,9 +149,9 @@ async fn sessions_export_and_idempotent_clear_preserve_ffi_query_semantics() {
         .await
         .unwrap_err();
     assert!(
-        matches!(error.unprojected(), OpsError::AiMux(aimux_core::AiMuxError::InvalidArgument { message, .. }) if message == "unknown session")
+        matches!(&error, OpsError::AiMux(aimux_core::AiMuxError::InvalidArgument { message, .. }) if message == "unknown session")
     );
-    let envelope = serde_json::to_value(error.envelope(SystemTime::now())).unwrap();
+    let envelope = serde_json::to_value(error.envelope()).unwrap();
     assert_eq!(envelope["kind"], "aimux");
     assert_eq!(envelope["code"], 5);
     assert_eq!(envelope["error"]["name"], "AI_InvalidArgumentError");
@@ -233,14 +227,10 @@ async fn invalid_controls_fail_before_mutation() {
             .await
             .unwrap_err();
         assert!(
-            matches!(
-                error.unprojected(),
-                OpsError::Protocol(ProtocolError::InvalidParams(_))
-            ),
+            matches!(&error, OpsError::Protocol(ProtocolError::InvalidParams(_))),
             "{op}: {error}"
         );
         assert_eq!(error.code(), 301);
-        assert!(matches!(error, OpsError::Projected(_)));
         assert_eq!(trace.store.len(), 1, "{op} mutated data on rejection");
     }
 }
@@ -298,15 +288,15 @@ async fn trace_ownership_and_drop_use_real_dispatch_without_disclosure() {
             .await
             .unwrap_err();
         assert_eq!(
-            serde_json::to_value(foreign_error.envelope(SystemTime::now())).unwrap(),
-            serde_json::to_value(unknown_error.envelope(SystemTime::now())).unwrap()
+            serde_json::to_value(foreign_error.envelope()).unwrap(),
+            serde_json::to_value(unknown_error.envelope()).unwrap()
         );
         for id in [HandleId(0), wrong] {
             let error = dispatch::call(ctx(trace.owner), id, op, params.clone())
                 .await
                 .unwrap_err();
             assert!(matches!(
-                error.unprojected(),
+                &error,
                 OpsError::Binding(BindingError::InvalidHandle { .. })
             ));
         }
@@ -334,34 +324,6 @@ async fn trace_ownership_and_drop_use_real_dispatch_without_disclosure() {
     // The retained Arc survives handle removal; no registry lock is needed.
     assert_eq!(trace.store.len(), 1);
     HandleRegistry::global().release_owner(foreign);
-}
-
-static CLOCK_CALLS: AtomicUsize = AtomicUsize::new(0);
-fn counted_clock() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(CLOCK_CALLS.fetch_add(1, Ordering::SeqCst) as u64)
-}
-
-#[tokio::test]
-async fn trace_errors_are_projected_once_by_dispatch() {
-    let trace = Trace::new(json!({})).await;
-    let mut context = ctx(trace.owner);
-    context.now = counted_clock;
-    CLOCK_CALLS.store(0, Ordering::SeqCst);
-    let error = dispatch::call(
-        context,
-        trace.id,
-        "trace.sessionChain",
-        json!({"sessionId":"missing"}),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(error, OpsError::Projected(_)));
-    assert_eq!(CLOCK_CALLS.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        serde_json::to_value(error.envelope(SystemTime::UNIX_EPOCH)).unwrap(),
-        serde_json::to_value(error.envelope(SystemTime::now())).unwrap()
-    );
-    assert_eq!(CLOCK_CALLS.load(Ordering::SeqCst), 1);
 }
 
 #[test]

@@ -1,16 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aimux_core::error::{AiMuxError, ApiCallError, RetryError, RetryErrorReason};
 use aimux_core::recording::RecordingError;
 use aimux_ops::envelope::{BindingError, ErrorDomain, ErrorEnvelope, OpsError, ProtocolError};
 use aimux_ops::handle::HandleKind;
 use serde_json::{Value, json};
-
-fn now() -> SystemTime {
-    UNIX_EPOCH + Duration::from_secs(1_700_000_000)
-}
 
 fn fixture(name: &str) -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -158,7 +153,7 @@ fn protocol_errors() -> Vec<(&'static str, OpsError)> {
 
 fn assert_golden(name: &str, error: OpsError) {
     let expected = fixture(name);
-    let envelope = error.envelope(now());
+    let envelope = error.envelope();
     assert_eq!(serde_json::to_value(&envelope).unwrap(), expected, "{name}");
     assert_eq!(error.code(), envelope.code, "{name}");
     let decoded: ErrorEnvelope = serde_json::from_value(expected.clone()).unwrap();
@@ -283,10 +278,10 @@ fn optional_payload_fields_distinguish_absent_and_explicit_null() {
         "https://example.test/v1",
         Value::Null,
     ))))
-    .envelope(now());
+    .envelope();
     let mut api = ApiCallError::new("reset", "https://example.test/v1", Value::Null);
     api.data = Some(Value::Null);
-    let explicit_null = OpsError::from(AiMuxError::ApiCall(Box::new(api))).envelope(now());
+    let explicit_null = OpsError::from(AiMuxError::ApiCall(Box::new(api))).envelope();
     assert!(absent.error.get("data").is_none());
     assert_eq!(explicit_null.error.get("data"), Some(&Value::Null));
     for envelope in [absent, explicit_null] {
@@ -299,7 +294,6 @@ fn optional_payload_fields_distinguish_absent_and_explicit_null() {
             assert!(envelope.error.get(key).is_none(), "{key}");
         }
         let wire = serde_json::to_value(&envelope).unwrap();
-        assert!(wire.get("retryAfterMs").is_none());
         let decoded: ErrorEnvelope = serde_json::from_value(wire).unwrap();
         assert_eq!(decoded, envelope);
     }
@@ -311,7 +305,7 @@ fn invalid_handle_without_actual_kind_omits_the_field() {
         expected: vec![HandleKind::Language],
         actual: None,
     })
-    .envelope(now());
+    .envelope();
     assert_eq!(error.kind, ErrorDomain::Binding);
     assert_eq!(error.code, 203);
     assert_eq!(
@@ -321,35 +315,10 @@ fn invalid_handle_without_actual_kind_omits_the_field() {
 }
 
 #[test]
-fn retry_hint_uses_the_captured_clock_and_distinguishes_zero() {
-    let error = OpsError::from(AiMuxError::ApiCall(Box::new(api(&[(
-        "Retry-After",
-        "Tue, 14 Nov 2023 22:13:22 GMT",
-    )]))));
-    let envelope = error.envelope(now());
-    assert_eq!(envelope.retry_after_ms, Some(2000));
-    assert_eq!(
-        error
-            .envelope(now() + Duration::from_secs(1))
-            .retry_after_ms,
-        Some(1000)
-    );
-    let encoded = serde_json::to_string(&envelope).unwrap();
-    let decoded: ErrorEnvelope = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(decoded.retry_after_ms, Some(2000));
-    let zero = OpsError::from(AiMuxError::ApiCall(Box::new(api(&[(
-        "retry-after-ms",
-        "0",
-    )]))))
-    .envelope(now());
-    assert_eq!(zero.retry_after_ms, Some(0));
-    assert_eq!(serde_json::to_value(zero).unwrap()["retryAfterMs"], 0);
-}
-
-#[test]
-fn only_direct_api_calls_get_top_level_retry_hints() {
+fn envelope_carries_response_headers_but_no_derived_retry_hint() {
     let attempt = AiMuxError::ApiCall(Box::new(api(&[("retry-after-ms", "1500")])));
     for error in [
+        attempt.clone(),
         AiMuxError::Retry(RetryError {
             reason: RetryErrorReason::MaxRetriesExceeded,
             errors: vec![attempt.clone()],
@@ -362,16 +331,21 @@ fn only_direct_api_calls_get_top_level_retry_hints() {
         AiMuxError::Aborted("aborted".into()),
     ] {
         let payload = serde_json::to_value(&error).unwrap();
-        let envelope = OpsError::from(error).envelope(now());
-        assert_eq!(envelope.retry_after_ms, None);
+        let envelope = OpsError::from(error).envelope();
         assert_eq!(envelope.error, payload);
-        assert!(
-            serde_json::to_value(envelope)
-                .unwrap()
-                .get("retryAfterMs")
-                .is_none()
-        );
+        let wire = serde_json::to_value(envelope).unwrap();
+        let mut keys: Vec<_> = wire.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["code", "error", "kind", "message"]);
     }
+    let direct = OpsError::from(AiMuxError::ApiCall(Box::new(api(&[(
+        "retry-after-ms",
+        "1500",
+    )]))));
+    assert_eq!(
+        direct.envelope().error["responseHeaders"]["retry-after-ms"],
+        "1500"
+    );
 }
 
 #[test]
@@ -395,7 +369,7 @@ fn settings_errors_redact_secret_canary() {
                 })),
             };
             for error in [error, nested] {
-                let wire = serde_json::to_string(&OpsError::from(error).envelope(now())).unwrap();
+                let wire = serde_json::to_string(&OpsError::from(error).envelope()).unwrap();
                 assert!(!wire.contains(SECRET), "secret leaked in envelope: {wire}");
             }
         }

@@ -1,5 +1,4 @@
 //! Project the shared envelope once, then materialize it on the JS thread.
-use std::time::SystemTime;
 
 use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError};
 use napi::bindgen_prelude::*;
@@ -8,7 +7,7 @@ use napi::{Env, sys};
 pub struct WireResult<T>(pub(crate) std::result::Result<T, ErrorEnvelope>);
 
 pub(crate) fn envelope(error: OpsError) -> ErrorEnvelope {
-    error.envelope(SystemTime::now())
+    error.envelope()
 }
 
 pub(crate) fn parse(
@@ -43,10 +42,6 @@ pub(crate) fn throwable(env: &Env, value: ErrorEnvelope) -> napi::Result<napi::E
     )?;
     object.set("code", value.code)?;
     object.set("error", value.error)?;
-    if let Some(ms) = value.retry_after_ms {
-        // This is the same projection as the envelope; never recompute hints.
-        object.set("retryAfterMs", ms)?;
-    }
     Ok(napi::Error::from(object.to_unknown()))
 }
 

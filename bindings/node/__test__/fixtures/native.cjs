@@ -40,7 +40,7 @@ class Runtime {
       case ops.OP_TRANSCRIPTION_START: return JSON.stringify(this.create('Operation').handle)
       case ops.OP_TEXT_GENERATE: return JSON.stringify({ text: params.prompt, nested: params.options, raw: null })
       case ops.OP_OPERATION_NEXT: return JSON.stringify({ type: 'ended' })
-      case 'fixture.error': throw Object.assign(envelope('aimux', 1, 'AI_APICallError', 'rate limit', { statusCode: 429, isRetryable: true, responseHeaders: { 'retry-after': '0' }, data: { unicode: '你好' } }), { retryAfterMs: 0 })
+      case 'fixture.error': throw Object.assign(envelope('aimux', 1, 'AI_APICallError', 'rate limit', { statusCode: 429, isRetryable: true, responseHeaders: { 'retry-after': '0' }, data: { unicode: '你好' } }))
       default: return JSON.stringify({ op, params })
     }
   }

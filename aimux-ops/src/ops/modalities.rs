@@ -298,7 +298,6 @@ mod tests {
         future::Future,
         pin::Pin,
         sync::{Arc, Mutex},
-        time::SystemTime,
     };
 
     struct MockModel {
@@ -480,7 +479,6 @@ mod tests {
         Ctx {
             owner: crate::handle::Owner::CProcess,
             abort: Some(AbortSignal::new()),
-            now: SystemTime::now,
         }
     }
 
@@ -696,7 +694,7 @@ mod tests {
         ] {
             assert!(
                 matches!(
-                    invoke(op, entry, params).await.unwrap_err().unprojected(),
+                    &invoke(op, entry, params).await.unwrap_err(),
                     OpsError::Protocol(ProtocolError::InvalidParams(_))
                 ),
                 "{op}"
@@ -715,9 +713,7 @@ mod tests {
         )
         .await;
         let error = error.unwrap_err();
-        let OpsError::Binding(BindingError::InvalidHandle { expected, actual }) =
-            error.unprojected()
-        else {
+        let OpsError::Binding(BindingError::InvalidHandle { expected, actual }) = &error else {
             panic!("expected InvalidHandle");
         };
         assert_eq!(expected, &[HandleKind::Embedding]);
@@ -738,7 +734,7 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(error.unwrap_err().unprojected(), OpsError::AiMux(AiMuxError::InvalidArgument { message, .. }) if message == "provider rejected query")
+            matches!(&error.unwrap_err(), OpsError::AiMux(AiMuxError::InvalidArgument { message, .. }) if message == "provider rejected query")
         );
         assert_eq!(model.calls.lock().unwrap().len(), 1);
     }

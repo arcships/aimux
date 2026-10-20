@@ -10,7 +10,6 @@ class ErrorEnvelope:
     error: Any
     kind: Any
     message: Any
-    retry_after_ms: Any
 
     @classmethod
     def from_json(cls, value):
@@ -19,7 +18,6 @@ class ErrorEnvelope:
             error=value["error"],
             kind=value["kind"],
             message=value["message"],
-            retry_after_ms=value.get("retryAfterMs"),
         )
 
 

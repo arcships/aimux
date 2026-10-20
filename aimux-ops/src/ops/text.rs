@@ -479,7 +479,6 @@ mod tests {
     use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
     use serde_json::json;
     use std::sync::Mutex;
-    use std::time::SystemTime;
 
     #[derive(Clone)]
     struct MockModel {
@@ -604,7 +603,6 @@ mod tests {
         Ctx {
             owner: Owner::CProcess,
             abort: None,
-            now: SystemTime::now,
         }
     }
     fn request() -> Value {
@@ -1008,14 +1006,13 @@ mod tests {
                         .await
                         .unwrap_err()
                 };
-                assert!(matches!(error, OpsError::Projected(_)));
                 assert_eq!(error.code(), 203);
                 if secondary == abort || secondary == HandleId(u64::MAX) {
                     assert!(matches!(
-                        error.unprojected(),
+                        &error,
                         OpsError::Binding(BindingError::InvalidHandle { actual: None, .. })
                     ));
-                    hidden.push(error.envelope(SystemTime::UNIX_EPOCH));
+                    hidden.push(error.envelope());
                 }
             }
             assert_eq!(hidden[0], hidden[1]);
@@ -1122,12 +1119,8 @@ mod tests {
         }
     }
 
-    fn fixed_now() -> SystemTime {
-        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000)
-    }
-
     #[tokio::test]
-    async fn text_stream_terminal_caches_retry_after_at_dispatch_boundary() {
+    async fn text_stream_terminal_keeps_response_headers() {
         let registry = HandleRegistry::default();
         let mut registrations = vec![];
         register(&mut registrations);
@@ -1149,16 +1142,17 @@ mod tests {
             let id = registry
                 .insert(ctx().owner, Entry::Language(Arc::new(model)))
                 .unwrap();
-            let mut context = ctx();
-            context.now = fixed_now;
             let frames = dispatcher
-                .stream(context, id, name, request())
+                .stream(ctx(), id, name, request())
                 .unwrap()
                 .map(|frame| serde_json::to_value(frame).unwrap())
                 .collect::<Vec<_>>()
                 .await;
             assert_eq!(frames.last().unwrap()["error"]["code"], 11);
-            assert_eq!(frames.last().unwrap()["error"]["retryAfterMs"], 2000);
+            assert_eq!(
+                frames.last().unwrap()["error"]["error"]["responseHeaders"]["Retry-After"],
+                "Tue, 14 Nov 2023 22:13:22 GMT"
+            );
         }
     }
 }

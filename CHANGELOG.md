@@ -1152,6 +1152,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- The ops error envelope is `{kind, code, message, error}`: the derived
+  `retryAfterMs` is removed, together with the clock and cached projection
+  behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
+  `aimux_ops::retry_hint`). It replaced 0.5's `aimux_error_retry_ms`, Node
+  `retryMs` and Python `retry_ms`. Read the delay from `error.responseHeaders`
+  (`retry-after-ms`, `retry-after`), as with the AI SDK; core still reads those
+  headers itself when it retries and when a provider poll waits (#334).
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's

@@ -8,7 +8,6 @@ public struct AimuxError: Error, Codable, Equatable, Sendable, LocalizedError {
     public var code: Int32 { envelope.code }
     public var message: String { envelope.message }
     public var error: JSONValue { envelope.error }
-    public var retryAfterMs: UInt64? { envelope.retryAfterMs }
     public var errorDescription: String? { message }
 
     public init(_ envelope: ErrorEnvelope) { self.envelope = envelope }

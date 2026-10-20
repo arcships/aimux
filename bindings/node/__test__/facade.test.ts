@@ -27,14 +27,13 @@ test('raw and typed preserve the same DTO, null, nested provider options and 64-
   await Promise.all([model.close(), embedding.close(), provider.close()])
 })
 
-test('error properties and prototype match for both layers, including zero retry hint', async () => {
+test('error properties and prototype match for both layers, including response headers', async () => {
   const client = new Client()
   for (const call of [() => client.raw.call('0', 'fixture.error', '{}'), () => client.call('0', 'fixture.error')]) {
     await assert.rejects(call, (error: unknown) => {
       assert.ok(error instanceof AimuxError)
       assert.equal(error.kind, 'aimux')
       assert.equal(error.code, 1)
-      assert.equal(error.retryAfterMs, 0)
       assert.deepEqual(error.error, { name: 'AI_APICallError', statusCode: 429, isRetryable: true, responseHeaders: { 'retry-after': '0' }, data: { unicode: '你好' } })
       assert.equal('retryable' in error, false)
       assert.equal('type' in error, false)
