@@ -1180,6 +1180,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A streamed SSE event that is not JSON yields `JsonParse` reading
+  `JSON parsing failed: Text: <event data>.\nError message: <parser message>`,
+  the AI SDK's `JSONParseError` message, as `@ai-sdk/openai-compatible`
+  3.0.62 and the other AI SDK providers do; it carried only the parser
+  message. This covers every stream read through
+  `create_event_source_response_handler`.
 - Vertex AI Gemini models are the Google model reading the Vertex
   namespaces, as `@ai-sdk/google-vertex` reuses `GoogleLanguageModel`; the
   separate Vertex copy is removed (`VertexModel` is now an alias of
