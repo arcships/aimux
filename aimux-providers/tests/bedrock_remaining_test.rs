@@ -1257,3 +1257,68 @@ async fn stream_message_checksum_mismatch_error() {
         "{error:?}"
     );
 }
+
+/// TS: "should throw for file parts with provider references" and "should
+/// throw UnsupportedFunctionalityError for URL data (File URL)" — the
+/// functionality names of convert-to-amazon-bedrock-chat-messages.ts:238-290
+/// and :612-650. A URL is checked for `s3:` before its media type.
+#[test]
+fn convert_unsupported_file_functionality_names() {
+    let unsupported = |content: Value| {
+        let prompt: LanguageModelPrompt = serde_json::from_value(content).unwrap();
+        match aimux_providers::bedrock::convert::convert_prompt_to_bedrock(&prompt) {
+            Err(aimux_core::AiMuxError::UnsupportedFunctionality(functionality)) => functionality,
+            other => panic!("expected UnsupportedFunctionality, got {other:?}"),
+        }
+    };
+    let user_file = |data: Value, media_type: &str| json!([{"role": "user", "content": [{"type": "file", "data": data, "mediaType": media_type}]}]);
+    let tool_file = |data: Value, media_type: &str| {
+        json!([{"role": "tool", "content": [{
+            "type": "tool-result", "toolCallId": "call-1", "toolName": "t",
+            "output": {"type": "content", "value": [{"type": "file", "data": data, "mediaType": media_type}]}
+        }]}])
+    };
+
+    assert_eq!(
+        unsupported(user_file(
+            json!({"type": "reference", "reference": {"bedrock": "file-ref-123"}}),
+            "image/png"
+        )),
+        "file parts with provider references"
+    );
+    assert_eq!(
+        unsupported(user_file(
+            json!({"type": "url", "url": "https://example.com/image.png"}),
+            "image"
+        )),
+        "File URL data"
+    );
+    assert_eq!(
+        unsupported(user_file(
+            json!({"type": "url", "url": "s3://bucket/file.pdf"}),
+            "application/pdf"
+        )),
+        "File URL data"
+    );
+    assert_eq!(
+        unsupported(tool_file(
+            json!({"type": "url", "url": "https://example.com/image.png"}),
+            "image"
+        )),
+        "tool result file data of type \"url\""
+    );
+    assert_eq!(
+        unsupported(tool_file(
+            json!({"type": "url", "url": "s3://bucket/file.pdf"}),
+            "application/pdf"
+        )),
+        "tool result file data of type \"url\""
+    );
+    assert_eq!(
+        unsupported(tool_file(
+            json!({"type": "text", "text": "hi"}),
+            "text/plain"
+        )),
+        "tool result file data of type \"text\""
+    );
+}

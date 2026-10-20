@@ -1180,6 +1180,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock names unsupported file parts as the AI SDK does: a provider
+  reference is `file parts with provider references`, a URL that is not
+  `s3:` or not an image or video is `File URL data` (checked for `s3:` before
+  its media type), and a tool-result file that is neither inline data nor an
+  `s3:` image or video is `tool result file data of type "<type>"`. They were
+  `File reference data`, `file media type or data: …` (after the media type
+  was checked) and `tool result file data`.
 - Amazon Bedrock streams that fail an event-stream checksum end with
   `@smithy/eventstream-codec`'s message, as the AI SDK does: `The prelude
   checksum specified in the message (…) does not match the calculated CRC32

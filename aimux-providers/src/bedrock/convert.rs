@@ -640,11 +640,7 @@ fn is_strict_schema_compatible(schema: &Value) -> bool {
     true
 }
 
-fn validate_media_type(
-    media_type: &str,
-    is_url: bool,
-    url: Option<&str>,
-) -> Result<(), aimux_core::AiMuxError> {
+fn validate_media_type(media_type: &str) -> Result<(), aimux_core::AiMuxError> {
     let supported = match media_type.split('/').next() {
         Some("image") => matches!(
             media_type,
@@ -674,15 +670,13 @@ fn validate_media_type(
             "{kind} mime type: {media_type}"
         )));
     }
-    if is_url
-        && (!url.is_some_and(|u| u.starts_with("s3:"))
-            || !(media_type.starts_with("image/") || media_type.starts_with("video/")))
-    {
-        return Err(aimux_core::AiMuxError::UnsupportedFunctionality(format!(
-            "file media type or data: {media_type}"
-        )));
-    }
     Ok(())
+}
+
+/// Whether a media type is an image or a video, the only kinds Bedrock takes
+/// from an S3 location.
+fn is_image_or_video(media_type: &str) -> bool {
+    media_type.starts_with("image/") || media_type.starts_with("video/")
 }
 
 /// Reject prompts the Converse API cannot express.
@@ -799,9 +793,20 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
     }
     match &file.data {
         FileData::Reference { .. } => Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-            "File reference data".into(),
+            "file parts with provider references".into(),
         )),
-        FileData::Url { url, .. } => validate_media_type(&file.media_type, true, Some(url)),
+        FileData::Url { url, .. } => {
+            let unsupported =
+                || aimux_core::AiMuxError::UnsupportedFunctionality("File URL data".into());
+            if !url.starts_with("s3:") {
+                return Err(unsupported());
+            }
+            let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
+            if !is_image_or_video(&media_type) {
+                return Err(unsupported());
+            }
+            validate_media_type(&media_type)
+        }
         FileData::Text { .. } => {
             let media_type = if is_full_media_type(&file.media_type) {
                 &file.media_type
@@ -813,11 +818,11 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
                     "file media type or data: {media_type}"
                 )));
             }
-            validate_media_type(media_type, false, None)
+            validate_media_type(media_type)
         }
         FileData::Data { .. } => {
             let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
-            validate_media_type(&media_type, false, None)
+            validate_media_type(&media_type)
         }
     }
 }
@@ -828,17 +833,27 @@ fn validate_tool_result(result: &ToolResultOutput) -> Result<(), aimux_core::AiM
             match part {
                 ToolResultContent::Text(_) => {}
                 ToolResultContent::File(file) => {
-                    let (is_url, url) = match &file.data {
-                        FileData::Data { .. } => (false, None),
-                        FileData::Url { url, .. } => (true, Some(url.as_str())),
-                        _ => {
-                            return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-                                "tool result file data".into(),
-                            ));
-                        }
+                    let kind = match &file.data {
+                        FileData::Data { .. } => "data",
+                        FileData::Url { .. } => "url",
+                        FileData::Reference { .. } => "reference",
+                        FileData::Text { .. } => "text",
                     };
+                    let unsupported = || {
+                        aimux_core::AiMuxError::UnsupportedFunctionality(format!(
+                            "tool result file data of type \"{kind}\""
+                        ))
+                    };
+                    let is_s3_url =
+                        matches!(&file.data, FileData::Url { url, .. } if url.starts_with("s3:"));
+                    if kind != "data" && !is_s3_url {
+                        return Err(unsupported());
+                    }
                     let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
-                    validate_media_type(&media_type, is_url, url)?;
+                    if is_s3_url && !is_image_or_video(&media_type) {
+                        return Err(unsupported());
+                    }
+                    validate_media_type(&media_type)?;
                 }
                 ToolResultContent::Custom { .. } => {
                     return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
