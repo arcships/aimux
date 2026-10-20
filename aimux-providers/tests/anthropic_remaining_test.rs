@@ -765,3 +765,42 @@ async fn web_fetch_result_without_citations_omits_the_key() {
         })
     );
 }
+
+/// The AI SDK sends `providerOptions.anthropic.safeguards` as `safeguards`
+/// with the `dangerous-tool-use-2026-09-03` beta.
+#[tokio::test]
+async fn sends_safeguards_and_their_beta() {
+    let fetch = mock();
+    let mut opts = default_options(test_prompt());
+    opts.provider_options = Some(
+        provider_namespace(
+            "anthropic",
+            json!({
+                "safeguards": [
+                    { "type": "dangerous_tool_use", "classifierContext": { "v": 1 } },
+                    { "type": "dangerous_tool_use" }
+                ]
+            }),
+        )
+        .unwrap(),
+    );
+    make_model_with_config(settings(&fetch))
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    let requests = fetch.seen();
+    assert_eq!(
+        requests[0].json_body()["safeguards"],
+        json!([
+            { "type": "dangerous_tool_use", "classifier_context": { "v": 1 } },
+            { "type": "dangerous_tool_use" }
+        ])
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("anthropic-beta")
+            .map(String::as_str),
+        Some("dangerous-tool-use-2026-09-03")
+    );
+}

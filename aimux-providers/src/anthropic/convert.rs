@@ -3224,6 +3224,24 @@ pub(crate) fn build_request_body_for(
                 .to_string(),
             );
         }
+        if let Some(safeguards) = provider_options
+            .get("safeguards")
+            .and_then(Value::as_array)
+            .filter(|safeguards| !safeguards.is_empty())
+        {
+            let mapped: Vec<Value> = safeguards
+                .iter()
+                .map(|safeguard| {
+                    let mut mapped = json!({ "type": field(safeguard, "type") });
+                    if let Some(context) = safeguard.get("classifierContext") {
+                        mapped["classifier_context"] = context.clone();
+                    }
+                    mapped
+                })
+                .collect();
+            body["safeguards"] = json!(mapped);
+            betas.insert("dangerous-tool-use-2026-09-03".to_string());
+        }
         if let Some(value) = provider_options.get("taskBudget").filter(|v| !v.is_null()) {
             if body.get("output_config").is_none() {
                 body["output_config"] = json!({});

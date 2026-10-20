@@ -1190,6 +1190,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic sends `providerOptions.anthropic.safeguards` as `safeguards`
+  (`classifierContext` as `classifier_context`) with the
+  `dangerous-tool-use-2026-09-03` beta, as the AI SDK does; it validated the
+  option and then left it out of the request.
 - Anthropic leaves `citations` out of a web_fetch tool result whose document
   has none, as the AI SDK does; it emitted `"citations": null` there and sent
   it back in the next request.
