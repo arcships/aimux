@@ -33,7 +33,7 @@ fn provider(fetch: &Arc<MockFetch>) -> VertexProvider {
     .unwrap()
 }
 
-/// TS: "should preserve local JSON Schema references in tool requests" (@ai-sdk/google-vertex/src/google-vertex-language-model.test.ts)
+/// partial: `should preserve local JSON Schema references in tool requests`; full port in src/vertex/tests/language_model.rs.
 #[tokio::test]
 async fn language_generate_preserves_tool_schema_references() {
     let response = json!({
@@ -104,9 +104,9 @@ async fn language_generate_preserves_tool_schema_references() {
     assert_eq!(result.response.unwrap().body.unwrap(), response);
 }
 
-/// TS: "should pass the model parameters correctly" (@ai-sdk/google-vertex/src/google-vertex-embedding-model.test.ts)
-/// TS: "should extract embeddings" (@ai-sdk/google-vertex/src/google-vertex-embedding-model.test.ts)
-/// TS: "should extract usage" (@ai-sdk/google-vertex/src/google-vertex-embedding-model.test.ts)
+/// partial: `should pass the model parameters correctly`; full port in src/vertex/tests/embedding_model.rs.
+/// partial: `should extract embeddings`; full port in src/vertex/tests/embedding_model.rs.
+/// partial: `should extract usage`; full port in src/vertex/tests/embedding_model.rs.
 #[tokio::test]
 async fn embedding_request_and_result() {
     let response = json!({"predictions": [
@@ -162,9 +162,9 @@ async fn embedding_request_and_result() {
     assert_eq!(result.response.unwrap().body.unwrap(), response);
 }
 
-/// TS: "should send response modalities, aspect ratio, seed, and headers" (@ai-sdk/google-vertex/src/google-vertex-image-model.test.ts)
-/// TS: "should use the language model endpoint and extract generated images" (@ai-sdk/google-vertex/src/google-vertex-image-model.test.ts)
-/// TS: "should include usage and response metadata" (@ai-sdk/google-vertex/src/google-vertex-image-model.test.ts)
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/vertex/tests/image_model.rs.
+/// partial: `should use the language model endpoint and extract generated images`; full port in src/vertex/tests/image_model.rs.
+/// partial: `should include usage and response metadata`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn image_generate_request_and_result() {
     let response = json!({
@@ -247,8 +247,8 @@ async fn image_generate_request_and_result() {
     );
 }
 
-/// TS: "should send the model, languageCodes, features and base64 content" (@ai-sdk/google-vertex/src/google-vertex-transcription-model.test.ts)
-/// TS: "should extract text, segments, language and duration" (@ai-sdk/google-vertex/src/google-vertex-transcription-model.test.ts)
+/// partial: `should send the model, languageCodes, features and base64 content`; full port in src/vertex/tests/transcription_model.rs.
+/// partial: `should extract text, segments, language and duration`; full port in src/vertex/tests/transcription_model.rs.
 #[tokio::test]
 async fn transcription_generate_request_and_result() {
     let fetch = MockFetch::new(vec![Canned::json(&json!({
@@ -300,9 +300,9 @@ async fn transcription_generate_request_and_result() {
     assert_eq!(result.duration_in_seconds, Some(1.0));
 }
 
-/// TS: "should pass correct request body" (@ai-sdk/google-vertex/src/google-vertex-video-model.test.ts)
-/// TS: "should return operation with operationName" (@ai-sdk/google-vertex/src/google-vertex-video-model.test.ts)
-/// TS: "should return completed with video data when done" (@ai-sdk/google-vertex/src/google-vertex-video-model.test.ts)
+/// partial: `should pass correct request body`; full port in src/vertex/tests/video_model.rs.
+/// partial: `should return operation with operationName`; full port in src/vertex/tests/video_model.rs.
+/// partial: `should return completed with video data when done`; full port in src/vertex/tests/video_model.rs.
 #[tokio::test]
 async fn video_start_and_completed_result() {
     let fetch = MockFetch::new(vec![
@@ -355,7 +355,7 @@ async fn video_start_and_completed_result() {
     );
 }
 
-/// TS: "should throw when no operation name returned" (@ai-sdk/google-vertex/src/google-vertex-video-model.test.ts)
+/// partial: `should throw when no operation name returned`; full port in src/vertex/tests/video_model.rs.
 #[tokio::test]
 async fn video_missing_operation_name_is_an_error() {
     let fetch = MockFetch::new(vec![Canned::json(&json!({"done": false}))]);
@@ -377,8 +377,7 @@ async fn video_missing_operation_name_is_an_error() {
     );
 }
 
-/// TS: "transcribes audio via Vertex generateContent with audioTranscriptionConfig"
-/// (google-vertex/src/gemini-transcription/google-vertex-gemini-transcription-model.test.ts)
+/// partial: `transcribes audio via Vertex generateContent with audioTranscriptionConfig`; full port in src/vertex/tests/gemini_transcription/gemini_transcription_model.rs.
 #[tokio::test]
 async fn gemini_transcription_generate_request_and_result() {
     let usage = json!({"promptTokenCount": 10, "candidatesTokenCount": 4});
@@ -492,6 +491,7 @@ async fn executable_credential_without_the_opt_in_fails_and_spawns_nothing() {
     assert!(fetch.seen().is_empty(), "a request was sent");
 }
 
+/// partial: `should accept the legacy vertex options key and prefer googleVertex`; full port in src/vertex/tests/image_model.rs.
 /// Upstream: @ai-sdk/google-vertex 5.0.100 src/google-vertex-image-model.ts
 /// reads the image options under `googleVertex`, then the legacy `vertex`,
 /// hands them to the inner language model under both keys (:190-194) and

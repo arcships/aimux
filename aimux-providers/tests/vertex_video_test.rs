@@ -96,6 +96,7 @@ async fn should_generate_video() {
     }
 }
 
+/// partial: `should pass correct request body`; full port in src/vertex/tests/video_model.rs.
 #[tokio::test]
 async fn should_pass_prompt() {
     let server = MockServer::start().await;
@@ -123,6 +124,7 @@ async fn should_pass_prompt() {
     assert_eq!(poll_body, json!({"operationName": "operations/test-op"}));
 }
 
+/// partial: `should include warnings and response metadata`; full port in src/vertex/tests/video_model.rs.
 #[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;

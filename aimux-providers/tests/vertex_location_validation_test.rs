@@ -115,54 +115,58 @@ async fn rejects(kind: Kind, location: Option<&str>, base_url: Option<&str>) -> 
     rejected
 }
 
-/// TS: "rejects %j before fetching"
-#[tokio::test]
-async fn rejects_a_location_that_is_not_one_dns_label() {
-    for kind in KINDS {
-        for location in INVALID {
+mod name_location_validation {
+    use super::*;
+
+    /// upstream: @ai-sdk/google-vertex src/google-vertex-location-validation.test.ts › ${…} › rejects %j before fetching
+    #[tokio::test]
+    async fn rejects_a_location_that_is_not_one_dns_label() {
+        for kind in KINDS {
+            for location in INVALID {
+                assert!(
+                    rejects(kind, Some(location), None).await,
+                    "{kind:?} {location:?}"
+                );
+            }
+        }
+    }
+
+    /// upstream: @ai-sdk/google-vertex src/google-vertex-location-validation.test.ts › ${…} › accepts %j
+    #[tokio::test]
+    async fn accepts_regional_and_multi_region_locations() {
+        for kind in KINDS {
+            for location in VALID {
+                assert!(
+                    !rejects(kind, Some(location), None).await,
+                    "{kind:?} {location:?}"
+                );
+            }
+        }
+    }
+
+    /// upstream: @ai-sdk/google-vertex src/google-vertex-location-validation.test.ts › ${…} › uses the environment location
+    #[tokio::test]
+    #[serial]
+    async fn validates_the_environment_location() {
+        let _location = EnvVar::set("GOOGLE_VERTEX_LOCATION", Some("user@internal/#"));
+        for kind in KINDS {
+            assert!(rejects(kind, None, None).await, "{kind:?}");
+        }
+    }
+
+    /// upstream: @ai-sdk/google-vertex src/google-vertex-location-validation.test.ts › ${…} › allows a custom URL with an unused invalid location
+    #[tokio::test]
+    async fn a_custom_url_ignores_an_invalid_location() {
+        for kind in KINDS {
             assert!(
-                rejects(kind, Some(location), None).await,
-                "{kind:?} {location:?}"
+                !rejects(kind, Some("not a region"), Some("https://proxy.example/v1")).await,
+                "{kind:?}"
             );
         }
     }
 }
 
-/// TS: "accepts %j"
-#[tokio::test]
-async fn accepts_regional_and_multi_region_locations() {
-    for kind in KINDS {
-        for location in VALID {
-            assert!(
-                !rejects(kind, Some(location), None).await,
-                "{kind:?} {location:?}"
-            );
-        }
-    }
-}
-
-/// TS: "uses the environment location"
-#[tokio::test]
-#[serial]
-async fn validates_the_environment_location() {
-    let _location = EnvVar::set("GOOGLE_VERTEX_LOCATION", Some("user@internal/#"));
-    for kind in KINDS {
-        assert!(rejects(kind, None, None).await, "{kind:?}");
-    }
-}
-
-/// TS: "allows a custom URL with an unused invalid location"
-#[tokio::test]
-async fn a_custom_url_ignores_an_invalid_location() {
-    for kind in KINDS {
-        assert!(
-            !rejects(kind, Some("not a region"), Some("https://proxy.example/v1")).await,
-            "{kind:?}"
-        );
-    }
-}
-
-/// TS: "allows a custom URL without a location"
+/// partial: `allows a custom URL without a location`; full port in src/vertex/tests/location_validation.rs.
 #[tokio::test]
 #[serial]
 async fn a_custom_url_needs_no_location() {
@@ -175,7 +179,7 @@ async fn a_custom_url_needs_no_location() {
     }
 }
 
-/// TS: "does not validate location in express mode"
+/// upstream: @ai-sdk/google-vertex src/google-vertex-location-validation.test.ts › does not validate location in express mode
 #[tokio::test]
 async fn express_mode_ignores_the_location() {
     let fetch = MockFetch::new(vec![]);
@@ -197,7 +201,7 @@ async fn express_mode_ignores_the_location() {
     assert_eq!(fetch.seen().len(), 1);
 }
 
-/// TS: "validates location for the separate transcription host of %s".
+/// partial: `validates location for the separate transcription host of %s`; full port in src/vertex/tests/location_validation.rs.
 /// Upstream's Gemini case is the live model; aimux's Gemini transcription
 /// models, unary and live, resolve the project and location the same way, and
 /// the unary one runs without a socket.
