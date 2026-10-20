@@ -8,12 +8,8 @@ keywords = ["llm", "ai", "openai", "anthropic", "provider"]
 categories = ["api-bindings", "asynchronous"]
 documentation = "https://docs.rs/aimux-core"
 
-[features]
-# Emit the wire types' ts-rs export tests. Enabled only by
-# scripts/gen_ts_types.py, which points TS_RS_EXPORT_DIR at a temp directory.
-ts-export = []
-
 [dependencies]
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
@@ -21,7 +17,6 @@ thiserror = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
 tracing = { workspace = true }
-ts-rs = { workspace = true }
 indexmap = { workspace = true }
 # Core also resolves generated file URLs before exposing file outputs.
 tokio = { version = "1", features = ["time", "macros", "rt", "sync", "net"] }

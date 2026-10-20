@@ -7,8 +7,8 @@ let testABI = ProcessInfo.processInfo.environment["AIMUX_SWIFT_TEST_ABI"] == "1"
 var targets: [Target] = [
     .systemLibrary(name: "CAimuxFFI", path: "Sources/CAimuxFFI"),
     .target(name: "Aimux", dependencies: ["CAimuxFFI"], path: ".",
-            exclude: ["Tests", "Sources/CAimuxFFI", "scripts", "README.md"],
-            sources: ["Sources/Aimux", "generated"],
+            exclude: ["Tests", "Sources/CAimuxFFI", "scripts", "README.md", "generated/DtoVectorTypes.swift"],
+            sources: ["Sources/Aimux", "generated/Types.swift", "generated/AimuxOps.swift"],
             linkerSettings: testABI ? [] : [.linkedLibrary("aimux_ffi")]),
     .testTarget(name: "AimuxTests", dependencies: testABI ? ["Aimux", "CAimuxTestABI"] : ["Aimux"]),
 ]

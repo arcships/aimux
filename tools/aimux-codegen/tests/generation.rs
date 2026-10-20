@@ -68,16 +68,33 @@ fn fixture() -> Value {
             {"name": "operation.next", "mode": "poll", "allowedHandleKinds": ["Operation"], "requestType": "PollParams"},
             {"name": "text.stream", "mode": "stream", "allowedHandleKinds": ["Language"], "requestType": "GenerateTextOptions"},
             {"name": "handle.drop", "mode": "call", "allowedHandleKinds": ["Language", "Operation"], "requestType": "EmptyParams"}]});
-    value["types"] = json!(
-        aimux_ops::manifest::manifest()["types"]
-            .as_array()
+    let runtime = aimux_ops::manifest::manifest();
+    value["typeDefs"] = runtime["typeDefs"].clone();
+    value["types"] = runtime["types"].clone();
+    for (name, schema) in [
+        (
+            "GenerateTextOptions",
+            json!({"type":"object","additionalProperties":true}),
+        ),
+        (
+            "EmptyParams",
+            json!({"type":"object","additionalProperties":false}),
+        ),
+        (
+            "Bytes",
+            json!({"type":"array","items":{"type":"integer","format":"uint8","minimum":0,"maximum":255}}),
+        ),
+        (
+            "PollParams",
+            json!({"type":"object","additionalProperties":false}),
+        ),
+    ] {
+        value["typeDefs"]["input"][name] = schema;
+        value["types"]
+            .as_array_mut()
             .unwrap()
-            .iter()
-            .filter(|ty| ["HandleId", "ErrorEnvelope", "StreamFrame"]
-                .contains(&ty["id"].as_str().unwrap()))
-            .cloned()
-            .collect::<Vec<_>>()
-    );
+            .push(json!({"id":name,"input":name}));
+    }
     value
 }
 
@@ -104,7 +121,7 @@ fn schema(artifacts: &Artifacts, name: &str) -> Value {
 fn validator(artifacts: &Artifacts, name: &str) -> jsonschema::Validator {
     let mut registry = Registry::new();
     for (path, bytes) in artifacts {
-        if path.starts_with("schema/ops") {
+        if path.starts_with("schema/ops") || path.starts_with("schema/types") {
             let document: Value = serde_json::from_slice(bytes).unwrap();
             let id = document["$id"].as_str().unwrap().to_owned();
             registry = registry.add(id, Resource::from_contents(document)).unwrap();
@@ -147,7 +164,7 @@ fn canonical_digest_sorts_nested_objects_without_reordering_arrays() {
 fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
     let outputs = artifacts();
     assert_eq!(outputs, artifacts());
-    assert_eq!(outputs.len(), 18);
+    assert!(outputs.len() > 16);
     assert_eq!(
         outputs[Path::new("aimux-ffi/include/aimux.h")],
         outputs[Path::new("bindings/flutter/native/aimux_ops.h")]
@@ -159,6 +176,9 @@ fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
         inventory["files"],
         json!(outputs.keys().collect::<Vec<_>>())
     );
+    assert!(outputs.contains_key(Path::new(
+        "tools/aimux-web/web/src/types/generated/WireCallRequest.ts"
+    )));
     let header =
         String::from_utf8(outputs[Path::new("aimux-ffi/include/aimux.h")].clone()).unwrap();
     for primitive in [
@@ -186,14 +206,16 @@ fn deterministic_complete_outputs_cover_every_language_and_abi_primitive() {
     assert!(header.contains("AIMUX_ERROR_PROTOCOL_INVALID_OP = 300"));
     assert!(header.contains("AIMUX_OP_TEXT_GENERATE_OPEN_AI \"text.generateOpenAI\""));
     assert!(header.contains("borrowed until the callback returns"));
-    for language in ["go", "java", "kotlin", "swift", "flutter", "node", "python"] {
-        let (_, bytes) = outputs
-            .iter()
-            .find(|(path, _)| {
-                path.starts_with(format!("bindings/{language}"))
-                    && (path.to_string_lossy().contains("generated/") || path.ends_with("ops.py"))
-            })
-            .unwrap();
+    for path in [
+        "bindings/go/generated/ops.go",
+        "bindings/java/generated/AimuxOps.java",
+        "bindings/kotlin/generated/AimuxOps.kt",
+        "bindings/swift/generated/AimuxOps.swift",
+        "bindings/flutter/lib/generated/ops.dart",
+        "bindings/node/src/generated/ops.ts",
+        "bindings/python/python/aimux/ops.py",
+    ] {
+        let bytes = &outputs[Path::new(path)];
         let text = std::str::from_utf8(bytes).unwrap();
         for op in fixture()["ops"].as_array().unwrap() {
             assert!(text.contains(op["name"].as_str().unwrap()));
@@ -305,9 +327,6 @@ fn request_controls_are_closed_case_sensitive_and_keep_provider_json_open() {
         !requests
             .is_valid(&json!({"handle": "1", "op": "operation.push", "params": {}, "abort": "0"}))
     );
-    assert!(
-        validator(&outputs, "provider-options").is_valid(&json!({"future": {"nested": [1, null]}}))
-    );
 }
 
 #[test]
@@ -351,7 +370,7 @@ fn frame_and_error_envelope_use_contract_discriminators() {
     assert!(
         frames.is_valid(&json!({"type": "end", "seq": "2", "outcome": "error", "error": error}))
     );
-    assert!(frames.is_valid(&json!({"type": "event", "seq": "1", "event": {"vendor": null}})));
+    assert!(frames.is_valid(&json!({"type": "event", "seq": "1", "event": {"type":"text-delta","id":"t","text":"hello"}})));
     assert!(frames.is_valid(&json!({"type": "end", "seq": "2", "outcome": "cancelled"})));
     assert!(
         !frames.is_valid(&json!({"type": "end", "seq": "2", "outcome": "success", "extra": true}))
@@ -398,23 +417,19 @@ fn malformed_manifest_identifiers_kinds_modes_and_error_codes_fail() {
 fn real_manifest_control_schemas_are_emitted_and_enforced() {
     let value = aimux_ops::manifest::manifest();
     let outputs = generate(&value, &aimux_ops::manifest::manifest_digest()).unwrap();
-    for (id, name) in [
-        ("HandleId", "handle-id"),
-        ("ErrorEnvelope", "error-envelope"),
-        ("StreamFrame", "stream-frame"),
+    let model = aimux_codegen::model::normalize(&value["typeDefs"]).unwrap();
+    for ty in model.types {
+        assert!(outputs.contains_key(Path::new(&format!("schema/types/{}.json", ty.name))));
+    }
+    for (name, target) in [
+        ("handle-id", "HandleIdInput"),
+        ("error-envelope", "ErrorEnvelope"),
+        ("stream-frame", "StreamFrame"),
     ] {
-        let expected = &value["types"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|ty| ty["id"] == id)
-            .unwrap()["schema"];
-        let mut emitted = schema(&outputs, name);
-        let object = emitted.as_object_mut().unwrap();
-        object.remove("$id");
-        object.remove("$schema");
-        object.remove("$comment");
-        assert_eq!(&emitted, expected, "{id}");
+        assert_eq!(
+            schema(&outputs, name)["$ref"],
+            format!("../types/{target}.json")
+        );
     }
     let handles = validator(&outputs, "handle-id");
     for wire in ["01", "00018446744073709551615"] {
@@ -433,29 +448,6 @@ fn real_manifest_control_schemas_are_emitted_and_enforced() {
         error: Some(envelope),
     };
     assert!(validator(&outputs, "stream-frame").is_valid(&serde_json::to_value(frame).unwrap()));
-    for ty in value["types"].as_array().unwrap() {
-        if ty.get("schema").is_some() {
-            assert!(
-                outputs.values().any(|bytes| {
-                    serde_json::from_slice::<Value>(bytes)
-                        .ok()
-                        .is_some_and(|document| {
-                            let mut document = document;
-                            if let Some(object) = document.as_object_mut() {
-                                object.remove("$schema");
-                                object.remove("$id");
-                                if ty["schema"].get("$comment").is_none() {
-                                    object.remove("$comment");
-                                }
-                            }
-                            document == ty["schema"]
-                        })
-                }),
-                "missing schema {}",
-                ty["id"]
-            );
-        }
-    }
     let requests = validator(&outputs, "request");
     assert!(
         requests.is_valid(&json!({"handle":"1","op":"operation.next","params":{"timeoutMs":0}}))

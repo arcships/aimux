@@ -15,7 +15,7 @@ use aimux_ops::dispatch::{Ctx, Dispatcher, EventStream, Handler, Target, seriali
 use aimux_ops::envelope::{OpsError, ProtocolError};
 use aimux_ops::handle::{HandleId, HandleRegistry, Owner};
 use aimux_ops::limits::{QueueEvent, QueueLimits, bounded_queue, check_wire_item};
-use aimux_ops::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use aimux_ops::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use futures::{Stream, StreamExt};
 use serde::{Serialize, Serializer};
 use serde_json::Value;
@@ -62,14 +62,14 @@ struct Observation {
 static SOURCE: Mutex<Option<EventStream>> = Mutex::new(None);
 static DESCRIPTOR: OpDescriptor = OpDescriptor {
     name: "test.scenario",
-    since_ops_version: "1.0",
+    since_ops_version: aimux_ops::op::OPS_VERSION,
     mode: OpMode::Stream,
     allowed_handle_kinds: &[],
-    request_type: "Value",
-    result_type: "()",
-    event_type: Some("Value"),
+    request_type: TypeRef::of::<Value>(),
+    result_type: TypeRef::of::<()>(),
+    event_type: Some(TypeRef::of::<Value>()),
     scope: Scope::Current,
-    terminal_type: Some("StreamFrame"),
+    terminal_type: Some(TypeRef::of::<aimux_ops::frame::StreamFrame>()),
     runtime_handle_fields: &[],
     required_capabilities: &[],
     cancellation: Cancellation::Abort,

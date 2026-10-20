@@ -28,8 +28,8 @@
     "integrity": "sha512-s0tWc+QeSce7O2ZLm+VWSRQy16dGfqEcMIUxEWh+LFvXX3h0TLH8jxCQ2H1qhiBgTta+6A97eHPhBlRFu1xy+g=="
   },
   "@ai-sdk/google-vertex": {
-    "version": "5.0.98",
-    "integrity": "sha512-k62ZqXWlYiBcrzH6vZjPgzIU3eSm7YLcoAx7BH1Kbds6BWZ0egElSPnwKVdVoQzGfWgzaI/fXvmhS1Z6r77rWA=="
+    "version": "5.0.100",
+    "integrity": "sha512-SWwmL+DHBPSrlLjEDmiSSSoJ5Y3VHvh4qPYb4c/R5Dxl04HkgPn0yffQh3NdmrRVv1b940ZqHERbqoTKnPzj1Q=="
   },
   "@ai-sdk/groq": {
     "version": "4.0.52",
