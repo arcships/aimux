@@ -1185,10 +1185,15 @@ public enum CapturePolicy: String, Codable, Equatable, Sendable {
 /// name then model id.
 public struct Catalogue: Codable, Equatable, Sendable {
     public var specs: [String: [String: ModelSpec]]
+    /// Specs of source providers with no aimux provider, keyed by the
+    /// source's own provider id then model id. The host maps them, if it
+    /// wants them.
+    public var unmapped: [String: [String: ModelSpec]]?
     public var updatedAt: UInt64
 
-    public init(specs: [String: [String: ModelSpec]], updatedAt: UInt64) {
+    public init(specs: [String: [String: ModelSpec]], unmapped: [String: [String: ModelSpec]]? = nil, updatedAt: UInt64) {
         self.specs = specs
+        self.unmapped = unmapped
         self.updatedAt = updatedAt
     }
 }

@@ -233,11 +233,11 @@ async fn list_models_http_error() {
 fn catalogue_normalize_and_lookup() {
     assert_eq!(
         catalogue::normalize_provider_name("fireworks-ai"),
-        "fireworks"
+        Some("fireworks")
     );
     assert_eq!(
         catalogue::normalize_provider_name("google-vertex"),
-        "vertex"
+        Some("google_vertex")
     );
     let anya2a = serde_json::json!({"updated_at":"1","providers":{"fireworks-ai":{"models":[{"id":"fw-1","type":"chat","tool_call":true}]}}});
     let cat = catalogue::parse_anya2a_all(&anya2a).unwrap();
@@ -249,26 +249,6 @@ fn catalogue_normalize_and_lookup() {
 fn parse_anya2a_missing_providers_key() {
     let err = catalogue::parse_anya2a_all(&serde_json::json!({"updated_at":"0"})).unwrap_err();
     assert!(matches!(err, aimux_core::AiMuxError::JsonParse(_)));
-}
-
-#[test]
-fn normalize_multi_target_aliases() {
-    assert_eq!(
-        catalogue::normalize_provider_name("google-vertex-anthropic"),
-        "vertex"
-    );
-    assert_eq!(
-        catalogue::normalize_provider_name("xiaomi-token-plan-ams"),
-        "xiaomi"
-    );
-    assert_eq!(
-        catalogue::normalize_provider_name("zhipuai-coding-plan"),
-        "zhipu_coding_plan"
-    );
-    assert_eq!(
-        catalogue::normalize_provider_name("siliconflow-com"),
-        "siliconflow"
-    );
 }
 
 #[tokio::test]

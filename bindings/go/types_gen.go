@@ -1851,7 +1851,11 @@ const (
 // In-memory catalogue: per-provider model specs, keyed by aimux provider
 // name then model id.
 type Catalogue struct {
-	Specs     map[string]map[string]ModelSpec `json:"specs"`
+	Specs map[string]map[string]ModelSpec `json:"specs"`
+	// Specs of source providers with no aimux provider, keyed by the
+	// source's own provider id then model id. The host maps them, if it
+	// wants them.
+	Unmapped  map[string]map[string]ModelSpec `json:"unmapped,omitzero"`
 	UpdatedAt uint64                          `json:"updatedAt"`
 }
 

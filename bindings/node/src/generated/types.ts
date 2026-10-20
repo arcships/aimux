@@ -711,6 +711,12 @@ export type CapturePolicy = "full"
  */
 export interface Catalogue {
   specs: Record<string, Record<string, ModelSpec>>
+  /**
+   * Specs of source providers with no aimux provider, keyed by the
+   * source's own provider id then model id. The host maps them, if it
+   * wants them.
+   */
+  unmapped?: Record<string, Record<string, ModelSpec>>
   updatedAt: number
 }
 
