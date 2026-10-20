@@ -197,6 +197,8 @@ fn convert_prompt_with_validator(
     }
 
     let mut has_system = false;
+    // Index of the last Anthropic message holding a non-empty user message.
+    let mut last_user_message_index: Option<usize> = None;
     for (index, msg) in prompt.iter().enumerate() {
         let eff = match msg {
             LanguageModelMessage::System { .. } => {
@@ -315,6 +317,9 @@ fn convert_prompt_with_validator(
                 content,
                 provider_options,
             } => {
+                if !content.is_empty() {
+                    last_user_message_index = Some(messages.len());
+                }
                 for (idx, part) in content.iter().enumerate() {
                     let is_last = idx + 1 == content.len();
                     let block = match part {
@@ -420,6 +425,8 @@ fn convert_prompt_with_validator(
         last_block["text"] = json!(text.trim());
     }
 
+    normalize_orphaned_callers(&mut messages, last_user_message_index, &mut warnings);
+
     // Merge any cache_control validation warnings.
     warnings.extend(validator.take_warnings());
 
@@ -430,6 +437,73 @@ fn convert_prompt_with_validator(
         betas,
         warnings,
     })
+}
+
+/// Drop the `caller` of historical assistant blocks whose source code
+/// execution call is missing from the converted history (e.g. pruned), with
+/// one warning per tool call. Only messages before the last user message are
+/// normalized: tool-result messages do not end a turn, so an active code
+/// execution keeps its callers (convert-to-anthropic-prompt.ts:1463-1510).
+fn normalize_orphaned_callers(
+    messages: &mut [Value],
+    last_user_message_index: Option<usize>,
+    warnings: &mut Vec<Warning>,
+) {
+    let Some(end) = last_user_message_index else {
+        return;
+    };
+    let code_execution_ids: HashSet<String> = messages
+        .iter()
+        .filter(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+        .filter_map(|message| message.get("content").and_then(Value::as_array))
+        .flatten()
+        .filter(|block| {
+            block.get("type").and_then(Value::as_str) == Some("server_tool_use")
+                && block.get("name").and_then(Value::as_str) == Some("code_execution")
+        })
+        .filter_map(|block| block.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let mut warned: HashSet<String> = HashSet::new();
+    for message in messages.iter_mut().take(end) {
+        if message.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        let Some(blocks) = message.get_mut("content").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for block in blocks {
+            let Some(caller) = block.get("caller") else {
+                continue;
+            };
+            if caller.get("type").and_then(Value::as_str) == Some("direct") {
+                continue;
+            }
+            let source = caller
+                .get("tool_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if code_execution_ids.contains(source) {
+                continue;
+            }
+            let source = source.to_string();
+            let tool_call_id = block
+                .get("id")
+                .or_else(|| block.get("tool_use_id"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            if let Some(object) = block.as_object_mut() {
+                object.remove("caller");
+            }
+            if warned.insert(tool_call_id.clone()) {
+                warnings.push(Warning::Other {
+                    message: format!(
+                        "Omitted caller metadata for tool {tool_call_id} because source code execution tool {source} is missing from the conversation history."
+                    ),
+                });
+            }
+        }
+    }
 }
 
 fn resolve_cache_control(

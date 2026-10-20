@@ -523,3 +523,47 @@ async fn sends_tool_change_blocks_and_beta_header() {
         requests[0].headers["anthropic-beta"].contains("mid-conversation-tool-changes-2026-07-01")
     );
 }
+
+/// Upstream drops the caller of a historical tool call whose source code execution call was pruned, with a warning.
+#[test]
+fn omits_orphaned_historical_programmatic_caller_with_warning() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([
+        {
+            "role": "assistant",
+            "content": [{
+                "type": "tool-call",
+                "toolCallId": "lookup-call",
+                "toolName": "lookup",
+                "input": { "ticker": "AAPL" },
+                "providerOptions": { "anthropic": {
+                    "caller": { "type": "code_execution_20260120", "toolId": "pruned-source" }
+                } },
+            }],
+        },
+        {
+            "role": "tool",
+            "content": [{
+                "type": "tool-result",
+                "toolCallId": "lookup-call",
+                "toolName": "lookup",
+                "output": { "type": "text", "value": "185.42" },
+            }],
+        },
+        { "role": "user", "content": [{ "type": "text", "text": "Now look up MSFT." }] },
+    ]))
+    .unwrap();
+    let result = aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full_fallible(
+        &prompt, false,
+    )
+    .unwrap();
+    assert_eq!(
+        result.messages[0]["content"],
+        json!([{ "type": "tool_use", "id": "lookup-call", "name": "lookup", "input": { "ticker": "AAPL" } }])
+    );
+    assert_eq!(
+        result.warnings,
+        vec![Warning::Other {
+            message: "Omitted caller metadata for tool lookup-call because source code execution tool pruned-source is missing from the conversation history.".into()
+        }]
+    );
+}

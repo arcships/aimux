@@ -1190,6 +1190,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic omits the `caller` of a historical tool call or result whose
+  source code execution call is missing from the history (before the last
+  user message), with a warning, as the AI SDK does; it sent the orphaned
+  caller, which Anthropic rejects.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not
