@@ -2683,3 +2683,51 @@ async fn stream_tool_calls_take_the_completed_arguments() {
         .collect();
     assert_eq!(inputs, [r#"{"path":"icon.svg"}"#]);
 }
+
+/// TS: `doStream` (open-responses-language-model.ts:957-990): `response.failed`
+/// with an error and in-stream `error` events become error parts carrying
+/// the event as `data`, and the stream finishes with `error`.
+#[tokio::test]
+async fn stream_errors_become_error_parts() {
+    let failed = json!({ "type": "response.failed", "response": { "status": "failed",
+                         "error": { "code": "429", "message": "Rate limit reached" } } });
+    let error =
+        json!({ "type": "error", "error": { "code": "503", "message": "Service unavailable" } });
+    let text = json!({ "type": "response.output_item.added", "item": { "type": "message", "id": "msg_1" } });
+    for (events, message, code) in [
+        (vec![failed.clone()], "Rate limit reached", "429"),
+        (vec![text, error.clone()], "Service unavailable", "503"),
+    ] {
+        let server = MockServer::start().await;
+        mock_sse(
+            &server,
+            events
+                .iter()
+                .map(|event| sse_event(&event.to_string()))
+                .collect(),
+        )
+        .await;
+        let result = make_model(&server, "m")
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+        let error = parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::Error {
+                    error: aimux_core::error::AiMuxError::ApiCall(error),
+                } => Some(error),
+                _ => None,
+            })
+            .expect("an error part");
+        assert_eq!(error.message, message);
+        assert_eq!(error.provider_code.as_deref(), Some(code));
+        assert_eq!(error.data.as_ref(), events.last());
+        let Some(StreamPart::Finish { finish_reason, .. }) = parts.last() else {
+            panic!("no finish");
+        };
+        assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+        assert_eq!(finish_reason.raw.as_deref(), Some(code));
+    }
+}

@@ -1180,6 +1180,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses turns `response.failed` events that carry an error, and
+  `error` events after the first one, into error parts with the event as
+  `data`, and finishes with `error`, as the AI SDK does. Both used to end
+  the stream without an error part (an `error` event was ignored). An error
+  as the first event is still returned by `do_stream`.
+
 - Open Responses streamed tool calls take the completed item's arguments
   unless they are empty, as the AI SDK does. An empty `arguments` from
   `response.output_item.added` used to win, so a stream without argument

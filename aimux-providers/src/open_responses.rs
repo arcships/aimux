@@ -527,6 +527,9 @@ impl LanguageModel for OpenResponsesModel {
             futures::stream::iter(first_event).chain(sse_stream),
             OpenResponsesStream {
                 provider_options_name: self.provider_options_name.clone(),
+                url: endpoint,
+                request_body: stream_body,
+                response_headers: response_headers.clone(),
                 warnings,
                 final_usage: Usage::default(),
                 has_tool_calls: false,
@@ -549,6 +552,10 @@ impl LanguageModel for OpenResponsesModel {
 /// The `TransformStream` of `OpenResponsesLanguageModel.doStream`.
 struct OpenResponsesStream {
     provider_options_name: String,
+    /// The request, for the errors of in-stream error events.
+    url: String,
+    request_body: Value,
+    response_headers: HashMap<String, String>,
     warnings: Vec<Warning>,
     final_usage: Usage,
     has_tool_calls: bool,
@@ -572,6 +579,9 @@ impl Transformer for OpenResponsesStream {
     fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
         let Self {
             ref provider_options_name,
+            ref url,
+            ref request_body,
+            ref response_headers,
             ref mut final_usage,
             ref mut has_tool_calls,
             ref mut finish_reason,
@@ -834,7 +844,27 @@ impl Transformer for OpenResponsesStream {
                             if let Some(usage_val) = response.get("usage") {
                                 *final_usage = extract_usage_from_value(usage_val);
                             }
+                            if let Some(error) = response.get("error").filter(|e| !e.is_null()) {
+                                let error = stream_error(
+                                    error,
+                                    &chunk,
+                                    url,
+                                    request_body,
+                                    response_headers,
+                                );
+                                controller.enqueue(StreamPart::Error { error });
+                            }
                         }
+                    }
+                    "error" => {
+                        let error = chunk.get("error").unwrap_or(&Value::Null);
+                        *finish_reason = FinishReason {
+                            unified: FinishReasonUnified::Error,
+                            raw: error_code(error),
+                        };
+                        let error =
+                            stream_error(error, &chunk, url, request_body, response_headers);
+                        controller.enqueue(StreamPart::Error { error });
                     }
                     _ => {
                         // Ignore unrecognised event types.
@@ -862,6 +892,40 @@ impl Transformer for OpenResponsesStream {
             usage: self.final_usage,
             provider_metadata: None,
         });
+    }
+}
+
+// == Stream errors ==
+
+/// createOpenResponsesStreamError: the error of a `response.failed` or
+/// `error` event, with the event as `data` and no status code.
+fn stream_error(
+    error: &Value,
+    event: &Value,
+    url: &str,
+    request_body: &Value,
+    response_headers: &HashMap<String, String>,
+) -> AiMuxError {
+    aimux_provider_utils::stream_error_api_call(
+        error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        error_code(error),
+        None,
+        event,
+        url,
+        request_body.clone(),
+        response_headers.clone(),
+    )
+}
+
+/// An error's `code`, a string or a number.
+fn error_code(error: &Value) -> Option<String> {
+    match error.get("code")? {
+        Value::String(code) => Some(code.clone()),
+        Value::Number(code) => Some(code.to_string()),
+        _ => None,
     }
 }
 
