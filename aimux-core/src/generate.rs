@@ -2334,7 +2334,8 @@ pub(crate) fn split_prompt(
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::openai_output::{
-    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, to_chat_completion_stream,
+    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, ResponseIdentity,
+    to_chat_completion_stream_with_identity,
 };
 
 /// Generate text and return the result as an OpenAI Chat Completion.
@@ -2403,7 +2404,9 @@ pub fn generate_text_result_to_chat_completion(
 ///
 /// This is the OpenAI-compatible equivalent of [`stream_text`]. Internally
 /// it calls `stream_text`, then converts the `StreamPart` stream into a
-/// `ChatCompletionChunk` stream via [`to_chat_completion_stream`].
+/// `ChatCompletionChunk` stream via [`to_chat_completion_stream_with_identity`].
+/// The chunks carry the provider's response id and model when the provider
+/// reports them (RFC-0026 §4.4).
 ///
 /// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
 /// always standard OpenAI Chat Completions streaming chunks.
@@ -2449,10 +2452,12 @@ pub async fn stream_text_as_openai(
     options: GenerateTextOptions,
     stream_options: OpenAiStreamOptions,
 ) -> Result<ChatCompletionStream, AiMuxError> {
-    let result = stream_text(model, prompt, options).await?;
-    Ok(to_chat_completion_stream(
+    let identity = ResponseIdentity::default();
+    let result = stream_text(&identity.observe(model), prompt, options).await?;
+    Ok(to_chat_completion_stream_with_identity(
         result.stream,
         model.model_id(),
         stream_options,
+        identity,
     ))
 }

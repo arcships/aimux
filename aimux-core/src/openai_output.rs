@@ -26,6 +26,7 @@
 
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::Stream;
@@ -35,15 +36,20 @@ use serde_json::Value;
 
 use crate::error::AiMuxError;
 use crate::generate::GenerateTextResult;
+use crate::language_model::{LanguageModel, SupportedUrls};
+use crate::options::CallOptions;
 use crate::parse_tool_call::original_tool_call_text;
+use crate::result::StreamResult;
 use crate::result::{
     ContentPart, GenerateContent, GenerateResult, GeneratedFileOutput, ReasoningOutput, Source,
     TypedToolError, TypedToolResult,
 };
 use crate::shared::GeneratedFileData;
-use crate::stream_part::TextStreamPart;
+use crate::stream_part::{StreamPart, TextStreamPart};
 use crate::tool::ToolCall;
-use crate::types::{FinishReasonUnified, LanguageModelUsage, as_language_model_usage};
+use crate::types::{
+    FinishReasonUnified, LanguageModelUsage, ResponseMetadata, as_language_model_usage,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-streaming response types
@@ -521,12 +527,61 @@ pub fn to_chat_completion_stream(
     model: &str,
     options: OpenAiStreamOptions,
 ) -> ChatCompletionStream {
+    chat_completion_stream(stream, model, options, None)
+}
+
+/// The response id and model a provider reported in its stream
+/// (`StreamPart::ResponseMetadata`), recorded by the model that
+/// [`observe`](Self::observe) returns. `stream_text` folds that part into the
+/// step result, so its `TextStreamPart` stream carries the id and model only
+/// at the end of the step.
+#[derive(Clone, Debug, Default)]
+pub struct ResponseIdentity(Arc<Mutex<Option<ResponseMetadata>>>);
+
+impl ResponseIdentity {
+    /// `model`, recording the `ResponseMetadata` of its streams here. A
+    /// transparent decorator: everything else is forwarded.
+    #[must_use]
+    pub fn observe<'a>(&self, model: &'a dyn LanguageModel) -> ResponseIdentityTap<'a> {
+        ResponseIdentityTap {
+            model,
+            identity: self.clone(),
+        }
+    }
+
+    fn reported(&self) -> Option<ResponseMetadata> {
+        self.0.lock().ok()?.clone()
+    }
+}
+
+/// [`to_chat_completion_stream`] whose chunks carry the provider's response id
+/// and model once `identity` holds them (RFC-0026 §4.4: `ResponseMetadata`
+/// records id/model). They arrive with the model's first chunk, after the
+/// call's `Start`, so the role frame waits for the first content, the end of
+/// the stream or an error. Without a report the chunks keep the generated id
+/// and `model`.
+#[must_use]
+pub fn to_chat_completion_stream_with_identity(
+    stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>>,
+    model: &str,
+    options: OpenAiStreamOptions,
+    identity: ResponseIdentity,
+) -> ChatCompletionStream {
+    chat_completion_stream(stream, model, options, Some(identity))
+}
+
+fn chat_completion_stream(
+    stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>>,
+    model: &str,
+    options: OpenAiStreamOptions,
+    identity: Option<ResponseIdentity>,
+) -> ChatCompletionStream {
     let model = model.to_string();
     let include_usage = options.include_usage;
     let include_reasoning = options.include_reasoning;
 
     let chunk_stream = async_stream::stream! {
-        let mut state = StreamState::new(model.clone());
+        let mut state = StreamState::new(model.clone(), identity);
 
         use futures::StreamExt;
         let mut stream = stream;
@@ -540,6 +595,9 @@ pub fn to_chat_completion_stream(
                 }
                 Err(e) => {
                     // Emit error as a content delta + finish, then stop.
+                    if let Some(chunk) = state.pending_start() {
+                        yield Ok(chunk);
+                    }
                     if let Some(chunk) = state.error_chunk(&e) {
                         yield Ok(chunk);
                     }
@@ -562,6 +620,9 @@ pub fn to_chat_completion_stream(
         }
 
         // Stream ended without Finish — emit a final chunk.
+        if let Some(chunk) = state.pending_start() {
+            yield Ok(chunk);
+        }
         if let Some(chunk) = state.final_chunk(include_usage) {
             yield Ok(chunk);
         }
@@ -587,6 +648,10 @@ struct StreamState {
     final_usage: Option<LanguageModelUsage>,
     final_finish_reason: Option<(FinishReasonUnified, Option<String>)>,
     finish_emitted: bool,
+    /// The provider's response id and model, read when the role frame is sent.
+    identity: Option<ResponseIdentity>,
+    /// `Start` was seen and its role frame waits for the identity.
+    start_pending: bool,
 }
 
 #[allow(dead_code)]
@@ -599,7 +664,7 @@ struct ToolCallAccum {
 }
 
 impl StreamState {
-    fn new(model: String) -> Self {
+    fn new(model: String, identity: Option<ResponseIdentity>) -> Self {
         Self {
             id: format!("chatcmpl-{}", random_id()),
             model,
@@ -612,6 +677,8 @@ impl StreamState {
             final_usage: None,
             final_finish_reason: None,
             finish_emitted: false,
+            identity,
+            start_pending: false,
         }
     }
 
@@ -633,6 +700,15 @@ impl StreamState {
             return None;
         }
         self.started = true;
+        let reported = self.identity.as_ref().and_then(ResponseIdentity::reported);
+        if let Some(reported) = reported {
+            if let Some(id) = reported.id {
+                self.id = id;
+            }
+            if let Some(model) = reported.model_id {
+                self.model = model;
+            }
+        }
         let mut chunk = self.base_chunk();
         chunk.choices = vec![ChatCompletionChunkChoice {
             index: 0,
@@ -647,6 +723,16 @@ impl StreamState {
         Some(chunk)
     }
 
+    /// The role frame of a `Start` still waiting for content, sent before an
+    /// error or the final chunk.
+    fn pending_start(&mut self) -> Option<ChatCompletionChunk> {
+        if self.start_pending {
+            self.ensure_started()
+        } else {
+            None
+        }
+    }
+
     /// Process a single TextStreamPart, returning zero or more output chunks.
     fn process_part(
         &mut self,
@@ -657,6 +743,7 @@ impl StreamState {
         let mut chunks = Vec::new();
 
         match part {
+            TextStreamPart::Start {} if self.identity.is_some() => self.start_pending = true,
             TextStreamPart::Start {} => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
@@ -665,7 +752,9 @@ impl StreamState {
 
             TextStreamPart::FinishStep { response, .. } => {
                 // Response metadata arrives at step end; emitted chunks keep their identity.
-                if !self.started {
+                // With an identity, only what the provider reported counts
+                // (`ensure_started`), not stream_text's generated response id.
+                if !self.started && self.identity.is_none() {
                     self.id.clone_from(&response.id);
                     self.model.clone_from(&response.model_id);
                 }
@@ -989,6 +1078,9 @@ impl StreamState {
             } => {
                 self.final_usage = Some(total_usage.clone());
                 self.final_finish_reason = Some((*finish_reason, raw_finish_reason.clone()));
+                if let Some(c) = self.pending_start() {
+                    chunks.push(c);
+                }
                 // Emit the final chunk here.
                 if let Some(c) = self.final_chunk_impl(include_usage) {
                     chunks.push(c);
@@ -996,6 +1088,9 @@ impl StreamState {
             }
 
             TextStreamPart::Error { error } => {
+                if let Some(chunk) = self.pending_start() {
+                    chunks.push(chunk);
+                }
                 if let Some(chunk) = self.error_chunk(error) {
                     chunks.push(chunk);
                 }
@@ -1073,6 +1168,50 @@ impl StreamState {
         }];
         chunk.usage = usage;
         Some(chunk)
+    }
+}
+
+/// A model that records the `ResponseMetadata` of its streams into a
+/// [`ResponseIdentity`]; see [`ResponseIdentity::observe`].
+pub struct ResponseIdentityTap<'a> {
+    model: &'a dyn LanguageModel,
+    identity: ResponseIdentity,
+}
+
+#[async_trait::async_trait]
+impl LanguageModel for ResponseIdentityTap<'_> {
+    fn specification_version(&self) -> &'static str {
+        self.model.specification_version()
+    }
+
+    fn provider(&self) -> &str {
+        self.model.provider()
+    }
+
+    fn model_id(&self) -> &str {
+        self.model.model_id()
+    }
+
+    async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        self.model.do_generate(options).await
+    }
+
+    async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        use futures::StreamExt;
+        let mut result = self.model.do_stream(options).await?;
+        let identity = self.identity.clone();
+        result.stream = Box::pin(result.stream.inspect(move |part| {
+            if let Ok(StreamPart::ResponseMetadata(metadata)) = part
+                && let Ok(mut identity) = identity.0.lock()
+            {
+                *identity = Some(metadata.clone());
+            }
+        }));
+        Ok(result)
+    }
+
+    async fn supported_urls(&self) -> SupportedUrls {
+        self.model.supported_urls().await
     }
 }
 

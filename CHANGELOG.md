@@ -1192,6 +1192,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release depends on the locked `@ai-sdk/google` 4.0.87. The Vertex user
   agent now reads `ai-sdk-google-vertex/5.0.100 ai-sdk-provider-utils/5.0.53`,
   and the MaaS and xAI models send `ai-sdk-openai-compatible/3.0.61`.
+- `stream_text_as_openai` and the bindings' OpenAI-format text stream carry
+  the provider's response id and model in every chunk again, as aimux 0.5
+  did; they sent a generated `chatcmpl-…` id and the requested model name.
+  The role frame now waits for the first content so that it has them. New
+  `ResponseIdentity` and `to_chat_completion_stream_with_identity` do the
+  same for a caller's own `stream_text` stream.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now
