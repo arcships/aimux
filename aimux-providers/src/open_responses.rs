@@ -335,9 +335,12 @@ impl LanguageModel for OpenResponsesModel {
             for part in output_arr {
                 let part_type = part.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 match part_type {
-                    "reasoning" => {
-                        if let Some(content_parts) = part.get("content").and_then(|c| c.as_array())
-                        {
+                    "reasoning" => match part
+                        .get("content")
+                        .and_then(Value::as_array)
+                        .filter(|parts| !parts.is_empty())
+                    {
+                        Some(content_parts) => {
                             for cp in content_parts {
                                 if let Some(text) = cp.get("text").and_then(|t| t.as_str()) {
                                     content.push(GenerateContent::Reasoning(ReasoningOutput {
@@ -351,7 +354,25 @@ impl LanguageModel for OpenResponsesModel {
                                 }
                             }
                         }
-                    }
+                        // No reasoning content (a summary or encrypted-only
+                        // item): one part with the joined summary text.
+                        None => {
+                            let text = part["summary"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|summary| summary["text"].as_str())
+                                .collect::<String>();
+                            content.push(GenerateContent::Reasoning(ReasoningOutput {
+                                text,
+                                provider_metadata: reasoning_metadata(
+                                    &self.provider_options_name,
+                                    part,
+                                    &part["content"],
+                                ),
+                            }));
+                        }
+                    },
                     "message" => {
                         if let Some(content_parts) = part.get("content").and_then(|c| c.as_array())
                         {

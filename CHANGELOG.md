@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses keeps reasoning items that have no reasoning content, as
+  the AI SDK does: a summary or encrypted-only item yields one reasoning part
+  with the joined summary text and the item's metadata. They were dropped.
+
 - Open Responses output carries the item metadata, as the AI SDK does: text
   parts and `text-end` carry `{ <name>: { itemId, annotations? } }`, tool
   calls `{ itemId }`, and reasoning parts and `reasoning-end` the item id,

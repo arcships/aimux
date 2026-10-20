@@ -2535,3 +2535,51 @@ async fn output_parts_carry_the_item_metadata() {
         ]
     );
 }
+
+/// TS: `doGenerate` (open-responses-language-model.ts:448-473): a reasoning
+/// item without content yields one reasoning part with the joined summary
+/// text, so summary and encrypted-only items are kept.
+#[tokio::test]
+async fn summary_only_reasoning_items_yield_reasoning() {
+    let server = MockServer::start().await;
+    mock_json(
+        &server,
+        json!({
+            "id": "resp_1", "created_at": 1, "model": "m", "status": "completed",
+            "output": [
+                { "type": "reasoning", "id": "rs_1",
+                  "summary": [{ "type": "summary_text", "text": "First. " },
+                              { "type": "summary_text", "text": "Second." }] },
+                { "type": "reasoning", "id": "rs_2", "summary": [], "content": [],
+                  "encrypted_content": "enc" }
+            ]
+        }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let reasoning: Vec<Value> = result
+        .content
+        .iter()
+        .map(|part| match part {
+            GenerateContent::Reasoning(part) => {
+                json!({ "text": part.text, "metadata": part.provider_metadata })
+            }
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        reasoning,
+        vec![
+            json!({ "text": "First. Second.", "metadata": { "lmstudio": { "itemId": "rs_1",
+                "reasoningSummary": [{ "type": "summary_text", "text": "First. " },
+                                     { "type": "summary_text", "text": "Second." }],
+                "reasoningContent": null } } }),
+            json!({ "text": "", "metadata": { "lmstudio": { "itemId": "rs_2",
+                "reasoningSummary": [], "reasoningContent": [],
+                "reasoningEncryptedContent": "enc" } } }),
+        ]
+    );
+}
