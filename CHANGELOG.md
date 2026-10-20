@@ -1190,6 +1190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic leaves `citations` out of a web_fetch tool result whose document
+  has none, as the AI SDK does; it emitted `"citations": null` there and sent
+  it back in the next request.
 - Anthropic surfaces a server-side `fallback` content block as an
   `anthropic.fallback` custom part (generate and stream) and sends such an
   assistant part back as a `fallback` block, a boundary that keeps reasoning

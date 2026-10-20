@@ -17,8 +17,9 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
 use aimux_core::options::CallOptions;
+use aimux_core::result::GenerateContent;
 use aimux_core::shared::provider_namespace;
-use aimux_core::tool::{FunctionTool, Tool};
+use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::Warning;
 use aimux_providers::anthropic::sanitize_json_schema::sanitize_json_schema;
 use aimux_providers::anthropic::{
@@ -707,6 +708,60 @@ async fn fallback_block_round_trips_as_custom_part() {
                 "from": { "model": "claude-fable-5" },
                 "to": { "model": "claude-opus-4-8" },
             } },
+        })
+    );
+}
+
+/// The AI SDK leaves `citations` out of a web_fetch result whose document has none.
+#[tokio::test]
+async fn web_fetch_result_without_citations_omits_the_key() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "msg_123", "type": "message", "role": "assistant",
+        "content": [
+            {
+                "type": "server_tool_use", "id": "srvtoolu_1", "name": "web_fetch",
+                "input": { "url": "https://example.com" }
+            },
+            {
+                "type": "web_fetch_tool_result", "tool_use_id": "srvtoolu_1",
+                "content": {
+                    "type": "web_fetch_result", "url": "https://example.com",
+                    "retrieved_at": "2025-09-29T07:28:57.560000+00:00",
+                    "content": {
+                        "type": "document", "title": null,
+                        "source": { "type": "text", "media_type": "text/plain", "data": "Hi" }
+                    }
+                }
+            }
+        ],
+        "model": "claude-3-haiku-20240307", "stop_reason": "end_turn",
+        "stop_sequence": null, "usage": { "input_tokens": 1, "output_tokens": 1 }
+    }))]);
+    let mut opts = default_options(test_prompt());
+    opts.tools = Some(vec![Tool::Provider(ProviderTool {
+        id: "anthropic.web_fetch_20250910".parse().unwrap(),
+        name: "web_fetch".to_string(),
+        args: serde_json::Map::new(),
+        supports_deferred_results: None,
+    })]);
+    let result = make_model_with_config(settings(&fetch))
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    let document = result
+        .content
+        .iter()
+        .find_map(|part| match part {
+            GenerateContent::ToolResult(tool_result) => Some(tool_result.result["content"].clone()),
+            _ => None,
+        })
+        .expect("a web_fetch tool result");
+    assert_eq!(
+        document,
+        json!({
+            "type": "document",
+            "title": null,
+            "source": { "type": "text", "mediaType": "text/plain", "data": "Hi" }
         })
     );
 }

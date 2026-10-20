@@ -1364,21 +1364,25 @@ fn assistant_web_fetch_content(value: &Value, is_error: bool) -> Value {
     }
     let inner = value.get("content").cloned().unwrap_or(Value::Null);
     let source = inner.get("source").cloned().unwrap_or(Value::Null);
-    json!({
+    let mut content = json!({
         "type": "web_fetch_result",
         "url": field(value, "url"),
         "retrieved_at": field(value, "retrievedAt"),
         "content": {
             "type": "document",
             "title": field(&inner, "title"),
-            "citations": field(&inner, "citations"),
             "source": {
                 "type": field(&source, "type"),
                 "media_type": field(&source, "mediaType"),
                 "data": field(&source, "data"),
             },
         },
-    })
+    });
+    // An absent `citations` stays absent, as `JSON.stringify` drops it.
+    if let Some(citations) = inner.get("citations").filter(|value| !value.is_null()) {
+        content["content"]["citations"] = citations.clone();
+    }
+    content
 }
 
 /// `web_search` result payload → wire `web_search_tool_result.content`

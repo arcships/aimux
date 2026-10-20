@@ -137,24 +137,25 @@ fn map_web_fetch_result(payload: &Value) -> (Value, Option<bool>) {
     }
     let inner = payload.get("content").cloned().unwrap_or(Value::Null);
     let source = inner.get("source").cloned().unwrap_or(Value::Null);
-    (
-        json!({
-            "type": "web_fetch_result",
-            "url": payload.get("url").cloned().unwrap_or(Value::Null),
-            "retrievedAt": payload.get("retrieved_at").cloned().unwrap_or(Value::Null),
-            "content": {
-                "type": "document",
-                "title": inner.get("title").cloned().unwrap_or(Value::Null),
-                "citations": inner.get("citations").cloned().unwrap_or(Value::Null),
-                "source": {
-                    "type": source.get("type").cloned().unwrap_or(Value::Null),
-                    "mediaType": source.get("media_type").cloned().unwrap_or(Value::Null),
-                    "data": source.get("data").cloned().unwrap_or(Value::Null),
-                },
+    let mut result = json!({
+        "type": "web_fetch_result",
+        "url": payload.get("url").cloned().unwrap_or(Value::Null),
+        "retrievedAt": payload.get("retrieved_at").cloned().unwrap_or(Value::Null),
+        "content": {
+            "type": "document",
+            "title": inner.get("title").cloned().unwrap_or(Value::Null),
+            "source": {
+                "type": source.get("type").cloned().unwrap_or(Value::Null),
+                "mediaType": source.get("media_type").cloned().unwrap_or(Value::Null),
+                "data": source.get("data").cloned().unwrap_or(Value::Null),
             },
-        }),
-        None,
-    )
+        },
+    });
+    // `citations` is optional upstream: a document without it has no key.
+    if let Some(citations) = inner.get("citations").filter(|value| !value.is_null()) {
+        result["content"]["citations"] = citations.clone();
+    }
+    (result, None)
 }
 
 /// `code_execution_tool_result.content` → `(result, is_error)`
