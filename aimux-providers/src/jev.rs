@@ -185,7 +185,7 @@ impl DecisionModel for JevDecisionModel {
         );
         result.map_err(|error| {
             aimux_provider_utils::invalid_response_api_call(
-                error.to_string(),
+                &error,
                 200,
                 &self.config.endpoint,
                 body,

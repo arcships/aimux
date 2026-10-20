@@ -31,6 +31,7 @@ use std::sync::{Arc, OnceLock};
 use futures::future::BoxFuture;
 
 use crate::shared::ProviderHeaders;
+use aimux_core::SourceError;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -271,12 +272,12 @@ impl Fetch for BearerTokenFetch {
                 .token
                 .resolve()
                 .await
-                .map_err(|error| FetchError::Other(error.to_string()))?;
+                .map_err(|error| FetchError::Other(SourceError::new(&error)))?;
             request.headers.insert(
                 reqwest::header::AUTHORIZATION,
                 format!("Bearer {token}").parse().map_err(
                     |error: reqwest::header::InvalidHeaderValue| {
-                        FetchError::Other(error.to_string())
+                        FetchError::Other(SourceError::new(&error))
                     },
                 )?,
             );

@@ -81,6 +81,7 @@ fn stability_successful_response_handler() -> aimux_provider_utils::ResponseHand
                     status_code: Some(status),
                     response_headers: Some(headers.clone()),
                     response_body: Some(String::from_utf8_lossy(&bytes).into_owned()),
+                    cause: Some(aimux_core::ErrorCause::source(&error)),
                     ..aimux_core::ApiCallError::new(
                         format!("Invalid JSON response: {error}"),
                         input.url,
