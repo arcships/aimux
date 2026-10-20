@@ -48,61 +48,74 @@ fn request() -> Value {
     })
 }
 
-/// TS: "should use native structured output without a JSON tool fallback" (anthropic/src/anthropic-language-model.test.ts)
-#[tokio::test]
-async fn generate_native_structured_output() {
-    let text = "{\"name\":\"Classic Lasagna\"}";
-    let response = body(
-        json!([{"type": "text", "text": text}]),
-        "end_turn",
-        json!({"input_tokens": 371, "output_tokens": 629}),
-    );
-    let fetch = MockFetch::new(vec![Canned::json(&response)]);
-    let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false});
-    let mut options = options();
-    options.max_output_tokens = Some(100);
-    options.response_format = Some(ResponseFormat::Json {
-        schema: Some(schema.clone()),
-        name: None,
-        description: None,
-    });
-    let result = provider(&fetch)
-        .messages("claude-future-9")
-        .do_generate(&options)
-        .await
-        .unwrap();
-    let seen = fetch.seen();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].method, "POST");
-    assert_eq!(seen[0].url, "https://test.invalid/v1/messages");
-    assert_eq!(seen[0].headers["x-api-key"], "test-api-key");
-    let mut expected = request();
-    expected["model"] = json!("claude-future-9");
-    expected["max_tokens"] = json!(100);
-    expected["output_config"] = json!({"format": {"type": "json_schema", "schema": schema}});
-    assert_eq!(seen[0].json_body(), expected);
-    assert_eq!(
-        result.content,
-        vec![GenerateContent::Text {
-            text: text.into(),
-            provider_metadata: None
-        }]
-    );
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.finish_reason.raw.as_deref(), Some("end_turn"));
-    assert_eq!(result.usage.input_tokens.total, Some(371));
-    assert_eq!(result.usage.input_tokens.no_cache, Some(371));
-    assert_eq!(result.usage.input_tokens.cache_read, Some(0));
-    assert_eq!(result.usage.input_tokens.cache_write, Some(0));
-    assert_eq!(result.usage.output_tokens.total, Some(629));
-    assert_eq!(result.request.unwrap().body, Some(expected));
-    let returned = result.response.unwrap();
-    assert_eq!(returned.model_id.as_deref(), Some("test-model"));
-    assert_eq!(returned.id.as_deref(), Some("msg_017TfcQ4AgGxKyBduUpqYPZn"));
-    assert_eq!(returned.body, Some(response));
+mod anthropic_language_model {
+    use super::*;
+
+    mod do_generate {
+        use super::*;
+
+        mod forward_compatible_defaults_for_unknown_claude_models {
+            use super::*;
+
+            /// upstream: @ai-sdk/anthropic src/anthropic-language-model.test.ts › AnthropicLanguageModel › doGenerate › forward-compatible defaults for unknown Claude models › should use native structured output without a JSON tool fallback
+            #[tokio::test]
+            async fn generate_native_structured_output() {
+                let text = "{\"name\":\"Classic Lasagna\"}";
+                let response = body(
+                    json!([{"type": "text", "text": text}]),
+                    "end_turn",
+                    json!({"input_tokens": 371, "output_tokens": 629}),
+                );
+                let fetch = MockFetch::new(vec![Canned::json(&response)]);
+                let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false});
+                let mut options = options();
+                options.max_output_tokens = Some(100);
+                options.response_format = Some(ResponseFormat::Json {
+                    schema: Some(schema.clone()),
+                    name: None,
+                    description: None,
+                });
+                let result = provider(&fetch)
+                    .messages("claude-future-9")
+                    .do_generate(&options)
+                    .await
+                    .unwrap();
+                let seen = fetch.seen();
+                assert_eq!(seen.len(), 1);
+                assert_eq!(seen[0].method, "POST");
+                assert_eq!(seen[0].url, "https://test.invalid/v1/messages");
+                assert_eq!(seen[0].headers["x-api-key"], "test-api-key");
+                let mut expected = request();
+                expected["model"] = json!("claude-future-9");
+                expected["max_tokens"] = json!(100);
+                expected["output_config"] =
+                    json!({"format": {"type": "json_schema", "schema": schema}});
+                assert_eq!(seen[0].json_body(), expected);
+                assert_eq!(
+                    result.content,
+                    vec![GenerateContent::Text {
+                        text: text.into(),
+                        provider_metadata: None
+                    }]
+                );
+                assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+                assert_eq!(result.finish_reason.raw.as_deref(), Some("end_turn"));
+                assert_eq!(result.usage.input_tokens.total, Some(371));
+                assert_eq!(result.usage.input_tokens.no_cache, Some(371));
+                assert_eq!(result.usage.input_tokens.cache_read, Some(0));
+                assert_eq!(result.usage.input_tokens.cache_write, Some(0));
+                assert_eq!(result.usage.output_tokens.total, Some(629));
+                assert_eq!(result.request.unwrap().body, Some(expected));
+                let returned = result.response.unwrap();
+                assert_eq!(returned.model_id.as_deref(), Some("test-model"));
+                assert_eq!(returned.id.as_deref(), Some("msg_017TfcQ4AgGxKyBduUpqYPZn"));
+                assert_eq!(returned.body, Some(response));
+            }
+        }
+    }
 }
 
-/// TS: "should stream text deltas" (anthropic/src/anthropic-language-model.test.ts)
+/// partial: `should stream text deltas`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn stream_text_deltas() {
     let events = [
@@ -181,7 +194,7 @@ async fn stream_text_deltas() {
     assert_eq!(provider_metadata.as_ref().unwrap()["anthropic"], serde_json::from_value::<serde_json::Map<String, Value>>(json!({"container": null, "contextManagement": null, "iterations": null, "stopSequence": null, "usage": {"input_tokens": 17, "output_tokens": 227}})).unwrap());
 }
 
-/// TS: "should extract tool calls" (anthropic/src/anthropic-language-model.test.ts)
+/// partial: `should extract tool calls`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn generate_tool_call() {
     let response = body(
@@ -229,7 +242,8 @@ async fn generate_tool_call() {
     assert_eq!(result.usage.output_tokens.total, Some(30));
 }
 
-/// TS: "should parse overloaded error" (anthropic/src/anthropic-error.test.ts)
+/// partial: `should parse overloaded error`; full port in src/anthropic/tests/error.rs.
+/// partial: `should throw an api error when the server is returning a 529 overloaded error`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn overloaded_error_response() {
     let mut canned = Canned::json(

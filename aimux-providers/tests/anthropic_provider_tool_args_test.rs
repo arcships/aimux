@@ -137,6 +137,7 @@ async fn args_that_match_the_schema_are_sent() {
     }
 }
 
+/// partial: `should reject advisor_20260301 maxTokens below 1024`; full port in src/anthropic/tests/prepare_tools.rs.
 #[tokio::test]
 async fn args_that_do_not_match_fail_the_call_before_any_request() {
     for (id, _, invalid) in cases() {

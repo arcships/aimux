@@ -66,6 +66,7 @@ fn provider(
     .unwrap()
 }
 
+/// partial: `selects native structured output automatically for supported models`; full port in src/anthropic/tests/evaluation.rs.
 #[tokio::test]
 async fn decides_through_the_messages_api() {
     let mock = MockFetch::new(vec![Canned::json(&answer())]);

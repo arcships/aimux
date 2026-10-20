@@ -139,6 +139,7 @@ fn is_missing_action_warning(warning: &Warning, tool_name: &str) -> bool {
         if message == &format!("toolset tool call for tool {tool_name} is missing the action"))
 }
 
+/// partial: `should serialize toolset tool calls and results with toolset_name`; full port in src/anthropic/tests/convert_to_prompt.rs.
 #[tokio::test]
 async fn a_member_call_goes_back_with_its_action_in_the_input() {
     let (messages, body, warnings) = sent_messages(
@@ -173,6 +174,7 @@ async fn a_member_call_goes_back_with_its_action_in_the_input() {
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
+/// partial: `should retain malformed toolset calls and their existing error results: %j`; full port in src/anthropic/tests/convert_to_prompt.rs.
 #[tokio::test]
 async fn a_member_call_without_an_action_is_sent_under_the_toolset_name() {
     let (messages, _, warnings) = sent_messages(
@@ -193,6 +195,7 @@ async fn a_member_call_without_an_action_is_sent_under_the_toolset_name() {
     assert!(is_missing_action_warning(&warnings[0], "my_computer"));
 }
 
+/// partial: `should retain malformed toolset calls and their existing error results: %j`; full port in src/anthropic/tests/convert_to_prompt.rs.
 #[tokio::test]
 async fn a_non_string_action_counts_as_missing_and_a_non_object_input_is_wrapped() {
     let (messages, _, warnings) = sent_messages(
@@ -217,6 +220,7 @@ async fn a_non_string_action_counts_as_missing_and_a_non_object_input_is_wrapped
     assert!(is_missing_action_warning(&warnings[0], "my_computer"));
 }
 
+/// partial: `should detect toolset tool calls through provider metadata when the tool is not passed`; full port in src/anthropic/tests/convert_to_prompt.rs.
 #[tokio::test]
 async fn the_toolset_comes_from_the_anthropic_metadata_when_the_tool_is_not_passed() {
     let (messages, _, _) = sent_messages(
@@ -259,6 +263,7 @@ async fn the_toolset_comes_from_the_anthropic_metadata_when_the_tool_is_not_pass
     }
 }
 
+/// partial: `should round-trip member calls and results with toolset_name`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn a_generated_member_call_round_trips_as_upstream_sends_it() {
     let fetch = MockFetch::new(vec![
@@ -389,6 +394,7 @@ fn member_call(parts: &[StreamPart]) -> (String, Vec<String>, String, String) {
     )
 }
 
+/// partial: `should stream member calls as a single input delta with the action injected`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn a_streamed_member_call_is_one_delta_with_the_action_injected() {
     let parts = stream_parts(&member_call_events(

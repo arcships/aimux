@@ -1913,6 +1913,7 @@ mod stream_tests {
         ]
     }
 
+    /// partial: `should stream tool deltas`; full port in src/anthropic/tests/language_model.rs.
     #[test]
     fn interleaved_text_and_tool_blocks_then_message_stop_finish_the_stream() {
         let mut input = vec![message_start()];
@@ -1962,6 +1963,7 @@ mod stream_tests {
         );
     }
 
+    /// partial: `should forward error chunks`; full port in src/anthropic/tests/language_model.rs.
     #[test]
     fn an_error_event_is_an_error_part_and_the_stream_goes_on() {
         let mut input = vec![message_start()];
