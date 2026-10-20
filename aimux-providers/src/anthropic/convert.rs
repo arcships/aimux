@@ -18,8 +18,9 @@ use std::collections::{BTreeSet, HashSet};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
-    AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
-    ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
+    AssistantPart, CustomPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart,
+    TextPart, ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart,
+    UserPart,
 };
 use aimux_core::options::{
     CallOptions, FunctionTool, LanguageModelV4ToolChoice, ResponseFormat, Tool,
@@ -181,7 +182,7 @@ fn convert_prompt_with_validator(
                 for part in content {
                     if matches!(
                         part.get("type").and_then(Value::as_str),
-                        Some("thinking" | "redacted_thinking")
+                        Some("thinking" | "redacted_thinking" | "fallback")
                     ) {
                         flush_segment(&mut segment, &mut ordered);
                         ordered.push(part);
@@ -938,6 +939,41 @@ fn convert_assistant_part(
                 block["caller"] = caller;
             }
             apply_cc(block, cc)
+        }
+
+        // A server-side fallback boundary from a previous response; only the
+        // canonical `anthropic` key is read, where the response side writes
+        // it (convert-to-anthropic-prompt.ts:829-853).
+        AssistantPart::Custom(CustomPart {
+            kind,
+            provider_options,
+        }) if kind.as_str() == "anthropic.fallback" => {
+            let metadata = provider_options
+                .as_ref()
+                .and_then(|options| options.get(CANONICAL));
+            let model = |key: &str| {
+                metadata?
+                    .get(key)?
+                    .get("model")?
+                    .as_str()
+                    .map(|model| json!({ "model": model }))
+            };
+            match (
+                metadata.and_then(|metadata| metadata.get("type")),
+                model("from"),
+                model("to"),
+            ) {
+                (Some(Value::String(kind)), Some(from), Some(to)) if kind == "fallback" => {
+                    json!({ "type": "fallback", "from": from, "to": to })
+                }
+                _ => {
+                    warnings.push(Warning::Other {
+                        message: "anthropic fallback metadata must include from.model and to.model"
+                            .to_string(),
+                    });
+                    return Ok(None);
+                }
+            }
         }
 
         AssistantPart::ReasoningFile(_) | AssistantPart::Custom(_) => return Ok(None),

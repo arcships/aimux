@@ -648,3 +648,65 @@ fn mcp_tool_result_round_trip_warns_like_upstream() {
         }]
     );
 }
+
+/// Upstream surfaces a response `fallback` block as an `anthropic.fallback` custom part and sends it back as a `fallback` block between reasoning blocks.
+#[tokio::test]
+async fn fallback_block_round_trips_as_custom_part() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "msg_fallback", "type": "message", "role": "assistant",
+        "model": "claude-opus-4-8",
+        "content": [
+            { "type": "fallback", "from": { "model": "claude-fable-5" }, "to": { "model": "claude-opus-4-8" } },
+            { "type": "text", "text": "Hi" },
+        ],
+        "stop_reason": "end_turn", "stop_sequence": null,
+        "usage": { "input_tokens": 1, "output_tokens": 1 },
+    }))]);
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([
+        {
+            "role": "assistant",
+            "content": [
+                { "type": "reasoning", "text": "primary", "providerOptions": { "anthropic": { "signature": "sig-1" } } },
+                {
+                    "type": "custom",
+                    "kind": "anthropic.fallback",
+                    "providerOptions": { "anthropic": {
+                        "type": "fallback",
+                        "from": { "model": "claude-fable-5" },
+                        "to": { "model": "claude-opus-4-8" },
+                    } },
+                },
+                { "type": "reasoning", "text": "fallback", "providerOptions": { "anthropic": { "signature": "sig-2" } } },
+                { "type": "text", "text": "Done." },
+            ],
+        },
+        { "role": "user", "content": [{ "type": "text", "text": "Hello" }] },
+    ]))
+    .unwrap();
+    let result = make_model_with_config(settings(&fetch))
+        .do_generate(&default_options(prompt))
+        .await
+        .unwrap();
+    let body = fetch.seen()[0].json_body();
+    assert_eq!(
+        body["messages"][0]["content"],
+        json!([
+            { "type": "thinking", "thinking": "primary", "signature": "sig-1" },
+            { "type": "fallback", "from": { "model": "claude-fable-5" }, "to": { "model": "claude-opus-4-8" } },
+            { "type": "thinking", "thinking": "fallback", "signature": "sig-2" },
+            { "type": "text", "text": "Done." },
+        ])
+    );
+    assert_eq!(
+        serde_json::to_value(&result.content).unwrap()[0],
+        json!({
+            "type": "custom",
+            "kind": "anthropic.fallback",
+            "providerMetadata": { "anthropic": {
+                "type": "fallback",
+                "from": { "model": "claude-fable-5" },
+                "to": { "model": "claude-opus-4-8" },
+            } },
+        })
+    );
+}

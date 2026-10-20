@@ -1190,6 +1190,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic surfaces a server-side `fallback` content block as an
+  `anthropic.fallback` custom part (generate and stream) and sends such an
+  assistant part back as a `fallback` block, a boundary that keeps reasoning
+  blocks apart, warning when its `from.model` / `to.model` are missing, as the
+  AI SDK does; it dropped the block both ways.
 - Anthropic warns `provider executed tool result for tool <name> is not
   supported` when it sends an MCP tool result back as `mcp_tool_result`, as
   the AI SDK does; it sent the block without the warning.

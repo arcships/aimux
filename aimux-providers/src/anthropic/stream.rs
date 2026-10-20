@@ -33,7 +33,7 @@ use super::convert::parse_stop_reason;
 use super::options::CANONICAL;
 use super::tool_name_mapping::ToolNameMapping;
 use super::types::{
-    AnthropicResponse, AnthropicUsage, ContentBlock, DeltaBlock, MessageDeltaBody,
+    AnthropicResponse, AnthropicUsage, ContentBlock, DeltaBlock, FallbackModel, MessageDeltaBody,
     MessageStartData, StreamErrorData, StreamEvent, ToolCallCaller,
 };
 use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
@@ -657,6 +657,24 @@ fn web_fetch_document(payload: &Value) -> Option<CitationDocument> {
     })
 }
 
+fn fallback_kind() -> NamespacedKind {
+    NamespacedKind::new("anthropic.fallback").expect("anthropic.fallback is namespaced")
+}
+
+/// A `fallback` block as the `anthropic.fallback` custom part's metadata
+/// (anthropic-language-model.ts:1724-1737, 1976-1989).
+fn fallback_metadata(from: &FallbackModel, to: &FallbackModel) -> ProviderMetadata {
+    provider_namespace(
+        CANONICAL,
+        json!({
+            "type": "fallback",
+            "from": { "model": from.model },
+            "to": { "model": to.model },
+        }),
+    )
+    .expect("provider metadata must be an object")
+}
+
 fn compaction_metadata(signature: Option<&str>) -> ProviderMetadata {
     let mut metadata = json!({ "type": "compaction" });
     if let Some(signature) = signature {
@@ -707,6 +725,10 @@ pub(crate) fn parse_anthropic_content(
 
     for block in blocks {
         match block {
+            ContentBlock::Fallback { from, to } => content.push(GenerateContent::Custom {
+                kind: fallback_kind(),
+                provider_metadata: Some(fallback_metadata(from, to)),
+            }),
             ContentBlock::ContainerUpload { file_id } => {
                 content.push(GenerateContent::Custom {
                     kind: NamespacedKind::new("anthropic.container_upload")
@@ -1463,6 +1485,12 @@ impl AnthropicMessagesStream {
                     ),
                 }));
             }
+            // Not a block of its own downstream: no state, so its
+            // `content_block_stop` is ignored.
+            ContentBlock::Fallback { from, to } => controller.enqueue(StreamPart::Custom {
+                kind: fallback_kind(),
+                provider_metadata: Some(fallback_metadata(&from, &to)),
+            }),
             // Redacted thinking — emit as ReasoningStart.
             ContentBlock::RedactedThinking { data } => {
                 let id = index.to_string();

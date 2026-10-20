@@ -194,11 +194,24 @@ pub enum ContentBlock {
         #[serde(default)]
         data: Value,
     },
-    /// Catch-all for any content-block type this SDK version does not yet model
-    /// (e.g. `compaction`, `fallback`). Decoding never fails for an unknown
+    /// A server-side fallback boundary: the turn moved from the `from` model
+    /// to the `to` model.
+    #[serde(rename = "fallback")]
+    Fallback {
+        from: FallbackModel,
+        to: FallbackModel,
+    },
+    /// Catch-all for any content-block type this SDK version does not yet model.
+    /// Decoding never fails for an unknown
     /// `type` tag; the block is simply ignored by the model layer.
     #[serde(other)]
     Other,
+}
+
+/// A model of a `fallback` block (`{ "model": ... }`).
+#[derive(Debug, Deserialize)]
+pub struct FallbackModel {
+    pub model: String,
 }
 
 /// Preserve the provider usage object verbatim, including explicit nulls and
