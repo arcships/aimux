@@ -1357,17 +1357,32 @@ fn convert_user_content(
     json!(parts)
 }
 
-/// Fail before sending when an inline user or tool-result file has a media
-/// type that cannot be resolved, as `resolveFullMediaType` throws upstream.
+/// Fail before sending where `convertToOpenResponsesInput` throws: a user
+/// file given as a provider reference or as text, and an inline user or
+/// tool-result file whose media type cannot be resolved.
 fn validate_file_media(prompt: &LanguageModelPrompt) -> Result<(), AiMuxError> {
     for message in prompt {
         match message {
             LanguageModelMessage::User { content, .. } => {
                 for part in content {
-                    if let UserPart::File(part) = part
-                        && matches!(part.data, FileData::Data { .. })
-                    {
-                        aimux_provider_utils::resolve_full_media_type(part)?;
+                    let UserPart::File(part) = part else {
+                        continue;
+                    };
+                    match part.data {
+                        FileData::Data { .. } => {
+                            aimux_provider_utils::resolve_full_media_type(part)?;
+                        }
+                        FileData::Reference { .. } => {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "file parts with provider references".into(),
+                            ));
+                        }
+                        FileData::Text { .. } => {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "text file parts".into(),
+                            ));
+                        }
+                        FileData::Url { .. } => {}
                     }
                 }
             }

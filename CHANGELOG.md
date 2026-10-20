@@ -1180,6 +1180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses fails with `UnsupportedFunctionality` before sending when a
+  user file is a provider reference or inline text, as the AI SDK does. It
+  used to drop the part with a warning.
+
 - Open Responses resolves the full media type of inline user files, as the
   AI SDK does: a partial type such as `image` is detected from the bytes,
   and a call whose type cannot be resolved fails with

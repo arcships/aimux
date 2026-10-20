@@ -2365,3 +2365,39 @@ async fn an_undetectable_user_file_media_type_fails_before_sending() {
     );
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:75-84)
+/// throws `UnsupportedFunctionalityError` for a user file given as a provider
+/// reference or as text, so the call fails before anything is sent.
+#[tokio::test]
+async fn reference_and_text_user_files_are_unsupported() {
+    let server = MockServer::start().await;
+    for (data, functionality) in [
+        (
+            json!({ "type": "reference", "reference": { "lmstudio": "file-1" } }),
+            "file parts with provider references",
+        ),
+        (
+            json!({ "type": "text", "text": "hello" }),
+            "text file parts",
+        ),
+    ] {
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+            "role": "user",
+            "content": [{ "type": "file", "mediaType": "text/plain", "data": data }]
+        }]))
+        .unwrap();
+        let error = make_model(&server, "gpt-4o")
+            .do_generate(&default_options(prompt))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                aimux_core::error::AiMuxError::UnsupportedFunctionality(f) if f == functionality
+            ),
+            "{error:?}"
+        );
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
