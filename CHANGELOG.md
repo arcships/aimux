@@ -1210,6 +1210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An OpenAI (and Azure) Responses stream that never sees
+  `response.created` finishes with `responseId: null` in its provider
+  metadata, as the AI SDK does, instead of an empty string.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not

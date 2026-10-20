@@ -1514,7 +1514,7 @@ impl Transformer for OpenAIResponsesStream {
         // responseId, serviceTier?, reasoningContext? } }. Mirrors the TS
         // flush() providerMetadata, which carries `service_tier` and
         // `reasoning.context` from the terminal response object.
-        let mut pm = json!({ "responseId": self.response_id.unwrap_or_default() });
+        let mut pm = json!({ "responseId": self.response_id });
         if let Some(st) = self.final_service_tier {
             pm["serviceTier"] = json!(st);
         }
