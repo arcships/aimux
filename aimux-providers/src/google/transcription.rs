@@ -424,6 +424,25 @@ pub(crate) fn validate_live_input_audio_format(
     Ok(())
 }
 
+/// A close before the input audio ended, as the AI SDK's `onClose` reports it:
+/// `{label} Live transcription WebSocket closed unexpectedly before finishing
+/// (code …, reason: …).`
+#[cfg(feature = "realtime")]
+fn closed_before_finishing(label: &str, frame: Option<(u16, String)>) -> AiMuxError {
+    let (code, reason) = frame.map_or_else(
+        || ("unknown".to_owned(), String::new()),
+        |(code, reason)| (code.to_string(), reason),
+    );
+    let reason = if reason.is_empty() {
+        String::new()
+    } else {
+        format!(", reason: {reason}")
+    };
+    AiMuxError::InvalidResponseData(format!(
+        "{label} Live transcription WebSocket closed unexpectedly before finishing (code {code}{reason})."
+    ))
+}
+
 /// The Gemini Live transcription session, shared with Vertex: waits for
 /// `setupComplete`, sends the audio, accumulates transcript segments and
 /// finishes on the idle signal, a server close after the audio ended, or after
@@ -492,13 +511,13 @@ pub(crate) fn live_stream(
                         Some(Ok(incoming)) => incoming,
                         // A close frame after the input audio ended means the server
                         // delivered everything it will deliver.
-                        Some(Err(AiMuxError::ApiCall(error))) if audio_ended && error.message.starts_with("websocket closed by peer") => { complete = true; break; }
-                        Some(Err(error)) => { yield Err(error); break; }
+                        Some(Err(error)) => match aimux_provider_utils::ws::peer_close(&error) {
+                            Some(_) if audio_ended => { complete = true; break; }
+                            Some(frame) => { yield Err(closed_before_finishing(label, frame)); break; }
+                            None => { yield Err(error); break; }
+                        },
                         None if audio_ended => { complete = true; break; }
-                        None => {
-                            yield Err(AiMuxError::InvalidResponseData(format!("{label} Live transcription WebSocket closed unexpectedly before finishing")));
-                            break;
-                        }
+                        None => { yield Err(closed_before_finishing(label, None)); break; }
                     };
                     let text = match incoming {
                         WsMessage::Text(text) => text,

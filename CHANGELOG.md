@@ -1193,6 +1193,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"candidates": null` as no candidates, stream function-call arguments
   sent as `partialArgs`, and leave an empty `thoughtSignature` out of server
   tool metadata.
+- Gemini Live transcription (Google and Vertex) closed by the server before
+  the input audio ended fails with `InvalidResponseData` reading
+  `… Live transcription WebSocket closed unexpectedly before finishing (code
+  1011, reason: internal error).`, as `@ai-sdk/google` 4.0.87 and
+  `@ai-sdk/google-vertex` 5.0.100 do; it used to pass on the socket's
+  `websocket closed by peer (…)` API call error.
 - Open Responses and the Codex subscription stream honor
   `include_raw_chunks`: each SSE chunk is sent as `StreamPart::Raw` before
   the parts made from it, as the AI SDK's Open Responses model and aimux's
