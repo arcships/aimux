@@ -136,11 +136,18 @@ impl Auth {
 
     /// The credentials to sign one request with. The region of the setting
     /// or `AWS_REGION` wins over the producer's, as upstream spreads the
-    /// loaded region over the credential provider's result (:145-150).
+    /// loaded region over the credential provider's result (:145-150); a
+    /// producer failure carries upstream's guidance (:151-160).
     async fn credentials(&self) -> Result<AwsCredentials, AiMuxError> {
         match &self.auth {
             Some(AnthropicAwsAuth::SigV4(producer)) => {
-                let mut credentials = producer.resolve().await?;
+                let mut credentials = producer.resolve().await.map_err(|error| {
+                    AiMuxError::Other(format!(
+                        "AWS credential provider failed: {error}. Please ensure your credential \
+                         provider returns valid AWS credentials with access_key_id and \
+                         secret_access_key."
+                    ))
+                })?;
                 if let Some(region) = load_optional_setting(self.region.as_deref(), REGION_ENV_VAR)
                 {
                     credentials.region = region;

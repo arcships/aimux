@@ -1194,6 +1194,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Original error:`), instead of the bare `LoadSetting` error. A missing
   region is still `LoadSetting`.
 
+- Anthropic AWS reports a failing SigV4 credential producer as
+  `AWS credential provider failed: <error>. Please ensure your credential
+  provider returns valid AWS credentials …`, the AI SDK's message, instead of
+  the producer's error alone.
+
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider

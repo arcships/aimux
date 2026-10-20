@@ -313,3 +313,33 @@ async fn a_missing_sigv4_key_fails_with_guidance() {
     );
     assert!(fetch.seen().is_empty());
 }
+
+/// A failing credential producer is reported with upstream's guidance and
+/// nothing is sent (anthropic-aws-provider.ts:145-160).
+#[serial]
+#[tokio::test]
+async fn a_failing_credential_producer_is_reported_with_guidance() {
+    let _env = clean_environment();
+    let fetch = MockFetch::new(vec![]);
+    let error = generate(
+        &fetch,
+        AnthropicAwsProviderSettings {
+            region: Some("us-west-2".into()),
+            workspace_id: Some("ws".into()),
+            auth: Some(AnthropicAwsAuth::SigV4(Resolvable::from_async_fn(
+                || async { Err(AiMuxError::Other("STS denied".into())) },
+            ))),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        error.to_string().contains(
+            "AWS credential provider failed: STS denied. Please ensure your credential \
+             provider returns valid AWS credentials with access_key_id and secret_access_key."
+        ),
+        "{error}"
+    );
+    assert!(fetch.seen().is_empty());
+}
