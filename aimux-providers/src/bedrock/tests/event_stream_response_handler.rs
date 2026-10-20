@@ -28,7 +28,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_provider_utils::HeaderMapOpt;
 
 use crate::bedrock::BedrockModel;
-use crate::bedrock::event_stream::encode_message;
+use crate::bedrock::event_stream_decoder::encode_message;
 use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint};
 use crate::test_support::mock_fetch::{Canned, MockFetch};
 

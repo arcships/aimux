@@ -13,7 +13,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::shared::provider_namespace;
 use serde_json::{Value, json};
 
-use crate::bedrock::convert::build_request_body_checked;
+use crate::bedrock::chat_language_model::build_request_body_checked;
 
 const NON_ANTHROPIC_MODEL: &str = "meta.llama3-70b-instruct-v1:0";
 const ANTHROPIC_MODEL: &str = "anthropic.claude-sonnet-4-5-20250929-v1:0";
@@ -827,5 +827,181 @@ mod prepare_tools {
                 );
             }
         }
+    }
+}
+
+// ── Older ports (previously `tests/bedrock_convert_test.rs`) ──
+//
+// Pure-function tests for the Amazon Bedrock provider's conversion layer.
+//
+// Translated from the TS test files:
+// - `convert-to-amazon-bedrock-chat-messages.test.ts` (64 cases)
+// - `amazon-bedrock-prepare-tools.test.ts` (23 cases incl. `it.each`)
+// - `convert-amazon-bedrock-usage.test.ts` (9 cases)
+
+mod bedrock_convert {
+    use serde_json::{Value, json};
+
+    use aimux_core::options::LanguageModelV4ToolChoice;
+    use aimux_core::tool::FunctionTool;
+
+    use crate::bedrock::prepare_tools::prepare_tools;
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // amazon-bedrock-prepare-tools
+    // ════════════════════════════════════════════════════════════════════════════
+
+    const NON_ANTHROPIC_MODEL: &str = "meta.llama3-70b-instruct-v1:0";
+
+    fn func_tool(name: &str, description: Option<&str>, input_schema: Value) -> FunctionTool {
+        FunctionTool {
+            name: name.to_string(),
+            description: description.map(std::string::ToString::to_string),
+            input_schema,
+            strict: None,
+            provider_options: None,
+            input_examples: None,
+        }
+    }
+
+    mod prepare_tools {
+        use super::*;
+
+        mod tool_choice {
+            use super::*;
+
+            /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "auto"
+            #[test]
+            fn prepare_tools_tool_choice_auto() {
+                let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+                let config = prepare_tools(
+                    &tools,
+                    Some(&LanguageModelV4ToolChoice::Auto),
+                    NON_ANTHROPIC_MODEL,
+                );
+                assert_eq!(config["toolChoice"], json!({ "auto": {} }));
+            }
+
+            /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "required"
+            #[test]
+            fn prepare_tools_tool_choice_required() {
+                let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+                let config = prepare_tools(
+                    &tools,
+                    Some(&LanguageModelV4ToolChoice::Required),
+                    NON_ANTHROPIC_MODEL,
+                );
+                assert_eq!(config["toolChoice"], json!({ "any": {} }));
+            }
+
+            /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "none" by clearing tools
+            #[test]
+            fn prepare_tools_tool_choice_none_clears() {
+                let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+                let config = prepare_tools(
+                    &tools,
+                    Some(&LanguageModelV4ToolChoice::None),
+                    NON_ANTHROPIC_MODEL,
+                );
+                assert_eq!(config, json!({}));
+            }
+
+            /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "tool"
+            #[test]
+            fn prepare_tools_tool_choice_tool() {
+                let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+                let config = prepare_tools(
+                    &tools,
+                    Some(&LanguageModelV4ToolChoice::Tool {
+                        tool_name: "testFunction".to_string(),
+                    }),
+                    NON_ANTHROPIC_MODEL,
+                );
+                assert_eq!(
+                    config["toolChoice"],
+                    json!({ "tool": { "name": "testFunction" } })
+                );
+            }
+
+            /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should filter function tools to only the named tool when tool choice is "tool"
+            #[test]
+            fn prepare_tools_tool_choice_filters_to_named() {
+                let tools = Some(vec![
+                    func_tool(
+                        "getWeather",
+                        Some("Get weather"),
+                        json!({ "type": "object" }),
+                    ),
+                    func_tool("getTime", Some("Get time"), json!({ "type": "object" })),
+                ]);
+                let config = prepare_tools(
+                    &tools,
+                    Some(&LanguageModelV4ToolChoice::Tool {
+                        tool_name: "getWeather".to_string(),
+                    }),
+                    NON_ANTHROPIC_MODEL,
+                );
+                assert_eq!(config["tools"].as_array().unwrap().len(), 1);
+                assert_eq!(config["tools"][0]["toolSpec"]["name"], json!("getWeather"));
+            }
+        }
+    }
+}
+
+// ── Older ports (previously `tests/bedrock_upstream_e2e_test.rs`) ──
+
+mod bedrock_upstream_e2e {
+    use crate::bedrock::tests::upstream_e2e_support::*;
+    use aimux_core::AiMuxError;
+
+    use aimux_core::language_model::LanguageModel;
+
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use serde_json::{Value, json};
+
+    /// Provider tool args go through the Anthropic `prepareTools` check, and
+    /// the tools Bedrock leaves out are dropped before it runs.
+    #[tokio::test]
+    async fn provider_tool_args_are_checked_before_the_request() {
+        let tool = |id: &str, args: Value| {
+            aimux_core::tool::Tool::Provider(aimux_core::tool::ProviderTool {
+                id: id.parse().unwrap(),
+                name: "web".into(),
+                args: args.as_object().cloned().unwrap(),
+                supports_deferred_results: None,
+            })
+        };
+        let fetch = MockFetch::new(vec![]);
+        let mut call = options();
+        call.tools = Some(vec![tool(
+            "anthropic.web_fetch_20250910",
+            json!({"maxUses": "3"}),
+        )]);
+        let error = provider(&fetch)
+            .chat("anthropic.model")
+            .do_generate(&call)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument(message) if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
+            "{error:?}"
+        );
+        assert!(fetch.seen().is_empty());
+
+        let fetch = MockFetch::new(vec![Canned::json(&json!({
+            "output":{"message":{"role":"assistant","content":[{"text":"Hi"}]}},
+            "usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2},"stopReason":"end_turn"
+        }))]);
+        call.tools = Some(vec![tool(
+            "anthropic.web_search_20250305",
+            json!({"maxUses": "3"}),
+        )]);
+        let result = provider(&fetch)
+            .chat("anthropic.model")
+            .do_generate(&call)
+            .await
+            .unwrap();
+        assert_eq!(fetch.seen().len(), 1);
+        assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
     }
 }

@@ -5,86 +5,35 @@
 //! across all Bedrock-backed models (Anthropic Claude, Meta Llama, Mistral,
 //! etc.).
 
-use aimux_core::tool::RawToolCall;
-use std::collections::{HashMap, HashSet};
-
-use async_trait::async_trait;
-use bytes::Bytes;
-use futures::{StreamExt, stream::BoxStream};
-
+use super::anthropic_model_support::{supports_native_structured_output, supports_strict_tools};
+use super::api_types::{BedrockContentBlock, BedrockConverseResponse};
+use super::chat_language_model_options::validate_options;
+use super::convert_to_chat_messages::convert_prompt;
+use super::convert_usage::convert_usage;
+use super::event_stream_decoder::EventStreamMessage;
+use super::event_stream_response_handler::bedrock_event_stream_response_handler;
+use super::map_finish_reason::map_finish_reason;
+use super::normalize_tool_call_id::normalize_tool_call_id;
+use super::options;
+use super::prepare_tools::{is_strict_schema_compatible, prepare_tools};
+use crate::shared::EndpointConfig;
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::options::CallOptions;
+use aimux_core::language_model_message::{AssistantPart, LanguageModelMessage};
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
+use aimux_core::tool::{FunctionTool, RawToolCall, Tool};
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
 };
-
-use serde_json::json;
-
-use aimux_provider_utils::{HttpBody, Transformer, pipe_through};
-
-use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
-
-use super::convert::{
-    build_request_body_checked, convert_usage, map_finish_reason, normalize_tool_call_id,
+use aimux_provider_utils::{
+    HttpBody, Transformer, inject_json_instruction_into_messages, pipe_through,
 };
-use super::event_stream::EventStreamMessage;
-use super::options;
-use super::types::{BedrockContentBlock, BedrockConverseResponse};
-use crate::shared::EndpointConfig;
-
-fn bedrock_event_stream_response_handler()
--> aimux_provider_utils::ResponseHandler<BoxStream<'static, Result<Bytes, AiMuxError>>> {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
-        let headers = aimux_provider_utils::extract_response_headers::extract_response_headers(
-            input.response.headers(),
-        );
-        let output_headers = headers.clone();
-        let url = input.url;
-        let request_body_values = input.request_body_values;
-        let signal = input.abort_signal;
-        let stream = input.response.bytes_stream().map(move |result| {
-            result.map_err(|error| {
-                AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
-                    response_headers: Some(headers.clone()),
-                    is_retryable: true,
-                    ..aimux_core::ApiCallError::new(
-                        error.to_string(),
-                        url.clone(),
-                        request_body_values.clone(),
-                    )
-                }))
-            })
-        });
-        let value: BoxStream<'static, Result<Bytes, AiMuxError>> = match signal {
-            Some(signal) => Box::pin(async_stream::stream! {
-                futures::pin_mut!(stream);
-                loop {
-                    tokio::select! {
-                        biased;
-                        () = signal.cancelled() => {
-                            yield Err(AiMuxError::from_abort_signal(&signal));
-                            break;
-                        }
-                        item = stream.next() => match item {
-                            Some(item) => yield item,
-                            None => break,
-                        }
-                    }
-                }
-            }),
-            None => Box::pin(stream),
-        };
-        Ok(aimux_provider_utils::ResponseHandlerOutput {
-            value,
-            raw_value: None,
-            response_headers: output_headers,
-        })
-    })
-    .streaming()
-}
+use async_trait::async_trait;
+use serde_json::{Value, json};
+use std::collections::{HashMap, HashSet};
 
 /// An Amazon Bedrock language model (e.g. `anthropic.claude-3-5-sonnet-20240620-v1:0`).
 ///
@@ -119,7 +68,7 @@ impl BedrockModel {
         };
         format!(
             "/model/{}/{}",
-            super::encode_model_id(&self.model_id),
+            super::provider::encode_model_id(&self.model_id),
             suffix
         )
     }
@@ -158,7 +107,7 @@ impl LanguageModel for BedrockModel {
             exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
-            super::bedrock_failed_response_handler(),
+            super::error::bedrock_failed_response_handler(),
         )
         .await?;
 
@@ -259,7 +208,7 @@ impl LanguageModel for BedrockModel {
             exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             bedrock_event_stream_response_handler(),
-            super::bedrock_failed_response_handler(),
+            super::error::bedrock_failed_response_handler(),
         )
         .await?;
 
@@ -277,7 +226,7 @@ impl LanguageModel for BedrockModel {
             .and_then(|date| aimux_core::Timestamp::from_http_date(date));
 
         let stream = pipe_through(
-            super::event_stream::decode_stream(body_stream),
+            super::event_stream_decoder::decode_stream(body_stream),
             AmazonBedrockChatStream {
                 ctx: StreamContext::new(
                     options,
@@ -531,7 +480,7 @@ impl AmazonBedrockChatStream {
 
     fn metadata(&mut self, payload: &serde_json::Value, controller: &mut Controller) {
         if let Some(usage) = payload.get("usage") {
-            let bedrock_usage: super::types::BedrockUsage =
+            let bedrock_usage: super::api_types::BedrockUsage =
                 match serde_json::from_value(usage.clone()) {
                     Ok(usage) => usage,
                     Err(error) => {
@@ -771,7 +720,9 @@ fn extract_content(
     }
 }
 
-fn cache_usage_metadata(usage: Option<&super::types::BedrockUsage>) -> Option<serde_json::Value> {
+fn cache_usage_metadata(
+    usage: Option<&super::api_types::BedrockUsage>,
+) -> Option<serde_json::Value> {
     let usage = usage?;
     let mut payload = serde_json::Map::new();
     if let Some(tokens) = usage.cache_write_input_tokens {
@@ -878,4 +829,620 @@ impl JsonObjectTextExtractor {
         }
         result
     }
+}
+
+// ── Request body ────────────────────────────────────────────────────────────
+
+// The request capabilities come from Anthropic's getModelCapabilities, not
+// Bedrock's separate strict-tool support list. Unknown newer model IDs assume
+// adaptive thinking and reject sampling; legacy IDs retain their defaults.
+fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool, bool) {
+    let Some((_, model)) = model_id.split_once("claude-") else {
+        return (4096.0, false, false, false);
+    };
+    if ["opus-5", "fable-5", "sonnet-5", "opus-4-8", "opus-4-7"]
+        .iter()
+        .any(|id| model.starts_with(id))
+    {
+        (128000.0, true, true, true)
+    } else if ["sonnet-4-6", "opus-4-6"]
+        .iter()
+        .any(|id| model.starts_with(id))
+    {
+        (128000.0, true, false, true)
+    } else if ["sonnet-4-5", "opus-4-5", "haiku-4-5"]
+        .iter()
+        .any(|id| model.starts_with(id))
+    {
+        (64000.0, false, false, true)
+    } else if model.starts_with("opus-4-1") {
+        (32000.0, false, false, true)
+    } else if model.starts_with("sonnet-4-") || model.starts_with("sonnet-4@") {
+        (64000.0, false, false, false)
+    } else if model.starts_with("opus-4-") || model.starts_with("opus-4@") {
+        (32000.0, false, false, false)
+    } else {
+        let two = model.strip_prefix('v').unwrap_or(model);
+        let legacy = model == "instant"
+            || model.starts_with("instant-")
+            || two == "2"
+            || two.starts_with("2-")
+            || two.starts_with("2.")
+            || two.starts_with("2:")
+            || model == "3"
+            || model.starts_with("3-")
+            || model.starts_with("3.");
+        if legacy {
+            (4096.0, false, false, false)
+        } else {
+            (128000.0, true, true, true)
+        }
+    }
+}
+
+/// Build a checked Converse request, preserving upstream warnings.
+///
+/// # Errors
+///
+/// A prompt or tool definition the Converse API cannot express.
+pub fn build_request_body_checked(
+    model_id: &str,
+    call: &CallOptions,
+    model_family: Option<&str>,
+) -> Result<(Value, Vec<aimux_core::types::Warning>, bool, bool), aimux_core::AiMuxError> {
+    use aimux_core::types::{ReasoningEffort, Warning};
+    let mut warnings = Vec::new();
+    let mut compatibility = Vec::new();
+    let mut warn = |feature: &str, details: Option<&str>| {
+        warnings.push(Warning::Unsupported {
+            feature: feature.into(),
+            details: details.map(str::to_owned),
+        })
+    };
+    let bedrock = options::read(call.provider_options.as_ref());
+    validate_options(bedrock)?;
+    let mut reasoning = bedrock
+        .and_then(|b| b.get("reasoningConfig"))
+        .cloned()
+        .unwrap_or(json!({}));
+    let anthropic = model_family == Some("anthropic")
+        || model_id.contains("anthropic")
+        || (model_id.contains(":application-inference-profile/")
+            && reasoning.get("budgetTokens").is_some());
+    let openai = model_id
+        .split('.')
+        .any(|p| p == options::OPENAI_MODEL_FAMILY);
+    let oss = openai && model_id.contains("-oss-");
+    let nova = model_id.contains("amazon.nova-2-lite-v1:0");
+    let (max_reasoning_tokens, adaptive, rejects_sampling, supports_structured_output) =
+        reasoning_capabilities(model_id);
+    if let Some(effort) = &call.reasoning
+        && effort.is_custom()
+    {
+        if anthropic && matches!(effort, ReasoningEffort::None) {
+            reasoning = json!({"type":"disabled"});
+        } else if !matches!(effort, ReasoningEffort::None)
+            && (anthropic
+                || openai
+                || nova
+                || bedrock.is_some_and(|b| b.contains_key("reasoningConfig")))
+        {
+            let level = match effort {
+                ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+                ReasoningEffort::Medium => "medium",
+                ReasoningEffort::High => "high",
+                ReasoningEffort::Xhigh => "max",
+                _ => "low",
+            };
+            if (!anthropic || adaptive)
+                && matches!(effort, ReasoningEffort::Minimal | ReasoningEffort::Xhigh)
+            {
+                compatibility.push(Warning::Compatibility { feature: "reasoning".into(), details: Some(format!("reasoning \"{effort}\" is not directly supported by this model. mapped to effort \"{level}\".")) });
+            }
+            let mut derived = if anthropic && adaptive {
+                json!({"type":"adaptive","maxReasoningEffort":level})
+            } else if anthropic {
+                let percentage = match effort {
+                    ReasoningEffort::Minimal => 0.02,
+                    ReasoningEffort::Low => 0.1,
+                    ReasoningEffort::Medium => 0.3,
+                    ReasoningEffort::High => 0.6,
+                    _ => 0.9,
+                };
+                json!({"type":"enabled","budgetTokens":(max_reasoning_tokens * percentage).round().clamp(1024.0, max_reasoning_tokens) as u64})
+            } else {
+                json!({"maxReasoningEffort":level})
+            };
+            if nova {
+                derived["type"] = json!("enabled");
+            }
+            if let Some(explicit) = reasoning.as_object() {
+                derived.as_object_mut().unwrap().extend(explicit.clone());
+            }
+            reasoning = derived;
+        } else if !matches!(effort, ReasoningEffort::None) {
+            warn(
+                "reasoning",
+                Some(
+                    "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig.",
+                ),
+            );
+        }
+        if reasoning["type"] == "disabled" {
+            reasoning.as_object_mut().unwrap().remove("budgetTokens");
+            reasoning
+                .as_object_mut()
+                .unwrap()
+                .remove("maxReasoningEffort");
+        }
+    }
+    let thinking = anthropic && matches!(reasoning["type"].as_str(), Some("enabled" | "adaptive"));
+    let rejects_forced = anthropic
+        && (model_id.contains("sonnet-5-5")
+            || model_id.contains("opus-5-5")
+            || model_id.contains("fable-5-1"));
+    let mut inference = serde_json::Map::new();
+    if let Some(max) = call.max_output_tokens {
+        inference.insert("maxTokens".into(), json!(max));
+    }
+    let (mut temperature, mut top_p, mut top_k) = (call.temperature, call.top_p, call.top_k);
+    if rejects_sampling {
+        // amazon-bedrock-chat-language-model.ts:204-230: temperature, topK, topP.
+        for (feature, given) in [
+            ("temperature", temperature.take().is_some()),
+            ("topK", top_k.take().is_some()),
+            ("topP", top_p.take().is_some()),
+        ] {
+            if given {
+                warn(
+                    feature,
+                    Some(&format!(
+                        "{feature} is not supported by {model_id} and will be ignored"
+                    )),
+                );
+            }
+        }
+    }
+    if let Some(temp) = temperature {
+        if thinking || (openai && !oss) {
+            let details = if thinking {
+                "temperature is not supported when thinking is enabled"
+            } else {
+                "temperature is not supported by this OpenAI model on the Converse API"
+            };
+            warn("temperature", Some(details));
+        } else {
+            let temp = if !openai || oss {
+                if temp > 1.0 {
+                    warn(
+                        "temperature",
+                        Some(&format!(
+                            "{temp} exceeds bedrock maximum of 1.0. clamped to 1.0"
+                        )),
+                    );
+                    1.0
+                } else if temp < 0.0 {
+                    warn(
+                        "temperature",
+                        Some(&format!(
+                            "{temp} is below bedrock minimum of 0. clamped to 0"
+                        )),
+                    );
+                    0.0
+                } else {
+                    temp
+                }
+            } else {
+                temp
+            };
+            inference.insert("temperature".into(), json!(temp));
+        }
+    }
+    if let Some(p) = top_p {
+        if thinking || (openai && !oss) {
+            let details = if thinking {
+                "topP is not supported when thinking is enabled"
+            } else {
+                "topP is not supported by this OpenAI model on the Converse API"
+            };
+            warn("topP", Some(details));
+        } else {
+            inference.insert("topP".into(), json!(p));
+        }
+    }
+    if let Some(k) = top_k {
+        if thinking {
+            warn(
+                "topK",
+                Some("topK is not supported when thinking is enabled"),
+            );
+        } else {
+            inference.insert("topK".into(), json!(k));
+        }
+    }
+    if let Some(stop) = &call.stop_sequences {
+        if openai {
+            warn(
+                "stopSequences",
+                Some("stopSequences is not supported by this OpenAI model on the Converse API"),
+            );
+        } else {
+            inference.insert("stopSequences".into(), json!(stop));
+        }
+    }
+    for (feature, present) in [
+        ("frequencyPenalty", call.frequency_penalty.is_some()),
+        ("presencePenalty", call.presence_penalty.is_some()),
+        ("seed", call.seed.is_some()),
+    ] {
+        if present {
+            warn(feature, None);
+        }
+    }
+    let mut fields = bedrock
+        .and_then(|b| b.get("additionalModelRequestFields"))
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if thinking && reasoning["type"] == "enabled" {
+        if let Some(budget) = reasoning["budgetTokens"].as_u64() {
+            let max = inference
+                .get("maxTokens")
+                .and_then(Value::as_u64)
+                .unwrap_or(4096);
+            inference.insert("maxTokens".into(), json!(max.saturating_add(budget)));
+            fields.insert(
+                "thinking".into(),
+                json!({"type":"enabled","budget_tokens":budget}),
+            );
+        }
+    } else if thinking && reasoning["type"] == "adaptive" {
+        let mut config = json!({"type":"adaptive"});
+        if let Some(display) = reasoning.get("display") {
+            config["display"] = display.clone();
+        }
+        fields.insert("thinking".into(), config);
+    } else if !anthropic {
+        if reasoning.get("budgetTokens").is_some() {
+            warn(
+                "budgetTokens",
+                Some(
+                    "budgetTokens applies only to Anthropic models on Bedrock and will be ignored for this model.",
+                ),
+            );
+        }
+        if reasoning["type"] == "adaptive" {
+            warn(
+                "adaptive thinking",
+                Some("adaptive thinking type applies only to Anthropic models on Bedrock."),
+            );
+        }
+    }
+    if let Some(effort) = reasoning.get("maxReasoningEffort") {
+        let key = if anthropic {
+            "output_config"
+        } else if openai && !oss {
+            "reasoning"
+        } else {
+            "reasoningConfig"
+        };
+        if oss {
+            fields.insert("reasoning_effort".into(), effort.clone());
+        } else {
+            let mut config = fields
+                .get(key)
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            config.insert(
+                if anthropic || openai {
+                    "effort"
+                } else {
+                    "maxReasoningEffort"
+                }
+                .into(),
+                effort.clone(),
+            );
+            if !anthropic && !openai {
+                if let Some(kind) = reasoning.get("type").filter(|t| *t != "adaptive") {
+                    config.insert("type".into(), kind.clone());
+                }
+                if let Some(budget) = reasoning
+                    .get("budgetTokens")
+                    .filter(|_| reasoning["type"] == "enabled")
+                {
+                    config.insert("budgetTokens".into(), budget.clone());
+                }
+            }
+            fields.insert(key.into(), Value::Object(config));
+        }
+        if nova
+            && reasoning["type"] == "enabled"
+            && matches!(effort.as_str(), Some("high" | "xhigh" | "max"))
+            && inference.remove("maxTokens").is_some()
+        {
+            warn(
+                "maxOutputTokens",
+                Some(&format!(
+                    "maxOutputTokens is not supported by {model_id} when high reasoning is enabled and will be ignored"
+                )),
+            );
+        }
+    }
+    if let Some(betas) = bedrock.and_then(|b| b.get("anthropicBeta")) {
+        fields.insert("anthropic_beta".into(), betas.clone());
+    }
+    let anthropic_options = call
+        .provider_options
+        .as_ref()
+        .and_then(|p| p.get("anthropic"));
+    if let Some(value) = anthropic_options.and_then(|p| p.get("structuredOutputMode"))
+        && !value
+            .as_str()
+            .is_some_and(|v| ["outputFormat", "jsonTool", "auto"].contains(&v))
+    {
+        return Err(aimux_core::AiMuxError::InvalidArgument(
+            "Invalid Anthropic structuredOutputMode".into(),
+        ));
+    }
+    if anthropic_options
+        .and_then(|p| p.get("disableParallelToolUse"))
+        .is_some_and(|v| !v.is_boolean())
+    {
+        return Err(aimux_core::AiMuxError::InvalidArgument(
+            "Invalid Anthropic disableParallelToolUse".into(),
+        ));
+    }
+    let structured_mode = bedrock
+        .and_then(|b| b.get("structuredOutputMode"))
+        .or_else(|| anthropic_options.and_then(|p| p.get("structuredOutputMode")))
+        .and_then(Value::as_str)
+        .unwrap_or("auto");
+    if structured_mode == "jsonTool"
+        && let Some(output_config) = fields
+            .get_mut("output_config")
+            .and_then(Value::as_object_mut)
+    {
+        output_config.remove("format");
+        if output_config.is_empty() {
+            fields.remove("output_config");
+        }
+    }
+    let schema = match &call.response_format {
+        Some(ResponseFormat::Json { schema, .. }) => schema.as_ref(),
+        _ => None,
+    };
+    let supports_native = supports_native_structured_output(model_id);
+    let uses_native = anthropic
+        && schema.is_some()
+        && (structured_mode == "outputFormat"
+            || (structured_mode == "auto"
+                && supports_native
+                && (supports_structured_output || thinking || model_family == Some("anthropic"))));
+    let uses_json_instruction = !uses_native
+        && anthropic
+        && schema.is_some()
+        && (rejects_forced
+            || (structured_mode != "jsonTool"
+                && !supports_strict_tools(model_id)
+                && call.tools.as_ref().is_some_and(|tools| !tools.is_empty())));
+    let uses_json_tool = schema.is_some() && !uses_native && !uses_json_instruction;
+    if uses_native {
+        let output_config = fields.entry("output_config").or_insert_with(|| json!({}));
+        if !output_config.is_object() {
+            *output_config = json!({});
+        }
+        output_config["format"] = json!({"type":"json_schema", "schema":crate::anthropic::sanitize_json_schema::sanitize_json_schema(schema.unwrap())});
+    }
+    let mut all_tools = call.tools.clone().unwrap_or_default();
+    if uses_json_tool {
+        all_tools.push(Tool::Function(
+            FunctionTool::new("json", schema.unwrap().clone())
+                .with_description("Respond with a JSON object."),
+        ));
+    }
+    let tool_choice = if uses_json_tool {
+        Some(LanguageModelV4ToolChoice::Required)
+    } else {
+        call.tool_choice.clone()
+    };
+    let disable_parallel = anthropic_options
+        .and_then(|p| p.get("disableParallelToolUse"))
+        .and_then(Value::as_bool)
+        == Some(true);
+    let mut provider_tools = super::prepare_tools::prepare_provider_tools(
+        Some(&all_tools),
+        tool_choice.as_ref(),
+        anthropic,
+        disable_parallel,
+        rejects_forced,
+    )?;
+    for warning in provider_tools.warnings.drain(..) {
+        match warning {
+            Warning::Unsupported { feature, details } => warn(&feature, details.as_deref()),
+            other => compatibility.push(other),
+        }
+    }
+    let tools: Option<Vec<FunctionTool>> = Some(
+        all_tools
+            .iter()
+            .filter_map(|tool| match tool {
+                Tool::Function(f) => Some(f.clone()),
+                _ => None,
+            })
+            .collect(),
+    );
+    let function_choice = if provider_tools.using_anthropic_tools
+        && matches!(tool_choice, Some(LanguageModelV4ToolChoice::None))
+    {
+        Some(LanguageModelV4ToolChoice::Auto)
+    } else {
+        tool_choice.clone()
+    };
+    let mut tool_config = prepare_tools(&tools, function_choice.as_ref(), model_id);
+    if !provider_tools.tools.is_empty() {
+        let mut combined = provider_tools.tools;
+        if let Some(functions) = tool_config.get("tools").and_then(Value::as_array) {
+            combined.extend(functions.clone());
+        }
+        tool_config["tools"] = json!(combined);
+    }
+    let has_additional_tools = provider_tools.tool_choice.is_some();
+    if provider_tools.using_anthropic_tools {
+        tool_config.as_object_mut().unwrap().remove("toolChoice");
+        if let Some(choice) = provider_tools.tool_choice {
+            fields.insert("tool_choice".into(), choice);
+        }
+    }
+    if !provider_tools.betas.is_empty() {
+        let mut betas = bedrock
+            .and_then(|b| b.get("anthropicBeta"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        betas.extend(provider_tools.betas.into_iter().map(Value::String));
+        fields.insert("anthropic_beta".into(), json!(betas));
+    }
+    if !provider_tools.using_anthropic_tools
+        && rejects_forced
+        && matches!(tool_choice, Some(LanguageModelV4ToolChoice::Required | LanguageModelV4ToolChoice::Tool { .. }))
+        && all_tools.iter().any(|tool| !matches!(tool, Tool::Provider(provider) if matches!(provider.id.as_str(), "anthropic.web_search_20250305" | "anthropic.web_search_20260318" | "anthropic.web_fetch_20260318")))
+    {
+        if tool_config.get("tools").is_some() { tool_config["toolChoice"] = json!({"auto":{}}); }
+        let details = match &tool_choice {
+            Some(LanguageModelV4ToolChoice::Tool {tool_name}) => format!("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '{tool_name}' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made."),
+            _ => "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made.".into(),
+        };
+        warn("toolChoice", Some(&details));
+    }
+    if let Some(tools) = &tools {
+        for tool in tools.iter().filter(|tool| !matches!(&function_choice, Some(LanguageModelV4ToolChoice::Tool { tool_name }) if tool_name != &tool.name)) {
+            if let Some(strict) = tool.strict
+                && !supports_strict_tools(model_id)
+            {
+                warn(
+                    "strict",
+                    Some(&format!(
+                        "Tool '{}' has strict: {}, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored.",
+                        tool.name, strict
+                    )),
+                );
+            } else if tool.strict == Some(true) && !is_strict_schema_compatible(&tool.input_schema)
+            {
+                warn(
+                    "strict",
+                    Some(&format!(
+                        "Tool '{}' has strict: true, but Amazon Bedrock requires every object in a strict tool schema to set additionalProperties: false. The strict property will be ignored.",
+                        tool.name
+                    )),
+                );
+            }
+        }
+    }
+    if !provider_tools.using_anthropic_tools
+        && anthropic
+        && disable_parallel
+        && tool_config.get("tools").is_some()
+    {
+        let choice = if rejects_forced {
+            json!({"type":"auto","disable_parallel_tool_use":true})
+        } else {
+            match &tool_choice {
+                Some(LanguageModelV4ToolChoice::Required) => {
+                    json!({"type":"any","disable_parallel_tool_use":true})
+                }
+                Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+                    json!({"type":"tool","name":tool_name,"disable_parallel_tool_use":true})
+                }
+                _ => json!({"type":"auto","disable_parallel_tool_use":true}),
+            }
+        };
+        fields.insert("tool_choice".into(), choice);
+        tool_config.as_object_mut().unwrap().remove("toolChoice");
+    }
+    let mut prompt = call.prompt.clone();
+    if tool_config.get("tools").is_none() && !has_additional_tools {
+        let has_tools = prompt.iter().any(|message| match message {
+            LanguageModelMessage::Assistant { content, .. } => content.iter().any(|part| {
+                matches!(
+                    part,
+                    AssistantPart::ToolCall(_) | AssistantPart::ToolResult(_)
+                )
+            }),
+            LanguageModelMessage::Tool { content, .. } => !content.is_empty(),
+            _ => false,
+        });
+        if has_tools {
+            for message in &mut prompt {
+                match message {
+                    LanguageModelMessage::Assistant { content, .. } => content.retain(|part| {
+                        !matches!(
+                            part,
+                            AssistantPart::ToolCall(_) | AssistantPart::ToolResult(_)
+                        )
+                    }),
+                    LanguageModelMessage::Tool { content, .. } => content.clear(),
+                    _ => {}
+                }
+            }
+            prompt.retain(|message| match message {
+                LanguageModelMessage::System { .. } => true,
+                LanguageModelMessage::User { content, .. } => !content.is_empty(),
+                LanguageModelMessage::Assistant { content, .. } => !content.is_empty(),
+                LanguageModelMessage::Tool { content, .. } => !content.is_empty(),
+            });
+            warn(
+                "toolContent",
+                Some(
+                    "Tool calls and results removed from conversation because Bedrock does not support tool content without active tools.",
+                ),
+            );
+        }
+    }
+    if uses_json_instruction {
+        // @ai-sdk/amazon-bedrock@5.0.100 amazon-bedrock-chat-language-model.ts:614-621
+        prompt = inject_json_instruction_into_messages(
+            &prompt,
+            schema,
+            None,
+            Some(
+                "You MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text.",
+            ),
+        );
+    }
+    let (system, messages) = convert_prompt(&prompt, model_id.contains("mistral."))?;
+    let mut body = json!({"messages":messages});
+    if !system.is_empty() {
+        body["system"] = json!(system);
+    }
+    if !inference.is_empty() {
+        body["inferenceConfig"] = Value::Object(inference);
+    }
+    if !fields.is_empty() {
+        body["additionalModelRequestFields"] = Value::Object(fields);
+    }
+    if anthropic {
+        body["additionalModelResponseFieldPaths"] = json!(["/delta/stop_sequence"]);
+    }
+    if let Some(tier) = bedrock.and_then(|b| b.get("serviceTier")) {
+        body["serviceTier"] = json!({"type":tier});
+    }
+    if let Some(bedrock) = bedrock {
+        for (key, value) in bedrock {
+            if !matches!(
+                key.as_str(),
+                "reasoningConfig"
+                    | "additionalModelRequestFields"
+                    | "serviceTier"
+                    | "structuredOutputMode"
+            ) {
+                body[key] = value.clone();
+            }
+        }
+    }
+    if tool_config.get("tools").is_some() {
+        body["toolConfig"] = tool_config;
+    }
+    warnings.extend(compatibility);
+    Ok((body, warnings, uses_json_instruction, uses_json_tool))
 }

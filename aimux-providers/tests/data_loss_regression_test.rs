@@ -48,7 +48,7 @@ use aimux_provider_utils::Resolvable;
 use aimux_providers::anthropic::AnthropicMessagesModel;
 use aimux_providers::anthropic::{AnthropicProviderSettings, create_anthropic};
 use aimux_providers::bedrock::{
-    AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock, event_stream,
+    AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock, event_stream_decoder,
 };
 use aimux_providers::openai::{OpenAIProviderSettings, create_openai};
 use aimux_providers::{
@@ -1471,7 +1471,11 @@ async fn finding_10_bedrock_generate_reasoning_signature_in_provider_metadata() 
 fn encode_events(events: &[(&str, &str, Value)]) -> Vec<u8> {
     let mut buf = Vec::new();
     for (mt, et, payload) in events {
-        buf.extend_from_slice(&event_stream::encode_message(mt, et, &payload.to_string()));
+        buf.extend_from_slice(&event_stream_decoder::encode_message(
+            mt,
+            et,
+            &payload.to_string(),
+        ));
     }
     buf
 }

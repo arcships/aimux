@@ -5,20 +5,17 @@
 //!
 //! Endpoint: `POST {base_url}/model/{model_id}/invoke`
 
-use async_trait::async_trait;
-use serde_json::{Map, Value, json};
-
+use super::options;
+use crate::shared::EndpointConfig;
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
     ImageResult,
 };
 use aimux_core::shared::Warning;
-
 use aimux_provider_utils::HttpBody;
-
-use super::options;
-use crate::shared::EndpointConfig;
+use async_trait::async_trait;
+use serde_json::{Map, Value, json};
 
 /// Returns the max images per call for the given model ID.
 fn get_max_images_per_call(model_id: &str) -> u32 {
@@ -331,14 +328,14 @@ impl ImageModel for BedrockImageModel {
             serde_json::to_string(&body).map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
         let url = exchange.url(&format!(
             "/model/{}/invoke",
-            super::encode_model_id(&self.model_id)
+            super::provider::encode_model_id(&self.model_id)
         ));
 
         let resp = aimux_provider_utils::post_to_api(
             exchange.request(url.clone(), options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler::<Value>(),
-            super::bedrock_failed_response_handler(),
+            super::error::bedrock_failed_response_handler(),
         )
         .await?;
         let rh = resp.response_headers;
