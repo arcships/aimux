@@ -247,3 +247,18 @@ fn the_default_provider_name_is_anthropic_aws_messages() {
     .unwrap();
     assert_eq!(named.messages("claude").provider(), "my-aws");
 }
+
+/// The Messages API fetches http(s) image and PDF URLs itself, so the model
+/// reports them as supported (anthropic-aws-provider.ts:251-254).
+#[serial]
+#[tokio::test]
+async fn models_support_http_image_and_pdf_urls() {
+    let provider = create_anthropic_aws(AnthropicAwsProviderSettings::default()).unwrap();
+    let urls = provider.messages("claude").supported_urls().await;
+    let mut kinds: Vec<_> = urls.0.keys().map(String::as_str).collect();
+    kinds.sort_unstable();
+    assert_eq!(kinds, ["application/pdf", "image/*"]);
+    assert!(urls.is_supported("https://example.com/a.png", "image/png"));
+    assert!(urls.is_supported("http://example.com/a.pdf", "application/pdf"));
+    assert!(!urls.is_supported("ftp://example.com/a.png", "image/png"));
+}

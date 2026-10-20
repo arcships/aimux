@@ -30,7 +30,7 @@ use futures::future::BoxFuture;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
@@ -209,7 +209,9 @@ impl AnthropicAwsProvider {
             provider: self.name.clone(),
             headers: AnthropicHeaders::Aws(self.headers.clone()),
             fetch: Some(self.fetch.clone()),
-            supported_urls: SupportedUrls::default(),
+            // The Messages API fetches http(s) images and PDFs itself
+            // (anthropic-aws-provider.ts:251-254).
+            supported_urls: crate::anthropic::supported_urls(),
             transform_request_body: self.transform_request_body.clone(),
             base_url,
             provider_options_name: self.provider_options_name.clone(),
