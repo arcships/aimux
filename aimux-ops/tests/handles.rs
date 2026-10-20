@@ -51,7 +51,7 @@ fn invalid_params(result: Result<Value, OpsError>) {
     let error = result.unwrap_err();
     assert!(matches!(
         error.unprojected(),
-        OpsError::Protocol(ProtocolError::InvalidParams(_))
+        OpsError::Protocol(ProtocolError::InvalidParams { .. })
     ));
     assert!(matches!(error, OpsError::Projected(_)));
 }

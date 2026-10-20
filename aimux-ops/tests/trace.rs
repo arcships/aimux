@@ -235,7 +235,7 @@ async fn invalid_controls_fail_before_mutation() {
         assert!(
             matches!(
                 error.unprojected(),
-                OpsError::Protocol(ProtocolError::InvalidParams(_))
+                OpsError::Protocol(ProtocolError::InvalidParams { .. })
             ),
             "{op}: {error}"
         );
