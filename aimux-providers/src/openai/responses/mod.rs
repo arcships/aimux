@@ -120,7 +120,7 @@ impl OpenAIResponsesModel {
                 )
             })
         {
-            return Err(AiMuxError::InvalidArgument("reasoningEffortUpdate".into()));
+            return Err(AiMuxError::invalid_argument("reasoningEffortUpdate"));
         }
         let update_incompatible = provider_options.is_some_and(|v| {
             v.get("reasoningMode") == Some(&serde_json::json!("pro"))
@@ -143,7 +143,7 @@ impl OpenAIResponsesModel {
                     .and_then(Value::as_str)
             {
                 if !matches!(effort, "none" | "low" | "medium" | "high" | "xhigh" | "max") {
-                    return Err(AiMuxError::InvalidArgument("reasoningEffortUpdate".into()));
+                    return Err(AiMuxError::invalid_argument("reasoningEffortUpdate"));
                 }
                 if !content.is_empty()
                     || !caps.supports_configuration_update
@@ -190,7 +190,7 @@ impl OpenAIResponsesModel {
                     FileData::Reference { reference }
                         if !reference.contains_key(profile.namespace.write_key()) =>
                     {
-                        return Err(AiMuxError::InvalidArgument(format!(
+                        return Err(AiMuxError::invalid_argument(format!(
                             "No file reference for {}",
                             profile.namespace.write_key()
                         )));

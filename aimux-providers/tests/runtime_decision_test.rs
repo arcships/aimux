@@ -557,7 +557,7 @@ async fn unsupported_fields_and_bad_encodings_fail_before_http() {
             }
             assert!(matches!(
                 decide(model(provider, &server).as_ref(), request).await,
-                Err(AiMuxError::InvalidArgument(_))
+                Err(AiMuxError::InvalidArgument { .. })
             ));
         }
     }
@@ -715,7 +715,7 @@ async fn scoring_rejects_wrong_dimensions_and_inconsistent_probabilities() {
         .await;
     assert!(matches!(
         decide(model("vllm", &server).as_ref(), scoring_options("vllm")).await,
-        Err(AiMuxError::InvalidResponseData(_))
+        Err(AiMuxError::InvalidResponseData { .. })
     ));
     assert_eq!(server.received_requests().await.unwrap().len(), 7);
 }
@@ -826,7 +826,7 @@ async fn runtime_limits_are_checked_before_http() {
             );
         } else {
             assert!(
-                matches!(error, AiMuxError::InvalidArgument(_)),
+                matches!(error, AiMuxError::InvalidArgument { .. }),
                 "{provider}: {error:?}"
             );
         }

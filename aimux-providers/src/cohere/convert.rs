@@ -302,8 +302,8 @@ fn image_part(
         .and_then(|options| options.get("detail"))
     {
         if !matches!(detail.as_str(), Some("auto" | "low" | "high")) {
-            return Err(AiMuxError::InvalidArgument(
-                "cohere.detail must be auto, low or high".into(),
+            return Err(AiMuxError::invalid_argument(
+                "cohere.detail must be auto, low or high",
             ));
         }
         image["detail"] = detail.clone();
@@ -457,8 +457,8 @@ pub fn resolve_cohere_thinking(
         && let Some(thinking) = cohere.get("thinking")
     {
         if !thinking.is_object() {
-            return Err(AiMuxError::InvalidArgument(
-                "cohere.thinking must be an object".into(),
+            return Err(AiMuxError::invalid_argument(
+                "cohere.thinking must be an object",
             ));
         }
         let t_type = match thinking.get("type") {
@@ -466,8 +466,8 @@ pub fn resolve_cohere_thinking(
             Some(value) => match value.as_str() {
                 Some(value @ ("enabled" | "disabled")) => value,
                 _ => {
-                    return Err(AiMuxError::InvalidArgument(
-                        "cohere.thinking.type must be enabled or disabled".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "cohere.thinking.type must be enabled or disabled",
                     ));
                 }
             },
@@ -475,8 +475,8 @@ pub fn resolve_cohere_thinking(
         let mut obj = json!({ "type": t_type });
         if let Some(budget) = thinking.get("tokenBudget") {
             if !budget.is_number() {
-                return Err(AiMuxError::InvalidArgument(
-                    "cohere.thinking.tokenBudget must be a number".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "cohere.thinking.tokenBudget must be a number",
                 ));
             }
             obj["token_budget"] = budget.clone();
