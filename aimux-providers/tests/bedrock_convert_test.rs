@@ -129,47 +129,271 @@ fn tool_result(id: &str, output: ToolResultOutput) -> ToolPart {
 
 // ── system messages ─────────────────────────────────────────────────────────
 
-/// TS: "should combine multiple leading system messages into a single system message"
-#[test]
-fn system_combine_multiple_leading() {
-    let (system, _) =
-        convert_prompt_to_bedrock(&vec![system_msg("Hello"), system_msg("World")]).unwrap();
-    assert_eq!(
-        Value::Array(system),
-        json!([{ "text": "Hello" }, { "text": "World" }])
-    );
+mod system_messages {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › system messages › should combine multiple leading system messages into a single system message
+    #[test]
+    fn system_combine_multiple_leading() {
+        let (system, _) =
+            convert_prompt_to_bedrock(&vec![system_msg("Hello"), system_msg("World")]).unwrap();
+        assert_eq!(
+            Value::Array(system),
+            json!([{ "text": "Hello" }, { "text": "World" }])
+        );
+    }
 }
 
-/// TS: "should extract the system message"
-#[test]
-fn system_extract_single() {
-    let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello")]).unwrap();
-    assert_eq!(Value::Array(system), json!([{ "text": "Hello" }]));
+mod user_messages {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › user messages › should extract the system message
+    #[test]
+    fn system_extract_single() {
+        let (system, _) = convert_prompt_to_bedrock(&vec![system_msg("Hello")]).unwrap();
+        assert_eq!(Value::Array(system), json!([{ "text": "Hello" }]));
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › user messages › should convert messages with image parts
+    #[test]
+    fn user_convert_image_parts() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
+            user_text("Hello"),
+            file_base64("AAECAw==", "image/png", None, None),
+        ])])
+        .unwrap();
+        assert_eq!(
+            Value::Array(messages),
+            json!([{
+                "role": "user",
+                "content": [
+                    { "text": "Hello" },
+                    { "image": { "format": "png", "source": { "bytes": "AAECAw==" } } },
+                ]
+            }])
+        );
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › user messages › should use consistent document names for prompt cache effectiveness
+    #[test]
+    fn user_consistent_document_names() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![
+            user(vec![
+                file_base64("AAECAw==", "application/pdf", None, None),
+                file_base64("BAUGBw==", "application/pdf", None, None),
+            ]),
+            assistant(vec![assistant_text("OK")]),
+            user(vec![file_base64("AAECAw==", "application/pdf", None, None)]),
+        ])
+        .unwrap();
+        assert_eq!(
+            Value::Array(messages),
+            json!([
+                { "role": "user", "content": [
+                    { "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" } } },
+                    { "document": { "format": "pdf", "name": "document-2", "source": { "bytes": "BAUGBw==" } } },
+                ]},
+                { "role": "assistant", "content": [{ "text": "OK" }] },
+                { "role": "user", "content": [
+                    { "document": { "format": "pdf", "name": "document-3", "source": { "bytes": "AAECAw==" } } },
+                ]},
+            ])
+        );
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › user messages › should add cache point to user content part when specified
+    #[test]
+    fn user_content_part_cache_point() {
+        let (system, messages) = convert_prompt_to_bedrock(&vec![user(vec![
+            user_text("Hello"),
+            UserPart::Text(text_with_cache("cached", "default", Some("5m"))),
+            user_text("World"),
+        ])])
+        .unwrap();
+        assert!(system.is_empty());
+        assert_eq!(
+            Value::Array(messages),
+            json!([{
+                "role": "user",
+                "content": [
+                    { "text": "Hello" },
+                    { "text": "cached" },
+                    { "cachePoint": { "type": "default", "ttl": "5m" } },
+                    { "text": "World" },
+                ]
+            }])
+        );
+    }
+}
+
+mod tool_messages {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › tool messages › should convert tool result with content array containing text
+    #[test]
+    fn tool_result_content_text() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
+            "call-123",
+            ToolResultOutput::Content {
+                value: vec![ToolResultContent::Text(TextPart {
+                    text: "The result is 42".to_string(),
+                    provider_options: None,
+                })],
+            },
+        )])])
+        .unwrap();
+        assert_eq!(
+            messages[0],
+            json!({
+                "role": "user",
+                "content": [{
+                    "toolResult": {
+                        "toolUseId": "call-123",
+                        "content": [{ "text": "The result is 42" }]
+                    }
+                }]
+            })
+        );
+    }
+}
+
+mod citations {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › citations › should handle citations enabled for PDF
+    #[test]
+    fn citations_enabled_for_pdf() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
+            "AAECAw==",
+            "application/pdf",
+            None,
+            Some(
+                provider_namespace("bedrock", json!({ "citations": { "enabled": true } })).unwrap(),
+            ),
+        )])])
+        .unwrap();
+        assert_eq!(
+            messages[0]["content"][0],
+            json!({
+                "document": {
+                    "format": "pdf",
+                    "name": "document-1",
+                    "source": { "bytes": "AAECAw==" },
+                    "citations": { "enabled": true }
+                }
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › citations › should handle citations disabled for PDF
+    #[test]
+    fn citations_disabled_for_pdf() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
+            "AAECAw==",
+            "application/pdf",
+            None,
+            Some(
+                provider_namespace("bedrock", json!({ "citations": { "enabled": false } }))
+                    .unwrap(),
+            ),
+        )])])
+        .unwrap();
+        assert_eq!(
+            messages[0]["content"][0],
+            json!({
+                "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" } }
+            })
+        );
+        assert!(
+            messages[0]["content"][0]["document"]
+                .get("citations")
+                .is_none()
+        );
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › citations › should handle no citations specified for PDF (default)
+    #[test]
+    fn citations_default_for_pdf() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
+            "AAECAw==",
+            "application/pdf",
+            None,
+            None,
+        )])])
+        .unwrap();
+        assert_eq!(
+            messages[0]["content"][0],
+            json!({
+                "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" } }
+            })
+        );
+        assert!(
+            messages[0]["content"][0]["document"]
+                .get("citations")
+                .is_none()
+        );
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › citations › should handle multiple PDFs with different citation settings
+    #[test]
+    fn citations_multiple_pdfs() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
+            file_base64(
+                "AAECAw==",
+                "application/pdf",
+                None,
+                Some(
+                    provider_namespace("bedrock", json!({ "citations": { "enabled": true } }))
+                        .unwrap(),
+                ),
+            ),
+            file_base64(
+                "BAUGBw==",
+                "application/pdf",
+                None,
+                Some(
+                    provider_namespace("bedrock", json!({ "citations": { "enabled": false } }))
+                        .unwrap(),
+                ),
+            ),
+        ])])
+        .unwrap();
+        assert_eq!(
+            messages[0]["content"],
+            json!([
+                { "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" }, "citations": { "enabled": true } } },
+                { "document": { "format": "pdf", "name": "document-2", "source": { "bytes": "BAUGBw==" } } },
+            ])
+        );
+    }
+}
+
+mod top_level_only_media_type_resolution {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › top-level-only mediaType resolution › should pass through a full image mediaType unchanged
+    #[test]
+    fn media_type_pass_through_full_image() {
+        let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
+            "iVBORw0KGgo=",
+            "image/png",
+            None,
+            None,
+        )])])
+        .unwrap();
+        assert_eq!(
+            Value::Array(messages),
+            json!([{
+                "role": "user",
+                "content": [{ "image": { "format": "png", "source": { "bytes": "iVBORw0KGgo=" } } }]
+            }])
+        );
+    }
 }
 
 // ── user messages ───────────────────────────────────────────────────────────
 
-/// TS: "should convert messages with image parts"
-#[test]
-fn user_convert_image_parts() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        user_text("Hello"),
-        file_base64("AAECAw==", "image/png", None, None),
-    ])])
-    .unwrap();
-    assert_eq!(
-        Value::Array(messages),
-        json!([{
-            "role": "user",
-            "content": [
-                { "text": "Hello" },
-                { "image": { "format": "png", "source": { "bytes": "AAECAw==" } } },
-            ]
-        }])
-    );
-}
-
-/// TS: "should convert messages with document parts"
+/// partial: `should convert messages with document parts`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn user_convert_document_parts() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
@@ -186,7 +410,7 @@ fn user_convert_document_parts() {
     );
 }
 
-/// TS: "should strip file extension when filename is provided"
+/// partial: `should strip file extension when filename is provided`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn user_strip_file_extension() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
@@ -205,7 +429,7 @@ fn user_strip_file_extension() {
     );
 }
 
-/// TS: "should preserve filename without extension when provided"
+/// partial: `should preserve filename without extension when provided`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn user_preserve_filename_without_extension() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
@@ -221,60 +445,9 @@ fn user_preserve_filename_without_extension() {
     );
 }
 
-/// TS: "should use consistent document names for prompt cache effectiveness"
-#[test]
-fn user_consistent_document_names() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![
-        user(vec![
-            file_base64("AAECAw==", "application/pdf", None, None),
-            file_base64("BAUGBw==", "application/pdf", None, None),
-        ]),
-        assistant(vec![assistant_text("OK")]),
-        user(vec![file_base64("AAECAw==", "application/pdf", None, None)]),
-    ])
-    .unwrap();
-    assert_eq!(
-        Value::Array(messages),
-        json!([
-            { "role": "user", "content": [
-                { "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" } } },
-                { "document": { "format": "pdf", "name": "document-2", "source": { "bytes": "BAUGBw==" } } },
-            ]},
-            { "role": "assistant", "content": [{ "text": "OK" }] },
-            { "role": "user", "content": [
-                { "document": { "format": "pdf", "name": "document-3", "source": { "bytes": "AAECAw==" } } },
-            ]},
-        ])
-    );
-}
-
-/// TS: "should add cache point to user content part when specified"
-#[test]
-fn user_content_part_cache_point() {
-    let (system, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        user_text("Hello"),
-        UserPart::Text(text_with_cache("cached", "default", Some("5m"))),
-        user_text("World"),
-    ])])
-    .unwrap();
-    assert!(system.is_empty());
-    assert_eq!(
-        Value::Array(messages),
-        json!([{
-            "role": "user",
-            "content": [
-                { "text": "Hello" },
-                { "text": "cached" },
-                { "cachePoint": { "type": "default", "ttl": "5m" } },
-                { "text": "World" },
-            ]
-        }])
-    );
-}
-
 // ── assistant messages ──────────────────────────────────────────────────────
 
-/// TS: "should remove trailing whitespace from last assistant message when there is no further user message"
+/// partial: `should remove trailing whitespace from last assistant message when there is no further user message`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_trim_trailing_whitespace_last() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -291,7 +464,7 @@ fn assistant_trim_trailing_whitespace_last() {
     );
 }
 
-/// TS: "should remove trailing whitespace from last assistant message with multi-part content when there is no further user message"
+/// partial: `should remove trailing whitespace from last assistant message with multi-part content when there is no further user message`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_trim_trailing_whitespace_multi_part() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -308,7 +481,7 @@ fn assistant_trim_trailing_whitespace_multi_part() {
     );
 }
 
-/// TS: "should keep trailing whitespace from assistant message when there is a further user message"
+/// partial: `should keep trailing whitespace from assistant message when there is a further user message`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_keep_trailing_whitespace_with_further_user() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -323,7 +496,7 @@ fn assistant_keep_trailing_whitespace_with_further_user() {
     );
 }
 
-/// TS: "should combine multiple sequential assistant messages into a single message"
+/// partial: `should combine multiple sequential assistant messages into a single message`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_combine_sequential() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -342,7 +515,7 @@ fn assistant_combine_sequential() {
     );
 }
 
-/// TS: "should add cache point to assistant content part when specified"
+/// partial: `should add cache point to assistant content part when specified`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_content_part_cache_point() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![assistant(vec![
@@ -365,7 +538,7 @@ fn assistant_content_part_cache_point() {
     );
 }
 
-/// TS: "should properly convert reasoning content type"
+/// partial: `should properly convert reasoning content type`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_reasoning_with_signature() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -389,7 +562,7 @@ fn assistant_reasoning_with_signature() {
     );
 }
 
-/// TS: "should preserve assistant message reasoning parts with amazonBedrock providerOptions"
+/// partial: `should preserve assistant message reasoning parts with amazonBedrock providerOptions`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_preserve_amazon_bedrock_reasoning() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -415,7 +588,7 @@ fn assistant_preserve_amazon_bedrock_reasoning() {
     );
 }
 
-/// TS: "should not trim reasoning text when a signature is present"
+/// partial: `should not trim reasoning text when a signature is present`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_no_trim_reasoning_with_signature() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -432,7 +605,7 @@ fn assistant_no_trim_reasoning_with_signature() {
     );
 }
 
-/// TS: "should omit reasoning content without signature"
+/// partial: `should omit reasoning content without signature`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_omit_reasoning_without_signature() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -446,7 +619,7 @@ fn assistant_omit_reasoning_without_signature() {
     assert_eq!(messages[1]["content"], json!([{ "text": "final answer" }]));
 }
 
-/// TS: "should omit multiple reasoning parts without signatures"
+/// partial: `should omit multiple reasoning parts without signatures`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_omit_multiple_reasoning_without_signatures() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -461,7 +634,7 @@ fn assistant_omit_multiple_reasoning_without_signatures() {
     assert_eq!(messages[1]["content"], json!([{ "text": "final answer" }]));
 }
 
-/// TS: "should omit unsigned reasoning while preserving tool calls in multi-turn tool use"
+/// partial: `should omit unsigned reasoning while preserving tool calls in multi-turn tool use`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_omit_unsigned_reasoning_preserving_tool_calls() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -493,7 +666,7 @@ fn assistant_omit_unsigned_reasoning_preserving_tool_calls() {
     );
 }
 
-/// TS: "should preserve reasoning text with signature in multi-turn tool use"
+/// partial: `should preserve reasoning text with signature in multi-turn tool use`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_preserve_reasoning_multi_turn() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -538,7 +711,7 @@ fn assistant_preserve_reasoning_multi_turn() {
     );
 }
 
-/// TS: "should handle a mix of text and reasoning content types"
+/// partial: `should handle a mix of text and reasoning content types`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_mix_text_and_reasoning() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -564,7 +737,7 @@ fn assistant_mix_text_and_reasoning() {
     );
 }
 
-/// TS: "should filter out empty text blocks in assistant messages"
+/// partial: `should filter out empty text blocks in assistant messages`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_filter_empty_text_blocks() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -586,7 +759,7 @@ fn assistant_filter_empty_text_blocks() {
     );
 }
 
-/// TS: "should wrap non-object (invalid) tool call input in an object"
+/// partial: `should wrap non-object (invalid) tool call input in an object`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_wrap_non_object_tool_input() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![assistant(vec![tool_call(
@@ -607,7 +780,7 @@ fn assistant_wrap_non_object_tool_input() {
     );
 }
 
-/// TS: "should strip invalid characters from tool call names"
+/// partial: `should strip invalid characters from tool call names`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_strip_invalid_tool_name_chars() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![assistant(vec![
@@ -630,7 +803,7 @@ fn assistant_strip_invalid_tool_name_chars() {
     );
 }
 
-/// TS: "should preserve empty text blocks when reasoning blocks are present"
+/// partial: `should preserve empty text blocks when reasoning blocks are present`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn assistant_preserve_empty_text_with_reasoning() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![
@@ -658,34 +831,7 @@ fn assistant_preserve_empty_text_with_reasoning() {
 
 // ── tool messages ───────────────────────────────────────────────────────────
 
-/// TS: "should convert tool result with content array containing text"
-#[test]
-fn tool_result_content_text() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
-        "call-123",
-        ToolResultOutput::Content {
-            value: vec![ToolResultContent::Text(TextPart {
-                text: "The result is 42".to_string(),
-                provider_options: None,
-            })],
-        },
-    )])])
-    .unwrap();
-    assert_eq!(
-        messages[0],
-        json!({
-            "role": "user",
-            "content": [{
-                "toolResult": {
-                    "toolUseId": "call-123",
-                    "content": [{ "text": "The result is 42" }]
-                }
-            }]
-        })
-    );
-}
-
-/// TS: "should convert tool result with content array containing image"
+/// partial: `should convert tool result with content array containing image`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn tool_result_content_image() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
@@ -713,7 +859,7 @@ fn tool_result_content_image() {
     );
 }
 
-/// TS: "should convert tool result with content array containing PDF"
+/// partial: `should convert tool result with content array containing PDF`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn tool_result_content_pdf() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
@@ -747,7 +893,8 @@ fn tool_result_content_pdf() {
 // content" and "should throw error for unsupported mime type in tool result
 // file content").
 
-/// TS: "should fallback to stringified result when content is undefined" (json output)
+/// partial: `should fallback to stringified result when content is undefined`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
+/// (json output)
 #[test]
 fn tool_result_json_output() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![tool_msg(vec![tool_result(
@@ -771,110 +918,9 @@ fn tool_result_json_output() {
 
 // ── citations ───────────────────────────────────────────────────────────────
 
-/// TS: "should handle citations enabled for PDF"
-#[test]
-fn citations_enabled_for_pdf() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
-        "AAECAw==",
-        "application/pdf",
-        None,
-        Some(provider_namespace("bedrock", json!({ "citations": { "enabled": true } })).unwrap()),
-    )])])
-    .unwrap();
-    assert_eq!(
-        messages[0]["content"][0],
-        json!({
-            "document": {
-                "format": "pdf",
-                "name": "document-1",
-                "source": { "bytes": "AAECAw==" },
-                "citations": { "enabled": true }
-            }
-        })
-    );
-}
-
-/// TS: "should handle citations disabled for PDF"
-#[test]
-fn citations_disabled_for_pdf() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
-        "AAECAw==",
-        "application/pdf",
-        None,
-        Some(provider_namespace("bedrock", json!({ "citations": { "enabled": false } })).unwrap()),
-    )])])
-    .unwrap();
-    assert_eq!(
-        messages[0]["content"][0],
-        json!({
-            "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" } }
-        })
-    );
-    assert!(
-        messages[0]["content"][0]["document"]
-            .get("citations")
-            .is_none()
-    );
-}
-
-/// TS: "should handle no citations specified for PDF (default)"
-#[test]
-fn citations_default_for_pdf() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
-        "AAECAw==",
-        "application/pdf",
-        None,
-        None,
-    )])])
-    .unwrap();
-    assert_eq!(
-        messages[0]["content"][0],
-        json!({
-            "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" } }
-        })
-    );
-    assert!(
-        messages[0]["content"][0]["document"]
-            .get("citations")
-            .is_none()
-    );
-}
-
-/// TS: "should handle multiple PDFs with different citation settings"
-#[test]
-fn citations_multiple_pdfs() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![
-        file_base64(
-            "AAECAw==",
-            "application/pdf",
-            None,
-            Some(
-                provider_namespace("bedrock", json!({ "citations": { "enabled": true } })).unwrap(),
-            ),
-        ),
-        file_base64(
-            "BAUGBw==",
-            "application/pdf",
-            None,
-            Some(
-                provider_namespace("bedrock", json!({ "citations": { "enabled": false } }))
-                    .unwrap(),
-            ),
-        ),
-    ])])
-    .unwrap();
-    assert_eq!(
-        messages[0]["content"],
-        json!([
-            { "document": { "format": "pdf", "name": "document-1", "source": { "bytes": "AAECAw==" }, "citations": { "enabled": true } } },
-            { "document": { "format": "pdf", "name": "document-2", "source": { "bytes": "BAUGBw==" } } },
-        ])
-    );
-}
-
 // ── additional file format tests ────────────────────────────────────────────
 
-/// TS: "should handle xlsx files correctly"
+/// partial: `should handle xlsx files correctly`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn file_format_xlsx() {
     let (system, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
@@ -891,7 +937,7 @@ fn file_format_xlsx() {
     );
 }
 
-/// TS: "should handle docx files correctly"
+/// partial: `should handle docx files correctly`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn file_format_docx() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
@@ -909,7 +955,7 @@ fn file_format_docx() {
 
 // ── Mistral tool call ID normalization ──────────────────────────────────────
 
-/// TS: "should not normalize tool call IDs when isMistral is false"
+/// partial: `should not normalize tool call IDs when isMistral is false`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn mistral_no_normalize_when_false() {
     let original_id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
@@ -927,7 +973,7 @@ fn mistral_no_normalize_when_false() {
     );
 }
 
-/// TS: "should default to not normalizing when isMistral is not provided"
+/// partial: `should default to not normalizing when isMistral is not provided`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn mistral_default_no_normalize() {
     let original_id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
@@ -947,26 +993,7 @@ fn mistral_default_no_normalize() {
 
 // ── top-level-only mediaType resolution ─────────────────────────────────────
 
-/// TS: "should pass through a full image mediaType unchanged"
-#[test]
-fn media_type_pass_through_full_image() {
-    let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
-        "iVBORw0KGgo=",
-        "image/png",
-        None,
-        None,
-    )])])
-    .unwrap();
-    assert_eq!(
-        Value::Array(messages),
-        json!([{
-            "role": "user",
-            "content": [{ "image": { "format": "png", "source": { "bytes": "iVBORw0KGgo=" } } }]
-        }])
-    );
-}
-
-/// TS: "should route to document slot for non-image top-level type via getTopLevelMediaType"
+/// partial: `should route to document slot for non-image top-level type via getTopLevelMediaType`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn media_type_route_to_document_text_plain() {
     let (_, messages) = convert_prompt_to_bedrock(&vec![user(vec![file_base64(
@@ -999,79 +1026,87 @@ fn func_tool(name: &str, description: Option<&str>, input_schema: Value) -> Func
     }
 }
 
-/// TS: "should handle tool choice 'auto'"
-#[test]
-fn prepare_tools_tool_choice_auto() {
-    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(
-        &tools,
-        Some(&LanguageModelV4ToolChoice::Auto),
-        NON_ANTHROPIC_MODEL,
-    );
-    assert_eq!(config["toolChoice"], json!({ "auto": {} }));
-}
+mod prepare_tools {
+    use super::*;
 
-/// TS: "should handle tool choice 'required'"
-#[test]
-fn prepare_tools_tool_choice_required() {
-    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(
-        &tools,
-        Some(&LanguageModelV4ToolChoice::Required),
-        NON_ANTHROPIC_MODEL,
-    );
-    assert_eq!(config["toolChoice"], json!({ "any": {} }));
-}
+    mod tool_choice {
+        use super::*;
 
-/// TS: "should handle tool choice 'none' by clearing tools"
-#[test]
-fn prepare_tools_tool_choice_none_clears() {
-    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(
-        &tools,
-        Some(&LanguageModelV4ToolChoice::None),
-        NON_ANTHROPIC_MODEL,
-    );
-    assert_eq!(config, json!({}));
-}
+        /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "auto"
+        #[test]
+        fn prepare_tools_tool_choice_auto() {
+            let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+            let config = prepare_tools(
+                &tools,
+                Some(&LanguageModelV4ToolChoice::Auto),
+                NON_ANTHROPIC_MODEL,
+            );
+            assert_eq!(config["toolChoice"], json!({ "auto": {} }));
+        }
 
-/// TS: "should handle tool choice 'tool'"
-#[test]
-fn prepare_tools_tool_choice_tool() {
-    let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
-    let config = prepare_tools(
-        &tools,
-        Some(&LanguageModelV4ToolChoice::Tool {
-            tool_name: "testFunction".to_string(),
-        }),
-        NON_ANTHROPIC_MODEL,
-    );
-    assert_eq!(
-        config["toolChoice"],
-        json!({ "tool": { "name": "testFunction" } })
-    );
-}
+        /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "required"
+        #[test]
+        fn prepare_tools_tool_choice_required() {
+            let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+            let config = prepare_tools(
+                &tools,
+                Some(&LanguageModelV4ToolChoice::Required),
+                NON_ANTHROPIC_MODEL,
+            );
+            assert_eq!(config["toolChoice"], json!({ "any": {} }));
+        }
 
-/// TS: "should filter function tools to only the named tool when tool choice is 'tool'"
-#[test]
-fn prepare_tools_tool_choice_filters_to_named() {
-    let tools = Some(vec![
-        func_tool(
-            "getWeather",
-            Some("Get weather"),
-            json!({ "type": "object" }),
-        ),
-        func_tool("getTime", Some("Get time"), json!({ "type": "object" })),
-    ]);
-    let config = prepare_tools(
-        &tools,
-        Some(&LanguageModelV4ToolChoice::Tool {
-            tool_name: "getWeather".to_string(),
-        }),
-        NON_ANTHROPIC_MODEL,
-    );
-    assert_eq!(config["tools"].as_array().unwrap().len(), 1);
-    assert_eq!(config["tools"][0]["toolSpec"]["name"], json!("getWeather"));
+        /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "none" by clearing tools
+        #[test]
+        fn prepare_tools_tool_choice_none_clears() {
+            let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+            let config = prepare_tools(
+                &tools,
+                Some(&LanguageModelV4ToolChoice::None),
+                NON_ANTHROPIC_MODEL,
+            );
+            assert_eq!(config, json!({}));
+        }
+
+        /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should handle tool choice "tool"
+        #[test]
+        fn prepare_tools_tool_choice_tool() {
+            let tools = Some(vec![func_tool("testFunction", Some("Test"), json!({}))]);
+            let config = prepare_tools(
+                &tools,
+                Some(&LanguageModelV4ToolChoice::Tool {
+                    tool_name: "testFunction".to_string(),
+                }),
+                NON_ANTHROPIC_MODEL,
+            );
+            assert_eq!(
+                config["toolChoice"],
+                json!({ "tool": { "name": "testFunction" } })
+            );
+        }
+
+        /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-prepare-tools.test.ts › prepareTools › tool choice › should filter function tools to only the named tool when tool choice is "tool"
+        #[test]
+        fn prepare_tools_tool_choice_filters_to_named() {
+            let tools = Some(vec![
+                func_tool(
+                    "getWeather",
+                    Some("Get weather"),
+                    json!({ "type": "object" }),
+                ),
+                func_tool("getTime", Some("Get time"), json!({ "type": "object" })),
+            ]);
+            let config = prepare_tools(
+                &tools,
+                Some(&LanguageModelV4ToolChoice::Tool {
+                    tool_name: "getWeather".to_string(),
+                }),
+                NON_ANTHROPIC_MODEL,
+            );
+            assert_eq!(config["tools"].as_array().unwrap().len(), 1);
+            assert_eq!(config["tools"][0]["toolSpec"]["name"], json!("getWeather"));
+        }
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1097,7 +1132,7 @@ fn bedrock_usage(
     }
 }
 
-/// TS: "should convert basic usage without cache tokens"
+/// partial: `should convert basic usage without cache tokens`; full port in src/bedrock/tests/convert_usage.rs.
 #[test]
 fn usage_basic_without_cache() {
     let u = convert_usage(Some(&bedrock_usage(100, 50, None, None)));
@@ -1109,7 +1144,7 @@ fn usage_basic_without_cache() {
     assert_eq!(u.output_tokens.text, Some(50));
 }
 
-/// TS: "should convert usage with cache read tokens"
+/// partial: `should convert usage with cache read tokens`; full port in src/bedrock/tests/convert_usage.rs.
 #[test]
 fn usage_with_cache_read() {
     let u = convert_usage(Some(&bedrock_usage(100, 50, Some(80), None)));
@@ -1121,7 +1156,7 @@ fn usage_with_cache_read() {
     assert_eq!(u.output_tokens.text, Some(50));
 }
 
-/// TS: "should convert usage with cache write tokens"
+/// partial: `should convert usage with cache write tokens`; full port in src/bedrock/tests/convert_usage.rs.
 #[test]
 fn usage_with_cache_write() {
     let u = convert_usage(Some(&bedrock_usage(100, 50, None, Some(60))));
@@ -1133,7 +1168,7 @@ fn usage_with_cache_write() {
     assert_eq!(u.output_tokens.text, Some(50));
 }
 
-/// TS: "should convert usage with both cache read and write tokens"
+/// partial: `should convert usage with both cache read and write tokens`; full port in src/bedrock/tests/convert_usage.rs.
 #[test]
 fn usage_with_both_cache() {
     let u = convert_usage(Some(&bedrock_usage(100, 50, Some(80), Some(60))));
@@ -1145,7 +1180,7 @@ fn usage_with_both_cache() {
     assert_eq!(u.output_tokens.text, Some(50));
 }
 
-/// TS: "should handle null cache tokens"
+/// partial: `should handle null cache tokens`; full port in src/bedrock/tests/convert_usage.rs.
 #[test]
 fn usage_null_cache_tokens() {
     let u = convert_usage(Some(&bedrock_usage(100, 50, None, None)));
@@ -1157,7 +1192,7 @@ fn usage_null_cache_tokens() {
     assert_eq!(u.output_tokens.text, Some(50));
 }
 
-/// TS: "should handle null usage"
+/// partial: `should handle null usage`; full port in src/bedrock/tests/convert_usage.rs.
 #[test]
 fn usage_null() {
     let u = convert_usage(None);
@@ -1169,7 +1204,7 @@ fn usage_null() {
     assert_eq!(u.output_tokens.text, None);
 }
 
-/// TS: "should handle undefined usage"
+/// partial: `should handle undefined usage`; full port in src/bedrock/tests/convert_usage.rs.
 #[test]
 fn usage_undefined() {
     let u = convert_usage(None);

@@ -362,6 +362,7 @@ mod tests {
         );
     }
 
+    /// partial: `surfaces frame decode errors instead of stranding later frames`; full port in src/bedrock/tests/event_stream_decoder.rs.
     #[test]
     fn corrupt_message_crc_is_rejected() {
         let payload = r#"{"delta":{"text":"Hi"}}"#;
