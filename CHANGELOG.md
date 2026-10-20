@@ -1190,6 +1190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic throws a first-chunk stream error with the error's data as the
+  `ApiCallError` response body and a 500 status when its type maps to none,
+  as the AI SDK does; it used the whole SSE frame as the body and no status.
 - Anthropic streams the `tool_use` blocks a `message_start` already carries
   (deferred programmatic tool calls) as tool input and tool-call parts with
   their caller, as the AI SDK does; it dropped them.

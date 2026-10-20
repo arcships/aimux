@@ -68,25 +68,8 @@ pub(crate) fn anthropic_stream_error(
         .and_then(|status| u16::try_from(status).ok())
         .or(inferred_status);
     let is_retryable = error.is_retryable.or(inferred_retryable);
-    // The error as the chunk schema parses it (anthropic-api.ts:1450-1459):
-    // its known fields only.
-    let mut parsed = serde_json::Map::new();
-    if let Some(error_type) = &error.error_type {
-        parsed.insert("type".into(), json!(error_type));
-    }
-    parsed.insert("message".into(), json!(error.message));
-    for (key, value) in [
-        ("code", error.code.clone()),
-        ("statusCode", error.status_code.clone()),
-        ("isRetryable", error.is_retryable.map(Value::Bool)),
-    ] {
-        if let Some(value) = value {
-            parsed.insert(key.into(), value);
-        }
-    }
-    let parsed = Value::Object(parsed);
-    // `data: 'data' in error ? error.data : error` (:91).
-    let data = error.data.clone().unwrap_or_else(|| parsed.clone());
+    let parsed = parsed_stream_error(error);
+    let data = stream_error_data(error);
     let mut result = aimux_provider_utils::stream_error_api_call(
         error.message.clone(),
         error.error_type.clone(),
@@ -103,6 +86,34 @@ pub(crate) fn anthropic_stream_error(
         details.data = (!data.is_null()).then(|| aimux_provider_utils::redact_error_context(data));
     }
     result
+}
+
+/// The error as the chunk schema parses it (anthropic-api.ts:1450-1459):
+/// its known fields only.
+fn parsed_stream_error(error: &StreamErrorData) -> Value {
+    let mut parsed = serde_json::Map::new();
+    if let Some(error_type) = &error.error_type {
+        parsed.insert("type".into(), json!(error_type));
+    }
+    parsed.insert("message".into(), json!(error.message));
+    for (key, value) in [
+        ("code", error.code.clone()),
+        ("statusCode", error.status_code.clone()),
+        ("isRetryable", error.is_retryable.map(Value::Bool)),
+    ] {
+        if let Some(value) = value {
+            parsed.insert(key.into(), value);
+        }
+    }
+    Value::Object(parsed)
+}
+
+/// `data: 'data' in error ? error.data : error` (anthropic-language-model.ts:91).
+fn stream_error_data(error: &StreamErrorData) -> Value {
+    error
+        .data
+        .clone()
+        .unwrap_or_else(|| parsed_stream_error(error))
 }
 
 /// Read a string field, dropping absent / non-string values.
@@ -1208,12 +1219,15 @@ pub(crate) async fn anthropic_stream_core(
         first_event => first_event,
     };
     if let Some((_, Ok(StreamEvent::Error { error }))) = first_event.as_ref() {
-        return Err(anthropic_stream_error(
-            error,
-            &endpoint,
-            body.clone(),
-            response_headers,
-        ));
+        // The thrown `APICallError` (anthropic-language-model.ts:3150-3160):
+        // `statusCode: error.statusCode ?? 500`, `responseBody:
+        // JSON.stringify(error.data)`, `isRetryable: error.isRetryable ?? false`.
+        let mut thrown = anthropic_stream_error(error, &endpoint, body.clone(), response_headers);
+        if let AiMuxError::ApiCall(details) = &mut thrown {
+            details.status_code.get_or_insert(500);
+            details.response_body = Some(stream_error_data(error).to_string());
+        }
+        return Err(thrown);
     }
 
     let raw_usage = Value::Object(serde_json::Map::new());

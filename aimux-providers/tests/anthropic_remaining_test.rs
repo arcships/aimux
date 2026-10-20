@@ -1081,3 +1081,42 @@ async fn stream_emits_the_tool_calls_carried_by_message_start() {
         ]
     );
 }
+
+/// The AI SDK throws a first-chunk stream error with the error's data as the
+/// response body, a 500 status when its type maps to none, and no retry.
+#[tokio::test]
+async fn first_chunk_stream_error_body_is_the_error_data() {
+    let cases = [
+        (
+            json!({ "type": "overloaded_error", "message": "Overloaded", "details": null }),
+            r#"{"type":"overloaded_error","message":"Overloaded"}"#,
+            529,
+            true,
+        ),
+        (
+            json!({ "type": "unknown_error", "message": "boom", "data": { "a": 1 } }),
+            r#"{"a":1}"#,
+            500,
+            false,
+        ),
+    ];
+    for (error, body, status, retryable) in cases {
+        let fetch = MockFetch::new(vec![sse_response(&[
+            json!({ "type": "error", "error": error }),
+        ])]);
+        let Err(AiMuxError::ApiCall(details)) = make_model_with_config(settings(&fetch))
+            .do_stream(&default_options(test_prompt()))
+            .await
+        else {
+            panic!("expected an API call error");
+        };
+        assert_eq!(
+            (
+                details.response_body.as_deref(),
+                details.status_code,
+                details.is_retryable
+            ),
+            (Some(body), Some(status), retryable)
+        );
+    }
+}
