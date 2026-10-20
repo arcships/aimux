@@ -1158,8 +1158,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `serviceTier: null` stays in the provider metadata; stream usage comes from
   the parsed chunk; and the request builder's warnings (reasoning mapping,
   thought-signature sentinel) are no longer dropped. Both models now read
-  `"candidates": null` as no candidates and stream function-call arguments
-  sent as `partialArgs`.
+  `"candidates": null` as no candidates, stream function-call arguments
+  sent as `partialArgs`, and leave an empty `thoughtSignature` out of server
+  tool metadata.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

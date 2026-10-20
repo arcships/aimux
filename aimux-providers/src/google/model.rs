@@ -886,7 +886,7 @@ fn server_tool_metadata(
         "serverToolCallId": tool_call_id,
         "serverToolType": server_tool_type,
     });
-    if let Some(signature) = thought_signature {
+    if let Some(signature) = thought_signature.filter(|signature| !signature.is_empty()) {
         payload["thoughtSignature"] = json!(signature);
     }
     namespace.metadata(payload)
