@@ -2623,3 +2623,27 @@ async fn streams_reasoning_summary_deltas() {
         ]
     );
 }
+
+/// TS: `doStream` flush (open-responses-language-model.ts:997-1003): a
+/// reasoning item that never got `response.output_item.done` ends with its
+/// own item id.
+#[tokio::test]
+async fn unfinished_reasoning_ends_with_its_item_id() {
+    let server = MockServer::start().await;
+    let added = json!({ "type": "response.output_item.added",
+                        "item": { "type": "reasoning", "id": "rs_open" } });
+    mock_sse(&server, sse_event(&added.to_string())).await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let ends: Vec<String> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::ReasoningEnd { id, .. } => Some(id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends, ["rs_open"]);
+}

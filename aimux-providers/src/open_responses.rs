@@ -531,7 +531,7 @@ impl LanguageModel for OpenResponsesModel {
                 final_usage: Usage::default(),
                 has_tool_calls: false,
                 finish_reason: FINISH_OTHER,
-                is_active_reasoning: false,
+                active_reasoning_id: None,
                 tool_calls: HashMap::new(),
             },
         );
@@ -553,7 +553,8 @@ struct OpenResponsesStream {
     final_usage: Usage,
     has_tool_calls: bool,
     finish_reason: FinishReason,
-    is_active_reasoning: bool,
+    /// The reasoning item started and not yet done.
+    active_reasoning_id: Option<String>,
     /// Tool-call accumulators keyed by item_id.
     tool_calls: HashMap<String, ToolCallAccum>,
 }
@@ -574,7 +575,7 @@ impl Transformer for OpenResponsesStream {
             ref mut final_usage,
             ref mut has_tool_calls,
             ref mut finish_reason,
-            ref mut is_active_reasoning,
+            ref mut active_reasoning_id,
             ref mut tool_calls,
             ..
         } = *self;
@@ -618,8 +619,8 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.reasoning_start(id);
-                                    *is_active_reasoning = true;
+                                    controller.reasoning_start(id.clone());
+                                    *active_reasoning_id = Some(id);
                                 }
                                 "message" => {
                                     let id = item
@@ -736,6 +737,9 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
+                                    if active_reasoning_id.as_ref() == Some(&id) {
+                                        *active_reasoning_id = None;
+                                    }
                                     controller.enqueue(StreamPart::ReasoningEnd {
                                         id,
                                         provider_metadata: reasoning_metadata(
@@ -744,7 +748,6 @@ impl Transformer for OpenResponsesStream {
                                             &item["content"],
                                         ),
                                     });
-                                    *is_active_reasoning = false;
                                 }
                                 "message" => {
                                     let id = item
@@ -849,8 +852,8 @@ impl Transformer for OpenResponsesStream {
 
     fn flush(self, controller: &mut Controller) {
         // Close any dangling reasoning segment.
-        if self.is_active_reasoning {
-            controller.reasoning_end("reasoning-0");
+        if let Some(id) = self.active_reasoning_id {
+            controller.reasoning_end(id);
         }
 
         controller.enqueue(StreamPart::Finish {
