@@ -9,14 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- `ApiCallError` keeps its cause, as the AI SDK's `APICallError.cause`: the
-  transport error with its whole source chain down to the OS error, the body
-  parse error, or the error a response handler returned (`.caused_by(..)`);
-  `invalid_response_api_call` takes that error instead of a message, its text
-  becoming the message. A cause is a nested `AiMuxError` or a `SourceError` chain of an OS, TLS or
-  parser error, and is what `source()` returns; `RetryError::source()` is the
-  last attempt. `FetchError` carries a `SourceError` without the request URL,
-  so transport error messages lose it too: `error sending request for url
+- Errors keep their cause, as the AI SDK's `cause`. `ApiCallError` has
+  `cause` (`.caused_by(..)`): the transport error with its whole source chain
+  down to the OS error, the body parse error, or the error a response handler
+  returned; `invalid_response_api_call` takes that error instead of a
+  message, its text becoming the message. `JsonParse`, `NoOutputGenerated`, `InvalidResponseData`,
+  `InvalidArgument`, `InvalidPrompt` and `Other` are `{ message, cause }`
+  (build them with `AiMuxError::json_parse(..)`, `invalid_argument(..)`, ...),
+  and `InvalidToolInput.cause` is the parse or validation error itself instead
+  of its text. A value that fails its schema is the new `TypeValidation`
+  error (`AI_TypeValidationError`, with the value), the cause of an
+  `InvalidToolInput` or of a structured output that does not match. A cause
+  is a nested `AiMuxError` or a `SourceError` chain of an OS, TLS or parser
+  error, and is what `source()` returns; `RetryError::source()` is the last
+  attempt. `FetchError` and download errors carry a `SourceError` without the
+  request URL, so their messages lose it too: `error sending request for url
   (…)` is now `error sending request`. Other messages are unchanged.
 
 - aimux's public JSON equals the AI SDK's JSON. Struct fields serialize

@@ -25,6 +25,20 @@
 结构化字段只放在真正拥有它的错误上。例如，HTTP 状态和响应头属于
 `APICallError`，不放进通用基类（retry hint 与 request id 从 `response_headers` 读取）。
 
+## 错误原因（cause）
+
+AI SDK 构造时接受 `cause` 的错误，在 aimux 里都有可选的 `cause`；它就是 Rust
+的 `Error::source()`，序列化后在错误 payload 的 `cause` 字段。`cause` 有两种：
+带 `name` 的嵌套 aimux 错误，或者没有 `name` 的底层错误 `{message, cause?}`
+（OS、TLS、JSON 解析器等），后者的 `cause` 继续往下一层。message 仍包含原来的
+底层错误文字，所以只看 message 的调用方不会少信息。
+
+值不符合调用方给的 schema 时，cause 是 `TypeValidation`（`AI_TypeValidationError`，
+带 `value`），和上游一样：工具输入不符合 `inputSchema` 时是
+`InvalidToolInput.cause`，结构化输出不符合 schema 时是 `InvalidResponseData.cause`。
+它和 `InvalidResponseData` 共用错误码 3。响应体本身形状不对仍是
+`InvalidResponseData`。
+
 ## 兼容性约定
 
 1. 已有错误名称和错误码不改名、不改号、不复用。
