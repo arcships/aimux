@@ -7,12 +7,8 @@
 //! records the binary audio frames and the final `audio.done` text frame, then
 //! sends the scripted events.
 //!
-//! Not ported (JS-only mechanics, no Rust analogue):
-//! - `specificationVersion` check (part of the first provider-info case)
-//! - "should cancel the audio stream when the WebSocket constructor throws"
-//! - "should cancel the audio stream when an audio send throws mid-stream"
-//! - "should close the WebSocket and stop reading audio when the stream is
-//!   cancelled"
+//! The upstream cases this file does not cover, or covers only in part, are
+//! ported in full in `src/xai/tests/transcription_model.rs`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -330,9 +326,225 @@ fn finish(text: &str, language: Value, duration: Option<f64>) -> Value {
     part
 }
 
-// ── tests: model information ────────────────────────────────────────────────
+mod do_generate {
+    use super::*;
 
-/// TS: should expose correct provider and model information
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doGenerate › should send a multipart request with the audio file
+    #[tokio::test]
+    async fn should_send_a_multipart_request_with_the_audio_file() {
+        let server = MockServer::start().await;
+        mock_stt(&server, json_response(default_body(), &[])).await;
+
+        generate(&server, &call(None, "audio/wav"), None).await;
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests[0].method.as_str(), "POST");
+        assert_eq!(requests[0].url.path(), "/stt");
+        let parts = parse_multipart(&requests[0]);
+        let file = parts.iter().find(|p| p.name == "file").expect("file field");
+        assert_eq!(file.filename.as_deref(), Some("audio.wav"));
+        assert_eq!(file.content_type.as_deref(), Some("audio/wav"));
+    }
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doGenerate › should map provider options onto xAI request fields
+    #[tokio::test]
+    async fn should_map_provider_options_onto_xai_request_fields() {
+        let server = MockServer::start().await;
+        mock_stt(&server, json_response(default_body(), &[])).await;
+
+        generate(&server, &call(Some(full_options()), "audio/pcm"), None).await;
+
+        let parts = parse_multipart(&server.received_requests().await.unwrap()[0]);
+        let values = |name: &str| -> Vec<&str> {
+            parts
+                .iter()
+                .filter(|p| p.name == name)
+                .map(|p| p.value.as_str())
+                .collect()
+        };
+        for (name, expected) in [
+            ("audio_format", "pcm"),
+            ("sample_rate", "16000"),
+            ("language", "en"),
+            ("format", "true"),
+            ("multichannel", "true"),
+            ("channels", "2"),
+            ("diarize", "true"),
+            ("filler_words", "true"),
+        ] {
+            assert_eq!(values(name), vec![expected], "field {name}");
+        }
+        assert_eq!(values("keyterm"), vec!["AI SDK", "Grok"]);
+    }
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doGenerate › should append file after all other multipart fields
+    #[tokio::test]
+    async fn should_append_file_after_all_other_multipart_fields() {
+        let server = MockServer::start().await;
+        mock_stt(
+            &server,
+            json_response(json!({"text": "Hello from the AI SDK!"}), &[]),
+        )
+        .await;
+
+        generate(&server, &call(Some(full_options()), "audio/pcm"), None).await;
+
+        let parts = parse_multipart(&server.received_requests().await.unwrap()[0]);
+        let names: Vec<&str> = parts.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "audio_format",
+                "sample_rate",
+                "language",
+                "format",
+                "multichannel",
+                "channels",
+                "diarize",
+                "filler_words",
+                "keyterm",
+                "keyterm",
+                "file"
+            ]
+        );
+    }
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doGenerate › should extract text, segments, language, and duration
+    #[tokio::test]
+    async fn should_extract_text_segments_language_and_duration() {
+        let server = MockServer::start().await;
+        mock_stt(&server, json_response(default_body(), &[])).await;
+
+        let result = generate(&server, &call(None, "audio/wav"), None).await;
+
+        assert_eq!(result.text, "Hello from the AI SDK!");
+        assert_eq!(result.language.as_deref(), Some("en"));
+        assert_eq!(result.duration_in_seconds, Some(2.5));
+        let segments: Vec<_> = result
+            .segments
+            .iter()
+            .map(|s| (s.text.as_str(), s.start_second, s.end_second))
+            .collect();
+        assert_eq!(
+            segments,
+            [("Hello", 0.0, 1.0), ("from the AI SDK!", 1.0, 2.5)]
+        );
+        assert!(result.warnings.is_empty());
+    }
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doGenerate › should handle missing words, duration, and empty language
+    #[tokio::test]
+    async fn should_handle_missing_words_duration_and_empty_language() {
+        let server = MockServer::start().await;
+        mock_stt(
+            &server,
+            json_response(
+                json!({"text": "Hello from the AI SDK!", "language": ""}),
+                &[],
+            ),
+        )
+        .await;
+
+        let result = generate(&server, &call(None, "audio/wav"), None).await;
+
+        assert_eq!(result.text, "Hello from the AI SDK!");
+        assert_eq!(result.language, None);
+        assert_eq!(result.duration_in_seconds, None);
+        assert!(result.segments.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+}
+
+mod do_stream {
+    use super::*;
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doStream › should emit one transcript-final per utterance and reconstruct the finish text when transcript.done is empty
+    #[tokio::test]
+    async fn should_emit_one_final_per_utterance_and_reconstruct_finish_text() {
+        let events = vec![
+            partial("Hello wor", false, false, Some((0.0, 0.8))),
+            partial("Hello world.", true, false, Some((0.0, 1.0))),
+            partial("Hello world.", true, true, Some((0.0, 1.0))),
+            done("", 1.0),
+        ];
+        let parts = run(None, events).await.values();
+
+        assert_eq!(
+            of_kind(&parts, "transcript-final"),
+            vec![json!({
+                "type": "transcript-final", "text": "Hello world.", "startSecond": 0.0,
+                "endSecond": 1.0
+            })]
+        );
+        // the speech_final:false re-send surfaces as a partial
+        assert_eq!(of_kind(&parts, "transcript-partial").len(), 2);
+        assert_eq!(
+            parts.last().unwrap(),
+            &finish("Hello world.", Value::Null, Some(1.0))
+        );
+    }
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doStream › should treat is_final fragments as partials and use the speech_final text for finish
+    #[tokio::test]
+    async fn should_treat_is_final_fragments_as_partials_and_use_speech_final_text() {
+        let events = vec![
+            partial("No", true, false, Some((0.0, 0.5))),
+            partial(", I'm not", true, false, Some((0.5, 0.7))),
+            partial("No, I'm not.", true, true, Some((0.0, 1.2))),
+            done("", 1.2),
+        ];
+        let parts = run(None, events).await.values();
+
+        assert_eq!(
+            kinds(&parts),
+            [
+                "stream-start",
+                "transcript-partial",
+                "transcript-partial",
+                "transcript-final",
+                "finish"
+            ]
+        );
+        assert_eq!(parts.last().unwrap()["text"], "No, I'm not.");
+    }
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doStream › should fall back to the latest pending text when no speech_final arrived before transcript.done
+    #[tokio::test]
+    async fn should_fall_back_to_latest_pending_text_without_speech_final() {
+        let events = vec![
+            partial("Hello wor", false, false, None),
+            partial("Hello world", true, false, None),
+            done("", 1.0),
+        ];
+        let parts = run(None, events).await.values();
+
+        let last = parts.last().unwrap();
+        assert_eq!(kinds(&parts).last(), Some(&"finish"));
+        assert_eq!(last["text"], "Hello world");
+    }
+
+    /// upstream: @ai-sdk/xai src/xai-transcription-model.test.ts › doStream › should warn on unrecognized inputAudioFormat types
+    #[tokio::test]
+    async fn should_warn_on_unrecognized_input_audio_format_types() {
+        let options = stream_options(None, "audio/wav", None);
+        let run = run_with(options, None, vec![done("Hello", 1.0)]).await;
+
+        match &run.parts[0] {
+            Ok(TranscriptionStreamPart::StreamStart { warnings }) => match warnings.as_slice() {
+                [Warning::Other { message }] => {
+                    assert!(
+                        message.contains("Unrecognized inputAudioFormat.type \"audio/wav\""),
+                        "{message}"
+                    );
+                }
+                other => panic!("expected one Other warning, got {other:?}"),
+            },
+            other => panic!("expected StreamStart, got {other:?}"),
+        }
+    }
+}
+
+/// Checks the provider id and the empty model id; specificationVersion is not checked. partial: should expose correct provider and model information; full port in src/xai/tests/
 #[test]
 fn should_expose_correct_provider_and_model_information() {
     let model = model("https://api.x.ai/v1", None);
@@ -340,89 +552,7 @@ fn should_expose_correct_provider_and_model_information() {
     assert_eq!(model.model_id(), "");
 }
 
-// ── tests: doGenerate ───────────────────────────────────────────────────────
-
-/// TS: doGenerate > should send a multipart request with the audio file
-#[tokio::test]
-async fn should_send_a_multipart_request_with_the_audio_file() {
-    let server = MockServer::start().await;
-    mock_stt(&server, json_response(default_body(), &[])).await;
-
-    generate(&server, &call(None, "audio/wav"), None).await;
-
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests[0].method.as_str(), "POST");
-    assert_eq!(requests[0].url.path(), "/stt");
-    let parts = parse_multipart(&requests[0]);
-    let file = parts.iter().find(|p| p.name == "file").expect("file field");
-    assert_eq!(file.filename.as_deref(), Some("audio.wav"));
-    assert_eq!(file.content_type.as_deref(), Some("audio/wav"));
-}
-
-/// TS: doGenerate > should map provider options onto xAI request fields
-#[tokio::test]
-async fn should_map_provider_options_onto_xai_request_fields() {
-    let server = MockServer::start().await;
-    mock_stt(&server, json_response(default_body(), &[])).await;
-
-    generate(&server, &call(Some(full_options()), "audio/pcm"), None).await;
-
-    let parts = parse_multipart(&server.received_requests().await.unwrap()[0]);
-    let values = |name: &str| -> Vec<&str> {
-        parts
-            .iter()
-            .filter(|p| p.name == name)
-            .map(|p| p.value.as_str())
-            .collect()
-    };
-    for (name, expected) in [
-        ("audio_format", "pcm"),
-        ("sample_rate", "16000"),
-        ("language", "en"),
-        ("format", "true"),
-        ("multichannel", "true"),
-        ("channels", "2"),
-        ("diarize", "true"),
-        ("filler_words", "true"),
-    ] {
-        assert_eq!(values(name), vec![expected], "field {name}");
-    }
-    assert_eq!(values("keyterm"), vec!["AI SDK", "Grok"]);
-}
-
-/// TS: doGenerate > should append file after all other multipart fields
-#[tokio::test]
-async fn should_append_file_after_all_other_multipart_fields() {
-    let server = MockServer::start().await;
-    mock_stt(
-        &server,
-        json_response(json!({"text": "Hello from the AI SDK!"}), &[]),
-    )
-    .await;
-
-    generate(&server, &call(Some(full_options()), "audio/pcm"), None).await;
-
-    let parts = parse_multipart(&server.received_requests().await.unwrap()[0]);
-    let names: Vec<&str> = parts.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(
-        names,
-        [
-            "audio_format",
-            "sample_rate",
-            "language",
-            "format",
-            "multichannel",
-            "channels",
-            "diarize",
-            "filler_words",
-            "keyterm",
-            "keyterm",
-            "file"
-        ]
-    );
-}
-
-/// TS: doGenerate > should pass headers and the xAI user agent
+/// Checks authorization, custom headers and the multipart content type; the user agent is checked without its version and the boundary only by prefix. partial: should pass headers and the xAI user agent; full port in src/xai/tests/
 #[tokio::test]
 async fn should_pass_headers_and_the_xai_user_agent() {
     let server = MockServer::start().await;
@@ -456,30 +586,7 @@ async fn should_pass_headers_and_the_xai_user_agent() {
     assert!(header("user-agent").contains("ai-sdk-xai/"));
 }
 
-/// TS: doGenerate > should extract text, segments, language, and duration
-#[tokio::test]
-async fn should_extract_text_segments_language_and_duration() {
-    let server = MockServer::start().await;
-    mock_stt(&server, json_response(default_body(), &[])).await;
-
-    let result = generate(&server, &call(None, "audio/wav"), None).await;
-
-    assert_eq!(result.text, "Hello from the AI SDK!");
-    assert_eq!(result.language.as_deref(), Some("en"));
-    assert_eq!(result.duration_in_seconds, Some(2.5));
-    let segments: Vec<_> = result
-        .segments
-        .iter()
-        .map(|s| (s.text.as_str(), s.start_second, s.end_second))
-        .collect();
-    assert_eq!(
-        segments,
-        [("Hello", 0.0, 1.0), ("from the AI SDK!", 1.0, 2.5)]
-    );
-    assert!(result.warnings.is_empty());
-}
-
-/// TS: doGenerate > should include response timestamp, model id, and headers
+/// Checks the response model id, headers and body; the timestamp is only checked as present. partial: should include response timestamp, model id, and headers; full port in src/xai/tests/
 #[tokio::test]
 async fn should_include_response_timestamp_model_id_and_headers() {
     let server = MockServer::start().await;
@@ -500,31 +607,7 @@ async fn should_include_response_timestamp_model_id_and_headers() {
     assert_eq!(result.response.body, Some(default_body()));
 }
 
-/// TS: doGenerate > should handle missing words, duration, and empty language
-#[tokio::test]
-async fn should_handle_missing_words_duration_and_empty_language() {
-    let server = MockServer::start().await;
-    mock_stt(
-        &server,
-        json_response(
-            json!({"text": "Hello from the AI SDK!", "language": ""}),
-            &[],
-        ),
-    )
-    .await;
-
-    let result = generate(&server, &call(None, "audio/wav"), None).await;
-
-    assert_eq!(result.text, "Hello from the AI SDK!");
-    assert_eq!(result.language, None);
-    assert_eq!(result.duration_in_seconds, None);
-    assert!(result.segments.is_empty());
-    assert!(result.warnings.is_empty());
-}
-
-// ── tests: doStream ─────────────────────────────────────────────────────────
-
-/// TS: doStream > should require channels when streaming multichannel audio
+/// Checks the multichannel-without-channels error and that no socket is opened; the error's argument field is not checked. partial: should require channels when streaming multichannel audio; full port in src/xai/tests/
 #[tokio::test]
 async fn should_require_channels_when_streaming_multichannel_audio() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -555,7 +638,7 @@ async fn should_require_channels_when_streaming_multichannel_audio() {
     );
 }
 
-/// TS: doStream > should stream xAI STT over WebSocket
+/// Checks the streaming URL, handshake, audio frames and parts; the response timestamp is only checked as present. partial: should stream xAI STT over WebSocket; full port in src/xai/tests/
 #[tokio::test]
 async fn should_stream_xai_stt_over_websocket() {
     let options = json!({
@@ -606,9 +689,7 @@ async fn should_stream_xai_stt_over_websocket() {
     assert!(response.timestamp.is_some());
 }
 
-/// TS: doStream > should strip undefined header values before the WebSocket constructor
-///
-/// Rust analogue: a provider header set to `None` is not sent on the handshake.
+/// Checks that a provider header set to None is left off the WebSocket handshake (analogue: per-call headers cannot hold None). partial: should strip undefined header values before the WebSocket constructor; full port in src/xai/tests/
 #[tokio::test]
 async fn should_not_send_removed_header_values_on_the_handshake() {
     let headers = HashMap::from([
@@ -626,72 +707,7 @@ async fn should_not_send_removed_header_values_on_the_handshake() {
     assert!(!run.cap.headers.contains_key("x-unset"));
 }
 
-/// TS: doStream > should emit one transcript-final per utterance and reconstruct the finish text when transcript.done is empty
-#[tokio::test]
-async fn should_emit_one_final_per_utterance_and_reconstruct_finish_text() {
-    let events = vec![
-        partial("Hello wor", false, false, Some((0.0, 0.8))),
-        partial("Hello world.", true, false, Some((0.0, 1.0))),
-        partial("Hello world.", true, true, Some((0.0, 1.0))),
-        done("", 1.0),
-    ];
-    let parts = run(None, events).await.values();
-
-    assert_eq!(
-        of_kind(&parts, "transcript-final"),
-        vec![json!({
-            "type": "transcript-final", "text": "Hello world.", "startSecond": 0.0,
-            "endSecond": 1.0
-        })]
-    );
-    // the speech_final:false re-send surfaces as a partial
-    assert_eq!(of_kind(&parts, "transcript-partial").len(), 2);
-    assert_eq!(
-        parts.last().unwrap(),
-        &finish("Hello world.", Value::Null, Some(1.0))
-    );
-}
-
-/// TS: doStream > should treat is_final fragments as partials and use the speech_final text for finish
-#[tokio::test]
-async fn should_treat_is_final_fragments_as_partials_and_use_speech_final_text() {
-    let events = vec![
-        partial("No", true, false, Some((0.0, 0.5))),
-        partial(", I'm not", true, false, Some((0.5, 0.7))),
-        partial("No, I'm not.", true, true, Some((0.0, 1.2))),
-        done("", 1.2),
-    ];
-    let parts = run(None, events).await.values();
-
-    assert_eq!(
-        kinds(&parts),
-        [
-            "stream-start",
-            "transcript-partial",
-            "transcript-partial",
-            "transcript-final",
-            "finish"
-        ]
-    );
-    assert_eq!(parts.last().unwrap()["text"], "No, I'm not.");
-}
-
-/// TS: doStream > should fall back to the latest pending text when no speech_final arrived before transcript.done
-#[tokio::test]
-async fn should_fall_back_to_latest_pending_text_without_speech_final() {
-    let events = vec![
-        partial("Hello wor", false, false, None),
-        partial("Hello world", true, false, None),
-        done("", 1.0),
-    ];
-    let parts = run(None, events).await.values();
-
-    let last = parts.last().unwrap();
-    assert_eq!(kinds(&parts).last(), Some(&"finish"));
-    assert_eq!(last["text"], "Hello world");
-}
-
-/// TS: doStream > should join finalized utterances per channel when transcript.done is empty
+/// Checks that finalized utterances are joined into the finish text; the finish part type is not checked. partial: should join finalized utterances per channel when transcript.done is empty; full port in src/xai/tests/
 #[tokio::test]
 async fn should_join_finalized_utterances_when_transcript_done_is_empty() {
     let events = vec![
@@ -707,7 +723,7 @@ async fn should_join_finalized_utterances_when_transcript_done_is_empty() {
     );
 }
 
-/// TS: doStream > should error the stream with the server message on error events
+/// Checks that an error event fails the stream with the server message; the WebSocket close is not checked. partial: should error the stream with the server message on error events; full port in src/xai/tests/
 #[tokio::test]
 async fn should_error_the_stream_with_the_server_message_on_error_events() {
     let events = vec![json!({"type": "error", "message": "invalid sample_rate"})];
@@ -723,26 +739,6 @@ async fn should_error_the_stream_with_the_server_message_on_error_events() {
         "got {:?}",
         run.parts[1]
     );
-}
-
-/// TS: doStream > should warn on unrecognized inputAudioFormat types
-#[tokio::test]
-async fn should_warn_on_unrecognized_input_audio_format_types() {
-    let options = stream_options(None, "audio/wav", None);
-    let run = run_with(options, None, vec![done("Hello", 1.0)]).await;
-
-    match &run.parts[0] {
-        Ok(TranscriptionStreamPart::StreamStart { warnings }) => match warnings.as_slice() {
-            [Warning::Other { message }] => {
-                assert!(
-                    message.contains("Unrecognized inputAudioFormat.type \"audio/wav\""),
-                    "{message}"
-                );
-            }
-            other => panic!("expected one Other warning, got {other:?}"),
-        },
-        other => panic!("expected StreamStart, got {other:?}"),
-    }
 }
 
 /// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);
