@@ -729,9 +729,7 @@ mod tests {
         let model = Arc::new(MockModel {
             output: Value::Null,
             calls: Mutex::new(vec![]),
-            failure: Some(AiMuxError::InvalidArgument(
-                "provider rejected query".into(),
-            )),
+            failure: Some(AiMuxError::invalid_argument("provider rejected query")),
         });
         let error = invoke(
             "search.search",
@@ -740,7 +738,7 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(error.unwrap_err().unprojected(), OpsError::AiMux(AiMuxError::InvalidArgument(message)) if message == "provider rejected query")
+            matches!(error.unwrap_err().unprojected(), OpsError::AiMux(AiMuxError::InvalidArgument { message, .. }) if message == "provider rejected query")
         );
         assert_eq!(model.calls.lock().unwrap().len(), 1);
     }

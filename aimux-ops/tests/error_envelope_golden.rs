@@ -42,6 +42,7 @@ const AIMUX: &[&str] = &[
     "load-api-key",
     "load-setting",
     "tool-choice-violation",
+    "type-validation",
 ];
 
 fn recording_errors() -> Vec<(&'static str, OpsError)> {
@@ -226,6 +227,7 @@ fn codes_preserve_existing_groups_and_have_disjoint_ranges() {
                     "invalid-response-data".into(),
                     "tool-call-not-found-for-approval".into(),
                     "tool-choice-violation".into(),
+                    "type-validation".into(),
                 ])
             ),
             (
@@ -354,7 +356,7 @@ fn only_direct_api_calls_get_top_level_retry_hints() {
         }),
         AiMuxError::ToolCallRepair {
             original_error: Box::new(attempt),
-            cause: Box::new(AiMuxError::Other("repair failed".into())),
+            cause: Box::new(AiMuxError::other("repair failed")),
         },
         AiMuxError::Timeout("timeout".into()),
         AiMuxError::Aborted("aborted".into()),

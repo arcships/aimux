@@ -155,7 +155,7 @@ async fn sessions_export_and_idempotent_clear_preserve_ffi_query_semantics() {
         .await
         .unwrap_err();
     assert!(
-        matches!(error.unprojected(), OpsError::AiMux(aimux_core::AiMuxError::InvalidArgument(message)) if message == "unknown session")
+        matches!(error.unprojected(), OpsError::AiMux(aimux_core::AiMuxError::InvalidArgument { message, .. }) if message == "unknown session")
     );
     let envelope = serde_json::to_value(error.envelope(SystemTime::now())).unwrap();
     assert_eq!(envelope["kind"], "aimux");
