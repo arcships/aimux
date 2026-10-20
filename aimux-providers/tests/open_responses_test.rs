@@ -2812,3 +2812,27 @@ async fn reads_the_reasoning_effort_provider_option() {
         json!({ "effort": "max", "summary": "detailed" })
     );
 }
+
+/// TS: `doGenerate` (open-responses-language-model.ts:411-426): an `error` in
+/// a successful response body fails with status 400, not retryable, and the
+/// error object as `data`.
+#[tokio::test]
+async fn response_errors_report_status_400() {
+    let server = MockServer::start().await;
+    let error = json!({ "code": "busy", "message": "Try again later.", "status_code": 503 });
+    mock_json(
+        &server,
+        json!({ "error": error, "status": "failed", "output": [] }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await;
+    let Err(aimux_core::error::AiMuxError::ApiCall(api_error)) = result else {
+        panic!("expected an API call error, got {result:?}");
+    };
+    assert_eq!(api_error.message, "Try again later.");
+    assert_eq!(api_error.status_code, Some(400));
+    assert!(!api_error.is_retryable);
+    assert_eq!(api_error.data, Some(error));
+}

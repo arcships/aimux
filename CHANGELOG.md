@@ -1180,6 +1180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses fails a successful response whose body carries an `error`
+  with status 400 and the error object as `data`, as the AI SDK does when
+  no `getResponseErrorMetadata` is configured. It reported the HTTP status
+  of the response, 200.
+
 - Open Responses reads `providerOptions.<name>.reasoningEffort`, as the AI
   SDK does: the value is sent as `reasoning.effort` as given and wins over
   the top-level `reasoning`. It was ignored.

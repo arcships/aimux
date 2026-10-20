@@ -64,7 +64,6 @@ fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHan
 
 fn open_responses_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
     aimux_provider_utils::ResponseHandler::new(|input| async move {
-        let status = input.response.status().as_u16();
         let url = input.url.clone();
         let request_body_values = input.request_body_values.clone();
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
@@ -80,8 +79,10 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                 .get("message")
                 .and_then(Value::as_str)
                 .unwrap_or("Open Responses request failed");
+            // `errorMetadata?.statusCode ?? 400`: the HTTP status is a 200.
             return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(status),
+                status_code: Some(400),
+                data: Some(Value::Object(error.clone())),
                 provider_code: error
                     .get("code")
                     .or_else(|| error.get("type"))
