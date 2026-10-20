@@ -1,0 +1,9 @@
+{
+  "type": "event",
+  "seq": "0",
+  "event": {
+    "type": "text-delta",
+    "id": "text-0",
+    "text": "hello 世界 👋"
+  }
+}

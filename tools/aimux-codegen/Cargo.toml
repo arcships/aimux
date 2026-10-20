@@ -7,6 +7,8 @@ description = "Deterministic C ABI, control schema, and op constant generation f
 
 [dependencies]
 aimux-ops = { path = "../../aimux-ops" }
+aimux-web = { path = "../aimux-web", default-features = false }
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"

@@ -1,23 +1,28 @@
 import CAimuxFFI
 import Foundation
 
-/// The full envelope, including unknown error names and payload fields.
+/// Presents a generated wire envelope as a Swift error.
 public struct AimuxError: Error, Codable, Equatable, Sendable, LocalizedError {
-    public let kind: String
-    public let code: Int32
-    public let message: String
-    public let error: JSONValue
-    public let retryAfterMs: UInt64?
+    public let envelope: ErrorEnvelope
+    public var kind: String { envelope.kind.rawValue }
+    public var code: Int32 { envelope.code }
+    public var message: String { envelope.message }
+    public var error: JSONValue { envelope.error }
+    public var retryAfterMs: UInt64? { envelope.retryAfterMs }
     public var errorDescription: String? { message }
 
+    public init(_ envelope: ErrorEnvelope) { self.envelope = envelope }
+    public init(from decoder: any Decoder) throws { envelope = try ErrorEnvelope(from: decoder) }
+    public func encode(to encoder: any Encoder) throws { try envelope.encode(to: encoder) }
+
     static func binding(_ message: String, code: Int32 = 206) -> AimuxError {
-        AimuxError(kind: "binding", code: code, message: message,
-                   error: .object(["name": .string("CallbackFailure")]), retryAfterMs: nil)
+        AimuxError(ErrorEnvelope(code: code, error: .object(["name": .string("CallbackFailure")]),
+                                kind: .binding, message: message))
     }
     static func state(_ message: String, code: Int32 = 304) -> AimuxError {
-        AimuxError(kind: "protocol", code: code, message: message,
-                   error: .object(["name": .string(code == 303 ? "ConcurrentConsumer" : code == 302 ? "UnsupportedOpsVersion" : "InvalidState")]),
-                   retryAfterMs: nil)
+        AimuxError(ErrorEnvelope(code: code,
+                                error: .object(["name": .string(code == 303 ? "ConcurrentConsumer" : code == 302 ? "UnsupportedOpsVersion" : "InvalidState")]),
+                                kind: .protocol, message: message))
     }
 }
 
@@ -77,7 +82,7 @@ private func nativeManifest() throws -> JSONValue {
 
 func validateManifest(_ value: JSONValue, version: UInt32) throws {
     guard value["opsVersion"] == .string(AimuxOps.OPS_VERSION),
-          value["abiVersion"] == .number(Double(version)),
+          value["abiVersion"] == .integer(Int64(version)),
           value["digest"] == .string(AimuxOps.MANIFEST_DIGEST) else {
         throw AimuxError.state("Incompatible manifest: opsVersion \(String(describing: value["opsVersion"])) (expected \(AimuxOps.OPS_VERSION)), digest \(String(describing: value["digest"])) (expected \(AimuxOps.MANIFEST_DIGEST))", code: 302)
     }
@@ -104,11 +109,13 @@ func nativeCall(_ id: UInt64, _ op: String, _ params: String, _ abort: UInt64 = 
 }
 
 func handleID(_ json: String) throws -> UInt64 {
-    let value = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
-    // Resource factories return a handle record; transcription.start returns
-    // the Operation ID directly. Both native results encode IDs as strings.
-    let decimal = value.stringValue ?? value["handle"]?.stringValue
-    guard let decimal, let id = UInt64(decimal), id != 0, String(id) == decimal else {
+    let data = Data(json.utf8)
+    let decoder = JSONDecoder()
+    let handle: HandleId
+    if let scalar = try? decoder.decode(HandleId.self, from: data) { handle = scalar }
+    else { handle = try decoder.decode(HandleResult.self, from: data).handle }
+    let id = handle.value
+    guard id != 0, String(id) == handle.rawValue else {
         throw invariant("Expected a nonzero decimal handle string")
     }
     return id

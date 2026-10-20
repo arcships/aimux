@@ -1,0 +1,5 @@
+{
+  "type": "tool-approval-request",
+  "approvalId": "a",
+  "toolCallId": "c"
+}

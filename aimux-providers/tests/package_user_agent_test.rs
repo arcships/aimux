@@ -116,7 +116,7 @@ async fn deepseek_names_its_own_provider_utils() {
     );
 }
 
-/// mistral-provider.ts:118-127; `@ai-sdk/mistral@4.0.54` depends on 5.0.51.
+/// mistral-provider.ts:118-127; `@ai-sdk/mistral@4.0.55` depends on 5.0.52.
 #[tokio::test]
 async fn mistral_names_its_own_provider_utils() {
     let (fetch, transport) = transport();
@@ -128,7 +128,7 @@ async fn mistral_names_its_own_provider_utils() {
     .unwrap();
     assert_eq!(
         sent_user_agent(&provider, "mistral-small-latest", &fetch).await,
-        "ai-sdk-mistral/4.0.54 ai-sdk-provider-utils/5.0.51"
+        "ai-sdk-mistral/4.0.55 ai-sdk-provider-utils/5.0.52"
     );
 }
 
@@ -182,8 +182,8 @@ async fn azure_names_its_own_provider_utils() {
     );
 }
 
-/// google-vertex-provider-base.ts:270-276; `@ai-sdk/google-vertex@5.0.98`
-/// and its nested `@ai-sdk/google@4.0.85` depend on 5.0.51.
+/// google-vertex-provider-base.ts:283-289; `@ai-sdk/google-vertex@5.0.100`
+/// and its nested `@ai-sdk/google@4.0.87` depend on 5.0.53.
 #[tokio::test]
 async fn vertex_gemini_names_its_own_provider_utils() {
     let (fetch, transport) = transport();
@@ -195,13 +195,13 @@ async fn vertex_gemini_names_its_own_provider_utils() {
     .unwrap();
     assert_eq!(
         sent_user_agent(&provider, "gemini-2.5-flash", &fetch).await,
-        "ai-sdk-google-vertex/5.0.98 ai-sdk-provider-utils/5.0.51"
+        "ai-sdk-google-vertex/5.0.100 ai-sdk-provider-utils/5.0.53"
     );
 }
 
 /// The Anthropic sub-provider sends the caller's headers as they are
-/// (google-vertex-anthropic-provider.ts:206-210) through the nested
-/// `@ai-sdk/anthropic@4.0.68`, which depends on 5.0.51.
+/// (google-vertex-anthropic-provider.ts:216-220) through the nested
+/// `@ai-sdk/anthropic@4.0.70`, which depends on 5.0.53.
 #[tokio::test]
 async fn vertex_anthropic_names_the_nested_provider_utils() {
     let (fetch, transport) = transport();
@@ -217,7 +217,7 @@ async fn vertex_anthropic_names_the_nested_provider_utils() {
     .unwrap();
     assert_eq!(
         sent_user_agent(&provider, "claude-sonnet-4-5@20250929", &fetch).await,
-        "ai-sdk-provider-utils/5.0.51"
+        "ai-sdk-provider-utils/5.0.53"
     );
 }
 
@@ -231,15 +231,15 @@ fn partner_settings(transport: FetchFunction) -> aimux_providers::VertexPartnerP
 }
 
 /// MaaS calls `createOpenAICompatible` from the `@ai-sdk/openai-compatible`
-/// that google-vertex pins, 3.0.59 (google-vertex-maas-provider.ts:111-118),
-/// which depends on 5.0.51.
+/// that google-vertex pins, 3.0.61 (google-vertex-maas-provider.ts:123-130),
+/// which depends on 5.0.53.
 #[tokio::test]
 async fn vertex_maas_names_the_nested_openai_compatible() {
     let (fetch, transport) = transport();
     let provider = aimux_providers::create_google_vertex_maas(partner_settings(transport)).unwrap();
     assert_eq!(
         sent_user_agent(&provider, "meta/llama-3.3-70b-instruct-maas", &fetch).await,
-        "ai-sdk-openai-compatible/3.0.59 ai-sdk-provider-utils/5.0.51"
+        "ai-sdk-openai-compatible/3.0.61 ai-sdk-provider-utils/5.0.53"
     );
 }
 
@@ -251,7 +251,7 @@ async fn vertex_xai_names_the_nested_openai_compatible() {
     let provider = aimux_providers::create_google_vertex_xai(partner_settings(transport)).unwrap();
     assert_eq!(
         sent_user_agent(&provider, "xai/grok-4.1-fast-reasoning", &fetch).await,
-        "ai-sdk-openai-compatible/3.0.59 ai-sdk-provider-utils/5.0.51"
+        "ai-sdk-openai-compatible/3.0.61 ai-sdk-provider-utils/5.0.53"
     );
 }
 

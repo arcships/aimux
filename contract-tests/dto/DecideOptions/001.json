@@ -1,0 +1,45 @@
+{
+  "state": "Classify the picture",
+  "questions": {
+    "choice": {
+      "type": "choice",
+      "instructions": "Select a native value",
+      "criteria": {
+        "boolean_true": null,
+        "text_true": null
+      }
+    },
+    "score": {
+      "type": "score",
+      "instructions": "Rate it",
+      "criteria": [
+        {
+          "label": "low",
+          "description": "Small amount"
+        },
+        {
+          "label": "high",
+          "description": "Large amount"
+        }
+      ]
+    }
+  },
+  "maxRetries": 0,
+  "providerOptions": {
+    "openai": {
+      "images": [
+        {
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=",
+          "mediaType": "image/png",
+          "detail": "low"
+        }
+      ],
+      "choiceValues": {
+        "choice": {
+          "boolean_true": true,
+          "text_true": "true"
+        }
+      }
+    }
+  }
+}

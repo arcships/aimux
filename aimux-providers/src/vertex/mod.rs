@@ -26,6 +26,7 @@ use crate::google::options::Namespace;
 use crate::google::{GoogleModel, GoogleSpeechModel};
 use crate::shared::{
     Endpoint, EndpointConfig, ResolveEndpoint, SupportedUrlsSource, TransformRequestBody,
+    is_valid_hostname_part,
 };
 
 mod anthropic_model;
@@ -149,6 +150,19 @@ fn location_host(location: &str) -> String {
     }
 }
 
+/// A location that goes into a host name: one DNS label
+/// (@ai-sdk/google-vertex@5.0.100 google-vertex-provider-base.ts:230-245).
+pub(crate) fn check_location(location: &str) -> Result<(), AiMuxError> {
+    if !is_valid_hostname_part(location) {
+        return Err(AiMuxError::InvalidArgument(
+            "Invalid Google Vertex location. Expected a single DNS label (letters, digits, and hyphens). \
+             Use `base_url` for custom endpoints."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Which publisher's models a base URL addresses.
 #[derive(Clone, Copy)]
 pub(crate) enum Publisher {
@@ -247,7 +261,9 @@ impl Resolver {
     }
 
     fn location(&self) -> Result<String, AiMuxError> {
-        load_setting(self.location.as_deref(), LOCATION_ENV_VAR, "location")
+        let location = load_setting(self.location.as_deref(), LOCATION_ENV_VAR, "location")?;
+        check_location(&location)?;
+        Ok(location)
     }
 
     fn project(&self) -> Result<String, AiMuxError> {
@@ -323,7 +339,7 @@ impl Resolver {
         let base_url = self.base_url(express_key.is_some(), publisher)?;
         let headers = self.headers(express_key.as_deref()).await?;
         let headers = match publisher {
-            // google-vertex-provider-base.ts:270-276 appends the package part.
+            // google-vertex-provider-base.ts:283-289 appends the package part.
             Publisher::Google => {
                 let package = crate::shared::aisdk_pins::GOOGLE_VERTEX;
                 let mut headers = normalize_headers(headers).into_iter().collect();
@@ -337,7 +353,7 @@ impl Resolver {
                     .collect()
             }
             // The Anthropic sub-provider passes the caller's headers as they
-            // are (google-vertex-anthropic-provider.ts:206-210).
+            // are (google-vertex-anthropic-provider.ts:216-220).
             Publisher::Anthropic => headers,
         };
         Ok(Endpoint { base_url, headers })

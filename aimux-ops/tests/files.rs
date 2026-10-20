@@ -440,16 +440,22 @@ async fn one_shot_text_upload_is_not_capped_by_stream_item_limit() {
 #[test]
 fn files_descriptors_use_concrete_types_and_abort_metadata() {
     let provider = dispatch::descriptor("provider.files").unwrap();
-    assert_eq!(provider.request_type, "EmptyParams");
-    assert_eq!(provider.result_type, "HandleId");
+    assert_eq!(
+        (provider.request_type.id)().into_owned(),
+        "aimux_ops::ops::operation::EmptyParams"
+    );
+    assert_eq!(
+        (provider.result_type.id)().into_owned(),
+        "aimux_ops::handle::HandleId"
+    );
     assert_eq!(provider.required_capabilities, &["files"]);
     let upload = dispatch::descriptor("files.upload").unwrap();
     assert_eq!(
-        upload.request_type,
+        (upload.request_type.id)().into_owned(),
         "aimux_ops::ops::files::UploadFileParams"
     );
     assert_eq!(
-        upload.result_type,
+        (upload.result_type.id)().into_owned(),
         "aimux_core::files_model::UploadFileResult"
     );
     assert_eq!(upload.cancellation, Cancellation::Abort);
@@ -464,7 +470,10 @@ fn files_descriptors_use_concrete_types_and_abort_metadata() {
     assert_eq!(upload.retry_owner, "none");
     assert!(upload.side_effects);
     let manifest = aimux_ops::manifest::manifest();
-    for id in [upload.request_type, upload.result_type] {
+    for id in [
+        (upload.request_type.id)().into_owned(),
+        (upload.result_type.id)().into_owned(),
+    ] {
         let ty = manifest["types"]
             .as_array()
             .unwrap()
