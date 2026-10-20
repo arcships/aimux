@@ -19,7 +19,7 @@ use aimux_core::types::Warning;
 use serde_json::{Value, json};
 
 use crate::xai::options::NAMESPACE;
-use crate::xai::responses::convert::convert_to_xai_responses_input;
+use crate::xai::responses::convert_to_xai_responses_input;
 
 /// The prompt in its JSON form, as the Rust prompt types deserialize it.
 fn parse_prompt(prompt: Value) -> LanguageModelPrompt {

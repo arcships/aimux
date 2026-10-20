@@ -166,7 +166,7 @@ impl SpeechModel for XaiSpeechModel {
                 exchange.request(url, options),
                 body.clone(),
                 aimux_provider_utils::create_json_response_handler::<TimestampsResponse>(),
-                super::xai_failed_response_handler(),
+                super::error::xai_failed_response_handler(),
             )
             .await?;
             let envelope = resp.value;
@@ -185,7 +185,7 @@ impl SpeechModel for XaiSpeechModel {
                 exchange.request(url, options),
                 body.clone(),
                 aimux_provider_utils::create_binary_response_handler(),
-                super::xai_failed_response_handler(),
+                super::error::xai_failed_response_handler(),
             )
             .await?;
             (resp.value.to_vec(), resp.response_headers, None, None)

@@ -7,7 +7,7 @@ use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::{StatusCode, Url};
 use serde_json::{Value, json};
 
-use crate::xai::xai_failed_response_handler;
+use crate::xai::error::xai_failed_response_handler;
 
 /// The upstream `makeResponse` helper: a 400 with a JSON body.
 fn make_response(url: &str, body: &Value) -> FetchResponse {
