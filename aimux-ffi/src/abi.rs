@@ -612,9 +612,7 @@ mod tests {
 
     #[test]
     fn message_getter_sanitizes_nul_and_keeps_the_json_envelope_exact() {
-        let error = finish(Err(OpsError::AiMux(aimux_core::AiMuxError::Other(
-            "a\0b".into(),
-        ))));
+        let error = finish(Err(OpsError::AiMux(aimux_core::AiMuxError::other("a\0b"))));
         let message = aimux_error_message(error);
         assert!(!message.is_null());
         assert!(

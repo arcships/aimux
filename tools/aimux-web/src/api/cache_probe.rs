@@ -58,9 +58,7 @@ pub async fn run(State(state): State<AppState>, Json(req): Json<ProbeRequest>) -
 
 async fn run_inner(state: AppState, req: ProbeRequest) -> Result<Response, AiMuxError> {
     if req.max_requests == 0 {
-        return Err(AiMuxError::InvalidArgument(
-            "max_requests must be >= 1".into(),
-        ));
+        return Err(AiMuxError::invalid_argument("max_requests must be >= 1"));
     }
 
     // Dry-run must not require an API key — it only reports the plan.

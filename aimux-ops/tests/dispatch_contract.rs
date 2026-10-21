@@ -221,7 +221,7 @@ fn events(_: Ctx, _: Target, params: Value) -> Result<EventStream, OpsError> {
         _ => Ok(Box::pin(futures::stream::iter([
             Ok(json!({"type":"error"})),
             Ok(json!({"type":"finish"})),
-            Err(AiMuxError::Other("terminal".into()).into()),
+            Err(AiMuxError::other("terminal").into()),
             Ok(Value::Null),
         ]))),
     }

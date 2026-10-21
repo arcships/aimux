@@ -1,5 +1,6 @@
 //! Catalogue, host-side repair, subscription refresh and OpenAI output conversion.
 
+use aimux_core::ErrorCause;
 use std::time::Duration;
 
 use aimux_core::{
@@ -239,9 +240,10 @@ fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
         .await
         .map_err(OpsError::AiMux)?;
         let raw = serde_json::from_str(&String::from_utf8_lossy(&response.value)).map_err(|e| {
-            OpsError::AiMux(AiMuxError::JsonParse(format!(
-                "get_model_specs: invalid source JSON: {e}"
-            )))
+            OpsError::AiMux(AiMuxError::JsonParse {
+                message: format!("get_model_specs: invalid source JSON: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })
         })?;
         let catalogue =
             aimux_providers::catalogue::parse_anya2a_all(&raw).map_err(OpsError::AiMux)?;
@@ -506,7 +508,7 @@ mod tests {
         }
         assert!(matches!(
             repair_apply(ctx(), entry(), json!({"toolCall":call,"reply":reply()})).await,
-            Err(OpsError::AiMux(AiMuxError::InvalidArgument(_)))
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
         ));
     }
 
@@ -574,7 +576,7 @@ mod tests {
         ] {
             assert!(matches!(
                 catalogue_fetch(ctx(), entry(), json!({"sourceUrl":url})).await,
-                Err(OpsError::AiMux(AiMuxError::InvalidArgument(_)))
+                Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
             ));
         }
     }

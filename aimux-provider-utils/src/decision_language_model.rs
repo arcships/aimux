@@ -39,11 +39,11 @@ impl DecisionLanguageModel {
 }
 
 fn invalid(message: impl Into<String>) -> AiMuxError {
-    AiMuxError::InvalidResponseData(message.into())
+    AiMuxError::invalid_response_data(message.into())
 }
 
 fn criteria_error(id: &str) -> AiMuxError {
-    AiMuxError::InvalidArgument(format!(
+    AiMuxError::invalid_argument(format!(
         "Invalid argument for parameter questions.{id}.criteria: Choice requires at least one option; Score requires at least two levels."
     ))
 }
@@ -90,7 +90,7 @@ impl DecisionModel for DecisionLanguageModel {
             }
         }
         if entries.is_empty() {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Invalid argument for parameter questions: Decision requires at least one question."
                     .to_string(),
             ));

@@ -46,8 +46,9 @@ String _timestamp(String text) {
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
 ///
-/// `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
-/// retry's last attempt and a repair's `cause`.
+/// A variant has a `cause` exactly where its AI SDK class takes one; it is
+/// what `source()` returns. `Retry` reports its
+/// last attempt and `ToolCallRepair` its `cause` the same way.
 sealed class AiMuxError {
   const AiMuxError();
   String get name;
@@ -63,6 +64,8 @@ sealed class AiMuxError {
         return AiMuxErrorAINoOutputGeneratedError.fromJson(json);
       case 'AI_InvalidResponseDataError':
         return AiMuxErrorAIInvalidResponseDataError.fromJson(json);
+      case 'AI_TypeValidationError':
+        return AiMuxErrorAITypeValidationError.fromJson(json);
       case 'AI_ToolCallNotFoundForApprovalError':
         return AiMuxErrorAIToolCallNotFoundForApprovalError.fromJson(json);
       case 'AI_NoSuchToolError':
@@ -226,27 +229,33 @@ final class AiMuxErrorAIRetryError extends AiMuxError {
 }
 
 final class AiMuxErrorAIJSONParseError extends AiMuxError {
+  final ErrorCause? cause;
   final String message;
   const AiMuxErrorAIJSONParseError({
+    this.cause,
     required this.message,
   });
   @override
   String get name => 'AI_JSONParseError';
   factory AiMuxErrorAIJSONParseError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorAIJSONParseError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_JSONParseError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
 
 final class AiMuxErrorAINoOutputGeneratedError extends AiMuxError {
+  final ErrorCause? cause;
   final String message;
   const AiMuxErrorAINoOutputGeneratedError({
+    this.cause,
     required this.message,
   });
   @override
@@ -254,19 +263,23 @@ final class AiMuxErrorAINoOutputGeneratedError extends AiMuxError {
   factory AiMuxErrorAINoOutputGeneratedError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorAINoOutputGeneratedError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_NoOutputGeneratedError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
 
 final class AiMuxErrorAIInvalidResponseDataError extends AiMuxError {
+  final ErrorCause? cause;
   final String message;
   const AiMuxErrorAIInvalidResponseDataError({
+    this.cause,
     required this.message,
   });
   @override
@@ -274,13 +287,42 @@ final class AiMuxErrorAIInvalidResponseDataError extends AiMuxError {
   factory AiMuxErrorAIInvalidResponseDataError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorAIInvalidResponseDataError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidResponseDataError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
+      };
+}
+
+final class AiMuxErrorAITypeValidationError extends AiMuxError {
+  final ErrorCause? cause;
+  final String message;
+  final Object? value;
+  const AiMuxErrorAITypeValidationError({
+    this.cause,
+    required this.message,
+    required this.value,
+  });
+  @override
+  String get name => 'AI_TypeValidationError';
+  factory AiMuxErrorAITypeValidationError.fromJson(Map<String, dynamic> json) {
+    return AiMuxErrorAITypeValidationError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
+      message: json['message'] as String,
+      value: json['value'],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': 'AI_TypeValidationError',
+        if (cause != null) 'cause': cause!.toJson(),
+        'message': message,
+        'value': value,
       };
 }
 
@@ -338,7 +380,7 @@ final class AiMuxErrorAINoSuchToolError extends AiMuxError {
 }
 
 final class AiMuxErrorAIInvalidToolInputError extends AiMuxError {
-  final String cause;
+  final ErrorCause cause;
   final String toolInput;
   final String toolName;
   const AiMuxErrorAIInvalidToolInputError({
@@ -351,7 +393,7 @@ final class AiMuxErrorAIInvalidToolInputError extends AiMuxError {
   factory AiMuxErrorAIInvalidToolInputError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorAIInvalidToolInputError(
-      cause: json['cause'] as String,
+      cause: ErrorCause.fromJson(json['cause']),
       toolInput: json['toolInput'] as String,
       toolName: json['toolName'] as String,
     );
@@ -359,7 +401,7 @@ final class AiMuxErrorAIInvalidToolInputError extends AiMuxError {
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidToolInputError',
-        'cause': cause,
+        'cause': cause.toJson(),
         'toolInput': toolInput,
         'toolName': toolName,
       };
@@ -390,39 +432,47 @@ final class AiMuxErrorAIToolCallRepairError extends AiMuxError {
 }
 
 final class AiMuxErrorAIInvalidArgumentError extends AiMuxError {
+  final ErrorCause? cause;
   final String message;
   const AiMuxErrorAIInvalidArgumentError({
+    this.cause,
     required this.message,
   });
   @override
   String get name => 'AI_InvalidArgumentError';
   factory AiMuxErrorAIInvalidArgumentError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorAIInvalidArgumentError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidArgumentError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
 
 final class AiMuxErrorAIInvalidPromptError extends AiMuxError {
+  final ErrorCause? cause;
   final String message;
   const AiMuxErrorAIInvalidPromptError({
+    this.cause,
     required this.message,
   });
   @override
   String get name => 'AI_InvalidPromptError';
   factory AiMuxErrorAIInvalidPromptError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorAIInvalidPromptError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidPromptError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
@@ -677,20 +727,24 @@ final class AiMuxErrorAbortError extends AiMuxError {
 }
 
 final class AiMuxErrorAIError extends AiMuxError {
+  final ErrorCause? cause;
   final String message;
   const AiMuxErrorAIError({
+    this.cause,
     required this.message,
   });
   @override
   String get name => 'AI_Error';
   factory AiMuxErrorAIError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorAIError(
+      cause: json['cause'] == null ? null : ErrorCause.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_Error',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
@@ -701,8 +755,9 @@ final class AiMuxErrorAIError extends AiMuxError {
 /// failure came from. `ApiCallError` is boxed only to keep the Rust enum
 /// compact; serde and every binding still observe the same object shape.
 ///
-/// `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
-/// retry's last attempt and a repair's `cause`.
+/// A variant has a `cause` exactly where its AI SDK class takes one; it is
+/// what `source()` returns. `Retry` reports its
+/// last attempt and `ToolCallRepair` its `cause` the same way.
 sealed class AiMuxErrorInput {
   const AiMuxErrorInput();
   String get name;
@@ -718,6 +773,8 @@ sealed class AiMuxErrorInput {
         return AiMuxErrorInputAINoOutputGeneratedError.fromJson(json);
       case 'AI_InvalidResponseDataError':
         return AiMuxErrorInputAIInvalidResponseDataError.fromJson(json);
+      case 'AI_TypeValidationError':
+        return AiMuxErrorInputAITypeValidationError.fromJson(json);
       case 'AI_ToolCallNotFoundForApprovalError':
         return AiMuxErrorInputAIToolCallNotFoundForApprovalError.fromJson(json);
       case 'AI_NoSuchToolError':
@@ -883,27 +940,35 @@ final class AiMuxErrorInputAIRetryError extends AiMuxErrorInput {
 }
 
 final class AiMuxErrorInputAIJSONParseError extends AiMuxErrorInput {
+  final ErrorCauseInput? cause;
   final String message;
   const AiMuxErrorInputAIJSONParseError({
+    this.cause,
     required this.message,
   });
   @override
   String get name => 'AI_JSONParseError';
   factory AiMuxErrorInputAIJSONParseError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorInputAIJSONParseError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_JSONParseError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
 
 final class AiMuxErrorInputAINoOutputGeneratedError extends AiMuxErrorInput {
+  final ErrorCauseInput? cause;
   final String message;
   const AiMuxErrorInputAINoOutputGeneratedError({
+    this.cause,
     required this.message,
   });
   @override
@@ -911,19 +976,25 @@ final class AiMuxErrorInputAINoOutputGeneratedError extends AiMuxErrorInput {
   factory AiMuxErrorInputAINoOutputGeneratedError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorInputAINoOutputGeneratedError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_NoOutputGeneratedError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
 
 final class AiMuxErrorInputAIInvalidResponseDataError extends AiMuxErrorInput {
+  final ErrorCauseInput? cause;
   final String message;
   const AiMuxErrorInputAIInvalidResponseDataError({
+    this.cause,
     required this.message,
   });
   @override
@@ -931,13 +1002,47 @@ final class AiMuxErrorInputAIInvalidResponseDataError extends AiMuxErrorInput {
   factory AiMuxErrorInputAIInvalidResponseDataError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorInputAIInvalidResponseDataError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidResponseDataError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
+      };
+}
+
+final class AiMuxErrorInputAITypeValidationError extends AiMuxErrorInput {
+  final ErrorCauseInput? cause;
+  final String message;
+  final Object? value;
+  const AiMuxErrorInputAITypeValidationError({
+    this.cause,
+    required this.message,
+    required this.value,
+  });
+  @override
+  String get name => 'AI_TypeValidationError';
+  factory AiMuxErrorInputAITypeValidationError.fromJson(
+      Map<String, dynamic> json) {
+    return AiMuxErrorInputAITypeValidationError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
+      message: json['message'] as String,
+      value: json['value'],
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': 'AI_TypeValidationError',
+        if (cause != null) 'cause': cause!.toJson(),
+        'message': message,
+        'value': value,
       };
 }
 
@@ -996,7 +1101,7 @@ final class AiMuxErrorInputAINoSuchToolError extends AiMuxErrorInput {
 }
 
 final class AiMuxErrorInputAIInvalidToolInputError extends AiMuxErrorInput {
-  final String cause;
+  final ErrorCauseInput cause;
   final String toolInput;
   final String toolName;
   const AiMuxErrorInputAIInvalidToolInputError({
@@ -1009,7 +1114,7 @@ final class AiMuxErrorInputAIInvalidToolInputError extends AiMuxErrorInput {
   factory AiMuxErrorInputAIInvalidToolInputError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorInputAIInvalidToolInputError(
-      cause: json['cause'] as String,
+      cause: ErrorCauseInput.fromJson(json['cause']),
       toolInput: json['toolInput'] as String,
       toolName: json['toolName'] as String,
     );
@@ -1017,7 +1122,7 @@ final class AiMuxErrorInputAIInvalidToolInputError extends AiMuxErrorInput {
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidToolInputError',
-        'cause': cause,
+        'cause': cause.toJson(),
         'toolInput': toolInput,
         'toolName': toolName,
       };
@@ -1049,8 +1154,10 @@ final class AiMuxErrorInputAIToolCallRepairError extends AiMuxErrorInput {
 }
 
 final class AiMuxErrorInputAIInvalidArgumentError extends AiMuxErrorInput {
+  final ErrorCauseInput? cause;
   final String message;
   const AiMuxErrorInputAIInvalidArgumentError({
+    this.cause,
     required this.message,
   });
   @override
@@ -1058,19 +1165,25 @@ final class AiMuxErrorInputAIInvalidArgumentError extends AiMuxErrorInput {
   factory AiMuxErrorInputAIInvalidArgumentError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorInputAIInvalidArgumentError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidArgumentError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
 
 final class AiMuxErrorInputAIInvalidPromptError extends AiMuxErrorInput {
+  final ErrorCauseInput? cause;
   final String message;
   const AiMuxErrorInputAIInvalidPromptError({
+    this.cause,
     required this.message,
   });
   @override
@@ -1078,12 +1191,16 @@ final class AiMuxErrorInputAIInvalidPromptError extends AiMuxErrorInput {
   factory AiMuxErrorInputAIInvalidPromptError.fromJson(
       Map<String, dynamic> json) {
     return AiMuxErrorInputAIInvalidPromptError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_InvalidPromptError',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }
@@ -1343,20 +1460,26 @@ final class AiMuxErrorInputAbortError extends AiMuxErrorInput {
 }
 
 final class AiMuxErrorInputAIError extends AiMuxErrorInput {
+  final ErrorCauseInput? cause;
   final String message;
   const AiMuxErrorInputAIError({
+    this.cause,
     required this.message,
   });
   @override
   String get name => 'AI_Error';
   factory AiMuxErrorInputAIError.fromJson(Map<String, dynamic> json) {
     return AiMuxErrorInputAIError(
+      cause: json['cause'] == null
+          ? null
+          : ErrorCauseInput.fromJson(json['cause']),
       message: json['message'] as String,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'name': 'AI_Error',
+        if (cause != null) 'cause': cause!.toJson(),
         'message': message,
       };
 }

@@ -28,6 +28,7 @@ class RetryError(AimuxError): pass
 class JSONParseError(AimuxError): pass
 class NoOutputGeneratedError(AimuxError): pass
 class InvalidResponseDataError(AimuxError): pass
+class TypeValidationError(AimuxError): pass
 class ToolCallNotFoundForApprovalError(AimuxError): pass
 class NoSuchToolError(AimuxError): pass
 class InvalidToolInputError(AimuxError): pass
@@ -53,6 +54,7 @@ _AIMUX_TYPES = {
     "AI_JSONParseError": JSONParseError,
     "AI_NoOutputGeneratedError": NoOutputGeneratedError,
     "AI_InvalidResponseDataError": InvalidResponseDataError,
+    "AI_TypeValidationError": TypeValidationError,
     "AI_ToolCallNotFoundForApprovalError": ToolCallNotFoundForApprovalError,
     "AI_NoSuchToolError": NoSuchToolError,
     "AI_InvalidToolInputError": InvalidToolInputError,

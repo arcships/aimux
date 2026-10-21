@@ -142,7 +142,7 @@ async fn args_that_do_not_match_fail_the_call_before_any_request() {
     for (id, _, invalid) in cases() {
         let (result, requests) = call(tool(id, invalid)).await;
         match result {
-            Err(AiMuxError::InvalidArgument(message)) => assert_eq!(
+            Err(AiMuxError::InvalidArgument { message, .. }) => assert_eq!(
                 message,
                 format!("Invalid configuration for provider-defined tool {id}")
             ),
@@ -156,7 +156,7 @@ async fn args_that_do_not_match_fail_the_call_before_any_request() {
 async fn the_advisor_needs_a_model() {
     let (result, requests) = call(tool("anthropic.advisor_20260301", json!({}))).await;
     assert!(
-        matches!(result, Err(AiMuxError::InvalidArgument(_))),
+        matches!(result, Err(AiMuxError::InvalidArgument { .. })),
         "{result:?}"
     );
     assert_eq!(requests, 0);
@@ -170,7 +170,7 @@ async fn a_toolset_config_must_be_an_object() {
     ))
     .await;
     assert!(
-        matches!(result, Err(AiMuxError::InvalidArgument(_))),
+        matches!(result, Err(AiMuxError::InvalidArgument { .. })),
         "{result:?}"
     );
 }
