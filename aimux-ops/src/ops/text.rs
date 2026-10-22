@@ -172,7 +172,7 @@ impl Default for StreamOptions {
 
 fn json<T: Serialize>(value: T) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|e| OpsError::Binding(BindingError::ResultSerialization(e.to_string())))
+        .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
 }
 
 fn language(target: Target) -> Result<Arc<dyn LanguageModel>, OpsError> {

@@ -208,15 +208,15 @@ struct OpenAiOutputRequest {
 fn params<T: DeserializeOwned>(value: Value) -> Result<T, OpsError> {
     // Avoid including request values (especially refresh tokens) in error messages.
     serde_json::from_value(value).map_err(|_| {
-        OpsError::Protocol(ProtocolError::InvalidParams(
-            "request does not match the operation schema".into(),
+        OpsError::Protocol(ProtocolError::invalid_params(
+            "request does not match the operation schema",
         ))
     })
 }
 
 fn output(value: &impl Serialize) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|e| OpsError::Binding(BindingError::ResultSerialization(e.to_string())))
+        .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
 }
 
 fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
@@ -335,8 +335,8 @@ fn to_openai(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
         };
         let request: OpenAiOutputRequest = params(value)?;
         if request.metadata_namespace.is_empty() {
-            return Err(OpsError::Protocol(ProtocolError::InvalidParams(
-                "metadataNamespace must not be empty".into(),
+            return Err(OpsError::Protocol(ProtocolError::invalid_params(
+                "metadataNamespace must not be empty",
             )));
         }
         // Core's result facts remain private. Restrict the canonical wire
@@ -444,7 +444,7 @@ mod tests {
             json!({"refreshToken":{"secret":true},"clientId":"c"}),
         ] {
             match params::<CodexRefreshRequest>(value) {
-                Err(OpsError::Protocol(ProtocolError::InvalidParams(message))) => {
+                Err(OpsError::Protocol(ProtocolError::InvalidParams { message, .. })) => {
                     assert!(!message.contains("secret"))
                 }
                 _ => panic!("expected InvalidParams"),

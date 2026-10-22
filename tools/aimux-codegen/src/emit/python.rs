@@ -413,7 +413,7 @@ fn error_support(model: &Model) -> Result<String> {
 
 fn contains_error(ty: &Ty) -> bool {
     match ty {
-        Ty::Ref(name) => name == "AiMuxError" || name == "ErrorEnvelope",
+        Ty::Ref(name) => name == "AiMuxError" || name == "ErrorCause" || name == "ErrorEnvelope",
         Ty::Array(inner) | Ty::Map(inner) | Ty::Nullable(inner) | Ty::Codec(_, inner) => {
             contains_error(inner)
         }

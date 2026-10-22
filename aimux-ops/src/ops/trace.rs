@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, SourceError};
 use aimux_core::trace::store::{DEFAULT_RING_CAPACITY, DEFAULT_SCOPE_CAP, TraceAuditMode};
 use aimux_core::trace::{RingTraceStore, TraceFilter};
 use serde::{Deserialize, Serialize};
@@ -92,7 +92,7 @@ pub struct TraceSessionParams {
 
 fn result(value: impl Serialize) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 fn store(target: Target) -> Result<Arc<RingTraceStore>, OpsError> {
@@ -112,8 +112,8 @@ fn create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
     Box::pin(async move {
         let p: TraceCreateParams = decode(value)?;
         if p.capacity == 0 || p.per_scope_capacity == 0 {
-            return Err(OpsError::Protocol(ProtocolError::InvalidParams(
-                "trace capacities must be greater than zero".into(),
+            return Err(OpsError::Protocol(ProtocolError::invalid_params(
+                "trace capacities must be greater than zero",
             )));
         }
         let mode = match p.audit_mode {
@@ -160,12 +160,16 @@ fn export(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
         let _: EmptyParams = decode(value)?;
         let mut bytes = Vec::new();
         store(target)?.export_jsonl(&mut bytes).map_err(|error| {
-            OpsError::Binding(BindingError::ResultSerialization(format!(
-                "export: {error}"
-            )))
+            OpsError::Binding(BindingError::ResultSerialization {
+                message: format!("export: {error}"),
+                cause: Some(SourceError::new(&error)),
+            })
         })?;
         let jsonl = String::from_utf8(bytes).map_err(|error| {
-            OpsError::Binding(BindingError::ResultSerialization(format!("utf8: {error}")))
+            OpsError::Binding(BindingError::ResultSerialization {
+                message: format!("utf8: {error}"),
+                cause: Some(SourceError::new(&error)),
+            })
         })?;
         Ok(Value::String(jsonl))
     })

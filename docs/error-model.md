@@ -30,8 +30,26 @@
 AI SDK 构造时接受 `cause` 的错误，在 aimux 里都有可选的 `cause`；它就是 Rust
 的 `Error::source()`，序列化后在错误 payload 的 `cause` 字段。`cause` 有两种：
 带 `name` 的嵌套 aimux 错误，或者没有 `name` 的底层错误 `{message, cause?}`
-（OS、TLS、JSON 解析器等），后者的 `cause` 继续往下一层。message 仍包含原来的
-底层错误文字，所以只看 message 的调用方不会少信息。
+（OS、TLS、JSON 解析器等），后者的 `cause` 继续往下一层。`Retry` 没有 `cause`
+字段，它的 `source()` 是最后一次尝试（AI SDK 的 `lastError`），各语言的原生
+cause 也取 `errors` 的最后一个。
+
+| 语言 | 原生入口 |
+|---|---|
+| Rust | `source()` 链，`anyhow` / `{:#}` 可直接打印 |
+| Node.js | 标准 `error.cause`：嵌套错误是 `AimuxCauseError`，底层错误是 `AimuxSourceError` |
+| Python | `__cause__`：嵌套错误是对应子类，底层错误是 `SourceError` |
+| Java / Kotlin | `getCause()` 链上的 `ErrorCause` |
+| Go | `Unwrap()` 返回 `*aimux.Cause`，`errors.Unwrap` / `errors.As` 可用 |
+| Swift / Flutter | `cause` 属性 |
+| C / C++ | 错误 JSON 的 `error.cause`；C++ 的 `aimux::NativeError::json()` |
+
+ops 信封的四个域用同一个形状：`aimux` 域是上面的错误 payload，`recording` 域的
+`Init`、`OpenFile`、`Spawn` 带 I/O 错误，`binding` 域的 `InvalidWireJson`、
+`ResultSerialization` 和 `protocol` 域的 `InvalidParams` 带 JSON 解析或序列化错误；
+没有底层错误的变体没有 `cause`。
+
+message 仍包含原来的底层错误文字，所以只看 message 的调用方不会少信息。
 
 值不符合调用方给的 schema 时，cause 是 `TypeValidation`（`AI_TypeValidationError`，
 带 `value`），和上游一样：工具输入不符合 `inputSchema` 时是
