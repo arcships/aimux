@@ -1210,6 +1210,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- xAI streaming transcription opens its WebSocket inside the stream, as
+  `@ai-sdk/xai` 5.0.12 does: a connect failure no longer fails `do_stream`
+  but arrives as the stream's error, and the caller's audio stream is
+  dropped.
+- Dropping an xAI streaming transcription before it finishes sends the
+  WebSocket close frame, as cancelling the stream does in `@ai-sdk/xai`
+  5.0.12; before, only the transport was released.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not
