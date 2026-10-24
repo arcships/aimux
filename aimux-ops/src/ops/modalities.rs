@@ -137,13 +137,11 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 // their serde implementations, but reject unknown operation-level control keys.
 fn check_fields(params: &Value, fields: &[&str]) -> Result<(), OpsError> {
     let object = params.as_object().ok_or_else(|| {
-        OpsError::Protocol(ProtocolError::InvalidParams(
-            "expected an options object".into(),
-        ))
+        OpsError::Protocol(ProtocolError::invalid_params("expected an options object"))
     })?;
     for key in object.keys() {
         if !fields.contains(&key.as_str()) {
-            return Err(OpsError::Protocol(ProtocolError::InvalidParams(format!(
+            return Err(OpsError::Protocol(ProtocolError::invalid_params(format!(
                 "unknown field `{key}`"
             ))));
         }
@@ -164,7 +162,7 @@ fn options<T: DeserializeOwned>(params: Value, fields: &[&str]) -> Result<T, Ops
 
 fn result(value: impl Serialize) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 macro_rules! model_call {
@@ -697,7 +695,7 @@ mod tests {
             assert!(
                 matches!(
                     invoke(op, entry, params).await.unwrap_err().unprojected(),
-                    OpsError::Protocol(ProtocolError::InvalidParams(_))
+                    OpsError::Protocol(ProtocolError::InvalidParams { .. })
                 ),
                 "{op}"
             );
@@ -729,9 +727,7 @@ mod tests {
         let model = Arc::new(MockModel {
             output: Value::Null,
             calls: Mutex::new(vec![]),
-            failure: Some(AiMuxError::InvalidArgument(
-                "provider rejected query".into(),
-            )),
+            failure: Some(AiMuxError::invalid_argument("provider rejected query")),
         });
         let error = invoke(
             "search.search",
@@ -740,7 +736,7 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(error.unwrap_err().unprojected(), OpsError::AiMux(AiMuxError::InvalidArgument(message)) if message == "provider rejected query")
+            matches!(error.unwrap_err().unprojected(), OpsError::AiMux(AiMuxError::InvalidArgument { message, .. }) if message == "provider rejected query")
         );
         assert_eq!(model.calls.lock().unwrap().len(), 1);
     }

@@ -957,7 +957,7 @@ mod xai_video_model {
             let (result, _) =
                 do_start_answered(V15, &options, Canned::json(&create_video_response())).await;
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(_))),
+                matches!(result, Err(AiMuxError::InvalidArgument { .. })),
                 "{result:?}"
             );
         }
@@ -976,7 +976,7 @@ mod xai_video_model {
             let (result, _) =
                 do_start_answered(V15, &options, Canned::json(&create_video_response())).await;
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(_))),
+                matches!(result, Err(AiMuxError::InvalidArgument { .. })),
                 "{result:?}"
             );
         }

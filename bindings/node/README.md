@@ -46,6 +46,11 @@ Errors expose the shared `kind`, numeric `code`, `message`, `error` payload and
 optional `retryAfterMs`. The AI SDK payload retains `name`, `isRetryable` and
 other variant fields. Data error events and end-frame error envelopes stay
 plain DTOs. Raw and typed call/next rejections use `AimuxError`.
+The payload's `cause` is also the standard `error.cause`: an
+`AimuxCauseError` for a nested AI SDK error (`name` and the whole `error`
+payload) or an `AimuxSourceError` for an underlying OS, TLS or parser error,
+each with its own `cause` down the chain. A retry error's `cause` is its last
+attempt, the AI SDK `lastError`.
 
 `close()` is idempotent. Recorder persistence is explicit: await `flush()` and
 inspect its result before closing; finalization does not flush. Dropping a

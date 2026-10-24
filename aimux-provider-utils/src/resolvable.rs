@@ -144,9 +144,15 @@ mod tests {
     #[tokio::test]
     async fn errors_propagate_and_a_future_caches_its_failure() {
         let value: Resolvable<String> =
-            Resolvable::from_future(async { Err(AiMuxError::Other("boom".into())) });
-        assert!(matches!(value.resolve().await, Err(AiMuxError::Other(_))));
-        assert!(matches!(value.resolve().await, Err(AiMuxError::Other(_))));
+            Resolvable::from_future(async { Err(AiMuxError::other("boom")) });
+        assert!(matches!(
+            value.resolve().await,
+            Err(AiMuxError::Other { .. })
+        ));
+        assert!(matches!(
+            value.resolve().await,
+            Err(AiMuxError::Other { .. })
+        ));
     }
 
     #[test]

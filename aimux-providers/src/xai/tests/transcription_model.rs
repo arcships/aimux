@@ -380,7 +380,7 @@ mod socket {
                 .unwrap()
                 .push((request.url.clone(), request.headers.clone()));
             if let Some(message) = &self.fail {
-                return Err(AiMuxError::Other(message.clone()));
+                return Err(AiMuxError::other(message.clone()));
             }
             let socket = self
                 .socket
@@ -543,7 +543,7 @@ mod do_stream {
         assert!(
             matches!(
                 &error,
-                AiMuxError::InvalidArgument(message)
+                AiMuxError::InvalidArgument { message, .. }
                     if message == "providerOptions.xai.channels is required when providerOptions.xai.multichannel is true"
             ),
             "{error:?}"
