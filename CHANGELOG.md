@@ -1210,6 +1210,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An OpenAI (and Azure) Responses stream chunk without a string `type`, or a
+  modeled event missing an envelope field its AI SDK schema requires (the
+  `output_index` of item and tool-input events, an item event's `item`,
+  `item_id`, the delta, a `response` object), yields a `TypeValidation`
+  error part and finishes the stream with `error`, as the AI SDK does;
+  aimux processed such chunks with defaults or skipped them.
 - A Chat Completions chunk on an OpenAI (and Azure) Responses stream yields
   an `ApiCall` error part that names the mix-up (use `openai.chat(...)` or
   `@ai-sdk/openai-compatible`) and finishes the stream with `error`, as the

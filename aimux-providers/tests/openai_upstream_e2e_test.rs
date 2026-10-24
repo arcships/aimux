@@ -1473,13 +1473,64 @@ async fn a_chat_completions_chunk_on_a_responses_stream_gives_a_helpful_error() 
         panic!("expected an API call error: {error:?}");
     };
     assert!(
-        detail
-            .message
-            .starts_with("Received a Chat Completions stream while using the OpenAI Responses API."),
+        detail.message.starts_with(
+            "Received a Chat Completions stream while using the OpenAI Responses API."
+        ),
         "{error}"
     );
-    assert_eq!(detail.response_body.as_deref(), Some(chunk.to_string().as_str()));
+    assert_eq!(
+        detail.response_body.as_deref(),
+        Some(chunk.to_string().as_str())
+    );
     assert!(!detail.is_retryable);
+    assert!(matches!(
+        parts.last(),
+        Some(StreamPart::Finish { finish_reason, .. }) if finish_reason.unified == FinishReasonUnified::Error
+    ));
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1338
+/// requires `output_index` on `response.function_call_arguments.done` (and
+/// :1095 on `response.output_item.done` of a modeled item), and a modeled
+/// chunk that fails its schema is not skipped as unknown (:1433-1441):
+/// src/responses/openai-responses-language-model.ts:1664-1680 sends an error
+/// part for it and finishes with `error`.
+#[tokio::test]
+async fn schema_invalid_known_responses_events_are_errors() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{}"}),
+        json!({"type":"response.output_item.done","item":{"type":"function_call","id":"fc_1",
+            "call_id":"call_1","name":"get_weather","arguments":"{}","status":"completed"}}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let errors = parts
+        .iter()
+        .filter(|part| {
+            matches!(
+                part,
+                StreamPart::Error {
+                    error: AiMuxError::TypeValidation { .. }
+                }
+            )
+        })
+        .count();
+    assert_eq!(errors, 2, "{parts:?}");
+    assert!(
+        !parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::ToolCall(_))),
+        "{parts:?}"
+    );
     assert!(matches!(
         parts.last(),
         Some(StreamPart::Finish { finish_reason, .. }) if finish_reason.unified == FinishReasonUnified::Error

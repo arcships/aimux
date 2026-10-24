@@ -442,6 +442,99 @@ fn is_chat_completion_chunk(chunk: &Value) -> bool {
         && !chunk.get("type").is_some_and(Value::is_string)
 }
 
+/// Output item types the AI SDK's chunk schema models
+/// (`openaiResponsesModeledOutputItemTypes`); an item event for another type
+/// is an unknown chunk and is skipped.
+const MODELED_OUTPUT_ITEM_TYPES: &[&str] = &[
+    "apply_patch_call",
+    "code_interpreter_call",
+    "compaction",
+    "computer_call",
+    "custom_tool_call",
+    "file_search_call",
+    "function_call",
+    "image_generation_call",
+    "local_shell_call",
+    "mcp_approval_request",
+    "mcp_call",
+    "mcp_list_tools",
+    "message",
+    "program",
+    "program_output",
+    "reasoning",
+    "shell_call",
+    "shell_call_output",
+    "tool_search_call",
+    "tool_search_output",
+    "web_search_call",
+];
+
+/// Why a chunk fails the AI SDK's Responses chunk schema
+/// (`openaiResponsesChunkSchema`): a chunk without a string `type`, or a
+/// modeled event without the envelope fields its schema requires (the
+/// `output_index`, `item_id`, `item`, delta or `response` of the event).
+fn chunk_schema_error(chunk: &Value) -> Option<String> {
+    let Some(kind) = chunk.get("type").and_then(Value::as_str) else {
+        return Some("expected a string `type`".to_owned());
+    };
+    let (strings, numbers): (&[&str], &[&str]) = match kind {
+        "response.output_item.added" | "response.output_item.done" => {
+            let Some(item_type) = chunk
+                .get("item")
+                .and_then(Value::as_object)
+                .and_then(|item| item.get("type"))
+                .and_then(Value::as_str)
+            else {
+                return Some("expected an `item` object with a string `type`".to_owned());
+            };
+            if !MODELED_OUTPUT_ITEM_TYPES.contains(&item_type) {
+                return None;
+            }
+            (&[], &["output_index"])
+        }
+        "response.output_text.delta" => (&["item_id", "delta"], &[]),
+        "response.function_call_arguments.delta"
+        | "response.custom_tool_call_input.delta"
+        | "response.code_interpreter_call_code.delta"
+        | "response.apply_patch_call_operation_diff.delta" => {
+            (&["item_id", "delta"], &["output_index"])
+        }
+        "response.function_call_arguments.done" => (&["item_id", "arguments"], &["output_index"]),
+        "response.code_interpreter_call_code.done" => (&["item_id", "code"], &["output_index"]),
+        "response.apply_patch_call_operation_diff.done" => {
+            (&["item_id", "diff"], &["output_index"])
+        }
+        "response.image_generation_call.partial_image" => {
+            (&["item_id", "partial_image_b64"], &["output_index"])
+        }
+        "response.reasoning_summary_part.added" | "response.reasoning_summary_part.done" => {
+            (&["item_id"], &["summary_index"])
+        }
+        "response.reasoning_summary_text.delta" => (&["item_id", "delta"], &["summary_index"]),
+        "response.created"
+        | "response.in_progress"
+        | "response.completed"
+        | "response.incomplete"
+        | "response.failed" => {
+            if !chunk.get("response").is_some_and(Value::is_object) {
+                return Some("expected a `response` object".to_owned());
+            }
+            (&[], &[])
+        }
+        _ => (&[], &[]),
+    };
+    if let Some(field) = strings
+        .iter()
+        .find(|field| !chunk.get(**field).is_some_and(Value::is_string))
+    {
+        return Some(format!("expected a string `{field}`"));
+    }
+    numbers
+        .iter()
+        .find(|field| !chunk.get(**field).is_some_and(Value::is_number))
+        .map(|field| format!("expected a number `{field}`"))
+}
+
 /// The item id an event refers to: the id the output item at the event's
 /// `output_index` started with, since OpenAI-compatible providers can rotate
 /// item ids between events (`resolveOutputItemId`), else the event's own.
@@ -842,6 +935,20 @@ impl Transformer for OpenAIResponsesStream {
                             request_body.clone(),
                             response_headers.clone(),
                         ),
+                    });
+                    return;
+                }
+                if let Some(detail) = chunk_schema_error(&parsed) {
+                    *stream_errored = true;
+                    *final_finish_reason = Some(FINISH_ERROR);
+                    controller.enqueue(StreamPart::Error {
+                        error: AiMuxError::TypeValidation {
+                            message: format!(
+                                "Type validation failed: Value: {parsed}.\nError message: {detail}"
+                            ),
+                            value: Box::new(parsed),
+                            cause: None,
+                        },
                     });
                     return;
                 }
