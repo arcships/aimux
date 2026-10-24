@@ -24,8 +24,8 @@ pub(super) fn parse_bedrock_reranking_options(
                     .get("additionalModelRequestFields")
                     .is_some_and(|v| !v.is_object())
             {
-                return Err(AiMuxError::InvalidArgument(
-                    "invalid amazonBedrock provider options".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "invalid amazonBedrock provider options",
                 ));
             }
             if let Some(token) = bedrock.get("nextToken").and_then(|v| v.as_str()) {

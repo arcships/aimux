@@ -51,7 +51,7 @@ impl Auth {
                 load_setting(None, REGION_ENV_VAR, "region")?
             };
         if !is_valid_hostname_part(&region) {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Invalid Amazon Bedrock region. Expected a single DNS label (letters, digits, and \
                  hyphens). Use `base_url` for custom endpoints."
                     .to_string(),

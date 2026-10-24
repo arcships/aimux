@@ -87,6 +87,10 @@ func decodeUnionBranch[T any](data []byte, dst *T, nullable bool, required ...st
 // Variants are cut by *what the caller does about it*, not by where the
 // failure came from. `ApiCallError` is boxed only to keep the Rust enum
 // compact; serde and every binding still observe the same object shape.
+//
+// A variant has a `cause` exactly where its AI SDK class takes one; it is
+// what `source()` returns. `Retry` reports its
+// last attempt and `ToolCallRepair` its `cause` the same way.
 type AiMuxErrorVariant interface{ isAiMuxError() }
 type AiMuxError struct {
 	Value AiMuxErrorVariant
@@ -237,6 +241,13 @@ func (v *AiMuxError) UnmarshalJSON(data []byte) error {
 		}
 		v.Value = next
 		return nil
+	case "AI_TypeValidationError":
+		var next AiMuxErrorVariantAITypeValidationError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	case "AI_UnsupportedFunctionalityError":
 		var next AiMuxErrorVariantAIUnsupportedFunctionalityError
 		if err := json.Unmarshal(data, &next); err != nil {
@@ -263,6 +274,10 @@ func (v *AiMuxError) UnmarshalJSON(data []byte) error {
 }
 
 type AiMuxErrorVariantAIAPICallError struct {
+	// The error this failure was built from (`APICallError.cause`): the
+	// transport error with its source chain, the body parse error, or the
+	// aimux error a response handler returned.
+	Cause *ErrorCause `json:"cause,omitzero"`
 	// Parsed provider error data.
 	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -324,7 +339,8 @@ func (v AiMuxErrorVariantAIRetryError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorVariantAIJSONParseError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCause `json:"cause,omitzero"`
+	Message string      `json:"message"`
 }
 
 func (AiMuxErrorVariantAIJSONParseError) isAiMuxError() {}
@@ -338,7 +354,8 @@ func (v AiMuxErrorVariantAIJSONParseError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorVariantAINoOutputGeneratedError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCause `json:"cause,omitzero"`
+	Message string      `json:"message"`
 }
 
 func (AiMuxErrorVariantAINoOutputGeneratedError) isAiMuxError() {}
@@ -352,7 +369,8 @@ func (v AiMuxErrorVariantAINoOutputGeneratedError) MarshalJSON() ([]byte, error)
 }
 
 type AiMuxErrorVariantAIInvalidResponseDataError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCause `json:"cause,omitzero"`
+	Message string      `json:"message"`
 }
 
 func (AiMuxErrorVariantAIInvalidResponseDataError) isAiMuxError() {}
@@ -363,6 +381,22 @@ func (v AiMuxErrorVariantAIInvalidResponseDataError) MarshalJSON() ([]byte, erro
 		Name string `json:"name"`
 		plain
 	}{Name: "AI_InvalidResponseDataError", plain: plain(v)})
+}
+
+type AiMuxErrorVariantAITypeValidationError struct {
+	Cause   *ErrorCause     `json:"cause,omitzero"`
+	Message string          `json:"message"`
+	Value   json.RawMessage `json:"value"`
+}
+
+func (AiMuxErrorVariantAITypeValidationError) isAiMuxError() {}
+
+func (v AiMuxErrorVariantAITypeValidationError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorVariantAITypeValidationError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_TypeValidationError", plain: plain(v)})
 }
 
 type AiMuxErrorVariantAIToolCallNotFoundForApprovalError struct {
@@ -397,9 +431,9 @@ func (v AiMuxErrorVariantAINoSuchToolError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorVariantAIInvalidToolInputError struct {
-	Cause     string `json:"cause"`
-	ToolInput string `json:"toolInput"`
-	ToolName  string `json:"toolName"`
+	Cause     ErrorCause `json:"cause"`
+	ToolInput string     `json:"toolInput"`
+	ToolName  string     `json:"toolName"`
 }
 
 func (AiMuxErrorVariantAIInvalidToolInputError) isAiMuxError() {}
@@ -428,7 +462,8 @@ func (v AiMuxErrorVariantAIToolCallRepairError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorVariantAIInvalidArgumentError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCause `json:"cause,omitzero"`
+	Message string      `json:"message"`
 }
 
 func (AiMuxErrorVariantAIInvalidArgumentError) isAiMuxError() {}
@@ -442,7 +477,8 @@ func (v AiMuxErrorVariantAIInvalidArgumentError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorVariantAIInvalidPromptError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCause `json:"cause,omitzero"`
+	Message string      `json:"message"`
 }
 
 func (AiMuxErrorVariantAIInvalidPromptError) isAiMuxError() {}
@@ -614,7 +650,8 @@ func (v AiMuxErrorVariantAbortError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorVariantAIError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCause `json:"cause,omitzero"`
+	Message string      `json:"message"`
 }
 
 func (AiMuxErrorVariantAIError) isAiMuxError() {}
@@ -632,6 +669,10 @@ func (v AiMuxErrorVariantAIError) MarshalJSON() ([]byte, error) {
 // Variants are cut by *what the caller does about it*, not by where the
 // failure came from. `ApiCallError` is boxed only to keep the Rust enum
 // compact; serde and every binding still observe the same object shape.
+//
+// A variant has a `cause` exactly where its AI SDK class takes one; it is
+// what `source()` returns. `Retry` reports its
+// last attempt and `ToolCallRepair` its `cause` the same way.
 type AiMuxErrorInputVariant interface{ isAiMuxErrorInput() }
 type AiMuxErrorInput struct {
 	Value AiMuxErrorInputVariant
@@ -782,6 +823,13 @@ func (v *AiMuxErrorInput) UnmarshalJSON(data []byte) error {
 		}
 		v.Value = next
 		return nil
+	case "AI_TypeValidationError":
+		var next AiMuxErrorInputVariantAITypeValidationError
+		if err := json.Unmarshal(data, &next); err != nil {
+			return err
+		}
+		v.Value = next
+		return nil
 	case "AI_UnsupportedFunctionalityError":
 		var next AiMuxErrorInputVariantAIUnsupportedFunctionalityError
 		if err := json.Unmarshal(data, &next); err != nil {
@@ -808,6 +856,10 @@ func (v *AiMuxErrorInput) UnmarshalJSON(data []byte) error {
 }
 
 type AiMuxErrorInputVariantAIAPICallError struct {
+	// The error this failure was built from (`APICallError.cause`): the
+	// transport error with its source chain, the body parse error, or the
+	// aimux error a response handler returned.
+	Cause *ErrorCauseInput `json:"cause,omitzero"`
 	// Parsed provider error data.
 	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -869,7 +921,8 @@ func (v AiMuxErrorInputVariantAIRetryError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorInputVariantAIJSONParseError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCauseInput `json:"cause,omitzero"`
+	Message string           `json:"message"`
 }
 
 func (AiMuxErrorInputVariantAIJSONParseError) isAiMuxErrorInput() {}
@@ -883,7 +936,8 @@ func (v AiMuxErrorInputVariantAIJSONParseError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorInputVariantAINoOutputGeneratedError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCauseInput `json:"cause,omitzero"`
+	Message string           `json:"message"`
 }
 
 func (AiMuxErrorInputVariantAINoOutputGeneratedError) isAiMuxErrorInput() {}
@@ -897,7 +951,8 @@ func (v AiMuxErrorInputVariantAINoOutputGeneratedError) MarshalJSON() ([]byte, e
 }
 
 type AiMuxErrorInputVariantAIInvalidResponseDataError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCauseInput `json:"cause,omitzero"`
+	Message string           `json:"message"`
 }
 
 func (AiMuxErrorInputVariantAIInvalidResponseDataError) isAiMuxErrorInput() {}
@@ -908,6 +963,22 @@ func (v AiMuxErrorInputVariantAIInvalidResponseDataError) MarshalJSON() ([]byte,
 		Name string `json:"name"`
 		plain
 	}{Name: "AI_InvalidResponseDataError", plain: plain(v)})
+}
+
+type AiMuxErrorInputVariantAITypeValidationError struct {
+	Cause   *ErrorCauseInput `json:"cause,omitzero"`
+	Message string           `json:"message"`
+	Value   json.RawMessage  `json:"value"`
+}
+
+func (AiMuxErrorInputVariantAITypeValidationError) isAiMuxErrorInput() {}
+
+func (v AiMuxErrorInputVariantAITypeValidationError) MarshalJSON() ([]byte, error) {
+	type plain AiMuxErrorInputVariantAITypeValidationError
+	return json.Marshal(struct {
+		Name string `json:"name"`
+		plain
+	}{Name: "AI_TypeValidationError", plain: plain(v)})
 }
 
 type AiMuxErrorInputVariantAIToolCallNotFoundForApprovalError struct {
@@ -942,9 +1013,9 @@ func (v AiMuxErrorInputVariantAINoSuchToolError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorInputVariantAIInvalidToolInputError struct {
-	Cause     string `json:"cause"`
-	ToolInput string `json:"toolInput"`
-	ToolName  string `json:"toolName"`
+	Cause     ErrorCauseInput `json:"cause"`
+	ToolInput string          `json:"toolInput"`
+	ToolName  string          `json:"toolName"`
 }
 
 func (AiMuxErrorInputVariantAIInvalidToolInputError) isAiMuxErrorInput() {}
@@ -973,7 +1044,8 @@ func (v AiMuxErrorInputVariantAIToolCallRepairError) MarshalJSON() ([]byte, erro
 }
 
 type AiMuxErrorInputVariantAIInvalidArgumentError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCauseInput `json:"cause,omitzero"`
+	Message string           `json:"message"`
 }
 
 func (AiMuxErrorInputVariantAIInvalidArgumentError) isAiMuxErrorInput() {}
@@ -987,7 +1059,8 @@ func (v AiMuxErrorInputVariantAIInvalidArgumentError) MarshalJSON() ([]byte, err
 }
 
 type AiMuxErrorInputVariantAIInvalidPromptError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCauseInput `json:"cause,omitzero"`
+	Message string           `json:"message"`
 }
 
 func (AiMuxErrorInputVariantAIInvalidPromptError) isAiMuxErrorInput() {}
@@ -1159,7 +1232,8 @@ func (v AiMuxErrorInputVariantAbortError) MarshalJSON() ([]byte, error) {
 }
 
 type AiMuxErrorInputVariantAIError struct {
-	Message string `json:"message"`
+	Cause   *ErrorCauseInput `json:"cause,omitzero"`
+	Message string           `json:"message"`
 }
 
 func (AiMuxErrorInputVariantAIError) isAiMuxErrorInput() {}
@@ -1193,6 +1267,10 @@ func (v AiMuxErrorInputVariantAIError) MarshalJSON() ([]byte, error) {
 // This keeps transport and response failures self-contained and matches the
 // AI SDK's `APICallError` contract.
 type APICallError struct {
+	// The error this failure was built from (`APICallError.cause`): the
+	// transport error with its source chain, the body parse error, or the
+	// aimux error a response handler returned.
+	Cause *ErrorCause `json:"cause,omitzero"`
 	// Parsed provider error data.
 	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -1249,6 +1327,10 @@ type APICallError struct {
 // This keeps transport and response failures self-contained and matches the
 // AI SDK's `APICallError` contract.
 type APICallErrorInput struct {
+	// The error this failure was built from (`APICallError.cause`): the
+	// transport error with its source chain, the body parse error, or the
+	// aimux error a response handler returned.
+	Cause *ErrorCauseInput `json:"cause,omitzero"`
 	// Parsed provider error data.
 	Data Field[json.RawMessage] `json:"data,omitzero"`
 	// Whether retrying can help (`APICallError.isRetryable`) — stored at
@@ -3060,6 +3142,104 @@ type EmbeddingUsage struct {
 }
 
 type EmptyParams struct{}
+
+// The error another error was built from: the AI SDK's `cause`.
+//
+// An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+// `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+// nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+type ErrorCauseVariant interface{ isErrorCause() }
+type ErrorCause struct {
+	Value ErrorCauseVariant
+}
+
+func (v ErrorCause) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+func (v *ErrorCause) UnmarshalJSON(data []byte) error {
+	var err error
+	{
+		var next AiMuxError
+		if err = decodeUnionBranch(data, &next, false); err == nil {
+			v.Value = ErrorCauseBranchAiMuxError{Value: next}
+			return nil
+		}
+	}
+	{
+		var next SourceError
+		if err = decodeUnionBranch(data, &next, false, "message"); err == nil {
+			v.Value = ErrorCauseBranchSourceError{Value: next}
+			return nil
+		}
+	}
+	return err
+}
+
+type ErrorCauseBranchAiMuxError struct{ Value AiMuxError }
+
+func (ErrorCauseBranchAiMuxError) isErrorCause() {}
+
+func (v ErrorCauseBranchAiMuxError) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+type ErrorCauseBranchSourceError struct{ Value SourceError }
+
+func (ErrorCauseBranchSourceError) isErrorCause() {}
+
+func (v ErrorCauseBranchSourceError) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+// The error another error was built from: the AI SDK's `cause`.
+//
+// An aimux error stays whole, as the AI SDK nests a `JSONParseError` in an
+// `APICallError`; any other error is a [`SourceError`]. The JSON form is the
+// nested error itself: a `name`-tagged aimux error, or `{ message, cause }`.
+type ErrorCauseInputVariant interface{ isErrorCauseInput() }
+type ErrorCauseInput struct {
+	Value ErrorCauseInputVariant
+}
+
+func (v ErrorCauseInput) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+func (v *ErrorCauseInput) UnmarshalJSON(data []byte) error {
+	var err error
+	{
+		var next AiMuxErrorInput
+		if err = decodeUnionBranch(data, &next, false); err == nil {
+			v.Value = ErrorCauseInputBranchAiMuxErrorInput{Value: next}
+			return nil
+		}
+	}
+	{
+		var next SourceError
+		if err = decodeUnionBranch(data, &next, false, "message"); err == nil {
+			v.Value = ErrorCauseInputBranchSourceError{Value: next}
+			return nil
+		}
+	}
+	return err
+}
+
+type ErrorCauseInputBranchAiMuxErrorInput struct{ Value AiMuxErrorInput }
+
+func (ErrorCauseInputBranchAiMuxErrorInput) isErrorCauseInput() {}
+
+func (v ErrorCauseInputBranchAiMuxErrorInput) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
+
+type ErrorCauseInputBranchSourceError struct{ Value SourceError }
+
+func (ErrorCauseInputBranchSourceError) isErrorCauseInput() {}
+
+func (v ErrorCauseInputBranchSourceError) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Value)
+}
 
 type ErrorDomain string
 
@@ -6299,6 +6479,18 @@ func (v SourceVariantDocument) MarshalJSON() ([]byte, error) {
 		SourceType string `json:"sourceType"`
 		plain
 	}{SourceType: "document", plain: plain(v)})
+}
+
+// An error from outside aimux (a transport, parser or I/O error), kept as
+// its message and the messages of its own sources, so it can be cloned,
+// serialized and sent across the bindings with the error built from it.
+//
+// The JSON form is a JavaScript `Error`'s own `{ message, cause }`.
+type SourceError struct {
+	// The error's own `source()`, recursively.
+	Cause *SourceError `json:"cause,omitzero"`
+	// The error's `Display` text.
+	Message string `json:"message"`
 }
 
 // Options passed to [`SpeechModel::do_generate`].
@@ -10149,6 +10341,10 @@ func NewDTO(name string) (any, error) {
 		return new(EmbeddingUsage), nil
 	case "EmptyParams":
 		return new(EmptyParams), nil
+	case "ErrorCause":
+		return new(ErrorCause), nil
+	case "ErrorCauseInput":
+		return new(ErrorCauseInput), nil
 	case "ErrorDomain":
 		return new(ErrorDomain), nil
 	case "ErrorEnvelope":
@@ -10449,6 +10645,8 @@ func NewDTO(name string) (any, error) {
 		return new(Size), nil
 	case "Source":
 		return new(Source), nil
+	case "SourceError":
+		return new(SourceError), nil
 	case "SpeechCallOptions":
 		return new(SpeechCallOptions), nil
 	case "SpeechRequest":

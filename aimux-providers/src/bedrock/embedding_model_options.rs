@@ -84,8 +84,8 @@ pub(super) fn parse_bedrock_provider_options(
             || !valid_enums
             || opts.get("normalize").is_some_and(|v| !v.is_boolean())
         {
-            return Err(AiMuxError::InvalidArgument(
-                "invalid amazonBedrock provider options".into(),
+            return Err(AiMuxError::invalid_argument(
+                "invalid amazonBedrock provider options",
             ));
         }
     }

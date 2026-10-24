@@ -98,7 +98,7 @@ fn sigv4_fetch(credentials: Resolvable<AwsCredentials>, inner: FetchFunction) ->
 /// unsigned. Its signer would fail, so a signed request would show.
 fn api_key_fetch(inner: FetchFunction) -> FetchFunction {
     sigv4_fetch(
-        Resolvable::from_fn(|| Err(AiMuxError::Other("no credentials".into()))),
+        Resolvable::from_fn(|| Err(AiMuxError::other("no credentials"))),
         inner,
     )
 }
@@ -597,7 +597,7 @@ mod create_sig_v4_fetch_function {
         let mock = MockFetch::new(vec![]);
         let fetch = sigv4_fetch(
             Resolvable::from_async_fn(|| async {
-                Err(AiMuxError::Other("Failed to get credentials".into()))
+                Err(AiMuxError::other("Failed to get credentials"))
             }),
             mock.transport(),
         );

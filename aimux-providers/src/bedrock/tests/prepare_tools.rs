@@ -983,7 +983,7 @@ mod bedrock_upstream_e2e {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message) if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
+            matches!(&error, AiMuxError::InvalidArgument { message, .. } if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
             "{error:?}"
         );
         assert!(fetch.seen().is_empty());

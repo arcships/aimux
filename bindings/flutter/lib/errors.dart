@@ -14,6 +14,23 @@ final class OpsException implements Exception {
   int? get retryAfterMs => envelope.retryAfterMs;
   Map<String, dynamic> toJson() => envelope.toJson();
 
+  /// The payload's cause: a nested AI SDK error (with `name`) or an
+  /// underlying OS, TLS or parser error as `{message, cause?}`. A retry
+  /// error's cause is its last attempt, the AI SDK `lastError`.
+  Map<String, dynamic>? get cause {
+    final error = envelope.error;
+    if (error is! Map) return null;
+    var cause = error['cause'];
+    final errors = error['errors'];
+    if (cause == null &&
+        error['name'] == 'AI_RetryError' &&
+        errors is List &&
+        errors.isNotEmpty) {
+      cause = errors.last;
+    }
+    return cause is Map ? Map<String, dynamic>.unmodifiable(cause) : null;
+  }
+
   @override
   String toString() => 'OpsException($kind/$code): $message';
 }

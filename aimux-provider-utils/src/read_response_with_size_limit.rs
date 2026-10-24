@@ -3,7 +3,7 @@
 use bytes::Bytes;
 use futures::StreamExt;
 
-use aimux_core::{AiMuxError, ApiCallError};
+use aimux_core::{AiMuxError, ApiCallError, ErrorCause};
 
 use crate::fetch::FetchResponse;
 
@@ -74,6 +74,7 @@ pub async fn read_response_with_size_limit(
                 status_code: None,
                 response_headers: Some(response_headers.clone()),
                 is_retryable: true,
+                cause: Some(ErrorCause::source(&error)),
                 ..ApiCallError::new(
                     format!("Failed to read response body: {error}"),
                     url,

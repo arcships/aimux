@@ -42,6 +42,7 @@ const AIMUX: &[&str] = &[
     "load-api-key",
     "load-setting",
     "tool-choice-violation",
+    "type-validation",
 ];
 
 fn recording_errors() -> Vec<(&'static str, OpsError)> {
@@ -99,6 +100,7 @@ fn binding_errors() -> Vec<(&'static str, OpsError)> {
             BindingError::InvalidWireJson {
                 argument: "params_json".into(),
                 message: "expected object".into(),
+                cause: Some("expected object".into()),
             }
             .into(),
         ),
@@ -113,7 +115,11 @@ fn binding_errors() -> Vec<(&'static str, OpsError)> {
         ("binding-reentrant-call", BindingError::ReentrantCall.into()),
         (
             "binding-result-serialization",
-            BindingError::ResultSerialization("invalid result".into()).into(),
+            BindingError::ResultSerialization {
+                message: "invalid result".into(),
+                cause: None,
+            }
+            .into(),
         ),
         (
             "binding-callback-failure",
@@ -130,7 +136,7 @@ fn protocol_errors() -> Vec<(&'static str, OpsError)> {
         ),
         (
             "protocol-invalid-params",
-            ProtocolError::InvalidParams("expected object".into()).into(),
+            ProtocolError::invalid_params("expected object").into(),
         ),
         (
             "protocol-unsupported-ops-version",
@@ -226,6 +232,7 @@ fn codes_preserve_existing_groups_and_have_disjoint_ranges() {
                     "invalid-response-data".into(),
                     "tool-call-not-found-for-approval".into(),
                     "tool-choice-violation".into(),
+                    "type-validation".into(),
                 ])
             ),
             (
@@ -303,6 +310,41 @@ fn optional_payload_fields_distinguish_absent_and_explicit_null() {
     }
 }
 
+/// A serializer or parser failure keeps its error as the payload's `cause`.
+#[test]
+fn serde_failures_keep_their_error_as_cause() {
+    let error = serde_json::from_str::<Value>("{").unwrap_err();
+    let text = error.to_string();
+    let envelope = OpsError::from(BindingError::result_serialization(&error)).envelope(now());
+    assert_eq!(envelope.error["message"], text.as_str());
+    assert_eq!(envelope.error["cause"], json!({ "message": text }));
+    let envelope = OpsError::from(ProtocolError::invalid_params("bad")).envelope(now());
+    assert!(envelope.error.get("cause").is_none());
+}
+
+/// The Rust `source()` chain runs through the binding and protocol domains to
+/// the same error the payload's `cause` carries.
+#[test]
+fn binding_and_protocol_sources_are_their_cause() {
+    use std::error::Error as _;
+    let error = serde_json::from_str::<Value>("{").unwrap_err();
+    let text = error.to_string();
+    let binding = OpsError::from(BindingError::result_serialization(&error));
+    let source = binding.source().and_then(|domain| domain.source()).unwrap();
+    assert_eq!(source.to_string(), text);
+    let protocol = OpsError::from(ProtocolError::InvalidParams {
+        message: "bad".into(),
+        cause: Some(aimux_core::SourceError::new(&error)),
+    });
+    let source = protocol
+        .source()
+        .and_then(|domain| domain.source())
+        .unwrap();
+    assert_eq!(source.to_string(), text);
+    let plain = OpsError::from(ProtocolError::invalid_params("bad"));
+    assert!(plain.source().unwrap().source().is_none());
+}
+
 #[test]
 fn invalid_handle_without_actual_kind_omits_the_field() {
     let error = OpsError::from(BindingError::InvalidHandle {
@@ -354,7 +396,7 @@ fn only_direct_api_calls_get_top_level_retry_hints() {
         }),
         AiMuxError::ToolCallRepair {
             original_error: Box::new(attempt),
-            cause: Box::new(AiMuxError::Other("repair failed".into())),
+            cause: Box::new(AiMuxError::other("repair failed")),
         },
         AiMuxError::Timeout("timeout".into()),
         AiMuxError::Aborted("aborted".into()),

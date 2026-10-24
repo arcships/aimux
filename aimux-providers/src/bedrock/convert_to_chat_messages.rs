@@ -675,8 +675,8 @@ fn validate_part_options(
         if let Some(value) = options.get("guardContent")
             && !value.is_boolean()
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock guardContent".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock guardContent",
             ));
         }
         if let Some(value) = options.get("guardContentQualifiers")
@@ -689,15 +689,15 @@ fn validate_part_options(
                 })
             })
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock guardContentQualifiers".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock guardContentQualifiers",
             ));
         }
         if let Some(value) = options.get("citations")
             && (!value.is_object() || value.get("enabled").is_some_and(|v| !v.is_boolean()))
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock citations".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock citations",
             ));
         }
         if reasoning {
@@ -706,7 +706,7 @@ fn validate_part_options(
                     && !value.is_string()
                     && !value.is_null()
                 {
-                    return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+                    return Err(aimux_core::AiMuxError::invalid_argument(format!(
                         "Invalid Bedrock {key}"
                     )));
                 }

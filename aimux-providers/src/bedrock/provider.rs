@@ -135,7 +135,7 @@ impl std::fmt::Debug for AmazonBedrockProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when an explicit `base_url` is not an
+/// Returns `AiMuxError::invalid_argument` when an explicit `base_url` is not an
 /// `http(s)` URL with a host. That is the only way this fails: the region, the
 /// key and the credentials are loaded per request, not here.
 pub fn create_amazon_bedrock(

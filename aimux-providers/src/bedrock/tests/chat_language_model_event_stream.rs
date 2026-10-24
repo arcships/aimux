@@ -492,7 +492,7 @@ mod bedrock_remaining {
         assert!(
             matches!(
                 error,
-                aimux_core::AiMuxError::InvalidResponseData(message)
+                aimux_core::AiMuxError::InvalidResponseData { message, .. }
                     if *message == format!(
                         "The message checksum ({computed}) did not match the expected value of {}",
                         computed ^ 0xff

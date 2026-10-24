@@ -18,6 +18,7 @@ use super::options;
 use super::prepare_tools::{is_strict_schema_compatible, prepare_tools};
 use crate::shared::EndpointConfig;
 use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::language_model_message::{AssistantPart, LanguageModelMessage};
@@ -486,9 +487,10 @@ impl AmazonBedrockChatStream {
                     Err(error) => {
                         self.final_finish_reason = Some(FINISH_ERROR);
                         controller.enqueue(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(format!(
-                                "{error}; usage: {usage}"
-                            )),
+                            error: AiMuxError::InvalidResponseData {
+                                message: format!("{error}; usage: {usage}"),
+                                cause: Some(ErrorCause::source(&error)),
+                            },
                         });
                         return;
                     }
@@ -1181,16 +1183,16 @@ pub fn build_request_body_checked(
             .as_str()
             .is_some_and(|v| ["outputFormat", "jsonTool", "auto"].contains(&v))
     {
-        return Err(aimux_core::AiMuxError::InvalidArgument(
-            "Invalid Anthropic structuredOutputMode".into(),
+        return Err(aimux_core::AiMuxError::invalid_argument(
+            "Invalid Anthropic structuredOutputMode",
         ));
     }
     if anthropic_options
         .and_then(|p| p.get("disableParallelToolUse"))
         .is_some_and(|v| !v.is_boolean())
     {
-        return Err(aimux_core::AiMuxError::InvalidArgument(
-            "Invalid Anthropic disableParallelToolUse".into(),
+        return Err(aimux_core::AiMuxError::invalid_argument(
+            "Invalid Anthropic disableParallelToolUse",
         ));
     }
     let structured_mode = bedrock
