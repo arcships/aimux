@@ -7,7 +7,7 @@ package = "@ai-sdk/open-responses"
 
 [[open_responses.files]]
 upstream = "src/index.ts"
-rust = "open_responses.rs"
+rust = "open_responses/mod.rs"
 status = "mapped"
 
 [open_responses.files.tests]
@@ -19,7 +19,7 @@ issue = 275
 
 [[open_responses.files]]
 upstream = "src/open-responses-provider.ts"
-rust = "open_responses.rs"
+rust = "open_responses/provider.rs"
 status = "mapped"
 
 [open_responses.files.tests]
@@ -35,7 +35,7 @@ issue = 275
 
 [[open_responses.files]]
 upstream = "src/responses/convert-to-open-responses-input.ts"
-rust = "open_responses.rs"
+rust = "open_responses/responses/convert_to_input.rs"
 status = "mapped"
 
 [open_responses.files.tests]
@@ -48,35 +48,35 @@ sub-feature = [
 
 [[open_responses.files]]
 upstream = "src/responses/map-open-responses-finish-reason.ts"
-rust = "open_responses.rs"
+rust = "open_responses/responses/map_finish_reason.rs"
 status = "mapped"
 
 [open_responses.files.tests]
 
 [[open_responses.files]]
 upstream = "src/responses/open-responses-api.ts"
-rust = "open_responses.rs"
+rust = "open_responses/responses/language_model.rs"
 status = "mapped"
 
 [open_responses.files.tests]
 
 [[open_responses.files]]
 upstream = "src/responses/open-responses-config.ts"
-rust = "open_responses.rs"
+rust = "open_responses/responses/language_model.rs"
 status = "mapped"
 
 [open_responses.files.tests]
 
 [[open_responses.files]]
 upstream = "src/responses/open-responses-language-model-options.ts"
-rust = "open_responses.rs"
+rust = "open_responses/responses/language_model.rs"
 status = "mapped"
 
 [open_responses.files.tests]
 
 [[open_responses.files]]
 upstream = "src/responses/open-responses-language-model.ts"
-rust = "open_responses.rs"
+rust = "open_responses/responses/language_model.rs"
 status = "mapped"
 
 [open_responses.files.tests]
