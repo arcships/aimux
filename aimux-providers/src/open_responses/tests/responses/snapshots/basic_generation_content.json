@@ -1,0 +1,27 @@
+[
+  {
+    "providerMetadata": {
+      "lmstudio": {
+        "itemId": "rs_3l1z5wpifxkwxhj459ya7",
+        "reasoningContent": [
+          {
+            "text": "reasoning content",
+            "type": "reasoning_text"
+          }
+        ],
+        "reasoningSummary": []
+      }
+    },
+    "text": "reasoning content",
+    "type": "reasoning"
+  },
+  {
+    "providerMetadata": {
+      "lmstudio": {
+        "itemId": "msg_p1y190hl7hj1xyfqr1cir"
+      }
+    },
+    "text": "text content",
+    "type": "text"
+  }
+]
