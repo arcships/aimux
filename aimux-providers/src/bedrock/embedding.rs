@@ -30,7 +30,7 @@ use crate::shared::EndpointConfig;
 pub struct BedrockEmbeddingModel {
     model_id: String,
     config: EndpointConfig,
-    model_family: Option<AmazonBedrockEmbeddingModelFamily>,
+    pub(super) model_family: Option<AmazonBedrockEmbeddingModelFamily>,
 }
 
 impl BedrockEmbeddingModel {

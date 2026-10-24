@@ -36,6 +36,7 @@ fn options(prompt: &str) -> ImageCallOptions {
     ImageCallOptions::new(prompt.to_string())
 }
 
+/// partial: `should extract the generated images`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn should_extract_generated_images() {
     let server = MockServer::start().await;
@@ -52,6 +53,7 @@ async fn should_extract_generated_images() {
     }
 }
 
+/// partial: `should pass the model and the settings`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_prompt() {
     let server = MockServer::start().await;
@@ -65,6 +67,7 @@ async fn should_pass_prompt() {
     assert_eq!(body["textToImageParams"]["text"], PROMPT);
 }
 
+/// partial: `should pass the model and the settings`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_size_and_n() {
     let server = MockServer::start().await;
@@ -82,6 +85,7 @@ async fn should_pass_size_and_n() {
     assert_eq!(body["imageGenerationConfig"]["numberOfImages"], 2);
 }
 
+/// partial: `should pass the model and the settings`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_seed() {
     let server = MockServer::start().await;
@@ -97,6 +101,7 @@ async fn should_pass_seed() {
     assert_eq!(body["imageGenerationConfig"]["seed"], 42);
 }
 
+/// partial: `should return warnings for unsupported settings`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn should_warn_for_aspect_ratio() {
     let server = MockServer::start().await;
@@ -110,6 +115,7 @@ async fn should_warn_for_aspect_ratio() {
     assert!(result.warnings.iter().any(|w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. } if feature == "aspectRatio")));
 }
 
+/// partial: `should default to IMAGE_VARIATION when files provided without mask or maskPrompt`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn should_support_image_variation() {
     let server = MockServer::start().await;
@@ -129,6 +135,7 @@ async fn should_support_image_variation() {
     assert!(body["imageVariationParams"]["images"].is_array());
 }
 
+/// partial: `should default to INPAINTING when files provided with mask`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn should_support_inpainting() {
     let server = MockServer::start().await;
@@ -152,25 +159,30 @@ async fn should_support_inpainting() {
     assert!(body["inPaintingParams"]["maskImage"].is_string());
 }
 
-#[tokio::test]
-async fn should_handle_moderated_response() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/model/amazon.nova-canvas-v1%3A0/invoke"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "fe7256d1-50d9-4663-8592-85eaf002e80c",
-            "status": "Request Moderated",
-            "result": null,
-            "progress": null,
-            "details": { "Moderation Reasons": ["Derivative Works Filter"] },
-            "preview": null
-        })))
-        .mount(&server)
-        .await;
-    let provider = create_amazon_bedrock(config(&server)).unwrap();
-    let model = provider.image_model("amazon.nova-canvas-v1:0").unwrap();
-    let result = model.do_generate(&options(PROMPT)).await;
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("Amazon Bedrock request was moderated: Derivative Works Filter"));
+mod do_generate {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-image-model.test.ts › doGenerate › should throw error when request is moderated
+    #[tokio::test]
+    async fn should_handle_moderated_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/model/amazon.nova-canvas-v1%3A0/invoke"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "fe7256d1-50d9-4663-8592-85eaf002e80c",
+                "status": "Request Moderated",
+                "result": null,
+                "progress": null,
+                "details": { "Moderation Reasons": ["Derivative Works Filter"] },
+                "preview": null
+            })))
+            .mount(&server)
+            .await;
+        let provider = create_amazon_bedrock(config(&server)).unwrap();
+        let model = provider.image_model("amazon.nova-canvas-v1:0").unwrap();
+        let result = model.do_generate(&options(PROMPT)).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Amazon Bedrock request was moderated: Derivative Works Filter"));
+    }
 }

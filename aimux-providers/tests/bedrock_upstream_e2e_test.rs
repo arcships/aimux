@@ -56,7 +56,7 @@ fn stream_response(events: Value) -> Canned {
     }
 }
 
-/// TS: "should extract reasoning text with signature" (amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts)
+/// partial: `should extract reasoning text with signature`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn generate_reasoning_signature_and_usage() {
     let response = json!({"output":{"message":{"role":"assistant","content":[
@@ -102,7 +102,7 @@ async fn generate_reasoning_signature_and_usage() {
     assert_eq!(result.usage.raw, response["usage"].as_object().cloned());
 }
 
-/// TS: "should stream text deltas with metadata and usage" (amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts)
+/// partial: `should stream text deltas with metadata and usage`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn stream_text_and_usage() {
     let fetch = MockFetch::new(vec![stream_response(json!([
@@ -165,7 +165,7 @@ async fn stream_text_and_usage() {
     );
 }
 
-/// TS: "should stream tool deltas" (amazon-bedrock/src/amazon-bedrock-chat-language-model.test.ts)
+/// partial: `should stream tool deltas`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn stream_partial_tool_arguments() {
     let fetch = MockFetch::new(vec![stream_response(json!([
@@ -217,7 +217,7 @@ async fn stream_partial_tool_arguments() {
     );
 }
 
-/// TS: "prefixes the provider message when the error type is present" (amazon-bedrock/src/amazon-bedrock-error.test.ts)
+/// partial: `prefixes the provider message when the error type is present`; full port in src/bedrock/tests/error.rs.
 #[tokio::test]
 async fn generate_error_response() {
     let response = json!({"type":"ValidationException","message":"boom"});
@@ -242,7 +242,7 @@ async fn generate_error_response() {
     assert_eq!(error.data, Some(response));
 }
 
-/// TS: "should handle single input value and return embeddings" (amazon-bedrock/src/amazon-bedrock-embedding-model.test.ts)
+/// partial: `should handle single input value and return embeddings`; full port in src/bedrock/tests/embedding_model.rs.
 #[tokio::test]
 async fn embed_single_value_and_usage() {
     let response = json!({"embedding":[-0.09,0.05,-0.02,0.01,0.04],"inputTextTokenCount":8});
@@ -268,7 +268,7 @@ async fn embed_single_value_and_usage() {
     assert!(result.response.is_none());
 }
 
-/// TS: "should pass the model and the settings" (amazon-bedrock/src/amazon-bedrock-image-model.test.ts)
+/// partial: `should pass the model and the settings`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn generate_images_with_settings() {
     let fetch = MockFetch::new(vec![Canned::json(
@@ -300,7 +300,7 @@ async fn generate_images_with_settings() {
     assert_eq!(images, vec!["base64-image-1", "base64-image-2"]);
 }
 
-/// TS: "should throw error when request is moderated" (amazon-bedrock/src/amazon-bedrock-image-model.test.ts)
+/// partial: `should throw error when request is moderated`; full port in src/bedrock/tests/image_model.rs.
 #[tokio::test]
 async fn image_moderation_error_response() {
     let fetch = MockFetch::new(vec![Canned::json(
@@ -324,7 +324,7 @@ async fn image_moderation_error_response() {
     );
 }
 
-/// TS: "should send request with stringified json documents" (amazon-bedrock/src/reranking/amazon-bedrock-reranking-model.test.ts)
+/// partial: `should send request with stringified json documents`; full port in src/bedrock/tests/reranking/reranking_model.rs.
 #[tokio::test]
 async fn rerank_json_documents_and_parse_ranking() {
     let response = json!({"results":[{"index":0,"relevanceScore":0.5110583305358887},{"index":5,"relevanceScore":0.30241215229034424}]});
@@ -359,7 +359,7 @@ async fn rerank_json_documents_and_parse_ranking() {
     assert_eq!(result.response.unwrap().body.unwrap(), response);
 }
 
-/// TS: "should handle JSON response format in streaming" (amazon-bedrock-chat-language-model.test.ts).
+/// partial: `should handle JSON response format in streaming`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn stream_json_response_tool_as_text() {
     let fetch = MockFetch::new(vec![stream_response(json!([
@@ -472,7 +472,7 @@ async fn provider_tool_args_are_checked_before_the_request() {
     assert_eq!(result.warnings.len(), 1, "{:?}", result.warnings);
 }
 
-/// TS: "should handle Anthropic provider-defined tools" (amazon-bedrock-chat-language-model.test.ts).
+/// partial: `should handle Anthropic provider-defined tools`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn generate_provider_defined_tool_with_input_schema() {
     let fetch = MockFetch::new(vec![Canned::json(&json!({

@@ -718,3 +718,6 @@ impl ProviderDiscovery for AmazonBedrockProvider {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

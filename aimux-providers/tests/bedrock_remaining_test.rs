@@ -163,83 +163,91 @@ fn clear_bedrock_env() {
     }
 }
 
-/// TS: "should return true for mistral models"
-#[test]
-fn is_mistral_model_true_for_mistral() {
-    for id in [
-        "mistral.mistral-7b-instruct-v0:2",
-        "mistral.mixtral-8x7b-instruct-v0:1",
-        "mistral.mistral-large-2402-v1:0",
-        "mistral.mistral-small-2402-v1:0",
-        "mistral.mistral-large-2407-v1:0",
-        "mistral.ministral-3-14b-instruct",
-        "mistral.ministral-3-8b-instruct",
-    ] {
-        assert!(model_normalizes_tool_id(id));
+mod is_mistral_model {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/normalize-tool-call-id.test.ts › isMistralModel › should return true for mistral models
+    #[test]
+    fn is_mistral_model_true_for_mistral() {
+        for id in [
+            "mistral.mistral-7b-instruct-v0:2",
+            "mistral.mixtral-8x7b-instruct-v0:1",
+            "mistral.mistral-large-2402-v1:0",
+            "mistral.mistral-small-2402-v1:0",
+            "mistral.mistral-large-2407-v1:0",
+            "mistral.ministral-3-14b-instruct",
+            "mistral.ministral-3-8b-instruct",
+        ] {
+            assert!(model_normalizes_tool_id(id));
+        }
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/normalize-tool-call-id.test.ts › isMistralModel › should return true for region-prefixed mistral models
+    #[test]
+    fn is_mistral_model_region_prefixed() {
+        assert!(model_normalizes_tool_id(
+            "us.mistral.pixtral-large-2502-v1:0"
+        ));
+        assert!(model_normalizes_tool_id(
+            "eu.mistral.mistral-large-2407-v1:0"
+        ));
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/normalize-tool-call-id.test.ts › isMistralModel › should return false for non-mistral models
+    #[test]
+    fn is_mistral_model_false_for_non_mistral() {
+        for id in [
+            "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "amazon.nova-pro-v1:0",
+            "openai.gpt-4o",
+            "meta.llama3-70b-instruct-v1:0",
+        ] {
+            assert!(!model_normalizes_tool_id(id));
+        }
     }
 }
 
-/// TS: "should return true for region-prefixed mistral models"
-#[test]
-fn is_mistral_model_region_prefixed() {
-    assert!(model_normalizes_tool_id(
-        "us.mistral.pixtral-large-2502-v1:0"
-    ));
-    assert!(model_normalizes_tool_id(
-        "eu.mistral.mistral-large-2407-v1:0"
-    ));
-}
+mod normalize_tool_call_id {
+    use super::*;
 
-/// TS: "should return false for non-mistral models"
-#[test]
-fn is_mistral_model_false_for_non_mistral() {
-    for id in [
-        "anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "amazon.nova-pro-v1:0",
-        "openai.gpt-4o",
-        "meta.llama3-70b-instruct-v1:0",
-    ] {
-        assert!(!model_normalizes_tool_id(id));
+    /// upstream: @ai-sdk/amazon-bedrock src/normalize-tool-call-id.test.ts › normalizeToolCallId › should return the original ID when not a Mistral model
+    #[test]
+    fn normalize_tool_call_id_passthrough_when_not_mistral() {
+        let id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
+        assert_eq!(normalize_tool_call_id(id, false), id);
     }
-}
 
-/// TS: "should return the original ID when not a Mistral model"
-#[test]
-fn normalize_tool_call_id_passthrough_when_not_mistral() {
-    let id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
-    assert_eq!(normalize_tool_call_id(id, false), id);
-}
-
-/// TS: "should hash incompatible IDs deterministically for Mistral models"
-#[test]
-fn normalize_tool_call_id_hashes_deterministically() {
-    let id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
-    assert_eq!(normalize_tool_call_id(id, true), "8eHypBDcw");
-    assert_eq!(normalize_tool_call_id(id, true), "8eHypBDcw");
-}
-
-/// TS: "should produce 9 alphanumeric characters for incompatible IDs"
-#[test]
-fn normalize_tool_call_id_special_chars() {
-    for (id, expected) in [
-        ("tool-use_123ABC456", "hvVDqPNyj"),
-        ("___abc123DEF___", "TnzPqldGU"),
-        ("abc", "GRuIyUwcV"),
-        ("12345", "PceAgWDYe"),
-        ("___---___", "5C589HVqG"),
-    ] {
-        let normalized = normalize_tool_call_id(id, true);
-        assert_eq!(normalized, expected);
-        assert_eq!(normalized.len(), 9);
-        assert!(normalized.bytes().all(|c| c.is_ascii_alphanumeric()));
+    /// upstream: @ai-sdk/amazon-bedrock src/normalize-tool-call-id.test.ts › normalizeToolCallId › should hash incompatible IDs deterministically for Mistral models
+    #[test]
+    fn normalize_tool_call_id_hashes_deterministically() {
+        let id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
+        assert_eq!(normalize_tool_call_id(id, true), "8eHypBDcw");
+        assert_eq!(normalize_tool_call_id(id, true), "8eHypBDcw");
     }
-}
 
-/// TS: "should preserve IDs that are already valid Mistral tool call IDs"
-#[test]
-fn normalize_tool_call_id_already_alphanumeric() {
-    assert_eq!(normalize_tool_call_id("abcdefghi", true), "abcdefghi");
-    assert_eq!(normalize_tool_call_id("abc123XYZ", true), "abc123XYZ");
+    /// upstream: @ai-sdk/amazon-bedrock src/normalize-tool-call-id.test.ts › normalizeToolCallId › should produce 9 alphanumeric characters for incompatible IDs
+    #[test]
+    fn normalize_tool_call_id_special_chars() {
+        for (id, expected) in [
+            ("tool-use_123ABC456", "hvVDqPNyj"),
+            ("___abc123DEF___", "TnzPqldGU"),
+            ("abc", "GRuIyUwcV"),
+            ("12345", "PceAgWDYe"),
+            ("___---___", "5C589HVqG"),
+        ] {
+            let normalized = normalize_tool_call_id(id, true);
+            assert_eq!(normalized, expected);
+            assert_eq!(normalized.len(), 9);
+            assert!(normalized.bytes().all(|c| c.is_ascii_alphanumeric()));
+        }
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/normalize-tool-call-id.test.ts › normalizeToolCallId › should preserve IDs that are already valid Mistral tool call IDs
+    #[test]
+    fn normalize_tool_call_id_already_alphanumeric() {
+        assert_eq!(normalize_tool_call_id("abcdefghi", true), "abcdefghi");
+        assert_eq!(normalize_tool_call_id("abc123XYZ", true), "abc123XYZ");
+    }
 }
 
 use aimux_providers::bedrock::convert::{BedrockUsage, convert_usage};
@@ -261,28 +269,32 @@ fn bedrock_usage_with_total(
     }
 }
 
-/// TS: "should include totalTokens in raw when provided"
-#[test]
-fn usage_raw_includes_total_tokens() {
-    let raw = bedrock_usage_with_total(100, 50, Some(150), None, None);
-    let u = convert_usage(Some(&raw));
-    assert_eq!(
-        u.raw,
-        Some(
-            json!({"inputTokens":100,"outputTokens":50,"totalTokens":150})
-                .as_object()
-                .unwrap()
-                .clone()
-        )
-    );
-}
+mod convert_amazon_bedrock_usage {
+    use super::*;
 
-/// TS: "should preserve raw usage data"
-#[test]
-fn usage_raw_preserved() {
-    let raw = bedrock_usage_with_total(100, 50, Some(150), Some(80), Some(60));
-    let u = convert_usage(Some(&raw));
-    assert_eq!(u.raw, Some(json!({"inputTokens":100,"outputTokens":50,"totalTokens":150,"cacheReadInputTokens":80,"cacheWriteInputTokens":60}).as_object().unwrap().clone()));
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-amazon-bedrock-usage.test.ts › convertAmazonBedrockUsage › should include totalTokens in raw when provided
+    #[test]
+    fn usage_raw_includes_total_tokens() {
+        let raw = bedrock_usage_with_total(100, 50, Some(150), None, None);
+        let u = convert_usage(Some(&raw));
+        assert_eq!(
+            u.raw,
+            Some(
+                json!({"inputTokens":100,"outputTokens":50,"totalTokens":150})
+                    .as_object()
+                    .unwrap()
+                    .clone()
+            )
+        );
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/convert-amazon-bedrock-usage.test.ts › convertAmazonBedrockUsage › should preserve raw usage data
+    #[test]
+    fn usage_raw_preserved() {
+        let raw = bedrock_usage_with_total(100, 50, Some(150), Some(80), Some(60));
+        let u = convert_usage(Some(&raw));
+        assert_eq!(u.raw, Some(json!({"inputTokens":100,"outputTokens":50,"totalTokens":150,"cacheReadInputTokens":80,"cacheWriteInputTokens":60}).as_object().unwrap().clone()));
+    }
 }
 
 /// TS: "should handle null cache tokens" — `raw` is the usage object as
@@ -306,8 +318,8 @@ fn usage_raw_keeps_null_and_unknown_keys() {
 // amazon-bedrock-provider.test.ts — provider configuration / auth
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: "should create a provider instance with default options" — the mocked
-/// upstream region loader returns `us-east-1`; pass it explicitly here.
+/// partial: `should create a provider instance with default options`; full port in src/bedrock/tests/provider.rs.
+/// The mocked upstream region loader returns `us-east-1`; pass it explicitly here.
 #[tokio::test]
 #[serial]
 async fn provider_default_region_and_base_url() {
@@ -334,8 +346,8 @@ async fn provider_default_region_and_base_url() {
     assert!(seen.headers["authorization"].starts_with("AWS4-HMAC-SHA256"));
 }
 
-/// TS: "should create a provider instance with custom options" — custom region
-/// flows into the base URL.
+/// partial: `should create a provider instance with custom options`; full port in src/bedrock/tests/provider.rs.
+/// Custom region flows into the base URL.
 #[tokio::test]
 async fn provider_custom_region_base_url() {
     let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
@@ -360,7 +372,8 @@ async fn provider_custom_region_base_url() {
     );
 }
 
-/// TS: "should create a provider instance with custom options" — baseURL override.
+/// partial: `should create a provider instance with custom options`; full port in src/bedrock/tests/provider.rs.
+/// baseURL override.
 #[tokio::test]
 async fn provider_with_base_url_override() {
     let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
@@ -381,7 +394,8 @@ async fn provider_with_base_url_override() {
     assert!(seen.url.starts_with("https://custom.url/model/"));
 }
 
-/// TS: "should use API key when provided in options" — bearer-token auth path.
+/// partial: `should use API key when provided in options`; full port in src/bedrock/tests/provider.rs.
+/// Bearer-token auth path.
 #[tokio::test]
 async fn provider_bearer_token_auth() {
     let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
@@ -401,8 +415,8 @@ async fn provider_bearer_token_auth() {
     assert_eq!(seen.headers["authorization"], "Bearer test-api-key");
 }
 
-/// TS: "should use API key from environment variable" — `AWS_BEARER_TOKEN_BEDROCK`
-/// takes precedence over SigV4 environment credentials.
+/// partial: `should use API key from environment variable`; full port in src/bedrock/tests/provider.rs.
+/// `AWS_BEARER_TOKEN_BEDROCK` takes precedence over SigV4 environment credentials.
 #[tokio::test]
 #[serial]
 async fn provider_from_env_bearer_token_precedence() {
@@ -431,8 +445,8 @@ async fn provider_from_env_bearer_token_precedence() {
     clear_bedrock_env();
 }
 
-/// TS: "should fall back to SigV4 when no API key provided" — the factory uses
-/// SigV4 when `AWS_BEARER_TOKEN_BEDROCK` is absent.
+/// partial: `should fall back to SigV4 when no API key provided`; full port in src/bedrock/tests/provider.rs.
+/// The factory uses SigV4 when `AWS_BEARER_TOKEN_BEDROCK` is absent.
 #[tokio::test]
 #[serial]
 async fn provider_from_env_sigv4_fallback() {
@@ -461,8 +475,8 @@ async fn provider_from_env_sigv4_fallback() {
     clear_bedrock_env();
 }
 
-/// TS: "should maintain backward compatibility with existing SigV4
-/// authentication" — `AWS_SESSION_TOKEN` is loaded from the environment.
+/// partial: `should maintain backward compatibility with existing SigV4 authentication`; full port in src/bedrock/tests/provider.rs.
+/// `AWS_SESSION_TOKEN` is loaded from the environment.
 #[tokio::test]
 #[serial]
 async fn provider_from_env_session_token() {
@@ -502,8 +516,8 @@ fn provider_name_and_language_model() {
     assert_eq!(model.provider(), "amazon-bedrock");
 }
 
-/// TS: "should prioritize options.apiKey over environment variable" — explicit
-/// bearer token construction does not consult env vars.
+/// partial: `should prioritize options.apiKey over environment variable`; full port in src/bedrock/tests/provider.rs.
+/// Explicit bearer token construction does not consult env vars.
 #[tokio::test]
 #[serial]
 async fn provider_explicit_bearer_over_env() {
@@ -544,7 +558,7 @@ fn assistant_msg(content: Vec<AssistantPart>) -> LanguageModelMessage {
     }
 }
 
-/// TS: "should normalize tool call IDs in tool results when isMistral is true"
+/// partial: `should normalize tool call IDs in tool results when isMistral is true`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn convert_mistral_normalize_tool_result_id() {
     let original_id = "tooluse_bpe71yCfRu2b5i-nKGDr5g";
@@ -563,7 +577,7 @@ fn convert_mistral_normalize_tool_result_id() {
     );
 }
 
-/// TS: "should normalize tool call IDs in tool calls when isMistral is true"
+/// partial: `should normalize tool call IDs in tool calls when isMistral is true`; full port in src/bedrock/tests/convert_to_chat_messages.rs.
 #[test]
 fn convert_mistral_normalize_tool_call_id() {
     let original_id = "tooluse_xyz123ABC456-def";
@@ -589,7 +603,7 @@ fn convert_mistral_normalize_tool_call_id() {
 
 // ── supportedUrls ────────────────────────────────────────────────────────────
 
-/// TS: "should support S3 URLs for image and video parts".
+/// partial: `should support S3 URLs for image and video parts`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn model_supported_urls_s3() {
     let model = create_amazon_bedrock(AmazonBedrockProviderSettings::default())
@@ -605,7 +619,7 @@ async fn model_supported_urls_s3() {
 
 // ── ARN model IDs containing a slash ─────────────────────────────────────────
 
-/// TS: "should generate text through the encoded Converse route".
+/// partial: `should generate text through the encoded Converse route`; full port in src/bedrock/tests/chat_language_model.rs.
 ///
 /// ARN inference-profile IDs contain a `/` which must be percent-encoded in the
 /// URL path. The upstream uses `encodeURIComponent(modelId)`.
@@ -643,7 +657,7 @@ async fn arn_model_id_encoded_generate_route() {
     );
 }
 
-/// TS: "should stream text through the encoded Converse route".
+/// partial: `should stream text through the encoded Converse route`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn arn_model_id_encoded_stream_route() {
     let arn = "arn:aws:bedrock:eu-west-1:474668406012:inference-profile/eu.amazon.nova-lite-v1:0";
@@ -706,7 +720,7 @@ async fn arn_model_id_encoded_stream_route() {
 
 // ── temperature clamping ─────────────────────────────────────────────────────
 
-/// TS: "should clamp temperature above 1 to 1 and add warning".
+/// partial: `should clamp temperature above 1 to 1 and add warning`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn temperature_clamped_above_1() {
     let server = mock_converse_json(200, ok_converse_body());
@@ -732,7 +746,7 @@ async fn temperature_clamped_above_1() {
     );
 }
 
-/// TS: "should clamp temperature below 0 to 0 and add warning".
+/// partial: `should clamp temperature below 0 to 0 and add warning`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn temperature_clamped_below_0() {
     let server = mock_converse_json(200, ok_converse_body());
@@ -757,7 +771,7 @@ async fn temperature_clamped_below_0() {
     );
 }
 
-/// TS: "should not clamp valid temperature between 0 and 1".
+/// partial: `should not clamp valid temperature between 0 and 1`; full port in src/bedrock/tests/chat_language_model.rs.
 #[tokio::test]
 async fn temperature_not_clamped_in_range() {
     let server = mock_converse_json(200, ok_converse_body());
@@ -830,8 +844,8 @@ fn nova_high_reasoning_max_output_tokens_warning_names_the_model() {
 
 // ── guardrails ───────────────────────────────────────────────────────────────
 
-/// TS: "should support guardrails" — `providerOptions.bedrock.guardrailConfig`
-/// is forwarded as a top-level `guardrailConfig` in the request body.
+/// partial: `should support guardrails`; full port in src/bedrock/tests/chat_language_model.rs.
+/// `providerOptions.bedrock.guardrailConfig` is forwarded as a top-level `guardrailConfig` in the request body.
 #[tokio::test]
 async fn guardrail_config_in_request_body() {
     let server = mock_converse_json(200, ok_converse_body());
@@ -865,8 +879,8 @@ async fn guardrail_config_in_request_body() {
 
 // ── trace in providerMetadata ────────────────────────────────────────────────
 
-/// TS: "should include trace information in providerMetadata" — the response
-/// `trace` field is surfaced as `providerMetadata.bedrock.trace`.
+/// partial: `should include trace information in providerMetadata`; full port in src/bedrock/tests/chat_language_model.rs.
+/// The response `trace` field is surfaced as `providerMetadata.bedrock.trace`.
 #[tokio::test]
 async fn trace_in_provider_metadata() {
     let trace = json!({
@@ -909,9 +923,8 @@ async fn trace_in_provider_metadata() {
 
 // ── stop_sequence in providerMetadata ────────────────────────────────────────
 
-/// TS: "should include stop_sequence in provider metadata" — when the response
-/// carries `additionalModelResponseFields.delta.stop_sequence`, it is surfaced
-/// as `providerMetadata.bedrock.stopSequence` (and `amazonBedrock.stopSequence`).
+/// partial: `should include stop_sequence in provider metadata`; full port in src/bedrock/tests/chat_language_model.rs.
+/// When the response carries `additionalModelResponseFields.delta.stop_sequence`, it is surfaced as `providerMetadata.bedrock.stopSequence` (and `amazonBedrock.stopSequence`).
 #[tokio::test]
 async fn stop_sequence_in_provider_metadata() {
     let server = mock_converse_json(
@@ -940,7 +953,8 @@ async fn stop_sequence_in_provider_metadata() {
 
 // ── tool calls with empty input ──────────────────────────────────────────────
 
-/// TS: "should support tool calls with empty input (no arguments)" (stream).
+/// partial: `should support tool calls with empty input (no arguments)`; full port in src/bedrock/tests/chat_language_model.rs.
+/// (stream).
 ///
 /// When a `toolUse` block carries no input deltas, the stream event loop
 /// accumulates an empty string and yields `input: "{}"`.
@@ -995,8 +1009,7 @@ async fn stream_tool_call_empty_input() {
 
 // ── omit toolConfig ──────────────────────────────────────────────────────────
 
-/// TS: "should omit toolConfig and filter tool content when conversation has
-/// tool calls but no active tools".
+/// partial: `should omit toolConfig and filter tool content when conversation has tool calls but no active tools`; full port in src/bedrock/tests/chat_language_model.rs.
 ///
 #[tokio::test]
 async fn omit_tool_config_when_no_active_tools() {
@@ -1042,8 +1055,8 @@ async fn omit_tool_config_when_no_active_tools() {
     );
 }
 
-/// TS: (same test) the assistant's `toolUse` block should be filtered out of
-/// the messages when no tools are active.
+/// partial: `should omit toolConfig and filter tool content when conversation has tool calls but no active tools`; full port in src/bedrock/tests/chat_language_model.rs.
+/// (same test) the assistant's `toolUse` block should be filtered out of the messages when no tools are active.
 #[tokio::test]
 async fn filter_tool_content_when_no_active_tools() {
     let server = mock_converse_json(200, ok_converse_body());
@@ -1090,7 +1103,8 @@ async fn filter_tool_content_when_no_active_tools() {
 
 // ── doGenerate: tool call with empty input (non-streaming) ───────────────────
 
-/// TS: "should support tool calls with empty input (no arguments)" (generate).
+/// partial: `should support tool calls with empty input (no arguments)`; full port in src/bedrock/tests/chat_language_model.rs.
+/// (generate).
 #[tokio::test]
 async fn generate_tool_call_empty_input() {
     let server = mock_converse_json(
@@ -1163,8 +1177,8 @@ async fn generate_tool_call_empty_tool_use_id() {
 // ── doGenerate: basic text + finish reason (sanity, already covered but
 //    exercised here against the remaining-test helper set) ────────────────────
 
-/// TS: "should pass the model and the messages" — the request body carries the
-/// model id implicitly via the URL path and the messages array.
+/// partial: `should pass the model and the messages`; full port in src/bedrock/tests/chat_language_model.rs.
+/// The request body carries the model id implicitly via the URL path and the messages array.
 #[tokio::test]
 async fn request_body_messages_shape() {
     let server = mock_converse_json(200, ok_converse_body());
@@ -1191,7 +1205,8 @@ async fn request_body_messages_shape() {
     assert_eq!(body["messages"][0]["content"][0]["text"], "Hello");
 }
 
-/// TS: "should extract finish reason" — `guardrail_intervened` → ContentFilter.
+/// partial: `should extract finish reason`; full port in src/bedrock/tests/chat_language_model.rs.
+/// `guardrail_intervened` → ContentFilter.
 #[tokio::test]
 async fn finish_reason_guardrail_intervened() {
     let server = mock_converse_json(
@@ -1219,7 +1234,8 @@ async fn finish_reason_guardrail_intervened() {
     );
 }
 
-/// TS: "should handle throttlingException error" (stream).
+/// partial: `should handle throttlingException error`; full port in src/bedrock/tests/chat_language_model.rs.
+/// (stream).
 #[tokio::test]
 async fn stream_throttling_error() {
     let body_bytes = aimux_providers::bedrock::event_stream::encode_messages(&[(
@@ -1247,7 +1263,8 @@ async fn stream_throttling_error() {
     assert!(parts.iter().any(|part| matches!(part, StreamPart::Finish { finish_reason, .. } if finish_reason.unified == FinishReasonUnified::Error)));
 }
 
-/// TS: "should handle validationException error" (stream).
+/// partial: `should handle validationException error`; full port in src/bedrock/tests/chat_language_model.rs.
+/// (stream).
 #[tokio::test]
 async fn stream_validation_error() {
     let body_bytes = aimux_providers::bedrock::event_stream::encode_messages(&[(
@@ -1279,8 +1296,8 @@ async fn stream_validation_error() {
 
 // ── doStream: request body parity ────────────────────────────────────────────
 
-/// TS: "should return the request body" (stream) — the stream result carries
-/// the request body for debugging.
+/// partial: `should return the request body`; full port in src/bedrock/tests/chat_language_model.rs.
+/// (stream) — the stream result carries the request body for debugging.
 #[tokio::test]
 async fn stream_request_body_available() {
     let events: Vec<(&str, &str, &str)> = vec![
