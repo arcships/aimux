@@ -576,14 +576,15 @@ mod tests {
     /// and drops the URL, whose query may carry an API key.
     #[tokio::test]
     async fn a_refused_connection_keeps_its_chain_without_the_url() {
-        // A bound socket that never listens refuses connections, and holding
-        // it keeps the port from being reused while the test runs.
-        let socket =
-            socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
-        socket
-            .bind(&std::net::SocketAddr::from(([127, 0, 0, 1], 0)).into())
+        // A socket that is only bound times out on macOS. An established
+        // client's local port refuses new connections and stays reserved
+        // while this connection and its peer are alive.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let connection = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
             .unwrap();
-        let address = socket.local_addr().unwrap().as_socket().unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+        let address = connection.local_addr().unwrap();
         // An explicit proxy turns off the environment's; NO_PROXY then sends
         // the loopback request directly.
         let direct = ProxyConfig {

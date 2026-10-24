@@ -57,8 +57,8 @@ async fn health() -> &'static str {
 /// Render an `AiMuxError` as a JSON error response with a sensible status.
 pub fn err_response(e: AiMuxError) -> Response {
     let status = match &e {
-        AiMuxError::InvalidArgument(_)
-        | AiMuxError::InvalidPrompt(_)
+        AiMuxError::InvalidArgument { .. }
+        | AiMuxError::InvalidPrompt { .. }
         | AiMuxError::LoadApiKey { .. }
         | AiMuxError::LoadSetting { .. }
         | AiMuxError::NoSuchProvider { .. }

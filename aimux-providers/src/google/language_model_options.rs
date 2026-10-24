@@ -7,8 +7,9 @@ use serde_json::Value;
 
 /// Validate the provider options against `googleLanguageModelOptions`.
 pub(super) fn validate_provider_options(values: &JsonObject) -> Result<(), AiMuxError> {
-    let invalid =
-        |name: &str| AiMuxError::InvalidArgument(format!("Invalid Google provider option: {name}"));
+    let invalid = |name: &str| {
+        AiMuxError::invalid_argument(format!("Invalid Google provider option: {name}"))
+    };
     for name in [
         "structuredOutputs",
         "audioTimestamp",

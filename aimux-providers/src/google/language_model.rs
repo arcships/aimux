@@ -1222,7 +1222,7 @@ pub(crate) fn build_request_body_with_warnings_for_namespace(
             None => true,
             Some(Value::Bool(value)) => *value,
             Some(_) => {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "invalid {} provider options",
                     provider_options.unwrap().0
                 )));
@@ -1630,7 +1630,7 @@ fn validate_file_part(
     if let FileData::Reference { reference } = &file.data
         && !reference.contains_key(GOOGLE)
     {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "No provider reference found for provider 'google'. Available providers: {}",
             reference.keys().cloned().collect::<Vec<_>>().join(", ")
         )));

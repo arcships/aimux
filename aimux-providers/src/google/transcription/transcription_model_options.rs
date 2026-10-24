@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::google::options::no_null;
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::JsonObject;
 
@@ -45,9 +46,10 @@ impl TranscriptionOptions {
         match raw {
             None => Ok(Self::default()),
             Some(raw) => serde_json::from_value(Value::Object(raw.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument(format!(
-                    "Invalid argument for parameter providerOptions: {error}"
-                ))
+                AiMuxError::InvalidArgument {
+                    message: format!("Invalid argument for parameter providerOptions: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             }),
         }
     }

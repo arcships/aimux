@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::{StreamExt, stream::BoxStream};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
@@ -543,9 +544,10 @@ impl AmazonBedrockChatStream {
                     Err(error) => {
                         self.final_finish_reason = Some(FINISH_ERROR);
                         controller.enqueue(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(format!(
-                                "{error}; usage: {usage}"
-                            )),
+                            error: AiMuxError::InvalidResponseData {
+                                message: format!("{error}; usage: {usage}"),
+                                cause: Some(ErrorCause::source(&error)),
+                            },
                         });
                         return;
                     }

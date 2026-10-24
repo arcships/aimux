@@ -127,17 +127,27 @@ class AiMuxErrorAIRetryError(_Wire):
 
 class AiMuxErrorAIJSONParseError(_Wire):
     name: Literal["AI_JSONParseError"] = Field(default="AI_JSONParseError", alias="name")
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
 class AiMuxErrorAINoOutputGeneratedError(_Wire):
     name: Literal["AI_NoOutputGeneratedError"] = Field(default="AI_NoOutputGeneratedError", alias="name")
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
 class AiMuxErrorAIInvalidResponseDataError(_Wire):
     name: Literal["AI_InvalidResponseDataError"] = Field(default="AI_InvalidResponseDataError", alias="name")
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
+
+
+class AiMuxErrorAITypeValidationError(_Wire):
+    name: Literal["AI_TypeValidationError"] = Field(default="AI_TypeValidationError", alias="name")
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
+    message: str = Field(alias="message")
+    value: Any = Field(alias="value")
 
 
 class AiMuxErrorAIToolCallNotFoundForApprovalError(_Wire):
@@ -155,7 +165,7 @@ class AiMuxErrorAINoSuchToolError(_Wire):
 
 class AiMuxErrorAIInvalidToolInputError(_Wire):
     name: Literal["AI_InvalidToolInputError"] = Field(default="AI_InvalidToolInputError", alias="name")
-    cause: str = Field(alias="cause")
+    cause: "_dto.ErrorCause" = Field(alias="cause")
     tool_input: str = Field(alias="toolInput")
     tool_name: str = Field(alias="toolName")
 
@@ -168,11 +178,13 @@ class AiMuxErrorAIToolCallRepairError(_Wire):
 
 class AiMuxErrorAIInvalidArgumentError(_Wire):
     name: Literal["AI_InvalidArgumentError"] = Field(default="AI_InvalidArgumentError", alias="name")
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
 class AiMuxErrorAIInvalidPromptError(_Wire):
     name: Literal["AI_InvalidPromptError"] = Field(default="AI_InvalidPromptError", alias="name")
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
@@ -246,6 +258,7 @@ class AiMuxErrorAbortError(_Wire):
 
 class AiMuxErrorAIError(_Wire):
     name: Literal["AI_Error"] = Field(default="AI_Error", alias="name")
+    cause: Optional["_dto.ErrorCause"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
@@ -255,9 +268,10 @@ class AiMuxErrorAIError(_Wire):
 #: failure came from. `ApiCallError` is boxed only to keep the Rust enum
 #: compact; serde and every binding still observe the same object shape.
 #:
-#: `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
-#: retry's last attempt and a repair's `cause`.
-AiMuxError = TypeAliasType("AiMuxError", Annotated[Union["AiMuxErrorAIAPICallError", "AiMuxErrorAIRetryError", "AiMuxErrorAIJSONParseError", "AiMuxErrorAINoOutputGeneratedError", "AiMuxErrorAIInvalidResponseDataError", "AiMuxErrorAIToolCallNotFoundForApprovalError", "AiMuxErrorAINoSuchToolError", "AiMuxErrorAIInvalidToolInputError", "AiMuxErrorAIToolCallRepairError", "AiMuxErrorAIInvalidArgumentError", "AiMuxErrorAIInvalidPromptError", "AiMuxErrorAILoadAPIKeyError", "AiMuxErrorAILoadSettingError", "AiMuxErrorAITokenExpiredError", "AiMuxErrorAIUnsupportedFunctionalityError", "AiMuxErrorAINoSuchModelError", "AiMuxErrorAINoSuchProviderError", "AiMuxErrorAIMissingToolResultsError", "AiMuxErrorAIToolChoiceViolationError", "AiMuxErrorTimeoutError", "AiMuxErrorAbortError", "AiMuxErrorAIError"], Field(discriminator="name")])
+#: A variant has a `cause` exactly where its AI SDK class takes one; it is
+#: what `source()` returns. `Retry` reports its
+#: last attempt and `ToolCallRepair` its `cause` the same way.
+AiMuxError = TypeAliasType("AiMuxError", Annotated[Union["AiMuxErrorAIAPICallError", "AiMuxErrorAIRetryError", "AiMuxErrorAIJSONParseError", "AiMuxErrorAINoOutputGeneratedError", "AiMuxErrorAIInvalidResponseDataError", "AiMuxErrorAITypeValidationError", "AiMuxErrorAIToolCallNotFoundForApprovalError", "AiMuxErrorAINoSuchToolError", "AiMuxErrorAIInvalidToolInputError", "AiMuxErrorAIToolCallRepairError", "AiMuxErrorAIInvalidArgumentError", "AiMuxErrorAIInvalidPromptError", "AiMuxErrorAILoadAPIKeyError", "AiMuxErrorAILoadSettingError", "AiMuxErrorAITokenExpiredError", "AiMuxErrorAIUnsupportedFunctionalityError", "AiMuxErrorAINoSuchModelError", "AiMuxErrorAINoSuchProviderError", "AiMuxErrorAIMissingToolResultsError", "AiMuxErrorAIToolChoiceViolationError", "AiMuxErrorTimeoutError", "AiMuxErrorAbortError", "AiMuxErrorAIError"], Field(discriminator="name")])
 
 class AiMuxErrorInputAIAPICallError(_Wire):
     name: Literal["AI_APICallError"] = Field(default="AI_APICallError", alias="name")
@@ -309,17 +323,27 @@ class AiMuxErrorInputAIRetryError(_Wire):
 
 class AiMuxErrorInputAIJSONParseError(_Wire):
     name: Literal["AI_JSONParseError"] = Field(default="AI_JSONParseError", alias="name")
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
 class AiMuxErrorInputAINoOutputGeneratedError(_Wire):
     name: Literal["AI_NoOutputGeneratedError"] = Field(default="AI_NoOutputGeneratedError", alias="name")
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
 class AiMuxErrorInputAIInvalidResponseDataError(_Wire):
     name: Literal["AI_InvalidResponseDataError"] = Field(default="AI_InvalidResponseDataError", alias="name")
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
+
+
+class AiMuxErrorInputAITypeValidationError(_Wire):
+    name: Literal["AI_TypeValidationError"] = Field(default="AI_TypeValidationError", alias="name")
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
+    message: str = Field(alias="message")
+    value: Any = Field(alias="value")
 
 
 class AiMuxErrorInputAIToolCallNotFoundForApprovalError(_Wire):
@@ -337,7 +361,7 @@ class AiMuxErrorInputAINoSuchToolError(_Wire):
 
 class AiMuxErrorInputAIInvalidToolInputError(_Wire):
     name: Literal["AI_InvalidToolInputError"] = Field(default="AI_InvalidToolInputError", alias="name")
-    cause: str = Field(alias="cause")
+    cause: "_dto.ErrorCauseInput" = Field(alias="cause")
     tool_input: str = Field(alias="toolInput")
     tool_name: str = Field(alias="toolName")
 
@@ -350,11 +374,13 @@ class AiMuxErrorInputAIToolCallRepairError(_Wire):
 
 class AiMuxErrorInputAIInvalidArgumentError(_Wire):
     name: Literal["AI_InvalidArgumentError"] = Field(default="AI_InvalidArgumentError", alias="name")
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
 class AiMuxErrorInputAIInvalidPromptError(_Wire):
     name: Literal["AI_InvalidPromptError"] = Field(default="AI_InvalidPromptError", alias="name")
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
@@ -429,6 +455,7 @@ class AiMuxErrorInputAbortError(_Wire):
 
 class AiMuxErrorInputAIError(_Wire):
     name: Literal["AI_Error"] = Field(default="AI_Error", alias="name")
+    cause: Optional["_dto.ErrorCauseInput"] = Field(default=None, alias="cause")
     message: str = Field(alias="message")
 
 
@@ -438,9 +465,10 @@ class AiMuxErrorInputAIError(_Wire):
 #: failure came from. `ApiCallError` is boxed only to keep the Rust enum
 #: compact; serde and every binding still observe the same object shape.
 #:
-#: `source()` follows the AI SDK's `cause`: an API failure's `cause`, a
-#: retry's last attempt and a repair's `cause`.
-AiMuxErrorInput = TypeAliasType("AiMuxErrorInput", Annotated[Union["AiMuxErrorInputAIAPICallError", "AiMuxErrorInputAIRetryError", "AiMuxErrorInputAIJSONParseError", "AiMuxErrorInputAINoOutputGeneratedError", "AiMuxErrorInputAIInvalidResponseDataError", "AiMuxErrorInputAIToolCallNotFoundForApprovalError", "AiMuxErrorInputAINoSuchToolError", "AiMuxErrorInputAIInvalidToolInputError", "AiMuxErrorInputAIToolCallRepairError", "AiMuxErrorInputAIInvalidArgumentError", "AiMuxErrorInputAIInvalidPromptError", "AiMuxErrorInputAILoadAPIKeyError", "AiMuxErrorInputAILoadSettingError", "AiMuxErrorInputAITokenExpiredError", "AiMuxErrorInputAIUnsupportedFunctionalityError", "AiMuxErrorInputAINoSuchModelError", "AiMuxErrorInputAINoSuchProviderError", "AiMuxErrorInputAIMissingToolResultsError", "AiMuxErrorInputAIToolChoiceViolationError", "AiMuxErrorInputTimeoutError", "AiMuxErrorInputAbortError", "AiMuxErrorInputAIError"], Field(discriminator="name")])
+#: A variant has a `cause` exactly where its AI SDK class takes one; it is
+#: what `source()` returns. `Retry` reports its
+#: last attempt and `ToolCallRepair` its `cause` the same way.
+AiMuxErrorInput = TypeAliasType("AiMuxErrorInput", Annotated[Union["AiMuxErrorInputAIAPICallError", "AiMuxErrorInputAIRetryError", "AiMuxErrorInputAIJSONParseError", "AiMuxErrorInputAINoOutputGeneratedError", "AiMuxErrorInputAIInvalidResponseDataError", "AiMuxErrorInputAITypeValidationError", "AiMuxErrorInputAIToolCallNotFoundForApprovalError", "AiMuxErrorInputAINoSuchToolError", "AiMuxErrorInputAIInvalidToolInputError", "AiMuxErrorInputAIToolCallRepairError", "AiMuxErrorInputAIInvalidArgumentError", "AiMuxErrorInputAIInvalidPromptError", "AiMuxErrorInputAILoadAPIKeyError", "AiMuxErrorInputAILoadSettingError", "AiMuxErrorInputAITokenExpiredError", "AiMuxErrorInputAIUnsupportedFunctionalityError", "AiMuxErrorInputAINoSuchModelError", "AiMuxErrorInputAINoSuchProviderError", "AiMuxErrorInputAIMissingToolResultsError", "AiMuxErrorInputAIToolChoiceViolationError", "AiMuxErrorInputTimeoutError", "AiMuxErrorInputAbortError", "AiMuxErrorInputAIError"], Field(discriminator="name")])
 
 #: What a failed API call observed — the field set of the AI SDK's
 #: `APICallError` (`statusCode` / `responseBody`), which this project's error
@@ -4925,6 +4953,7 @@ AiMuxErrorAIRetryError.model_rebuild(_types_namespace=globals())
 AiMuxErrorAIJSONParseError.model_rebuild(_types_namespace=globals())
 AiMuxErrorAINoOutputGeneratedError.model_rebuild(_types_namespace=globals())
 AiMuxErrorAIInvalidResponseDataError.model_rebuild(_types_namespace=globals())
+AiMuxErrorAITypeValidationError.model_rebuild(_types_namespace=globals())
 AiMuxErrorAIToolCallNotFoundForApprovalError.model_rebuild(_types_namespace=globals())
 AiMuxErrorAINoSuchToolError.model_rebuild(_types_namespace=globals())
 AiMuxErrorAIInvalidToolInputError.model_rebuild(_types_namespace=globals())
@@ -4947,6 +4976,7 @@ AiMuxErrorInputAIRetryError.model_rebuild(_types_namespace=globals())
 AiMuxErrorInputAIJSONParseError.model_rebuild(_types_namespace=globals())
 AiMuxErrorInputAINoOutputGeneratedError.model_rebuild(_types_namespace=globals())
 AiMuxErrorInputAIInvalidResponseDataError.model_rebuild(_types_namespace=globals())
+AiMuxErrorInputAITypeValidationError.model_rebuild(_types_namespace=globals())
 AiMuxErrorInputAIToolCallNotFoundForApprovalError.model_rebuild(_types_namespace=globals())
 AiMuxErrorInputAINoSuchToolError.model_rebuild(_types_namespace=globals())
 AiMuxErrorInputAIInvalidToolInputError.model_rebuild(_types_namespace=globals())
@@ -5666,6 +5696,7 @@ __all__ = [
     "AiMuxErrorAIJSONParseError",
     "AiMuxErrorAINoOutputGeneratedError",
     "AiMuxErrorAIInvalidResponseDataError",
+    "AiMuxErrorAITypeValidationError",
     "AiMuxErrorAIToolCallNotFoundForApprovalError",
     "AiMuxErrorAINoSuchToolError",
     "AiMuxErrorAIInvalidToolInputError",
@@ -5689,6 +5720,7 @@ __all__ = [
     "AiMuxErrorInputAIJSONParseError",
     "AiMuxErrorInputAINoOutputGeneratedError",
     "AiMuxErrorInputAIInvalidResponseDataError",
+    "AiMuxErrorInputAITypeValidationError",
     "AiMuxErrorInputAIToolCallNotFoundForApprovalError",
     "AiMuxErrorInputAINoSuchToolError",
     "AiMuxErrorInputAIInvalidToolInputError",

@@ -140,9 +140,9 @@ fn files_for(server: &MockServer) -> GoogleFiles {
 }
 
 async fn create_mock_files(options: MockFilesOptions) -> MockFiles {
-    // A server of its own rather than one from wiremock's pool: the abort
-    // test drops the client mid-request, and a request that lands after the
-    // test ends must not reach the next test that takes the pooled server.
+    // A server of its own, not one from wiremock's pool: the abort tests drop
+    // the client mid-upload, and a late upload byte must not reach the next
+    // test that borrows the same pooled server.
     let server = MockServer::builder().start().await;
     let upload_url = format!("{}{}", server.uri(), options.upload_path);
 

@@ -348,7 +348,7 @@ impl ChatToolCalls {
 
 /// End the stream with the upstream `InvalidResponseDataError`.
 fn invalid(controller: &mut Controller, message: &str) -> bool {
-    controller.error(AiMuxError::InvalidResponseData(message.to_string()));
+    controller.error(AiMuxError::invalid_response_data(message.to_string()));
     false
 }
 

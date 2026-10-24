@@ -105,7 +105,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
         if is_live(&self.model_id) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Model '{}' only supports streaming transcription. Use stream_transcribe, \
                  or a unary model such as 'gemini-3.5-transcribe'.",
                 self.model_id
@@ -198,7 +198,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
     ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
         Some(Box::pin(async move {
             if !is_live(&self.model_id) {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "Model '{}' does not support streaming transcription. \
                  Use a live model such as 'gemini-3.5-transcribe-live'.",
                     self.model_id
@@ -295,8 +295,8 @@ pub(crate) fn validate_live_input_audio_format(
 ) -> Result<(), AiMuxError> {
     let format = &options.input_audio_format;
     if format.format_type != "audio/pcm" || format.rate.is_some_and(|rate| rate != 16000) {
-        return Err(AiMuxError::InvalidArgument(
-            "The Gemini Live transcription API only supports 16kHz 16-bit PCM input audio.".into(),
+        return Err(AiMuxError::invalid_argument(
+            "The Gemini Live transcription API only supports 16kHz 16-bit PCM input audio.",
         ));
     }
     Ok(())
@@ -316,7 +316,7 @@ fn closed_before_finishing(label: &str, frame: Option<(u16, String)>) -> AiMuxEr
     } else {
         format!(", reason: {reason}")
     };
-    AiMuxError::InvalidResponseData(format!(
+    AiMuxError::invalid_response_data(format!(
         "{label} Live transcription WebSocket closed unexpectedly before finishing (code {code}{reason})."
     ))
 }
@@ -406,7 +406,7 @@ pub(crate) fn live_stream(
                     if message.get("setupComplete").is_some_and(|value| !value.is_null()) { ready = true; }
                     if let Some(value) = message.get("usageMetadata").filter(|value| !value.is_null()) { usage_metadata = Some(value.clone()); }
                     if let Some(error) = message.get("error").filter(|value| !value.is_null()) {
-                        yield Err(AiMuxError::InvalidResponseData(error.get("message").and_then(Value::as_str).map_or_else(|| format!("{label} Live API error"), str::to_owned)));
+                        yield Err(AiMuxError::invalid_response_data(error.get("message").and_then(Value::as_str).map_or_else(|| format!("{label} Live API error"), str::to_owned)));
                         break;
                     }
                     let content = message.get("serverContent");

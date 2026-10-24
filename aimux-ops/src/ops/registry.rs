@@ -174,7 +174,7 @@ struct ModelWrapParams {
 }
 
 fn invalid(message: impl Into<String>) -> OpsError {
-    OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
+    OpsError::Protocol(ProtocolError::invalid_params(message))
 }
 
 fn handle(value: &str) -> Result<HandleId, OpsError> {
@@ -698,7 +698,7 @@ mod tests {
         .await;
         assert!(matches!(
             result,
-            Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
         ));
         drop(HandleRegistry::global().remove(owner, id));
     }

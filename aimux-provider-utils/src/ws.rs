@@ -300,11 +300,9 @@ fn resolve_proxy(
     let Some(raw) = raw else {
         return Ok(None);
     };
-    let proxy = url::Url::parse(&raw).map_err(|e| {
-        AiMuxError::InvalidArgument(format!(
-            "invalid proxy URL {}: {e}",
-            sanitized_proxy_url(&raw)
-        ))
+    let proxy = url::Url::parse(&raw).map_err(|e| AiMuxError::InvalidArgument {
+        message: format!("invalid proxy URL {}: {e}", sanitized_proxy_url(&raw)),
+        cause: Some(ErrorCause::source(&e)),
     })?;
     let scheme = proxy.scheme().to_ascii_lowercase();
     if scheme != "http" {
@@ -320,7 +318,7 @@ fn resolve_proxy(
     let host = proxy
         .host_str()
         .ok_or_else(|| {
-            AiMuxError::InvalidArgument(format!(
+            AiMuxError::invalid_argument(format!(
                 "proxy URL has no host: {}",
                 sanitized_proxy_url(&raw)
             ))
@@ -542,18 +540,25 @@ async fn connect_tungstenite(
     req: &WebSocketRequest,
     config: &crate::fetch::ProxyConfig,
 ) -> Result<WsConnection, AiMuxError> {
-    let mut http_req = req
-        .url
-        .as_str()
-        .into_client_request()
-        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid WebSocket URL: {e}")))?;
+    let mut http_req =
+        req.url
+            .as_str()
+            .into_client_request()
+            .map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid WebSocket URL: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
     for (k, v) in &req.headers {
         http_req.headers_mut().insert(
             tokio_tungstenite::tungstenite::http::HeaderName::try_from(k.as_str()).map_err(
-                |e| AiMuxError::InvalidArgument(format!("invalid WS header name {k}: {e}")),
+                |e| AiMuxError::InvalidArgument {
+                    message: format!("invalid WS header name {k}: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                },
             )?,
-            HeaderValue::from_str(v).map_err(|e| {
-                AiMuxError::InvalidArgument(format!("invalid WS header value for {k}: {e}"))
+            HeaderValue::from_str(v).map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid WS header value for {k}: {e}"),
+                cause: Some(ErrorCause::source(&e)),
             })?,
         );
     }
@@ -561,7 +566,10 @@ async fn connect_tungstenite(
         http_req.headers_mut().insert(
             "Sec-WebSocket-Protocol",
             HeaderValue::from_str(&req.subprotocols.join(", ")).map_err(|e| {
-                AiMuxError::InvalidArgument(format!("invalid WS subprotocols: {e}"))
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid WS subprotocols: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                }
             })?,
         );
     }
@@ -578,8 +586,10 @@ async fn connect_tungstenite(
 
     // Proxy resolution (RFC-0034 §2): the connector's ProxyConfig.
     // no_proxy hits and a proxy-less config keep the direct path unchanged.
-    let target = url::Url::parse(&req.url)
-        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid WebSocket URL: {e}")))?;
+    let target = url::Url::parse(&req.url).map_err(|e| AiMuxError::InvalidArgument {
+        message: format!("invalid WebSocket URL: {e}"),
+        cause: Some(ErrorCause::source(&e)),
+    })?;
     let proxy = {
         let target_host = target.host_str().unwrap_or_default();
         let target_port = target.port_or_known_default().unwrap_or(80);

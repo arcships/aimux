@@ -408,7 +408,7 @@ mod older_speech {
 
     fn invalid_argument(error: AiMuxError) -> String {
         match error {
-            AiMuxError::InvalidArgument(message) => message,
+            AiMuxError::InvalidArgument { message, .. } => message,
             other => panic!("expected InvalidArgument, got {other:?}"),
         }
     }
