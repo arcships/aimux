@@ -30,11 +30,11 @@ use futures::future::BoxFuture;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model::LanguageModel;
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{
-    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, default_fetch, validate_base_url,
+    AwsCredentials, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
 use crate::anthropic::AnthropicMessagesModel;
@@ -45,8 +45,9 @@ use crate::anthropic::options::{CANONICAL, options_name_of};
 
 pub use crate::shared::TransformRequestBody;
 
-/// The provider name when the settings give none.
-const DEFAULT_NAME: &str = "anthropic-aws";
+/// The provider name when the settings give none, the `provider` of
+/// upstream's chat model (anthropic-aws-provider.ts:246).
+const DEFAULT_NAME: &str = "anthropic-aws.messages";
 
 /// Authentication method for the Anthropic-AWS provider.
 #[derive(Clone, Debug)]
@@ -83,7 +84,8 @@ pub struct AnthropicAwsProviderSettings {
     /// SDK does: `x-api-key` with `ANTHROPIC_AWS_API_KEY` when it is set and
     /// not empty, else SigV4 with `AWS_ACCESS_KEY_ID`,
     /// `AWS_SECRET_ACCESS_KEY` and the optional `AWS_SESSION_TOKEN` (a
-    /// missing one fails the request with `AiMuxError::LoadSetting`).
+    /// missing key fails the request with `AiMuxError::Other`, upstream's
+    /// guidance on providing credentials).
     pub auth: Option<AnthropicAwsAuth>,
     /// Sent as `anthropic-workspace-id`. `None` loads
     /// `ANTHROPIC_AWS_WORKSPACE_ID` when a request is made. Required: with
@@ -94,7 +96,7 @@ pub struct AnthropicAwsProviderSettings {
     /// including one of the fixed ones. Per-call headers win over these.
     pub headers: Option<HeaderMapOpt>,
     /// The provider name, the `provider()` string of the messages model.
-    /// Default `"anthropic-aws"`. The providerOptions key is always
+    /// Default `"anthropic-aws.messages"`. The providerOptions key is always
     /// `anthropic`, plus the first dot-separated segment of a name that was
     /// given here.
     pub name: Option<String>,
@@ -160,11 +162,7 @@ pub fn create_anthropic_aws(
         .as_deref()
         .map_or_else(|| CANONICAL.to_string(), options_name_of);
     let name = settings.name.unwrap_or_else(|| DEFAULT_NAME.to_string());
-    let (headers, fetch) = model::authenticated(
-        auth.clone(),
-        settings.headers,
-        settings.fetch.unwrap_or_else(default_fetch),
-    );
+    let (headers, fetch) = model::authenticated(auth.clone(), settings.headers, settings.fetch);
     Ok(AnthropicAwsProvider {
         name,
         provider_options_name,
@@ -208,7 +206,9 @@ impl AnthropicAwsProvider {
             provider: self.name.clone(),
             headers: AnthropicHeaders::Aws(self.headers.clone()),
             fetch: Some(self.fetch.clone()),
-            supported_urls: SupportedUrls::default(),
+            // The Messages API fetches http(s) images and PDFs itself
+            // (anthropic-aws-provider.ts:251-254).
+            supported_urls: crate::anthropic::supported_urls(),
             transform_request_body: self.transform_request_body.clone(),
             base_url,
             provider_options_name: self.provider_options_name.clone(),
@@ -231,7 +231,7 @@ impl AnthropicAwsProvider {
     }
 
     /// A Messages model; `provider()` is the provider name
-    /// (`"anthropic-aws"` by default).
+    /// (`"anthropic-aws.messages"` by default).
     #[must_use]
     pub fn messages(&self, model_id: &str) -> AnthropicAwsModel {
         AnthropicMessagesModel::with_config(model_id.to_string(), self.model_config())
