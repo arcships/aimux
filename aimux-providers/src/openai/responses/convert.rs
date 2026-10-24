@@ -257,7 +257,14 @@ fn convert_responses_input_with_conversation(
                                 continue;
                             }
                             let kind = provider_tool_kind(tools, tool_name);
-                            if provider_executed == &Some(true) {
+                            // Hosted tool search and program calls are replayed
+                            // in full without response storage.
+                            if provider_executed == &Some(true)
+                                && !matches!(
+                                    kind,
+                                    Some("tool_search" | "programmatic_tool_calling")
+                                )
+                            {
                                 if store && let Some(id) = &id {
                                     input.push(json!({"type":"item_reference", "id":id}));
                                 }

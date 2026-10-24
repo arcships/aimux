@@ -1755,3 +1755,43 @@ async fn responses_unsupported_reasoning_effort_update_lists_the_supported_effor
         }])
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/convert-to-openai-responses-input.ts:780-842
+/// replays a provider-executed tool search or program call in full when
+/// responses are not stored: the tool search and program checks come before
+/// the provider-executed one.
+#[tokio::test]
+async fn responses_replays_hosted_tool_search_and_program_calls_without_storage() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = CallOptions::new(vec![
+        serde_json::from_value(json!({"role":"assistant","content":[
+            {"type":"tool-call","toolCallId":"tsc_1","toolName":"tool_search","input":{"arguments":{"paths":["get_weather"]},"call_id":null},"providerExecuted":true,"providerOptions":{"openai":{"itemId":"tsc_1"}}},
+            {"type":"tool-call","toolCallId":"program_call_1","toolName":"program","input":{"code":"1","fingerprint":"fp"},"providerExecuted":true,"providerOptions":{"openai":{"itemId":"program_item_1"}}}
+        ]}))
+        .unwrap(),
+    ]);
+    call.tools = Some(vec![
+        serde_json::from_value(
+            json!({"type":"provider","id":"openai.tool_search","name":"tool_search","args":{}}),
+        )
+        .unwrap(),
+        serde_json::from_value(
+            json!({"type":"provider","id":"openai.programmatic_tool_calling","name":"program","args":{}}),
+        )
+        .unwrap(),
+    ]);
+    call.provider_options =
+        Some(serde_json::from_value(json!({"openai":{"store":false}})).unwrap());
+    provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["input"],
+        json!([
+            {"type":"tool_search_call","id":"tsc_1","execution":"server","call_id":null,"status":"completed","arguments":{"paths":["get_weather"]}},
+            {"type":"program","id":"program_item_1","call_id":"program_call_1","code":"1","fingerprint":"fp"}
+        ])
+    );
+}
