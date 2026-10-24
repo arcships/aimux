@@ -35,7 +35,7 @@ impl TimeoutDeadline {
         let at = start
             .checked_add(std::time::Duration::from_millis(duration_ms))
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(format!(
+                AiMuxError::invalid_argument(format!(
                     "{label} timeout of {duration_ms}ms exceeds the supported range"
                 ))
             })?;
@@ -207,7 +207,7 @@ mod tests {
         let retry = retry::retry_with_exponential_backoff(
             || {
                 attempts.fetch_add(1, Ordering::SeqCst);
-                async { Err::<(), _>(AiMuxError::Other("retry".into())) }
+                async { Err::<(), _>(AiMuxError::other("retry")) }
             },
             2,
             60_000,
@@ -258,7 +258,7 @@ mod tests {
                 .expect("timeout validation must not panic");
             assert!(matches!(
                 result,
-                Ok(_) | Err(AiMuxError::InvalidArgument(_))
+                Ok(_) | Err(AiMuxError::InvalidArgument { .. })
             ));
         }
     }

@@ -7,6 +7,7 @@ use crate::decision_model::{
     DecideOptions, DecideResult, DecisionCallOptions, DecisionModel, DecisionQuestionType,
     DecisionResult, DecisionUsage, decide,
 };
+use crate::error::ErrorCause;
 use crate::recording::{OutcomeStatus, Recording, RecordingOperation};
 
 /// Appended to a replay error when recordings written by aimux 0.5 or
@@ -52,8 +53,8 @@ impl MockDecisionReplayModel {
                 && rec.provider.provider == provider
                 && rec.provider.model_id == model_id
         }) {
-            return Err(AiMuxError::InvalidArgument(
-                "decision replay: no matching provider/model recording".into(),
+            return Err(AiMuxError::invalid_argument(
+                "decision replay: no matching provider/model recording",
             ));
         }
         Ok(Self {
@@ -67,21 +68,24 @@ impl MockDecisionReplayModel {
     /// # Errors
     /// Returns read/parse errors or an error if the file contains no decisions.
     pub fn from_jsonl(path: impl AsRef<std::path::Path>) -> Result<Self, AiMuxError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| AiMuxError::InvalidArgument(format!("decision replay: {e}")))?;
+        let content = std::fs::read_to_string(path).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("decision replay: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
         let recordings: Vec<Recording> = content
             .lines()
             .filter(|line| !line.trim().is_empty())
             .map(|line| {
-                serde_json::from_str(line).map_err(|e| AiMuxError::JsonParse(e.to_string()))
+                serde_json::from_str(line).map_err(|e| AiMuxError::JsonParse {
+                    message: e.to_string(),
+                    cause: Some(ErrorCause::source(&e)),
+                })
             })
             .collect::<Result<_, _>>()?;
         let first = recordings
             .iter()
             .find(|rec| rec.input.operation == RecordingOperation::Decision)
-            .ok_or_else(|| {
-                AiMuxError::InvalidArgument("decision replay: no decisions in file".into())
-            })?;
+            .ok_or_else(|| AiMuxError::invalid_argument("decision replay: no decisions in file"))?;
         Self::new(
             first.provider.provider.clone(),
             first.provider.model_id.clone(),
@@ -114,8 +118,12 @@ impl DecisionModel for MockDecisionReplayModel {
         DecisionQuestionType::ALL
     }
     async fn do_decide(&self, options: &DecisionCallOptions) -> Result<DecisionResult, AiMuxError> {
-        let requested =
-            key(&serde_json::to_value(options).map_err(|e| AiMuxError::JsonParse(e.to_string()))?);
+        let requested = key(
+            &serde_json::to_value(options).map_err(|e| AiMuxError::JsonParse {
+                message: e.to_string(),
+                cause: Some(ErrorCause::source(&e)),
+            })?,
+        );
         let rec = self
             .recordings
             .iter()
@@ -143,7 +151,7 @@ impl DecisionModel for MockDecisionReplayModel {
                         "; {older} recording(s) of this model were {OLDER_RECORDING} and never match"
                     ));
                 }
-                AiMuxError::InvalidArgument(message)
+                AiMuxError::invalid_argument(message)
             })?;
         if rec.outcome.status != OutcomeStatus::Success {
             return Err(rec
@@ -152,7 +160,7 @@ impl DecisionModel for MockDecisionReplayModel {
                 .clone()
                 .and_then(|v| serde_json::from_value(v).ok())
                 .unwrap_or_else(|| {
-                    AiMuxError::InvalidResponseData(
+                    AiMuxError::invalid_response_data(
                         rec.outcome
                             .error
                             .clone()
@@ -162,9 +170,12 @@ impl DecisionModel for MockDecisionReplayModel {
         }
         let recorded: DecideResult =
             serde_json::from_value(rec.outcome.decision_result.clone().ok_or_else(|| {
-                AiMuxError::InvalidResponseData("decision replay: missing recorded result".into())
+                AiMuxError::invalid_response_data("decision replay: missing recorded result")
             })?)
-            .map_err(|e| AiMuxError::InvalidResponseData(format!("decision replay result: {e}")))?;
+            .map_err(|e| AiMuxError::InvalidResponseData {
+                message: format!("decision replay result: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
         Ok(DecisionResult {
             answers: recorded.answers,
             rounding: recorded.rounding,
@@ -188,8 +199,8 @@ pub async fn replay_decision_with_model(
     model: &dyn DecisionModel,
 ) -> Result<DecideResult, AiMuxError> {
     if recording.input.operation != RecordingOperation::Decision {
-        return Err(AiMuxError::InvalidArgument(
-            "decision replay requires a decision recording".into(),
+        return Err(AiMuxError::invalid_argument(
+            "decision replay requires a decision recording",
         ));
     }
     let unread = crate::replay::snake_case_option_keys(&recording.input.options);
@@ -199,7 +210,7 @@ pub async fn replay_decision_with_model(
         } else {
             String::new()
         };
-        return Err(AiMuxError::JsonParse(format!(
+        return Err(AiMuxError::json_parse(format!(
             "decision replay: {older}this version reads the options camelCase and would \
              ignore {}",
             unread.join(", ")
@@ -208,11 +219,15 @@ pub async fn replay_decision_with_model(
     let options = crate::replay::readable_options(&recording.input.options);
     let options: DecideOptions = serde_json::from_value(options).map_err(|e| {
         if recording.provider.provider_id.is_empty() {
-            AiMuxError::JsonParse(format!(
-                "decision replay: the recording was {OLDER_RECORDING}: {e}"
-            ))
+            AiMuxError::JsonParse {
+                message: format!("decision replay: the recording was {OLDER_RECORDING}: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            }
         } else {
-            AiMuxError::JsonParse(e.to_string())
+            AiMuxError::JsonParse {
+                message: e.to_string(),
+                cause: Some(ErrorCause::source(&e)),
+            }
         }
     })?;
     decide(model, options).await

@@ -138,7 +138,7 @@ impl ImageModel for GoogleImageModel {
             .or_default();
         if let Some(search) = google.remove("googleSearch") {
             let invalid =
-                || AiMuxError::InvalidArgument("Invalid Google image googleSearch option".into());
+                || AiMuxError::invalid_argument("Invalid Google image googleSearch option");
             let object = search.as_object().ok_or_else(invalid)?;
             if object.get("searchTypes").is_some_and(|types| {
                 !types.as_object().is_some_and(|types| {

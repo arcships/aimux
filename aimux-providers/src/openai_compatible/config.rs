@@ -10,6 +10,7 @@
 //! `transformRequestBody`) are kept as given. The shared model never compares
 //! a provider name.
 
+use aimux_core::SourceError;
 use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,8 +18,9 @@ use std::sync::Arc;
 use aimux_core::types::{ProviderMetadata, Usage};
 use serde_json::Value;
 
+use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_core::language_model::SupportedUrls;
-use aimux_core::{AiMuxError, SourceError};
 use aimux_provider_utils::{
     ExchangeContext, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
     HttpRequest, ProviderErrorParts, combine_headers, normalize_headers,
@@ -252,9 +254,11 @@ impl CompatModelConfig {
     /// origin credentialed headers may be sent to.
     pub(crate) fn url(&self, path: &str) -> Result<(String, String), AiMuxError> {
         let base = self.base_url.resolve()?;
-        let mut url = url::Url::parse(&format!("{base}{path}")).map_err(|e| {
-            AiMuxError::InvalidArgument(format!("invalid request URL for {}: {e}", self.provider))
-        })?;
+        let mut url =
+            url::Url::parse(&format!("{base}{path}")).map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid request URL for {}: {e}", self.provider),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
         if let Some(params) = &self.query_params {
             // As the AI SDK does: the configured parameters replace whatever
             // query the base URL carried.

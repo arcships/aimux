@@ -72,7 +72,7 @@ async fn strict_controls_fail_before_configuration() {
         assert!(matches!(error, OpsError::Projected(_)));
         assert!(matches!(
             error.unprojected(),
-            OpsError::Protocol(ProtocolError::InvalidParams(_))
+            OpsError::Protocol(ProtocolError::InvalidParams { .. })
         ));
         assert_eq!(error.code(), 301);
     }
