@@ -442,6 +442,104 @@ fn is_chat_completion_chunk(chunk: &Value) -> bool {
         && !chunk.get("type").is_some_and(Value::is_string)
 }
 
+/// Chunk types the AI SDK's chunk schema models
+/// (`openaiResponsesModeledChunkTypes`); any other type is an unknown chunk.
+const MODELED_CHUNK_TYPES: &[&str] = &[
+    "error",
+    "response.apply_patch_call_operation_diff.delta",
+    "response.apply_patch_call_operation_diff.done",
+    "response.code_interpreter_call_code.delta",
+    "response.code_interpreter_call_code.done",
+    "response.completed",
+    "response.created",
+    "response.custom_tool_call_input.delta",
+    "response.failed",
+    "response.function_call_arguments.delta",
+    "response.function_call_arguments.done",
+    "response.image_generation_call.partial_image",
+    "response.in_progress",
+    "response.incomplete",
+    "response.output_item.added",
+    "response.output_item.done",
+    "response.output_text.annotation.added",
+    "response.output_text.delta",
+    "response.reasoning_summary_part.added",
+    "response.reasoning_summary_part.done",
+    "response.reasoning_summary_text.delta",
+];
+
+/// How long to keep looking for an error frame once `response.in_progress`
+/// shows the request was accepted (`acceptedGraceMs`).
+const ACCEPTED_GRACE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Reads the stream until its first output event, as the AI SDK's
+/// `throwIfOpenAIStreamErrorBeforeOutput` does: an `error` frame, or a
+/// `response.failed` with an error, before any output fails the call with
+/// an `ApiCall` error instead of becoming an error part. After
+/// `response.in_progress` each further read waits at most
+/// [`ACCEPTED_GRACE`], so a healthy stream is handed over without waiting
+/// for the first token. Returns the events read so far, to be replayed.
+pub(crate) async fn read_until_output<S>(
+    sse_stream: &mut S,
+    request_url: &str,
+    request_body: &Value,
+    response_headers: &HashMap<String, String>,
+) -> Result<Vec<Result<Value, AiMuxError>>, AiMuxError>
+where
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin,
+{
+    let mut events = Vec::new();
+    let mut accepted = false;
+    loop {
+        let next = if accepted {
+            match tokio::time::timeout(ACCEPTED_GRACE, sse_stream.next()).await {
+                Ok(next) => next,
+                Err(_) => return Ok(events),
+            }
+        } else {
+            sse_stream.next().await
+        };
+        let event = match next {
+            None => return Ok(events),
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            Some(Err(error)) => {
+                events.push(Err(error));
+                return Ok(events);
+            }
+            Some(Ok(event)) => event,
+        };
+        if is_chat_completion_chunk(&event) || chunk_schema_error(&event).is_some() {
+            events.push(Ok(event));
+            return Ok(events);
+        }
+        let kind = event["type"].as_str().unwrap_or_default();
+        if kind == "error" || (kind == "response.failed" && !event["response"]["error"].is_null()) {
+            return Err(super::super::openai_stream_error(
+                &event,
+                request_url,
+                request_body.clone(),
+                response_headers.clone(),
+            ));
+        }
+        let unknown_item = matches!(
+            kind,
+            "response.output_item.added" | "response.output_item.done"
+        ) && !MODELED_OUTPUT_ITEM_TYPES
+            .contains(&event["item"]["type"].as_str().unwrap_or_default());
+        let output = MODELED_CHUNK_TYPES.contains(&kind)
+            && !unknown_item
+            && !matches!(
+                kind,
+                "response.created" | "response.in_progress" | "response.failed"
+            );
+        accepted |= kind == "response.in_progress";
+        events.push(Ok(event));
+        if output {
+            return Ok(events);
+        }
+    }
+}
+
 /// Output item types the AI SDK's chunk schema models
 /// (`openaiResponsesModeledOutputItemTypes`); an item event for another type
 /// is an unknown chunk and is skipped.

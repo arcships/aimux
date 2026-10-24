@@ -1536,3 +1536,29 @@ async fn schema_invalid_known_responses_events_are_errors() {
         Some(StreamPart::Finish { finish_reason, .. }) if finish_reason.unified == FinishReasonUnified::Error
     ));
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-stream-error.ts:39 reads the
+/// stream until its first output event (`throwIfOpenAIStreamErrorBeforeOutput`,
+/// called at src/responses/openai-responses-language-model.ts:1552), so an
+/// error frame after `response.created` but before any output rejects
+/// `doStream` with an `APICallError` instead of becoming an error part.
+#[tokio::test]
+async fn a_responses_error_before_output_after_response_created_rejects_the_call() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","sequence_number":0,"response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"error","sequence_number":1,"code":"rate_limit_exceeded","message":"Rate limit reached","param":null}),
+    ])]);
+    let Err(error) = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+    else {
+        panic!("doStream resolved; expected it to reject");
+    };
+    let AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected an API call error: {error:?}");
+    };
+    assert_eq!(detail.message, "Rate limit reached");
+    assert_eq!(detail.status_code, Some(429));
+    assert!(detail.is_retryable);
+}

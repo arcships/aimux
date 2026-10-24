@@ -1210,6 +1210,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An OpenAI (and Azure) Responses stream that sends an `error` frame (or a
+  `response.failed` with an error) after `response.created` or
+  `response.in_progress` but before any output rejects `do_stream` with an
+  `ApiCall` error, as the AI SDK's `throwIfOpenAIStreamErrorBeforeOutput`
+  does; aimux checked only the first event and otherwise returned a stream
+  whose first content was an error part. After `response.in_progress` the
+  check waits at most 50 ms per event, so a healthy stream is not held back.
 - An OpenAI (and Azure) Responses stream chunk without a string `type`, or a
   modeled event missing an envelope field its AI SDK schema requires (the
   `output_index` of item and tool-input events, an item event's `item`,

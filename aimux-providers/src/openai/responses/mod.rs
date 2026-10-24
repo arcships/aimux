@@ -325,13 +325,16 @@ impl LanguageModel for OpenAIResponsesModel {
         let response_headers = resp.response_headers;
 
         let mut sse_stream = resp.value;
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first_event => first_event,
-        };
+        let events_before_output = responses_convert::read_until_output(
+            &mut sse_stream,
+            &endpoint,
+            &body,
+            &response_headers,
+        )
+        .await?;
         let stream = responses_convert::build_responses_event_stream_with_tools(
-            first_event,
-            sse_stream,
+            None,
+            futures::stream::iter(events_before_output).chain(sse_stream),
             provider_key,
             warnings,
             store_flag,
