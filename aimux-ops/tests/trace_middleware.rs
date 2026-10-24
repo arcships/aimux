@@ -6,7 +6,7 @@ use aimux_core::{AiMuxError, LanguageModel};
 use aimux_ops::{Ctx, Entry, HandleId, HandleKind, HandleRegistry, Owner, dispatch};
 use futures::StreamExt;
 use serde_json::{Value, json};
-use std::{future::Future, pin::Pin, sync::Arc, time::SystemTime};
+use std::{future::Future, pin::Pin, sync::Arc};
 
 struct Model;
 impl Model {
@@ -65,11 +65,7 @@ impl LanguageModel for Model {
 }
 
 fn context(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 async fn call(owner: Owner, handle: HandleId, op: &str, params: Value) -> Value {
     dispatch::call(context(owner), handle, op, params)
