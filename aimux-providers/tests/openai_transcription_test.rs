@@ -494,6 +494,39 @@ async fn diarization_response_format_and_chunking_strategy() {
     );
 }
 
+/// Diarized segments come back as the usual segments plus
+/// `providerMetadata.openai.segments` with each speaker
+/// (`transcription/openai-transcription-model.ts:315-353`).
+#[tokio::test]
+async fn diarized_segments_carry_the_speaker_in_provider_metadata() {
+    let server = MockServer::start().await;
+    mock_json_response(&server, &diarized_response()).await;
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider
+        .transcription_model("gpt-4o-transcribe-diarize")
+        .unwrap()
+        .unwrap();
+    let result = model
+        .do_generate(&transcription_options(mock_audio_data(), "audio/mpeg"))
+        .await
+        .unwrap();
+
+    assert_eq!(result.segments.len(), 2);
+    assert_eq!(result.segments[1].text, "Hello from Bob.");
+    assert_eq!(
+        serde_json::to_value(result.provider_metadata).unwrap(),
+        json!({"openai": {"segments": [
+            {"text": "Hello from Alice.", "startSecond": 0.0, "endSecond": 1.5, "speaker": "A"},
+            {"text": "Hello from Bob.", "startSecond": 1.5, "endSecond": 3.2, "speaker": "B"}
+        ]}})
+    );
+}
+
 /// TS: "should handle segments with missing optional fields"
 #[tokio::test]
 async fn should_handle_segments_with_missing_optional_fields() {

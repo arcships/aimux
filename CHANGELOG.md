@@ -1305,6 +1305,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI transcription returns diarized segments with their speaker in
+  `providerMetadata.openai.segments` (`text`, `startSecond`, `endSecond`,
+  `speaker`), like the AI SDK; the speaker was dropped.
 - OpenAI transcription takes `providerOptions.openai.responseFormat` and
   `chunkingStrategy` (`"auto"` or a server-VAD object, sent as snake_case
   JSON), and `gpt-4o-transcribe-diarize` defaults to `diarized_json` with

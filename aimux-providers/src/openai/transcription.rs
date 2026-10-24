@@ -205,6 +205,9 @@ struct OpenAISegment {
     text: String,
     start: f64,
     end: f64,
+    /// Set on `diarized_json` segments (`transcript.text.segment`).
+    #[serde(default)]
+    speaker: Option<String>,
 }
 
 /// The OpenAI transcription API response body.
@@ -403,6 +406,31 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             .and_then(language_name_to_code)
             .map(std::string::ToString::to_string);
 
+        // Diarized segments keep their speaker in `providerMetadata.openai.segments`
+        // (`transcription/openai-transcription-model.ts:315-353`).
+        let diarized_segments: Vec<Value> = parsed
+            .segments
+            .iter()
+            .flatten()
+            .filter_map(|segment| {
+                let speaker = segment.speaker.as_ref()?;
+                Some(serde_json::json!({
+                    "text": segment.text,
+                    "startSecond": segment.start,
+                    "endSecond": segment.end,
+                    "speaker": speaker,
+                }))
+            })
+            .collect();
+        let provider_metadata = if diarized_segments.is_empty() {
+            None
+        } else {
+            Some(aimux_core::shared::provider_namespace(
+                "openai",
+                serde_json::json!({ "segments": diarized_segments }),
+            )?)
+        };
+
         // Segments: prefer `segments`, fall back to `words`.
         let segments: Vec<TranscriptionSegment> = if let Some(segs) = parsed.segments {
             segs.into_iter()
@@ -440,7 +468,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                 headers: Some(response_headers),
                 body: Some(raw_body),
             },
-            provider_metadata: None,
+            provider_metadata,
         })
     }
 
