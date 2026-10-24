@@ -549,7 +549,7 @@ mod responses_default_language_model {
             .expect("creating the provider must fail");
             assert!(matches!(
                 error,
-                AiMuxError::InvalidArgument(ref message)
+                AiMuxError::InvalidArgument { ref message, .. }
                     if message == "Both apiKey and tokenProvider were provided. Please use only one authentication method."
             ));
         }
@@ -2189,7 +2189,7 @@ mod resource_name_validation {
             assert!(
                 matches!(
                     error,
-                    AiMuxError::InvalidArgument(ref message)
+                    AiMuxError::InvalidArgument { ref message, .. }
                         if message.contains("Invalid Azure resource name")
                 ),
                 "{resource_name}: {error}"

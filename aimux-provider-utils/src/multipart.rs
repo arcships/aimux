@@ -39,7 +39,7 @@ impl MultipartForm {
     ///
     /// # Errors
     ///
-    /// Returns `AiMuxError::InvalidArgument` when `name` fails MIME-header
+    /// Returns `AiMuxError::invalid_argument` when `name` fails MIME-header
     /// validation (see `validate_multipart_param`).
     pub fn text(&mut self, name: &str, value: &str) -> Result<&mut Self, AiMuxError> {
         validate_multipart_param(name, "name")?;
@@ -65,7 +65,7 @@ impl MultipartForm {
     ///
     /// # Errors
     ///
-    /// Returns `AiMuxError::InvalidArgument` when `name`, `filename`, or
+    /// Returns `AiMuxError::invalid_argument` when `name`, `filename`, or
     /// `media_type` fails MIME-header validation.
     pub fn file(
         &mut self,
@@ -161,7 +161,7 @@ fn validate_multipart_param(value: &str, label: &str) -> Result<(), AiMuxError> 
         .iter()
         .any(|&b| b == b'"' || b == b'\r' || b == b'\n' || b == 0)
     {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "invalid multipart {label}: must not contain '\"', CR, LF or NUL"
         )));
     }
@@ -210,13 +210,16 @@ mod tests {
         // A double-quote would break out of the quoted-string.
         let mut form = MultipartForm::new();
         let err = form.text("evil\"", "value").unwrap_err();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "got {err:?}");
+        assert!(
+            matches!(err, AiMuxError::InvalidArgument { .. }),
+            "got {err:?}"
+        );
         assert!(err.to_string().contains("multipart name"));
 
         // CRLF would inject a new header line.
         let mut form = MultipartForm::new();
         let err = form.text("evil\r\nX-Injected: yes", "value").unwrap_err();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)));
+        assert!(matches!(err, AiMuxError::InvalidArgument { .. }));
 
         // Nothing should have been appended after a rejected field.
         let mut form = MultipartForm::new();
@@ -234,7 +237,7 @@ mod tests {
         let err = form
             .file("file", "evil\".wav", "audio/wav", b"data")
             .unwrap_err();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)));
+        assert!(matches!(err, AiMuxError::InvalidArgument { .. }));
         assert!(err.to_string().contains("multipart filename"));
 
         // Malicious filename (CRLF injection).
@@ -242,14 +245,14 @@ mod tests {
         let err = form
             .file("file", "evil\r\nX-Injected: yes", "audio/wav", b"data")
             .unwrap_err();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)));
+        assert!(matches!(err, AiMuxError::InvalidArgument { .. }));
 
         // Malicious media type (CRLF injection / header splitting).
         let mut form = MultipartForm::new();
         let err = form
             .file("file", "audio.wav", "audio/wav\r\nX-Injected: yes", b"data")
             .unwrap_err();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)));
+        assert!(matches!(err, AiMuxError::InvalidArgument { .. }));
         assert!(err.to_string().contains("multipart media_type"));
 
         // Malicious name is rejected before any bytes are appended.

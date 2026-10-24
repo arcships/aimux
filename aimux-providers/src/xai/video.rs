@@ -114,7 +114,7 @@ fn unsupported(warnings: &mut Vec<Warning>, feature: &str, details: impl Into<St
 }
 
 fn invalid(key: &str, expected: &str) -> AiMuxError {
-    AiMuxError::InvalidArgument(format!(
+    AiMuxError::invalid_argument(format!(
         "Invalid argument for parameter providerOptions: xai.{key} must be {expected}"
     ))
 }
@@ -713,7 +713,7 @@ impl VideoModel for XaiVideoModel {
             .value
             .request_id
             .filter(|id| !id.is_empty())
-            .ok_or_else(|| AiMuxError::Other("No request_id returned from xAI API.".into()))?;
+            .ok_or_else(|| AiMuxError::other("No request_id returned from xAI API."))?;
         Ok(VideoOperationStart {
             operation: json!({ "requestId": request_id }),
             warnings,
@@ -735,7 +735,7 @@ impl VideoModel for XaiVideoModel {
             .get("requestId")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument("xai operation reference is missing requestId".into())
+                AiMuxError::invalid_argument("xai operation reference is missing requestId")
             })?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let url = exchange.url(&format!("/videos/{}", encode_path_segment(request_id)));

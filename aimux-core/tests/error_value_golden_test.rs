@@ -6,7 +6,7 @@
 //! cross-language contract: a field rename, a variant rename or a shape change
 //! breaks every binding, so it must break this test first.
 
-use aimux_core::error::ToolChoiceViolationError;
+use aimux_core::error::{SourceError, ToolChoiceViolationError};
 use aimux_core::result::GenerateContent;
 use aimux_core::tool::LanguageModelV4ToolChoice;
 use aimux_core::types::FinishReasonUnified;
@@ -103,12 +103,20 @@ fn error_value_snapshot_retry_history() {
 fn error_value_snapshots_plain_variants() {
     for (err, expected) in [
         (
-            AiMuxError::JsonParse("bad json".into()),
+            AiMuxError::json_parse("bad json"),
             r#"{"name":"AI_JSONParseError","message":"bad json"}"#,
         ),
         (
-            AiMuxError::InvalidResponseData("eof".into()),
+            AiMuxError::invalid_response_data("eof"),
             r#"{"name":"AI_InvalidResponseDataError","message":"eof"}"#,
+        ),
+        (
+            AiMuxError::TypeValidation {
+                message: "Type validation failed: Value: {}.\nError message: missing city".into(),
+                value: Box::new(serde_json::json!({})),
+                cause: Some(SourceError::from("missing city").into()),
+            },
+            r#"{"name":"AI_TypeValidationError","message":"Type validation failed: Value: {}.\nError message: missing city","value":{},"cause":{"message":"missing city"}}"#,
         ),
         (
             AiMuxError::ToolCallNotFoundForApproval {
@@ -139,9 +147,9 @@ fn error_value_snapshots_plain_variants() {
             AiMuxError::InvalidToolInput {
                 tool_name: "weather".into(),
                 tool_input: "{".into(),
-                cause: "JSON parsing failed".into(),
+                cause: AiMuxError::json_parse("JSON parsing failed").into(),
             },
-            r#"{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{","cause":"JSON parsing failed"}"#,
+            r#"{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{","cause":{"name":"AI_JSONParseError","message":"JSON parsing failed"}}"#,
         ),
         (
             AiMuxError::ToolCallRepair {
@@ -150,16 +158,16 @@ fn error_value_snapshots_plain_variants() {
                     available_tools: None,
                     tool_input: None,
                 }),
-                cause: Box::new(AiMuxError::Other("repair model failed".into())),
+                cause: Box::new(AiMuxError::other("repair model failed")),
             },
             r#"{"name":"AI_ToolCallRepairError","originalError":{"name":"AI_NoSuchToolError","toolName":"weathr"},"cause":{"name":"AI_Error","message":"repair model failed"}}"#,
         ),
         (
-            AiMuxError::InvalidArgument("bad arg".into()),
+            AiMuxError::invalid_argument("bad arg"),
             r#"{"name":"AI_InvalidArgumentError","message":"bad arg"}"#,
         ),
         (
-            AiMuxError::InvalidPrompt("bad prompt".into()),
+            AiMuxError::invalid_prompt("bad prompt"),
             r#"{"name":"AI_InvalidPromptError","message":"bad prompt"}"#,
         ),
         (
@@ -230,7 +238,7 @@ fn error_value_snapshots_plain_variants() {
             r#"{"name":"AbortError","message":"request aborted"}"#,
         ),
         (
-            AiMuxError::Other("misc".into()),
+            AiMuxError::other("misc"),
             r#"{"name":"AI_Error","message":"misc"}"#,
         ),
     ] {
@@ -306,26 +314,27 @@ fn variant_addition_breaks_this_match(error: &AiMuxError) {
     match error {
         AiMuxError::ApiCall(_)
         | AiMuxError::Retry(_)
-        | AiMuxError::JsonParse(_)
-        | AiMuxError::InvalidResponseData(_)
+        | AiMuxError::JsonParse { .. }
+        | AiMuxError::InvalidResponseData { .. }
+        | AiMuxError::TypeValidation { .. }
         | AiMuxError::ToolCallNotFoundForApproval { .. }
         | AiMuxError::NoSuchTool { .. }
         | AiMuxError::InvalidToolInput { .. }
         | AiMuxError::ToolCallRepair { .. }
-        | AiMuxError::InvalidArgument(_)
-        | AiMuxError::InvalidPrompt(_)
+        | AiMuxError::InvalidArgument { .. }
+        | AiMuxError::InvalidPrompt { .. }
         | AiMuxError::LoadApiKey { .. }
         | AiMuxError::LoadSetting { .. }
         | AiMuxError::MissingToolResults { .. }
         | AiMuxError::ToolChoiceViolation(_)
-        | AiMuxError::NoOutputGenerated(_)
+        | AiMuxError::NoOutputGenerated { .. }
         | AiMuxError::TokenExpired(_)
         | AiMuxError::UnsupportedFunctionality(_)
         | AiMuxError::NoSuchModel { .. }
         | AiMuxError::NoSuchProvider { .. }
         | AiMuxError::Timeout(_)
         | AiMuxError::Aborted(_)
-        | AiMuxError::Other(_) => {}
+        | AiMuxError::Other { .. } => {}
     }
 }
 
@@ -337,8 +346,13 @@ fn variant_set_is_exactly_the_wire_tag_list() {
             reason: RetryErrorReason::MaxRetriesExceeded,
             errors: vec![AiMuxError::ApiCall(Box::new(api_error("x")))],
         }),
-        AiMuxError::JsonParse("x".into()),
-        AiMuxError::InvalidResponseData("x".into()),
+        AiMuxError::json_parse("x"),
+        AiMuxError::invalid_response_data("x"),
+        AiMuxError::TypeValidation {
+            message: "x".into(),
+            value: Box::new(serde_json::Value::Null),
+            cause: None,
+        },
         AiMuxError::ToolCallNotFoundForApproval {
             tool_call_id: "x".into(),
             approval_id: "x".into(),
@@ -351,7 +365,7 @@ fn variant_set_is_exactly_the_wire_tag_list() {
         AiMuxError::InvalidToolInput {
             tool_name: "x".into(),
             tool_input: "{}".into(),
-            cause: "x".into(),
+            cause: AiMuxError::json_parse("x").into(),
         },
         AiMuxError::ToolCallRepair {
             original_error: Box::new(AiMuxError::NoSuchTool {
@@ -359,10 +373,10 @@ fn variant_set_is_exactly_the_wire_tag_list() {
                 available_tools: None,
                 tool_input: None,
             }),
-            cause: Box::new(AiMuxError::Other("x".into())),
+            cause: Box::new(AiMuxError::other("x")),
         },
-        AiMuxError::InvalidArgument("x".into()),
-        AiMuxError::InvalidPrompt("x".into()),
+        AiMuxError::invalid_argument("x"),
+        AiMuxError::invalid_prompt("x"),
         AiMuxError::LoadApiKey {
             env_var: "X".into(),
             description: "x".into(),
@@ -381,7 +395,7 @@ fn variant_set_is_exactly_the_wire_tag_list() {
             model_id: "x".into(),
             content: vec![],
         })),
-        AiMuxError::NoOutputGenerated("x".into()),
+        AiMuxError::no_output_generated("x"),
         AiMuxError::TokenExpired("x".into()),
         AiMuxError::UnsupportedFunctionality("x".into()),
         AiMuxError::NoSuchModel {
@@ -396,7 +410,7 @@ fn variant_set_is_exactly_the_wire_tag_list() {
         },
         AiMuxError::Timeout("x".into()),
         AiMuxError::Aborted("request aborted".into()),
-        AiMuxError::Other("x".into()),
+        AiMuxError::other("x"),
     ];
     // The wire tag is the AI SDK's error name, under `name`.
     let mut names: Vec<String> = all
@@ -430,6 +444,7 @@ fn variant_set_is_exactly_the_wire_tag_list() {
             "AI_ToolCallNotFoundForApprovalError",
             "AI_ToolCallRepairError",
             "AI_ToolChoiceViolationError",
+            "AI_TypeValidationError",
             "AI_UnsupportedFunctionalityError",
             "AbortError",
             "TimeoutError",

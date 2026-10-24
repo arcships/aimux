@@ -116,11 +116,11 @@ pub(crate) const HUGGINGFACE: Package = Package {
     version: "2.0.62",
     provider_utils: "5.0.53",
 };
-/// `@ai-sdk/mistral@4.0.54` package.json: `"@ai-sdk/provider-utils": "5.0.51"`.
+/// `@ai-sdk/mistral@4.0.55` package.json: `"@ai-sdk/provider-utils": "5.0.52"`.
 pub(crate) const MISTRAL: Package = Package {
     name: "mistral",
-    version: "4.0.54",
-    provider_utils: "5.0.51",
+    version: "4.0.55",
+    provider_utils: "5.0.52",
 };
 /// `@ai-sdk/open-responses@2.0.58` package.json:
 /// `"@ai-sdk/provider-utils": "5.0.53"`.

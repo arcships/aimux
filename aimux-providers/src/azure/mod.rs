@@ -26,11 +26,13 @@ mod transcription;
 
 pub use transcription::AzureTranscriptionModel;
 
+use aimux_core::SourceError;
 use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
 
 use crate::shared::ProviderHeaders;
+use aimux_core::ErrorCause;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -151,8 +153,10 @@ fn base_url_info(base_url: Option<&str>) -> Result<BaseUrlInfo, AiMuxError> {
             is_versioned: false,
         });
     };
-    let url = url::Url::parse(base_url)
-        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid Azure base URL: {e}")))?;
+    let url = url::Url::parse(base_url).map_err(|e| AiMuxError::InvalidArgument {
+        message: format!("invalid Azure base URL: {e}"),
+        cause: Some(ErrorCause::source(&e)),
+    })?;
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
     let is_azure_openai = host.ends_with(".openai.azure.com")
         || host.ends_with(".services.ai.azure.com")
@@ -170,7 +174,7 @@ fn base_url_info(base_url: Option<&str>) -> Result<BaseUrlInfo, AiMuxError> {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when a non-empty `api_key` and
+/// Returns `AiMuxError::invalid_argument` when a non-empty `api_key` and
 /// `token_provider` are given or `base_url` / `speech_base_url` is not an `http(s)` URL with a
 /// host. Those are the only ways this fails: credentials and the resource
 /// name are resolved per request, not here.
@@ -183,7 +187,7 @@ pub fn create_azure(
         Some(_) => true,
     };
     if has_api_key && settings.token_provider.is_some() {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "Both apiKey and tokenProvider were provided. Please use only one authentication \
              method."
                 .to_string(),
@@ -271,12 +275,12 @@ impl Fetch for BearerTokenFetch {
                 .token
                 .resolve()
                 .await
-                .map_err(|error| FetchError::Other(error.to_string()))?;
+                .map_err(|error| FetchError::Other(SourceError::new(&error)))?;
             request.headers.insert(
                 reqwest::header::AUTHORIZATION,
                 format!("Bearer {token}").parse().map_err(
                     |error: reqwest::header::InvalidHeaderValue| {
-                        FetchError::Other(error.to_string())
+                        FetchError::Other(SourceError::new(&error))
                     },
                 )?,
             );
@@ -341,7 +345,7 @@ impl UrlRules {
         // The resource name becomes part of the request host, so only a DNS
         // label is accepted (`user@internal:8080/#` would rewrite the host).
         if !is_valid_hostname_part(&resource) {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Invalid Azure resource name. Expected a single DNS label (letters, digits, and \
                  hyphens). Use `base_url` for custom endpoints."
                     .to_string(),
@@ -363,8 +367,10 @@ impl UrlRules {
         } else {
             format!("{prefix}/v1{path}")
         };
-        let mut url = url::Url::parse(&full)
-            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid Azure URL `{full}`: {e}")))?;
+        let mut url = url::Url::parse(&full).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("invalid Azure URL `{full}`: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
         if self.use_deployment_based_urls
             || (info.is_azure_openai && !info.is_versioned && !info.is_foundry_project)
         {
@@ -593,8 +599,13 @@ impl ProviderDiscovery for AzureOpenAIProvider {
             }
 
             let provider_headers = config.request_headers(None).await?;
-            let mut url = url::Url::parse(&format!("{}/deployments", rules.prefix()?))
-                .map_err(|e| AiMuxError::InvalidArgument(format!("invalid Azure URL: {e}")))?;
+            let mut url =
+                url::Url::parse(&format!("{}/deployments", rules.prefix()?)).map_err(|e| {
+                    AiMuxError::InvalidArgument {
+                        message: format!("invalid Azure URL: {e}"),
+                        cause: Some(ErrorCause::source(&e)),
+                    }
+                })?;
             set_query_param(&mut url, "api-version", &rules.api_version);
             let url = url.to_string();
             let resp = aimux_provider_utils::get_from_api(
