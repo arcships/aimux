@@ -26,24 +26,30 @@
 
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::Stream;
+use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::generate::GenerateTextResult;
+use crate::language_model::{LanguageModel, SupportedUrls};
+use crate::options::CallOptions;
 use crate::parse_tool_call::original_tool_call_text;
+use crate::result::StreamResult;
 use crate::result::{
     ContentPart, GenerateContent, GenerateResult, GeneratedFileOutput, ReasoningOutput, Source,
     TypedToolError, TypedToolResult,
 };
 use crate::shared::GeneratedFileData;
-use crate::stream_part::TextStreamPart;
+use crate::stream_part::{StreamPart, TextStreamPart};
 use crate::tool::ToolCall;
-use crate::types::{FinishReasonUnified, LanguageModelUsage, as_language_model_usage};
+use crate::types::{
+    FinishReasonUnified, LanguageModelUsage, ResponseMetadata, as_language_model_usage,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-streaming response types
@@ -52,8 +58,7 @@ use crate::types::{FinishReasonUnified, LanguageModelUsage, as_language_model_us
 /// A complete Chat Completion response (non-streaming).
 ///
 /// Mirrors the OpenAI `chat.completion` object.
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletion {
     pub id: String,
     pub object: String,
@@ -65,8 +70,7 @@ pub struct ChatCompletion {
     pub system_fingerprint: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChoice {
     pub index: u32,
     pub message: ChatCompletionMessage,
@@ -78,8 +82,7 @@ pub struct ChatCompletionChoice {
     pub logprobs: Option<Value>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionMessage {
     pub role: String,
     pub content: Option<String>,
@@ -91,8 +94,7 @@ pub struct ChatCompletionMessage {
     pub annotations: Option<Vec<Value>>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionToolCall {
     pub id: String,
     #[serde(rename = "type")]
@@ -100,8 +102,7 @@ pub struct ChatCompletionToolCall {
     pub function: ChatCompletionFunction,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionFunction {
     pub name: String,
     pub arguments: String,
@@ -114,8 +115,7 @@ pub struct ChatCompletionFunction {
 /// A single Chat Completion chunk (streaming).
 ///
 /// Mirrors the OpenAI `chat.completion.chunk` object.
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChunk {
     pub id: String,
     pub object: String,
@@ -126,8 +126,7 @@ pub struct ChatCompletionChunk {
     pub usage: Option<ChatCompletionUsage>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChunkChoice {
     pub index: u32,
     pub delta: ChatCompletionDelta,
@@ -136,8 +135,7 @@ pub struct ChatCompletionChunkChoice {
     pub logprobs: Option<Value>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct ChatCompletionDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
@@ -149,8 +147,7 @@ pub struct ChatCompletionDelta {
     pub tool_calls: Option<Vec<ChatCompletionChunkToolCall>>,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ChatCompletionChunkToolCall {
     pub index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -160,8 +157,7 @@ pub struct ChatCompletionChunkToolCall {
     pub function: ChatCompletionChunkFunction,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct ChatCompletionChunkFunction {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -173,8 +169,7 @@ pub struct ChatCompletionChunkFunction {
 // Usage (shared by streaming and non-streaming)
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct ChatCompletionUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -185,16 +180,14 @@ pub struct ChatCompletionUsage {
     pub completion_tokens_details: Option<CompletionTokensDetails>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct PromptTokensDetails {
     pub cached_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_write_tokens: Option<u32>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, TS)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Default, Serialize, JsonSchema)]
 pub struct CompletionTokensDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_tokens: Option<u32>,
@@ -534,12 +527,61 @@ pub fn to_chat_completion_stream(
     model: &str,
     options: OpenAiStreamOptions,
 ) -> ChatCompletionStream {
+    chat_completion_stream(stream, model, options, None)
+}
+
+/// The response id and model a provider reported in its stream
+/// (`StreamPart::ResponseMetadata`), recorded by the model that
+/// [`observe`](Self::observe) returns. `stream_text` folds that part into the
+/// step result, so its `TextStreamPart` stream carries the id and model only
+/// at the end of the step.
+#[derive(Clone, Debug, Default)]
+pub struct ResponseIdentity(Arc<Mutex<Option<ResponseMetadata>>>);
+
+impl ResponseIdentity {
+    /// `model`, recording the `ResponseMetadata` of its streams here. A
+    /// transparent decorator: everything else is forwarded.
+    #[must_use]
+    pub fn observe<'a>(&self, model: &'a dyn LanguageModel) -> ResponseIdentityTap<'a> {
+        ResponseIdentityTap {
+            model,
+            identity: self.clone(),
+        }
+    }
+
+    fn reported(&self) -> Option<ResponseMetadata> {
+        self.0.lock().ok()?.clone()
+    }
+}
+
+/// [`to_chat_completion_stream`] whose chunks carry the provider's response id
+/// and model once `identity` holds them (RFC-0026 §4.4: `ResponseMetadata`
+/// records id/model). They arrive with the model's first chunk, after the
+/// call's `Start`, so the role frame waits for the first content, the end of
+/// the stream or an error. Without a report the chunks keep the generated id
+/// and `model`.
+#[must_use]
+pub fn to_chat_completion_stream_with_identity(
+    stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>>,
+    model: &str,
+    options: OpenAiStreamOptions,
+    identity: ResponseIdentity,
+) -> ChatCompletionStream {
+    chat_completion_stream(stream, model, options, Some(identity))
+}
+
+fn chat_completion_stream(
+    stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>>,
+    model: &str,
+    options: OpenAiStreamOptions,
+    identity: Option<ResponseIdentity>,
+) -> ChatCompletionStream {
     let model = model.to_string();
     let include_usage = options.include_usage;
     let include_reasoning = options.include_reasoning;
 
     let chunk_stream = async_stream::stream! {
-        let mut state = StreamState::new(model.clone());
+        let mut state = StreamState::new(model.clone(), identity);
 
         use futures::StreamExt;
         let mut stream = stream;
@@ -553,6 +595,9 @@ pub fn to_chat_completion_stream(
                 }
                 Err(e) => {
                     // Emit error as a content delta + finish, then stop.
+                    if let Some(chunk) = state.pending_start() {
+                        yield Ok(chunk);
+                    }
                     if let Some(chunk) = state.error_chunk(&e) {
                         yield Ok(chunk);
                     }
@@ -575,6 +620,9 @@ pub fn to_chat_completion_stream(
         }
 
         // Stream ended without Finish — emit a final chunk.
+        if let Some(chunk) = state.pending_start() {
+            yield Ok(chunk);
+        }
         if let Some(chunk) = state.final_chunk(include_usage) {
             yield Ok(chunk);
         }
@@ -600,6 +648,10 @@ struct StreamState {
     final_usage: Option<LanguageModelUsage>,
     final_finish_reason: Option<(FinishReasonUnified, Option<String>)>,
     finish_emitted: bool,
+    /// The provider's response id and model, read when the role frame is sent.
+    identity: Option<ResponseIdentity>,
+    /// `Start` was seen and its role frame waits for the identity.
+    start_pending: bool,
 }
 
 #[allow(dead_code)]
@@ -612,7 +664,7 @@ struct ToolCallAccum {
 }
 
 impl StreamState {
-    fn new(model: String) -> Self {
+    fn new(model: String, identity: Option<ResponseIdentity>) -> Self {
         Self {
             id: format!("chatcmpl-{}", random_id()),
             model,
@@ -625,6 +677,8 @@ impl StreamState {
             final_usage: None,
             final_finish_reason: None,
             finish_emitted: false,
+            identity,
+            start_pending: false,
         }
     }
 
@@ -646,6 +700,15 @@ impl StreamState {
             return None;
         }
         self.started = true;
+        let reported = self.identity.as_ref().and_then(ResponseIdentity::reported);
+        if let Some(reported) = reported {
+            if let Some(id) = reported.id {
+                self.id = id;
+            }
+            if let Some(model) = reported.model_id {
+                self.model = model;
+            }
+        }
         let mut chunk = self.base_chunk();
         chunk.choices = vec![ChatCompletionChunkChoice {
             index: 0,
@@ -660,6 +723,16 @@ impl StreamState {
         Some(chunk)
     }
 
+    /// The role frame of a `Start` still waiting for content, sent before an
+    /// error or the final chunk.
+    fn pending_start(&mut self) -> Option<ChatCompletionChunk> {
+        if self.start_pending {
+            self.ensure_started()
+        } else {
+            None
+        }
+    }
+
     /// Process a single TextStreamPart, returning zero or more output chunks.
     fn process_part(
         &mut self,
@@ -670,6 +743,7 @@ impl StreamState {
         let mut chunks = Vec::new();
 
         match part {
+            TextStreamPart::Start {} if self.identity.is_some() => self.start_pending = true,
             TextStreamPart::Start {} => {
                 if let Some(c) = self.ensure_started() {
                     chunks.push(c);
@@ -678,7 +752,9 @@ impl StreamState {
 
             TextStreamPart::FinishStep { response, .. } => {
                 // Response metadata arrives at step end; emitted chunks keep their identity.
-                if !self.started {
+                // With an identity, only what the provider reported counts
+                // (`ensure_started`), not stream_text's generated response id.
+                if !self.started && self.identity.is_none() {
                     self.id.clone_from(&response.id);
                     self.model.clone_from(&response.model_id);
                 }
@@ -1002,6 +1078,9 @@ impl StreamState {
             } => {
                 self.final_usage = Some(total_usage.clone());
                 self.final_finish_reason = Some((*finish_reason, raw_finish_reason.clone()));
+                if let Some(c) = self.pending_start() {
+                    chunks.push(c);
+                }
                 // Emit the final chunk here.
                 if let Some(c) = self.final_chunk_impl(include_usage) {
                     chunks.push(c);
@@ -1009,6 +1088,9 @@ impl StreamState {
             }
 
             TextStreamPart::Error { error } => {
+                if let Some(chunk) = self.pending_start() {
+                    chunks.push(chunk);
+                }
                 if let Some(chunk) = self.error_chunk(error) {
                     chunks.push(chunk);
                 }
@@ -1086,6 +1168,50 @@ impl StreamState {
         }];
         chunk.usage = usage;
         Some(chunk)
+    }
+}
+
+/// A model that records the `ResponseMetadata` of its streams into a
+/// [`ResponseIdentity`]; see [`ResponseIdentity::observe`].
+pub struct ResponseIdentityTap<'a> {
+    model: &'a dyn LanguageModel,
+    identity: ResponseIdentity,
+}
+
+#[async_trait::async_trait]
+impl LanguageModel for ResponseIdentityTap<'_> {
+    fn specification_version(&self) -> &'static str {
+        self.model.specification_version()
+    }
+
+    fn provider(&self) -> &str {
+        self.model.provider()
+    }
+
+    fn model_id(&self) -> &str {
+        self.model.model_id()
+    }
+
+    async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+        self.model.do_generate(options).await
+    }
+
+    async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+        use futures::StreamExt;
+        let mut result = self.model.do_stream(options).await?;
+        let identity = self.identity.clone();
+        result.stream = Box::pin(result.stream.inspect(move |part| {
+            if let Ok(StreamPart::ResponseMetadata(metadata)) = part
+                && let Ok(mut identity) = identity.0.lock()
+            {
+                *identity = Some(metadata.clone());
+            }
+        }));
+        Ok(result)
+    }
+
+    async fn supported_urls(&self) -> SupportedUrls {
+        self.model.supported_urls().await
     }
 }
 
@@ -1262,6 +1388,7 @@ fn random_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::SourceError;
     use crate::result::GenerateResult;
     use crate::result::ReasoningOutput;
     use crate::shared::ResponseInfo;
@@ -1382,7 +1509,7 @@ mod tests {
         let error = AiMuxError::InvalidToolInput {
             tool_name: "get_weather".to_string(),
             tool_input: String::new(),
-            cause: "Type validation failed: missing 'city'".to_string(),
+            cause: SourceError::from("Type validation failed: missing 'city'").into(),
         };
         let arguments = parsed_tool_call_arguments(&json!({}), Some(true), Some(&error));
         assert_eq!(arguments, "{}");
@@ -1424,7 +1551,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_tool_calls_stream_their_raw_arguments_verbatim() {
         let failing_repair = crate::parse_tool_call::ToolCallRepair::new(|_context| async {
-            Err(AiMuxError::Other("repair model failed".to_string()))
+            Err(AiMuxError::other("repair model failed"))
         });
         let cases: [(&str, &str, Option<&crate::parse_tool_call::ToolCallRepair>); 3] = [
             // Valid JSON string rejected by the schema: the quotes must
@@ -2061,7 +2188,7 @@ mod tests {
     async fn recoverable_frame_error_does_not_truncate_chat_completion_stream() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
             Ok(TextStreamPart::Start {}),
-            Err(AiMuxError::JsonParse("malformed SSE data".into())),
+            Err(AiMuxError::json_parse("malformed SSE data")),
             Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
                 text: "after-error".to_string(),
@@ -2082,7 +2209,7 @@ mod tests {
         let outcomes: Vec<_> = result.stream.collect().await;
         let error_index = outcomes
             .iter()
-            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse(_))))
+            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse { .. })))
             .expect("parse error should be preserved as an error item");
 
         assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(

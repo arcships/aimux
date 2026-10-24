@@ -1,0 +1,12 @@
+{
+  "type": "tool-error",
+  "toolCallId": "srv-2",
+  "toolName": "code_execution",
+  "input": {
+    "code": "1/0"
+  },
+  "error": {
+    "error_code": "unavailable"
+  },
+  "providerExecuted": true
+}

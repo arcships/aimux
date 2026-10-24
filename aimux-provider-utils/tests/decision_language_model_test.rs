@@ -387,7 +387,7 @@ async fn supports_boolean_without_criteria() {
 
 fn assert_invalid_response(error: &AiMuxError) {
     assert!(
-        matches!(error, AiMuxError::InvalidResponseData(_)),
+        matches!(error, AiMuxError::InvalidResponseData { .. }),
         "got {error:?}"
     );
 }
@@ -572,7 +572,7 @@ async fn rejects_invalid_rubric_shapes_before_model_io() {
         };
         let error = model.do_decide(&opts).await.unwrap_err();
         assert!(
-            matches!(error, AiMuxError::InvalidArgument(_)),
+            matches!(error, AiMuxError::InvalidArgument { .. }),
             "got {error:?}"
         );
         assert!(mock.calls.lock().unwrap().is_empty());
@@ -600,7 +600,8 @@ fn provider_defaults_to_the_language_provider_with_a_decision_suffix() {
 
 fn error_message(error: AiMuxError) -> String {
     match error {
-        AiMuxError::InvalidArgument(message) | AiMuxError::InvalidResponseData(message) => message,
+        AiMuxError::InvalidArgument { message, .. }
+        | AiMuxError::InvalidResponseData { message, .. } => message,
         other => panic!("unexpected error {other:?}"),
     }
 }

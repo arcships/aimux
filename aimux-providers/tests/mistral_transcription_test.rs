@@ -237,7 +237,7 @@ mod do_generate {
         let fetch = MockFetch::new(vec![]);
         let model =
             provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-        let Err(AiMuxError::InvalidArgument(message)) = model
+        let Err(AiMuxError::InvalidArgument { message, .. }) = model
             .do_generate(&wav(Some(json!({ "contextBias": ["AI SDK"] }))))
             .await
         else {
@@ -266,7 +266,7 @@ mod do_generate {
                 "timestampGranularities": ["segment"],
             }))))
             .await;
-        assert!(matches!(result, Err(AiMuxError::InvalidArgument(_))));
+        assert!(matches!(result, Err(AiMuxError::InvalidArgument { .. })));
         assert!(fetch.seen().is_empty());
     }
 

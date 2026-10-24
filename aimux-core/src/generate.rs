@@ -17,10 +17,10 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use futures::{Stream, StreamExt};
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use tracing::Instrument;
-use ts_rs::TS;
 
 use crate::download::{DownloadFunction, create_default_download_function};
 use crate::error::AiMuxError;
@@ -117,29 +117,21 @@ async fn resolve_file(
 /// Unknown keys are rejected (RFC-0042 §7.2): a host still writing aimux
 /// 0.5's snake_case keys (`max_retries`, `timeout.total_ms`) gets an error
 /// naming the key instead of the default it would silently fall back to.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateTextOptions {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_sequences: Option<Vec<String>>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_k: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f64>,
     /// The structured output to generate, the AI SDK's `output`
@@ -147,46 +139,35 @@ pub struct GenerateTextOptions {
     /// `response_format` and parses the final text into
     /// [`GenerateTextResult::output`]. `None` sends no response format and
     /// takes the text as the output.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<Output>,
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
     /// Top-level reasoning effort.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<ReasoningEffort>,
     /// System instructions prepended to the prompt.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     /// retrying. `None` uses 2, the AI SDK default.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
     /// Per-call timeout configuration (total / first-chunk / chunk idle).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
     /// Session identifier, for grouping consecutive calls into a session
     /// (observability, see RFC-0024). Orthogonal to RFC-0019 session-affinity
     /// headers. When `None` and the optional session inferer is enabled, one
     /// may be inferred from prompt-prefix continuation.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     /// Abort signal for cancelling the call.
@@ -194,16 +175,13 @@ pub struct GenerateTextOptions {
     /// Runtime handle — never crosses the JSON boundary. Rust callers set it
     /// directly; the Node binding bridges a JS `AbortSignal` natively.
     #[serde(skip)]
-    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
     /// Optional one-shot repair callback for unknown, malformed, or
     /// schema-invalid tool calls.
     #[serde(skip)]
-    #[ts(skip)]
     pub repair_tool_call: Option<ToolCallRepair>,
     /// The download of the prompt's file URLs, the AI SDK's
     /// `experimental_download` (ai@7.0.127 `generate-text.ts:382-386`,
@@ -216,7 +194,6 @@ pub struct GenerateTextOptions {
     ///
     /// Runtime handle; never crosses the JSON boundary.
     #[serde(skip)]
-    #[ts(skip)]
     pub download: Option<DownloadFunction>,
 }
 
@@ -282,6 +259,8 @@ impl GenerateTextOptions {
 /// `steps`, `total_usage` and `output` are read back.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(try_from = "GenerateTextResultFacts")]
+#[derive(JsonSchema)]
+#[schemars(schema_with = "text_result_schema")]
 pub struct GenerateTextResult {
     steps: Vec<StepResult>,
     total_usage: LanguageModelUsage,
@@ -517,9 +496,7 @@ impl GenerateTextResult {
     pub fn output(&self) -> Result<&Value, AiMuxError> {
         match &self.output {
             OutputState::Parsed(value) => Ok(value),
-            OutputState::NotParsed => {
-                Err(AiMuxError::NoOutputGenerated("No output generated.".into()))
-            }
+            OutputState::NotParsed => Err(AiMuxError::no_output_generated("No output generated.")),
             OutputState::Failed(error) => Err(error.clone()),
         }
     }
@@ -561,10 +538,8 @@ impl GenerateTextResult {
 /// the AI SDK's result derives from them (`generate-text.ts:1714-1808`).
 /// `finalStep` and the static/dynamic subsets are left out: they are the
 /// last entry of `steps` and a filter on `dynamic`.
-#[derive(Serialize, TS)]
+#[derive(Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[ts(rename = "GenerateTextResult")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 struct GenerateTextResultSnapshot<'a> {
     content: Vec<&'a ContentPart>,
     text: String,
@@ -572,24 +547,22 @@ struct GenerateTextResultSnapshot<'a> {
     reasoning: Vec<ReasoningPart>,
     /// Deprecated upstream: the last step's reasoning text.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     reasoning_text: Option<String>,
     files: Vec<&'a GeneratedFile>,
     /// Each with its `type` tag (`generate-text-result.ts:73`).
     #[serde(with = "crate::wire::typed_vec")]
-    #[ts(as = "Vec<crate::result::TypedSource>")]
+    #[schemars(with = "Vec<crate::result::TypedSource>", extend("x-aimux-codec" = "tagged"))]
     sources: Vec<&'a Source>,
     /// Each with its `type` tag (`generate-text-result.ts:78`).
     #[serde(with = "crate::wire::typed_vec")]
-    #[ts(as = "Vec<crate::tool::TypedToolCall>")]
+    #[schemars(with = "Vec<crate::tool::TypedToolCall>", extend("x-aimux-codec" = "tagged"))]
     tool_calls: Vec<&'a ToolCall>,
     /// Each with its `type` tag (`generate-text-result.ts:93`).
     #[serde(with = "crate::wire::typed_vec")]
-    #[ts(as = "Vec<crate::result::TaggedToolResult>")]
+    #[schemars(with = "Vec<crate::result::TaggedToolResult>", extend("x-aimux-codec" = "tagged"))]
     tool_results: Vec<&'a TypedToolResult>,
     finish_reason: FinishReasonUnified,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     raw_finish_reason: Option<&'a str>,
     usage: &'a LanguageModelUsage,
     /// Deprecated upstream: equal to `usage`.
@@ -602,13 +575,20 @@ struct GenerateTextResultSnapshot<'a> {
     response_messages: Vec<&'a ModelMessage>,
     /// Deprecated upstream: the last step's provider metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     provider_metadata: Option<&'a ProviderMetadata>,
     steps: &'a [StepResult],
     /// Absent when the output was not parsed.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[schemars(extend("x-aimux-codec" = "presence"))]
     output: Option<&'a Value>,
+}
+
+fn text_result_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    if generator.contract().is_serialize() {
+        GenerateTextResultSnapshot::json_schema(generator)
+    } else {
+        GenerateTextResultFacts::json_schema(generator)
+    }
 }
 
 impl Serialize for GenerateTextResult {
@@ -618,12 +598,14 @@ impl Serialize for GenerateTextResult {
 }
 
 /// The values a serialized [`GenerateTextResult`] is read back from.
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct GenerateTextResultFacts {
+    #[schemars(length(min = 1))]
     steps: Vec<StepResult>,
     total_usage: LanguageModelUsage,
     #[serde(default, deserialize_with = "present_value")]
+    #[schemars(extend("x-aimux-codec" = "presence"))]
     output: Option<Value>,
 }
 
@@ -680,14 +662,12 @@ fn stream_output(step: &StepResult, output: Option<&Output>) -> OutputState {
 
 /// Result of the deprecated [`generate_object`]: the AI SDK's
 /// `GenerateObjectResult` (`generate-object/generate-object-result.ts`).
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResult {
     /// The generated object, as parsed by the output.
     pub object: Value,
     /// The reasoning text, `None` when there is none.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
     /// Why the model call finished.
@@ -703,24 +683,20 @@ pub struct GenerateObjectResult {
     /// The response of the model call, without messages.
     pub response: GenerateObjectResponse,
     /// Provider metadata of the model call.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
 }
 
 /// `GenerateObjectResult.response`: the AI SDK's
 /// `Omit<LanguageModelResponseMetadata, 'messages'>`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct GenerateObjectResponse {
     pub id: String,
     pub timestamp: crate::timestamp::Timestamp,
     pub model_id: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
 }
@@ -923,9 +899,7 @@ impl StreamTextResult {
         }
         if steps.is_empty() {
             return Err(aborted.unwrap_or_else(|| {
-                AiMuxError::NoOutputGenerated(
-                    "No output generated. Check the stream for errors.".into(),
-                )
+                AiMuxError::no_output_generated("No output generated. Check the stream for errors.")
             }));
         }
         let output = stream_output(steps.last().expect("checked above"), output.as_ref());
@@ -1372,7 +1346,7 @@ async fn convert_generated_content(
                             && tool.supports_deferred_results == Some(true))
                 });
                 if !has_call && !deferred_allowed {
-                    return Err(AiMuxError::Other(format!(
+                    return Err(AiMuxError::other(format!(
                         "Tool call {} not found.",
                         result.tool_call_id
                     )));
@@ -1934,8 +1908,8 @@ async fn stream_in_operation(
             // empty step; one with partial output keeps it
             // (stream-text.ts:3015-3030).
             if !step.terminal && !step.saw_output {
-                yield Ok(TextStreamPart::Error { error: AiMuxError::NoOutputGenerated(
-                    "No output generated. The model stream ended without a finish chunk.".into(),
+                yield Ok(TextStreamPart::Error { error: AiMuxError::no_output_generated(
+                    "No output generated. The model stream ended without a finish chunk.",
                 ) });
                 return;
             }
@@ -2334,9 +2308,7 @@ pub(crate) fn standardize_prompt(
 ) -> Result<(Vec<ModelMessage>, Option<&str>), AiMuxError> {
     let (messages, instructions) = split_prompt(prompt, instructions);
     if messages.is_empty() {
-        return Err(AiMuxError::InvalidPrompt(
-            "messages must not be empty".into(),
-        ));
+        return Err(AiMuxError::invalid_prompt("messages must not be empty"));
     }
     Ok((messages, instructions))
 }
@@ -2356,7 +2328,8 @@ pub(crate) fn split_prompt(
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::openai_output::{
-    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, to_chat_completion_stream,
+    ChatCompletion, ChatCompletionStream, OpenAiStreamOptions, ResponseIdentity,
+    to_chat_completion_stream_with_identity,
 };
 
 /// Generate text and return the result as an OpenAI Chat Completion.
@@ -2425,7 +2398,9 @@ pub fn generate_text_result_to_chat_completion(
 ///
 /// This is the OpenAI-compatible equivalent of [`stream_text`]. Internally
 /// it calls `stream_text`, then converts the `StreamPart` stream into a
-/// `ChatCompletionChunk` stream via [`to_chat_completion_stream`].
+/// `ChatCompletionChunk` stream via [`to_chat_completion_stream_with_identity`].
+/// The chunks carry the provider's response id and model when the provider
+/// reports them (RFC-0026 §4.4).
 ///
 /// Works with **any** provider (OpenAI, Anthropic, Google, …) — the output is
 /// always standard OpenAI Chat Completions streaming chunks.
@@ -2471,10 +2446,12 @@ pub async fn stream_text_as_openai(
     options: GenerateTextOptions,
     stream_options: OpenAiStreamOptions,
 ) -> Result<ChatCompletionStream, AiMuxError> {
-    let result = stream_text(model, prompt, options).await?;
-    Ok(to_chat_completion_stream(
+    let identity = ResponseIdentity::default();
+    let result = stream_text(&identity.observe(model), prompt, options).await?;
+    Ok(to_chat_completion_stream_with_identity(
         result.stream,
         model.model_id(),
         stream_options,
+        identity,
     ))
 }

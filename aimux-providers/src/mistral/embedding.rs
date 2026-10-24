@@ -51,7 +51,7 @@ impl EmbeddingModel for MistralEmbeddingModel {
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
         if options.values.len() > 32 {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "{} model {} supports at most 32 embeddings per call; received {}",
                 self.provider(),
                 self.model_id,
@@ -145,8 +145,8 @@ pub(super) fn parse_mistral_provider_options(
         .cloned();
     let output_dtype = provider_opts.and_then(|o| o.get("outputDtype"));
     if metadata.as_ref().is_some_and(|value| !value.is_object()) {
-        return Err(AiMuxError::InvalidArgument(
-            "mistral.metadata must be a record".into(),
+        return Err(AiMuxError::invalid_argument(
+            "mistral.metadata must be a record",
         ));
     }
     if output_dimension.as_ref().is_some_and(|value| {
@@ -154,8 +154,8 @@ pub(super) fn parse_mistral_provider_options(
             number > 0.0 && number.fract() == 0.0 && number <= 9_007_199_254_740_991.0
         })
     }) {
-        return Err(AiMuxError::InvalidArgument(
-            "mistral.outputDimension must be a positive integer".into(),
+        return Err(AiMuxError::invalid_argument(
+            "mistral.outputDimension must be a positive integer",
         ));
     }
     if output_dtype.is_some_and(|value| {
@@ -164,8 +164,8 @@ pub(super) fn parse_mistral_provider_options(
             Some("float" | "int8" | "uint8" | "binary" | "ubinary")
         )
     }) {
-        return Err(AiMuxError::InvalidArgument(
-            "mistral.outputDtype must be float, int8, uint8, binary, or ubinary".into(),
+        return Err(AiMuxError::invalid_argument(
+            "mistral.outputDtype must be float, int8, uint8, binary, or ubinary",
         ));
     }
     Ok(MistralEmbeddingProviderOptions {

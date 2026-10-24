@@ -113,7 +113,7 @@ async fn jev_preserves_constructor_errors_and_rejects_unavailable_settings() {
         assert_eq!(error.code(), 5);
         assert!(matches!(
             error.unprojected(),
-            OpsError::AiMux(AiMuxError::InvalidArgument(_))
+            OpsError::AiMux(AiMuxError::InvalidArgument { .. })
         ));
     }
     let provider = jev(owner, "native").await;

@@ -115,8 +115,8 @@ fn retryable() -> AiMuxError {
 
 fn message(error: AiMuxError) -> String {
     match error {
-        AiMuxError::InvalidArgument(message)
-        | AiMuxError::InvalidResponseData(message)
+        AiMuxError::InvalidArgument { message, .. }
+        | AiMuxError::InvalidResponseData { message, .. }
         | AiMuxError::UnsupportedFunctionality(message) => message,
         other => panic!("unexpected error {other:?}"),
     }
@@ -198,7 +198,7 @@ async fn invalid_input_is_rejected_before_the_model_is_called() {
     for (questions, expected) in cases {
         let options = DecideOptions::new("text", serde_json::from_value(questions).unwrap());
         let error = decide(&model, options).await.unwrap_err();
-        assert!(matches!(error, AiMuxError::InvalidArgument(_)));
+        assert!(matches!(error, AiMuxError::InvalidArgument { .. }));
         assert_eq!(message(error), expected);
     }
     assert!(
@@ -287,7 +287,7 @@ async fn answers_are_validated_once_after_the_retries() {
         )))
     });
     let error = decide(&model, options()).await.unwrap_err();
-    assert!(matches!(error, AiMuxError::InvalidResponseData(_)));
+    assert!(matches!(error, AiMuxError::InvalidResponseData { .. }));
     assert_eq!(
         message(error),
         "Decision must return exactly one answer for every question."

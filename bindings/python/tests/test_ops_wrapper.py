@@ -9,7 +9,7 @@ HAS_TYPED = importlib.util.find_spec("pydantic") is not None and any(
 if HAS_TYPED:
     from pydantic import TypeAdapter
     from aimux.wrapper import (
-        ContentPart, GenerateContent, GeneratedFile, StreamPart, TextContent, TextContentPart,
+        ContentPart, ContentPartText, GenerateContent, GeneratedFile, TextStreamPart, base64_wire,
     )
 
 @unittest.skipUnless(HAS_TYPED, "requires installed binding and optional Pydantic")
@@ -24,12 +24,14 @@ class TestRequestOptions(unittest.TestCase):
                 GenerateTextOptions.model_validate(wire)
 
     def test_python_names_and_provider_tool_flags_round_trip(self):
-        from aimux.wrapper import GenerateTextOptions, ProviderTool, TimeoutConfiguration
+        from aimux.wrapper import GenerateTextOptions, TimeoutConfiguration, ToolProvider
 
         for deferred in (None, False, True):
             with self.subTest(deferred=deferred):
-                tool = ProviderTool(id="anthropic.code_execution_20250825", name="code_execution",
-                                    args={}, supports_deferred_results=deferred)
+                # An explicit None is sent as null; leave the field unset to omit it.
+                flag = {} if deferred is None else {"supports_deferred_results": deferred}
+                tool = ToolProvider(id="anthropic.code_execution_20250825", name="code_execution",
+                                    args={}, **flag)
                 wire_tool = {"type": "provider", "id": tool.id, "name": tool.name, "args": {}}
                 if deferred is not None:
                     wire_tool["supportsDeferredResults"] = deferred
@@ -50,7 +52,7 @@ class TestGeneratedFiles(unittest.TestCase):
         file = GeneratedFile.model_validate({"base64": "aGk=", "mediaType": "text/plain"})
         assert file.model_dump(by_alias=True) == {"base64": "aGk=", "mediaType": "text/plain"}
         assert GeneratedFile(base64=b"hi", media_type="text/plain").base64 == "aGk="
-        assert file.to_bytes() == b"hi"
+        assert base64_wire(file.base64, decode=True) == b"hi"
 
         for tag in ("file", "reasoning-file"):
             wire = {
@@ -58,7 +60,7 @@ class TestGeneratedFiles(unittest.TestCase):
                 "file": {"base64": "aGk=", "mediaType": "text/plain"},
                 "providerMetadata": {"google": {"thoughtSignature": "sig"}},
             }
-            for adapter in (TypeAdapter(TextContent), TypeAdapter(StreamPart)):
+            for adapter in (TypeAdapter(ContentPart), TypeAdapter(TextStreamPart)):
                 assert adapter.dump_python(adapter.validate_python(wire), by_alias=True) == wire
 
         raw = {
@@ -78,24 +80,29 @@ class TestStandaloneTypeTags(unittest.TestCase):
         and {type: 'source', sourceType} (provider language-model-v4-source.ts:8,
         :36); generate-text-result.ts:73, :78. A repair function's call is a
         tagged LanguageModelV4ToolCall (language-model-v4-tool-call.ts:7)."""
-        from aimux.wrapper import GenerateTextResult, RawToolCall, ToolCall
+        from aimux.wrapper import GenerateTextResult, TaggedRawToolCall, TypedToolCall
 
         call = {"type": "tool-call", "toolCallId": "call-1", "toolName": "weather", "input": {"city": "SG"}}
         url = {"type": "source", "sourceType": "url", "id": "s1", "url": "https://example.com"}
         result = GenerateTextResult.model_validate(
-            {"text": "", "finishReason": "stop", "toolCalls": [call], "sources": [url]}
+            {"text": "", "finishReason": "stop", "toolCalls": [call], "sources": [url],
+             "content": [], "reasoning": [], "files": [], "toolResults": [],
+             "usage": {"inputTokenDetails": {}, "outputTokenDetails": {}},
+             "totalUsage": {"inputTokenDetails": {}, "outputTokenDetails": {}}, "warnings": [], "request": {},
+             "response": {"id": "r", "timestamp": "2026-01-01T00:00:00Z", "modelId": "m", "messages": []},
+             "responseMessages": [], "steps": []}
         )
         dumped = result.model_dump(by_alias=True)
         assert dumped["toolCalls"] == [call]
         assert dumped["sources"] == [url]
-        assert RawToolCall(tool_call_id="c", tool_name="t", input="{}").model_dump(by_alias=True) == {
+        assert TaggedRawToolCall(type="tool-call", tool_call_id="c", tool_name="t", input="{}").model_dump(by_alias=True) == {
             "type": "tool-call", "toolCallId": "c", "toolName": "t", "input": "{}",
         }
 
-        # JSON written before the tag still reads; another tag is rejected.
-        assert ToolCall.model_validate({"toolCallId": "c", "toolName": "t", "input": {}}).type == "tool-call"
+        # Standalone calls use the generated tagged DTO; another tag is rejected.
+        assert TypedToolCall(type="tool-call", tool_call_id="c", tool_name="t", input={}).type == "tool-call"
         with self.assertRaises(ValueError):
-            ToolCall.model_validate({"type": "source", "toolCallId": "c", "toolName": "t", "input": {}})
+            TypeAdapter(TypedToolCall).validate_python({"type": "source", "toolCallId": "c", "toolName": "t", "input": {}})
 
 @unittest.skipUnless(HAS_TYPED, "requires installed binding and optional Pydantic")
 class TestNullIsKeptApartFromMissing(unittest.TestCase):
@@ -105,16 +112,16 @@ class TestNullIsKeptApartFromMissing(unittest.TestCase):
         :56) and ``inputSchemaInput?: unknown`` (provider-utils
         types/tool-approval-request.ts:41): the AI SDK's JSON keeps ``null``
         and omits ``undefined``; so does the dump of a parsed model."""
-        from aimux.wrapper import GenerateResponseMetadata, RequestInfo
+        from aimux.wrapper import AssistantContentPart, ResponseInfo, RequestInfo
 
         for wire in ({}, {"body": None}, {"body": {"a": None}}):
-            assert GenerateResponseMetadata.model_validate(wire).model_dump(
+            assert ResponseInfo.model_validate(wire).model_dump(
                 mode="json", by_alias=True) == wire
             assert RequestInfo.model_validate(wire).model_dump(
                 mode="json", by_alias=True) == wire
         approval = {"type": "tool-approval-request", "approvalId": "a1",
                     "toolCallId": "c1", "inputSchemaInput": None}
-        part = TypeAdapter(ContentPart).validate_python(approval)
+        part = TypeAdapter(AssistantContentPart).validate_python(approval)
         assert part.model_dump(mode="json", by_alias=True) == approval
 
     def test_null_tool_input_is_sent_as_null(self):
@@ -123,7 +130,7 @@ class TestNullIsKeptApartFromMissing(unittest.TestCase):
         part = TypeAdapter(ContentPart).validate_python(
             {"type": "tool-call", "toolCallId": "c1", "toolName": "t", "input": None})
         assert part.model_dump(mode="json", by_alias=True)["input"] is None
-        assert TextContentPart(text="x").model_dump(mode="json", by_alias=True) == {
+        assert ContentPartText(text="x").model_dump(mode="json", by_alias=True) == {
             "type": "text", "text": "x"}
 
 @unittest.skipUnless(HAS_TYPED, "requires installed binding and optional Pydantic")
@@ -145,7 +152,9 @@ class TestStepsAndUsageAreCamelCase(unittest.TestCase):
             "callId": "c1", "stepNumber": 0,
             "model": {"provider": "openai", "modelId": "gpt-4o"},
             "content": [], "finishReason": "stop", "usage": usage,
-            "performance": {"stepTimeMs": 1.0}, "warnings": [], "request": {},
+            "performance": {"stepTimeMs": 1.0, "responseTimeMs": 1.0,
+                            "effectiveOutputTokensPerSecond": 2.0,
+                            "effectiveTotalTokensPerSecond": 5.0, "toolExecutionMs": {}}, "warnings": [], "request": {},
             "response": {"id": "r1", "timestamp": "2026-01-01T00:00:00.000Z",
                          "modelId": "gpt-4o", "body": None, "messages": []},
         }

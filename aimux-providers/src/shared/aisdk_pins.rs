@@ -83,22 +83,22 @@ pub(crate) const DEEPSEEK: Package = Package {
     version: "3.0.56",
     provider_utils: "5.0.51",
 };
-/// `@ai-sdk/google-vertex@5.0.98` package.json:
-/// `"@ai-sdk/provider-utils": "5.0.51"`. The nested `@ai-sdk/google@4.0.85`
-/// (Gemini) and `@ai-sdk/anthropic@4.0.68` (the Anthropic sub-provider, which
-/// sends no package part) depend on the same 5.0.51.
+/// `@ai-sdk/google-vertex@5.0.100` package.json:
+/// `"@ai-sdk/provider-utils": "5.0.53"`. The nested `@ai-sdk/google@4.0.87`
+/// (Gemini, the `GOOGLE` pin) and `@ai-sdk/anthropic@4.0.70` (the Anthropic
+/// sub-provider, which sends no package part) depend on the same 5.0.53.
 pub(crate) const GOOGLE_VERTEX: Package = Package {
     name: "google-vertex",
-    version: "5.0.98",
-    provider_utils: "5.0.51",
+    version: "5.0.100",
+    provider_utils: "5.0.53",
 };
-/// The `@ai-sdk/openai-compatible` that `@ai-sdk/google-vertex@5.0.98`
-/// package.json pins (`"3.0.59"`) for its MaaS and xAI sub-providers. That
-/// version's package.json: `"@ai-sdk/provider-utils": "5.0.51"`.
+/// The `@ai-sdk/openai-compatible` that `@ai-sdk/google-vertex@5.0.100`
+/// package.json pins (`"3.0.61"`) for its MaaS and xAI sub-providers. That
+/// version's package.json: `"@ai-sdk/provider-utils": "5.0.53"`.
 pub(crate) const GOOGLE_VERTEX_OPENAI_COMPATIBLE: Package = Package {
     name: "openai-compatible",
-    version: "3.0.59",
-    provider_utils: "5.0.51",
+    version: "3.0.61",
+    provider_utils: "5.0.53",
 };
 /// `@ai-sdk/groq@4.0.52` package.json: `"@ai-sdk/provider-utils": "5.0.51"`.
 pub(crate) const GROQ: Package = Package {

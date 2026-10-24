@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix='aimux-python-real-') as folder:
     shutil.copytree(binding / 'python/aimux', package, ignore=shutil.ignore_patterns('__pycache__', '*.so'))
     filename = 'aimux.pyd' if sys.platform == 'win32' else 'aimux.abi3.so'
     shutil.copyfile(sys.argv[1], package / filename)
-    env = dict(os.environ, PYTHONPATH=folder, AIMUX_REAL_OPS='1')
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([folder, os.environ.get('PYTHONPATH', '')]), AIMUX_REAL_OPS='1')
     env.pop('AIMUX_OPS_DOUBLE', None)
     subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', str(binding / 'tests'),
                     '-p', 'test_ops_*.py', '-v', *sys.argv[2:]], env=env, check=True, timeout=120)

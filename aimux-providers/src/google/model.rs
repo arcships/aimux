@@ -7,6 +7,7 @@ use aimux_core::tool::ToolResult;
 use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::{Value, json};
+use std::borrow::Cow;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
@@ -17,7 +18,7 @@ use aimux_core::result::{
 use aimux_core::shared::{FileBytes, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
 };
 use aimux_provider_utils::{Transformer, pipe_through};
 
@@ -26,28 +27,39 @@ use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext}
 use aimux_core::language_model::SupportedUrls;
 
 use super::convert::{
-    build_request_body_with_warnings, code_execution_tool_name, convert_usage, extract_sources,
-    parse_finish_reason, validate_call_options,
+    build_request_body_with_warnings_for_namespace, code_execution_tool_name, convert_usage,
+    extract_sources, parse_finish_reason, validate_call_options_for_namespace,
 };
-use super::options::google_metadata;
+use super::options::Namespace;
 use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent, StreamChunk};
+use super::utils::{GoogleJsonAccumulator, PartialArg};
 use crate::shared::EndpointConfig;
 
-/// A Google Gemini language model.
+/// A Google Gemini language model (the AI SDK's `GoogleLanguageModel`), used
+/// by both the Gemini API and Vertex AI providers.
 ///
 /// Does **not** hold an HTTP client — the `aimux-provider-utils` API helpers use the
 /// process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct GoogleModel {
     model_id: String,
     config: EndpointConfig,
+    namespace: Namespace,
     generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl GoogleModel {
-    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
+    /// A model reading and writing the `namespace` provider options and
+    /// metadata; [`Namespace::Vertex`] also turns on the Vertex AI request
+    /// differences (`isVertexProvider` upstream).
+    pub(crate) fn from_config(
+        model_id: String,
+        config: EndpointConfig,
+        namespace: Namespace,
+    ) -> Self {
         Self {
             model_id,
             config,
+            namespace,
             generate_id: std::sync::Arc::new(aimux_provider_utils::generate_id),
         }
     }
@@ -71,6 +83,71 @@ impl GoogleModel {
             format!("models/{}", self.model_id)
         }
     }
+
+    /// The validated call options. Vertex AI sends `sharedRequestType` and
+    /// `requestType` as headers, which win over the call's own.
+    fn call_options<'a>(
+        &self,
+        options: &'a CallOptions,
+    ) -> Result<Cow<'a, CallOptions>, AiMuxError> {
+        validate_call_options_for_namespace(options, self.namespace)?;
+        if self.namespace != Namespace::Vertex {
+            return Ok(Cow::Borrowed(options));
+        }
+        let Some(provider_options) = self.namespace.read(options.provider_options.as_ref()) else {
+            return Ok(Cow::Borrowed(options));
+        };
+        let mut options = options.clone();
+        let mut headers = options.headers.take().unwrap_or_default();
+        for (option, header) in [
+            ("sharedRequestType", "X-Vertex-AI-LLM-Shared-Request-Type"),
+            ("requestType", "X-Vertex-AI-LLM-Request-Type"),
+        ] {
+            if let Some(value) = provider_options.get(option).and_then(Value::as_str) {
+                headers.retain(|name, _| !name.eq_ignore_ascii_case(header));
+                headers.insert(header.to_string(), value.to_string());
+            }
+        }
+        options.headers = Some(headers);
+        Ok(Cow::Owned(options))
+    }
+
+    /// The request body and its warnings. A Vertex AI stream also asks for
+    /// streamed function-call arguments when `streamFunctionCallArguments` is set.
+    fn request_body(
+        &self,
+        options: &CallOptions,
+        streaming: bool,
+    ) -> Result<(Value, Vec<Warning>), AiMuxError> {
+        let (mut body, mut warnings) = build_request_body_with_warnings_for_namespace(
+            &self.model_id,
+            options,
+            self.namespace,
+        )?;
+        for warning in &mut warnings {
+            if let Warning::Other { message } = warning {
+                *message = message.replace("google.generative-ai", &self.config.provider);
+            }
+        }
+        if streaming
+            && self.namespace == Namespace::Vertex
+            && self
+                .namespace
+                .read(options.provider_options.as_ref())
+                .and_then(|options| options.get("streamFunctionCallArguments"))
+                == Some(&Value::Bool(true))
+        {
+            body.as_object_mut()
+                .unwrap()
+                .entry("toolConfig")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .unwrap()
+                .entry("functionCallingConfig")
+                .or_insert_with(|| json!({}))["streamFunctionCallArguments"] = json!(true);
+        }
+        Ok((body, warnings))
+    }
 }
 
 #[async_trait]
@@ -88,14 +165,9 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        validate_call_options(options)?;
+        let options = &*self.call_options(options)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
-        for warning in &mut tool_warnings {
-            if let aimux_core::types::Warning::Other { message } = warning {
-                *message = message.replace("google.generative-ai", &self.config.provider);
-            }
-        }
+        let (body, warnings) = self.request_body(options, false)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let url = exchange.url(&format!("/{}:generateContent", self.model_path()));
@@ -118,6 +190,7 @@ impl LanguageModel for GoogleModel {
         let (content, has_tool_calls) = extract_content_from_candidate(
             &candidate,
             &code_execution_tool_name,
+            self.namespace,
             &*self.generate_id,
         );
 
@@ -140,9 +213,9 @@ impl LanguageModel for GoogleModel {
             .map(convert_usage)
             .unwrap_or_default();
 
-        // Provider metadata: wrap the raw Google metadata under a `google`
-        // key (matching the TS `wrapProviderMetadata`).
-        let provider_metadata = Some(google_metadata(serde_json::json!({
+        // Provider metadata under the namespace keys (the TS
+        // `wrapProviderMetadata`).
+        let provider_metadata = Some(self.namespace.metadata(serde_json::json!({
             "promptFeedback": data.prompt_feedback,
             "groundingMetadata": candidate.grounding_metadata,
             "urlContextMetadata": candidate.url_context_metadata,
@@ -156,7 +229,7 @@ impl LanguageModel for GoogleModel {
             content,
             finish_reason,
             usage,
-            warnings: tool_warnings,
+            warnings,
             provider_metadata,
             response: Some(aimux_core::shared::ResponseInfo {
                 id: data.response_id,
@@ -170,14 +243,9 @@ impl LanguageModel for GoogleModel {
     }
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        validate_call_options(options)?;
+        let options = &*self.call_options(options)?;
         let code_execution_tool_name = code_execution_tool_name(options.tools.as_deref());
-        let (body, mut tool_warnings) = build_request_body_with_warnings(&self.model_id, options)?;
-        for warning in &mut tool_warnings {
-            if let aimux_core::types::Warning::Other { message } = warning {
-                *message = message.replace("google.generative-ai", &self.config.provider);
-            }
-        }
+        let (body, warnings) = self.request_body(options, true)?;
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(body);
         let endpoint = exchange.url(&format!(
@@ -204,8 +272,9 @@ impl LanguageModel for GoogleModel {
             GoogleLanguageModelStream {
                 ctx: StreamContext {
                     generate_id: self.generate_id.clone(),
-                    ..StreamContext::new(options, tool_warnings, endpoint, &body, &response_headers)
+                    ..StreamContext::new(options, warnings, endpoint, &body, &response_headers)
                 },
+                namespace: self.namespace,
                 code_execution_tool_name,
                 ..GoogleLanguageModelStream::default()
             },
@@ -225,6 +294,7 @@ impl LanguageModel for GoogleModel {
 #[derive(Default)]
 struct GoogleLanguageModelStream {
     ctx: StreamContext,
+    namespace: Namespace,
     code_execution_tool_name: String,
     text_id: Option<String>,
     reasoning_id: Option<String>,
@@ -232,6 +302,9 @@ struct GoogleLanguageModelStream {
     final_usage: Usage,
     final_finish_reason: Option<FinishReason>,
     has_tool_calls: bool,
+    /// Function calls whose arguments are still streaming (Vertex AI
+    /// `partialArgs`), innermost last.
+    active_tool_calls: Vec<(RawToolCall, GoogleJsonAccumulator)>,
     response_metadata_emitted: bool,
     stream_errored: bool,
     prompt_blocked: bool,
@@ -334,11 +407,7 @@ impl GoogleLanguageModelStream {
         if let Some(parts) = candidate.content.as_ref().and_then(|c| c.parts.as_ref()) {
             for part in parts {
                 // thoughtSignature → provider_metadata (upstream :778-782)
-                let thought_sig_meta: Option<ProviderMetadata> = part
-                    .get("thoughtSignature")
-                    .and_then(|v| v.as_str())
-                    .filter(|signature| !signature.is_empty())
-                    .map(|s| google_metadata(json!({ "thoughtSignature": s })));
+                let thought_sig_meta = thought_signature_metadata(self.namespace, part);
 
                 // text part
                 if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
@@ -463,6 +532,7 @@ impl GoogleLanguageModelStream {
                     self.last_server_tool_call_id = Some(id.clone());
                     let args = tc.get("args").cloned().unwrap_or(json!({}));
                     let server_meta = server_tool_metadata(
+                        self.namespace,
                         &id,
                         tool_type,
                         part.get("thoughtSignature").and_then(|v| v.as_str()),
@@ -491,6 +561,7 @@ impl GoogleLanguageModelStream {
                         .unwrap_or_else(|| (self.ctx.generate_id)());
                     let response = tr.get("response").cloned().unwrap_or(json!({}));
                     let server_meta = server_tool_metadata(
+                        self.namespace,
                         &id,
                         tool_type,
                         part.get("thoughtSignature").and_then(|v| v.as_str()),
@@ -538,66 +609,12 @@ impl GoogleLanguageModelStream {
                     }
                 }
             }
+            // Function calls come after the other parts, as upstream.
             for part in parts {
-                let thought_sig_meta = part
-                    .get("thoughtSignature")
-                    .and_then(Value::as_str)
-                    .filter(|signature| !signature.is_empty())
-                    .map(|signature| google_metadata(json!({"thoughtSignature": signature})));
-                if let Some(fc) = part.get("functionCall") {
-                    // Single-chunk complete function call (the
-                    // common case for the public Gemini API).
-                    if fc.get("name").and_then(Value::as_str).is_none()
-                        || fc.get("partialArgs").is_some_and(|value| !value.is_null())
-                        || fc.get("willContinue").and_then(Value::as_bool) == Some(true)
-                    {
-                        continue;
-                    }
-                    let name = fc.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    let id = fc
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .filter(|id| !id.is_empty())
-                        .map(std::string::ToString::to_string)
-                        .unwrap_or_else(|| (self.ctx.generate_id)());
-                    let args = fc
-                        .get("args")
-                        .filter(|value| !value.is_null())
-                        .cloned()
-                        .unwrap_or(json!({}));
-
-                    controller.enqueue(StreamPart::ToolInputStart {
-                        id: id.clone(),
-                        tool_name: name.to_string(),
-                        provider_executed: None,
-                        dynamic: None,
-                        title: None,
-                        provider_metadata: thought_sig_meta.clone(),
-                    });
-                    let args_str = args
-                        .as_str()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| args.to_string());
-                    if fc.get("args").is_some_and(|value| !value.is_null()) {
-                        controller.enqueue(StreamPart::ToolInputDelta {
-                            id: id.clone(),
-                            delta: args_str.clone(),
-                            provider_metadata: thought_sig_meta.clone(),
-                        });
-                    }
-                    controller.enqueue(StreamPart::ToolInputEnd {
-                        id: id.clone(),
-                        provider_metadata: thought_sig_meta.clone(),
-                    });
-                    controller.enqueue(StreamPart::ToolCall(RawToolCall {
-                        tool_call_id: id,
-                        tool_name: name.to_string(),
-                        input: args_str,
-                        provider_executed: None,
-                        dynamic: None,
-                        provider_metadata: thought_sig_meta.clone(),
-                    }));
-                    self.has_tool_calls = true;
+                if let Some(call) = part.get("functionCall")
+                    && !self.function_call(call, part, controller)
+                {
+                    return;
                 }
             }
         }
@@ -605,6 +622,141 @@ impl GoogleLanguageModelStream {
         if let Some(reason) = candidate.finish_reason.as_deref() {
             self.final_finish_reason = Some(parse_finish_reason(reason, self.has_tool_calls));
         }
+    }
+}
+
+impl GoogleLanguageModelStream {
+    /// One `functionCall` part: a chunk of streamed arguments (`partialArgs`,
+    /// or a name with `willContinue`), the empty chunk that ends a streamed
+    /// call, or a complete call. `false` when the arguments cannot be
+    /// accumulated, which ends the stream.
+    fn function_call(&mut self, call: &Value, part: &Value, controller: &mut Controller) -> bool {
+        let field = |name: &str| call.get(name).filter(|value| !value.is_null());
+        let name = field("name").and_then(Value::as_str);
+        let args = field("args");
+        let partial_args = field("partialArgs");
+        let will_continue = field("willContinue").and_then(Value::as_bool);
+        let metadata = thought_signature_metadata(self.namespace, part);
+        let id = || {
+            field("id")
+                .and_then(Value::as_str)
+                .filter(|id| !id.is_empty())
+                .map_or_else(|| (self.ctx.generate_id)(), str::to_owned)
+        };
+
+        if partial_args.is_some() || (name.is_some() && will_continue == Some(true)) {
+            if let Some(name) = name {
+                let id = id();
+                controller.enqueue(StreamPart::ToolInputStart {
+                    id: id.clone(),
+                    tool_name: name.to_owned(),
+                    provider_executed: None,
+                    dynamic: None,
+                    title: None,
+                    provider_metadata: metadata.clone(),
+                });
+                self.active_tool_calls.push((
+                    RawToolCall {
+                        tool_call_id: id,
+                        tool_name: name.to_owned(),
+                        input: String::new(),
+                        provider_executed: None,
+                        dynamic: None,
+                        provider_metadata: metadata.clone(),
+                    },
+                    GoogleJsonAccumulator::new(),
+                ));
+            }
+            let (Some(partial_args), Some((active, accumulator))) = (
+                partial_args.and_then(Value::as_array),
+                self.active_tool_calls.last_mut(),
+            ) else {
+                return true;
+            };
+            let partial_args: Vec<PartialArg> = partial_args.iter().map(partial_arg).collect();
+            match accumulator.process_partial_args(&partial_args) {
+                Ok(result) if !result.text_delta.is_empty() => {
+                    controller.enqueue(StreamPart::ToolInputDelta {
+                        id: active.tool_call_id.clone(),
+                        delta: result.text_delta,
+                        provider_metadata: metadata,
+                    });
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    controller.enqueue(StreamPart::Error { error });
+                    controller.terminate();
+                    return false;
+                }
+            }
+            if will_continue != Some(true)
+                && partial_args
+                    .iter()
+                    .all(|arg| arg.will_continue != Some(true))
+            {
+                self.finish_streaming_tool_call(controller);
+            }
+        } else if name.is_none() && args.is_none() && will_continue.is_none() {
+            self.finish_streaming_tool_call(controller);
+        } else if let Some(name) = name {
+            let id = id();
+            let input = match args {
+                Some(Value::String(args)) => args.clone(),
+                Some(args) => args.to_string(),
+                None => "{}".to_owned(),
+            };
+            controller.enqueue(StreamPart::ToolInputStart {
+                id: id.clone(),
+                tool_name: name.to_owned(),
+                provider_executed: None,
+                dynamic: None,
+                title: None,
+                provider_metadata: metadata.clone(),
+            });
+            if args.is_some() {
+                controller.enqueue(StreamPart::ToolInputDelta {
+                    id: id.clone(),
+                    delta: input.clone(),
+                    provider_metadata: metadata.clone(),
+                });
+            }
+            controller.enqueue(StreamPart::ToolInputEnd {
+                id: id.clone(),
+                provider_metadata: metadata.clone(),
+            });
+            controller.enqueue(StreamPart::ToolCall(RawToolCall {
+                tool_call_id: id,
+                tool_name: name.to_owned(),
+                input,
+                provider_executed: None,
+                dynamic: None,
+                provider_metadata: metadata,
+            }));
+            self.has_tool_calls = true;
+        }
+        true
+    }
+
+    /// Close the innermost streamed function call with its final arguments.
+    fn finish_streaming_tool_call(&mut self, controller: &mut Controller) {
+        let Some((mut call, accumulator)) = self.active_tool_calls.pop() else {
+            return;
+        };
+        let result = accumulator.finalize();
+        if !result.closing_delta.is_empty() {
+            controller.enqueue(StreamPart::ToolInputDelta {
+                id: call.tool_call_id.clone(),
+                delta: result.closing_delta,
+                provider_metadata: call.provider_metadata.clone(),
+            });
+        }
+        controller.enqueue(StreamPart::ToolInputEnd {
+            id: call.tool_call_id.clone(),
+            provider_metadata: call.provider_metadata.clone(),
+        });
+        call.input = result.final_json;
+        controller.enqueue(StreamPart::ToolCall(call));
+        self.has_tool_calls = true;
     }
 }
 
@@ -668,7 +820,7 @@ impl GoogleLanguageModelStream {
             controller.reasoning_end(id);
         }
 
-        let provider_metadata = Some(google_metadata(serde_json::json!({
+        let provider_metadata = Some(self.namespace.metadata(serde_json::json!({
             "promptFeedback": self.last_prompt_feedback,
             "groundingMetadata": self.last_grounding_metadata,
             "urlContextMetadata": self.last_url_context_metadata,
@@ -696,7 +848,36 @@ impl GoogleLanguageModelStream {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/// `{ thoughtSignature }` under the namespace keys, when the part carries a
+/// non-empty signature.
+fn thought_signature_metadata(namespace: Namespace, part: &Value) -> Option<ProviderMetadata> {
+    part.get("thoughtSignature")
+        .and_then(Value::as_str)
+        .filter(|signature| !signature.is_empty())
+        .map(|signature| namespace.metadata(json!({ "thoughtSignature": signature })))
+}
+
+/// One Vertex AI `partialArgs` entry.
+fn partial_arg(arg: &Value) -> PartialArg {
+    PartialArg {
+        json_path: arg
+            .get("jsonPath")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        string_value: arg
+            .get("stringValue")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        number_value: arg.get("numberValue").and_then(Value::as_f64),
+        bool_value: arg.get("boolValue").and_then(Value::as_bool),
+        null_value: arg.get("nullValue").map(|_| ()),
+        will_continue: arg.get("willContinue").and_then(Value::as_bool),
+    }
+}
+
 fn server_tool_metadata(
+    namespace: Namespace,
     tool_call_id: &str,
     server_tool_type: &str,
     thought_signature: Option<&str>,
@@ -705,10 +886,10 @@ fn server_tool_metadata(
         "serverToolCallId": tool_call_id,
         "serverToolType": server_tool_type,
     });
-    if let Some(signature) = thought_signature {
+    if let Some(signature) = thought_signature.filter(|signature| !signature.is_empty()) {
         payload["thoughtSignature"] = json!(signature);
     }
-    google_metadata(payload)
+    namespace.metadata(payload)
 }
 
 /// Extract `GenerateContent` items from a non-streaming candidate.
@@ -724,6 +905,7 @@ fn server_tool_metadata(
 fn extract_content_from_candidate(
     candidate: &Candidate,
     code_execution_tool_name: &str,
+    namespace: Namespace,
     generate_id: &dyn Fn() -> String,
 ) -> (Vec<GenerateContent>, bool) {
     let mut content = Vec::new();
@@ -740,11 +922,7 @@ fn extract_content_from_candidate(
     if let Some(parts) = parts {
         for part in parts {
             // thoughtSignature → provider_metadata (upstream :448-451)
-            let thought_sig_meta: Option<ProviderMetadata> = part
-                .get("thoughtSignature")
-                .and_then(|v| v.as_str())
-                .filter(|signature| !signature.is_empty())
-                .map(|s| google_metadata(json!({ "thoughtSignature": s })));
+            let thought_sig_meta = thought_signature_metadata(namespace, part);
 
             // Branch order matches upstream (google-language-model.ts:420-534):
             // executableCode → codeExecutionResult → text → functionCall
@@ -876,6 +1054,7 @@ fn extract_content_from_candidate(
                 last_server_tool_call_id = Some(id.clone());
                 let input = tc.get("args").cloned().unwrap_or(json!({}));
                 let server_meta = server_tool_metadata(
+                    namespace,
                     &id,
                     tool_type,
                     part.get("thoughtSignature").and_then(|v| v.as_str()),
@@ -903,6 +1082,7 @@ fn extract_content_from_candidate(
                     .unwrap_or_else(generate_id);
                 let response = tr.get("response").cloned().unwrap_or(json!({}));
                 let server_meta = server_tool_metadata(
+                    namespace,
                     &id,
                     tool_type,
                     part.get("thoughtSignature").and_then(|v| v.as_str()),

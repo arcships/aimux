@@ -153,7 +153,7 @@ fn option_string(
     match merged.get(key) {
         None => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(AiMuxError::InvalidArgument(format!(
+        Some(_) => Err(AiMuxError::invalid_argument(format!(
             "invalid provider options for \"{namespace_name}\": `{key}` must be a string"
         ))),
     }
@@ -167,7 +167,7 @@ fn validate_options(options: &Map<String, Value>, namespace_name: &str) -> Resul
         .get("strictJsonSchema")
         .is_some_and(|value| !value.is_boolean())
     {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "invalid provider options for \"{namespace_name}\": `strictJsonSchema` must be a boolean"
         )));
     }

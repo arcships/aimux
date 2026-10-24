@@ -51,7 +51,7 @@ fn invalid_params(result: Result<Value, OpsError>) {
     let error = result.unwrap_err();
     assert!(matches!(
         error.unprojected(),
-        OpsError::Protocol(ProtocolError::InvalidParams(_))
+        OpsError::Protocol(ProtocolError::InvalidParams { .. })
     ));
     assert!(matches!(error, OpsError::Projected(_)));
 }
@@ -211,7 +211,7 @@ async fn builtin_download_keeps_the_guard_and_model_supported_url_policy() {
                 is_url_supported_by_model: false
             }])
             .await,
-        Err(AiMuxError::InvalidArgument(_))
+        Err(AiMuxError::InvalidArgument { .. })
     ));
     assert_eq!(
         download
@@ -428,11 +428,11 @@ fn registrations_publish_complete_metadata() {
         assert_eq!(op.mode, OpMode::Call);
         assert_eq!(op.cancellation, Cancellation::None);
         assert_eq!(op.request_byte_policy, RequestBytePolicy::Json);
-        assert_eq!(op.terminal_type, None);
+        assert!(op.terminal_type.is_none());
         assert!(op.side_effects);
         assert!(op.required_capabilities.is_empty());
-        assert_ne!(op.request_type, "serde_json::Value");
-        assert_ne!(op.result_type, "serde_json::Value");
+        assert_ne!((op.request_type.id)().into_owned(), "AnyValue");
+        assert_ne!((op.result_type.id)().into_owned(), "AnyValue");
     }
     assert_eq!(
         dispatch::descriptor("abort.signal")
