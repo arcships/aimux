@@ -1210,6 +1210,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An OpenAI (and Azure) Responses generate call whose message holds a part
+  other than `output_text` (a `refusal`) fails with an `ApiCall` error
+  ("Invalid JSON response"), as the AI SDK's response schema rejects it;
+  aimux skipped the part and returned an empty result, so the evaluation
+  model reported a refusal as invalid decision JSON.
 - OpenAI (and Azure) Responses local shell tool inputs list the action's
   fields in the AI SDK's order (`type`, `command`, timeout, `user`, working
   directory, `env`), in generated and streamed calls; aimux kept the wire

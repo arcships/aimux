@@ -164,6 +164,27 @@ pub(crate) fn build_responses_generate_result_with_tools(
         match part.get("type").and_then(|v| v.as_str()) {
             Some("message") => {
                 if let Some(content_parts) = part.get("content").and_then(|v| v.as_array()) {
+                    // The AI SDK's response schema lets a message hold only
+                    // `output_text` parts; any other part (a `refusal`) fails
+                    // its parse, which rejects the response as invalid JSON.
+                    if let Some(other) = content_parts
+                        .iter()
+                        .find(|cp| cp.get("type").and_then(Value::as_str) != Some("output_text"))
+                    {
+                        return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                            status_code: Some(200),
+                            response_body: Some(raw_body.to_string()),
+                            response_headers: Some(response_headers.clone()),
+                            ..ApiCallError::new(
+                                format!(
+                                    "Invalid JSON response: message content part of type {} is not output_text",
+                                    other.get("type").unwrap_or(&Value::Null)
+                                ),
+                                request_url,
+                                aimux_provider_utils::redact_error_context(body.clone()),
+                            )
+                        })));
+                    }
                     for cp in content_parts {
                         if cp.get("type").and_then(|v| v.as_str()) == Some("output_text") {
                             let text = cp

@@ -1221,3 +1221,43 @@ async fn local_shell_input_lists_action_fields_in_schema_order() {
         r#"{"action":{"type":"exec","command":["ls"],"working_directory":"/root","env":{}}}"#
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1486
+/// lets a message's `content` hold only `output_text` parts, so a `refusal`
+/// part fails the response schema and the JSON response handler rejects the
+/// call with an `APICallError` ("Invalid JSON response").
+#[tokio::test]
+async fn a_refusal_message_part_rejects_the_response() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_refusal",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "message",
+            "id": "msg_refusal",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "refusal", "refusal": "Cannot help with this."}]
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let error = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap_err();
+    let AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected an API call error: {error:?}");
+    };
+    assert!(
+        detail.message.starts_with("Invalid JSON response"),
+        "{error}"
+    );
+    assert!(
+        detail
+            .response_body
+            .as_deref()
+            .is_some_and(|body| body.contains("Cannot help with this.")),
+        "{error:?}"
+    );
+}
