@@ -311,7 +311,7 @@ mod tests {
     #[tokio::test]
     async fn first_non_retryable_error_is_not_wrapped() {
         let error = retry_with_exponential_backoff(
-            || async { Err::<(), _>(AiMuxError::InvalidArgument("bad".into())) },
+            || async { Err::<(), _>(AiMuxError::invalid_argument("bad")) },
             2,
             0,
             2,
@@ -321,7 +321,7 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(matches!(error, AiMuxError::InvalidArgument(_)));
+        assert!(matches!(error, AiMuxError::InvalidArgument { .. }));
     }
 
     #[tokio::test]

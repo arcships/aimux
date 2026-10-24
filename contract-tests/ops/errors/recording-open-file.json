@@ -5,6 +5,8 @@
   "error": {
     "name": "OpenFile",
     "path": "recordings/session.jsonl",
-    "source": "permission denied"
+    "cause": {
+      "message": "permission denied"
+    }
   }
 }

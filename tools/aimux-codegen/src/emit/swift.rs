@@ -235,6 +235,17 @@ fn encode(out: &mut String, field: &Field, value: &str, indent: &str) {
     .unwrap();
 }
 
+/// An optional field of the struct's own type (`SourceError.cause`): a Swift
+/// struct cannot store itself inline, so the value lives in a `WireIndirect`
+/// behind a property of the field's own name.
+fn boxed(name: &str, field: &Field) -> bool {
+    optional(field) && matches!(nonnull(&field.ty), Ty::Ref(inner) if inner == name)
+}
+
+fn storage(field: &Field) -> String {
+    format!("_{}", camel(&field.json_name).trim_matches('`'))
+}
+
 fn structure(out: &mut String, name: &str, fields: &[Field]) {
     writeln!(
         out,
@@ -244,13 +255,19 @@ fn structure(out: &mut String, name: &str, fields: &[Field]) {
     .unwrap();
     for field in fields {
         docs(out, field.doc.as_deref(), "    ");
-        writeln!(
-            out,
-            "    public var {}: {}",
-            camel(&field.json_name),
-            field_ty(field)
-        )
-        .unwrap();
+        let key = camel(&field.json_name);
+        if boxed(name, field) {
+            let storage = storage(field);
+            writeln!(
+                out,
+                "    public var {key}: {} {{\n        get {{ {storage}?.value }}\n        set {{ {storage} = newValue.map(WireIndirect.boxed) }}\n    }}\n    private var {storage}: WireIndirect<{}>?",
+                field_ty(field),
+                ident(name)
+            )
+            .unwrap();
+        } else {
+            writeln!(out, "    public var {key}: {}", field_ty(field)).unwrap();
+        }
     }
     out.push_str("\n    public init(");
     for (i, field) in fields.iter().enumerate() {
@@ -275,12 +292,22 @@ fn structure(out: &mut String, name: &str, fields: &[Field]) {
     out.push_str(") {\n");
     for field in fields {
         let key = camel(&field.json_name);
-        writeln!(out, "        self.{key} = {key}").unwrap();
+        if boxed(name, field) {
+            writeln!(
+                out,
+                "        self.{} = {key}.map(WireIndirect.boxed)",
+                storage(field)
+            )
+            .unwrap();
+        } else {
+            writeln!(out, "        self.{key} = {key}").unwrap();
+        }
     }
     out.push_str("    }\n");
     if !fields.is_empty()
         && fields.iter().all(|field| {
-            !matches!(nonnull(&field.ty), Ty::Literal(_))
+            !boxed(name, field)
+                && !matches!(nonnull(&field.ty), Ty::Literal(_))
                 && !presence(field)
                 && !(field.required && matches!(field.ty, Ty::Nullable(_)))
         })
@@ -301,13 +328,23 @@ fn structure(out: &mut String, name: &str, fields: &[Field]) {
     } else {
         out.push_str("        let c = try decoder.container(keyedBy: CodingKeys.self)\n");
         for field in fields {
-            writeln!(
-                out,
-                "        self.{} = {}",
-                camel(&field.json_name),
-                decode(field)
-            )
-            .unwrap();
+            if boxed(name, field) {
+                writeln!(
+                    out,
+                    "        self.{} = {}.map(WireIndirect.boxed)",
+                    storage(field),
+                    decode(field)
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    out,
+                    "        self.{} = {}",
+                    camel(&field.json_name),
+                    decode(field)
+                )
+                .unwrap();
+            }
         }
     }
     out.push_str("    }\n    public func encode(to encoder: any Encoder) throws {\n");
@@ -651,6 +688,17 @@ public struct WireUInt64: Codable, Equatable, Sendable {
         try c.encode(rawValue)
     }
 }
+/// The boxed storage of a struct's optional field of its own type.
+indirect enum WireIndirect<Value> {
+    case boxed(Value)
+    var value: Value {
+        switch self {
+        case .boxed(let value): return value
+        }
+    }
+}
+extension WireIndirect: Equatable where Value: Equatable {}
+extension WireIndirect: Sendable where Value: Sendable {}
 private struct WireKey: CodingKey {
     let stringValue: String
     let intValue: Int? = nil
@@ -683,6 +731,26 @@ mod tests {
         assert!(source.contains("c.decodePresence(JSONValue.self, forKey: .body)"));
         assert!(source.contains("c.encode(self.required, forKey: .required)"));
         assert!(source.contains("c.encodePresence(self.body, forKey: .body)"));
+    }
+
+    #[test]
+    fn a_field_of_the_structs_own_type_is_boxed() {
+        let model = normalize(&json!({"input": {}, "output": {"Chain": {
+            "type": "object", "properties": {
+                "message": {"type": "string"},
+                "cause": {"$ref": "#/typeDefs/output/Chain"}
+            }, "required": ["message"]
+        }}}))
+        .unwrap();
+        let files = Swift.files(&model).unwrap();
+        let declaration = files[0].1.split("public struct Chain").nth(1).unwrap();
+        assert!(declaration.contains("public var cause: Chain? {"));
+        assert!(declaration.contains("private var _cause: WireIndirect<Chain>?"));
+        assert!(declaration.contains("self._cause = cause.map(WireIndirect.boxed)"));
+        assert!(declaration.contains(
+            "self._cause = try c.decodeIfPresent(Chain.self, forKey: .cause).map(WireIndirect.boxed)"
+        ));
+        assert!(declaration.contains("try c.encodeIfPresent(self.cause, forKey: .cause)"));
     }
 
     #[test]

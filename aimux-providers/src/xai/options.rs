@@ -29,7 +29,7 @@ pub(crate) fn xai_metadata(payload: Value) -> ProviderMetadata {
 // where the schema says `.nullish()`). ──
 
 fn invalid(key: &str, expected: &str) -> AiMuxError {
-    AiMuxError::InvalidArgument(format!(
+    AiMuxError::invalid_argument(format!(
         "Invalid argument for parameter providerOptions: xai.{key} must be {expected}"
     ))
 }

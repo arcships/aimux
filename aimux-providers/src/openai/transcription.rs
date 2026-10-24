@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::transcription_model::{
@@ -204,8 +205,12 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
     match audio {
         AudioInput::Binary(bytes) => Ok(bytes.clone()),
         AudioInput::Base64(b64) => {
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(|e| {
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid base64: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                }
+            })
         }
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
@@ -496,10 +501,12 @@ impl OpenAITranscriptionModel {
 
         // Session establishment (send session.update). Send errors are
         // abort-aware inside ws.send_text.
-        ws.send_text(
-            &serde_json::to_string(&session_update)
-                .map_err(|e| AiMuxError::JsonParse(format!("serialize session.update: {e}")))?,
-        )
+        ws.send_text(&serde_json::to_string(&session_update).map_err(|e| {
+            AiMuxError::JsonParse {
+                message: format!("serialize session.update: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            }
+        })?)
         .await?;
 
         let mut audio = options.audio;

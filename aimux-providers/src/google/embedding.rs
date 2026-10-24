@@ -60,8 +60,8 @@ impl EmbeddingModel for GoogleEmbeddingModel {
         if let Some(opts) = provider_options {
             if let Some(dimension) = opts.get("outputDimensionality") {
                 if !dimension.is_number() {
-                    return Err(AiMuxError::InvalidArgument(
-                        "outputDimensionality must be a number".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "outputDimensionality must be a number",
                     ));
                 }
                 settings.insert("outputDimensionality".into(), dimension.clone());
@@ -80,15 +80,15 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                             | "CODE_RETRIEVAL_QUERY"
                     )
                 ) {
-                    return Err(AiMuxError::InvalidArgument(
-                        "Invalid Google embedding taskType".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "Invalid Google embedding taskType",
                     ));
                 }
                 settings.insert("taskType".into(), task.clone());
             }
         }
         if options.values.len() > 100 {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Too many values for a single embedding call. The {} model \"{}\" can only embed up to 100 values per call, but {} values were provided.",
                 self.provider(),
                 self.model_id,
@@ -99,13 +99,13 @@ impl EmbeddingModel for GoogleEmbeddingModel {
         let multimodal = multimodal
             .map(|v| {
                 v.as_array().ok_or_else(|| {
-                    AiMuxError::InvalidArgument("Google embedding content must be an array".into())
+                    AiMuxError::invalid_argument("Google embedding content must be an array")
                 })
             })
             .transpose()?;
         if let Some(content) = multimodal {
             if content.len() != options.values.len() {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "The number of multimodal content entries ({}) must match the number of values ({}).",
                     content.len(),
                     options.values.len()
@@ -113,8 +113,8 @@ impl EmbeddingModel for GoogleEmbeddingModel {
             }
             for entry in content.iter().filter(|v| !v.is_null()) {
                 let parts = entry.as_array().filter(|p| !p.is_empty()).ok_or_else(|| {
-                    AiMuxError::InvalidArgument(
-                        "Google embedding content entries must be nonempty arrays or null".into(),
+                    AiMuxError::invalid_argument(
+                        "Google embedding content entries must be nonempty arrays or null",
                     )
                 })?;
                 for part in parts {
@@ -128,8 +128,8 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                                 && p.get("fileUri").is_some_and(Value::is_string)
                         });
                     if !valid {
-                        return Err(AiMuxError::InvalidArgument(
-                            "Invalid Google embedding content part".into(),
+                        return Err(AiMuxError::invalid_argument(
+                            "Invalid Google embedding content part",
                         ));
                     }
                 }
@@ -190,13 +190,13 @@ impl EmbeddingModel for GoogleEmbeddingModel {
             vec![
                 raw_value
                     .get("embedding")
-                    .ok_or_else(|| AiMuxError::InvalidResponseData("Missing embedding".into()))?,
+                    .ok_or_else(|| AiMuxError::invalid_response_data("Missing embedding"))?,
             ]
         } else {
             raw_value
                 .get("embeddings")
                 .and_then(Value::as_array)
-                .ok_or_else(|| AiMuxError::InvalidResponseData("Missing embeddings".into()))?
+                .ok_or_else(|| AiMuxError::invalid_response_data("Missing embeddings"))?
                 .iter()
                 .collect()
         };
@@ -206,16 +206,12 @@ impl EmbeddingModel for GoogleEmbeddingModel {
                 let values = item
                     .get("values")
                     .and_then(Value::as_array)
-                    .ok_or_else(|| {
-                        AiMuxError::InvalidResponseData("Missing embedding values".into())
-                    })?;
+                    .ok_or_else(|| AiMuxError::invalid_response_data("Missing embedding values"))?;
                 values
                     .iter()
                     .map(|v| {
                         v.as_f64().map(|v| v as f32).ok_or_else(|| {
-                            AiMuxError::InvalidResponseData(
-                                "Embedding values must be numbers".into(),
-                            )
+                            AiMuxError::invalid_response_data("Embedding values must be numbers")
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()

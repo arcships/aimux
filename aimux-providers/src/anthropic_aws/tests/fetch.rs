@@ -611,7 +611,7 @@ mod create_sig_v4_fetch_function {
         let mock = MockFetch::new(vec![]);
         let fetch = sigv4_fetch(
             Resolvable::from_async_fn(|| async {
-                Err(AiMuxError::Other("Failed to get credentials".into()))
+                Err(AiMuxError::other("Failed to get credentials"))
             }),
             mock.transport(),
         );

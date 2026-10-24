@@ -383,7 +383,7 @@ mod anthropic_aws_provider_authentication {
         async fn wraps_credential_provider_rejections_with_a_guided_message() {
             let _env = stub_default_env();
             let credentials = Resolvable::from_async_fn(|| async {
-                Err::<AwsCredentials, _>(AiMuxError::Other("STS denied".into()))
+                Err::<AwsCredentials, _>(AiMuxError::other("STS denied"))
             });
             let fetch = MockFetch::new(vec![]);
             let provider = create_anthropic_aws(AnthropicAwsProviderSettings {
@@ -783,7 +783,7 @@ async fn region_comes_from_the_setting_or_aws_region_with_no_default() {
     let fetch = MockFetch::new(vec![]);
     let error = generate(&fetch, settings()).await.unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message) if message.contains("Invalid AWS region")),
+        matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.contains("Invalid AWS region")),
         "{error:?}"
     );
     assert!(fetch.seen().is_empty());
@@ -951,7 +951,7 @@ async fn a_missing_sigv4_key_fails_with_guidance() {
 
     let fetch = MockFetch::new(vec![]);
     let error = generate(&fetch, settings()).await.unwrap_err();
-    let AiMuxError::Other(message) = &error else {
+    let AiMuxError::Other { message, .. } = &error else {
         panic!("a missing access key is the guidance error: {error:?}");
     };
     assert!(
@@ -965,7 +965,7 @@ async fn a_missing_sigv4_key_fails_with_guidance() {
 
     let _key_id = EnvVar::set("AWS_ACCESS_KEY_ID", Some("AKIDENV"));
     let error = generate(&fetch, settings()).await.unwrap_err();
-    let AiMuxError::Other(message) = &error else {
+    let AiMuxError::Other { message, .. } = &error else {
         panic!("a missing secret key is the guidance error: {error:?}");
     };
     assert!(
@@ -995,7 +995,7 @@ async fn a_failing_credential_producer_is_reported_with_guidance() {
             region: Some("us-west-2".into()),
             workspace_id: Some("ws".into()),
             auth: Some(AnthropicAwsAuth::SigV4(Resolvable::from_async_fn(
-                || async { Err(AiMuxError::Other("STS denied".into())) },
+                || async { Err(AiMuxError::other("STS denied")) },
             ))),
             ..Default::default()
         },
