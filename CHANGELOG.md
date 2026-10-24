@@ -1210,6 +1210,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A Chat Completions chunk on an OpenAI (and Azure) Responses stream yields
+  an `ApiCall` error part that names the mix-up (use `openai.chat(...)` or
+  `@ai-sdk/openai-compatible`) and finishes the stream with `error`, as the
+  AI SDK does; aimux ignored the chunk and finished with `other`.
 - OpenAI (and Azure) Responses streams correlate reasoning summary events
   and the reasoning item's end by `output_index`, as the AI SDK does, so a
   provider that rotates item ids mid-stream (GitHub Copilot) keeps one

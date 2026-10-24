@@ -427,6 +427,21 @@ fn reasoning_stream_metadata(
     provider_namespace(provider_key, inner).expect("provider metadata must be an object")
 }
 
+/// The error for a Chat Completions chunk on a Responses stream
+/// (`createOpenAIResponsesChatCompletionsMismatchError`).
+const CHAT_COMPLETIONS_MISMATCH: &str = concat!(
+    "Received a Chat Completions stream while using the OpenAI Responses API. ",
+    "The default OpenAI provider model uses the Responses API. If your custom baseURL targets a Chat Completions-compatible endpoint, use openai.chat('model-id') or createOpenAI(...).chat('model-id') instead. ",
+    "You can also use @ai-sdk/openai-compatible for OpenAI-compatible providers.",
+);
+
+/// A Chat Completions chunk: a `choices` array and no string `type`
+/// (`isOpenAIChatCompletionChunk`).
+fn is_chat_completion_chunk(chunk: &Value) -> bool {
+    chunk.get("choices").is_some_and(Value::is_array)
+        && !chunk.get("type").is_some_and(Value::is_string)
+}
+
 /// The item id an event refers to: the id the output item at the event's
 /// `output_index` started with, since OpenAI-compatible providers can rotate
 /// item ids between events (`resolveOutputItemId`), else the event's own.
@@ -813,6 +828,22 @@ impl Transformer for OpenAIResponsesStream {
                     controller.enqueue(StreamPart::Raw {
                         raw_value: parsed.clone(),
                     });
+                }
+                if is_chat_completion_chunk(&parsed) {
+                    *stream_errored = true;
+                    *final_finish_reason = Some(FINISH_ERROR);
+                    controller.enqueue(StreamPart::Error {
+                        error: aimux_provider_utils::stream_error_api_call(
+                            CHAT_COMPLETIONS_MISMATCH,
+                            None,
+                            None,
+                            &parsed,
+                            url.clone(),
+                            request_body.clone(),
+                            response_headers.clone(),
+                        ),
+                    });
+                    return;
                 }
                 let etype = parsed
                     .get("type")

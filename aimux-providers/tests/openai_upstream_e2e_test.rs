@@ -1442,3 +1442,46 @@ async fn rotated_reasoning_item_ids_are_correlated_by_output_index() {
         [("start", "rs_1:0"), ("delta", "rs_1:0"), ("end", "rs_1:0")]
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1664-1680 turns a chunk
+/// that fails the Responses schema and looks like a Chat Completions chunk
+/// (:2962, a `choices` array and no string `type`) into an `APICallError`
+/// that names the mix-up (:2972), sends it as an error part and finishes with
+/// `error`.
+#[tokio::test]
+async fn a_chat_completions_chunk_on_a_responses_stream_gives_a_helpful_error() {
+    let chunk = json!({"choices":[],"created":0,"id":"","model":"","object":""});
+    let fetch = MockFetch::new(vec![sse(vec![chunk.clone()])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let error = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Error { error } => Some(error),
+            _ => None,
+        })
+        .expect("an error part");
+    let AiMuxError::ApiCall(detail) = error else {
+        panic!("expected an API call error: {error:?}");
+    };
+    assert!(
+        detail
+            .message
+            .starts_with("Received a Chat Completions stream while using the OpenAI Responses API."),
+        "{error}"
+    );
+    assert_eq!(detail.response_body.as_deref(), Some(chunk.to_string().as_str()));
+    assert!(!detail.is_retryable);
+    assert!(matches!(
+        parts.last(),
+        Some(StreamPart::Finish { finish_reason, .. }) if finish_reason.unified == FinishReasonUnified::Error
+    ));
+}
