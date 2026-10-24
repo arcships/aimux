@@ -1,6 +1,6 @@
 //! Upstream `supports-reasoning-effort.test.ts`.
 
-use crate::xai::convert::supports_reasoning_effort;
+use crate::xai::supports_reasoning_effort::supports_reasoning_effort;
 
 #[allow(
     clippy::module_inception,

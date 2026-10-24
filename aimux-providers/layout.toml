@@ -22,7 +22,7 @@ issue = 275
 
 [[xai.files]]
 upstream = "src/get-response-metadata.ts"
-rust = "xai/responses/mod.rs"
+rust = "xai/responses/responses_language_model.rs"
 status = "mapped"
 
 [xai.files.tests]
@@ -61,56 +61,56 @@ reason = "Realtime is out of scope (docs/aisdk-architecture-alignment.md, 本期
 
 [[xai.files]]
 upstream = "src/responses/convert-to-xai-responses-input.ts"
-rust = "xai/responses/convert.rs"
+rust = "xai/responses/convert_to_responses_input.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/responses/convert-xai-responses-usage.ts"
-rust = "xai/responses/convert.rs"
+rust = "xai/responses/convert_responses_usage.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/responses/map-xai-responses-finish-reason.ts"
-rust = "xai/responses/convert.rs"
+rust = "xai/responses/map_responses_finish_reason.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/responses/xai-responses-api.ts"
-rust = "xai/responses/types.rs"
+rust = "xai/responses/responses_api.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/responses/xai-responses-language-model-options.ts"
-rust = "xai/responses/convert.rs"
+rust = "xai/responses/responses_language_model_options.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/responses/xai-responses-language-model.ts"
-rust = "xai/responses/mod.rs"
+rust = "xai/responses/responses_language_model.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/responses/xai-responses-prepare-tools.ts"
-rust = "xai/responses/convert.rs"
+rust = "xai/responses/responses_prepare_tools.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/supports-reasoning-effort.ts"
-rust = "xai/convert.rs"
+rust = "xai/supports_reasoning_effort.rs"
 status = "mapped"
 
 [xai.files.tests]
@@ -172,14 +172,14 @@ reason = "Batch is out of scope (docs/aisdk-architecture-alignment.md, 本期范
 
 [[xai.files]]
 upstream = "src/xai-error.ts"
-rust = "xai/mod.rs"
+rust = "xai/error.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/xai-file-part-options.ts"
-rust = "xai/responses/convert.rs"
+rust = "xai/responses/convert_to_responses_input.rs"
 status = "mapped"
 
 [xai.files.tests]
@@ -201,7 +201,7 @@ issue = 275
 
 [[xai.files]]
 upstream = "src/xai-provider.ts"
-rust = "xai/mod.rs"
+rust = "xai/provider.rs"
 status = "mapped"
 
 [xai.files.tests]
@@ -213,42 +213,42 @@ sub-feature = [
 
 [[xai.files]]
 upstream = "src/xai-speech-model-options.ts"
-rust = "xai/speech.rs"
+rust = "xai/speech_model.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/xai-speech-model.ts"
-rust = "xai/speech.rs"
+rust = "xai/speech_model.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/xai-transcription-model-options.ts"
-rust = "xai/transcription.rs"
+rust = "xai/transcription_model.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/xai-transcription-model.ts"
-rust = "xai/transcription.rs"
+rust = "xai/transcription_model.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/xai-video-model-options.ts"
-rust = "xai/video.rs"
+rust = "xai/video_model.rs"
 status = "mapped"
 
 [xai.files.tests]
 
 [[xai.files]]
 upstream = "src/xai-video-model.ts"
-rust = "xai/video.rs"
+rust = "xai/video_model.rs"
 status = "mapped"
 
 [xai.files.tests]

@@ -504,7 +504,7 @@ fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, A
 /// Generate a unique source ID for streaming annotation sources.
 ///
 /// Uses a process-wide atomic counter — consistent with the xAI Responses
-/// provider (`aimux-providers/src/xai/responses/mod.rs`). Upstream TS uses
+/// provider (`aimux-providers/src/xai/responses/responses_language_model.rs`). Upstream TS uses
 /// `generateId()` for the same purpose.
 fn generate_source_id() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
