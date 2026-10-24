@@ -1210,6 +1210,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A streamed SSE event that is not JSON yields `JsonParse` reading
+  `JSON parsing failed: Text: <event data>.\nError message: <parser message>`,
+  the AI SDK's `JSONParseError` message, as `@ai-sdk/openai-compatible`
+  3.0.62 and the other AI SDK providers do; it carried only the parser
+  message. This covers every stream read through
+  `create_event_source_response_handler`.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not
