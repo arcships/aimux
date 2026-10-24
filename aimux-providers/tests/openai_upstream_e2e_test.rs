@@ -1592,3 +1592,48 @@ async fn responses_async_tool_warning_names_the_gpt_6_requirement() {
         }])
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:183-202
+/// and :454-504 quote the `allowedTools` entry in the warning feature and give
+/// the reason a tool is dropped: a deferred tool is not visible to
+/// `tool_choice.allowed_tools`.
+#[tokio::test]
+async fn responses_allowed_tools_warnings_quote_the_entry_and_give_the_reason() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.tools = Some(vec![
+        Tool::Function(FunctionTool::new(
+            "get_weather",
+            json!({"type":"object","properties":{}}),
+        )),
+        Tool::Function(FunctionTool {
+            provider_options: Some(
+                serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
+            ),
+            ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
+        }),
+    ]);
+    call.provider_options = Some(
+        serde_json::from_value(
+            json!({"openai":{"allowedTools":{"toolNames":["get_weather","deferred"]}}}),
+        )
+        .unwrap(),
+    );
+    let result = provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["tool_choice"],
+        json!({"type":"allowed_tools","mode":"auto","tools":[{"type":"function","name":"get_weather"}]})
+    );
+    assert_eq!(
+        serde_json::to_value(&result.warnings).unwrap(),
+        json!([{
+            "type": "unsupported",
+            "feature": "allowedTools entry \"deferred\"",
+            "details": "deferred tools are not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools"
+        }])
+    );
+}

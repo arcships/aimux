@@ -1149,7 +1149,7 @@ fn prepare_allowed_tools(
         let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.as_str().strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
         let tool = if let Some(tool) = direct {
             if !aliases.is_empty() {
-                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
             }
             Some(tool)
         } else {
@@ -1159,7 +1159,7 @@ fn prepare_allowed_tools(
                     _ => false,
                 })
             {
-                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("several tools share this provider tool name; use the tool name from this request".into()) });
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("several tools in this request share this provider tool name; use the tool name from the tools for this request instead".into()) });
                 continue;
             }
             aliases.first().copied()
@@ -1170,10 +1170,22 @@ fn prepare_allowed_tools(
                     .provider_options
                     .as_ref()
                     .and_then(|options| options.get("openai"));
-                if opts.is_some_and(|opts| {
-                    opts.contains_key("namespace") || opts.get("deferLoading") == Some(&json!(true))
-                }) {
-                    warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("namespace and deferred tools are not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                let reason = if opts.is_some_and(|opts| opts.contains_key("namespace")) {
+                    Some(
+                        "tools inside an OpenAI tool namespace are not visible to tool_choice.allowed_tools",
+                    )
+                } else if opts.is_some_and(|opts| opts.get("deferLoading") == Some(&json!(true))) {
+                    Some("deferred tools are not visible to tool_choice.allowed_tools")
+                } else {
+                    None
+                };
+                if let Some(reason) = reason {
+                    warnings.push(Warning::Unsupported {
+                        feature: format!("allowedTools entry \"{name}\""),
+                        details: Some(format!(
+                            "{reason}; the tool is removed from the allowed tools"
+                        )),
+                    });
                     continue;
                 }
                 json!({"type":"function", "name":tool.name})
@@ -1187,7 +1199,7 @@ fn prepare_allowed_tools(
                     Some("custom") => json!({"type":"custom", "name":tool.name}),
                     Some("mcp") => json!({"type":"mcp", "server_label":value["server_label"]}),
                     Some("tool_search") => {
-                        warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("tool_search is not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                        warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("OpenAI does not support tool_search tools in tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
                         continue;
                     }
                     Some(kind) => json!({"type":kind}),
@@ -1195,7 +1207,7 @@ fn prepare_allowed_tools(
                 }
             }
             None => {
-                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("the tool is not part of the tools for this request and is sent as a function tool".into()) });
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("the tool is not part of the tools for this request and is sent as a function tool".into()) });
                 json!({"type":"function", "name":name})
             }
         };
