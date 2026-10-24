@@ -252,7 +252,7 @@ fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<
 }
 
 /// Resolve a provider reference, throwing if the provider is not found.
-fn resolve_provider_reference(
+pub(crate) fn resolve_provider_reference(
     reference: &aimux_core::shared::SharedProviderReference,
     provider: &str,
 ) -> Result<String, String> {

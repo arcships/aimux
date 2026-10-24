@@ -187,13 +187,12 @@ impl OpenAIResponsesModel {
                             "text file parts".into(),
                         ));
                     }
-                    FileData::Reference { reference }
-                        if !reference.contains_key(profile.namespace.write_key()) =>
-                    {
-                        return Err(AiMuxError::invalid_argument(format!(
-                            "No file reference for {}",
-                            profile.namespace.write_key()
-                        )));
+                    FileData::Reference { reference } => {
+                        crate::openai::convert::resolve_provider_reference(
+                            reference,
+                            profile.namespace.write_key(),
+                        )
+                        .map_err(AiMuxError::invalid_argument)?;
                     }
                     FileData::Data { .. } if user => {
                         aimux_provider_utils::resolve_full_media_type(file)?;

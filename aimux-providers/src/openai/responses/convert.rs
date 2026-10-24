@@ -746,12 +746,9 @@ fn convert_user_part(
                 )
             }
             FileData::Reference { reference } => {
-                let file_id = reference.get(ns.write_key()).ok_or_else(|| {
-                    AiMuxError::invalid_argument(format!(
-                        "No file reference for {}",
-                        ns.write_key()
-                    ))
-                })?;
+                let file_id =
+                    crate::openai::convert::resolve_provider_reference(reference, ns.write_key())
+                        .map_err(AiMuxError::invalid_argument)?;
                 let mut part = json!({ "type": if file.media_type.split('/').next() == Some("image") { "input_image" } else { "input_file" }, "file_id": file_id });
                 if part["type"] == "input_image"
                     && let Some(detail) =
@@ -1448,7 +1445,8 @@ fn map_shell_environment(environment: &Value) -> Result<Value, AiMuxError> {
         if let Some(skills) = environment.get("skills").and_then(Value::as_array) {
             value["skills"] = Value::Array(skills.iter().map(|skill| {
                 if skill["type"] == "skillReference" {
-                    let id = skill.get("providerReference").and_then(|reference| reference.get("openai")).and_then(Value::as_str).ok_or_else(|| AiMuxError::invalid_argument("No skill reference for openai"))?;
+                    let reference = skill.get("providerReference").and_then(Value::as_object).map(|reference| reference.iter().filter_map(|(provider, id)| Some((provider.clone(), id.as_str()?.to_owned()))).collect()).unwrap_or_default();
+                    let id = crate::openai::convert::resolve_provider_reference(&reference, "openai").map_err(AiMuxError::invalid_argument)?;
                     Ok(json!({"type":"skill_reference", "skill_id":id, "version":skill.get("version").cloned().unwrap_or_else(|| json!("latest"))}))
                 } else {
                     let mut value = map_tool_fields(skill, &[("name", "name"), ("description", "description")]);

@@ -1280,6 +1280,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An OpenAI (and Azure) Responses stream that never sees
   `response.created` finishes with `responseId: null` in its provider
   metadata, as the AI SDK does, instead of an empty string.
+- OpenAI Responses now rejects a file or shell skill reference without an
+  `openai` entry with "No provider reference found for provider 'openai'.
+  Available providers: …", like the AI SDK's `NoSuchProviderReferenceError`.
 - OpenAI Responses now quotes the namespace name when tools give one namespace
   two descriptions (`conflicting descriptions for OpenAI tool namespace
   "crm"`), like the AI SDK.

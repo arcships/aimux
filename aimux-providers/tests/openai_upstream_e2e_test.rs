@@ -1699,3 +1699,31 @@ async fn responses_conflicting_namespace_descriptions_quote_the_namespace() {
         "{error:?}"
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/convert-to-openai-responses-input.ts:142-145
+/// and src/responses/openai-responses-prepare-tools.ts:780-783 resolve file and
+/// skill references with `resolveProviderReference`, whose
+/// `NoSuchProviderReferenceError` names the provider and the available ones.
+#[tokio::test]
+async fn responses_missing_provider_reference_names_the_available_providers() {
+    let fetch = MockFetch::new(vec![]);
+    let model = provider(&fetch).responses("gpt-5.4");
+    let file_call = CallOptions::new(vec![
+        serde_json::from_value(json!({"role":"user","content":[{"type":"file","mediaType":"image/png","data":{"type":"reference","reference":{"anthropic":"file-xyz"}}}]}))
+            .unwrap(),
+    ]);
+    let mut skill_call = options();
+    skill_call.tools = Some(vec![
+        serde_json::from_value(json!({"type":"provider","id":"openai.shell","name":"shell","args":{"environment":{"type":"containerAuto","skills":[{"type":"skillReference","providerReference":{"anthropic":"skill_abc"}}]}}}))
+            .unwrap(),
+    ]);
+    for call in [file_call, skill_call] {
+        let error = model.do_generate(&call).await.unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
+                if message == "No provider reference found for provider 'openai'. Available providers: anthropic"),
+            "{error:?}"
+        );
+    }
+    assert!(fetch.seen().is_empty());
+}
