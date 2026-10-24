@@ -102,7 +102,7 @@ fn arg(args: &Map<String, Value>, key: &str) -> Value {
 ///
 /// # Errors
 ///
-/// [`AiMuxError::InvalidArgument`] when a provider-defined tool's `args` do
+/// [`AiMuxError::invalid_argument`] when a provider-defined tool's `args` do
 /// not match the schema upstream validates them against.
 pub fn prepare_tools_with_provider(
     tools: Option<&[AnthropicTool]>,
@@ -617,7 +617,7 @@ pub(crate) fn validate_provider_tool_args(
     if valid {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "Invalid configuration for provider-defined tool {id}"
         )))
     }

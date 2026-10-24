@@ -175,14 +175,14 @@ fn options_name_of(name: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `name` is empty or `base_url` is
+/// Returns `AiMuxError::invalid_argument` when `name` is empty or `base_url` is
 /// not an `http(s)` URL with a host. Credentials are resolved per request, not
 /// here.
 pub fn create_open_responses(
     settings: OpenResponsesProviderSettings,
 ) -> Result<OpenResponsesProvider, AiMuxError> {
     if settings.name.trim().is_empty() {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "Open Responses requires a non-empty `name`.".to_string(),
         ));
     }
@@ -322,7 +322,7 @@ impl LanguageModel for OpenResponsesModel {
                 Some(d) => format!("Responses API returned no output ({d})"),
                 None => "Responses API returned no output".to_string(),
             };
-            return Err(AiMuxError::InvalidResponseData(message));
+            return Err(AiMuxError::invalid_response_data(message));
         }
 
         // Build content array from output items.
@@ -501,6 +501,7 @@ impl LanguageModel for OpenResponsesModel {
                 finish_reason: FINISH_OTHER,
                 is_active_reasoning: false,
                 tool_calls: HashMap::new(),
+                include_raw_chunks: options.include_raw_chunks == Some(true),
             },
         );
 
@@ -523,6 +524,7 @@ struct OpenResponsesStream {
     is_active_reasoning: bool,
     /// Tool-call accumulators keyed by item_id.
     tool_calls: HashMap<String, ToolCallAccum>,
+    include_raw_chunks: bool,
 }
 
 impl Transformer for OpenResponsesStream {
@@ -536,6 +538,22 @@ impl Transformer for OpenResponsesStream {
     }
 
     fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        // Every chunk first, as `raw` when requested
+        // (open-responses-language-model.ts:685-690); a chunk that is not
+        // JSON has no raw value.
+        if self.include_raw_chunks {
+            match &event {
+                Ok(chunk) => controller.enqueue(StreamPart::Raw {
+                    raw_value: chunk.clone(),
+                }),
+                Err(error) if error.is_recoverable_stream_error() => {
+                    controller.enqueue(StreamPart::Raw {
+                        raw_value: Value::Null,
+                    });
+                }
+                Err(_) => {}
+            }
+        }
         let Self {
             ref mut final_usage,
             ref mut has_tool_calls,

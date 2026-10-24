@@ -40,7 +40,11 @@ its own, ...), it is case 2: add its own package next to `groq/` and
    `profile.max_tokens_key` (`"max_tokens"` or `"max_completion_tokens"`: the
    only max-token key the vendor accepts); `profile.convert_usage`
    (`"alibaba"` or `"moonshotai"`: a usage shape that differs from the
-   generic OpenAI one; a new shape is a new converter in `preset.rs`). Per-call
+   generic OpenAI one; a new shape is a new converter in `preset.rs`);
+   `profile.structured_output_models` (the chat models that take a
+   `json_schema` response format, exact model ids or a prefix ending in `*`;
+   `[]` for none; absent for every model; a vendor with an AI SDK package
+   follows its `supportsStructuredOutputs`). Per-call
    body fields can use the
    provider's options namespace. The OpenAI-compatible factory also exposes
    its upstream `transform_request_body` hook; if the quirk changes auth or
@@ -159,10 +163,8 @@ its own, ...), it is case 2: add its own package next to `groq/` and
 - **A generator may stay in `scripts/` only if its output carries a
   "GENERATED — do not edit" header and CI runs it with `--check`.** Today
   that is `gen_providers_doc.py` (the `contract-tests`
-  job).
-  `gen_ts_types.py` regenerates the ts-rs TypeScript
-  types through `cargo test -p aimux-core --lib export` (the export tests
-  are the gate).
+  job). Binding DTOs are written by `cargo run -p aimux-codegen`; CI
+  checks them with `--check` and `python3 scripts/check_dto_vectors.py`.
 - `docs/api/providers.md` is the single source of truth for provider counts
   (#177). Never hand-write a provider count anywhere else — link to the
   page (the README states the total once, with a date, next to that link).

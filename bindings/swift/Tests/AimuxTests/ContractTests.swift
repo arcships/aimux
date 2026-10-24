@@ -39,7 +39,7 @@ struct ContractTests {
 #endif
     static func manifestRequiresExactVersionAndDigest() throws {
         let valid: [String: JSONValue] = [
-            "abiVersion": .number(Double(AimuxOps.ABI_VERSION)),
+            "abiVersion": .integer(Int64(AimuxOps.ABI_VERSION)),
             "opsVersion": .string(AimuxOps.OPS_VERSION),
             "digest": .string(AimuxOps.MANIFEST_DIGEST),
         ]
@@ -242,7 +242,7 @@ struct ContractTests {
             try require(error.message == "未来错误 🌍")
             let expected: JSONValue = .object([
                 "name": .string("AI_FutureError"),
-                "opaque": .object(["newField": .array([.bool(true), .null, .number(7)])]),
+                "opaque": .object(["newField": .array([.bool(true), .null, .integer(7)])]),
             ])
             try require(error.error == expected)
             try require(try JSONDecoder().decode(AimuxError.self, from: JSONEncoder().encode(error)) == error)

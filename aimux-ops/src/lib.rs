@@ -33,3 +33,6 @@ pub use envelope::{BindingError, ErrorEnvelope, OpsError, ProjectedError, Protoc
 pub use frame::{FrameStream, Outcome, StreamFrame};
 pub use handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 pub use op::{ABI_VERSION, OPS_VERSION, OpDescriptor, OpMode};
+
+#[cfg(test)]
+mod dto_vectors;

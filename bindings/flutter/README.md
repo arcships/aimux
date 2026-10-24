@@ -30,8 +30,8 @@ control functions are nonblocking and may run on the caller isolate.
 // `model` is an adopted Language handle; params follows text.stream's schema.
 final subscription = client.stream('text.stream', handle: model, params: params)
     .listen((frame) {
-  if (frame is EventFrame) print(frame.event);
-  if (frame is EndFrame) print('${frame.outcome}: ${frame.error}');
+  if (frame is StreamFrameEvent) print(frame.event);
+  if (frame is StreamFrameEnd) print('${frame.outcome}: ${frame.error}');
 });
 // Pausing withholds native credit; cancelling signals abort even while paused.
 subscription.pause();
@@ -52,7 +52,7 @@ return and the final queued notification have completed. Single-subscription
 streams start only on listen.
 
 A rejected start is a stream error with no frames. After acceptance, raw streams
-expose the explicit `EndFrame` (success/error/cancelled); an error in that terminal
+expose the explicit `StreamFrameEnd` (success/error/cancelled); an error in that terminal
 is not thrown a second time. `TypedModel` projects events into existing typed
 results and throws the terminal error once. Recoverable error *events* stay data.
 Host `onData` handlers run under Dart's normal Stream/Zone error rules. Internal
@@ -62,6 +62,8 @@ return. No callback exception crosses the C boundary.
 `OpsException` preserves the complete error envelope, including unknown payload
 names/fields and optional `retryAfterMs`. AI SDK payloads keep their `name`, flat
 fields and `isRetryable`; the binding does not invent HTTP status or retry policy.
+`cause` is the payload's cause: a nested AI SDK error, or an OS, TLS or parser
+error as `{message, cause?}`. A retry error's cause is its last attempt.
 `TranscriptionOperation` wraps the new push/next primitives and typed
 part/ended/timeout states. `ToolCallRepair` exposes the three pure DTO ops.
 `DecisionModel` exposes `decision.decide` and `decision.capabilities` over an
@@ -74,6 +76,16 @@ the same Future. Forgotten handles use a native `void(void*)` token trampoline:
 it queues cleanup to a native reaper thread, without running Dart or blocking
 on native drop in the GC callback. Finalization is a leak safeguard; it does not
 flush a recorder or complete an operation normally.
+
+DTOs are generated from the Rust manifest into `lib/src/generated/types.dart`.
+Import `package:aimux/types.dart` for immutable classes, enums and union variants.
+`Field<T>` keeps an absent field distinct from an explicit JSON null. Integer
+fields, including Rust `u64` ones, are Dart `int` (64-bit signed on the VM), so a
+`u64` above 2^63-1 cannot be held; `ErrorEnvelope/001.json` in the DTO vectors is
+the one vector skipped for this reason. Handle and sequence ids stay decimal
+strings in the DTOs, and `_u64String` rejects a string outside the `u64` range.
+There is no `BigInt` or custom JSON codec in the DTOs: they use `dart:convert`.
+Unknown union tags raise `FormatException` with the type and tag.
 
 ## Native packaging
 

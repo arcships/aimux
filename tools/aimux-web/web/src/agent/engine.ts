@@ -8,11 +8,12 @@
 
 import { api, callStream, parseStreamPart } from '../api/client'
 import type { WireCallRequest } from '@/types/generated/WireCallRequest'
-import type { TextStreamPart } from '@aimux/types/TextStreamPart'
+import type { WireMeta } from '@/types/generated/WireMeta'
+import type { TextStreamPart } from '@aimux/types'
 
-/** A chat message as sent to the backend (loose typing: the backend wire
- * schema's `JsonValue` is a recursive union that trips TS2589 inside
- * `ref`/`reactive` unwrapping, so content parts are `any[]` here). */
+/** A chat message as sent to the backend (loose typing: Vue `ref`/`reactive`
+ * unwrapping of the generated wire unions trips TS2589, so content parts
+ * are `any[]` here). */
 export type AgentMessage = { role: string; content: any[] }
 
 export interface ToolCallView {
@@ -32,7 +33,7 @@ export interface AgentStepView {
   usage?: unknown
   latencyMs?: number
   error?: string
-  meta?: { callId?: string; sessionId?: string; step?: number; outcome?: string }
+  meta?: WireMeta
 }
 
 export interface AgentDef {
