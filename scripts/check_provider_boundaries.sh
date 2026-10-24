@@ -143,8 +143,10 @@ rule4_hits="$(
 violation 'provider-name comparison in a shared protocol package (aimux-providers/src/{openai,openai_compatible,anthropic,google,bedrock,cohere})' "$rule4_hits"
 
 # `"groq"` / `"deepseek"` literals belong to their own packages and the registry.
+# The vendor tests under `tests/` may name them: the openai-compatible fixtures
+# were recorded with a provider named `groq`.
 rule4b_hits="$(
-    grep -rnE '"(groq|deepseek)"' \
+    grep -rnE '"(groq|deepseek)"' --exclude-dir=tests \
         aimux-providers/src/openai aimux-providers/src/openai_compatible --include='*.rs' || true
 )"
 violation 'groq / deepseek literal in the shared OpenAI or compatible package' "$rule4b_hits"

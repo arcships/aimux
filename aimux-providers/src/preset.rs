@@ -37,9 +37,8 @@ use aimux_core::types::Usage;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::openai_compatible::chat::usage_from_raw;
-use crate::openai_compatible::config::{BaseUrl, ChatSettings};
 use crate::openai_compatible::{
-    Assembly, ConvertUsage, OpenAICompatibleProvider, TransformRequestBody,
+    Assembly, BaseUrl, ChatSettings, ConvertUsage, OpenAICompatibleProvider, TransformRequestBody,
 };
 use crate::shared::Credential;
 
