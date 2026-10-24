@@ -120,7 +120,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 
 fn json(value: impl Serialize) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 fn store(target: Target) -> Result<Arc<SessionStore>, OpsError> {

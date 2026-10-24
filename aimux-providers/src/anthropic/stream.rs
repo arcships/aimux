@@ -1302,7 +1302,7 @@ impl AnthropicMessagesStream {
                 return;
             }
             controller.enqueue(StreamPart::Error {
-                error: AiMuxError::InvalidResponseData(format!(
+                error: AiMuxError::invalid_response_data(format!(
                     "Received message_start for message {:?} while message {:?} is still open.",
                     message.id, active_id,
                 )),

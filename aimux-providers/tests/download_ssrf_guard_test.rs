@@ -55,7 +55,7 @@ async fn rejects_response_body_url_pointing_at_loopback_metadata() {
         .await
         .expect_err("guard must block metadata IP");
     match err {
-        aimux_core::AiMuxError::InvalidArgument(msg) => {
+        aimux_core::AiMuxError::InvalidArgument { message: msg, .. } => {
             assert!(msg.contains("non-public"), "unexpected message: {msg}");
         }
         other => panic!("expected InvalidArgument, got {other:?}"),

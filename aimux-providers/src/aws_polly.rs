@@ -28,6 +28,7 @@ use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
@@ -265,7 +266,7 @@ impl ResolveEndpoint for PollyEndpoint {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the region and the
 /// credentials are loaded per request, not here.
 pub fn create_aws_polly(
@@ -370,8 +371,12 @@ impl SpeechModel for AwsPollySpeechModel {
 
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
         let (body, warnings) = build_request(options, &self.model_id);
-        let body_str = serde_json::to_string(&Value::Object(body.clone()))
-            .map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
+        let body_str = serde_json::to_string(&Value::Object(body.clone())).map_err(|e| {
+            AiMuxError::JsonParse {
+                message: e.to_string(),
+                cause: Some(ErrorCause::source(&e)),
+            }
+        })?;
         // The request is signed by the transport (`SigV4Fetch`), over the exact
         // bytes sent: user-supplied headers and `Content-Type` are part of the
         // signature.

@@ -1388,6 +1388,7 @@ fn random_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::SourceError;
     use crate::result::GenerateResult;
     use crate::result::ReasoningOutput;
     use crate::shared::ResponseInfo;
@@ -1508,7 +1509,7 @@ mod tests {
         let error = AiMuxError::InvalidToolInput {
             tool_name: "get_weather".to_string(),
             tool_input: String::new(),
-            cause: "Type validation failed: missing 'city'".to_string(),
+            cause: SourceError::from("Type validation failed: missing 'city'").into(),
         };
         let arguments = parsed_tool_call_arguments(&json!({}), Some(true), Some(&error));
         assert_eq!(arguments, "{}");
@@ -1550,7 +1551,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_tool_calls_stream_their_raw_arguments_verbatim() {
         let failing_repair = crate::parse_tool_call::ToolCallRepair::new(|_context| async {
-            Err(AiMuxError::Other("repair model failed".to_string()))
+            Err(AiMuxError::other("repair model failed"))
         });
         let cases: [(&str, &str, Option<&crate::parse_tool_call::ToolCallRepair>); 3] = [
             // Valid JSON string rejected by the schema: the quotes must
@@ -2187,7 +2188,7 @@ mod tests {
     async fn recoverable_frame_error_does_not_truncate_chat_completion_stream() {
         let parts: Vec<Result<TextStreamPart, AiMuxError>> = vec![
             Ok(TextStreamPart::Start {}),
-            Err(AiMuxError::JsonParse("malformed SSE data".into())),
+            Err(AiMuxError::json_parse("malformed SSE data")),
             Ok(TextStreamPart::TextDelta {
                 id: "0".to_string(),
                 text: "after-error".to_string(),
@@ -2208,7 +2209,7 @@ mod tests {
         let outcomes: Vec<_> = result.stream.collect().await;
         let error_index = outcomes
             .iter()
-            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse(_))))
+            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse { .. })))
             .expect("parse error should be preserved as an error item");
 
         assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(

@@ -75,7 +75,7 @@ pub struct AnthropicPromptConversion {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` / `UnsupportedFunctionality` when a
+/// Returns `AiMuxError::invalid_argument` / `UnsupportedFunctionality` when a
 /// message part cannot be represented in the Anthropic wire format (e.g. an
 /// unresolvable file reference or an unsupported media type).
 pub fn convert_prompt_to_anthropic_full_fallible(
@@ -97,7 +97,7 @@ pub fn convert_prompt_to_anthropic_full_fallible(
 ///
 /// # Errors
 ///
-/// Same as [`convert_prompt_to_anthropic_full_fallible`]: `AiMuxError::InvalidArgument`
+/// Same as [`convert_prompt_to_anthropic_full_fallible`]: `AiMuxError::invalid_argument`
 /// / `UnsupportedFunctionality` when a message part cannot be represented in the
 /// Anthropic wire format.
 pub fn convert_prompt_to_anthropic_full_with_tools(
@@ -223,7 +223,7 @@ fn convert_prompt_with_validator(
                     let options = anthropic_options(provider_options.as_ref(), options_name)
                         .unwrap_or_default();
                     let invalid =
-                        || AiMuxError::InvalidArgument("invalid anthropic provider options".into());
+                        || AiMuxError::invalid_argument("invalid anthropic provider options");
                     let clear_at = options.get("clearAt");
                     if clear_at.is_some_and(|value| value.as_str() != Some("next_user_message")) {
                         return Err(invalid());
@@ -1678,7 +1678,7 @@ fn resolve_anthropic_reference(
         return Ok(id.to_string());
     }
     let providers: Vec<&str> = reference.keys().map(String::as_str).collect();
-    Err(AiMuxError::InvalidArgument(format!(
+    Err(AiMuxError::invalid_argument(format!(
         "No provider reference found for provider '{CANONICAL}'. Available providers: {}",
         providers.join(", ")
     )))
@@ -2321,7 +2321,7 @@ fn strip_null_fields(value: &mut Value) {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when provider-option resolution
+/// Returns `AiMuxError::invalid_argument` when provider-option resolution
 /// fails (e.g. a custom skill reference missing the `anthropic` key).
 pub fn build_request_body(
     model_id: &str,
@@ -2945,7 +2945,7 @@ fn append_anthropic_container(
 /// # Errors
 ///
 /// Propagates prompt/provider-option conversion errors, e.g.
-/// `AiMuxError::InvalidArgument` for an unresolvable file reference or
+/// `AiMuxError::invalid_argument` for an unresolvable file reference or
 /// container option.
 pub fn build_request_body_with_warnings(
     model_id: &str,
@@ -2971,10 +2971,8 @@ pub(crate) fn build_request_body_for(
     if let Some(raw) =
         anthropic_options_in(options.provider_options.as_ref(), &profile.options_name)
     {
-        let parsed =
-            parse_anthropic_option_object("options", &Value::Object(raw)).map_err(|()| {
-                AiMuxError::InvalidArgument("invalid anthropic provider options".to_string())
-            })?;
+        let parsed = parse_anthropic_option_object("options", &Value::Object(raw))
+            .map_err(|()| AiMuxError::invalid_argument("invalid anthropic provider options"))?;
         let namespaces = parsed_options
             .provider_options
             .get_or_insert_with(Default::default);
@@ -3195,7 +3193,9 @@ pub(crate) fn build_request_body_for(
                 .get("contextManagement")
                 .is_some_and(|v| !v.is_null())
         {
-            return Err(AiMuxError::InvalidArgument("Anthropic provider options `compaction` and `contextManagement` cannot be used together.".to_string()));
+            return Err(AiMuxError::invalid_argument(
+                "Anthropic provider options `compaction` and `contextManagement` cannot be used together.",
+            ));
         }
         for (source, target) in [
             ("speed", "speed"),

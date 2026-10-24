@@ -159,7 +159,7 @@ fn rejects_empty_base_url_option() {
         ..Default::default()
     });
     assert!(
-        matches!(result, Err(AiMuxError::InvalidArgument(msg)) if msg == "baseURL must be a non-empty string.")
+        matches!(result, Err(AiMuxError::InvalidArgument { message: msg, .. }) if msg == "baseURL must be a non-empty string.")
     );
 }
 
@@ -190,7 +190,7 @@ fn throws_when_both_api_key_and_auth_token_provided() {
         ..Default::default()
     });
     assert!(
-        matches!(result, Err(AiMuxError::InvalidArgument(msg)) if msg == "Both apiKey and authToken were provided. Please use only one authentication method.")
+        matches!(result, Err(AiMuxError::InvalidArgument { message: msg, .. }) if msg == "Both apiKey and authToken were provided. Please use only one authentication method.")
     );
 }
 

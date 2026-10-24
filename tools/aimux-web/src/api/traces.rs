@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ErrorCause};
 use aimux_core::recording::Recording;
 
 use crate::api::err_response;
@@ -84,11 +84,12 @@ pub async fn import_jsonl(State(state): State<AppState>, body: String) -> Respon
                 count += 1;
             }
             Err(e) => {
-                let msg = format!("import line {}: {e}", idx + 1);
+                let message = format!("import line {}: {e}", idx + 1);
+                let cause = Some(ErrorCause::source(&e));
                 return err_response(if e.classify() == serde_json::error::Category::Data {
-                    AiMuxError::InvalidArgument(msg)
+                    AiMuxError::InvalidArgument { message, cause }
                 } else {
-                    AiMuxError::JsonParse(msg)
+                    AiMuxError::JsonParse { message, cause }
                 });
             }
         }

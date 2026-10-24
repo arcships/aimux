@@ -33,7 +33,9 @@ fn parse_cohere_reranking_options(
             .and_then(|options| options.get(key))
             .map(|value| match value {
                 Value::Number(number) => Ok(number.clone()),
-                _ => Err(AiMuxError::InvalidArgument(format!("Invalid cohere.{key}"))),
+                _ => Err(AiMuxError::invalid_argument(format!(
+                    "Invalid cohere.{key}"
+                ))),
             })
             .transpose()
     };
