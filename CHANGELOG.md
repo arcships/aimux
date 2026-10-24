@@ -1210,6 +1210,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An OpenAI (and Azure) Responses reasoning summary part that ends before
+  its reasoning item (when the next part starts, or on
+  `reasoning_summary_part.done` with `store`) carries only `itemId` in its
+  provider metadata, as the AI SDK's does; aimux also sent
+  `reasoningEncryptedContent`, which belongs on the ends sent with the item.
 - The `tool-input-end` of a streamed OpenAI (and Azure) Responses function
   call with a `namespace` carries `providerMetadata.<key>.namespace`, as the
   AI SDK's does; aimux only put it on the tool call.

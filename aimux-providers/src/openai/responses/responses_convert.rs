@@ -427,6 +427,13 @@ fn reasoning_stream_metadata(
     provider_namespace(provider_key, inner).expect("provider metadata must be an object")
 }
 
+/// The metadata of a reasoning summary part that ends before its item does:
+/// only the item id, without the encrypted content the item's end carries.
+fn reasoning_item_metadata(provider_key: &str, item_id: &str) -> ProviderMetadata {
+    provider_namespace(provider_key, json!({ "itemId": item_id }))
+        .expect("provider metadata must be an object")
+}
+
 fn tool_metadata(item: &Value) -> Value {
     let mut metadata = json!({ "itemId": item.get("id").cloned().unwrap_or(Value::Null) });
     for key in ["async", "namespace"] {
@@ -1095,7 +1102,10 @@ impl Transformer for OpenAIResponsesStream {
                                 state.summary_parts.insert(idx, SummaryStatus::Concluded);
                                 controller.enqueue(StreamPart::ReasoningEnd {
                                     id: format!("{item_id}:{idx}"),
-                                    provider_metadata: Some(meta.clone()),
+                                    provider_metadata: Some(reasoning_item_metadata(
+                                        provider_key,
+                                        &item_id,
+                                    )),
                                 });
                             }
                             state
@@ -1152,10 +1162,9 @@ impl Transformer for OpenAIResponsesStream {
                                     .insert(summary_index, SummaryStatus::Concluded);
                                 controller.enqueue(StreamPart::ReasoningEnd {
                                     id: format!("{item_id}:{summary_index}"),
-                                    provider_metadata: Some(reasoning_stream_metadata(
+                                    provider_metadata: Some(reasoning_item_metadata(
                                         provider_key,
                                         &item_id,
-                                        state.encrypted_content.as_deref(),
                                     )),
                                 });
                             } else {

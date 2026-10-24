@@ -1351,3 +1351,53 @@ async fn a_streamed_namespaced_function_call_ends_its_input_with_the_namespace()
         json!({"openai": {"namespace": "weather_ns"}})
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:2709 (a summary part
+/// concluded when the next one starts) and :2762 (a summary part concluded
+/// on `reasoning_summary_part.done` with `store`) end the reasoning part with
+/// provider metadata `{ itemId }` only; the encrypted content goes on the
+/// ends sent when the reasoning item is done (line 2523).
+#[tokio::test]
+async fn early_reasoning_summary_ends_carry_only_the_item_id() {
+    for store in [false, true] {
+        let fetch = MockFetch::new(vec![sse(vec![
+            json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+            json!({"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","encrypted_content":"enc"}}),
+            json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,"summary_index":0}),
+            json!({"type":"response.reasoning_summary_part.done","item_id":"rs_1","output_index":0,"summary_index":0}),
+            json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,"summary_index":1}),
+            json!({"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1","encrypted_content":"enc"}}),
+            json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+        ])]);
+        let mut opts = options();
+        opts.provider_options = provider_namespace("openai", json!({"store": store})).ok();
+        let parts = provider(&fetch)
+            .responses("test-model")
+            .do_stream(&opts)
+            .await
+            .unwrap()
+            .stream
+            .map(|part| part.unwrap())
+            .collect::<Vec<_>>()
+            .await;
+        let ends: Vec<Value> = parts
+            .iter()
+            .filter_map(|part| match part {
+                StreamPart::ReasoningEnd {
+                    id,
+                    provider_metadata,
+                } => Some(json!({"id": id, "providerMetadata": provider_metadata})),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            ends,
+            [
+                json!({"id": "rs_1:0", "providerMetadata": {"openai": {"itemId": "rs_1"}}}),
+                json!({"id": "rs_1:1", "providerMetadata": {"openai": {"itemId": "rs_1", "reasoningEncryptedContent": "enc"}}}),
+            ],
+            "store: {store}"
+        );
+    }
+}
