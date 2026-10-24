@@ -92,6 +92,37 @@ async fn chat_generate() {
     );
 }
 
+/// Chat drops the legacy `promptCacheRetention` for models that take
+/// `promptCacheOptions` and names them like the AI SDK does
+/// (`chat/openai-chat-language-model.ts:235`).
+#[tokio::test]
+async fn chat_prompt_cache_retention_warning_names_gpt_6_models() {
+    let fetch = MockFetch::new(vec![Canned::json(&chat_response())]);
+    let mut opts = options();
+    opts.provider_options = Some(
+        provider_namespace("openai", json!({"promptCacheRetention":"24h"}))
+            .expect("provider metadata must be an object"),
+    );
+    let result = provider(&fetch)
+        .chat("gpt-6-astra")
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body().get("prompt_cache_retention"),
+        None
+    );
+    assert_eq!(
+        result.warnings,
+        vec![aimux_core::types::Warning::Unsupported {
+            feature: "promptCacheRetention".into(),
+            details: Some(
+                "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead".into()
+            ),
+        }]
+    );
+}
+
 /// TS: "should stream text deltas" (src/chat/openai-chat-language-model.test.ts)
 #[tokio::test]
 async fn chat_stream() {

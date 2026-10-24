@@ -1132,7 +1132,7 @@ pub(crate) fn build_request_body_with_chat_options(
         body.as_object_mut()
             .unwrap()
             .remove("prompt_cache_retention");
-        warnings.push(Warning::Unsupported { feature: "promptCacheRetention".into(), details: Some("promptCacheRetention is not supported by sixth-generation and later models; use promptCacheOptions instead".into()) });
+        warnings.push(Warning::Unsupported { feature: "promptCacheRetention".into(), details: Some("promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead".into()) });
     }
     if is_reasoning_model {
         let allow_logprobs = resolved_reasoning_effort.as_deref() == Some("none")
