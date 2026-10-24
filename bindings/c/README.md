@@ -5,6 +5,8 @@ ABI primitives. Both examples run offline and print the manifest and
 runtime description. `aimux_raii.hpp` owns strings, errors, and handles;
 its stream trampoline copies borrowed frame bytes, catches every C++ exception,
 requests abort, and rethrows the first exception only after `aimux_stream` returns.
+`aimux::check` throws `aimux::NativeError` (a `std::runtime_error`) carrying the
+error code and the envelope JSON, whose `error.cause` holds the cause chain.
 A stream wrapper caller must supply a live Abort handle for cancellation.
 Callbacks must return promptly.
 

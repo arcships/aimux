@@ -33,8 +33,8 @@ const DEFAULT_NAME: &str = "anthropic.messages";
 /// (`normalizeBaseURL` in `createAnthropic`); anything else is taken as given.
 fn normalize_base_url(url: &str) -> Result<String, AiMuxError> {
     if url.trim().is_empty() {
-        return Err(AiMuxError::InvalidArgument(
-            "baseURL must be a non-empty string.".into(),
+        return Err(AiMuxError::invalid_argument(
+            "baseURL must be a non-empty string.",
         ));
     }
     let url = validate_base_url(url)?;
@@ -118,7 +118,7 @@ impl std::fmt::Debug for AnthropicProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when the explicit `base_url` is not
+/// Returns `AiMuxError::invalid_argument` when the explicit `base_url` is not
 /// an `http(s)` URL with a host, or when both credentials are nonempty. Those
 /// are the only ways this fails: credentials are loaded per request, and an
 /// invalid `ANTHROPIC_BASE_URL` is reported by each request, not here.
@@ -135,7 +135,7 @@ pub fn create_anthropic(
     if settings.api_key.as_ref().is_some_and(is_truthy)
         && settings.auth_token.as_ref().is_some_and(is_truthy)
     {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "Both apiKey and authToken were provided. Please use only one authentication method."
                 .to_string(),
         ));

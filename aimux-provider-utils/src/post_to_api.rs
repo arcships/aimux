@@ -273,7 +273,7 @@ mod tests {
             ..Default::default()
         };
         let handler = ResponseHandler::<serde_json::Value>::new(|_| async {
-            Err(AiMuxError::JsonParse("Unexpected end of JSON input".into()))
+            Err(AiMuxError::json_parse("Unexpected end of JSON input"))
         });
         let error = call_to_api_with_deadline(
             request.prepare(HttpMethod::Post, HttpBody::Json(serde_json::json!({}))),

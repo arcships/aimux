@@ -725,7 +725,7 @@ mod prepare_tools {
                 None,
             );
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(_))),
+                matches!(result, Err(AiMuxError::InvalidArgument { .. })),
                 "{args}: {result:?}"
             );
         }
@@ -1408,7 +1408,7 @@ mod older_provider_tool_args {
         for (id, _, invalid) in cases() {
             let (result, requests) = call(tool(id, invalid)).await;
             match result {
-                Err(AiMuxError::InvalidArgument(message)) => assert_eq!(
+                Err(AiMuxError::InvalidArgument { message, .. }) => assert_eq!(
                     message,
                     format!("Invalid configuration for provider-defined tool {id}")
                 ),
@@ -1422,7 +1422,7 @@ mod older_provider_tool_args {
     async fn the_advisor_needs_a_model() {
         let (result, requests) = call(tool("anthropic.advisor_20260301", json!({}))).await;
         assert!(
-            matches!(result, Err(AiMuxError::InvalidArgument(_))),
+            matches!(result, Err(AiMuxError::InvalidArgument { .. })),
             "{result:?}"
         );
         assert_eq!(requests, 0);
@@ -1436,7 +1436,7 @@ mod older_provider_tool_args {
         ))
         .await;
         assert!(
-            matches!(result, Err(AiMuxError::InvalidArgument(_))),
+            matches!(result, Err(AiMuxError::InvalidArgument { .. })),
             "{result:?}"
         );
     }

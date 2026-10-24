@@ -101,7 +101,7 @@ impl std::fmt::Debug for KlingAIProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_klingai(settings: KlingAIProviderSettings) -> Result<KlingAIProvider, AiMuxError> {
@@ -352,14 +352,14 @@ impl VideoModel for KlingAIVideoModel {
         }
 
         let task_data = task.data.ok_or_else(|| {
-            AiMuxError::InvalidResponseData(
+            AiMuxError::invalid_response_data(
                 "KlingAI task submission did not return data".to_string(),
             )
         })?;
 
         let task_id = task_data.task_id;
         let id = task_data.id.ok_or_else(|| {
-            AiMuxError::InvalidResponseData(
+            AiMuxError::invalid_response_data(
                 "KlingAI task submission did not return a job id".to_string(),
             )
         })?;
@@ -385,7 +385,7 @@ impl VideoModel for KlingAIVideoModel {
     ) -> Result<VideoOperationStatus, AiMuxError> {
         let field = |name: &str| {
             operation.get(name).and_then(Value::as_str).ok_or_else(|| {
-                AiMuxError::InvalidArgument(format!(
+                AiMuxError::invalid_argument(format!(
                     "klingai operation reference is missing {name}"
                 ))
             })
@@ -442,7 +442,7 @@ impl VideoModel for KlingAIVideoModel {
                     })
                     .collect();
                 if videos.is_empty() {
-                    return Err(AiMuxError::InvalidResponseData(format!(
+                    return Err(AiMuxError::invalid_response_data(format!(
                         "KlingAI task {task_id} succeeded without video URLs"
                     )));
                 }

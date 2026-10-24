@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_core::files_model::UploadFileData;
 use aimux_core::shared::FileBytes;
 use aimux_core::skills_model::{Skills, UploadSkillCallOptions, UploadSkillResult};
@@ -95,7 +96,10 @@ impl Skills for AnthropicSkills {
                         ),
                     );
                     body.extend_from_slice(&engine.decode(normalized).map_err(|error| {
-                        AiMuxError::InvalidArgument(format!("invalid base64: {error}"))
+                        AiMuxError::InvalidArgument {
+                            message: format!("invalid base64: {error}"),
+                            cause: Some(ErrorCause::source(&error)),
+                        }
                     })?);
                 }
             }

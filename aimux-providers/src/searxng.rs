@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
@@ -81,7 +82,7 @@ impl std::fmt::Debug for SearxngProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is given and is not
+/// Returns `AiMuxError::invalid_argument` when `base_url` is given and is not
 /// an `http(s)` URL with a host. That is the only way this fails: a missing
 /// instance URL is reported by the first request.
 pub fn create_searxng(settings: SearxngProviderSettings) -> Result<SearxngProvider, AiMuxError> {
@@ -209,8 +210,11 @@ impl SearchModel for SearxngSearchModel {
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
-        let mut url = url::Url::parse(&exchange.url("/search"))
-            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid searxng endpoint: {e}")))?;
+        let mut url =
+            url::Url::parse(&exchange.url("/search")).map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid searxng endpoint: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
         url.query_pairs_mut()
             .append_pair("q", &options.query)
             .append_pair("format", "json");

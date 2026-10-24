@@ -20,6 +20,22 @@
     "file": "AiMuxError/005.json"
   },
   {
+    "type": "AiMuxError",
+    "file": "AiMuxError/006.json"
+  },
+  {
+    "type": "AiMuxError",
+    "file": "AiMuxError/007.json"
+  },
+  {
+    "type": "AiMuxError",
+    "file": "AiMuxError/008.json"
+  },
+  {
+    "type": "AiMuxError",
+    "file": "AiMuxError/009.json"
+  },
+  {
     "type": "AiMuxErrorInput",
     "file": "AiMuxErrorInput/001.json"
   },
@@ -38,6 +54,22 @@
   {
     "type": "AiMuxErrorInput",
     "file": "AiMuxErrorInput/005.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/006.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/007.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/008.json"
+  },
+  {
+    "type": "AiMuxErrorInput",
+    "file": "AiMuxErrorInput/009.json"
   },
   {
     "type": "AssistantContent",

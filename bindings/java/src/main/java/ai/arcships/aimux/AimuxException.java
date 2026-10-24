@@ -15,6 +15,7 @@ public abstract class AimuxException extends NativeException {
             case "AI_Error": return new OtherError(envelope);
             case "AI_JSONParseError": return new JSONParseError(envelope);
             case "AI_InvalidResponseDataError": return new InvalidResponseDataError(envelope);
+            case "AI_TypeValidationError": return new TypeValidationError(envelope);
             case "AI_ToolCallNotFoundForApprovalError": return new ToolCallNotFoundForApprovalError(envelope);
             case "AI_InvalidArgumentError": return new InvalidArgumentError(envelope);
             case "AI_InvalidPromptError": return new InvalidPromptError(envelope);
@@ -46,6 +47,9 @@ public abstract class AimuxException extends NativeException {
     }
     public static final class InvalidResponseDataError extends AimuxException {
         InvalidResponseDataError(ErrorEnvelope envelope) { super(envelope); }
+    }
+    public static final class TypeValidationError extends AimuxException {
+        TypeValidationError(ErrorEnvelope envelope) { super(envelope); }
     }
     public static final class ToolCallNotFoundForApprovalError extends AimuxException {
         ToolCallNotFoundForApprovalError(ErrorEnvelope envelope) { super(envelope); }

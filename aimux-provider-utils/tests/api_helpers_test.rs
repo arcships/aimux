@@ -235,7 +235,7 @@ async fn event_source_handler_reports_unparsable_events_like_the_ai_sdk() {
 
     assert_eq!(items.len(), 2);
     match &items[0] {
-        Err(AiMuxError::JsonParse(message)) => assert_eq!(
+        Err(AiMuxError::JsonParse { message, .. }) => assert_eq!(
             message,
             "JSON parsing failed: Text: {unparsable}.\nError message: key must be a string at line 1 column 2"
         ),

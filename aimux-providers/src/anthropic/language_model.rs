@@ -1483,7 +1483,7 @@ impl AnthropicMessagesStream {
                 return;
             }
             controller.enqueue(StreamPart::Error {
-                error: AiMuxError::InvalidResponseData(format!(
+                error: AiMuxError::invalid_response_data(format!(
                     "Received message_start for message {:?} while message {:?} is still open.",
                     message.id, active_id,
                 )),
@@ -2989,7 +2989,7 @@ fn append_anthropic_container(
 /// # Errors
 ///
 /// Propagates prompt/provider-option conversion errors, e.g.
-/// `AiMuxError::InvalidArgument` for an unresolvable file reference or
+/// `AiMuxError::invalid_argument` for an unresolvable file reference or
 /// container option.
 #[cfg(test)]
 pub(super) fn build_request_body_with_warnings(
@@ -3016,10 +3016,8 @@ pub(crate) fn build_request_body_for(
     if let Some(raw) =
         anthropic_options_in(options.provider_options.as_ref(), &profile.options_name)
     {
-        let parsed =
-            parse_anthropic_option_object("options", &Value::Object(raw)).map_err(|()| {
-                AiMuxError::InvalidArgument("invalid anthropic provider options".to_string())
-            })?;
+        let parsed = parse_anthropic_option_object("options", &Value::Object(raw))
+            .map_err(|()| AiMuxError::invalid_argument("invalid anthropic provider options"))?;
         let namespaces = parsed_options
             .provider_options
             .get_or_insert_with(Default::default);
@@ -3240,7 +3238,9 @@ pub(crate) fn build_request_body_for(
                 .get("contextManagement")
                 .is_some_and(|v| !v.is_null())
         {
-            return Err(AiMuxError::InvalidArgument("Anthropic provider options `compaction` and `contextManagement` cannot be used together.".to_string()));
+            return Err(AiMuxError::invalid_argument(
+                "Anthropic provider options `compaction` and `contextManagement` cannot be used together.",
+            ));
         }
         for (source, target) in [
             ("speed", "speed"),

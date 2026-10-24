@@ -360,9 +360,10 @@ pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
 /// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`).
 fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
     serde_json::from_str(data).map_err(|error| match AiMuxError::from(error) {
-        AiMuxError::JsonParse(message) => AiMuxError::JsonParse(format!(
-            "JSON parsing failed: Text: {data}.\nError message: {message}"
-        )),
+        AiMuxError::JsonParse { message, cause } => AiMuxError::JsonParse {
+            message: format!("JSON parsing failed: Text: {data}.\nError message: {message}"),
+            cause,
+        },
         other => other,
     })
 }

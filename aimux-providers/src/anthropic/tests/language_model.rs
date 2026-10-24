@@ -480,7 +480,7 @@ fn error_json(error: &AiMuxError) -> Value {
             }
             Value::Object(out)
         }
-        AiMuxError::JsonParse(message) => json!({
+        AiMuxError::JsonParse { message, .. } => json!({
             "$error": { "name": "AI_JSONParseError", "message": message }
         }),
         other => json!({ "$error": { "name": "AiMuxError", "message": other.to_string() } }),
@@ -6164,7 +6164,7 @@ mod anthropic_language_model {
                 // `name: 'AI_InvalidArgumentError'` is the variant; aimux's
                 // `InvalidArgument` carries no `argument` field to compare with
                 // upstream's `argument: 'providerOptions'`.
-                let Err(AiMuxError::InvalidArgument(message)) = result else {
+                let Err(AiMuxError::InvalidArgument { message, .. }) = result else {
                     panic!("expected an InvalidArgumentError, got {result:?}");
                 };
                 assert_eq!(

@@ -88,7 +88,7 @@ mod anthropic_message_lifecycle {
 
         assert_eq!(error_parts.len(), 1, "{parts:?}");
         assert!(
-            matches!(error_parts[0], AiMuxError::InvalidResponseData(_)),
+            matches!(error_parts[0], AiMuxError::InvalidResponseData { .. }),
             "{:?}",
             error_parts[0]
         );

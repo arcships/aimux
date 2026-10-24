@@ -63,7 +63,7 @@ pub struct AnthropicPromptConversion {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` / `UnsupportedFunctionality` when a
+/// Returns `AiMuxError::invalid_argument` / `UnsupportedFunctionality` when a
 /// message part cannot be represented in the Anthropic wire format (e.g. an
 /// unresolvable file reference or an unsupported media type).
 #[cfg(test)]
@@ -86,7 +86,7 @@ pub(super) fn convert_prompt_to_anthropic_full_fallible(
 ///
 /// # Errors
 ///
-/// Same as [`convert_prompt_to_anthropic_full_fallible`]: `AiMuxError::InvalidArgument`
+/// Same as [`convert_prompt_to_anthropic_full_fallible`]: `AiMuxError::invalid_argument`
 /// / `UnsupportedFunctionality` when a message part cannot be represented in the
 /// Anthropic wire format.
 #[cfg(test)]
@@ -214,7 +214,7 @@ pub(super) fn convert_prompt_with_validator(
                     let options = anthropic_options(provider_options.as_ref(), options_name)
                         .unwrap_or_default();
                     let invalid =
-                        || AiMuxError::InvalidArgument("invalid anthropic provider options".into());
+                        || AiMuxError::invalid_argument("invalid anthropic provider options");
                     let clear_at = options.get("clearAt");
                     if clear_at.is_some_and(|value| value.as_str() != Some("next_user_message")) {
                         return Err(invalid());
@@ -1669,7 +1669,7 @@ fn resolve_anthropic_reference(
         return Ok(id.to_string());
     }
     let providers: Vec<&str> = reference.keys().map(String::as_str).collect();
-    Err(AiMuxError::InvalidArgument(format!(
+    Err(AiMuxError::invalid_argument(format!(
         "No provider reference found for provider '{CANONICAL}'. Available providers: {}",
         providers.join(", ")
     )))
