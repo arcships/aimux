@@ -1,0 +1,13 @@
+[
+  {
+    "input": "{\"code\":\"def fibonacci(n):\\n    if n <= 0:\\n        return 0\\n    elif n == 1:\\n        return 1\\n    else:\\n        a, b = 0, 1\\n        for _ in range(2, n + 1):\\n            a, b = b, a + b\\n        return b\\n\\nprint(fibonacci(10))\"}",
+    "providerExecuted": true,
+    "toolCallId": "fc_5138abcf-4c4e-b0ab-7e0b-f4c81b98f455_us-east-1_0",
+    "toolName": "code_execution",
+    "type": "tool-call"
+  },
+  {
+    "text": "55",
+    "type": "text"
+  }
+]

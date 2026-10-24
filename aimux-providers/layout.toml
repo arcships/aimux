@@ -1,0 +1,262 @@
+# Upstream file map for aimux-providers (RFC-0046 §4.4, RFC-0045 §3).
+# One table per vendor with an upstream package; versions come from
+# fixtures/aisdk/VERSIONS.json. `rust` paths are relative to src/.
+
+[xai]
+package = "@ai-sdk/xai"
+
+[[xai.files]]
+upstream = "src/files/xai-files-api.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/files/xai-files-options.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/files/xai-files.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/get-response-metadata.ts"
+rust = "xai/responses/mod.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/index.ts"
+rust = "xai/mod.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/map-xai-finish-reason.ts"
+status = "not-applicable"
+reason = "used only by xai-batch.ts; Batch is out of scope (docs/aisdk-architecture-alignment.md, 本期范围外)"
+
+[[xai.files]]
+upstream = "src/realtime/index.ts"
+status = "not-applicable"
+reason = "Realtime is out of scope (docs/aisdk-architecture-alignment.md, 本期范围外)"
+
+[[xai.files]]
+upstream = "src/realtime/xai-realtime-event-mapper.ts"
+status = "not-applicable"
+reason = "Realtime is out of scope (docs/aisdk-architecture-alignment.md, 本期范围外)"
+
+[[xai.files]]
+upstream = "src/realtime/xai-realtime-model-options.ts"
+status = "not-applicable"
+reason = "Realtime is out of scope (docs/aisdk-architecture-alignment.md, 本期范围外)"
+
+[[xai.files]]
+upstream = "src/realtime/xai-realtime-model.ts"
+status = "not-applicable"
+reason = "Realtime is out of scope (docs/aisdk-architecture-alignment.md, 本期范围外)"
+
+[[xai.files]]
+upstream = "src/responses/convert-to-xai-responses-input.ts"
+rust = "xai/responses/convert.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/responses/convert-xai-responses-usage.ts"
+rust = "xai/responses/convert.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/responses/map-xai-responses-finish-reason.ts"
+rust = "xai/responses/convert.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/responses/xai-responses-api.ts"
+rust = "xai/responses/types.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/responses/xai-responses-language-model-options.ts"
+rust = "xai/responses/convert.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/responses/xai-responses-language-model.ts"
+rust = "xai/responses/mod.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/responses/xai-responses-prepare-tools.ts"
+rust = "xai/responses/convert.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/supports-reasoning-effort.ts"
+rust = "xai/convert.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/tool/code-execution.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/file-search.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/image-generation.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/index.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/mcp-server.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/view-image.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/view-x-video.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/web-search.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/tool/x-search.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[[xai.files]]
+upstream = "src/xai-batch.ts"
+status = "not-applicable"
+reason = "Batch is out of scope (docs/aisdk-architecture-alignment.md, 本期范围外)"
+
+[[xai.files]]
+upstream = "src/xai-error.ts"
+rust = "xai/mod.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/xai-file-part-options.ts"
+rust = "xai/responses/convert.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/xai-image-model-options.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/xai-image-model.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/xai-image-settings.ts"
+status = "missing"
+issue = 275
+
+[[xai.files]]
+upstream = "src/xai-provider.ts"
+rust = "xai/mod.rs"
+status = "mapped"
+
+[xai.files.tests]
+sub-feature = [
+  { case = "xAIProvider › imageModel › should construct an image model with correct configuration", issue = 275, reason = "aimux has no xAI image model; Provider::image_model answers NoSuchModel" },
+  { case = "xAIProvider › imageModel › should pass custom headers to image model", issue = 275, reason = "aimux has no xAI image model; Provider::image_model answers NoSuchModel" },
+  { case = "xAIProvider › imageModel › should use custom baseURL for image model", issue = 275, reason = "aimux has no xAI image model; Provider::image_model answers NoSuchModel" },
+]
+
+[[xai.files]]
+upstream = "src/xai-speech-model-options.ts"
+rust = "xai/speech.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/xai-speech-model.ts"
+rust = "xai/speech.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/xai-transcription-model-options.ts"
+rust = "xai/transcription.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/xai-transcription-model.ts"
+rust = "xai/transcription.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/xai-video-model-options.ts"
+rust = "xai/video.rs"
+status = "mapped"
+
+[xai.files.tests]
+
+[[xai.files]]
+upstream = "src/xai-video-model.ts"
+rust = "xai/video.rs"
+status = "mapped"
+
+[xai.files.tests]
+sub-feature = [
+  { case = "XaiVideoModel › doStatus › should return error status on expired", issue = 276, reason = "aimux-core VideoOperationStatus has only Pending and Completed; an error status is Err(AiMuxError), which carries no response metadata" },
+]
+
+[[xai.files]]
+upstream = "src/xai-video-settings.ts"
+status = "not-applicable"
+reason = "only the XaiVideoModelId string union; Rust takes the model id as &str"
