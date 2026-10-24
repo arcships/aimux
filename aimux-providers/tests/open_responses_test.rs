@@ -435,7 +435,7 @@ mod convert_tests {
             json!([{
                 "type": "message",
                 "role": "user",
-                "content": [{"type": "input_image", "image_url": "data:image/png;base64,ZmFrZS1kYXRh"}]
+                "content": [{"type": "input_image", "image_url": "data:image/png;base64,ZmFrZS1kYXRh", "detail": "auto"}]
             }])
         );
         assert!(warnings.is_empty());
@@ -461,7 +461,7 @@ mod convert_tests {
             json!([{
                 "type": "message",
                 "role": "user",
-                "content": [{"type": "input_image", "image_url": "https://example.com/image.png"}]
+                "content": [{"type": "input_image", "image_url": "https://example.com/image.png", "detail": "auto"}]
             }])
         );
     }
@@ -1168,14 +1168,22 @@ mod do_generate_tests {
             result.content[0],
             GenerateContent::Reasoning(ReasoningOutput {
                 text: "reasoning content".to_string(),
-                provider_metadata: None,
+                provider_metadata: serde_json::from_value(json!({ "lmstudio": {
+                    "itemId": "rs_3l1z5wpifxkwxhj459ya7",
+                    "reasoningSummary": [],
+                    "reasoningContent": [{ "type": "reasoning_text", "text": "reasoning content" }],
+                } }))
+                .unwrap(),
             })
         );
         assert_eq!(
             result.content[1],
             GenerateContent::Text {
                 text: "text content".to_string(),
-                provider_metadata: None,
+                provider_metadata: serde_json::from_value(
+                    json!({ "lmstudio": { "itemId": "msg_p1y190hl7hj1xyfqr1cir" } })
+                )
+                .unwrap(),
             }
         );
     }
@@ -1889,7 +1897,10 @@ provider_options: None
             result.content[0],
             GenerateContent::Text {
                 text: "Dummy PDF file".to_string(),
-                provider_metadata: None,
+                provider_metadata: serde_json::from_value(json!({ "lmstudio": {
+                    "itemId": "msg_048edf44633e41ae0069d4fea0d1a08194af1e491c093df1d9"
+                } }))
+                .unwrap(),
             }
         );
     }
@@ -2265,6 +2276,591 @@ async fn supports_http_image_urls() {
     assert_eq!(urls.0.len(), 1);
     assert!(urls.0["image/*"][0].is_match("https://example.com/a.png"));
     assert!(!urls.0["image/*"][0].is_match("ftp://example.com/a.png"));
+}
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:279-305):
+/// an assistant text part's `providerOptions.<name>.itemId` becomes the
+/// message `id`, its `url_citation` annotations are replayed, and text parts
+/// with different item ids go out as separate messages.
+#[test]
+fn assistant_text_replays_the_item_id_and_annotations() {
+    let citation = json!({
+        "type": "url_citation", "start_index": 0, "end_index": 7,
+        "url": "https://example.com/source", "title": "Example source"
+    });
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [
+            { "type": "text", "text": "Sourced answer",
+              "providerOptions": { "open-responses": { "itemId": "msg_1", "annotations": [citation] } } },
+            { "type": "text", "text": "Next",
+              "providerOptions": { "open-responses": { "itemId": "msg_2" } } }
+        ]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input,
+        json!([
+            { "type": "message", "role": "assistant", "id": "msg_1",
+              "content": [{ "type": "output_text", "text": "Sourced answer", "annotations": [citation] }] },
+            { "type": "message", "role": "assistant", "id": "msg_2",
+              "content": [{ "type": "output_text", "text": "Next" }] }
+        ])
+    );
+}
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:88-98):
+/// a user image carries `detail` from `providerOptions.<name>.imageDetail`,
+/// `auto` when it is not set.
+#[test]
+fn user_images_carry_the_image_detail() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "user",
+        "content": [
+            { "type": "file", "mediaType": "image/png", "data": { "type": "data", "data": "AAEC" },
+              "providerOptions": { "open-responses": { "imageDetail": "low" } } },
+            { "type": "file", "mediaType": "image/jpeg", "data": { "type": "url", "url": "https://example.com/a.jpg" } }
+        ]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input,
+        json!([{ "type": "message", "role": "user", "content": [
+            { "type": "input_image", "image_url": "data:image/png;base64,AAEC", "detail": "low" },
+            { "type": "input_image", "image_url": "https://example.com/a.jpg", "detail": "auto" }
+        ] }])
+    );
+}
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:91-108):
+/// inline user files go out with `resolveFullMediaType`, so a partial media
+/// type such as `image` is detected from the bytes.
+#[test]
+fn inline_user_files_resolve_the_full_media_type() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "user",
+        "content": [{ "type": "file", "mediaType": "image",
+                      "data": { "type": "data", "data": "iVBORw0KGgoAAAANSUhEUg==" } }]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input[0]["content"][0]["image_url"],
+        json!("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==")
+    );
+}
+
+/// TS: `resolveFullMediaType` throws for an inline user file whose subtype
+/// cannot be detected, so the call fails before anything is sent.
+#[tokio::test]
+async fn an_undetectable_user_file_media_type_fails_before_sending() {
+    let server = MockServer::start().await;
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "user",
+        "content": [{ "type": "file", "mediaType": "image/*",
+                      "data": { "type": "data", "data": "AAEC" } }]
+    }]))
+    .unwrap();
+    let error = make_model(&server, "gpt-4o")
+        .do_generate(&default_options(prompt))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            aimux_core::error::AiMuxError::UnsupportedFunctionality(_)
+        ),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:75-84)
+/// throws `UnsupportedFunctionalityError` for a user file given as a provider
+/// reference or as text, so the call fails before anything is sent.
+#[tokio::test]
+async fn reference_and_text_user_files_are_unsupported() {
+    let server = MockServer::start().await;
+    for (data, functionality) in [
+        (
+            json!({ "type": "reference", "reference": { "lmstudio": "file-1" } }),
+            "file parts with provider references",
+        ),
+        (
+            json!({ "type": "text", "text": "hello" }),
+            "text file parts",
+        ),
+    ] {
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+            "role": "user",
+            "content": [{ "type": "file", "mediaType": "text/plain", "data": data }]
+        }]))
+        .unwrap();
+        let error = make_model(&server, "gpt-4o")
+            .do_generate(&default_options(prompt))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                aimux_core::error::AiMuxError::UnsupportedFunctionality(f) if f == functionality
+            ),
+            "{error:?}"
+        );
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// TS: `convertToOpenResponsesInput` (convert-to-open-responses-input.ts:306-336):
+/// an assistant tool call's `providerOptions.<name>.itemId` becomes the
+/// `function_call` item `id`.
+#[test]
+fn tool_calls_replay_the_item_id() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [{ "type": "tool-call", "toolCallId": "call_1", "toolName": "weather",
+                      "input": { "city": "Paris" },
+                      "providerOptions": { "open-responses": { "itemId": "fc_1" } } }]
+    }]))
+    .unwrap();
+    let (input, _, _) = convert_to_open_responses_input(&prompt);
+    assert_eq!(
+        input,
+        json!([{ "type": "function_call", "id": "fc_1", "call_id": "call_1",
+                 "name": "weather", "arguments": "{\"city\":\"Paris\"}" }])
+    );
+}
+
+/// TS: `OpenResponsesLanguageModel` (open-responses-language-model.ts:446-505,
+/// :757-779, :876-917): generated and streamed output carries
+/// `{ <name>: { itemId } }`, text adds its `url_citation` annotations, and
+/// reasoning adds its summary, content and encrypted content.
+#[tokio::test]
+async fn output_parts_carry_the_item_metadata() {
+    let citation = json!({
+        "type": "url_citation", "start_index": 0, "end_index": 4,
+        "url": "https://example.com", "title": "Example"
+    });
+    let server = MockServer::start().await;
+    mock_json(
+        &server,
+        json!({
+            "id": "resp_1", "created_at": 1, "model": "m", "status": "completed",
+            "output": [
+                { "type": "reasoning", "id": "rs_1", "summary": [],
+                  "content": [{ "type": "reasoning_text", "text": "Think" }],
+                  "encrypted_content": "enc" },
+                { "type": "message", "id": "msg_1", "role": "assistant",
+                  "content": [{ "type": "output_text", "text": "Done", "annotations": [citation] }] },
+                { "type": "function_call", "id": "fc_1", "call_id": "call_1",
+                  "name": "weather", "arguments": "{}" }
+            ]
+        }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let metadata: Vec<Value> = result
+        .content
+        .iter()
+        .map(|part| match part {
+            GenerateContent::Reasoning(part) => json!(part.provider_metadata),
+            GenerateContent::Text {
+                provider_metadata, ..
+            } => json!(provider_metadata),
+            GenerateContent::ToolCall(call) => json!(call.provider_metadata),
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        metadata,
+        vec![
+            json!({ "lmstudio": { "itemId": "rs_1", "reasoningSummary": [],
+                "reasoningContent": [{ "type": "reasoning_text", "text": "Think" }],
+                "reasoningEncryptedContent": "enc" } }),
+            json!({ "lmstudio": { "itemId": "msg_1", "annotations": [citation] } }),
+            json!({ "lmstudio": { "itemId": "fc_1" } }),
+        ]
+    );
+
+    let server = MockServer::start().await;
+    let events = [
+        json!({ "type": "response.output_item.added", "item": { "type": "message", "id": "msg_1" } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "message", "id": "msg_1",
+                "content": [{ "type": "output_text", "text": "Done", "annotations": [citation] }] } }),
+        json!({ "type": "response.output_item.added", "item": { "type": "reasoning", "id": "rs_1" } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "reasoning", "id": "rs_1",
+                "summary": [{ "type": "summary_text", "text": "Sum" }] } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "function_call", "id": "fc_1",
+                "call_id": "call_1", "name": "weather", "arguments": "{}" } }),
+    ];
+    mock_sse(
+        &server,
+        events
+            .iter()
+            .map(|event| sse_event(&event.to_string()))
+            .collect(),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let metadata: Vec<Value> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::TextEnd {
+                provider_metadata, ..
+            }
+            | StreamPart::ReasoningEnd {
+                provider_metadata, ..
+            } => Some(json!(provider_metadata)),
+            StreamPart::ToolCall(call) => Some(json!(call.provider_metadata)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        metadata,
+        vec![
+            json!({ "lmstudio": { "itemId": "msg_1", "annotations": [citation] } }),
+            json!({ "lmstudio": { "itemId": "rs_1",
+                "reasoningSummary": [{ "type": "summary_text", "text": "Sum" }],
+                "reasoningContent": null } }),
+            json!({ "lmstudio": { "itemId": "fc_1" } }),
+        ]
+    );
+}
+
+/// TS: `doGenerate` (open-responses-language-model.ts:448-473): a reasoning
+/// item without content yields one reasoning part with the joined summary
+/// text, so summary and encrypted-only items are kept.
+#[tokio::test]
+async fn summary_only_reasoning_items_yield_reasoning() {
+    let server = MockServer::start().await;
+    mock_json(
+        &server,
+        json!({
+            "id": "resp_1", "created_at": 1, "model": "m", "status": "completed",
+            "output": [
+                { "type": "reasoning", "id": "rs_1",
+                  "summary": [{ "type": "summary_text", "text": "First. " },
+                              { "type": "summary_text", "text": "Second." }] },
+                { "type": "reasoning", "id": "rs_2", "summary": [], "content": [],
+                  "encrypted_content": "enc" }
+            ]
+        }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let reasoning: Vec<Value> = result
+        .content
+        .iter()
+        .map(|part| match part {
+            GenerateContent::Reasoning(part) => {
+                json!({ "text": part.text, "metadata": part.provider_metadata })
+            }
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        reasoning,
+        vec![
+            json!({ "text": "First. Second.", "metadata": { "lmstudio": { "itemId": "rs_1",
+                "reasoningSummary": [{ "type": "summary_text", "text": "First. " },
+                                     { "type": "summary_text", "text": "Second." }],
+                "reasoningContent": null } } }),
+            json!({ "text": "", "metadata": { "lmstudio": { "itemId": "rs_2",
+                "reasoningSummary": [], "reasoningContent": [],
+                "reasoningEncryptedContent": "enc" } } }),
+        ]
+    );
+}
+
+/// TS: `doStream` (open-responses-language-model.ts:878-892): reasoning
+/// summary text deltas stream as reasoning deltas, like LM Studio's
+/// `response.reasoning_text.delta`.
+#[tokio::test]
+async fn streams_reasoning_summary_deltas() {
+    let server = MockServer::start().await;
+    let events = [
+        json!({ "type": "response.output_item.added", "item": { "type": "reasoning", "id": "rs_1" } }),
+        json!({ "type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "delta": "Think" }),
+        json!({ "type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "delta": "ing." }),
+    ];
+    mock_sse(
+        &server,
+        events
+            .iter()
+            .map(|event| sse_event(&event.to_string()))
+            .collect(),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let deltas: Vec<(String, String)> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::ReasoningDelta { id, delta, .. } => Some((id, delta)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        deltas,
+        [
+            ("rs_1".into(), "Think".into()),
+            ("rs_1".into(), "ing.".into())
+        ]
+    );
+}
+
+/// TS: `doStream` flush (open-responses-language-model.ts:997-1003): a
+/// reasoning item that never got `response.output_item.done` ends with its
+/// own item id.
+#[tokio::test]
+async fn unfinished_reasoning_ends_with_its_item_id() {
+    let server = MockServer::start().await;
+    let added = json!({ "type": "response.output_item.added",
+                        "item": { "type": "reasoning", "id": "rs_open" } });
+    mock_sse(&server, sse_event(&added.to_string())).await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let ends: Vec<String> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::ReasoningEnd { id, .. } => Some(id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends, ["rs_open"]);
+}
+
+/// TS: `doStream` (open-responses-language-model.ts:758-781): a streamed tool
+/// call takes the completed item's `arguments` unless they are empty, so a
+/// stream without argument events still has the input.
+#[tokio::test]
+async fn stream_tool_calls_take_the_completed_arguments() {
+    let server = MockServer::start().await;
+    let events = [
+        json!({ "type": "response.output_item.added", "item": { "type": "function_call",
+                "id": "fc_1", "call_id": "call_1", "name": "write_svg", "arguments": "" } }),
+        json!({ "type": "response.output_item.done", "item": { "type": "function_call",
+                "id": "fc_1", "call_id": "call_1", "name": "write_svg",
+                "arguments": "{\"path\":\"icon.svg\"}" } }),
+    ];
+    mock_sse(
+        &server,
+        events
+            .iter()
+            .map(|event| sse_event(&event.to_string()))
+            .collect(),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let inputs: Vec<String> = collect_stream(result)
+        .await
+        .into_iter()
+        .filter_map(|part| match part {
+            StreamPart::ToolCall(call) => Some(call.input),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inputs, [r#"{"path":"icon.svg"}"#]);
+}
+
+/// TS: `doStream` (open-responses-language-model.ts:957-990): `response.failed`
+/// with an error and in-stream `error` events become error parts carrying
+/// the event as `data`, and the stream finishes with `error`.
+#[tokio::test]
+async fn stream_errors_become_error_parts() {
+    let failed = json!({ "type": "response.failed", "response": { "status": "failed",
+                         "error": { "code": "429", "message": "Rate limit reached" } } });
+    let error =
+        json!({ "type": "error", "error": { "code": "503", "message": "Service unavailable" } });
+    let text = json!({ "type": "response.output_item.added", "item": { "type": "message", "id": "msg_1" } });
+    for (events, message, code) in [
+        (vec![failed.clone()], "Rate limit reached", "429"),
+        (vec![text, error.clone()], "Service unavailable", "503"),
+    ] {
+        let server = MockServer::start().await;
+        mock_sse(
+            &server,
+            events
+                .iter()
+                .map(|event| sse_event(&event.to_string()))
+                .collect(),
+        )
+        .await;
+        let result = make_model(&server, "m")
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+        let error = parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::Error {
+                    error: aimux_core::error::AiMuxError::ApiCall(error),
+                } => Some(error),
+                _ => None,
+            })
+            .expect("an error part");
+        assert_eq!(error.message, message);
+        assert_eq!(error.provider_code.as_deref(), Some(code));
+        assert_eq!(error.data.as_ref(), events.last());
+        let Some(StreamPart::Finish { finish_reason, .. }) = parts.last() else {
+            panic!("no finish");
+        };
+        assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+        assert_eq!(finish_reason.raw.as_deref(), Some(code));
+    }
+}
+
+/// TS: `getArgs` (open-responses-language-model.ts:304-315): a JSON response
+/// format without a schema is sent as `{ type: "json_object" }`.
+#[tokio::test]
+async fn schema_less_json_is_a_json_object() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let options = CallOptions {
+        response_format: Some(ResponseFormat::Json {
+            schema: None,
+            name: None,
+            description: None,
+        }),
+        ..default_options(test_prompt())
+    };
+    make_model(&server, "m")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let request = &server.received_requests().await.unwrap()[0];
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["text"], json!({ "format": { "type": "json_object" } }));
+}
+
+/// TS: `getArgs` (open-responses-language-model.ts:166-300): with no
+/// extension to encode them, provider-defined tools are left out with an
+/// `unsupported` warning each, and a tool choice naming one is omitted.
+#[tokio::test]
+async fn provider_defined_tools_are_unsupported() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let options: CallOptions = serde_json::from_value(json!({
+        "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+        "tools": [
+            { "type": "provider", "id": "openai.web_search", "name": "web_search", "args": {} },
+            { "type": "provider", "id": "openai.file_search", "name": "file_search", "args": {} }
+        ],
+        "toolChoice": { "type": "tool", "toolName": "web_search" }
+    }))
+    .unwrap();
+    let result = make_model(&server, "m")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        json!(result.warnings),
+        json!([
+            { "type": "unsupported", "feature": "provider-defined tool openai.web_search" },
+            { "type": "unsupported", "feature": "provider-defined tool openai.file_search" }
+        ])
+    );
+    let request = &server.received_requests().await.unwrap()[0];
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert!(body.get("tools").is_none());
+    assert!(body.get("tool_choice").is_none());
+}
+
+/// TS: `getArgs` (open-responses-language-model.ts:330-347):
+/// `providerOptions.<name>.reasoningEffort` is sent as is and wins over the
+/// top-level `reasoning`.
+#[tokio::test]
+async fn reads_the_reasoning_effort_provider_option() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let options: CallOptions = serde_json::from_value(json!({
+        "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+        "reasoning": "low",
+        "providerOptions": { "lmstudio": { "reasoningEffort": "max", "reasoningSummary": "detailed" } }
+    }))
+    .unwrap();
+    make_model(&server, "m")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let request = &server.received_requests().await.unwrap()[0];
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(
+        body["reasoning"],
+        json!({ "effort": "max", "summary": "detailed" })
+    );
+}
+
+/// TS: `doGenerate` (open-responses-language-model.ts:411-426): an `error` in
+/// a successful response body fails with status 400, not retryable, and the
+/// error object as `data`.
+#[tokio::test]
+async fn response_errors_report_status_400() {
+    let server = MockServer::start().await;
+    let error = json!({ "code": "busy", "message": "Try again later.", "status_code": 503 });
+    mock_json(
+        &server,
+        json!({ "error": error, "status": "failed", "output": [] }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await;
+    let Err(aimux_core::error::AiMuxError::ApiCall(api_error)) = result else {
+        panic!("expected an API call error, got {result:?}");
+    };
+    assert_eq!(api_error.message, "Try again later.");
+    assert_eq!(api_error.status_code, Some(400));
+    assert!(!api_error.is_retryable);
+    assert_eq!(api_error.data, Some(error));
+}
+
+/// TS: `doGenerate` (open-responses-language-model.ts:428-441): a response
+/// without `output` fails as an API call error with status 500, not
+/// retryable.
+#[tokio::test]
+async fn missing_output_is_an_api_call_error() {
+    let server = MockServer::start().await;
+    mock_json(
+        &server,
+        json!({ "id": "resp_1", "status": "incomplete",
+                "incomplete_details": { "reason": "content_filter" } }),
+    )
+    .await;
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(test_prompt()))
+        .await;
+    let Err(aimux_core::error::AiMuxError::ApiCall(api_error)) = result else {
+        panic!("expected an API call error, got {result:?}");
+    };
+    assert_eq!(
+        api_error.message,
+        "Responses API returned no output (content_filter)"
+    );
+    assert_eq!(api_error.status_code, Some(500));
+    assert!(!api_error.is_retryable);
 }
 
 /// Two SSE chunks: a text delta and the completion.
