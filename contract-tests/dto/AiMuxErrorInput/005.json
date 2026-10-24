@@ -1,0 +1,15 @@
+{
+  "name": "AI_APICallError",
+  "url": "https://example.test/v1",
+  "requestBodyValues": {},
+  "statusCode": 200,
+  "message": "Failed to process successful response: JSON parse error: Unexpected end of JSON input",
+  "responseHeaders": {
+    "content-type": "application/json"
+  },
+  "isRetryable": false,
+  "cause": {
+    "name": "AI_JSONParseError",
+    "message": "Unexpected end of JSON input"
+  }
+}

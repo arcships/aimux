@@ -107,7 +107,7 @@ impl std::fmt::Debug for ProdiaProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_prodia(settings: ProdiaProviderSettings) -> Result<ProdiaProvider, AiMuxError> {
@@ -364,7 +364,7 @@ impl ImageModel for ProdiaImageModel {
                 p.strip_prefix("boundary=").map(|s| s.trim().to_string())
             })
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData(format!(
+                AiMuxError::invalid_response_data(format!(
                     "Prodia response missing multipart boundary: {content_type}"
                 ))
             })?;
@@ -390,7 +390,7 @@ impl ImageModel for ProdiaImageModel {
         }
 
         let image_bytes = image_bytes.ok_or_else(|| {
-            AiMuxError::InvalidResponseData("Prodia multipart response missing output image".into())
+            AiMuxError::invalid_response_data("Prodia multipart response missing output image")
         })?;
         let job_result = job_result.unwrap_or(Value::Null);
 
@@ -483,7 +483,7 @@ impl VideoModel for ProdiaVideoModel {
             .get("job")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData(
+                AiMuxError::invalid_response_data(
                     "Prodia job submission response missing job id".to_string(),
                 )
             })?
@@ -510,7 +510,7 @@ impl VideoModel for ProdiaVideoModel {
             .get("job_id")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(
+                AiMuxError::invalid_argument(
                     "prodia operation reference is missing job_id".to_string(),
                 )
             })?;
@@ -558,7 +558,7 @@ impl VideoModel for ProdiaVideoModel {
             .or_else(|| raw_body.get("video_url"))
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData("Prodia job done without a video URL".to_string())
+                AiMuxError::invalid_response_data("Prodia job done without a video URL")
             })?;
         let videos: Vec<VideoData> = vec![VideoData::Url {
             url: video_url.to_string(),

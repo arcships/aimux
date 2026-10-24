@@ -78,6 +78,15 @@ pub fn provider_names() -> Vec<&'static str> {
     names
 }
 
+/// `name` as [`create_provider`] accepts it, or `None`.
+pub(crate) fn provider_name(name: &str) -> Option<&'static str> {
+    PACKAGES
+        .iter()
+        .copied()
+        .chain(preset::names())
+        .find(|candidate| *candidate == name)
+}
+
 /// Create the built-in provider `name` with `settings` (key, base URL, extra
 /// headers, transport) applied to its factory. A vendor package wins over a
 /// registry row of the same name.
@@ -113,7 +122,7 @@ pub fn create_provider(
         transform_request_body,
     } = settings;
     let unsupported = |field: &str| {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "provider '{name}' has no `{field}` setting"
         )))
     };
@@ -576,7 +585,7 @@ mod tests {
             ]);
             let error = model.do_generate(&options).await.expect_err(name);
             assert!(
-                matches!(&error, AiMuxError::InvalidArgument(message) if message.starts_with(var)),
+                matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.starts_with(var)),
                 "{name}: {error:?}"
             );
         }

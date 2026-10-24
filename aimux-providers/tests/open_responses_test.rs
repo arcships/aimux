@@ -2969,3 +2969,64 @@ async fn missing_output_is_an_api_call_error() {
     assert_eq!(api_error.status_code, Some(500));
     assert!(!api_error.is_retryable);
 }
+
+/// Two SSE chunks: a text delta and the completion.
+fn raw_chunk_events() -> [&'static str; 3] {
+    [
+        r#"{"type":"response.output_item.added","output_index":0,"item":{"id":"msg_1","type":"message","status":"in_progress","content":[],"role":"assistant"},"sequence_number":0}"#,
+        r#"{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hi","sequence_number":1}"#,
+        r#"{"type":"response.completed","response":{"id":"resp_1","status":"completed","incomplete_details":null,"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}},"sequence_number":2}"#,
+    ]
+}
+
+async fn stream_raw_values(include_raw_chunks: Option<bool>) -> (Vec<Value>, Vec<StreamPart>) {
+    let server = MockServer::start().await;
+    let events: Vec<String> = raw_chunk_events().iter().map(|e| sse_event(e)).collect();
+    mock_sse(
+        &server,
+        sse_body(&events.iter().map(String::as_str).collect::<Vec<_>>()),
+    )
+    .await;
+    let mut options = default_options(test_prompt());
+    options.include_raw_chunks = include_raw_chunks;
+    let parts = collect_stream(
+        make_model(&server, "gpt-4o")
+            .do_stream(&options)
+            .await
+            .unwrap(),
+    )
+    .await;
+    let raw = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::Raw { raw_value } => Some(raw_value.clone()),
+            _ => None,
+        })
+        .collect();
+    (raw, parts)
+}
+
+/// open-responses-language-model.ts:685-690: with `includeRawChunks`, each
+/// chunk is sent as `raw` before the parts made from it.
+#[tokio::test]
+async fn stream_sends_each_chunk_as_raw_when_asked() {
+    let (raw, parts) = stream_raw_values(Some(true)).await;
+    let expected: Vec<Value> = raw_chunk_events()
+        .iter()
+        .map(|event| serde_json::from_str(event).unwrap())
+        .collect();
+    assert_eq!(raw, expected);
+    let raw_delta = parts
+        .iter()
+        .position(
+            |part| matches!(part, StreamPart::Raw { raw_value } if raw_value["delta"] == "Hi"),
+        )
+        .unwrap();
+    assert!(matches!(&parts[raw_delta + 1], StreamPart::TextDelta { delta, .. } if delta == "Hi"));
+}
+
+#[tokio::test]
+async fn stream_sends_no_raw_chunks_by_default() {
+    assert!(stream_raw_values(None).await.0.is_empty());
+    assert!(stream_raw_values(Some(false)).await.0.is_empty());
+}

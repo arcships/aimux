@@ -27,6 +27,7 @@ import Foundation
             ("operationPrimitives", { try await ContractTests.operationPrimitives() }),
             ("cancelBlockedPushAndPoll", { try await ContractTests.cancelBlockedPushAndPoll() }),
             ("handleResults", { try WireTests.handleResults() }),
+            ("testErrorCauseIsThePayloadCause", { try WireTests.testErrorCauseIsThePayloadCause() }),
             ("wireValues", { try ContractTests.wireValues() }),
             ("testToolCallProviderMetadataRoundTrip", { try WireTests.testToolCallProviderMetadataRoundTrip() }),
             ("testUnknownFieldsKeepNullApartFromMissing", { try WireTests.testUnknownFieldsKeepNullApartFromMissing() }),
