@@ -1210,6 +1210,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses reasoning deltas carry the reasoning item's
+  id as `providerMetadata.<key>.itemId`, as the AI SDK's do and as aimux's
+  reasoning start and end parts already did.
+
+- An OpenAI (and Azure) Responses stream that never sees
+  `response.created` finishes with `responseId: null` in its provider
+  metadata, as the AI SDK does, instead of an empty string.
+
+- The OpenAI (and Azure) file search tool sends `max_num_results` as an
+  integer, as the AI SDK does: `FileSearchArgs::max_num_results` is an
+  `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` no longer
+  goes out as `5.0`.
+
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not

@@ -17,6 +17,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_core::types::FinishReasonUnified;
+use aimux_providers::openai::tools::{FileSearchArgs, file_search};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use mock_fetch::{Canned, MockFetch};
@@ -926,5 +927,95 @@ async fn responses_stream_emits_raw_chunks_when_asked() {
         !without_raw
             .iter()
             .any(|part| matches!(part, StreamPart::Raw { .. }))
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/tool/file-search.ts:29 takes
+/// `maxNumResults` as a JS number and
+/// src/responses/openai-responses-prepare-tools.ts:219 sends it as is, so
+/// `maxNumResults: 5` reaches the API's integer field as `5`, not `5.0`.
+#[tokio::test]
+async fn file_search_sends_max_num_results_as_an_integer() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let args: FileSearchArgs =
+        serde_json::from_value(json!({ "vectorStoreIds": ["vs_1"], "maxNumResults": 5 })).unwrap();
+    let mut options = options();
+    options.tools = Some(vec![Tool::Provider(file_search(args).unwrap())]);
+    provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["tools"][0]["max_num_results"],
+        json!(5)
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1587 starts `responseId` at
+/// `null` and only `response.created` sets it, so a stream without that event
+/// finishes with `responseId: null`, not an empty string.
+#[tokio::test]
+async fn a_stream_without_response_created_finishes_with_a_null_response_id() {
+    let fetch = MockFetch::new(vec![sse(vec![json!({
+        "type":"response.completed",
+        "response":{"id":"resp_1","created_at":1,"model":"test-model","status":"completed","output":[],
+            "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}
+    })])]);
+    let parts: Vec<_> = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let Some(StreamPart::Finish {
+        provider_metadata: Some(metadata),
+        ..
+    }) = parts.last()
+    else {
+        panic!("expected a finish part with provider metadata: {parts:?}");
+    };
+    assert_eq!(metadata["openai"]["responseId"], Value::Null);
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:2735-2749 gives every
+/// `reasoning-delta` the reasoning item's id as `providerMetadata.<key>.itemId`,
+/// as it does for `reasoning-start` and `reasoning-end`.
+#[tokio::test]
+async fn reasoning_deltas_carry_the_item_id() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.output_item.added","output_index":0,
+            "item":{"id":"rs_1","type":"reasoning","summary":[]}}),
+        json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,
+            "summary_index":0,"part":{"type":"summary_text","text":""}}),
+        json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,
+            "summary_index":0,"delta":"Thinking"}),
+    ])]);
+    let parts: Vec<_> = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let delta = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::ReasoningDelta {
+                provider_metadata, ..
+            } => Some(provider_metadata),
+            _ => None,
+        })
+        .expect("a reasoning delta");
+    assert_eq!(
+        serde_json::to_value(delta).unwrap(),
+        json!({ "openai": { "itemId": "rs_1" } })
     );
 }
