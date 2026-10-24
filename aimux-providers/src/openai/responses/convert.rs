@@ -1140,6 +1140,7 @@ fn prepare_allowed_tools(
         .transpose()?
         .unwrap_or("auto");
     let mut entries = Vec::new();
+    let mut dropped = Vec::new();
     for name in names {
         let name = name.as_str().ok_or_else(invalid)?;
         let direct = tools.iter().find(|tool| match tool {
@@ -1160,6 +1161,7 @@ fn prepare_allowed_tools(
                 })
             {
                 warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("several tools in this request share this provider tool name; use the tool name from the tools for this request instead".into()) });
+                dropped.push(name);
                 continue;
             }
             aliases.first().copied()
@@ -1186,6 +1188,7 @@ fn prepare_allowed_tools(
                             "{reason}; the tool is removed from the allowed tools"
                         )),
                     });
+                    dropped.push(name);
                     continue;
                 }
                 json!({"type":"function", "name":tool.name})
@@ -1200,6 +1203,7 @@ fn prepare_allowed_tools(
                     Some("mcp") => json!({"type":"mcp", "server_label":value["server_label"]}),
                     Some("tool_search") => {
                         warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("OpenAI does not support tool_search tools in tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                        dropped.push(name);
                         continue;
                     }
                     Some(kind) => json!({"type":kind}),
@@ -1214,9 +1218,10 @@ fn prepare_allowed_tools(
         entries.push(entry);
     }
     if entries.is_empty() {
-        return Err(AiMuxError::UnsupportedFunctionality(
-            "allowedTools with only tools that cannot be allow-listed".into(),
-        ));
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "allowedTools with only tools that cannot be allow-listed ({})",
+            dropped.join(", ")
+        )));
     }
     Ok(json!({"type":"allowed_tools", "mode":mode, "tools":entries}))
 }

@@ -1637,3 +1637,32 @@ async fn responses_allowed_tools_warnings_quote_the_entry_and_give_the_reason() 
         }])
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:509-515
+/// names the dropped entries when no `allowedTools` entry can be expressed.
+#[tokio::test]
+async fn responses_allowed_tools_error_names_the_dropped_entries() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.tools = Some(vec![Tool::Function(FunctionTool {
+        provider_options: Some(
+            serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
+        ),
+        ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
+    })]);
+    call.provider_options = Some(
+        serde_json::from_value(json!({"openai":{"allowedTools":{"toolNames":["deferred"]}}}))
+            .unwrap(),
+    );
+    let error = provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::UnsupportedFunctionality(message)
+            if message == "allowedTools with only tools that cannot be allow-listed (deferred)"),
+        "{error:?}"
+    );
+    assert!(fetch.seen().is_empty());
+}

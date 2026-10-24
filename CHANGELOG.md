@@ -1280,6 +1280,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An OpenAI (and Azure) Responses stream that never sees
   `response.created` finishes with `responseId: null` in its provider
   metadata, as the AI SDK does, instead of an empty string.
+- OpenAI Responses now lists the dropped entries when no `allowedTools` entry
+  can be allow-listed ("allowedTools with only tools that cannot be
+  allow-listed (a, b)"), like the AI SDK.
 - OpenAI Responses `allowedTools` warnings now quote the entry
   (`allowedTools entry "name"`) and give separate reasons for a namespaced
   tool, a deferred tool, a tool_search tool and a provider tool name several
