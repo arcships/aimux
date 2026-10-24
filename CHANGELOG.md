@@ -1165,6 +1165,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- Google's sub-modules follow the `@ai-sdk/google` files (RFC-0046 §4.2):
+  `google::embedding`, `google::image`, `google::speech`, `google::video`,
+  `google::convert`, `google::types` and `google::utils` are no longer public.
+  The models and settings stay at the `google` root and the crate root:
+  `google::{GoogleEmbeddingModel, GoogleImageModel, GoogleImageSettings,
+  GoogleSpeechModel, GoogleVideoModel}`. The request and response helpers of
+  `convert`, `types` and `utils` (`convert_to_google_messages`,
+  `build_request_body`, `build_request_body_with_warnings`, `prepare_tools`,
+  `prepare_all_tools`, `get_google_model_capabilities`,
+  `sanitize_response_json_schema`, `parse_finish_reason`, `convert_usage`,
+  `extract_sources`, the response types, `get_model_path`,
+  `is_supported_file_url`, `GoogleJsonAccumulator`) and
+  `speech::google_speech_input` become crate-internal, with no public
+  replacement. `google::files` and `google::transcription` keep their paths.
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's

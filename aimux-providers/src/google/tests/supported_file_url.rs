@@ -1,4 +1,4 @@
-use crate::google::utils::is_supported_file_url;
+use crate::google::supported_file_url::is_supported_file_url;
 
 /// `new URL(text)`: the URL as the WHATWG parser serializes it (a bare origin
 /// gains its `/` path), which is what upstream hands to `isSupportedFileUrl`.

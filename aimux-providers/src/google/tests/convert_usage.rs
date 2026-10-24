@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
-use crate::google::convert::convert_usage;
-use crate::google::types::GoogleUsageMetadata;
+use crate::google::api_types::GoogleUsageMetadata;
+use crate::google::convert_usage::convert_usage;
 
 /// `convertGoogleUsage(usageMetadata)` as the upstream JSON object.
 fn convert_usage_json(usage_metadata: Value) -> Value {

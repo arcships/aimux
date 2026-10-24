@@ -11,8 +11,6 @@
 
 use async_trait::async_trait;
 use base64::Engine;
-use serde::de::{Deserialize, Deserializer, Error as _};
-use serde::{Deserialize as DeriveDeserialize, Serialize};
 use serde_json::{Value, json};
 
 use aimux_core::ErrorCause;
@@ -22,209 +20,15 @@ use aimux_core::speech_model::{
     AudioData, SpeechCallOptions, SpeechModel, SpeechRequest, SpeechResponse, SpeechResult,
 };
 
-use super::options::{GOOGLE, Namespace, google_metadata, no_null};
+use super::options::{GOOGLE, Namespace, google_metadata};
+use super::speech_api::SpeechResponseBody;
+use super::speech_input::google_speech_input;
+use super::speech_model_options::{SpeechMetadata, parse_options};
 use crate::shared::EndpointConfig;
 
 const DEFAULT_VOICE: &str = "Kore";
 /// Gemini TTS returns raw PCM at 24kHz when the response does not specify a rate.
 const DEFAULT_SAMPLE_RATE: u32 = 24000;
-
-// ── Provider options (`google-speech-model-options.ts`) ─────────────────────
-
-/// `z.never().optional()`: the key must not be present.
-fn never<'de, D: Deserializer<'de>>(_: D) -> Result<Option<()>, D::Error> {
-    Err(D::Error::custom("Custom voices are not supported"))
-}
-
-/// `z.string().min(1).optional()`.
-fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
-    let value = String::deserialize(deserializer)?;
-    if value.is_empty() {
-        return Err(D::Error::custom("speaker must not be empty"));
-    }
-    Ok(Some(value))
-}
-
-#[derive(Clone, Default, Serialize, DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct SpeechMetadata {
-    #[serde(
-        default,
-        deserialize_with = "non_empty",
-        skip_serializing_if = "Option::is_none"
-    )]
-    speaker: Option<String>,
-    #[serde(
-        default,
-        deserialize_with = "no_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    style: Option<String>,
-}
-
-#[derive(DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct Turn {
-    text: String,
-    #[serde(default, deserialize_with = "no_null")]
-    speech_metadata: Option<SpeechMetadata>,
-}
-
-#[derive(Clone, Serialize, DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct PrebuiltVoiceConfig {
-    voice_name: String,
-}
-
-#[derive(Clone, Serialize, DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct VoiceConfig {
-    prebuilt_voice_config: PrebuiltVoiceConfig,
-    #[serde(
-        default,
-        rename = "voice",
-        deserialize_with = "never",
-        skip_serializing
-    )]
-    _voice: Option<()>,
-}
-
-#[derive(Clone, Serialize, DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct SpeakerVoiceConfig {
-    speaker: String,
-    voice_config: VoiceConfig,
-}
-
-#[derive(Clone, Serialize, DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct MultiSpeakerVoiceConfig {
-    speaker_voice_configs: Vec<SpeakerVoiceConfig>,
-}
-
-#[derive(DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct SpeechOptions {
-    #[serde(default, deserialize_with = "no_null")]
-    speech_metadata: Option<SpeechMetadata>,
-    #[serde(default, deserialize_with = "no_null")]
-    turns: Option<Vec<Turn>>,
-    #[serde(default, deserialize_with = "no_null")]
-    multi_speaker_voice_config: Option<MultiSpeakerVoiceConfig>,
-}
-
-fn parse_options(
-    raw: Option<&aimux_core::shared::JsonObject>,
-) -> Result<SpeechOptions, AiMuxError> {
-    let invalid = |error: String, cause: Option<ErrorCause>| AiMuxError::InvalidArgument {
-        message: format!("Invalid argument for parameter providerOptions: {error}"),
-        cause,
-    };
-    let Some(raw) = raw else {
-        return Ok(SpeechOptions {
-            speech_metadata: None,
-            turns: None,
-            multi_speaker_voice_config: None,
-        });
-    };
-    let options: SpeechOptions = serde_json::from_value(Value::Object(raw.clone()))
-        .map_err(|e| invalid(e.to_string(), Some(ErrorCause::source(&e))))?;
-    if options.turns.as_ref().is_some_and(Vec::is_empty) {
-        return Err(invalid("turns must contain at least one turn".into(), None));
-    }
-    Ok(options)
-}
-
-// ── Speech input (`google-speech-input.ts`) ─────────────────────────────────
-
-/// The transcript and voice kind of a speech request.
-#[derive(Debug, PartialEq, Eq)]
-pub struct GoogleSpeechInput {
-    pub text: String,
-    pub uses_custom_voice: bool,
-}
-
-/// Inspects speech input without replacing provider option validation. Also
-/// used by intermediaries that need the transcript or voice kind before
-/// invoking a model. `provider_options` is the whole providerOptions record
-/// and is read leniently: anything malformed is left to provider validation.
-#[must_use]
-pub fn google_speech_input(
-    text: &str,
-    voice: Option<&str>,
-    provider_options: Option<&Value>,
-) -> GoogleSpeechInput {
-    let options = provider_options
-        .and_then(|options| options.get(GOOGLE))
-        .filter(|google| google.is_object());
-    let mut text = text.to_owned();
-    if let Some(turns) = options
-        .and_then(|options| options.get("turns"))
-        .and_then(Value::as_array)
-    {
-        let texts: Vec<&str> = turns
-            .iter()
-            .map_while(|turn| turn.get("text").and_then(Value::as_str))
-            .collect();
-        if !turns.is_empty() && texts.len() == turns.len() {
-            text = texts.concat();
-        }
-    }
-    let speakers = options
-        .and_then(|options| options.get("multiSpeakerVoiceConfig"))
-        .and_then(|config| config.get("speakerVoiceConfigs"))
-        .and_then(Value::as_array);
-    let uses_custom_voice = voice
-        .is_some_and(|voice| voice.starts_with("voice_") || voice.starts_with("voicekey_"))
-        || speakers.is_some_and(|speakers| {
-            speakers.iter().any(|speaker| {
-                speaker
-                    .get("voiceConfig")
-                    .and_then(Value::as_object)
-                    .is_some_and(|config| config.contains_key("voice"))
-            })
-        });
-    GoogleSpeechInput {
-        text,
-        uses_custom_voice,
-    }
-}
-
-// ── Response (`google-speech-api.ts`) ───────────────────────────────────────
-
-#[derive(DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct InlineData {
-    mime_type: Option<String>,
-    data: Option<String>,
-}
-
-#[derive(DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct ResponsePart {
-    inline_data: Option<InlineData>,
-}
-
-#[derive(DeriveDeserialize)]
-struct ResponseContent {
-    parts: Option<Vec<ResponsePart>>,
-}
-
-#[derive(DeriveDeserialize)]
-struct ResponseCandidate {
-    content: Option<ResponseContent>,
-}
-
-#[derive(DeriveDeserialize)]
-#[serde(rename_all = "camelCase")]
-struct SpeechResponseBody {
-    candidates: Option<Vec<ResponseCandidate>>,
-    /// Passed through as the result's usage
-    /// (`@ai-sdk/google@4.0.87 src/google-speech-api.ts:35`).
-    usage_metadata: Option<serde_json::Map<String, Value>>,
-}
-
-// ── Model ───────────────────────────────────────────────────────────────────
 
 /// A Google Gemini speech (TTS) model.
 pub struct GoogleSpeechModel {
