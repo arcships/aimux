@@ -1727,3 +1727,31 @@ async fn responses_missing_provider_reference_names_the_available_providers() {
     }
     assert!(fetch.seen().is_empty());
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:455-492
+/// warns about a request-level `reasoningEffortUpdate` the model does not
+/// support by listing the efforts it does support, and omits the update.
+#[tokio::test]
+async fn responses_unsupported_reasoning_effort_update_lists_the_supported_efforts() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.provider_options =
+        Some(serde_json::from_value(json!({"openai":{"reasoningEffortUpdate":"none"}})).unwrap());
+    let result = provider(&fetch)
+        .responses("gpt-6-astra")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["input"],
+        json!([{"role":"user","content":[{"type":"input_text","text":"Hello"}]}])
+    );
+    assert_eq!(
+        serde_json::to_value(&result.warnings).unwrap(),
+        json!([{
+            "type": "unsupported",
+            "feature": "reasoningEffortUpdate",
+            "details": "gpt-6-astra only supports the following reasoning efforts: low, medium, high, xhigh, max"
+        }])
+    );
+}

@@ -1970,15 +1970,15 @@ pub fn build_responses_request_body_for(
             || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"))
         {
             Some("reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation".to_string())
-        } else if caps
-            .supported_reasoning_efforts
-            .is_some_and(|values| !values.contains(&effort.as_str()))
-        {
-            Some(format!(
-                "{model_id} does not support reasoning effort {effort}"
-            ))
         } else {
-            None
+            caps.supported_reasoning_efforts
+                .filter(|values| !values.contains(&effort.as_str()))
+                .map(|values| {
+                    format!(
+                        "{model_id} only supports the following reasoning efforts: {}",
+                        values.join(", ")
+                    )
+                })
         };
         if let Some(details) = reason {
             warnings.push(Warning::Unsupported {
