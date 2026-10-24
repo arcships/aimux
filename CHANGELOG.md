@@ -1165,6 +1165,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
+  layout (RFC-0046). The sub-modules `mistral::convert` and
+  `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
+  re-exported at `aimux_providers::mistral`, instead of
+  `mistral::embedding::MistralEmbeddingModel`. The helpers `mistral::convert`
+  exposed (`prepare_tools`, `convert_prompt_to_mistral_messages`,
+  `build_request_body`, `request_warnings`, `parse_finish_reason`,
+  `PreparedTools`) are not reachable from outside the crate any more and have
+  no replacement. Exports at the crate root and the `mistral` module root are
+  unchanged.
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
