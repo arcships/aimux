@@ -101,6 +101,6 @@ fn decision_decide(ctx: Ctx, target: Target, params: Value) -> CallFuture {
         request.options.abort_signal = ctx.abort;
         let result = decide(model(target)?.as_ref(), request.options).await?;
         serde_json::to_value(result)
-            .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+            .map_err(|error| BindingError::result_serialization(&error).into())
     })
 }

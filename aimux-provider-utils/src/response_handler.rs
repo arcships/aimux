@@ -7,7 +7,7 @@ use bytes::Bytes;
 use futures::{StreamExt, stream::BoxStream};
 use serde::de::DeserializeOwned;
 
-use aimux_core::{AiMuxError, ApiCallError};
+use aimux_core::{AiMuxError, ApiCallError, ErrorCause};
 
 use crate::extract_response_headers::extract_response_headers;
 use crate::fetch::FetchResponse;
@@ -132,6 +132,7 @@ where
                 status_code: Some(status),
                 response_body: Some(String::from_utf8_lossy(&body).into_owned()),
                 response_headers: Some(headers.clone()),
+                cause: Some(ErrorCause::source(&error)),
                 ..ApiCallError::new(
                     format!("Invalid JSON response: {error}"),
                     input.url.clone(),
@@ -190,9 +191,11 @@ fn error_body_string(body: &[u8], read_truncated: bool) -> String {
 /// Callers may hold the original request after the transport has returned.
 /// Apply the same URL sanitization and structured-context bounds as transport
 /// errors; keep bounded raw response evidence and the observed HTTP status.
+/// `error` is the validation failure: its text is the message and the error
+/// itself the `cause`.
 #[must_use]
 pub fn invalid_response_api_call(
-    message: impl Into<String>,
+    error: &(dyn std::error::Error + 'static),
     status_code: u16,
     url: &str,
     request_body_values: serde_json::Value,
@@ -207,8 +210,9 @@ pub fn invalid_response_api_call(
         )),
         response_headers: Some(response_headers),
         data: Some(crate::logging::redact_error_context(response_body)),
+        cause: Some(ErrorCause::source(error)),
         ..ApiCallError::new(
-            message,
+            error.to_string(),
             crate::http::sanitized_request_url(url),
             crate::logging::redact_error_context(request_body_values),
         )
@@ -356,9 +360,10 @@ pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
 /// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`).
 fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
     serde_json::from_str(data).map_err(|error| match AiMuxError::from(error) {
-        AiMuxError::JsonParse(message) => AiMuxError::JsonParse(format!(
-            "JSON parsing failed: Text: {data}.\nError message: {message}"
-        )),
+        AiMuxError::JsonParse { message, cause } => AiMuxError::JsonParse {
+            message: format!("JSON parsing failed: Text: {data}.\nError message: {message}"),
+            cause,
+        },
         other => other,
     })
 }
@@ -386,6 +391,7 @@ where
                 AiMuxError::ApiCall(Box::new(ApiCallError {
                     response_headers: Some(headers.clone()),
                     is_retryable: true,
+                    cause: Some(ErrorCause::source(&error)),
                     ..ApiCallError::new(
                         error.to_string(),
                         body_url.clone(),
@@ -425,6 +431,7 @@ where
                         yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: true,
+                            cause: Some(ErrorCause::source(error.as_ref())),
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
@@ -440,6 +447,7 @@ where
                         yield Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                             response_headers: Some(stream_headers.clone()),
                             is_retryable: false,
+                            cause: Some(ErrorCause::source(&error)),
                             ..ApiCallError::new(
                                 error.to_string(),
                                 stream_url.clone(),
