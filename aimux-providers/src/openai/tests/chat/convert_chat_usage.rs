@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
-use crate::openai::model::convert_usage;
-use crate::openai::types::UsageResponse;
+use crate::openai::chat::chat_api::UsageResponse;
+use crate::openai::chat::convert_chat_usage::convert_usage;
 
 /// `convertOpenAIChatUsage(usage)`: the wire usage parsed as aimux parses it,
 /// with the same object kept as `raw`.

@@ -2396,3 +2396,135 @@ mod convert_to_openai_responses_input {
         }
     }
 }
+
+// ── Older ports (previously the inline tests of `src/openai/responses/convert.rs`) ──
+mod older_responses_convert {
+
+    use crate::openai::language_model_capabilities::SystemMessageMode;
+    use crate::openai::responses::ResponsesNamespace;
+    use crate::openai::responses::convert_to_responses_input::*;
+    use aimux_core::language_model_message::AssistantPart;
+    use aimux_core::language_model_message::LanguageModelMessage;
+    use aimux_core::language_model_message::ReasoningPart;
+    use aimux_core::types::Warning;
+    use serde_json::Value;
+    use serde_json::json;
+
+    fn reasoning(text: &str, options: Value) -> AssistantPart {
+        AssistantPart::Reasoning(ReasoningPart {
+            text: text.to_string(),
+            provider_options: Some(serde_json::from_value(json!({ "openai": options })).unwrap()),
+        })
+    }
+
+    fn convert(store: bool, content: Vec<AssistantPart>) -> ResponsesInputResult {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content,
+            provider_options: None,
+        }];
+        convert_to_responses_input(
+            ResponsesNamespace::OPENAI,
+            &prompt,
+            SystemMessageMode::System,
+            store,
+            false,
+        )
+        .unwrap()
+    }
+
+    /// partial: `should merge consecutive parts with same reasoning ID`; full port in src/openai/tests/responses/convert_to_responses_input.rs.
+    /// Parts of one reasoning item become one input item: the summaries are
+    /// appended and the last encrypted content wins (openai@4.0.83
+    /// `convert-to-openai-responses-input.ts:1167-1220`).
+    #[test]
+    fn reasoning_parts_with_one_item_id_are_merged_without_store() {
+        let result = convert(
+            false,
+            vec![
+                reasoning(
+                    "first",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-1" }),
+                ),
+                reasoning(
+                    "second",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-2" }),
+                ),
+                reasoning(
+                    "other",
+                    json!({ "itemId": "rs_2", "reasoningEncryptedContent": "enc-3" }),
+                ),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![
+                json!({
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "encrypted_content": "enc-2",
+                    "summary": [
+                        { "type": "summary_text", "text": "first" },
+                        { "type": "summary_text", "text": "second" },
+                    ],
+                }),
+                json!({
+                    "type": "reasoning",
+                    "id": "rs_2",
+                    "encrypted_content": "enc-3",
+                    "summary": [{ "type": "summary_text", "text": "other" }],
+                }),
+            ]
+        );
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    }
+
+    /// partial: `should warn when appending empty text to existing sequence`; full port in src/openai/tests/responses/convert_to_responses_input.rs.
+    /// An empty part cannot extend an item that already has parts.
+    #[test]
+    fn an_empty_reasoning_part_is_not_appended_to_an_item() {
+        let result = convert(
+            false,
+            vec![
+                reasoning(
+                    "first",
+                    json!({ "itemId": "rs_1", "reasoningEncryptedContent": "enc-1" }),
+                ),
+                reasoning("", json!({ "itemId": "rs_1" })),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![json!({
+                "type": "reasoning",
+                "id": "rs_1",
+                "encrypted_content": "enc-1",
+                "summary": [{ "type": "summary_text", "text": "first" }],
+            })]
+        );
+        assert!(matches!(
+            result.warnings.as_slice(),
+            [Warning::Other { message }]
+                if message.starts_with("Cannot append empty reasoning part to existing reasoning sequence. Skipping reasoning part: ")
+        ));
+    }
+
+    /// With `store`, one item reference stands for every part of the item.
+    #[test]
+    fn reasoning_parts_with_one_item_id_are_one_reference_with_store() {
+        let result = convert(
+            true,
+            vec![
+                reasoning("first", json!({ "itemId": "rs_1" })),
+                reasoning("second", json!({ "itemId": "rs_1" })),
+                reasoning("other", json!({ "itemId": "rs_2" })),
+            ],
+        );
+        assert_eq!(
+            result.input,
+            vec![
+                json!({ "type": "item_reference", "id": "rs_1" }),
+                json!({ "type": "item_reference", "id": "rs_2" }),
+            ]
+        );
+    }
+}

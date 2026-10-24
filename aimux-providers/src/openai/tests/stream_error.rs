@@ -1,7 +1,7 @@
 use aimux_core::error::{AiMuxError, ApiCallError};
 use serde_json::{Value, json};
 
-use crate::openai::openai_stream_error;
+use crate::openai::stream_error::openai_stream_error;
 
 /// `createOpenAIProviderStreamError(frame)`. The Rust error is an
 /// `ApiCallError`; it has no `type` field, so upstream's `type` is not

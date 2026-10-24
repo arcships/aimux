@@ -5,9 +5,8 @@ use aimux_core::language_model_message::{
 use aimux_core::shared::{FileBytes, FileData};
 use serde_json::{Value, json};
 
-use crate::openai::convert::{
-    SystemMessageMode, convert_prompt_to_openai_messages_with_mode_fallible,
-};
+use crate::openai::chat::convert_to_chat_messages::convert_prompt_to_openai_messages_with_mode_fallible;
+use crate::openai::language_model_capabilities::SystemMessageMode;
 
 /// The upstream prompt literal (AI SDK V4 JSON shape) as an aimux prompt.
 fn prompt(value: Value) -> LanguageModelPrompt {
@@ -811,5 +810,50 @@ mod tool_calls {
                 },
             ])
         );
+    }
+}
+
+// ── Older ports (previously the inline tests of `src/openai/convert.rs`) ──
+mod older_convert {
+    use aimux_core::language_model_message::ToolCallPart;
+
+    use crate::openai::chat::convert_to_chat_messages::*;
+    use crate::openai::language_model_capabilities::SystemMessageMode;
+    use aimux_core::language_model_message::AssistantPart;
+    use aimux_core::language_model_message::LanguageModelMessage;
+    use serde_json::Value;
+    use serde_json::json;
+
+    fn replayed_arguments(input: Value) -> Value {
+        let prompt = vec![LanguageModelMessage::Assistant {
+            content: vec![AssistantPart::ToolCall(ToolCallPart {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "echo".to_string(),
+                input,
+                provider_executed: None,
+                provider_options: None,
+            })],
+            provider_options: None,
+        }];
+        let messages = convert_prompt_to_openai_messages_with_mode_fallible(
+            &prompt,
+            SystemMessageMode::System,
+        )
+        .unwrap();
+        messages[0]["tool_calls"][0]["function"]["arguments"].clone()
+    }
+
+    /// partial: `should stringify arguments to tool calls`; full port in src/openai/tests/chat/convert_to_chat_messages.rs.
+    /// partial: `should default missing tool call input to an empty object`; full port in src/openai/tests/chat/convert_to_chat_messages.rs.
+    /// partial: `should normalize malformed tool call input and preserve the tool error`; full port in src/openai/tests/chat/convert_to_chat_messages.rs.
+    #[test]
+    fn replayed_tool_arguments_follow_upstream() {
+        assert_eq!(
+            replayed_arguments(json!({ "city": "Tokyo" })),
+            json!(r#"{"city":"Tokyo"}"#)
+        );
+        for input in [json!("Tokyo"), json!(7), json!(["Tokyo"]), Value::Null] {
+            assert_eq!(replayed_arguments(input), json!("{}"));
+        }
     }
 }

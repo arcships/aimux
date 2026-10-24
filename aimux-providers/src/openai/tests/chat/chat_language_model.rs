@@ -2873,3 +2873,126 @@ mod do_stream {
         }
     }
 }
+
+// ── Older ports (previously the inline tests of `src/openai/model.rs`) ──
+
+// The Chat Completions stream driven chunk by chunk.
+mod older_stream {
+    use serde_json::json;
+
+    use crate::stream::testing::run;
+
+    use crate::openai::chat::chat_language_model::*;
+    use aimux_core::error::AiMuxError;
+    use serde_json::Value;
+
+    fn delta(delta: Value) -> Result<Value, AiMuxError> {
+        Ok(json!({ "choices": [{ "delta": delta }] }))
+    }
+
+    fn tool_calls(tool_calls: Value) -> Result<Value, AiMuxError> {
+        delta(json!({ "tool_calls": tool_calls }))
+    }
+
+    #[test]
+    fn interleaved_tool_calls_stream_as_they_arrive_and_end_on_flush_in_index_order() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                tool_calls(json!([{
+                    "index": 1, "id": "call_b", "type": "function",
+                    "function": { "name": "time", "arguments": "{" }
+                }])),
+                tool_calls(json!([{
+                    "index": 0, "id": "call_a", "type": "function",
+                    "function": { "name": "weather", "arguments": "{\"city\":" }
+                }])),
+                tool_calls(json!([
+                    { "index": 1, "function": { "arguments": "}" } },
+                    { "index": 0, "function": { "arguments": "\"Paris\"}" } }
+                ])),
+                Ok(json!({ "choices": [{ "delta": {}, "finish_reason": "tool_calls" }] })),
+            ],
+        );
+        assert_eq!(
+            parts,
+            [
+                "stream-start",
+                "tool-input-start call_b time",
+                "tool-input-delta call_b {",
+                "tool-input-start call_a weather",
+                "tool-input-delta call_a {\"city\":",
+                "tool-input-delta call_b }",
+                "tool-input-delta call_a \"Paris\"}",
+                "tool-input-end call_a",
+                "tool-call call_a weather {\"city\":\"Paris\"}",
+                "tool-input-end call_b",
+                "tool-call call_b time {}",
+                "finish ToolCalls",
+            ]
+        );
+    }
+
+    /// partial: `should forward error stream parts after output has started`; full port in src/openai/tests/chat/chat_language_model.rs.
+    #[test]
+    fn an_error_frame_is_an_error_part_and_the_stream_finishes_with_error() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                delta(json!({ "content": "Hi" })),
+                Ok(json!({ "error": { "message": "overloaded", "type": "server_error" } })),
+            ],
+        );
+        assert_eq!(parts.len(), 6, "{parts:?}");
+        assert_eq!(
+            parts[..3],
+            ["stream-start", "text-start 0", "text-delta 0 Hi"]
+        );
+        assert!(parts[3].starts_with("error ") && parts[3].contains("overloaded"));
+        assert_eq!(parts[4..], ["text-end 0", "finish Error"]);
+    }
+
+    #[test]
+    fn flush_closes_open_blocks_and_finishes_with_other_without_a_finish_reason() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                delta(json!({ "reasoning_content": "Hmm" })),
+                delta(json!({ "content": "Hi" })),
+            ],
+        );
+        assert_eq!(
+            parts,
+            [
+                "stream-start",
+                "reasoning-start reasoning-0",
+                "reasoning-delta reasoning-0 Hmm",
+                "reasoning-end reasoning-0",
+                "text-start 0",
+                "text-delta 0 Hi",
+                "text-end 0",
+                "finish Other",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tool_call_of_another_type_ends_the_stream_without_flush() {
+        let parts = run(
+            OpenAIChatStream::default(),
+            [
+                tool_calls(json!([{
+                    "index": 0, "id": "call_a", "type": "custom",
+                    "function": { "name": "weather", "arguments": "{}" }
+                }])),
+                delta(json!({ "content": "ignored" })),
+            ],
+        );
+        assert_eq!(parts.len(), 2, "{parts:?}");
+        assert_eq!(parts[0], "stream-start");
+        assert!(
+            parts[1].starts_with("err ") && parts[1].contains("Expected 'function' type."),
+            "{parts:?}"
+        );
+    }
+}

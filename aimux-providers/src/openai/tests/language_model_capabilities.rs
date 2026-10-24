@@ -1,4 +1,4 @@
-use crate::openai::convert_common::{SystemMessageMode, get_model_capabilities};
+use crate::openai::language_model_capabilities::{SystemMessageMode, get_model_capabilities};
 
 mod get_open_ai_language_model_capabilities {
     use super::*;
