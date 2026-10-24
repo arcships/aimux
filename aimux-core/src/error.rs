@@ -1345,6 +1345,37 @@ mod tests {
         assert_eq!(AiMuxError::Timeout("spent".into()).retry_after_hint(), None);
     }
 
+    /// A retry inside a retry has no hint at either level, and the attempt
+    /// keeps its own: its headers survive nesting and serialization unchanged.
+    #[test]
+    fn nested_retry_keeps_the_attempt_hint() {
+        let attempt = AiMuxError::ApiCall(Box::new(ApiCallError {
+            response_headers: Some(HashMap::from([("retry-after-ms".into(), "250".into())])),
+            ..api_error("rate limited")
+        }));
+        let inner = AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![attempt],
+        });
+        let outer = AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::ErrorNotRetryable,
+            errors: vec![inner],
+        });
+        let decoded: AiMuxError =
+            serde_json::from_value(serde_json::to_value(&outer).unwrap()).unwrap();
+        for error in [&outer, &decoded] {
+            let AiMuxError::Retry(outer) = error else {
+                panic!("outer retry: {error:?}");
+            };
+            let AiMuxError::Retry(inner) = outer.last_error() else {
+                panic!("inner retry: {:?}", outer.last_error());
+            };
+            assert_eq!(error.retry_after_hint(), None);
+            assert_eq!(outer.last_error().retry_after_hint(), None);
+            assert_eq!(inner.last_error().retry_after_hint(), Some(250));
+        }
+    }
+
     /// A 429 is retryable and carries its hint wherever it lives — the
     /// classification is the `status_code` field, not a variant.
     #[test]
