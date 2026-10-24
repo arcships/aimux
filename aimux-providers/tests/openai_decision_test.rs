@@ -386,7 +386,7 @@ fn factory_is_explicit_and_preserves_the_provider_boundary() {
     assert_eq!(model.supported_question_types(), DecisionQuestionType::ALL);
     assert!(matches!(
         provider.decision_model(" "),
-        Some(Err(AiMuxError::InvalidArgument(_)))
+        Some(Err(AiMuxError::InvalidArgument { .. }))
     ));
     let registry = aimux_core::create_provider_registry(
         std::collections::BTreeMap::from([("openai".to_string(), provider)]),

@@ -15,6 +15,7 @@ use serde_json::{Map, Value, json};
 
 use super::options::{google_metadata, no_null};
 use crate::shared::EndpointConfig;
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::JsonObject;
 use aimux_core::transcription_model::{
@@ -66,9 +67,10 @@ impl TranscriptionOptions {
         match raw {
             None => Ok(Self::default()),
             Some(raw) => serde_json::from_value(Value::Object(raw.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument(format!(
-                    "Invalid argument for parameter providerOptions: {error}"
-                ))
+                AiMuxError::InvalidArgument {
+                    message: format!("Invalid argument for parameter providerOptions: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             }),
         }
     }
@@ -209,7 +211,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
         if is_live(&self.model_id) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Model '{}' only supports streaming transcription. Use stream_transcribe, \
                  or a unary model such as 'gemini-3.5-transcribe'.",
                 self.model_id
@@ -302,7 +304,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
     ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
         Some(Box::pin(async move {
             if !is_live(&self.model_id) {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "Model '{}' does not support streaming transcription. \
                  Use a live model such as 'gemini-3.5-transcribe-live'.",
                     self.model_id
@@ -397,8 +399,10 @@ impl GoogleTranscriptionModel {
 /// trailing `/v1beta` or `/v1alpha` of the base URL is dropped.
 #[cfg(feature = "realtime")]
 fn live_web_socket_url(base_url: &str, path: &str) -> Result<url::Url, AiMuxError> {
-    let mut url = url::Url::parse(base_url)
-        .map_err(|error| AiMuxError::InvalidArgument(format!("invalid base URL: {error}")))?;
+    let mut url = url::Url::parse(base_url).map_err(|error| AiMuxError::InvalidArgument {
+        message: format!("invalid base URL: {error}"),
+        cause: Some(ErrorCause::source(&error)),
+    })?;
     let mut segments: Vec<&str> = url.path().split('/').collect();
     if matches!(segments.last(), Some(&("v1beta" | "v1alpha"))) {
         segments.pop();
@@ -407,7 +411,7 @@ fn live_web_socket_url(base_url: &str, path: &str) -> Result<url::Url, AiMuxErro
     let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
     url.set_path(&format!("{}/ws/{path}", base_path.trim_end_matches('/')));
     url.set_scheme(scheme)
-        .map_err(|()| AiMuxError::InvalidArgument("invalid base URL scheme".into()))?;
+        .map_err(|()| AiMuxError::invalid_argument("invalid base URL scheme"))?;
     Ok(url)
 }
 
@@ -417,8 +421,8 @@ pub(crate) fn validate_live_input_audio_format(
 ) -> Result<(), AiMuxError> {
     let format = &options.input_audio_format;
     if format.format_type != "audio/pcm" || format.rate.is_some_and(|rate| rate != 16000) {
-        return Err(AiMuxError::InvalidArgument(
-            "The Gemini Live transcription API only supports 16kHz 16-bit PCM input audio.".into(),
+        return Err(AiMuxError::invalid_argument(
+            "The Gemini Live transcription API only supports 16kHz 16-bit PCM input audio.",
         ));
     }
     Ok(())
@@ -496,7 +500,7 @@ pub(crate) fn live_stream(
                         Some(Err(error)) => { yield Err(error); break; }
                         None if audio_ended => { complete = true; break; }
                         None => {
-                            yield Err(AiMuxError::InvalidResponseData(format!("{label} Live transcription WebSocket closed unexpectedly before finishing")));
+                            yield Err(AiMuxError::invalid_response_data(format!("{label} Live transcription WebSocket closed unexpectedly before finishing")));
                             break;
                         }
                     };
@@ -509,7 +513,7 @@ pub(crate) fn live_stream(
                     if message.get("setupComplete").is_some_and(|value| !value.is_null()) { ready = true; }
                     if let Some(value) = message.get("usageMetadata").filter(|value| !value.is_null()) { usage_metadata = Some(value.clone()); }
                     if let Some(error) = message.get("error").filter(|value| !value.is_null()) {
-                        yield Err(AiMuxError::InvalidResponseData(error.get("message").and_then(Value::as_str).map_or_else(|| format!("{label} Live API error"), str::to_owned)));
+                        yield Err(AiMuxError::invalid_response_data(error.get("message").and_then(Value::as_str).map_or_else(|| format!("{label} Live API error"), str::to_owned)));
                         break;
                     }
                     let content = message.get("serverContent");

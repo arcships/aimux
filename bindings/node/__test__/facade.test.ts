@@ -9,7 +9,7 @@ const loader = require.resolve('../index.js')
 require.cache[loader] = { id: loader, filename: loader, loaded: true, exports: require('./fixtures/native.cjs') } as never
 const api = await import('../src/index.ts')
 const rawApi = await import('../src/native.ts')
-const { Client, LanguageModel, EmbeddingModel, AimuxError, readable } = api
+const { Client, LanguageModel, EmbeddingModel, AimuxError, AimuxCauseError, AimuxSourceError, readable } = api
 
 test('raw and typed preserve the same DTO, null, nested provider options and 64-bit IDs', async () => {
   const client = new Client()
@@ -41,6 +41,57 @@ test('error properties and prototype match for both layers, including zero retry
       return true
     })
   }
+})
+
+test('the payload cause is the standard Error.cause on raw and typed rejections', async () => {
+  const client = new Client()
+  for (const call of [() => client.raw.call('0', 'fixture.cause', '{}'), () => client.call('0', 'fixture.cause')]) {
+    await assert.rejects(call, (error: unknown) => {
+      assert.ok(error instanceof AimuxError)
+      assert.deepEqual((error.error as { cause?: unknown }).cause, { message: 'error sending request', cause: { message: 'Connection refused (os error 111)' } })
+      assert.ok(error.cause instanceof AimuxSourceError)
+      assert.equal(error.cause.message, 'error sending request')
+      assert.ok(error.cause.cause instanceof AimuxSourceError)
+      assert.equal(error.cause.cause.message, 'Connection refused (os error 111)')
+      assert.equal('cause' in error.cause.cause, false)
+      assert.equal(Object.keys(error).includes('cause'), false)
+      return true
+    })
+  }
+  assert.equal('cause' in new AimuxError({ kind: 'aimux', code: 12, message: 't', error: { name: 'TimeoutError', message: 't' } }), false)
+})
+
+test('a nested AI SDK cause is an error class with its own cause, recursively', () => {
+  const parse = { name: 'AI_JSONParseError', message: 'JSON parsing failed', text: '{', cause: { message: 'EOF' } }
+  const built = new AimuxError({ kind: 'aimux', code: 3, message: 'm', error: { name: 'AI_InvalidToolInputError', message: 'm', toolName: 't', toolInput: '{', cause: parse } })
+  assert.ok(built.cause instanceof AimuxCauseError)
+  assert.ok(built.cause instanceof Error)
+  assert.equal(built.cause.name, 'AI_JSONParseError')
+  assert.equal(built.cause.message, 'JSON parsing failed')
+  assert.deepEqual(built.cause.error, parse)
+  assert.equal(typeof built.cause.stack, 'string')
+  assert.ok(built.cause.cause instanceof AimuxSourceError)
+  assert.equal(built.cause.cause.message, 'EOF')
+})
+
+test('a retry error\'s cause is its last attempt, as the AI SDK lastError', () => {
+  const attempt = (statusCode: number) => ({ name: 'AI_APICallError', message: `status ${statusCode}`, statusCode, isRetryable: true })
+  const error = new AimuxError({ kind: 'aimux', code: 10, message: 'r', error: { name: 'AI_RetryError', message: 'r', reason: 'maxRetriesExceeded', errors: [attempt(429), attempt(503)] } })
+  assert.ok(error.cause instanceof AimuxCauseError)
+  assert.equal(error.cause.name, 'AI_APICallError')
+  assert.equal(error.cause.message, 'status 503')
+  assert.equal('cause' in new AimuxError({ kind: 'aimux', code: 10, message: 'r', error: { name: 'AI_RetryError', message: 'r', reason: 'abort', errors: [] } }), false)
+})
+
+test('params that are not JSON data keep the serializer error as the cause', async () => {
+  const client = new Client()
+  await assert.rejects(() => client.call('0', 'fixture.error', { callback: () => 1 }), (error: unknown) => {
+    assert.ok(error instanceof AimuxError)
+    assert.equal(error.code, 202)
+    assert.ok(error.cause instanceof TypeError)
+    assert.deepEqual((error.error as { cause?: unknown }).cause, { message: String(error.cause) })
+    return true
+  })
 })
 
 test('events retain recoverable error data and a unique explicit terminal', async () => {

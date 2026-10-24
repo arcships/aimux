@@ -60,7 +60,7 @@ AI SDK 的规则是"没给工具集的调用从不修复",宿主看到 `null` �
 { "toolCall": { "type": "tool-call", "toolCallId": "call-1", "toolName": "weather",
                 "input": "{\"town\":\"Singapore\"}", "dynamic": true },
   "error": { "name": "AI_InvalidToolInputError", "toolName": "weather",
-             "toolInput": "…", "cause": "…" },
+             "toolInput": "…", "cause": { "message": "…" } },
   "inputSchema": { "type": "object", "required": ["city"], "…": "…" },
   "tools": [ … ], "messages": [ … ], "instructions": null }
 ```

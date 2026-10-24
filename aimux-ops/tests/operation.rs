@@ -64,7 +64,7 @@ impl TranscriptionModel for MockModel {
         'b: 'c,
         Self: 'c,
     {
-        Box::pin(async { Err(AiMuxError::Other("batch generation is unused".into())) })
+        Box::pin(async { Err(AiMuxError::other("batch generation is unused")) })
     }
 
     fn do_stream(
@@ -79,8 +79,8 @@ impl TranscriptionModel for MockModel {
             let stream: Pin<
                 Box<dyn Stream<Item = Result<TranscriptionStreamPart, AiMuxError>> + Send>,
             > = match &self.mode {
-                Mode::Unsupported => return Err(AiMuxError::Other("unused".into())),
-                Mode::ConnectFailure => return Err(AiMuxError::Other("connect failed".into())),
+                Mode::Unsupported => return Err(AiMuxError::other("unused")),
+                Mode::ConnectFailure => return Err(AiMuxError::other("connect failed")),
                 Mode::Pending => return std::future::pending().await,
                 Mode::Echo(gate) => {
                     gate.cancelled().await;
@@ -282,7 +282,7 @@ async fn connection_failure_is_saved_and_delivered_once() {
     )
     .await;
     assert!(
-        matches!(next(&operation).await, Err(OpsError::AiMux(AiMuxError::Other(message))) if message == "connect failed")
+        matches!(next(&operation).await, Err(OpsError::AiMux(AiMuxError::Other { message, .. })) if message == "connect failed")
     );
     assert!(matches!(next(&operation).await, Ok(PollResult::Ended)));
     assert!(matches!(next(&operation).await, Ok(PollResult::Ended)));

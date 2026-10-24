@@ -147,7 +147,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
             .and_then(|v| v.as_str())
             .unwrap_or("");
         // A success response that cannot yield a usable result (§2.2).
-        AiMuxError::InvalidResponseData(if detail.is_empty() {
+        AiMuxError::invalid_response_data(if detail.is_empty() {
             "Responses API returned no output".to_string()
         } else {
             format!("Responses API returned no output ({detail})")
@@ -436,7 +436,7 @@ fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
 
 fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, AiMuxError> {
     let invalid = |field: &str| {
-        AiMuxError::InvalidResponseData(format!("Invalid Responses annotation field: {field}"))
+        AiMuxError::invalid_response_data(format!("Invalid Responses annotation field: {field}"))
     };
     let string = |field| {
         annotation

@@ -146,7 +146,7 @@ fn build_request_body_and_warnings(
                 .as_f64()
                 .filter(|speed| (0.25..=4.0).contains(speed))
                 .ok_or_else(|| {
-                    AiMuxError::InvalidArgument("invalid openai speech option: speed".into())
+                    AiMuxError::invalid_argument("invalid openai speech option: speed")
                 })?;
             body.insert("speed".into(), json!(speed));
         }
@@ -155,7 +155,7 @@ fn build_request_body_and_warnings(
             .filter(|value| !value.is_null())
         {
             let instructions = value.as_str().ok_or_else(|| {
-                AiMuxError::InvalidArgument("invalid openai speech option: instructions".into())
+                AiMuxError::invalid_argument("invalid openai speech option: instructions")
             })?;
             body.insert("instructions".into(), json!(instructions));
         }
