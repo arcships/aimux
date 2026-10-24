@@ -3,7 +3,6 @@
 use indexmap::IndexSet;
 
 use async_trait::async_trait;
-use serde::Deserialize;
 use serde_json::json;
 
 use aimux_core::AiMuxError;
@@ -13,30 +12,10 @@ use aimux_core::shared::FileBytes;
 use aimux_core::skills_model::{Skills, UploadSkillCallOptions, UploadSkillResult};
 use aimux_provider_utils::{HttpBody, HttpRequest};
 
-use super::config::AnthropicModelConfig;
-use super::options::CANONICAL;
+use crate::anthropic::config::AnthropicModelConfig;
+use crate::anthropic::language_model_options::CANONICAL;
 
-#[derive(Deserialize)]
-struct SkillResponse {
-    id: String,
-    display_title: Option<String>,
-    name: Option<String>,
-    description: Option<String>,
-    latest_version: Option<String>,
-    source: String,
-    created_at: String,
-    updated_at: String,
-}
-
-#[derive(Deserialize)]
-struct VersionResponse {
-    #[serde(rename = "type")]
-    _kind: String,
-    #[serde(rename = "skill_id")]
-    _skill_id: String,
-    name: Option<String>,
-    description: Option<String>,
-}
+use super::skills_api::{SkillResponse, VersionResponse};
 
 /// The provider's skill upload interface.
 pub struct AnthropicSkills {

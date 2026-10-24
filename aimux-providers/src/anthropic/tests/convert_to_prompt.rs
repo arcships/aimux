@@ -17,10 +17,10 @@ use aimux_core::tool::Tool;
 use aimux_core::types::Warning;
 use serde_json::{Value, json};
 
-use crate::anthropic::convert::{
+use crate::anthropic::convert_to_prompt::{
     AnthropicPromptConversion, convert_prompt_to_anthropic_full_with_tools,
 };
-use crate::anthropic::options::CANONICAL;
+use crate::anthropic::language_model_options::CANONICAL;
 use crate::anthropic::tool_name_mapping::ToolNameMapping;
 
 /// The V4 prompt written as upstream's JSON.
@@ -4536,5 +4536,154 @@ mod toolsets {
                 "{input}"
             );
         }
+    }
+}
+
+// ── Older ports (previously `tests/anthropic_remaining_test.rs`) ──
+//
+// Remaining Anthropic provider tests — ported from the TS SDK suite.
+//
+// Sources:
+//
+// - `anthropic-provider.test.ts` — provider configuration (baseURL, auth,
+//   custom provider name, `supportedUrls`).
+// - `anthropic-unknown-model-max-output-tokens.test.ts` — unknown-model
+//   `max_tokens` defaulting + compatibility warning.
+// - `sanitize-json-schema.test.ts` — JSON Schema sanitization.
+// - `anthropic-language-model.test.ts` → `mid-conversation tool changes`
+//   describe block.
+
+mod older_remaining {
+
+    use aimux_core::language_model_message::LanguageModelPrompt;
+    use aimux_core::types::Warning;
+    use serde_json::json;
+
+    /// Upstream drops the caller of a historical tool call whose source code execution call was pruned, with a warning.
+    #[test]
+    fn omits_orphaned_historical_programmatic_caller_with_warning() {
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([
+            {
+                "role": "assistant",
+                "content": [{
+                    "type": "tool-call",
+                    "toolCallId": "lookup-call",
+                    "toolName": "lookup",
+                    "input": { "ticker": "AAPL" },
+                    "providerOptions": { "anthropic": {
+                        "caller": { "type": "code_execution_20260120", "toolId": "pruned-source" }
+                    } },
+                }],
+            },
+            {
+                "role": "tool",
+                "content": [{
+                    "type": "tool-result",
+                    "toolCallId": "lookup-call",
+                    "toolName": "lookup",
+                    "output": { "type": "text", "value": "185.42" },
+                }],
+            },
+            { "role": "user", "content": [{ "type": "text", "text": "Now look up MSFT." }] },
+        ]))
+        .unwrap();
+        let result =
+            crate::anthropic::convert_to_prompt::convert_prompt_to_anthropic_full_fallible(
+                &prompt, false,
+            )
+            .unwrap();
+        assert_eq!(
+            result.messages[0]["content"],
+            json!([{ "type": "tool_use", "id": "lookup-call", "name": "lookup", "input": { "ticker": "AAPL" } }])
+        );
+        assert_eq!(
+        result.warnings,
+        vec![Warning::Other {
+            message: "Omitted caller metadata for tool lookup-call because source code execution tool pruned-source is missing from the conversation history.".into()
+        }]
+    );
+    }
+
+    /// Upstream names the unsupported output type when an advisor result cannot be sent back.
+    #[test]
+    fn advisor_result_with_text_output_warns_with_output_type() {
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool-call",
+                    "toolCallId": "srvtoolu_advisor",
+                    "toolName": "advisor",
+                    "input": {},
+                    "providerExecuted": true,
+                },
+                {
+                    "type": "tool-result",
+                    "toolCallId": "srvtoolu_advisor",
+                    "toolName": "advisor",
+                    "output": { "type": "text", "value": "should be json" },
+                },
+            ],
+        }]))
+        .unwrap();
+        let result =
+            crate::anthropic::convert_to_prompt::convert_prompt_to_anthropic_full_fallible(
+                &prompt, false,
+            )
+            .unwrap();
+        assert_eq!(result.messages[0]["content"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            result.warnings,
+            vec![Warning::Other {
+            message:
+                "provider executed tool result output type text for tool advisor is not supported"
+                    .into()
+        }]
+        );
+    }
+
+    /// Upstream sends an MCP tool result back as `mcp_tool_result` and still warns that the provider-executed result is not supported.
+    #[test]
+    fn mcp_tool_result_round_trip_warns_like_upstream() {
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [
+            {
+                "type": "tool-call",
+                "toolCallId": "mcptoolu_1",
+                "toolName": "echo",
+                "input": {},
+                "providerExecuted": true,
+                "providerOptions": { "anthropic": { "type": "mcp-tool-use", "serverName": "echo" } },
+            },
+            {
+                "type": "tool-result",
+                "toolCallId": "mcptoolu_1",
+                "toolName": "echo",
+                "output": { "type": "json", "value": [{ "type": "text", "text": "hello" }] },
+            },
+        ],
+    }]))
+    .unwrap();
+        let result =
+            crate::anthropic::convert_to_prompt::convert_prompt_to_anthropic_full_fallible(
+                &prompt, false,
+            )
+            .unwrap();
+        assert_eq!(
+            result.messages[0]["content"][1],
+            json!({
+                "type": "mcp_tool_result",
+                "tool_use_id": "mcptoolu_1",
+                "is_error": false,
+                "content": [{ "type": "text", "text": "hello" }],
+            })
+        );
+        assert_eq!(
+            result.warnings,
+            vec![Warning::Other {
+                message: "provider executed tool result for tool echo is not supported".into()
+            }]
+        );
     }
 }

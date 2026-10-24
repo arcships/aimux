@@ -14,8 +14,8 @@ use aimux_core::tool::LanguageModelV4ToolChoice;
 use aimux_core::types::Warning;
 use serde_json::{Map, Value, json};
 
-use super::cache_control::CacheControlValidator;
-use super::options::{CANONICAL, anthropic_options_in};
+use super::get_cache_control::CacheControlValidator;
+use super::language_model_options::{CANONICAL, anthropic_options_in};
 
 /// Result of [`prepare_tools`] / [`prepare_tools_with_provider`].
 #[derive(Debug, Clone)]

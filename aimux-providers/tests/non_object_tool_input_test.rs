@@ -10,7 +10,7 @@
 //!   `groq/convert.rs:88`, `deepseek/convert.rs:286`).
 //! - Anthropic wraps it as `{ rawInvalidInput: input }`
 //!   (`@ai-sdk/anthropic@4.0.71` `src/convert-to-anthropic-prompt.ts:1668-1673`,
-//!   used at `:1013`; aimux `anthropic/convert.rs:821-828`).
+//!   used at `:1013`; aimux `anthropic/convert_to_prompt.rs:892-899`).
 
 #[path = "common/mock_fetch.rs"]
 mod mock_fetch;

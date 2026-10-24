@@ -20,7 +20,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::stream_part::StreamPart;
 
-use crate::anthropic::options::CANONICAL;
+use crate::anthropic::language_model_options::CANONICAL;
 use crate::anthropic::{
     AnthropicMessagesModel, AnthropicProvider, AnthropicProviderSettings, create_anthropic,
 };
@@ -1361,7 +1361,7 @@ mod anthropic_language_model {
             }
 
             // `should use native structured output without a JSON tool fallback`:
-            // tests/anthropic_upstream_e2e_test.rs `generate_native_structured_output`.
+            // `older_upstream_e2e` `generate_native_structured_output` below.
         }
 
         mod legacy_claude_model_defaults {
@@ -5409,6 +5409,7 @@ mod anthropic_language_model {
 
         /// upstream: @ai-sdk/anthropic src/anthropic-language-model.test.ts › AnthropicLanguageModel › doGenerate › should throw an api error when the server is returning a 529 overloaded error
         #[tokio::test]
+        #[serial_test::serial]
         async fn should_throw_an_api_error_when_the_server_is_returning_a_529_overloaded_error() {
             let body = r#"{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"}}"#;
             let (result, _) = anthropic_try_generate(
@@ -11149,6 +11150,7 @@ mod anthropic_language_model {
 
         /// upstream: @ai-sdk/anthropic src/anthropic-language-model.test.ts › AnthropicLanguageModel › doStream › should throw an api error when the server is returning a 529 overloaded error
         #[tokio::test]
+        #[serial_test::serial]
         async fn should_throw_an_api_error_when_the_server_is_returning_a_529_overloaded_error() {
             let body = r#"{"type":"error","error":{"details":null,"type":"overloaded_error","message":"Overloaded"}}"#;
             let mock = server(vec![Canned {
@@ -11199,6 +11201,7 @@ mod anthropic_language_model {
 
         /// upstream: @ai-sdk/anthropic src/anthropic-language-model.test.ts › AnthropicLanguageModel › doStream › should throw an api error when the first stream chunk is an overloaded error
         #[tokio::test]
+        #[serial_test::serial]
         async fn should_throw_an_api_error_when_the_first_stream_chunk_is_an_overloaded_error() {
             let mock = server(vec![sse_raw(&[
                 "event: error\n",
@@ -11816,7 +11819,7 @@ mod anthropic_language_model {
 
 /// `getModelCapabilities(modelId)` in upstream's JSON shape.
 fn model_capabilities(model_id: &str) -> Value {
-    let caps = crate::anthropic::convert::get_model_capabilities(model_id);
+    let caps = crate::anthropic::language_model::get_model_capabilities(model_id);
     json!({
         "isKnownModel": caps.is_known_model,
         "maxOutputTokens": caps.max_output_tokens,
@@ -14069,5 +14072,1430 @@ mod mid_conversation_tool_changes {
             beta.contains("mid-conversation-output-config-2026-07-01"),
             "{beta}"
         );
+    }
+}
+
+// ── Older ports (previously `tests/anthropic_toolset_test.rs`) ──
+//
+// The Anthropic computer toolset end to end, against `@ai-sdk/anthropic`
+// 4.0.71: member calls in a response become one call of the caller's
+// toolset tool with the member name as `action`, and go back to the API as
+// upstream sends them (`convert-to-anthropic-prompt.ts:663-679`, `:978-1004`;
+// `anthropic-language-model.ts:1347-1366`, `:2086-2110`, `:2604-2686`).
+
+mod older_toolset {
+
+    use crate::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use aimux_core::language_model::LanguageModel;
+    use aimux_core::language_model_message::{
+        AssistantPart, LanguageModelMessage, ToolCallPart, ToolPart, ToolResultOutput,
+        ToolResultPart,
+    };
+    use aimux_core::options::CallOptions;
+    use aimux_core::result::GenerateContent;
+    use aimux_core::shared::{SharedProviderOptions, provider_namespace};
+    use aimux_core::stream_part::StreamPart;
+    use aimux_core::tool::{ProviderTool, Tool};
+    use aimux_core::types::Warning;
+    use futures::StreamExt;
+    use serde_json::{Value, json};
+
+    const TOOLSET_ID: &str = "anthropic.computer_toolset_20260801";
+
+    fn provider(fetch: &std::sync::Arc<MockFetch>) -> AnthropicProvider {
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some("https://test.invalid/v1".into()),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn computer_tool(name: &str) -> Tool {
+        Tool::Provider(ProviderTool {
+            id: TOOLSET_ID.parse().unwrap(),
+            name: name.to_string(),
+            args: serde_json::Map::new(),
+            supports_deferred_results: None,
+        })
+    }
+
+    fn response(content: Value) -> Value {
+        json!({
+            "id": "msg_1", "type": "message", "role": "assistant", "content": content,
+            "model": "test-model", "stop_reason": "tool_use", "stop_sequence": null,
+            "usage": {"input_tokens": 4, "output_tokens": 30}
+        })
+    }
+
+    fn text_response() -> Canned {
+        Canned::json(&json!({
+            "id": "msg_2", "type": "message", "role": "assistant",
+            "content": [{"type": "text", "text": "done"}],
+            "model": "test-model", "stop_reason": "end_turn", "stop_sequence": null,
+            "usage": {"input_tokens": 4, "output_tokens": 1}
+        }))
+    }
+
+    fn sse(events: &[Value]) -> Canned {
+        Canned {
+            status: 200,
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+            body: events
+                .iter()
+                .map(|event| format!("data: {event}\n\n"))
+                .collect::<String>()
+                .into_bytes(),
+        }
+    }
+
+    fn anthropic(value: Value) -> SharedProviderOptions {
+        provider_namespace("anthropic", value).unwrap()
+    }
+
+    /// A history with one toolset call and its result, then a user turn.
+    fn history(
+        input: Value,
+        call_options: Option<SharedProviderOptions>,
+        tool_name: &str,
+    ) -> Vec<LanguageModelMessage> {
+        vec![
+            LanguageModelMessage::user_text("Take a screenshot"),
+            LanguageModelMessage::Assistant {
+                content: vec![AssistantPart::ToolCall(ToolCallPart {
+                    tool_call_id: "toolu_1".into(),
+                    tool_name: tool_name.into(),
+                    input,
+                    provider_executed: None,
+                    provider_options: call_options.clone(),
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![ToolPart::ToolResult(ToolResultPart {
+                    tool_call_id: "toolu_1".into(),
+                    tool_name: tool_name.into(),
+                    output: ToolResultOutput::Text {
+                        value: "ok".into(),
+                        provider_options: None,
+                    },
+                    provider_options: call_options,
+                })],
+                provider_options: None,
+            },
+            LanguageModelMessage::user_text("Next"),
+        ]
+    }
+
+    async fn sent_messages(
+        prompt: Vec<LanguageModelMessage>,
+        tools: Option<Vec<Tool>>,
+    ) -> (Value, Vec<u8>, Vec<Warning>) {
+        let fetch = MockFetch::new(vec![text_response()]);
+        let options = CallOptions {
+            max_output_tokens: Some(100),
+            tools,
+            ..CallOptions::new(prompt)
+        };
+        let result = provider(&fetch)
+            .messages("test-model")
+            .do_generate(&options)
+            .await
+            .unwrap();
+        let seen = fetch.seen();
+        assert_eq!(seen.len(), 1);
+        (
+            seen[0].json_body()["messages"].clone(),
+            seen[0].body.clone(),
+            result.warnings,
+        )
+    }
+
+    fn is_missing_action_warning(warning: &Warning, tool_name: &str) -> bool {
+        matches!(warning, Warning::Other { message }
+        if message == &format!("toolset tool call for tool {tool_name} is missing the action"))
+    }
+
+    /// partial: `should serialize toolset tool calls and results with toolset_name`; full port in src/anthropic/tests/convert_to_prompt.rs.
+    #[tokio::test]
+    async fn a_member_call_goes_back_with_its_action_in_the_input() {
+        let (messages, body, warnings) = sent_messages(
+            history(
+                json!({"action": "left_click", "coordinate": [10, 20]}),
+                None,
+                "my_computer",
+            ),
+            Some(vec![computer_tool("my_computer")]),
+        )
+        .await;
+        assert_eq!(
+            messages[1]["content"][0],
+            json!({
+                "type": "tool_use", "id": "toolu_1", "name": "left_click",
+                "toolset_name": "computer",
+                "input": {"action": "left_click", "coordinate": [10, 20]}
+            })
+        );
+        assert_eq!(
+            messages[2]["content"][0],
+            json!({"type": "tool_result", "tool_use_id": "toolu_1", "toolset_name": "computer", "content": "ok"})
+        );
+        // Key order on the sent bytes, as upstream builds the blocks.
+        let body = String::from_utf8(body).unwrap();
+        assert!(body.contains(
+        r#"{"type":"tool_use","id":"toolu_1","name":"left_click","toolset_name":"computer","input":{"action":"left_click","coordinate":[10,20]}}"#
+    ), "{body}");
+        assert!(body.contains(
+        r#"{"type":"tool_result","tool_use_id":"toolu_1","toolset_name":"computer","content":"ok"}"#
+    ), "{body}");
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// partial: `should retain malformed toolset calls and their existing error results: %j`; full port in src/anthropic/tests/convert_to_prompt.rs.
+    #[tokio::test]
+    async fn a_member_call_without_an_action_is_sent_under_the_toolset_name() {
+        let (messages, _, warnings) = sent_messages(
+            history(json!({"coordinate": [1, 2]}), None, "my_computer"),
+            Some(vec![computer_tool("my_computer")]),
+        )
+        .await;
+        assert_eq!(
+            messages[1]["content"][0],
+            json!({
+                "type": "tool_use", "id": "toolu_1", "name": "computer",
+                "toolset_name": "computer", "input": {"coordinate": [1, 2]}
+            })
+        );
+        // Its result still has the call it answers.
+        assert_eq!(messages[2]["content"][0]["tool_use_id"], "toolu_1");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(is_missing_action_warning(&warnings[0], "my_computer"));
+    }
+
+    /// partial: `should retain malformed toolset calls and their existing error results: %j`; full port in src/anthropic/tests/convert_to_prompt.rs.
+    #[tokio::test]
+    async fn a_non_string_action_counts_as_missing_and_a_non_object_input_is_wrapped() {
+        let (messages, _, warnings) = sent_messages(
+            history(json!({"action": 3}), None, "my_computer"),
+            Some(vec![computer_tool("my_computer")]),
+        )
+        .await;
+        assert_eq!(messages[1]["content"][0]["name"], "computer");
+        assert_eq!(messages[1]["content"][0]["input"], json!({"action": 3}));
+        assert!(is_missing_action_warning(&warnings[0], "my_computer"));
+
+        let (messages, _, warnings) = sent_messages(
+            history(json!("not an object"), None, "my_computer"),
+            Some(vec![computer_tool("my_computer")]),
+        )
+        .await;
+        assert_eq!(
+            messages[1]["content"][0]["input"],
+            json!({"rawInvalidInput": "not an object"})
+        );
+        assert_eq!(messages[1]["content"][0]["name"], "computer");
+        assert!(is_missing_action_warning(&warnings[0], "my_computer"));
+    }
+
+    /// partial: `should detect toolset tool calls through provider metadata when the tool is not passed`; full port in src/anthropic/tests/convert_to_prompt.rs.
+    #[tokio::test]
+    async fn the_toolset_comes_from_the_anthropic_metadata_when_the_tool_is_not_passed() {
+        let (messages, _, _) = sent_messages(
+            history(
+                json!({"action": "screenshot"}),
+                Some(anthropic(json!({"toolsetName": "computer"}))),
+                "my_computer",
+            ),
+            None,
+        )
+        .await;
+        assert_eq!(messages[1]["content"][0]["name"], "screenshot");
+        assert_eq!(messages[1]["content"][0]["toolset_name"], "computer");
+        assert_eq!(
+            messages[1]["content"][0]["input"],
+            json!({"action": "screenshot"})
+        );
+        assert_eq!(messages[2]["content"][0]["toolset_name"], "computer");
+
+        // Only `anthropic` is read, as `getAnthropicToolsetName` does; another
+        // namespace or a non-string value leaves a plain tool call.
+        for options in [
+            provider_namespace("vertex", json!({"toolsetName": "computer"})).unwrap(),
+            anthropic(json!({"toolsetName": 7})),
+        ] {
+            let (messages, _, _) = sent_messages(
+                history(
+                    json!({"action": "screenshot"}),
+                    Some(options),
+                    "my_computer",
+                ),
+                None,
+            )
+            .await;
+            assert_eq!(
+                messages[1]["content"][0],
+                json!({"type": "tool_use", "id": "toolu_1", "name": "my_computer", "input": {"action": "screenshot"}})
+            );
+            assert!(messages[2]["content"][0].get("toolset_name").is_none());
+        }
+    }
+
+    /// partial: `should round-trip member calls and results with toolset_name`; full port in src/anthropic/tests/language_model.rs.
+    #[tokio::test]
+    async fn a_generated_member_call_round_trips_as_upstream_sends_it() {
+        let fetch = MockFetch::new(vec![
+            Canned::json(&response(json!([{
+                "type": "tool_use", "id": "toolu_1", "name": "left_click",
+                "toolset_name": "computer",
+                "input": {"coordinate": [10, 20]},
+                "caller": {"type": "direct"}
+            }]))),
+            text_response(),
+        ]);
+        let tools = Some(vec![computer_tool("my_computer")]);
+        let options = CallOptions {
+            max_output_tokens: Some(100),
+            tools: tools.clone(),
+            ..CallOptions::new(vec![LanguageModelMessage::user_text("Click")])
+        };
+        let model = provider(&fetch).messages("test-model");
+        let result = model.do_generate(&options).await.unwrap();
+        let GenerateContent::ToolCall(call) = &result.content[0] else {
+            panic!("expected a tool call: {:?}", result.content);
+        };
+        assert_eq!(call.tool_name, "my_computer");
+        assert_eq!(
+            call.input,
+            r#"{"action":"left_click","coordinate":[10,20]}"#
+        );
+        let metadata = call.provider_metadata.clone().unwrap();
+        assert_eq!(
+            serde_json::to_string(&metadata).unwrap(),
+            r#"{"anthropic":{"toolsetName":"computer","caller":{"type":"direct"}}}"#
+        );
+
+        // The next turn sends the call back with the metadata as its options.
+        let next = CallOptions {
+            max_output_tokens: Some(100),
+            tools,
+            ..CallOptions::new(history(
+                serde_json::from_str(&call.input).unwrap(),
+                Some(metadata),
+                "my_computer",
+            ))
+        };
+        model.do_generate(&next).await.unwrap();
+        let sent = fetch.seen()[1].json_body();
+        assert_eq!(
+            sent["messages"][1]["content"][0],
+            json!({
+                "type": "tool_use", "id": "toolu_1", "name": "left_click",
+                "toolset_name": "computer",
+                "input": {"action": "left_click", "coordinate": [10, 20]},
+                "caller": {"type": "direct"}
+            })
+        );
+    }
+
+    async fn stream_parts(events: &[Value]) -> Vec<StreamPart> {
+        let fetch = MockFetch::new(vec![sse(events)]);
+        let options = CallOptions {
+            max_output_tokens: Some(100),
+            tools: Some(vec![computer_tool("my_computer")]),
+            ..CallOptions::new(vec![LanguageModelMessage::user_text("Click")])
+        };
+        provider(&fetch)
+            .messages("test-model")
+            .do_stream(&options)
+            .await
+            .unwrap()
+            .stream
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+
+    fn member_call_events(start_input: Value, deltas: &[&str]) -> Vec<Value> {
+        let mut events = vec![
+            json!({"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "test-model", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 4, "output_tokens": 1}}}),
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "left_click", "toolset_name": "computer", "input": start_input}}),
+        ];
+        events.extend(deltas.iter().map(|delta| {
+        json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": delta}})
+    }));
+        events.extend([
+        json!({"type": "content_block_stop", "index": 0}),
+        json!({"type": "message_delta", "delta": {"stop_reason": "tool_use", "stop_sequence": null}, "usage": {"output_tokens": 30}}),
+        json!({"type": "message_stop"}),
+    ]);
+        events
+    }
+
+    /// The tool-input parts of a streamed member call: (start name, deltas,
+    /// final input, metadata).
+    fn member_call(parts: &[StreamPart]) -> (String, Vec<String>, String, String) {
+        let start = parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::ToolInputStart { tool_name, .. } => Some(tool_name.clone()),
+                _ => None,
+            })
+            .expect("a tool-input-start");
+        let deltas = parts
+            .iter()
+            .filter_map(|part| match part {
+                StreamPart::ToolInputDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        let call = parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::ToolCall(call) => Some(call.clone()),
+                _ => None,
+            })
+            .expect("a tool call");
+        assert!(
+            parts
+                .iter()
+                .any(|part| matches!(part, StreamPart::ToolInputEnd { id, .. } if id == "toolu_1"))
+        );
+        assert_eq!(call.tool_name, "my_computer");
+        (
+            start,
+            deltas,
+            call.input,
+            serde_json::to_string(&call.provider_metadata).unwrap(),
+        )
+    }
+
+    /// partial: `should stream member calls as a single input delta with the action injected`; full port in src/anthropic/tests/language_model.rs.
+    #[tokio::test]
+    async fn a_streamed_member_call_is_one_delta_with_the_action_injected() {
+        let parts = stream_parts(&member_call_events(
+            json!({}),
+            &[r#"{"coordinate":"#, r#"[10,20]}"#],
+        ))
+        .await;
+        let (start, deltas, input, metadata) = member_call(&parts);
+        assert_eq!(start, "my_computer");
+        assert_eq!(deltas, [r#"{"action":"left_click","coordinate":[10,20]}"#]);
+        assert_eq!(input, r#"{"action":"left_click","coordinate":[10,20]}"#);
+        assert_eq!(metadata, r#"{"anthropic":{"toolsetName":"computer"}}"#);
+
+        // Input given whole in the start block, and no input at all.
+        let parts = stream_parts(&member_call_events(json!({"coordinate": [1, 2]}), &[])).await;
+        assert_eq!(
+            member_call(&parts).2,
+            r#"{"action":"left_click","coordinate":[1,2]}"#
+        );
+        let parts = stream_parts(&member_call_events(json!({}), &[])).await;
+        assert_eq!(member_call(&parts).2, r#"{"action":"left_click"}"#);
+    }
+
+    #[tokio::test]
+    async fn a_streamed_member_input_that_secure_json_parse_refuses_is_kept_raw() {
+        for raw in [
+            r#"{"coordinate":[1,2]"#,
+            r#"{"__proto__":{"x":1}}"#,
+            r#"{"a":{"constructor":{"prototype":{}}}}"#,
+        ] {
+            let parts = stream_parts(&member_call_events(json!({}), &[raw])).await;
+            let (_, deltas, input, _) = member_call(&parts);
+            assert_eq!(deltas, [raw]);
+            assert_eq!(input, raw);
+        }
+    }
+}
+
+// ── Older ports (previously `tests/anthropic_upstream_e2e_test.rs`) ──
+//
+// Small factory-level subset of the ported Anthropic upstream cases.
+
+mod older_upstream_e2e {
+
+    use crate::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use aimux_core::AiMuxError;
+    use aimux_core::language_model::LanguageModel;
+    use aimux_core::language_model_message::LanguageModelMessage;
+    use aimux_core::options::{CallOptions, ResponseFormat};
+    use aimux_core::result::GenerateContent;
+    use aimux_core::stream_part::StreamPart;
+    use aimux_core::tool::{FunctionTool, Tool};
+    use aimux_core::types::FinishReasonUnified;
+    use futures::StreamExt;
+    use serde_json::{Value, json};
+
+    fn provider(fetch: &std::sync::Arc<MockFetch>) -> AnthropicProvider {
+        create_anthropic(AnthropicProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some("https://test.invalid/v1".into()),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn options() -> CallOptions {
+        CallOptions {
+            max_output_tokens: Some(4096),
+            ..CallOptions::new(vec![LanguageModelMessage::user_text("Hello")])
+        }
+    }
+
+    fn body(content: Value, stop_reason: &str, usage: Value) -> Value {
+        json!({
+            "id": "msg_017TfcQ4AgGxKyBduUpqYPZn", "type": "message",
+            "role": "assistant", "content": content, "model": "test-model",
+            "stop_reason": stop_reason, "stop_sequence": null, "usage": usage
+        })
+    }
+
+    fn request() -> Value {
+        json!({
+            "model": "test-model", "max_tokens": 4096,
+            "messages": [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]
+        })
+    }
+
+    mod anthropic_language_model {
+        use super::*;
+
+        mod do_generate {
+            use super::*;
+
+            mod forward_compatible_defaults_for_unknown_claude_models {
+                use super::*;
+
+                /// upstream: @ai-sdk/anthropic src/anthropic-language-model.test.ts › AnthropicLanguageModel › doGenerate › forward-compatible defaults for unknown Claude models › should use native structured output without a JSON tool fallback
+                #[tokio::test]
+                async fn generate_native_structured_output() {
+                    let text = "{\"name\":\"Classic Lasagna\"}";
+                    let response = body(
+                        json!([{"type": "text", "text": text}]),
+                        "end_turn",
+                        json!({"input_tokens": 371, "output_tokens": 629}),
+                    );
+                    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+                    let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false});
+                    let mut options = options();
+                    options.max_output_tokens = Some(100);
+                    options.response_format = Some(ResponseFormat::Json {
+                        schema: Some(schema.clone()),
+                        name: None,
+                        description: None,
+                    });
+                    let result = provider(&fetch)
+                        .messages("claude-future-9")
+                        .do_generate(&options)
+                        .await
+                        .unwrap();
+                    let seen = fetch.seen();
+                    assert_eq!(seen.len(), 1);
+                    assert_eq!(seen[0].method, "POST");
+                    assert_eq!(seen[0].url, "https://test.invalid/v1/messages");
+                    assert_eq!(seen[0].headers["x-api-key"], "test-api-key");
+                    let mut expected = request();
+                    expected["model"] = json!("claude-future-9");
+                    expected["max_tokens"] = json!(100);
+                    expected["output_config"] =
+                        json!({"format": {"type": "json_schema", "schema": schema}});
+                    assert_eq!(seen[0].json_body(), expected);
+                    assert_eq!(
+                        result.content,
+                        vec![GenerateContent::Text {
+                            text: text.into(),
+                            provider_metadata: None
+                        }]
+                    );
+                    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+                    assert_eq!(result.finish_reason.raw.as_deref(), Some("end_turn"));
+                    assert_eq!(result.usage.input_tokens.total, Some(371));
+                    assert_eq!(result.usage.input_tokens.no_cache, Some(371));
+                    assert_eq!(result.usage.input_tokens.cache_read, Some(0));
+                    assert_eq!(result.usage.input_tokens.cache_write, Some(0));
+                    assert_eq!(result.usage.output_tokens.total, Some(629));
+                    assert_eq!(result.request.unwrap().body, Some(expected));
+                    let returned = result.response.unwrap();
+                    assert_eq!(returned.model_id.as_deref(), Some("test-model"));
+                    assert_eq!(returned.id.as_deref(), Some("msg_017TfcQ4AgGxKyBduUpqYPZn"));
+                    assert_eq!(returned.body, Some(response));
+                }
+            }
+        }
+    }
+
+    /// partial: `should stream text deltas`; full port in src/anthropic/tests/language_model.rs.
+    #[tokio::test]
+    async fn stream_text_deltas() {
+        let events = [
+            json!({"type": "message_start", "message": {"id": "msg_01KfpJoAEabmH2iHRRFjQMAG", "type": "message", "role": "assistant", "content": [], "model": "test-model", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 17, "output_tokens": 1}}}),
+            json!({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "Hello"}}),
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": ", "}}),
+            json!({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "World!"}}),
+            json!({"type": "content_block_stop", "index": 0}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"output_tokens": 227}}),
+            json!({"type": "message_stop"}),
+        ];
+        let fetch = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+            body: events
+                .iter()
+                .map(|event| format!("data: {event}\n\n"))
+                .collect::<String>()
+                .into_bytes(),
+        }]);
+        let result = provider(&fetch)
+            .messages("test-model")
+            .do_stream(&options())
+            .await
+            .unwrap();
+        let mut expected = request();
+        expected["stream"] = json!(true);
+        assert_eq!(fetch.seen().len(), 1);
+        assert_eq!(fetch.seen()[0].json_body(), expected);
+        assert_eq!(result.request.unwrap().body, Some(expected));
+        let parts = result
+            .stream
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(parts.len(), 8);
+        assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
+        assert!(
+            matches!(&parts[1], StreamPart::ResponseMetadata(metadata) if metadata.id.as_deref() == Some("msg_01KfpJoAEabmH2iHRRFjQMAG") && metadata.model_id.as_deref() == Some("test-model") && metadata.timestamp.is_none())
+        );
+        assert!(
+            matches!(&parts[2], StreamPart::TextStart { id, provider_metadata } if id == "0" && provider_metadata.is_none())
+        );
+        for (part, expected_delta) in parts[3..6].iter().zip(["Hello", ", ", "World!"]) {
+            assert!(
+                matches!(part, StreamPart::TextDelta { id, delta, provider_metadata } if id == "0" && delta == expected_delta && provider_metadata.is_none())
+            );
+        }
+        assert!(
+            matches!(&parts[6], StreamPart::TextEnd { id, provider_metadata } if id == "0" && provider_metadata.is_none())
+        );
+        let StreamPart::Finish {
+            finish_reason,
+            usage,
+            provider_metadata,
+        } = &parts[7]
+        else {
+            panic!("expected finish");
+        };
+        assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
+        assert_eq!(finish_reason.raw.as_deref(), Some("end_turn"));
+        assert_eq!(usage.input_tokens.total, Some(17));
+        assert_eq!(usage.input_tokens.no_cache, Some(17));
+        assert_eq!(usage.input_tokens.cache_read, Some(0));
+        assert_eq!(usage.input_tokens.cache_write, Some(0));
+        assert_eq!(usage.output_tokens.total, Some(227));
+        assert_eq!(
+            usage.raw,
+            json!({"input_tokens": 17, "output_tokens": 227})
+                .as_object()
+                .cloned()
+        );
+        assert_eq!(provider_metadata.as_ref().unwrap()["anthropic"], serde_json::from_value::<serde_json::Map<String, Value>>(json!({"container": null, "contextManagement": null, "iterations": null, "stopSequence": null, "usage": {"input_tokens": 17, "output_tokens": 227}})).unwrap());
+    }
+
+    /// partial: `should extract tool calls`; full port in src/anthropic/tests/language_model.rs.
+    #[tokio::test]
+    async fn generate_tool_call() {
+        let response = body(
+            json!([
+                {"type": "text", "text": "Some text\n\n"},
+                {"type": "tool_use", "id": "toolu_1", "name": "test-tool", "input": {"value": "example value"}}
+            ]),
+            "tool_use",
+            json!({"input_tokens": 4, "output_tokens": 30}),
+        );
+        let fetch = MockFetch::new(vec![Canned::json(&response)]);
+        let schema = json!({"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"], "additionalProperties": false, "$schema": "http://json-schema.org/draft-07/schema#"});
+        let mut options = options();
+        options.tools = Some(vec![Tool::Function(FunctionTool::new(
+            "test-tool",
+            schema.clone(),
+        ))]);
+        let result = provider(&fetch)
+            .messages("test-model")
+            .do_generate(&options)
+            .await
+            .unwrap();
+        let mut expected = request();
+        expected["tools"] = json!([{"name": "test-tool", "input_schema": schema}]);
+        assert_eq!(fetch.seen().len(), 1);
+        assert_eq!(fetch.seen()[0].json_body(), expected);
+        assert_eq!(result.content.len(), 2);
+        assert_eq!(
+            result.content[0],
+            GenerateContent::Text {
+                text: "Some text\n\n".into(),
+                provider_metadata: None
+            }
+        );
+        let GenerateContent::ToolCall(call) = &result.content[1] else {
+            panic!("expected tool call");
+        };
+        assert_eq!(call.tool_call_id, "toolu_1");
+        assert_eq!(call.tool_name, "test-tool");
+        assert_eq!(call.input, "{\"value\":\"example value\"}");
+        assert_eq!(call.provider_metadata, None);
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+        assert_eq!(result.finish_reason.raw.as_deref(), Some("tool_use"));
+        assert_eq!(result.usage.input_tokens.total, Some(4));
+        assert_eq!(result.usage.output_tokens.total, Some(30));
+    }
+
+    /// partial: `should parse overloaded error`; full port in src/anthropic/tests/error.rs.
+    /// partial: `should throw an api error when the server is returning a 529 overloaded error`; full port in src/anthropic/tests/language_model.rs.
+    #[tokio::test]
+    async fn overloaded_error_response() {
+        let mut canned = Canned::json(
+            &json!({"type": "error", "error": {"details": null, "type": "overloaded_error", "message": "Overloaded"}}),
+        );
+        canned.status = 529;
+        let fetch = MockFetch::new(vec![canned]);
+        let error = provider(&fetch)
+            .messages("test-model")
+            .do_generate(&options())
+            .await
+            .unwrap_err();
+        assert_eq!(fetch.seen().len(), 1);
+        assert_eq!(fetch.seen()[0].json_body(), request());
+        let AiMuxError::ApiCall(error) = error else {
+            panic!("expected provider API error");
+        };
+        assert_eq!(error.message, "Overloaded");
+        assert_eq!(error.provider_code.as_deref(), Some("overloaded_error"));
+        assert_eq!(error.status_code, Some(529));
+    }
+
+    /// Upstream: @ai-sdk/anthropic 4.0.71 src/anthropic-language-model.ts:75-121
+    /// (`createAnthropicStreamError` / `getAnthropicStreamErrorMetadata`): an
+    /// in-stream error's documented type maps to its status and retry flag, a
+    /// status or retry flag in the frame itself wins, and an unknown type
+    /// carries neither; thrown as the first chunk it is a 500 that is not
+    /// retried (:3150-3160).
+    #[tokio::test]
+    async fn stream_error_status_follows_the_upstream_type_map() {
+        let cases = [
+            (
+                json!({"type": "invalid_request_error", "message": "bad"}),
+                Some(400),
+                false,
+            ),
+            (
+                json!({"type": "authentication_error", "message": "who"}),
+                Some(401),
+                false,
+            ),
+            (
+                json!({"type": "request_too_large", "message": "big"}),
+                Some(413),
+                false,
+            ),
+            (
+                json!({"type": "overloaded_error", "message": "busy"}),
+                Some(529),
+                true,
+            ),
+            (
+                json!({"type": "api_error", "message": "own", "statusCode": 502, "isRetryable": false}),
+                Some(502),
+                false,
+            ),
+            (
+                json!({"type": "something_new", "message": "new"}),
+                Some(500),
+                false,
+            ),
+        ];
+        let fetch = MockFetch::new(
+            cases
+                .iter()
+                .map(|(error, ..)| Canned {
+                    status: 200,
+                    headers: vec![("content-type".into(), "text/event-stream".into())],
+                    body: format!("data: {}\n\n", json!({"type": "error", "error": error}))
+                        .into_bytes(),
+                })
+                .collect(),
+        );
+        let model = provider(&fetch).messages("test-model");
+        for (frame, status, retryable) in cases {
+            let Err(AiMuxError::ApiCall(error)) = model.do_stream(&options()).await.map(|_| ())
+            else {
+                panic!("expected an API error for {frame}");
+            };
+            assert_eq!(error.message, frame["message"], "{frame}");
+            assert_eq!(error.status_code, status, "{frame}");
+            assert_eq!(error.is_retryable, retryable, "{frame}");
+        }
+    }
+
+    /// Upstream: @ai-sdk/anthropic 4.0.71 src/anthropic-language-model.ts:91
+    /// (`data: 'data' in error ? error.data : error`) over the error-chunk schema
+    /// of src/anthropic-api.ts:1450-1459. The frame's own `data` is the error's
+    /// data, even `null`. Without one, the data is the error as the schema parses
+    /// it: its known fields only.
+    #[tokio::test]
+    async fn stream_error_data_is_the_frame_data_or_the_error() {
+        let cases = [
+            (
+                json!({"type": "overloaded_error", "message": "busy"}),
+                Some(json!({"type": "overloaded_error", "message": "busy"})),
+            ),
+            (
+                json!({"type": "api_error", "message": "m", "data": {"request_id": "req_1"}}),
+                Some(json!({"request_id": "req_1"})),
+            ),
+            (
+                json!({"type": "api_error", "message": "m", "code": 7, "statusCode": 502, "unknown": "dropped"}),
+                Some(json!({"type": "api_error", "message": "m", "code": 7, "statusCode": 502})),
+            ),
+            (
+                json!({"type": "api_error", "message": "m", "data": null}),
+                None,
+            ),
+        ];
+        let fetch = MockFetch::new(
+            cases
+                .iter()
+                .map(|(error, _)| Canned {
+                    status: 200,
+                    headers: vec![("content-type".into(), "text/event-stream".into())],
+                    body: format!("data: {}\n\n", json!({"type": "error", "error": error}))
+                        .into_bytes(),
+                })
+                .collect(),
+        );
+        let model = provider(&fetch).messages("test-model");
+        for (frame, data) in cases {
+            let Err(AiMuxError::ApiCall(error)) = model.do_stream(&options()).await.map(|_| ())
+            else {
+                panic!("expected an API error for {frame}");
+            };
+            assert_eq!(error.data, data, "{frame}");
+        }
+    }
+}
+
+// ── Older ports (previously `tests/anthropic_remaining_test.rs`) ──
+//
+// Remaining Anthropic provider tests — ported from the TS SDK suite.
+//
+// Sources:
+//
+// - `anthropic-provider.test.ts` — provider configuration (baseURL, auth,
+//   custom provider name, `supportedUrls`).
+// - `anthropic-unknown-model-max-output-tokens.test.ts` — unknown-model
+//   `max_tokens` defaulting + compatibility warning.
+// - `sanitize-json-schema.test.ts` — JSON Schema sanitization.
+// - `anthropic-language-model.test.ts` → `mid-conversation tool changes`
+//   describe block.
+
+mod older_remaining {
+    use super::super::remaining_support::*;
+    use crate::anthropic::{AnthropicProviderSettings, create_anthropic};
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use aimux_core::error::AiMuxError;
+    use aimux_core::language_model::LanguageModel;
+    use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
+    use aimux_core::result::GenerateContent;
+    use aimux_core::shared::provider_namespace;
+    use aimux_core::stream_part::StreamPart;
+    use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
+    use aimux_core::types::Warning;
+    use serde_json::{Value, json};
+
+    mod unknown_model_max_output_tokens {
+        use super::*;
+
+        /// upstream: @ai-sdk/anthropic src/anthropic-unknown-model-max-output-tokens.test.ts › unknown model max output tokens › should warn when using the default max output token limit
+        #[tokio::test]
+        async fn warns_when_using_default_max_output_token_limit() {
+            let server = mock();
+
+            let model = create_anthropic(settings(&server))
+                .unwrap()
+                .messages("future-model");
+            let result = model
+                .do_generate(&default_options(test_prompt()))
+                .await
+                .expect("do_generate should succeed");
+
+            let requests = server.seen();
+            let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(body["model"], "future-model");
+            assert_eq!(body["max_tokens"], 4096);
+
+            assert_eq!(result.warnings.len(), 1);
+            match &result.warnings[0] {
+                Warning::Compatibility { feature, details } => {
+                    assert_eq!(feature, "maxOutputTokens");
+                    assert_eq!(
+                        details.as_deref(),
+                        Some(
+                            "The model \"future-model\" is unknown. The max output tokens have been \
+                         limited to 4096. Set maxOutputTokens explicitly to override this limit."
+                        )
+                    );
+                }
+                other => panic!("expected Compatibility warning, got {other:?}"),
+            }
+        }
+
+        /// upstream: @ai-sdk/anthropic src/anthropic-unknown-model-max-output-tokens.test.ts › unknown model max output tokens › should not warn when max output tokens are provided
+        #[tokio::test]
+        async fn does_not_warn_when_max_output_tokens_provided() {
+            let server = mock();
+
+            let model = create_anthropic(settings(&server))
+                .unwrap()
+                .messages("future-model");
+            let mut opts = default_options(test_prompt());
+            opts.max_output_tokens = Some(123456);
+            let result = model
+                .do_generate(&opts)
+                .await
+                .expect("do_generate should succeed");
+
+            let requests = server.seen();
+            let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(body["model"], "future-model");
+            assert_eq!(body["max_tokens"], 123456);
+            assert!(
+                result.warnings.is_empty(),
+                "warnings: {:?}",
+                result.warnings
+            );
+        }
+
+        /// upstream: @ai-sdk/anthropic src/anthropic-unknown-model-max-output-tokens.test.ts › unknown model max output tokens › should use the current-generation default and warn for an unknown Claude model
+        #[tokio::test]
+        async fn uses_current_gen_default_and_warns_for_unknown_model() {
+            let server = mock();
+
+            let model = create_anthropic(settings(&server))
+                .unwrap()
+                .messages("claude-future-9");
+            let result = model
+                .do_generate(&default_options(test_prompt()))
+                .await
+                .expect("do_generate should succeed");
+
+            let requests = server.seen();
+            let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+            assert_eq!(body["model"], "claude-future-9");
+            assert_eq!(body["max_tokens"], 128000);
+
+            assert_eq!(result.warnings.len(), 1);
+            match &result.warnings[0] {
+                Warning::Compatibility { feature, details } => {
+                    assert_eq!(feature, "maxOutputTokens");
+                    assert_eq!(
+                        details.as_deref(),
+                        Some(
+                            "The model \"claude-future-9\" is unknown. The max output tokens have been \
+                         limited to 128000. Set maxOutputTokens explicitly to override this limit."
+                        )
+                    );
+                }
+                other => panic!("expected Compatibility warning, got {other:?}"),
+            }
+        }
+    }
+
+    mod mid_conversation_tool_changes {
+        use super::*;
+
+        /// upstream: @ai-sdk/anthropic src/anthropic-language-model.test.ts › mid-conversation tool changes › should send tool change blocks and the beta header
+        #[tokio::test]
+        async fn sends_tool_change_blocks_and_beta_header() {
+            let fetch = mock();
+            let model = create_anthropic(settings(&fetch))
+                .unwrap()
+                .messages("claude-opus-4-8");
+            let mut opts = default_options(vec![
+                LanguageModelMessage::user_text("Say OK."),
+                LanguageModelMessage::System {
+                    content: String::new(),
+                    provider_options: Some(
+                        provider_namespace(
+                            "anthropic",
+                            json!({
+                                "toolChanges": [{"type": "tool_removal", "toolName": "get_weather"}]
+                            }),
+                        )
+                        .unwrap(),
+                    ),
+                },
+            ]);
+            opts.tools = Some(vec![Tool::Function(
+                FunctionTool::new(
+                    "get_weather",
+                    json!({
+                        "type": "object", "properties": {"city": {"type": "string"}}
+                    }),
+                )
+                .with_description("Get weather"),
+            )]);
+            model.do_generate(&opts).await.unwrap();
+            let requests = fetch.seen();
+            let body = requests[0].json_body();
+            assert!(body["messages"].as_array().unwrap().contains(&json!({
+            "role": "system", "content": [{
+                "type": "tool_removal", "tool": {"type": "tool_reference", "name": "get_weather"}
+            }]
+        })));
+            assert!(
+                requests[0].headers["anthropic-beta"]
+                    .contains("mid-conversation-tool-changes-2026-07-01")
+            );
+        }
+    }
+
+    /// Upstream surfaces a response `fallback` block as an `anthropic.fallback` custom part and sends it back as a `fallback` block between reasoning blocks.
+    #[tokio::test]
+    async fn fallback_block_round_trips_as_custom_part() {
+        let fetch = MockFetch::new(vec![Canned::json(&json!({
+            "id": "msg_fallback", "type": "message", "role": "assistant",
+            "model": "claude-opus-4-8",
+            "content": [
+                { "type": "fallback", "from": { "model": "claude-fable-5" }, "to": { "model": "claude-opus-4-8" } },
+                { "type": "text", "text": "Hi" },
+            ],
+            "stop_reason": "end_turn", "stop_sequence": null,
+            "usage": { "input_tokens": 1, "output_tokens": 1 },
+        }))]);
+        let prompt: LanguageModelPrompt = serde_json::from_value(json!([
+        {
+            "role": "assistant",
+            "content": [
+                { "type": "reasoning", "text": "primary", "providerOptions": { "anthropic": { "signature": "sig-1" } } },
+                {
+                    "type": "custom",
+                    "kind": "anthropic.fallback",
+                    "providerOptions": { "anthropic": {
+                        "type": "fallback",
+                        "from": { "model": "claude-fable-5" },
+                        "to": { "model": "claude-opus-4-8" },
+                    } },
+                },
+                { "type": "reasoning", "text": "fallback", "providerOptions": { "anthropic": { "signature": "sig-2" } } },
+                { "type": "text", "text": "Done." },
+            ],
+        },
+        { "role": "user", "content": [{ "type": "text", "text": "Hello" }] },
+    ]))
+    .unwrap();
+        let result = make_model_with_config(settings(&fetch))
+            .do_generate(&default_options(prompt))
+            .await
+            .unwrap();
+        let body = fetch.seen()[0].json_body();
+        assert_eq!(
+            body["messages"][0]["content"],
+            json!([
+                { "type": "thinking", "thinking": "primary", "signature": "sig-1" },
+                { "type": "fallback", "from": { "model": "claude-fable-5" }, "to": { "model": "claude-opus-4-8" } },
+                { "type": "thinking", "thinking": "fallback", "signature": "sig-2" },
+                { "type": "text", "text": "Done." },
+            ])
+        );
+        assert_eq!(
+            serde_json::to_value(&result.content).unwrap()[0],
+            json!({
+                "type": "custom",
+                "kind": "anthropic.fallback",
+                "providerMetadata": { "anthropic": {
+                    "type": "fallback",
+                    "from": { "model": "claude-fable-5" },
+                    "to": { "model": "claude-opus-4-8" },
+                } },
+            })
+        );
+    }
+
+    /// The AI SDK leaves `citations` out of a web_fetch result whose document has none.
+    #[tokio::test]
+    async fn web_fetch_result_without_citations_omits_the_key() {
+        let fetch = MockFetch::new(vec![Canned::json(&json!({
+            "id": "msg_123", "type": "message", "role": "assistant",
+            "content": [
+                {
+                    "type": "server_tool_use", "id": "srvtoolu_1", "name": "web_fetch",
+                    "input": { "url": "https://example.com" }
+                },
+                {
+                    "type": "web_fetch_tool_result", "tool_use_id": "srvtoolu_1",
+                    "content": {
+                        "type": "web_fetch_result", "url": "https://example.com",
+                        "retrieved_at": "2025-09-29T07:28:57.560000+00:00",
+                        "content": {
+                            "type": "document", "title": null,
+                            "source": { "type": "text", "media_type": "text/plain", "data": "Hi" }
+                        }
+                    }
+                }
+            ],
+            "model": "claude-3-haiku-20240307", "stop_reason": "end_turn",
+            "stop_sequence": null, "usage": { "input_tokens": 1, "output_tokens": 1 }
+        }))]);
+        let mut opts = default_options(test_prompt());
+        opts.tools = Some(vec![Tool::Provider(ProviderTool {
+            id: "anthropic.web_fetch_20250910".parse().unwrap(),
+            name: "web_fetch".to_string(),
+            args: serde_json::Map::new(),
+            supports_deferred_results: None,
+        })]);
+        let result = make_model_with_config(settings(&fetch))
+            .do_generate(&opts)
+            .await
+            .unwrap();
+        let document = result
+            .content
+            .iter()
+            .find_map(|part| match part {
+                GenerateContent::ToolResult(tool_result) => {
+                    Some(tool_result.result["content"].clone())
+                }
+                _ => None,
+            })
+            .expect("a web_fetch tool result");
+        assert_eq!(
+            document,
+            json!({
+                "type": "document",
+                "title": null,
+                "source": { "type": "text", "mediaType": "text/plain", "data": "Hi" }
+            })
+        );
+    }
+
+    /// The AI SDK sends `providerOptions.anthropic.safeguards` as `safeguards`
+    /// with the `dangerous-tool-use-2026-09-03` beta.
+    #[tokio::test]
+    async fn sends_safeguards_and_their_beta() {
+        let fetch = mock();
+        let mut opts = default_options(test_prompt());
+        opts.provider_options = Some(
+            provider_namespace(
+                "anthropic",
+                json!({
+                    "safeguards": [
+                        { "type": "dangerous_tool_use", "classifierContext": { "v": 1 } },
+                        { "type": "dangerous_tool_use" }
+                    ]
+                }),
+            )
+            .unwrap(),
+        );
+        make_model_with_config(settings(&fetch))
+            .do_generate(&opts)
+            .await
+            .unwrap();
+        let requests = fetch.seen();
+        assert_eq!(
+            requests[0].json_body()["safeguards"],
+            json!([
+                { "type": "dangerous_tool_use", "classifier_context": { "v": 1 } },
+                { "type": "dangerous_tool_use" }
+            ])
+        );
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("anthropic-beta")
+                .map(String::as_str),
+            Some("dangerous-tool-use-2026-09-03")
+        );
+    }
+
+    /// The AI SDK knows Vertex ids such as `claude-sonnet-4@20250514`
+    /// (`/claude-sonnet-4(?:-|@)/`) and defaults their `max_tokens` to 64000.
+    #[tokio::test]
+    async fn knows_vertex_claude_4_model_ids() {
+        for (model_id, max_tokens) in [
+            ("claude-sonnet-4@20250514", 64000),
+            ("claude-opus-4@20250514", 32000),
+        ] {
+            let fetch = mock();
+            let result = create_anthropic(settings(&fetch))
+                .unwrap()
+                .messages(model_id)
+                .do_generate(&default_options(test_prompt()))
+                .await
+                .unwrap();
+            assert_eq!(
+                fetch.seen()[0].json_body()["max_tokens"],
+                json!(max_tokens),
+                "{model_id}"
+            );
+            assert!(
+                result.warnings.is_empty(),
+                "{model_id}: {:?}",
+                result.warnings
+            );
+        }
+    }
+
+    /// The AI SDK joins `anthropic-beta` in insertion order: prompt betas, then
+    /// provider-option betas, tool betas, header betas, and `anthropicBeta`.
+    #[tokio::test]
+    async fn joins_beta_headers_in_insertion_order() {
+        let fetch = mock();
+        let model = create_anthropic(AnthropicProviderSettings {
+            headers: Some(
+                [("anthropic-beta".to_string(), Some("zz-config".to_string()))]
+                    .into_iter()
+                    .collect(),
+            ),
+            ..settings(&fetch)
+        })
+        .unwrap()
+        .messages("claude-3-haiku-20240307");
+        let mut opts = default_options(test_prompt());
+        opts.headers = Some(
+            [("anthropic-beta".to_string(), "bb-request".to_string())]
+                .into_iter()
+                .collect(),
+        );
+        opts.provider_options = Some(
+        provider_namespace(
+            "anthropic",
+            json!({
+                "fallbacks": "default",
+                "speed": "fast",
+                "container": { "skills": [{ "type": "anthropic", "skillId": "pptx" }] },
+                "mcpServers": [{ "type": "url", "name": "echo", "url": "https://example.com/mcp" }],
+                "anthropicBeta": ["aa-option"]
+            }),
+        )
+        .unwrap(),
+    );
+        opts.tools = Some(vec![Tool::Provider(ProviderTool {
+            id: "anthropic.web_fetch_20250910".parse().unwrap(),
+            name: "web_fetch".to_string(),
+            args: serde_json::Map::new(),
+            supports_deferred_results: None,
+        })]);
+        model.do_generate(&opts).await.unwrap();
+        assert_eq!(
+            fetch.seen()[0].headers["anthropic-beta"],
+            "mcp-client-2025-04-04,code-execution-2025-08-25,skills-2025-10-02,\
+         files-api-2025-04-14,fast-mode-2026-02-01,server-side-fallback-2026-07-01,\
+         web-fetch-2025-09-10,zz-config,bb-request,aa-option"
+        );
+    }
+
+    /// The AI SDK keeps a streamed code-execution call's input as the streamed
+    /// text with its `type` injected; it does not re-serialize it.
+    #[tokio::test]
+    async fn streamed_code_execution_tool_call_keeps_the_streamed_input_text() {
+        let fetch = MockFetch::new(vec![sse_response(&[
+            stream_message_start("msg_1"),
+            json!({
+                "type": "content_block_start", "index": 0,
+                "content_block": {
+                    "type": "server_tool_use", "id": "srvtoolu_1",
+                    "name": "bash_code_execution", "input": {}
+                }
+            }),
+            json!({
+                "type": "content_block_delta", "index": 0,
+                "delta": { "type": "input_json_delta", "partial_json": "{\"command\": \"ls -la\"}" }
+            }),
+            json!({ "type": "content_block_stop", "index": 0 }),
+            json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+                "usage": { "output_tokens": 5 }
+            }),
+            json!({ "type": "message_stop" }),
+        ])]);
+        let mut options = default_options(test_prompt());
+        options.tools = Some(vec![Tool::Provider(ProviderTool {
+            id: "anthropic.code_execution_20250825".parse().unwrap(),
+            name: "code_execution".to_string(),
+            args: serde_json::Map::new(),
+            supports_deferred_results: None,
+        })]);
+        let items = stream_items(&fetch, &options).await;
+        let inputs: Vec<_> = items
+            .iter()
+            .filter_map(|item| match item {
+                Ok(StreamPart::ToolCall(call)) => Some(call.input.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            inputs,
+            [r#"{"type": "bash_code_execution","command": "ls -la"}"#]
+        );
+    }
+
+    /// The AI SDK keeps reading after `message_stop`: each later
+    /// `message_start … message_stop` round streams its parts and its own finish.
+    #[tokio::test]
+    async fn stream_continues_after_message_stop_with_the_next_message() {
+        let text_block = |text: &str| {
+            [
+                json!({
+                    "type": "content_block_start", "index": 0,
+                    "content_block": { "type": "text", "text": "" }
+                }),
+                json!({
+                    "type": "content_block_delta", "index": 0,
+                    "delta": { "type": "text_delta", "text": text }
+                }),
+                json!({ "type": "content_block_stop", "index": 0 }),
+            ]
+        };
+        let mut chunks = vec![stream_message_start("msg_1")];
+        chunks.extend(text_block("first"));
+        chunks.extend([
+            json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "pause_turn", "stop_sequence": null },
+                "usage": { "output_tokens": 5 }
+            }),
+            json!({ "type": "message_stop" }),
+            stream_message_start("msg_2"),
+        ]);
+        chunks.extend(text_block("second"));
+        chunks.extend([
+            json!({
+                "type": "message_delta",
+                "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+                "usage": { "output_tokens": 7 }
+            }),
+            json!({ "type": "message_stop" }),
+        ]);
+        let fetch = MockFetch::new(vec![sse_response(&chunks)]);
+        let items = stream_items(&fetch, &default_options(test_prompt())).await;
+        let summary: Vec<String> = items
+            .iter()
+            .filter_map(|item| match item.as_ref().unwrap() {
+                StreamPart::ResponseMetadata(metadata) => {
+                    Some(format!("response {}", metadata.id.as_deref().unwrap()))
+                }
+                StreamPart::TextDelta { delta, .. } => Some(format!("text {delta}")),
+                StreamPart::Finish {
+                    finish_reason,
+                    usage,
+                    ..
+                } => Some(format!(
+                    "finish {:?} {}",
+                    finish_reason.raw,
+                    usage.output_tokens.total.unwrap()
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                "response msg_1",
+                "text first",
+                r#"finish Some("pause_turn") 5"#,
+                "response msg_2",
+                "text second",
+                r#"finish Some("end_turn") 7"#,
+            ]
+        );
+    }
+
+    /// The AI SDK streams the `tool_use` blocks a `message_start` already
+    /// carries (deferred programmatic tool calls) as complete tool calls.
+    #[tokio::test]
+    async fn stream_emits_the_tool_calls_carried_by_message_start() {
+        let mut start = stream_message_start("msg_1");
+        start["message"]["content"] = json!([{
+            "type": "tool_use", "id": "toolu_1", "name": "rollDie",
+            "input": { "player": "player1" },
+            "caller": { "type": "code_execution_20250825", "tool_id": "srvtoolu_1" }
+        }]);
+        start["message"]["stop_reason"] = json!("tool_use");
+        let fetch = MockFetch::new(vec![sse_response(&[
+            start,
+            json!({ "type": "message_stop" }),
+        ])]);
+        let items = stream_items(&fetch, &default_options(test_prompt())).await;
+        let parts: Vec<Value> = items
+            .iter()
+            .map(|item| serde_json::to_value(item.as_ref().unwrap()).unwrap())
+            .filter(|part| part["type"].as_str().unwrap().starts_with("tool-"))
+            .collect();
+        assert_eq!(
+            parts,
+            [
+                json!({ "type": "tool-input-start", "id": "toolu_1", "toolName": "rollDie" }),
+                json!({
+                    "type": "tool-input-delta", "id": "toolu_1",
+                    "delta": "{\"player\":\"player1\"}"
+                }),
+                json!({ "type": "tool-input-end", "id": "toolu_1" }),
+                json!({
+                    "type": "tool-call", "toolCallId": "toolu_1", "toolName": "rollDie",
+                    "input": "{\"player\":\"player1\"}",
+                    "providerMetadata": {
+                        "anthropic": {
+                            "caller": { "type": "code_execution_20250825", "toolId": "srvtoolu_1" }
+                        }
+                    }
+                }),
+            ]
+        );
+    }
+
+    /// The AI SDK throws a first-chunk stream error with the error's data as the
+    /// response body, a 500 status when its type maps to none, and no retry.
+    #[tokio::test]
+    async fn first_chunk_stream_error_body_is_the_error_data() {
+        let cases = [
+            (
+                json!({ "type": "overloaded_error", "message": "Overloaded", "details": null }),
+                r#"{"type":"overloaded_error","message":"Overloaded"}"#,
+                529,
+                true,
+            ),
+            (
+                json!({ "type": "unknown_error", "message": "boom", "data": { "a": 1 } }),
+                r#"{"a":1}"#,
+                500,
+                false,
+            ),
+        ];
+        for (error, body, status, retryable) in cases {
+            let fetch = MockFetch::new(vec![sse_response(&[
+                json!({ "type": "error", "error": error }),
+            ])]);
+            let Err(AiMuxError::ApiCall(details)) = make_model_with_config(settings(&fetch))
+                .do_stream(&default_options(test_prompt()))
+                .await
+            else {
+                panic!("expected an API call error");
+            };
+            assert_eq!(
+                (
+                    details.response_body.as_deref(),
+                    details.status_code,
+                    details.is_retryable
+                ),
+                (Some(body), Some(status), retryable)
+            );
+        }
     }
 }
