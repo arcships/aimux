@@ -10,6 +10,7 @@
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
@@ -63,7 +64,10 @@ async fn file_bytes(file: &ImageFile) -> Result<(Vec<u8>, String), AiMuxError> {
                 ImageFileData::Binary(bytes) => bytes.clone(),
                 ImageFileData::Base64(b64) => {
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))?
+                        .map_err(|e| AiMuxError::InvalidArgument {
+                            message: format!("invalid base64: {e}"),
+                            cause: Some(ErrorCause::source(&e)),
+                        })?
                 }
             };
             Ok((bytes, media_type.clone()))

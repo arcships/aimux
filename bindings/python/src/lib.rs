@@ -16,7 +16,7 @@ use std::time::SystemTime;
 
 use aimux_core::AbortSignal;
 use aimux_ops::dispatch::{self, Ctx};
-use aimux_ops::envelope::{BindingError, OpsError, ProtocolError};
+use aimux_ops::envelope::{BindingError, OpsError, ProtocolError, SourceError};
 use aimux_ops::handle::{HandleId, HandleRegistry, Owner};
 use pyo3::prelude::*;
 use serde_json::Value;
@@ -49,14 +49,14 @@ fn invalid_state(message: &str) -> OpsError {
 
 fn parse_handle(value: &str) -> Result<HandleId, OpsError> {
     if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(OpsError::Protocol(ProtocolError::InvalidParams(
-            "handle must be a decimal u64 string".into(),
+        return Err(OpsError::Protocol(ProtocolError::invalid_params(
+            "handle must be a decimal u64 string",
         )));
     }
     value
         .parse()
         .map(HandleId)
-        .map_err(|_| OpsError::Protocol(ProtocolError::InvalidParams("handle exceeds u64".into())))
+        .map_err(|_| OpsError::Protocol(ProtocolError::invalid_params("handle exceeds u64")))
 }
 
 fn parse_params(text: &str) -> Result<Value, OpsError> {
@@ -64,13 +64,14 @@ fn parse_params(text: &str) -> Result<Value, OpsError> {
         OpsError::Binding(BindingError::InvalidWireJson {
             argument: "params_json".into(),
             message: error.to_string(),
+            cause: Some(SourceError::new(&error)),
         })
     })
 }
 
 fn serialize(value: &impl serde::Serialize) -> Result<String, OpsError> {
     serde_json::to_string(value)
-        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 fn interpreter_id(py: Python<'_>) -> PyResult<i64> {
