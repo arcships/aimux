@@ -1210,6 +1210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses text annotations in provider metadata keep
+  only the fields the AI SDK's schema has for their type, so a
+  `container_file_citation` no longer carries an extra `index`.
 - OpenAI (and Azure) Responses map only the AI SDK's twelve provider tools
   (`providerToolNames`) back to the caller's tool names; aimux mapped every
   `openai.*` tool, so a `computer_call` without a `call_id` came back under

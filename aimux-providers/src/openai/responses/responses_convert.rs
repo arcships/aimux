@@ -429,9 +429,35 @@ fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
         metadata["phase"] = phase.clone();
     }
     if let Some(annotations) = annotations.filter(|v| !v.is_empty()) {
-        metadata["annotations"] = json!(annotations);
+        metadata["annotations"] = annotations.iter().map(annotation_fields).collect();
     }
     metadata
+}
+
+/// The fields the AI SDK's annotation schema keeps for each annotation type
+/// (`openaiResponsesResponseSchema` and the `annotation.added` chunk schema);
+/// any other field is dropped.
+fn annotation_fields(annotation: &Value) -> Value {
+    let fields: &[&str] = match annotation["type"].as_str() {
+        Some("url_citation") => &["start_index", "end_index", "url", "title"],
+        Some("file_citation") => &["file_id", "filename", "index"],
+        Some("container_file_citation") => &[
+            "container_id",
+            "file_id",
+            "filename",
+            "start_index",
+            "end_index",
+        ],
+        Some("file_path") => &["file_id", "index"],
+        _ => return annotation.clone(),
+    };
+    let mut output = json!({"type": annotation["type"]});
+    for field in fields {
+        if let Some(value) = annotation.get(*field) {
+            output[*field] = value.clone();
+        }
+    }
+    output
 }
 
 fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, AiMuxError> {

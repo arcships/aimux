@@ -1096,3 +1096,60 @@ async fn computer_use_results_keep_the_canonical_tool_name() {
         .collect();
     assert_eq!(names, ["computer_use", "computer_use"]);
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1520
+/// parses a `container_file_citation` annotation with only `type`,
+/// `container_id`, `file_id`, `filename`, `start_index` and `end_index`, and
+/// src/responses/openai-responses-language-model.ts:1072 puts the parsed
+/// annotations in the text part's provider metadata, so an extra `index` is
+/// dropped.
+#[tokio::test]
+async fn text_annotations_keep_only_the_fields_of_their_type() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_annotations",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "message",
+            "id": "msg_container",
+            "role": "assistant",
+            "content": [{
+                "type": "output_text",
+                "text": "Generated with container file.",
+                "annotations": [{
+                    "type": "container_file_citation",
+                    "container_id": "cntr_test",
+                    "file_id": "file-container",
+                    "filename": "data.csv",
+                    "start_index": 0,
+                    "end_index": 10,
+                    "index": 2
+                }]
+            }]
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::Text {
+        provider_metadata: Some(metadata),
+        ..
+    }) = result.content.first()
+    else {
+        panic!("expected a text part: {:?}", result.content);
+    };
+    assert_eq!(
+        metadata["openai"]["annotations"],
+        json!([{
+            "type": "container_file_citation",
+            "container_id": "cntr_test",
+            "file_id": "file-container",
+            "filename": "data.csv",
+            "start_index": 0,
+            "end_index": 10
+        }])
+    );
+}
