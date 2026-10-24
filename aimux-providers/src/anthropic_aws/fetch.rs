@@ -1,7 +1,7 @@
-//! Anthropic-AWS model wiring.
+//! The Anthropic-AWS transport and request authentication (`anthropic-aws-fetch.ts`).
 //!
 //! Claude Platform on AWS serves the Anthropic Messages API unchanged, so its
-//! model *is* the shared [`AnthropicMessagesModel`]. What is specific to the
+//! model *is* the shared [`AnthropicMessagesModel`](crate::anthropic::AnthropicMessagesModel). What is specific to the
 //! host is where a request goes and how it is authenticated, and that is data
 //! on the model's configuration: an `x-api-key` header, or a [`SigV4Fetch`]
 //! transport decorator that signs the final method, URL, headers and body
@@ -23,14 +23,9 @@ use aimux_provider_utils::{
     load_setting,
 };
 
-use crate::anthropic::AnthropicMessagesModel;
 use crate::shared::is_valid_hostname_part;
 
 use super::AnthropicAwsAuth;
-
-/// An Anthropic-AWS language model: the shared Messages model configured for
-/// the AWS host.
-pub type AnthropicAwsModel = AnthropicMessagesModel;
 
 /// The SigV4 service name of Claude Platform on AWS.
 const SIGV4_SERVICE: &str = "aws-external-anthropic";
