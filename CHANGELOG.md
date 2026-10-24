@@ -1210,6 +1210,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses streams correlate reasoning summary events
+  and the reasoning item's end by `output_index`, as the AI SDK does, so a
+  provider that rotates item ids mid-stream (GitHub Copilot) keeps one
+  reasoning part instead of starting deltas under new ids and never ending
+  the first.
+
 - OpenAI (and Azure) Responses reasoning deltas carry the reasoning item's
   id as `providerMetadata.<key>.itemId`, as the AI SDK's do and as aimux's
   reasoning start and end parts already did.
