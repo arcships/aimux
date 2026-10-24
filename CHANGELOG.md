@@ -1210,6 +1210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses apply patch tool inputs list the operation's
+  fields as `type`, `path`, `diff`, the AI SDK's schema order, in generated
+  and streamed calls; aimux kept the wire order.
 - OpenAI (and Azure) Responses text annotations in provider metadata keep
   only the fields the AI SDK's schema has for their type, so a
   `container_file_citation` no longer carries an extra `index`.

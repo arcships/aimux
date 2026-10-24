@@ -129,7 +129,8 @@ pub(crate) fn provider_tool_content(
         "apply_patch_call" => vec![call(
             call_id,
             name("apply_patch"),
-            json!({"callId": part["call_id"], "operation": part["operation"]}).to_string(),
+            json!({"callId": part["call_id"], "operation": apply_patch_operation(&part["operation"])})
+                .to_string(),
             None,
             None,
             metadata(),
@@ -272,11 +273,33 @@ pub(crate) fn web_search_output(action: &Value) -> Value {
     }
 }
 
+/// An apply patch operation with the fields of its type in the order of the
+/// AI SDK's schema (`type`, `path`, then `diff`), as zod's parse leaves it.
+pub(crate) fn apply_patch_operation(operation: &Value) -> Value {
+    let fields: &[&str] = match operation["type"].as_str() {
+        Some("create_file" | "update_file") => &["path", "diff"],
+        Some("delete_file") => &["path"],
+        _ => return operation.clone(),
+    };
+    let mut output = json!({"type": operation["type"]});
+    for field in fields {
+        if let Some(value) = operation.get(*field) {
+            output[*field] = value.clone();
+        }
+    }
+    output
+}
+
 /// Keeps the fields each computer action type has, renaming the scroll
 /// offsets and leaving out a null `keys`, as the AI SDK's `mapComputerAction`.
 fn computer_action(action: &Value) -> Value {
     let fields: &[(&str, &str)] = match action["type"].as_str() {
-        Some("click") => &[("button", "button"), ("x", "x"), ("y", "y"), ("keys", "keys")],
+        Some("click") => &[
+            ("button", "button"),
+            ("x", "x"),
+            ("y", "y"),
+            ("keys", "keys"),
+        ],
         Some("double_click" | "move") => &[("x", "x"), ("y", "y"), ("keys", "keys")],
         Some("drag") => &[("path", "path"), ("keys", "keys")],
         Some("keypress") => &[("keys", "keys")],

@@ -1661,7 +1661,7 @@ fn provider_tool_start(item: &Value, names: &HashMap<String, String>) -> Vec<Str
             provider_metadata: None,
         }),
         "apply_patch_call" => {
-            let operation = &item["operation"];
+            let operation = &super::provider_events::apply_patch_operation(&item["operation"]);
             if operation["type"] == "delete_file" {
                 parts.push(StreamPart::ToolInputDelta {
                     id: id.clone(),

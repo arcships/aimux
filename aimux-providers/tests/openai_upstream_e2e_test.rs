@@ -1153,3 +1153,37 @@ async fn text_annotations_keep_only_the_fields_of_their_type() {
         }])
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1698
+/// parses an apply patch operation as `{type, path, diff}`, and
+/// src/responses/openai-responses-language-model.ts:1443 stringifies that
+/// parsed operation into the tool input, so its keys follow the schema order
+/// whatever order the wire sent them in.
+#[tokio::test]
+async fn apply_patch_input_lists_operation_fields_in_schema_order() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_apply_patch",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "apply_patch_call",
+            "id": "apc_1",
+            "call_id": "call_1",
+            "status": "completed",
+            "operation": {"diff": "+hello\n", "type": "create_file", "path": "a.md"}
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::ToolCall(call)) = result.content.first() else {
+        panic!("expected a tool call: {:?}", result.content);
+    };
+    assert_eq!(
+        call.input,
+        r#"{"callId":"call_1","operation":{"type":"create_file","path":"a.md","diff":"+hello\n"}}"#
+    );
+}
