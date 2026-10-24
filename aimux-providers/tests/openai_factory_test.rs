@@ -765,6 +765,7 @@ async fn chat_error(status: u16, body: &Value) -> Box<aimux_core::ApiCallError> 
     error
 }
 
+/// partial: `should parse OpenRouter resource exhausted error`; full port in src/openai/tests/error.rs.
 /// openai@4.0.83 `openai-error.test.ts` "should parse OpenRouter resource
 /// exhausted error": the message is `error.message`, a numeric `code` is
 /// accepted, and a 429 is retryable (provider@4.0.21
