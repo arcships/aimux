@@ -1562,3 +1562,33 @@ async fn a_responses_error_before_output_after_response_created_rejects_the_call
     assert_eq!(detail.status_code, Some(429));
     assert!(detail.is_retryable);
 }
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:684-688
+/// drops `async: true` for a model without async tool calling and warns with
+/// the quoted tool name and the GPT-6 requirement.
+#[tokio::test]
+async fn responses_async_tool_warning_names_the_gpt_6_requirement() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.tools = Some(vec![Tool::Function(FunctionTool {
+        provider_options: Some(serde_json::from_value(json!({"openai":{"async":true}})).unwrap()),
+        ..FunctionTool::new("weather", json!({"type":"object","properties":{}}))
+    })]);
+    let result = provider(&fetch)
+        .responses("gpt-5.6")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert!(
+        fetch.seen()[0].json_body()["tools"][0]
+            .get("async")
+            .is_none()
+    );
+    assert_eq!(
+        serde_json::to_value(&result.warnings).unwrap(),
+        json!([{
+            "type": "unsupported",
+            "feature": "async tool calling for \"weather\"",
+            "details": "Async tool calling is only supported by GPT-6 and later models."
+        }])
+    );
+}

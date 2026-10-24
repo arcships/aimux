@@ -1113,8 +1113,8 @@ fn resolve_async_tool_option(
             object.remove("async");
         }
         warnings.push(Warning::Unsupported {
-            feature: format!("async tool calling for {name}"),
-            details: Some("Async tool calling is not supported by this model.".into()),
+            feature: format!("async tool calling for \"{name}\""),
+            details: Some("Async tool calling is only supported by GPT-6 and later models.".into()),
         });
     }
 }

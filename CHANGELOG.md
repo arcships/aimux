@@ -1280,6 +1280,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An OpenAI (and Azure) Responses stream that never sees
   `response.created` finishes with `responseId: null` in its provider
   metadata, as the AI SDK does, instead of an empty string.
+- OpenAI Responses now warns about `async: true` on a model without async tool
+  calling with the quoted tool name and "Async tool calling is only supported
+  by GPT-6 and later models.", like the AI SDK.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not
