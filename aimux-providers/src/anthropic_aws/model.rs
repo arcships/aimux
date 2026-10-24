@@ -73,7 +73,7 @@ impl Auth {
     pub(crate) fn host_region(&self) -> Result<String, AiMuxError> {
         let region = self.region()?;
         if !is_valid_hostname_part(&region) {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Invalid AWS region. Expected a single DNS label (letters, digits, and hyphens). \
                  Use `base_url` for custom endpoints."
                     .to_string(),
@@ -110,7 +110,7 @@ impl Auth {
         let region = self.region()?;
         let access_key_id = load_setting(None, ACCESS_KEY_ID_ENV_VAR, "access_key_id")
             .map_err(|error| {
-                AiMuxError::Other(format!(
+                AiMuxError::other(format!(
                     "AWS SigV4 authentication requires AWS credentials. Please provide either:\n\
                      1. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables\n\
                      2. Provide the credentials as `AnthropicAwsAuth::SigV4(Resolvable::Value(..))`\n\
@@ -121,7 +121,7 @@ impl Auth {
             })?;
         let secret_access_key = load_setting(None, SECRET_ACCESS_KEY_ENV_VAR, "secret_access_key")
             .map_err(|error| {
-                AiMuxError::Other(format!(
+                AiMuxError::other(format!(
                     "AWS SigV4 authentication requires both AWS_ACCESS_KEY_ID and \
                      AWS_SECRET_ACCESS_KEY. Please ensure both credentials are provided.\n\
                      Original error: {error}"
@@ -143,7 +143,7 @@ impl Auth {
         match &self.auth {
             Some(AnthropicAwsAuth::SigV4(producer)) => {
                 let mut credentials = producer.resolve().await.map_err(|error| {
-                    AiMuxError::Other(format!(
+                    AiMuxError::other(format!(
                         "AWS credential provider failed: {error}. Please ensure your credential \
                          provider returns valid AWS credentials with access_key_id and \
                          secret_access_key."

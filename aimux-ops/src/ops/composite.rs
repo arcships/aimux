@@ -53,7 +53,7 @@ struct MoaParams {
 }
 
 fn invalid(message: impl Into<String>) -> OpsError {
-    OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
+    OpsError::Protocol(ProtocolError::invalid_params(message))
 }
 
 fn language(ctx: &Ctx, id: &str) -> Result<Arc<dyn LanguageModel>, OpsError> {

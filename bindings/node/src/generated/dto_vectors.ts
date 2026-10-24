@@ -52,6 +52,8 @@ export interface DtoTypes {
   "EmbeddingResult": T.EmbeddingResult
   "EmbeddingUsage": T.EmbeddingUsage
   "EmptyParams": T.EmptyParams
+  "ErrorCause": T.ErrorCause
+  "ErrorCauseInput": T.ErrorCauseInput
   "ErrorDomain": T.ErrorDomain
   "ErrorEnvelope": T.ErrorEnvelope
   "Fallback": T.Fallback
@@ -202,6 +204,7 @@ export interface DtoTypes {
   "SessionView": T.SessionView
   "Size": T.Size
   "Source": T.Source
+  "SourceError": T.SourceError
   "SpeechCallOptions": T.SpeechCallOptions
   "SpeechRequest": T.SpeechRequest
   "SpeechResponse": T.SpeechResponse
@@ -299,8 +302,8 @@ export interface DtoTypes {
 }
 
 export const dtoTags: Partial<Record<keyof DtoTypes, { tag: string; values: readonly string[] }>> = {
-  "AiMuxError": { tag: "name", values: ["AI_APICallError", "AI_RetryError", "AI_JSONParseError", "AI_NoOutputGeneratedError", "AI_InvalidResponseDataError", "AI_ToolCallNotFoundForApprovalError", "AI_NoSuchToolError", "AI_InvalidToolInputError", "AI_ToolCallRepairError", "AI_InvalidArgumentError", "AI_InvalidPromptError", "AI_LoadAPIKeyError", "AI_LoadSettingError", "AI_TokenExpiredError", "AI_UnsupportedFunctionalityError", "AI_NoSuchModelError", "AI_NoSuchProviderError", "AI_MissingToolResultsError", "AI_ToolChoiceViolationError", "TimeoutError", "AbortError", "AI_Error"] },
-  "AiMuxErrorInput": { tag: "name", values: ["AI_APICallError", "AI_RetryError", "AI_JSONParseError", "AI_NoOutputGeneratedError", "AI_InvalidResponseDataError", "AI_ToolCallNotFoundForApprovalError", "AI_NoSuchToolError", "AI_InvalidToolInputError", "AI_ToolCallRepairError", "AI_InvalidArgumentError", "AI_InvalidPromptError", "AI_LoadAPIKeyError", "AI_LoadSettingError", "AI_TokenExpiredError", "AI_UnsupportedFunctionalityError", "AI_NoSuchModelError", "AI_NoSuchProviderError", "AI_MissingToolResultsError", "AI_ToolChoiceViolationError", "TimeoutError", "AbortError", "AI_Error"] },
+  "AiMuxError": { tag: "name", values: ["AI_APICallError", "AI_RetryError", "AI_JSONParseError", "AI_NoOutputGeneratedError", "AI_InvalidResponseDataError", "AI_TypeValidationError", "AI_ToolCallNotFoundForApprovalError", "AI_NoSuchToolError", "AI_InvalidToolInputError", "AI_ToolCallRepairError", "AI_InvalidArgumentError", "AI_InvalidPromptError", "AI_LoadAPIKeyError", "AI_LoadSettingError", "AI_TokenExpiredError", "AI_UnsupportedFunctionalityError", "AI_NoSuchModelError", "AI_NoSuchProviderError", "AI_MissingToolResultsError", "AI_ToolChoiceViolationError", "TimeoutError", "AbortError", "AI_Error"] },
+  "AiMuxErrorInput": { tag: "name", values: ["AI_APICallError", "AI_RetryError", "AI_JSONParseError", "AI_NoOutputGeneratedError", "AI_InvalidResponseDataError", "AI_TypeValidationError", "AI_ToolCallNotFoundForApprovalError", "AI_NoSuchToolError", "AI_InvalidToolInputError", "AI_ToolCallRepairError", "AI_InvalidArgumentError", "AI_InvalidPromptError", "AI_LoadAPIKeyError", "AI_LoadSettingError", "AI_TokenExpiredError", "AI_UnsupportedFunctionalityError", "AI_NoSuchModelError", "AI_NoSuchProviderError", "AI_MissingToolResultsError", "AI_ToolChoiceViolationError", "TimeoutError", "AbortError", "AI_Error"] },
   "AssistantContentPart": { tag: "type", values: ["text", "custom", "file", "reasoning", "reasoning-file", "tool-call", "tool-result", "tool-approval-request"] },
   "AssistantPart": { tag: "type", values: ["text", "file", "reasoning", "reasoning-file", "custom", "tool-call", "tool-result"] },
   "BackendConfig": { tag: "type", values: ["ring", "jsonl"] },
@@ -395,6 +398,8 @@ export const dtoTypeNames = [
   "EmbeddingResult",
   "EmbeddingUsage",
   "EmptyParams",
+  "ErrorCause",
+  "ErrorCauseInput",
   "ErrorDomain",
   "ErrorEnvelope",
   "Fallback",
@@ -545,6 +550,7 @@ export const dtoTypeNames = [
   "SessionView",
   "Size",
   "Source",
+  "SourceError",
   "SpeechCallOptions",
   "SpeechRequest",
   "SpeechResponse",

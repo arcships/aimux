@@ -99,6 +99,12 @@ pub struct PresetDescriptor {
     /// `amazon-bedrock` (Bedrock Mantle) also appends it a second time in
     /// the transport, like `@ai-sdk/amazon-bedrock`'s mantle provider.
     pub user_agent: (&'static str, &'static str),
+    /// The chat models that take a `json_schema` response format
+    /// (`profile.structured_output_models`: exact ids, or a prefix ending in
+    /// `*`). `None`: every model; `[]`: none,
+    /// which sends `json_object` with a warning for a schema. Rows of vendors
+    /// with an AI SDK package follow its `supportsStructuredOutputs`.
+    pub structured_output_models: Option<Vec<String>>,
 }
 
 /// Settings of a preset factory. Every field is optional.
@@ -165,7 +171,21 @@ struct RegistryRow {
     #[serde(default)]
     params: Vec<RegistryParam>,
     #[serde(default)]
-    profile: HashMap<String, String>,
+    profile: RegistryProfile,
+}
+
+/// A row's chat settings that differ from the preset defaults.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RegistryProfile {
+    #[serde(default, deserialize_with = "registry_optional")]
+    max_tokens_key: Option<String>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    convert_usage: Option<String>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    user_agent: Option<String>,
+    #[serde(default, deserialize_with = "registry_optional")]
+    structured_output_models: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -249,24 +269,15 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
                 .is_none_or(|var| env_name.is_match(var)),
             "invalid base_url_env name",
         );
-        check(
-            row.profile.keys().all(|key| {
-                matches!(
-                    key.as_str(),
-                    "max_tokens_key" | "convert_usage" | "user_agent"
-                )
-            }),
-            "unknown profile key",
-        );
         // bedrock-mantle-provider.ts:236-240 (getHeaders) names the
         // amazon-bedrock package, not openai-compatible.
-        let package = match row.profile.get("user_agent").map(String::as_str) {
+        let package = match row.profile.user_agent.as_deref() {
             None => crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
             Some("amazon-bedrock") => crate::shared::aisdk_pins::AMAZON_BEDROCK,
             Some(value) => panic!("registry row '{name}': unknown user_agent {value:?}"),
         };
         let user_agent = (package.name, package.version);
-        let max_tokens_key = row.profile.get("max_tokens_key").cloned();
+        let max_tokens_key = row.profile.max_tokens_key;
         check(
             max_tokens_key
                 .as_deref()
@@ -274,7 +285,7 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
             "invalid max_tokens_key",
         );
         let convert_usage: Option<fn(Option<&Value>) -> Usage> =
-            match row.profile.get("convert_usage").map(String::as_str) {
+            match row.profile.convert_usage.as_deref() {
                 None => None,
                 Some("alibaba") => Some(alibaba_usage),
                 Some("moonshotai") => Some(moonshotai_usage),
@@ -329,6 +340,7 @@ fn parse_registry(json: &str) -> Vec<PresetDescriptor> {
             convert_usage,
             params,
             user_agent,
+            structured_output_models: row.profile.structured_output_models,
         });
     }
     descriptors
@@ -398,7 +410,7 @@ fn assemble(
             .iter()
             .find(|spec| &spec.name == name && spec.derive.is_none());
         if declared.is_none() {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "preset '{}' has no template parameter `{name}`; declared parameters: [{}]",
                 descriptor.name,
                 settable_params(descriptor).join(", ")
@@ -431,6 +443,7 @@ fn assemble(
     let chat = ChatSettings {
         include_usage: true,
         supports_structured_outputs: true,
+        structured_output_models: descriptor.structured_output_models.as_deref(),
         supports_top_k: true,
         max_tokens_key: descriptor.max_tokens_key.as_deref(),
         convert_usage: descriptor
@@ -497,7 +510,7 @@ fn check_param_value(
     if plain {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "preset '{}': template parameter `{name}` must be a plain segment \
              (letters, digits, `.`, `_`, `-`; no `/`, `@`, `:`, `?`, `#` or spaces), got {value:?}",
             descriptor.name
@@ -523,8 +536,10 @@ pub(crate) fn resolve_base_url(
     if let Some(var) = descriptor.base_url_env.as_deref()
         && let Some(url) = env_value(&[var])
     {
-        return validate_base_url(&url)
-            .map_err(|e| AiMuxError::InvalidArgument(format!("{var}: {e}")));
+        return validate_base_url(&url).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("{var}: {e}"),
+            cause: Some(e.into()),
+        });
     }
 
     let mut values: HashMap<&str, String> = HashMap::new();
@@ -544,7 +559,7 @@ pub(crate) fn resolve_base_url(
                 } else {
                     format!(" or set {}", spec.env.join(" / "))
                 };
-                AiMuxError::InvalidArgument(format!(
+                AiMuxError::invalid_argument(format!(
                     "preset '{}' needs the template parameter `{}`: pass it in `params`{source}, \
                      or pass a concrete `base_url`",
                     descriptor.name, spec.name
@@ -556,7 +571,7 @@ pub(crate) fn resolve_base_url(
     for spec in descriptor.params.iter() {
         let Some(derive) = &spec.derive else { continue };
         let from = values.get(derive.from.as_str()).cloned().ok_or_else(|| {
-            AiMuxError::InvalidArgument(format!(
+            AiMuxError::invalid_argument(format!(
                 "preset '{}': derived parameter `{}` depends on undeclared `{}`",
                 descriptor.name, spec.name, derive.from
             ))
@@ -579,7 +594,7 @@ pub(crate) fn resolve_base_url(
         url = url.replace(&format!("{{{name}}}"), value);
     }
     if url.chars().any(|c| matches!(c, '{' | '}' | '<' | '>')) {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "preset '{}': base URL {:?} still has an unexpanded placeholder after expanding its \
              parameters",
             descriptor.name, url
@@ -762,6 +777,29 @@ mod tests {
         registry(serde_json::json!([row(
             serde_json::json!({ "env_var": null })
         )]));
+    }
+
+    #[test]
+    #[should_panic(expected = "registry row \"vendor\"")]
+    fn an_unknown_profile_key_is_refused() {
+        registry(serde_json::json!([row(
+            serde_json::json!({ "profile": { "supports_top_k": "false" } })
+        )]));
+    }
+
+    #[test]
+    fn a_structured_output_model_list_is_read() {
+        let descriptors = registry(serde_json::json!([
+            row(serde_json::json!({
+                "profile": { "structured_output_models": ["model-a"] }
+            })),
+            row(serde_json::json!({ "name": "other", "profile": {} })),
+        ]));
+        assert_eq!(descriptors[0].structured_output_models, None);
+        assert_eq!(
+            descriptors[1].structured_output_models,
+            Some(vec!["model-a".to_string()])
+        );
     }
 
     #[test]

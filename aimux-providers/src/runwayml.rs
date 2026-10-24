@@ -99,7 +99,7 @@ impl std::fmt::Debug for RunwaymlProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_runwayml(settings: RunwaymlProviderSettings) -> Result<RunwaymlProvider, AiMuxError> {
@@ -298,7 +298,7 @@ impl VideoModel for RunwaymlVideoModel {
             .get("task_id")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(format!(
+                AiMuxError::invalid_argument(format!(
                     "{PROVIDER_NAME} operation reference is missing task_id"
                 ))
             })?;
@@ -325,7 +325,7 @@ impl VideoModel for RunwaymlVideoModel {
                         .output
                         .filter(|o| !o.is_empty())
                         .ok_or_else(|| {
-                            AiMuxError::InvalidResponseData(format!(
+                            AiMuxError::invalid_response_data(format!(
                                 "{PROVIDER_NAME} task {task_id} succeeded without output"
                             ))
                         })?;

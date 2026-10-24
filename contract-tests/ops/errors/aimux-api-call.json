@@ -16,7 +16,16 @@
       "retry-after-ms": "1500"
     },
     "data": null,
-    "isRetryable": true
+    "isRetryable": true,
+    "cause": {
+      "message": "error sending request",
+      "cause": {
+        "message": "tcp connect error",
+        "cause": {
+          "message": "Connection refused (os error 111)"
+        }
+      }
+    }
   },
   "retryAfterMs": 1500
 }

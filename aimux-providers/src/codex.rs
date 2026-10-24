@@ -55,7 +55,7 @@ use aimux_provider_utils::{
 
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::responses::responses_convert::{
-    build_responses_event_stream, build_responses_generate_result,
+    build_responses_event_stream_with_raw, build_responses_generate_result,
 };
 use crate::openai::responses::{
     OpenAIResponsesModel, ResponsesNamespace, build_responses_request_body,
@@ -173,7 +173,7 @@ enum Channel {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: credentials are resolved
 /// per request, not here.
 pub fn create_codex(settings: CodexProviderSettings) -> Result<CodexProvider, AiMuxError> {
@@ -438,7 +438,7 @@ impl CodexModel {
                 response_headers,
             ),
             None => Err(failure.unwrap_or_else(|| {
-                AiMuxError::InvalidResponseData(
+                AiMuxError::invalid_response_data(
                     "subscription stream ended without response.completed".to_string(),
                 )
             })),
@@ -469,7 +469,7 @@ impl CodexModel {
             Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
             first_event => first_event,
         };
-        let stream = build_responses_event_stream(
+        let stream = build_responses_event_stream_with_raw(
             first_event,
             sse_stream,
             ResponsesNamespace::OPENAI.write_key().to_string(),
@@ -478,6 +478,7 @@ impl CodexModel {
             endpoint,
             body.clone(),
             response_headers.clone(),
+            options.include_raw_chunks == Some(true),
         )?;
 
         Ok(StreamResult {
@@ -609,7 +610,7 @@ pub async fn codex_refresh_at(
         .get("access_token")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            AiMuxError::InvalidResponseData("oauth token response missing access_token".to_string())
+            AiMuxError::invalid_response_data("oauth token response missing access_token")
         })?;
 
     Ok(CodexTokens {
