@@ -5,3 +5,4 @@ mod convert_to_chat_prompt;
 mod embedding_model;
 mod prepare_tools;
 mod reranking;
+mod upstream_e2e;

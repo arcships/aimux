@@ -7,70 +7,70 @@ package = "@ai-sdk/cohere"
 
 [[cohere.files]]
 upstream = "src/cohere-chat-language-model-options.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/chat_language_model_options.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-chat-language-model.ts"
-rust = "cohere/model.rs"
+rust = "cohere/chat_language_model.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-chat-prompt.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/convert_to_chat_prompt.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-embedding-model-options.ts"
-rust = "cohere/embedding.rs"
+rust = "cohere/embedding_model_options.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-embedding-model.ts"
-rust = "cohere/embedding.rs"
+rust = "cohere/embedding_model.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-error.ts"
-rust = "cohere/mod.rs"
+rust = "cohere/error.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-prepare-tools.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/prepare_tools.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-provider.ts"
-rust = "cohere/mod.rs"
+rust = "cohere/provider.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/convert-cohere-usage.ts"
-rust = "cohere/model.rs"
+rust = "cohere/convert_usage.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/convert-to-cohere-chat-prompt.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/convert_to_chat_prompt.rs"
 status = "mapped"
 
 [cohere.files.tests]
@@ -84,28 +84,28 @@ status = "mapped"
 
 [[cohere.files]]
 upstream = "src/map-cohere-finish-reason.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/map_finish_reason.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/reranking/cohere-reranking-api.ts"
-rust = "cohere/reranking.rs"
+rust = "cohere/reranking/reranking_api.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/reranking/cohere-reranking-model-options.ts"
-rust = "cohere/reranking.rs"
+rust = "cohere/reranking/reranking_model_options.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/reranking/cohere-reranking-model.ts"
-rust = "cohere/reranking.rs"
+rust = "cohere/reranking/reranking_model.rs"
 status = "mapped"
 
 [cohere.files.tests]

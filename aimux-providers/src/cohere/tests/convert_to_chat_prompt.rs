@@ -3,8 +3,9 @@
 //! One nested module per `describe`, one `#[test]` per `it`. Each test carries
 //! its upstream chain in an `upstream:` marker line.
 
-use crate::cohere::convert::{build_request_body, convert_prompt_to_cohere};
-use crate::cohere::options::NAMESPACE;
+use crate::cohere::chat_language_model::build_request_body;
+use crate::cohere::chat_language_model_options::NAMESPACE;
+use crate::cohere::convert_to_chat_prompt::convert_prompt_to_cohere;
 use aimux_core::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart, ToolPart,
