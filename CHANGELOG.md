@@ -1305,6 +1305,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- An empty or blank base URL is rejected with the AI SDK's message,
+  "baseURL must be a non-empty string." (`validate_base_url`; it said
+  "base URL cannot be empty", and a blank value was reported as an
+  unparsable URL).
 - OpenAI structured-output and tool schemas: a singleton
   `allOf: [{ "$ref": ... }]` (how Zod 4 writes a recursive reference)
   becomes a direct `$ref`, and at the schema root is expanded from its local
