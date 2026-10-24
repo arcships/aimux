@@ -193,11 +193,11 @@ mod tests {
 
         fn transform(&mut self, chunk: i32, controller: &mut TransformStreamController<i32>) {
             if chunk == 0 {
-                controller.enqueue_error(AiMuxError::InvalidResponseData("zero".into()));
+                controller.enqueue_error(AiMuxError::invalid_response_data("zero"));
                 return;
             }
             if chunk < 0 {
-                controller.error(AiMuxError::InvalidResponseData("negative".into()));
+                controller.error(AiMuxError::invalid_response_data("negative"));
                 return;
             }
             self.total += chunk;
@@ -257,8 +257,8 @@ mod tests {
         controller.enqueue(1);
         controller.terminate();
         controller.enqueue(2);
-        controller.enqueue_error(AiMuxError::InvalidResponseData("late".into()));
-        controller.error(AiMuxError::InvalidResponseData("late".into()));
+        controller.enqueue_error(AiMuxError::invalid_response_data("late"));
+        controller.error(AiMuxError::invalid_response_data("late"));
         let emitted: Vec<i32> = controller.drain().map(Result::unwrap).collect();
         assert_eq!(emitted, [1]);
         assert!(controller.is_closed());

@@ -274,7 +274,7 @@ pub(crate) fn validate_tool_args(kind: &str, args: &Value) -> Result<(), AiMuxEr
     if valid {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "Invalid arguments for provider tool openai.{kind}"
         )))
     }
@@ -375,7 +375,7 @@ pub(super) fn validate_tool_call(kind: &str, input: &Value) -> Result<(), AiMuxE
     if valid {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "Invalid input for provider tool openai.{kind}"
         )))
     }
@@ -430,7 +430,7 @@ pub(super) fn validate_tool_result(kind: &str, output: &Value) -> Result<(), AiM
     if valid {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "Invalid output for provider tool openai.{kind}"
         )))
     }

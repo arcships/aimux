@@ -17,7 +17,9 @@ int main() {
     check_error(error.release(), 300);
     bool caught = false;
     try { aimux::check(aimux_call(0, "not.an.op", "{}", 0, &raw)); }
-    catch (const std::runtime_error &) { caught = true; }
+    catch (const aimux::NativeError &e) {
+        caught = e.code() == 300 && e.json().find("\"InvalidOp\"") != std::string::npos;
+    }
     assert(caught);
 
     aimux::Handle first(create_handle("abort.create", 0, "{}"));

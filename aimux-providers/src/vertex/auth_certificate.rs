@@ -1,21 +1,32 @@
 //! Certificate subject tokens and their native TLS transport.
 
+use aimux_core::SourceError;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use aimux_core::{AiMuxError, SourceError};
+use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
 use base64::Engine;
 use futures::StreamExt;
 use serde_json::Value;
 
-fn invalid(message: impl std::fmt::Display) -> AiMuxError {
-    AiMuxError::InvalidArgument(message.to_string())
+fn invalid(message: impl Into<String>) -> AiMuxError {
+    AiMuxError::invalid_argument(message)
+}
+
+fn invalid_from(error: impl std::error::Error + 'static) -> AiMuxError {
+    AiMuxError::InvalidArgument {
+        message: error.to_string(),
+        cause: Some(ErrorCause::source(&error)),
+    }
 }
 
 fn read(path: &str) -> Result<Vec<u8>, AiMuxError> {
-    std::fs::read(path)
-        .map_err(|error| invalid(format!("Cannot read certificate source {path}: {error}")))
+    std::fs::read(path).map_err(|error| AiMuxError::InvalidArgument {
+        message: format!("Cannot read certificate source {path}: {error}"),
+        cause: Some(ErrorCause::source(&error)),
+    })
 }
 
 fn nonempty(value: Option<&str>) -> Option<&str> {
@@ -52,7 +63,8 @@ pub(super) fn certificate(
                 });
             directory.join("certificate_config.json")
         });
-    let config: Value = serde_json::from_slice(&read(&path.to_string_lossy())?).map_err(invalid)?;
+    let config: Value =
+        serde_json::from_slice(&read(&path.to_string_lossy())?).map_err(invalid_from)?;
     let workload = &config["cert_configs"]["workload"];
     let cert_path = nonempty(workload["cert_path"].as_str())
         .ok_or_else(|| invalid("Missing workload cert_path"))?;
@@ -73,7 +85,7 @@ pub(super) fn certificate(
     };
     identity_pem.push(b'\n');
     identity_pem.extend(key);
-    let identity = reqwest::Identity::from_pem(&identity_pem).map_err(invalid)?;
+    let identity = reqwest::Identity::from_pem(&identity_pem).map_err(invalid_from)?;
     let mut chain = match nonempty(options["trust_chain_path"].as_str()) {
         Some(path) => pem_certificates(&read(path)?)?,
         None => Vec::new(),
@@ -90,22 +102,22 @@ pub(super) fn certificate(
     // Root-store parsing validates DER without changing the mTLS server trust.
     let mut validation = reqwest::Client::builder();
     for der in &chain {
-        validation =
-            validation.add_root_certificate(reqwest::Certificate::from_der(der).map_err(invalid)?);
+        validation = validation
+            .add_root_certificate(reqwest::Certificate::from_der(der).map_err(invalid_from)?);
     }
-    validation.build().map_err(invalid)?;
+    validation.build().map_err(invalid_from)?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .identity(identity)
         .build()
-        .map_err(invalid)?;
+        .map_err(invalid_from)?;
     let subject_token = serde_json::to_string(
         &chain
             .iter()
             .map(|der| base64::engine::general_purpose::STANDARD.encode(der))
             .collect::<Vec<_>>(),
     )
-    .map_err(invalid)?;
+    .map_err(invalid_from)?;
     Ok((
         subject_token,
         Some(fetch.unwrap_or_else(|| Arc::new(CertificateFetch(client)))),
@@ -115,7 +127,7 @@ pub(super) fn certificate(
 fn pem_certificates(bytes: &[u8]) -> Result<Vec<Vec<u8>>, AiMuxError> {
     let text = String::from_utf8_lossy(bytes);
     let pattern = regex::Regex::new(r"-----BEGIN CERTIFICATE-----[^-]+-----END CERTIFICATE-----")
-        .map_err(invalid)?;
+        .map_err(invalid_from)?;
     pattern
         .find_iter(&text)
         .map(|block| {
@@ -128,13 +140,13 @@ fn pem_certificates(bytes: &[u8]) -> Result<Vec<Vec<u8>>, AiMuxError> {
                 .collect();
             base64::engine::general_purpose::STANDARD
                 .decode(encoded)
-                .map_err(invalid)
+                .map_err(invalid_from)
         })
         .collect()
 }
 
 pub(super) fn ca_fetch(path: &str) -> Result<FetchFunction, AiMuxError> {
-    let certificates = reqwest::Certificate::from_pem_bundle(&read(path)?).map_err(invalid)?;
+    let certificates = reqwest::Certificate::from_pem_bundle(&read(path)?).map_err(invalid_from)?;
     let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .tls_built_in_root_certs(false);
@@ -142,7 +154,7 @@ pub(super) fn ca_fetch(path: &str) -> Result<FetchFunction, AiMuxError> {
         builder = builder.add_root_certificate(certificate);
     }
     Ok(Arc::new(CertificateFetch(
-        builder.build().map_err(invalid)?,
+        builder.build().map_err(invalid_from)?,
     )))
 }
 
