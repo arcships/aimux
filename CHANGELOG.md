@@ -1305,6 +1305,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI realtime transcription configures the session from
+  `providerOptions.openai.streaming` (`delay` and `include`) like the AI
+  SDK; it put the REST `include` option into the session instead.
 - OpenAI realtime transcription authenticates through the WebSocket
   subprotocols like the AI SDK: it offers `realtime` and
   `openai-insecure-api-key.<key>` (the bearer token of the last

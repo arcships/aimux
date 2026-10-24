@@ -217,3 +217,67 @@ async fn realtime_transcription_replays_through_injected_web_socket() {
     assert_eq!(seen.frames[1]["audio"], "AQID");
     assert_eq!(seen.frames[2]["audio"], "BAUG");
 }
+
+/// Streams the fixture with `provider_options`; returns the parts and the
+/// `session.update` the client sent.
+async fn replay_with(provider_options: Value) -> (Vec<TranscriptionStreamPart>, Value) {
+    let seen = Arc::new(Mutex::new(Seen::default()));
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("sk-replay-test".to_string()),
+        base_url: Some("https://replay.invalid/v1".into()),
+        web_socket: Some(Arc::new(ReplayConnector {
+            seen: Arc::clone(&seen),
+            events: fixture_events(),
+        })),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let options = TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::iter(vec![AudioChunk::Binary(vec![
+            1, 2, 3,
+        ])])),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: Some(24_000),
+        },
+        provider_options: Some(serde_json::from_value(provider_options).unwrap()),
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: None,
+    };
+    let result = provider
+        .transcription("gpt-realtime-whisper")
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .expect("stream opens");
+    let parts = result
+        .stream
+        .map(|part| part.expect("no stream error"))
+        .collect()
+        .await;
+    let session = seen.lock().unwrap().frames[0].clone();
+    (parts, session)
+}
+
+/// `providerOptions.openai.streaming.delay` and `.include` configure the
+/// realtime session; the REST `include` does not
+/// (`transcription/openai-transcription-model.ts:580-617`).
+#[tokio::test]
+async fn realtime_session_takes_the_streaming_options() {
+    let (_, session) = replay_with(serde_json::json!({"openai": {
+        "language": "en",
+        "include": ["logprobs"],
+        "streaming": {"delay": "low", "include": ["item.input_audio_transcription.logprobs"]},
+    }}))
+    .await;
+    assert_eq!(
+        session["session"]["audio"]["input"]["transcription"],
+        serde_json::json!({"model": "gpt-realtime-whisper", "language": "en", "delay": "low"})
+    );
+    assert_eq!(
+        session["session"]["include"],
+        serde_json::json!(["item.input_audio_transcription.logprobs"])
+    );
+}

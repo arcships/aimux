@@ -576,8 +576,25 @@ impl OpenAITranscriptionModel {
             session_update["session"]["audio"]["input"]["transcription"]["language"] =
                 serde_json::json!(lang);
         }
-        if let Some(include) = &openai_options.include {
-            session_update["session"]["include"] = serde_json::json!(include);
+        // `providerOptions.openai.streaming` (`buildOpenAIRealtimeTranscriptionSession`,
+        // `transcription/openai-transcription-model.ts:580-617`); the REST
+        // `include` does not apply to the realtime session.
+        let streaming = options
+            .provider_options
+            .as_ref()
+            .and_then(|options| options.get("openai"))
+            .and_then(|openai| openai.get("streaming"));
+        if let Some(delay) = streaming
+            .and_then(|streaming| streaming.get("delay"))
+            .filter(|delay| !delay.is_null())
+        {
+            session_update["session"]["audio"]["input"]["transcription"]["delay"] = delay.clone();
+        }
+        if let Some(include) = streaming
+            .and_then(|streaming| streaming.get("include"))
+            .filter(|include| !include.is_null())
+        {
+            session_update["session"]["include"] = include.clone();
         }
 
         let mut header_list = self
