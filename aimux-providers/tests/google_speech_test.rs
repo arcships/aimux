@@ -102,7 +102,7 @@ fn has_warning(result: &SpeechResult, expected: &str) -> bool {
 
 fn invalid_argument(error: AiMuxError) -> String {
     match error {
-        AiMuxError::InvalidArgument(message) => message,
+        AiMuxError::InvalidArgument { message, .. } => message,
         other => panic!("expected InvalidArgument, got {other:?}"),
     }
 }

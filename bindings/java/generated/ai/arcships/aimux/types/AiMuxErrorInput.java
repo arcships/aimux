@@ -13,6 +13,10 @@ import java.util.*;
  * Variants are cut by *what the caller does about it*, not by where the
  * failure came from. `ApiCallError` is boxed only to keep the Rust enum
  * compact; serde and every binding still observe the same object shape.
+ *
+ * A variant has a `cause` exactly where its AI SDK class takes one; it is
+ * what `source()` returns. `Retry` reports its
+ * last attempt and `ToolCallRepair` its `cause` the same way.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "name")
 // clang-format off
@@ -22,6 +26,7 @@ import java.util.*;
     @JsonSubTypes.Type(value = AiMuxErrorInput.AIJSONParseError.class, name = "AI_JSONParseError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.AINoOutputGeneratedError.class, name = "AI_NoOutputGeneratedError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.AIInvalidResponseDataError.class, name = "AI_InvalidResponseDataError"),
+    @JsonSubTypes.Type(value = AiMuxErrorInput.AITypeValidationError.class, name = "AI_TypeValidationError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.AIToolCallNotFoundForApprovalError.class, name = "AI_ToolCallNotFoundForApprovalError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.AINoSuchToolError.class, name = "AI_NoSuchToolError"),
     @JsonSubTypes.Type(value = AiMuxErrorInput.AIInvalidToolInputError.class, name = "AI_InvalidToolInputError"),
@@ -58,6 +63,7 @@ public abstract class AiMuxErrorInput {
     public String getUrl() { return null; }
     public List<AiMuxErrorInput> getErrors() { return null; }
     public RetryErrorReason getReason() { return null; }
+    public JsonNode getValue() { return null; }
     public String getApprovalId() { return null; }
     public String getToolCallId() { return null; }
     public List<String> getAvailableTools() { return null; }
@@ -94,6 +100,7 @@ public abstract class AiMuxErrorInput {
     public final boolean isAIToolCallNotFoundForApprovalError() { return "AI_ToolCallNotFoundForApprovalError".equals(getName()); }
     public final boolean isAIToolCallRepairError() { return "AI_ToolCallRepairError".equals(getName()); }
     public final boolean isAIToolChoiceViolationError() { return "AI_ToolChoiceViolationError".equals(getName()); }
+    public final boolean isAITypeValidationError() { return "AI_TypeValidationError".equals(getName()); }
     public final boolean isAIUnsupportedFunctionalityError() { return "AI_UnsupportedFunctionalityError".equals(getName()); }
     public final boolean isAbortError() { return "AbortError".equals(getName()); }
     public final boolean isTimeoutError() { return "TimeoutError".equals(getName()); }
@@ -104,6 +111,13 @@ public abstract class AiMuxErrorInput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIAPICallError extends AiMuxErrorInput {
+        /**
+         * The error this failure was built from (`APICallError.cause`): the
+         * transport error with its source chain, the body parse error, or the
+         * aimux error a response handler returned.
+         */
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
         /**
          * Parsed provider error data.
          */
@@ -168,6 +182,7 @@ public abstract class AiMuxErrorInput {
 
         @JsonCreator
         public AIAPICallError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
             @JsonProperty(value = "data") FieldPresence<JsonNode> data,
             @JsonProperty(value = "isRetryable") Boolean isRetryable,
             @JsonProperty(value = "message", required = true) String message,
@@ -177,6 +192,7 @@ public abstract class AiMuxErrorInput {
             @JsonProperty(value = "responseHeaders") Map<String, String> responseHeaders,
             @JsonProperty(value = "statusCode") Integer statusCode,
             @JsonProperty(value = "url", required = true) String url) {
+            this.cause = cause;
             this.data = data == null ? FieldPresence.absent() : data;
             this.isRetryable = isRetryable;
             this.message = message;
@@ -193,6 +209,7 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_APICallError"; }
+        public ErrorCauseInput getCause() { return cause; }
         public JsonNode getData() { return data.getValue() == null ? null : data.getValue().deepCopy(); }
         public boolean hasData() { return data.isPresent(); }
         public Boolean getIsRetryable() { return isRetryable; }
@@ -205,6 +222,7 @@ public abstract class AiMuxErrorInput {
         public String getUrl() { return url; }
 
         public static final class Builder {
+            private ErrorCauseInput cause;
             private FieldPresence<JsonNode> data = FieldPresence.absent();
             private Boolean isRetryable;
             private String message;
@@ -214,6 +232,11 @@ public abstract class AiMuxErrorInput {
             private Map<String, String> responseHeaders;
             private Integer statusCode;
             private String url;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder data(JsonNode value) {
                 this.data = FieldPresence.of(value == null ? null : value.deepCopy());
@@ -265,7 +288,7 @@ public abstract class AiMuxErrorInput {
                 return this;
             }
 
-            public AIAPICallError build() { return new AIAPICallError(data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
+            public AIAPICallError build() { return new AIAPICallError(cause, data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
         }
     }
 
@@ -320,12 +343,16 @@ public abstract class AiMuxErrorInput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIJSONParseError extends AiMuxErrorInput {
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
         @JsonProperty("message")
         private final String message;
 
         @JsonCreator
         public AIJSONParseError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
             @JsonProperty(value = "message", required = true) String message) {
+            this.cause = cause;
             this.message = message;
         }
 
@@ -334,17 +361,24 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_JSONParseError"; }
+        public ErrorCauseInput getCause() { return cause; }
         public String getMessage() { return message; }
 
         public static final class Builder {
+            private ErrorCauseInput cause;
             private String message;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder message(String value) {
                 this.message = value;
                 return this;
             }
 
-            public AIJSONParseError build() { return new AIJSONParseError(message); }
+            public AIJSONParseError build() { return new AIJSONParseError(cause, message); }
         }
     }
 
@@ -354,12 +388,16 @@ public abstract class AiMuxErrorInput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AINoOutputGeneratedError extends AiMuxErrorInput {
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
         @JsonProperty("message")
         private final String message;
 
         @JsonCreator
         public AINoOutputGeneratedError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
             @JsonProperty(value = "message", required = true) String message) {
+            this.cause = cause;
             this.message = message;
         }
 
@@ -368,17 +406,24 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_NoOutputGeneratedError"; }
+        public ErrorCauseInput getCause() { return cause; }
         public String getMessage() { return message; }
 
         public static final class Builder {
+            private ErrorCauseInput cause;
             private String message;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder message(String value) {
                 this.message = value;
                 return this;
             }
 
-            public AINoOutputGeneratedError build() { return new AINoOutputGeneratedError(message); }
+            public AINoOutputGeneratedError build() { return new AINoOutputGeneratedError(cause, message); }
         }
     }
 
@@ -388,12 +433,16 @@ public abstract class AiMuxErrorInput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidResponseDataError extends AiMuxErrorInput {
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
         @JsonProperty("message")
         private final String message;
 
         @JsonCreator
         public AIInvalidResponseDataError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
             @JsonProperty(value = "message", required = true) String message) {
+            this.cause = cause;
             this.message = message;
         }
 
@@ -402,17 +451,80 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_InvalidResponseDataError"; }
+        public ErrorCauseInput getCause() { return cause; }
         public String getMessage() { return message; }
 
         public static final class Builder {
+            private ErrorCauseInput cause;
             private String message;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder message(String value) {
                 this.message = value;
                 return this;
             }
 
-            public AIInvalidResponseDataError build() { return new AIInvalidResponseDataError(message); }
+            public AIInvalidResponseDataError build() { return new AIInvalidResponseDataError(cause, message); }
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
+    @JsonDeserialize(using = JsonDeserializer.None.class)
+    public static final class AITypeValidationError extends AiMuxErrorInput {
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
+        @JsonProperty("message")
+        private final String message;
+        @JsonProperty("value")
+        private final JsonNode value;
+
+        @JsonCreator
+        public AITypeValidationError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
+            @JsonProperty(value = "message", required = true) String message,
+            @JsonProperty(value = "value", required = true) JsonNode value) {
+            this.cause = cause;
+            this.message = message;
+            this.value = value == null ? null : value.deepCopy();
+        }
+
+        public static Builder builder() { return new Builder(); }
+
+        @Override
+        @JsonProperty("name")
+        public String getName() { return "AI_TypeValidationError"; }
+        public ErrorCauseInput getCause() { return cause; }
+        public String getMessage() { return message; }
+        public JsonNode getValue() { return value == null ? null : value.deepCopy(); }
+
+        public static final class Builder {
+            private ErrorCauseInput cause;
+            private String message;
+            private JsonNode value;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
+
+            public Builder message(String value) {
+                this.message = value;
+                return this;
+            }
+
+            public Builder value(JsonNode value) {
+                this.value = value;
+                return this;
+            }
+
+            public AITypeValidationError build() { return new AITypeValidationError(cause, message, value); }
         }
     }
 
@@ -524,7 +636,7 @@ public abstract class AiMuxErrorInput {
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidToolInputError extends AiMuxErrorInput {
         @JsonProperty("cause")
-        private final String cause;
+        private final ErrorCauseInput cause;
         @JsonProperty("toolInput")
         private final String toolInput;
         @JsonProperty("toolName")
@@ -532,7 +644,7 @@ public abstract class AiMuxErrorInput {
 
         @JsonCreator
         public AIInvalidToolInputError(
-            @JsonProperty(value = "cause", required = true) String cause,
+            @JsonProperty(value = "cause", required = true) ErrorCauseInput cause,
             @JsonProperty(value = "toolInput", required = true) String toolInput,
             @JsonProperty(value = "toolName", required = true) String toolName) {
             this.cause = cause;
@@ -545,16 +657,16 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_InvalidToolInputError"; }
-        public String getCause() { return cause; }
+        public ErrorCauseInput getCause() { return cause; }
         public String getToolInput() { return toolInput; }
         public String getToolName() { return toolName; }
 
         public static final class Builder {
-            private String cause;
+            private ErrorCauseInput cause;
             private String toolInput;
             private String toolName;
 
-            public Builder cause(String value) {
+            public Builder cause(ErrorCauseInput value) {
                 this.cause = value;
                 return this;
             }
@@ -624,12 +736,16 @@ public abstract class AiMuxErrorInput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidArgumentError extends AiMuxErrorInput {
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
         @JsonProperty("message")
         private final String message;
 
         @JsonCreator
         public AIInvalidArgumentError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
             @JsonProperty(value = "message", required = true) String message) {
+            this.cause = cause;
             this.message = message;
         }
 
@@ -638,17 +754,24 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_InvalidArgumentError"; }
+        public ErrorCauseInput getCause() { return cause; }
         public String getMessage() { return message; }
 
         public static final class Builder {
+            private ErrorCauseInput cause;
             private String message;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder message(String value) {
                 this.message = value;
                 return this;
             }
 
-            public AIInvalidArgumentError build() { return new AIInvalidArgumentError(message); }
+            public AIInvalidArgumentError build() { return new AIInvalidArgumentError(cause, message); }
         }
     }
 
@@ -658,12 +781,16 @@ public abstract class AiMuxErrorInput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIInvalidPromptError extends AiMuxErrorInput {
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
         @JsonProperty("message")
         private final String message;
 
         @JsonCreator
         public AIInvalidPromptError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
             @JsonProperty(value = "message", required = true) String message) {
+            this.cause = cause;
             this.message = message;
         }
 
@@ -672,17 +799,24 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_InvalidPromptError"; }
+        public ErrorCauseInput getCause() { return cause; }
         public String getMessage() { return message; }
 
         public static final class Builder {
+            private ErrorCauseInput cause;
             private String message;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder message(String value) {
                 this.message = value;
                 return this;
             }
 
-            public AIInvalidPromptError build() { return new AIInvalidPromptError(message); }
+            public AIInvalidPromptError build() { return new AIInvalidPromptError(cause, message); }
         }
     }
 
@@ -1162,12 +1296,16 @@ public abstract class AiMuxErrorInput {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NONE)
     @JsonDeserialize(using = JsonDeserializer.None.class)
     public static final class AIError extends AiMuxErrorInput {
+        @JsonProperty("cause")
+        private final ErrorCauseInput cause;
         @JsonProperty("message")
         private final String message;
 
         @JsonCreator
         public AIError(
+            @JsonProperty(value = "cause") ErrorCauseInput cause,
             @JsonProperty(value = "message", required = true) String message) {
+            this.cause = cause;
             this.message = message;
         }
 
@@ -1176,17 +1314,24 @@ public abstract class AiMuxErrorInput {
         @Override
         @JsonProperty("name")
         public String getName() { return "AI_Error"; }
+        public ErrorCauseInput getCause() { return cause; }
         public String getMessage() { return message; }
 
         public static final class Builder {
+            private ErrorCauseInput cause;
             private String message;
+
+            public Builder cause(ErrorCauseInput value) {
+                this.cause = value;
+                return this;
+            }
 
             public Builder message(String value) {
                 this.message = value;
                 return this;
             }
 
-            public AIError build() { return new AIError(message); }
+            public AIError build() { return new AIError(cause, message); }
         }
     }
 }

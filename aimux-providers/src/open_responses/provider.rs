@@ -96,14 +96,14 @@ fn options_name_of(name: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `name` is empty or `base_url` is
+/// Returns `AiMuxError::invalid_argument` when `name` is empty or `base_url` is
 /// not an `http(s)` URL with a host. Credentials are resolved per request, not
 /// here.
 pub fn create_open_responses(
     settings: OpenResponsesProviderSettings,
 ) -> Result<OpenResponsesProvider, AiMuxError> {
     if settings.name.trim().is_empty() {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "Open Responses requires a non-empty `name`.".to_string(),
         ));
     }

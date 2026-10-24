@@ -450,7 +450,7 @@ async fn provider_tool_args_are_checked_before_the_request() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message) if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
+        matches!(&error, AiMuxError::InvalidArgument { message, .. } if message == "Invalid configuration for provider-defined tool anthropic.web_fetch_20250910"),
         "{error:?}"
     );
     assert!(fetch.seen().is_empty());
@@ -512,5 +512,47 @@ async fn generate_provider_defined_tool_with_input_schema() {
     assert!(result.warnings.is_empty());
     assert!(
         matches!(&result.content[0], GenerateContent::ToolCall(tool) if tool.tool_call_id == "tool-use-id" && tool.tool_name == "bash" && tool.input == "{\"command\":\"ls -l\"}")
+    );
+}
+
+/// The JSON instruction Bedrock adds for an Anthropic model that cannot take
+/// a forced tool, appended to the system prompt
+/// (`@ai-sdk/amazon-bedrock@5.0.100` src/amazon-bedrock-chat-language-model.ts:614-621,
+/// with `injectJsonInstructionIntoMessages` from `@ai-sdk/provider-utils`).
+#[tokio::test]
+async fn json_instruction_text_for_a_model_without_forced_tools() {
+    let response = json!({"output":{"message":{"role":"assistant","content":[{"text":"{}"}]}},
+        "usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2},"stopReason":"end_turn"});
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+    let mut call = CallOptions::new(vec![
+        LanguageModelMessage::System {
+            content: "Be brief.".into(),
+            provider_options: None,
+        },
+        LanguageModelMessage::user_text("Hello"),
+    ]);
+    call.response_format = Some(aimux_core::options::ResponseFormat::Json {
+        schema: Some(schema.clone()),
+        name: None,
+        description: None,
+    });
+    call.provider_options = Some(
+        aimux_core::shared::provider_namespace(
+            "bedrock",
+            json!({"structuredOutputMode": "jsonTool"}),
+        )
+        .unwrap(),
+    );
+    provider(&fetch)
+        .chat("us.anthropic.claude-sonnet-5-5-v1:0")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["system"],
+        json!([{"text": format!(
+            "Be brief.\n\nJSON schema:\n{schema}\nYou MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text."
+        )}])
     );
 }

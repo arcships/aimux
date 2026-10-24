@@ -211,9 +211,7 @@ async fn the_dispatch_projection_keeps_the_original_clock_and_cause() {
 
 fn events(_: Ctx, _: Target, params: Value) -> Result<EventStream, OpsError> {
     match params["case"].as_str() {
-        Some("reject") => {
-            Err(ProtocolError::InvalidParams("reject before acceptance".into()).into())
-        }
+        Some("reject") => Err(ProtocolError::invalid_params("reject before acceptance").into()),
         Some("pending") => Ok(Box::pin(futures::stream::pending())),
         Some("large") => Ok(Box::pin(futures::stream::iter([Ok(json!(
             "x".repeat(aimux_ops::limits::ITEM_BYTES)
@@ -221,7 +219,7 @@ fn events(_: Ctx, _: Target, params: Value) -> Result<EventStream, OpsError> {
         _ => Ok(Box::pin(futures::stream::iter([
             Ok(json!({"type":"error"})),
             Ok(json!({"type":"finish"})),
-            Err(AiMuxError::Other("terminal".into()).into()),
+            Err(AiMuxError::other("terminal").into()),
             Ok(Value::Null),
         ]))),
     }

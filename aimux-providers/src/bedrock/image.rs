@@ -8,6 +8,7 @@
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
@@ -57,8 +58,8 @@ impl BedrockImageModel {
 
     fn get_base64_data(file: &ImageFile) -> Result<String, AiMuxError> {
         match file {
-            ImageFile::Url { .. } => Err(AiMuxError::InvalidArgument(
-                "URL-based images are not supported for Amazon Bedrock image editing.".into(),
+            ImageFile::Url { .. } => Err(AiMuxError::invalid_argument(
+                "URL-based images are not supported for Amazon Bedrock image editing.",
             )),
             ImageFile::File { data, .. } => match data {
                 ImageFileData::Base64(s) => Ok(s.clone()),
@@ -126,22 +127,22 @@ impl ImageModel for BedrockImageModel {
                     .get(key)
                     .is_some_and(|v| !v.as_str().is_some_and(|s| allowed.contains(&s)))
                 {
-                    return Err(AiMuxError::InvalidArgument(
-                        "invalid amazonBedrock provider options".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "invalid amazonBedrock provider options",
                     ));
                 }
             }
             for key in ["negativeText", "maskPrompt"] {
                 if opts.get(key).is_some_and(|v| !v.is_string()) {
-                    return Err(AiMuxError::InvalidArgument(
-                        "invalid amazonBedrock provider options".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "invalid amazonBedrock provider options",
                     ));
                 }
             }
             for key in ["cfgScale", "similarityStrength"] {
                 if opts.get(key).is_some_and(|v| !v.is_number()) {
-                    return Err(AiMuxError::InvalidArgument(
-                        "invalid amazonBedrock provider options".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "invalid amazonBedrock provider options",
                     ));
                 }
             }
@@ -284,7 +285,7 @@ impl ImageModel for BedrockImageModel {
                     );
                 }
                 _ => {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "Unsupported task type: {task_type}"
                     )));
                 }
@@ -327,8 +328,10 @@ impl ImageModel for BedrockImageModel {
         let current_date = aimux_core::Timestamp::now();
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let body = exchange.transform_body(Value::Object(args));
-        let body_str =
-            serde_json::to_string(&body).map_err(|e| AiMuxError::JsonParse(e.to_string()))?;
+        let body_str = serde_json::to_string(&body).map_err(|e| AiMuxError::JsonParse {
+            message: e.to_string(),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
         let url = exchange.url(&format!(
             "/model/{}/invoke",
             super::encode_model_id(&self.model_id)
@@ -383,8 +386,8 @@ impl ImageModel for BedrockImageModel {
             })
             .unwrap_or_default();
         if images.is_empty() {
-            return Err(AiMuxError::InvalidResponseData(
-                "Amazon Bedrock returned no images.".into(),
+            return Err(AiMuxError::invalid_response_data(
+                "Amazon Bedrock returned no images.",
             ));
         }
 

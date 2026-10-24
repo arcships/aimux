@@ -357,6 +357,7 @@ impl LanguageModel for OpenResponsesModel {
                 finish_reason: FINISH_OTHER,
                 active_reasoning_id: None,
                 tool_calls: HashMap::new(),
+                include_raw_chunks: options.include_raw_chunks == Some(true),
             },
         );
 
@@ -385,6 +386,7 @@ struct OpenResponsesStream {
     active_reasoning_id: Option<String>,
     /// Tool-call accumulators keyed by item_id.
     tool_calls: HashMap<String, ToolCallAccum>,
+    include_raw_chunks: bool,
 }
 
 impl Transformer for OpenResponsesStream {
@@ -398,6 +400,22 @@ impl Transformer for OpenResponsesStream {
     }
 
     fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        // Every chunk first, as `raw` when requested
+        // (open-responses-language-model.ts:685-690); a chunk that is not
+        // JSON has no raw value.
+        if self.include_raw_chunks {
+            match &event {
+                Ok(chunk) => controller.enqueue(StreamPart::Raw {
+                    raw_value: chunk.clone(),
+                }),
+                Err(error) if error.is_recoverable_stream_error() => {
+                    controller.enqueue(StreamPart::Raw {
+                        raw_value: Value::Null,
+                    });
+                }
+                Err(_) => {}
+            }
+        }
         let Self {
             ref provider_options_name,
             ref url,

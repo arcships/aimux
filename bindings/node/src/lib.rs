@@ -131,7 +131,7 @@ fn invalid_state(message: &str) -> ErrorEnvelope {
 fn handle(value: &str) -> std::result::Result<HandleId, ErrorEnvelope> {
     value
         .parse()
-        .map_err(|message| envelope(OpsError::Protocol(ProtocolError::InvalidParams(message))))
+        .map_err(|message| envelope(OpsError::Protocol(ProtocolError::invalid_params(message))))
 }
 
 /// All Runtime instances in one napi Env share one unforgeable Owner::Node.
