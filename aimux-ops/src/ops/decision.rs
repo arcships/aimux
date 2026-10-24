@@ -7,14 +7,14 @@ use crate::{
     dispatch::{CallFuture, Ctx, Handler, Target, decode},
     envelope::{BindingError, OpsError, ProtocolError},
     handle::{Entry, HandleId, HandleKind},
-    op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope},
+    op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef},
     ops::operation::EmptyParams,
 };
 
 /// Runtime controls surround the canonical business options; only the control
 /// object rejects unknown fields. Dispatch resolves `abort` with the caller's
 /// owner before entering the handler and supplies its signal in `Ctx`.
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DecisionDecideRequest {
     pub options: DecideOptions,
@@ -27,8 +27,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Decision],
-        request_type: "aimux_ops::ops::decision::DecisionDecideRequest",
-        result_type: "aimux_core::decision_model::DecideResult",
+        request_type: TypeRef::of::<DecisionDecideRequest>(),
+        result_type: TypeRef::of::<aimux_core::decision_model::DecideResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -50,9 +50,9 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Decision],
-        request_type: "EmptyParams",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
         // The canonical property helper already returns this JSON value.
-        result_type: "serde_json::Value",
+        result_type: TypeRef::of::<serde_json::Value>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -101,6 +101,6 @@ fn decision_decide(ctx: Ctx, target: Target, params: Value) -> CallFuture {
         request.options.abort_signal = ctx.abort;
         let result = decide(model(target)?.as_ref(), request.options).await?;
         serde_json::to_value(result)
-            .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+            .map_err(|error| BindingError::result_serialization(&error).into())
     })
 }

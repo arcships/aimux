@@ -4,8 +4,8 @@
 //! (`reference/ai/packages/provider/src/reranking-model/v4/`).
 
 use async_trait::async_trait;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 use crate::error::AiMuxError;
 use crate::shared::{SharedHeaders, SharedProviderMetadata, SharedProviderOptions, Warning};
@@ -14,13 +14,12 @@ use crate::{AbortSignal, retry, timeout};
 /// Documents to rerank: either a list of texts or a list of JSON objects.
 ///
 /// Aligned with V4 `RerankingModelV4CallOptions.documents`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum RerankingDocuments {
     /// A list of plain-text documents.
     Text { values: Vec<String> },
@@ -31,9 +30,8 @@ pub enum RerankingDocuments {
 /// Options passed to [`RerankingModel::do_rerank`].
 ///
 /// Aligned with V4 `RerankingModelV4CallOptions`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingCallOptions {
     /// Documents to rerank.
     pub documents: RerankingDocuments,
@@ -42,33 +40,27 @@ pub struct RerankingCallOptions {
     pub query: String,
 
     /// Optional limit: return only the top `n` documents.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_n: Option<u32>,
 
     /// Abort signal for cancelling the operation.
     #[serde(skip)]
-    #[ts(skip)]
     pub abort_signal: Option<AbortSignal>,
 
     /// Maximum number of retries, the AI SDK's `maxRetries`; `Some(0)` disables
     /// retrying. `None` uses 2, the AI SDK default.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 
     /// Per-call operation timeout.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<crate::options::TimeoutConfiguration>,
 
     /// Additional provider-specific options, keyed by provider name.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 
     /// Additional HTTP headers to send with the request.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
 }
@@ -90,9 +82,8 @@ impl RerankingCallOptions {
 }
 
 /// A single reranked entry: the original index and its relevance score.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingRank {
     /// The index of the document in the original list (before reranking).
     pub index: u32,
@@ -103,9 +94,8 @@ pub struct RerankingRank {
 /// The result of [`RerankingModel::do_rerank`].
 ///
 /// Aligned with V4 `RerankingModelV4Result`.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingResult {
     /// Ordered list of reranked documents, sorted by descending relevance
     /// score. Each entry's `index` refers to the position in the original
@@ -113,49 +103,41 @@ pub struct RerankingResult {
     pub ranking: Vec<RerankingRank>,
 
     /// Additional provider-specific metadata, keyed by provider name.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<SharedProviderMetadata>,
 
     /// Warnings for the call, e.g. unsupported settings.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warnings: Option<Vec<Warning>>,
 
     /// Optional response information for debugging.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<RerankingResponse>,
 }
 
 /// Optional response information for a reranking call.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RerankingResponse {
     /// ID for the generated response, if the provider sends one.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     /// Timestamp for the start of the generated response (`toISOString()` in the JSON).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<crate::timestamp::Timestamp>,
     /// The ID of the model that was used to generate the response.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     /// Response headers.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<SharedHeaders>,
     /// Response body (opaque JSON).
-    #[ts(optional)]
     #[serde(
         default,
         deserialize_with = "crate::wire::present",
         skip_serializing_if = "Option::is_none"
     )]
+    #[schemars(extend("x-aimux-codec" = "presence"))]
     pub body: Option<serde_json::Value>,
 }
 

@@ -63,8 +63,10 @@ pub(crate) fn base_url_setting(
     }
     Ok(
         match aimux_provider_utils::load_optional_setting(None, var) {
-            Some(url) => normalize(&url)
-                .map_err(|error| AiMuxError::InvalidArgument(format!("{var}: {error}"))),
+            Some(url) => normalize(&url).map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("{var}: {error}"),
+                cause: Some(error.into()),
+            }),
             None => Ok(default.to_string()),
         },
     )

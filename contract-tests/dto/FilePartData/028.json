@@ -1,0 +1,6 @@
+{
+  "type": "reference",
+  "reference": {
+    "openai": "file-abc"
+  }
+}

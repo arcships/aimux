@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Errors keep their cause, as the AI SDK's `cause`. `ApiCallError` has
+  `cause` (`.caused_by(..)`): the transport error with its whole source chain
+  down to the OS error, the body parse error, or the error a response handler
+  returned; `invalid_response_api_call` takes that error instead of a
+  message, its text becoming the message. `JsonParse`, `NoOutputGenerated`, `InvalidResponseData`,
+  `InvalidArgument`, `InvalidPrompt` and `Other` are `{ message, cause }`
+  (build them with `AiMuxError::json_parse(..)`, `invalid_argument(..)`, ...),
+  and `InvalidToolInput.cause` is the parse or validation error itself instead
+  of its text. A value that fails its schema is the new `TypeValidation`
+  error (`AI_TypeValidationError`, with the value), the cause of an
+  `InvalidToolInput` or of a structured output that does not match. A cause
+  is a nested `AiMuxError` or a `SourceError` chain of an OS, TLS or parser
+  error, and is what `source()` returns; `RetryError::source()` is the last
+  attempt. `FetchError` and download errors carry a `SourceError` without the
+  request URL, so their messages lose it too: `error sending request for url
+  (…)` is now `error sending request`. Other messages are unchanged.
+
+- The ops error envelope carries the cause in all four domains, as the
+  payload's optional `cause`: the recording domain's `source` string becomes
+  `cause: { message, cause? }`, and the binding and protocol domains keep the
+  JSON parser's or serializer's error (`InvalidWireJson`,
+  `ResultSerialization`, `InvalidParams`, now struct variants). Every binding
+  exposes it natively: Node `error.cause` (`AimuxCauseError` for a nested
+  error, `AimuxSourceError` for an underlying one), Python `__cause__` (a
+  nested error is its own exception class, an underlying error is
+  `aimux.SourceError`), Java/Kotlin `getCause()` (`ErrorCause`), Go `Unwrap()`
+  (`*aimux.Cause`), Swift and Flutter `cause`; a retry error's cause is its
+  last attempt. The C++ wrapper throws `aimux::NativeError`
+  (a `std::runtime_error`) with the error code and the envelope JSON.
+
 - aimux's public JSON equals the AI SDK's JSON. Struct fields serialize
   camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
   AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,
@@ -1103,6 +1133,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ToolApprovalResponse` are decoded. Tool-call
   repair reads the top-level `tool_calls` only.
 
+- Every binding's DTO types and codecs are generated from the Rust types
+  (#268). `aimux-codegen` reads the manifest's `typeDefs` (the `schemars`
+  schemas of the Rust types) and writes the business JSON schemas
+  (`schema/types/*.json`) and the DTOs of Node, Go, Java, Swift, Dart and
+  Python (Kotlin uses Java's), and the web console's types; the hand-written
+  DTO types are deleted and the generated ones take the Rust type names, so
+  hand-written names that Rust does not have (for example Go's `Role` and
+  `MessageContent`, Java's `TokenUsage`) are gone. Where the types moved:
+  Node `bindings/node/src/types/*.ts` (one ts-rs file per type) becomes
+  `bindings/node/src/generated/types.ts`, re-exported by `src/types.ts`; Go
+  `types.go`, `multimodal_types.go` and `repair_types.go` become
+  `types_gen.go`; Java's nested `Types.X` and `MultimodalTypes.X` become
+  top-level classes in the package `ai.arcships.aimux.types`
+  (`bindings/java/generated/`), which Kotlin uses directly; Swift `Types.swift`,
+  `Multimodal.swift` and `ToolCallRepair.swift` become `generated/Types.swift`;
+  Dart `types.dart` and `types.g.dart` (`json_serializable`) become
+  `lib/src/generated/types.dart`, which `types.dart` re-exports, and an absent
+  field is told from an explicit `null` by `Field<T>` (replacing `hasBody` and
+  `hasInputSchemaInput`); the Python models of `wrapper.py` become
+  `aimux/_types.py` and `_error_payloads.py`, which `aimux.wrapper`
+  re-exports. The web console imports core types from the Node file through
+  `@aimux/types` and its own `Wire*` types from
+  `tools/aimux-web/web/src/types/generated/`, both written by `aimux-codegen`.
+  Generated Dart and Java hold integers as signed 64-bit values and cannot
+  represent a `u64` above 2^63-1; Node decodes numbers as doubles and rounds
+  integers above 2^53; Go accepts any string for a single-value tag where the
+  other languages reject other values; Node, which has declarations but no
+  codec, keeps an explicit `null` that the other languages fold to an omitted
+  key. These are registered in `docs/rfc-0039-implementation.md` (D13 to D16). `cargo run -p aimux-codegen
+  -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
+  files and the codecs.
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
@@ -1165,6 +1227,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `error`. Before, only a top-level `error` field was read, so `error` events
   carrying the message on the event and `response.failed` events passed
   unnoticed, and the finish reason stayed `other`.
+- The model catalogue keys specs by the names `create_provider` accepts.
+  anya2a provider ids map through an explicit table of the same vendor's
+  providers, checked by hand (13 old aliases named providers that do not
+  exist, such as `vertex`, `bedrock` and `xiaomi`), or map to themselves when
+  they are a provider name; the rest, and an alias whose target the catalogue
+  also lists under its own id, go to `Catalogue::unmapped` under the anya2a id
+  instead of a name guessed from the spelling. `normalize_provider_name`
+  returns `None` for them, and each mapped `ModelSpec` carries its
+  `provider`.
+- Vertex AI Gemini models are the Google model reading the Vertex
+  namespaces, as `@ai-sdk/google-vertex` reuses `GoogleLanguageModel`; the
+  separate Vertex copy is removed (`VertexModel` is now an alias of
+  `GoogleModel`). Code execution, server tool calls and sources take their
+  ids from `generate_id` (new on `VertexProviderSettings`); stream text and
+  reasoning ids count only text and reasoning blocks; code execution carries
+  no server-tool metadata; an empty `thoughtSignature` adds no metadata;
+  `serviceTier: null` stays in the provider metadata; stream usage comes from
+  the parsed chunk; and the request builder's warnings (reasoning mapping,
+  thought-signature sentinel) are no longer dropped. Both models now read
+  `"candidates": null` as no candidates, stream function-call arguments
+  sent as `partialArgs`, and leave an empty `thoughtSignature` out of server
+  tool metadata.
+- Open Responses and the Codex subscription stream honor
+  `include_raw_chunks`: each SSE chunk is sent as `StreamPart::Raw` before
+  the parts made from it, as the AI SDK's Open Responses model and aimux's
+  OpenAI Responses stream do. Both ignored the option.
+- Presets of vendors with an AI SDK package follow its
+  `supportsStructuredOutputs`: Together AI sends a `json_schema` response
+  format only for `deepseek-ai/DeepSeek-V4-Flash-0731`, Moonshot (`moonshotai`
+  and `kimi`) only for `kimi-k*` and seven `moonshot-v1-*` models, and Vercel
+  and v0 never, as `@ai-sdk/togetherai`, `@ai-sdk/moonshotai` and
+  `@ai-sdk/vercel` do; other models send `json_object` with an `unsupported`
+  warning. Registry rows declare this in `profile.structured_output_models`
+  (exact ids, or a prefix ending in `*`); rows without it keep sending a
+  schema to every model.
+- Mistral with `structuredOutputs: false` and a JSON schema adds the schema
+  instruction to the system prompt and asks for `json_object`, as the AI SDK
+  does; it sent the bare `json_object` mode with no instruction.
+  `aimux-provider-utils` gains `inject_json_instruction` and
+  `inject_json_instruction_into_messages` (the AI SDK's
+  `injectJsonInstruction*`), which Mistral and Bedrock now share. The
+  Mistral pin moves to `@ai-sdk/mistral` 4.0.55, the first release with this
+  behavior: the user-agent reads `ai-sdk-mistral/4.0.55
+  ai-sdk-provider-utils/5.0.52`, and an `error` finish reason maps to
+  `error` instead of `other`.
+- Google Vertex checks that a location going into a host name is one DNS
+  label (letters, digits and hyphens), as the AI SDK does: the Gemini and
+  Claude models, MaaS and the Speech-to-Text models (whose `region` provider
+  option is checked too) fail the request with `InvalidArgument` before
+  anything is sent. Language models with a custom `base_url`, Express mode
+  and the xAI models, which always call the global host, do not check it;
+  transcription models check it with a custom `base_url` too, since they
+  still name the location in their own endpoint. The check came with
+  `@ai-sdk/google-vertex` 5.0.100, so the lock moves there from 5.0.98; that
+  release depends on the locked `@ai-sdk/google` 4.0.87. The Vertex user
+  agent now reads `ai-sdk-google-vertex/5.0.100 ai-sdk-provider-utils/5.0.53`,
+  and the MaaS and xAI models send `ai-sdk-openai-compatible/3.0.61`.
+- `stream_text_as_openai` and the bindings' OpenAI-format text stream carry
+  the provider's response id and model in every chunk again, as aimux 0.5
+  did; they sent a generated `chatcmpl-…` id and the requested model name.
+  The role frame now waits for the first content so that it has them. New
+  `ResponseIdentity` and `to_chat_completion_stream_with_identity` do the
+  same for a caller's own `stream_text` stream.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now
@@ -1215,11 +1340,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model no longer match each other's prefix history. The trace
   scope isolates by provider name and model id; `TraceLayer::with_scope_name`
   names a scope for a host that calls one provider at several endpoints.
-- Gated aimux-core's ts-rs exports behind `ts-export`, so plain `cargo test`
-  no longer rewrites tracked TypeScript types. `scripts/gen_ts_types.py`
-  enables exports and rejects ungated export attributes with `--check`.
 
 ### Removed
+
+- ts-rs is retired (#268): the `ts-rs` dependency, the `TS` derives and the
+  `ts-export` feature, `scripts/gen_ts_types.py` and its CI step are deleted,
+  along with the generated `bindings/node/src/types/*.ts` and
+  `tools/aimux-web/web/src/types/generated/serde_json/JsonValue.ts`.
+  `aimux-codegen` replaces them (see the entry under Breaking).
 
 - The cross-language contract fixtures are retired (#249):
   `contract-tests/fixtures/wire-format.json` (a record of Rust's own serde
@@ -1238,9 +1366,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   master layer by layer, each layer CI-green with all its consumers updated,
   instead of one atomic cutover through an integration branch (§0.4 Q3, D31,
   §9.1). The new C ABI, codegen, the full recording schema 3 and the binding
-  migration come last; until then the existing C constructors keep their
-  signatures and call the new factories, and ts-rs stays as the interim
-  generator. No release is cut from master until every layer is merged;
+  migration come last; the existing C constructors kept their
+  signatures and called the new factories until the new C ABI landed (#265),
+  and ts-rs stayed as the interim generator until `aimux-codegen` generated
+  the DTOs (#268). Recording schema 3 follows as a separate PR before the
+  release. No release is cut from master until every layer is merged;
   fixes for released versions ship from a maintenance branch. `ROADMAP.md`
   defers the ops protocol schema and L0 passthrough and no longer fixes C1
   at nine exports.

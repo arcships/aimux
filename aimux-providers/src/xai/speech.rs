@@ -12,6 +12,7 @@ use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
 use aimux_core::speech_model::{
@@ -77,7 +78,7 @@ fn build_request(options: &SpeechCallOptions) -> Result<(Value, Vec<Warning>, bo
             Some(Value::Object(map.clone()))
         }
         Some(_) => {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Invalid argument for parameter providerOptions: xai.replace must be a record of strings"
                     .to_owned(),
             ));
@@ -174,8 +175,9 @@ impl SpeechModel for XaiSpeechModel {
             let audio = match &envelope.audio {
                 Some(audio) => base64::engine::general_purpose::STANDARD
                     .decode(audio)
-                    .map_err(|e| {
-                        AiMuxError::InvalidResponseData(format!("invalid base64 audio: {e}"))
+                    .map_err(|e| AiMuxError::InvalidResponseData {
+                        message: format!("invalid base64 audio: {e}"),
+                        cause: Some(ErrorCause::source(&e)),
                     })?,
                 None => Vec::new(),
             };

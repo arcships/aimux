@@ -3,7 +3,6 @@ package ai.arcships.aimux.kotlin
 import ai.arcships.aimux.KotlinInteropFixtures
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import java.math.BigInteger
 
 class ErrorsTest {
     // Compiled without else, so additions must update the exhaustive facade.
@@ -11,6 +10,7 @@ class ErrorsTest {
         is NoOutputGeneratedError -> "NoOutputGeneratedError"
         is JSONParseError -> "JSONParseError"
         is InvalidResponseDataError -> "InvalidResponseDataError"
+        is TypeValidationError -> "TypeValidationError"
         is ToolCallNotFoundForApprovalError -> "ToolCallNotFoundForApprovalError"
         is InvalidArgumentError -> "InvalidArgumentError"
         is InvalidPromptError -> "InvalidPromptError"
@@ -38,11 +38,12 @@ class ErrorsTest {
 
     @Test
     fun `every Java core subtype maps to an exhaustive sealed variant`() {
-        val codes = listOf(18, 2, 3, 3, 5, 6, 19, 20, 7, 8, 9, 10, 11, 14, 12, 13, 15, 16, 17, 6, 3, 1)
+        val codes = listOf(18, 2, 3, 3, 3, 5, 6, 19, 20, 7, 8, 9, 10, 11, 14, 12, 13, 15, 16, 17, 6, 3, 1)
         val variants = listOf(
             "NoOutputGeneratedError",
             "JSONParseError",
             "InvalidResponseDataError",
+            "TypeValidationError",
             "ToolCallNotFoundForApprovalError",
             "InvalidArgumentError",
             "InvalidPromptError",
@@ -101,16 +102,16 @@ class ErrorsTest {
     }
 
     @Test
-    fun `open payload and unsigned retry hint survive unchanged`() {
+    fun `open payload and native retry hint survive unchanged`() {
         val java = KotlinInteropFixtures.decode("""{
-            "kind":"aimux","code":11,"message":"limited","retryAfterMs":18446744073709551615,
+            "kind":"aimux","code":11,"message":"limited","retryAfterMs":9223372036854775807,
             "error":{"name":"AI_APICallError","statusCode":429,"isRetryable":true,
             "requestBodyValues":{"model":"模型"},"responseHeaders":{"retry-after":"10"},
             "data":{"unknown":17}}
         }""")
         val error = AimuxException.fromJava(java) as APICallError
         assertSame(java, error.details)
-        assertEquals(BigInteger("18446744073709551615"), error.retryAfterMs)
+        assertEquals(Long.MAX_VALUE, error.retryAfterMs)
         assertTrue(error.details.isRetryable)
         assertEquals(429, error.details.statusCode)
         assertEquals(java.error, error.error)
@@ -127,7 +128,7 @@ class ErrorsTest {
         assertEquals("UnknownError", classify(error))
         assertSame(java, error.javaError)
         assertEquals(java.envelope, error.envelope)
-        assertEquals(BigInteger.valueOf(25), error.retryAfterMs)
+        assertEquals(25L, error.retryAfterMs)
     }
 
     @Test
