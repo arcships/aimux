@@ -1210,6 +1210,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses computer tool calls build each action from
+  the fields its type has and leave out a null `keys`, as the AI SDK's
+  `mapComputerAction` does; aimux passed the wire action through, so
+  `"keys":null` and unknown fields reached the tool input.
 - The OpenAI (and Azure) file search tool sends `max_num_results` as an
   integer, as the AI SDK does: `FileSearchArgs::max_num_results` is an
   `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` no longer

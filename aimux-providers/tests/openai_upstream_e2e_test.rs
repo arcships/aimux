@@ -1019,3 +1019,41 @@ async fn file_search_sends_max_num_results_as_an_integer() {
         json!(5)
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:128 (`mapComputerAction`)
+/// builds each computer action from the fields its type has and adds `keys`
+/// only when it is not null, so a `double_click` with `keys: null` reaches the
+/// tool input without `keys`.
+#[tokio::test]
+async fn computer_actions_leave_out_null_keys() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_computer",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "computer_call",
+            "id": "computer_item",
+            "call_id": "computer_call",
+            "status": "completed",
+            "actions": [
+                {"type": "double_click", "x": 1, "y": 2, "keys": null},
+                {"type": "scroll", "x": 3, "y": 4, "scroll_x": 0, "scroll_y": 5, "keys": null}
+            ],
+            "pending_safety_checks": []
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::ToolCall(call)) = result.content.first() else {
+        panic!("expected a tool call: {:?}", result.content);
+    };
+    assert_eq!(
+        call.input,
+        r#"{"actions":[{"type":"double_click","x":1,"y":2},{"type":"scroll","x":3,"y":4,"scrollX":0,"scrollY":5}],"pendingSafetyChecks":[],"status":"completed"}"#
+    );
+}
