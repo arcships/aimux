@@ -17,6 +17,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
 use aimux_core::types::FinishReasonUnified;
+use aimux_providers::openai::tools::{FileSearchArgs, file_search};
 use aimux_providers::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use futures::StreamExt;
 use mock_fetch::{Canned, MockFetch};
@@ -88,6 +89,83 @@ async fn chat_generate() {
     assert_eq!(
         result.response.unwrap().id.as_deref(),
         Some("chatcmpl-test")
+    );
+}
+
+/// Chat drops the legacy `promptCacheRetention` for models that take
+/// `promptCacheOptions` and names them like the AI SDK does
+/// (`chat/openai-chat-language-model.ts:235`).
+#[tokio::test]
+async fn chat_prompt_cache_retention_warning_names_gpt_6_models() {
+    let fetch = MockFetch::new(vec![Canned::json(&chat_response())]);
+    let mut opts = options();
+    opts.provider_options = Some(
+        provider_namespace("openai", json!({"promptCacheRetention":"24h"}))
+            .expect("provider metadata must be an object"),
+    );
+    let result = provider(&fetch)
+        .chat("gpt-6-astra")
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body().get("prompt_cache_retention"),
+        None
+    );
+    assert_eq!(
+        result.warnings,
+        vec![aimux_core::types::Warning::Unsupported {
+            feature: "promptCacheRetention".into(),
+            details: Some(
+                "promptCacheRetention is not supported by GPT-6 and later models; use promptCacheOptions instead".into()
+            ),
+        }]
+    );
+}
+
+/// A singleton `allOf: [{ $ref }]` (Zod 4's recursive reference) becomes a
+/// direct `$ref`, and is expanded from its definition at the schema root,
+/// like the AI SDK (`normalize-openai-json-schema.ts:176-208`).
+#[tokio::test]
+async fn chat_json_schema_unwraps_singleton_reference_all_of() {
+    let fetch = MockFetch::new(vec![Canned::json(&chat_response())]);
+    let person = json!({
+        "type": "object",
+        "properties": {
+            "firstName": {"type": "string"},
+            "relatives": {"type": "array", "items": {"allOf": [{"$ref": "#/definitions/person"}]}},
+        },
+        "required": ["firstName", "relatives"],
+        "additionalProperties": false,
+    });
+    let mut opts = options();
+    opts.response_format = Some(aimux_core::options::ResponseFormat::Json {
+        schema: Some(json!({
+            "allOf": [{"$ref": "#/definitions/person"}],
+            "definitions": {"person": person},
+        })),
+        name: None,
+        description: None,
+    });
+    provider(&fetch)
+        .chat("gpt-4o")
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    let direct = json!({
+        "type": "object",
+        "properties": {
+            "firstName": {"type": "string"},
+            "relatives": {"type": "array", "items": {"$ref": "#/definitions/person"}},
+        },
+        "required": ["firstName", "relatives"],
+        "additionalProperties": false,
+    });
+    let mut expected = direct.clone();
+    expected["definitions"] = json!({"person": direct});
+    assert_eq!(
+        fetch.seen()[0].json_body()["response_format"]["json_schema"]["schema"],
+        expected
     );
 }
 
@@ -926,5 +1004,894 @@ async fn responses_stream_emits_raw_chunks_when_asked() {
         !without_raw
             .iter()
             .any(|part| matches!(part, StreamPart::Raw { .. }))
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1587 starts `responseId` at
+/// `null` and only `response.created` sets it, so a stream without that event
+/// finishes with `responseId: null`, not an empty string.
+#[tokio::test]
+async fn a_stream_without_response_created_finishes_with_a_null_response_id() {
+    let fetch = MockFetch::new(vec![sse(vec![json!({
+        "type":"response.completed",
+        "response":{"id":"resp_1","created_at":1,"model":"test-model","status":"completed","output":[],
+            "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}
+    })])]);
+    let parts: Vec<_> = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let Some(StreamPart::Finish {
+        provider_metadata: Some(metadata),
+        ..
+    }) = parts.last()
+    else {
+        panic!("expected a finish part with provider metadata: {parts:?}");
+    };
+    assert_eq!(metadata["openai"]["responseId"], Value::Null);
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:2735-2749 gives every
+/// `reasoning-delta` the reasoning item's id as `providerMetadata.<key>.itemId`,
+/// as it does for `reasoning-start` and `reasoning-end`.
+#[tokio::test]
+async fn reasoning_deltas_carry_the_item_id() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.output_item.added","output_index":0,
+            "item":{"id":"rs_1","type":"reasoning","summary":[]}}),
+        json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,
+            "summary_index":0,"part":{"type":"summary_text","text":""}}),
+        json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,
+            "summary_index":0,"delta":"Thinking"}),
+    ])]);
+    let parts: Vec<_> = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect()
+        .await;
+    let delta = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::ReasoningDelta {
+                provider_metadata, ..
+            } => Some(provider_metadata),
+            _ => None,
+        })
+        .expect("a reasoning delta");
+    assert_eq!(
+        serde_json::to_value(delta).unwrap(),
+        json!({ "openai": { "itemId": "rs_1" } })
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/tool/file-search.ts:29 takes
+/// `maxNumResults` as a JS number and
+/// src/responses/openai-responses-prepare-tools.ts:219 sends it as is, so
+/// `maxNumResults: 5` reaches the API's integer field as `5`, not `5.0`.
+#[tokio::test]
+async fn file_search_sends_max_num_results_as_an_integer() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let args: FileSearchArgs =
+        serde_json::from_value(json!({ "vectorStoreIds": ["vs_1"], "maxNumResults": 5 })).unwrap();
+    let mut options = options();
+    options.tools = Some(vec![Tool::Provider(file_search(args).unwrap())]);
+    provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["tools"][0]["max_num_results"],
+        json!(5)
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:128 (`mapComputerAction`)
+/// builds each computer action from the fields its type has and adds `keys`
+/// only when it is not null, so a `double_click` with `keys: null` reaches the
+/// tool input without `keys`.
+#[tokio::test]
+async fn computer_actions_leave_out_null_keys() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_computer",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "computer_call",
+            "id": "computer_item",
+            "call_id": "computer_call",
+            "status": "completed",
+            "actions": [
+                {"type": "double_click", "x": 1, "y": 2, "keys": null},
+                {"type": "scroll", "x": 3, "y": 4, "scroll_x": 0, "scroll_y": 5, "keys": null}
+            ],
+            "pending_safety_checks": []
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::ToolCall(call)) = result.content.first() else {
+        panic!("expected a tool call: {:?}", result.content);
+    };
+    assert_eq!(
+        call.input,
+        r#"{"actions":[{"type":"double_click","x":1,"y":2},{"type":"scroll","x":3,"y":4,"scrollX":0,"scrollY":5}],"pendingSafetyChecks":[],"status":"completed"}"#
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:378 maps the names of
+/// twelve provider tools back to the caller's tool names
+/// (`providerToolNames`); `computer_use` is not one of them, so a computer
+/// call without a `call_id` (line 1358) keeps the name `computer_use` even
+/// when the request declares an `openai.computer_use` tool with another name.
+#[tokio::test]
+async fn computer_use_results_keep_the_canonical_tool_name() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_computer_use",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{"type": "computer_call", "id": "computer_item", "status": "completed"}],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let mut options = options();
+    options.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
+        id: "openai.computer_use".parse().unwrap(),
+        name: "computerUse".into(),
+        args: serde_json::Map::new(),
+        supports_deferred_results: None,
+    })]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let names: Vec<&str> = result
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            GenerateContent::ToolCall(call) => Some(call.tool_name.as_str()),
+            GenerateContent::ToolResult(result) => Some(result.tool_name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(names, ["computer_use", "computer_use"]);
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1520
+/// parses a `container_file_citation` annotation with only `type`,
+/// `container_id`, `file_id`, `filename`, `start_index` and `end_index`, and
+/// src/responses/openai-responses-language-model.ts:1072 puts the parsed
+/// annotations in the text part's provider metadata, so an extra `index` is
+/// dropped.
+#[tokio::test]
+async fn text_annotations_keep_only_the_fields_of_their_type() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_annotations",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "message",
+            "id": "msg_container",
+            "role": "assistant",
+            "content": [{
+                "type": "output_text",
+                "text": "Generated with container file.",
+                "annotations": [{
+                    "type": "container_file_citation",
+                    "container_id": "cntr_test",
+                    "file_id": "file-container",
+                    "filename": "data.csv",
+                    "start_index": 0,
+                    "end_index": 10,
+                    "index": 2
+                }]
+            }]
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::Text {
+        provider_metadata: Some(metadata),
+        ..
+    }) = result.content.first()
+    else {
+        panic!("expected a text part: {:?}", result.content);
+    };
+    assert_eq!(
+        metadata["openai"]["annotations"],
+        json!([{
+            "type": "container_file_citation",
+            "container_id": "cntr_test",
+            "file_id": "file-container",
+            "filename": "data.csv",
+            "start_index": 0,
+            "end_index": 10
+        }])
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1698
+/// parses an apply patch operation as `{type, path, diff}`, and
+/// src/responses/openai-responses-language-model.ts:1443 stringifies that
+/// parsed operation into the tool input, so its keys follow the schema order
+/// whatever order the wire sent them in.
+#[tokio::test]
+async fn apply_patch_input_lists_operation_fields_in_schema_order() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_apply_patch",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "apply_patch_call",
+            "id": "apc_1",
+            "call_id": "call_1",
+            "status": "completed",
+            "operation": {"diff": "+hello\n", "type": "create_file", "path": "a.md"}
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::ToolCall(call)) = result.content.first() else {
+        panic!("expected a tool call: {:?}", result.content);
+    };
+    assert_eq!(
+        call.input,
+        r#"{"callId":"call_1","operation":{"type":"create_file","path":"a.md","diff":"+hello\n"}}"#
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:147
+/// parses a local shell action as `{type, command, timeout_ms, user,
+/// working_directory, env}`, and
+/// src/responses/openai-responses-language-model.ts:998 stringifies the
+/// parsed action into the tool input, so its keys follow that order.
+#[tokio::test]
+async fn local_shell_input_lists_action_fields_in_schema_order() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_local_shell",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "local_shell_call",
+            "id": "lsh_1",
+            "call_id": "call_1",
+            "status": "completed",
+            "action": {"type": "exec", "command": ["ls"], "env": {}, "working_directory": "/root"}
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::ToolCall(call)) = result.content.first() else {
+        panic!("expected a tool call: {:?}", result.content);
+    };
+    assert_eq!(
+        call.input,
+        r#"{"action":{"type":"exec","command":["ls"],"working_directory":"/root","env":{}}}"#
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1486
+/// lets a message's `content` hold only `output_text` parts, so a `refusal`
+/// part fails the response schema and the JSON response handler rejects the
+/// call with an `APICallError` ("Invalid JSON response").
+#[tokio::test]
+async fn a_refusal_message_part_rejects_the_response() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_refusal",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "message",
+            "id": "msg_refusal",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "refusal", "refusal": "Cannot help with this."}]
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let error = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap_err();
+    let AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected an API call error: {error:?}");
+    };
+    assert!(
+        detail.message.starts_with("Invalid JSON response"),
+        "{error}"
+    );
+    assert!(
+        detail
+            .response_body
+            .as_deref()
+            .is_some_and(|body| body.contains("Cannot help with this.")),
+        "{error:?}"
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:875
+/// (chunk) and :1490 (response) parse a logprobs entry as `{token, logprob,
+/// top_logprobs: [{token, logprob}]}`, so `bytes` never reaches
+/// `providerMetadata.openai.logprobs`
+/// (openai-responses-language-model.ts:1065 generate, :2685 stream).
+#[tokio::test]
+async fn responses_logprobs_metadata_has_no_bytes() {
+    let wire = json!([{"token":"N","logprob":-2.5,"bytes":[78],
+        "top_logprobs":[{"token":"N","logprob":-2.5,"bytes":[78]},{"token":"Y","logprob":-1.0,"bytes":[89]}]}]);
+    let expected = json!([[{"token":"N","logprob":-2.5,
+        "top_logprobs":[{"token":"N","logprob":-2.5},{"token":"Y","logprob":-1.0}]}]]);
+    let mut opts = options();
+    opts.provider_options = provider_namespace("openai", json!({"logprobs": 2})).ok();
+
+    let mut response = responses_response();
+    response["output"][0]["content"][0]["logprobs"] = wire.clone();
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(result.provider_metadata).unwrap()["openai"]["logprobs"],
+        expected
+    );
+
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1"}}),
+        json!({"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"N","logprobs":wire}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&opts)
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let Some(StreamPart::Finish {
+        provider_metadata, ..
+    }) = parts.last()
+    else {
+        panic!("no finish part: {parts:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(provider_metadata).unwrap()["openai"]["logprobs"],
+        expected
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1986 gives the
+/// `tool-input-end` of a streamed function call with a `namespace` the
+/// provider metadata `{ namespace }`.
+#[tokio::test]
+async fn a_streamed_namespaced_function_call_ends_its_input_with_the_namespace() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1",
+            "call_id":"call_1","name":"get_weather","arguments":"{}","status":"completed","namespace":"weather_ns"}}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let metadata = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::ToolInputEnd {
+                provider_metadata, ..
+            } => Some(provider_metadata),
+            _ => None,
+        })
+        .expect("a tool-input-end part");
+    assert_eq!(
+        serde_json::to_value(metadata).unwrap(),
+        json!({"openai": {"namespace": "weather_ns"}})
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:2709 (a summary part
+/// concluded when the next one starts) and :2762 (a summary part concluded
+/// on `reasoning_summary_part.done` with `store`) end the reasoning part with
+/// provider metadata `{ itemId }` only; the encrypted content goes on the
+/// ends sent when the reasoning item is done (line 2523).
+#[tokio::test]
+async fn early_reasoning_summary_ends_carry_only_the_item_id() {
+    for store in [false, true] {
+        let fetch = MockFetch::new(vec![sse(vec![
+            json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+            json!({"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","encrypted_content":"enc"}}),
+            json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,"summary_index":0}),
+            json!({"type":"response.reasoning_summary_part.done","item_id":"rs_1","output_index":0,"summary_index":0}),
+            json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,"summary_index":1}),
+            json!({"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1","encrypted_content":"enc"}}),
+            json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+        ])]);
+        let mut opts = options();
+        opts.provider_options = provider_namespace("openai", json!({"store": store})).ok();
+        let parts = provider(&fetch)
+            .responses("test-model")
+            .do_stream(&opts)
+            .await
+            .unwrap()
+            .stream
+            .map(|part| part.unwrap())
+            .collect::<Vec<_>>()
+            .await;
+        let ends: Vec<Value> = parts
+            .iter()
+            .filter_map(|part| match part {
+                StreamPart::ReasoningEnd {
+                    id,
+                    provider_metadata,
+                } => Some(json!({"id": id, "providerMetadata": provider_metadata})),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            ends,
+            [
+                json!({"id": "rs_1:0", "providerMetadata": {"openai": {"itemId": "rs_1"}}}),
+                json!({"id": "rs_1:1", "providerMetadata": {"openai": {"itemId": "rs_1", "reasoningEncryptedContent": "enc"}}}),
+            ],
+            "store: {store}"
+        );
+    }
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1633-1644 keeps the id
+/// each output item started with by `output_index` (OpenAI-compatible
+/// providers can rotate item ids between events) and resolves the reasoning
+/// summary events (:2688, :2736, :2751) and the reasoning item's end (:2503)
+/// through it.
+#[tokio::test]
+async fn rotated_reasoning_item_ids_are_correlated_by_output_index() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}),
+        json!({"type":"response.reasoning_summary_part.added","item_id":"rs_2","output_index":0,"summary_index":0}),
+        json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_3","output_index":0,"summary_index":0,"delta":"thinking"}),
+        json!({"type":"response.reasoning_summary_part.done","item_id":"rs_4","output_index":0,"summary_index":0}),
+        json!({"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_5"}}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let ids: Vec<(&str, &str)> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ReasoningStart { id, .. } => Some(("start", id.as_str())),
+            StreamPart::ReasoningDelta { id, .. } => Some(("delta", id.as_str())),
+            StreamPart::ReasoningEnd { id, .. } => Some(("end", id.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        [("start", "rs_1:0"), ("delta", "rs_1:0"), ("end", "rs_1:0")]
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1664-1680 turns a chunk
+/// that fails the Responses schema and looks like a Chat Completions chunk
+/// (:2962, a `choices` array and no string `type`) into an `APICallError`
+/// that names the mix-up (:2972), sends it as an error part and finishes with
+/// `error`.
+#[tokio::test]
+async fn a_chat_completions_chunk_on_a_responses_stream_gives_a_helpful_error() {
+    let chunk = json!({"choices":[],"created":0,"id":"","model":"","object":""});
+    let fetch = MockFetch::new(vec![sse(vec![chunk.clone()])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let error = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::Error { error } => Some(error),
+            _ => None,
+        })
+        .expect("an error part");
+    let AiMuxError::ApiCall(detail) = error else {
+        panic!("expected an API call error: {error:?}");
+    };
+    assert!(
+        detail.message.starts_with(
+            "Received a Chat Completions stream while using the OpenAI Responses API."
+        ),
+        "{error}"
+    );
+    assert_eq!(
+        detail.response_body.as_deref(),
+        Some(chunk.to_string().as_str())
+    );
+    assert!(!detail.is_retryable);
+    assert!(matches!(
+        parts.last(),
+        Some(StreamPart::Finish { finish_reason, .. }) if finish_reason.unified == FinishReasonUnified::Error
+    ));
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:1338
+/// requires `output_index` on `response.function_call_arguments.done` (and
+/// :1095 on `response.output_item.done` of a modeled item), and a modeled
+/// chunk that fails its schema is not skipped as unknown (:1433-1441):
+/// src/responses/openai-responses-language-model.ts:1664-1680 sends an error
+/// part for it and finishes with `error`.
+#[tokio::test]
+async fn schema_invalid_known_responses_events_are_errors() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.function_call_arguments.done","item_id":"fc_1","arguments":"{}"}),
+        json!({"type":"response.output_item.done","item":{"type":"function_call","id":"fc_1",
+            "call_id":"call_1","name":"get_weather","arguments":"{}","status":"completed"}}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let errors = parts
+        .iter()
+        .filter(|part| {
+            matches!(
+                part,
+                StreamPart::Error {
+                    error: AiMuxError::TypeValidation { .. }
+                }
+            )
+        })
+        .count();
+    assert_eq!(errors, 2, "{parts:?}");
+    assert!(
+        !parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::ToolCall(_))),
+        "{parts:?}"
+    );
+    assert!(matches!(
+        parts.last(),
+        Some(StreamPart::Finish { finish_reason, .. }) if finish_reason.unified == FinishReasonUnified::Error
+    ));
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/openai-stream-error.ts:39 reads the
+/// stream until its first output event (`throwIfOpenAIStreamErrorBeforeOutput`,
+/// called at src/responses/openai-responses-language-model.ts:1552), so an
+/// error frame after `response.created` but before any output rejects
+/// `doStream` with an `APICallError` instead of becoming an error part.
+#[tokio::test]
+async fn a_responses_error_before_output_after_response_created_rejects_the_call() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","sequence_number":0,"response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"error","sequence_number":1,"code":"rate_limit_exceeded","message":"Rate limit reached","param":null}),
+    ])]);
+    let Err(error) = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+    else {
+        panic!("doStream resolved; expected it to reject");
+    };
+    let AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected an API call error: {error:?}");
+    };
+    assert_eq!(detail.message, "Rate limit reached");
+    assert_eq!(detail.status_code, Some(429));
+    assert!(detail.is_retryable);
+}
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:684-688
+/// drops `async: true` for a model without async tool calling and warns with
+/// the quoted tool name and the GPT-6 requirement.
+#[tokio::test]
+async fn responses_async_tool_warning_names_the_gpt_6_requirement() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.tools = Some(vec![Tool::Function(FunctionTool {
+        provider_options: Some(serde_json::from_value(json!({"openai":{"async":true}})).unwrap()),
+        ..FunctionTool::new("weather", json!({"type":"object","properties":{}}))
+    })]);
+    let result = provider(&fetch)
+        .responses("gpt-5.6")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert!(
+        fetch.seen()[0].json_body()["tools"][0]
+            .get("async")
+            .is_none()
+    );
+    assert_eq!(
+        serde_json::to_value(&result.warnings).unwrap(),
+        json!([{
+            "type": "unsupported",
+            "feature": "async tool calling for \"weather\"",
+            "details": "Async tool calling is only supported by GPT-6 and later models."
+        }])
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:183-202
+/// and :454-504 quote the `allowedTools` entry in the warning feature and give
+/// the reason a tool is dropped: a deferred tool is not visible to
+/// `tool_choice.allowed_tools`.
+#[tokio::test]
+async fn responses_allowed_tools_warnings_quote_the_entry_and_give_the_reason() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.tools = Some(vec![
+        Tool::Function(FunctionTool::new(
+            "get_weather",
+            json!({"type":"object","properties":{}}),
+        )),
+        Tool::Function(FunctionTool {
+            provider_options: Some(
+                serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
+            ),
+            ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
+        }),
+    ]);
+    call.provider_options = Some(
+        serde_json::from_value(
+            json!({"openai":{"allowedTools":{"toolNames":["get_weather","deferred"]}}}),
+        )
+        .unwrap(),
+    );
+    let result = provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["tool_choice"],
+        json!({"type":"allowed_tools","mode":"auto","tools":[{"type":"function","name":"get_weather"}]})
+    );
+    assert_eq!(
+        serde_json::to_value(&result.warnings).unwrap(),
+        json!([{
+            "type": "unsupported",
+            "feature": "allowedTools entry \"deferred\"",
+            "details": "deferred tools are not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools"
+        }])
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:509-515
+/// names the dropped entries when no `allowedTools` entry can be expressed.
+#[tokio::test]
+async fn responses_allowed_tools_error_names_the_dropped_entries() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.tools = Some(vec![Tool::Function(FunctionTool {
+        provider_options: Some(
+            serde_json::from_value(json!({"openai":{"deferLoading":true}})).unwrap(),
+        ),
+        ..FunctionTool::new("deferred", json!({"type":"object","properties":{}}))
+    })]);
+    call.provider_options = Some(
+        serde_json::from_value(json!({"openai":{"allowedTools":{"toolNames":["deferred"]}}}))
+            .unwrap(),
+    );
+    let error = provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::UnsupportedFunctionality(message)
+            if message == "allowedTools with only tools that cannot be allow-listed (deferred)"),
+        "{error:?}"
+    );
+    assert!(fetch.seen().is_empty());
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:174-178
+/// rejects two descriptions for one tool namespace, quoting its name.
+#[tokio::test]
+async fn responses_conflicting_namespace_descriptions_quote_the_namespace() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let namespaced = |name: &str, description: &str| {
+        Tool::Function(FunctionTool {
+            provider_options: Some(
+                serde_json::from_value(
+                    json!({"openai":{"namespace":{"name":"crm","description":description}}}),
+                )
+                .unwrap(),
+            ),
+            ..FunctionTool::new(name, json!({"type":"object","properties":{}}))
+        })
+    };
+    let mut call = options();
+    call.tools = Some(vec![
+        namespaced("get_customer", "CRM tools"),
+        namespaced("list_orders", "Other CRM tools"),
+    ]);
+    let error = provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::UnsupportedFunctionality(message)
+            if message == "conflicting descriptions for OpenAI tool namespace \"crm\""),
+        "{error:?}"
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/convert-to-openai-responses-input.ts:142-145
+/// and src/responses/openai-responses-prepare-tools.ts:780-783 resolve file and
+/// skill references with `resolveProviderReference`, whose
+/// `NoSuchProviderReferenceError` names the provider and the available ones.
+#[tokio::test]
+async fn responses_missing_provider_reference_names_the_available_providers() {
+    let fetch = MockFetch::new(vec![]);
+    let model = provider(&fetch).responses("gpt-5.4");
+    let file_call = CallOptions::new(vec![
+        serde_json::from_value(json!({"role":"user","content":[{"type":"file","mediaType":"image/png","data":{"type":"reference","reference":{"anthropic":"file-xyz"}}}]}))
+            .unwrap(),
+    ]);
+    let mut skill_call = options();
+    skill_call.tools = Some(vec![
+        serde_json::from_value(json!({"type":"provider","id":"openai.shell","name":"shell","args":{"environment":{"type":"containerAuto","skills":[{"type":"skillReference","providerReference":{"anthropic":"skill_abc"}}]}}}))
+            .unwrap(),
+    ]);
+    for call in [file_call, skill_call] {
+        let error = model.do_generate(&call).await.unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
+                if message == "No provider reference found for provider 'openai'. Available providers: anthropic"),
+            "{error:?}"
+        );
+    }
+    assert!(fetch.seen().is_empty());
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-language-model.ts:455-492
+/// warns about a request-level `reasoningEffortUpdate` the model does not
+/// support by listing the efforts it does support, and omits the update.
+#[tokio::test]
+async fn responses_unsupported_reasoning_effort_update_lists_the_supported_efforts() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = options();
+    call.provider_options =
+        Some(serde_json::from_value(json!({"openai":{"reasoningEffortUpdate":"none"}})).unwrap());
+    let result = provider(&fetch)
+        .responses("gpt-6-astra")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["input"],
+        json!([{"role":"user","content":[{"type":"input_text","text":"Hello"}]}])
+    );
+    assert_eq!(
+        serde_json::to_value(&result.warnings).unwrap(),
+        json!([{
+            "type": "unsupported",
+            "feature": "reasoningEffortUpdate",
+            "details": "gpt-6-astra only supports the following reasoning efforts: low, medium, high, xhigh, max"
+        }])
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/convert-to-openai-responses-input.ts:780-842
+/// replays a provider-executed tool search or program call in full when
+/// responses are not stored: the tool search and program checks come before
+/// the provider-executed one.
+#[tokio::test]
+async fn responses_replays_hosted_tool_search_and_program_calls_without_storage() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let mut call = CallOptions::new(vec![
+        serde_json::from_value(json!({"role":"assistant","content":[
+            {"type":"tool-call","toolCallId":"tsc_1","toolName":"tool_search","input":{"arguments":{"paths":["get_weather"]},"call_id":null},"providerExecuted":true,"providerOptions":{"openai":{"itemId":"tsc_1"}}},
+            {"type":"tool-call","toolCallId":"program_call_1","toolName":"program","input":{"code":"1","fingerprint":"fp"},"providerExecuted":true,"providerOptions":{"openai":{"itemId":"program_item_1"}}}
+        ]}))
+        .unwrap(),
+    ]);
+    call.tools = Some(vec![
+        serde_json::from_value(
+            json!({"type":"provider","id":"openai.tool_search","name":"tool_search","args":{}}),
+        )
+        .unwrap(),
+        serde_json::from_value(
+            json!({"type":"provider","id":"openai.programmatic_tool_calling","name":"program","args":{}}),
+        )
+        .unwrap(),
+    ]);
+    call.provider_options =
+        Some(serde_json::from_value(json!({"openai":{"store":false}})).unwrap());
+    provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["input"],
+        json!([
+            {"type":"tool_search_call","id":"tsc_1","execution":"server","call_id":null,"status":"completed","arguments":{"paths":["get_weather"]}},
+            {"type":"program","id":"program_item_1","call_id":"program_call_1","code":"1","fingerprint":"fp"}
+        ])
+    );
+}
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/convert-to-openai-responses-input.ts:1646-1683
+/// sends the `caller` provider option of a tool result on its
+/// `function_call_output`, linking a nested call to its program.
+#[tokio::test]
+async fn responses_function_call_output_keeps_the_program_caller() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let call = CallOptions::new(vec![
+        serde_json::from_value(json!({"role":"tool","content":[
+            {"type":"tool-result","toolCallId":"function_call_1","toolName":"get_inventory","output":{"type":"text","value":"42"},"providerOptions":{"openai":{"caller":{"type":"program","callerId":"program_call_1"}}}}
+        ]}))
+        .unwrap(),
+    ]);
+    provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["input"],
+        json!([{"type":"function_call_output","call_id":"function_call_1","output":"42","caller":{"type":"program","caller_id":"program_call_1"}}])
     );
 }
