@@ -615,6 +615,21 @@
     "pointer": "/script/0/event/totalUsage/inputTokens"
   },
   {
+    "file": "ModelLimits/002.json",
+    "source": "aimux-core/src/model_catalogue.rs",
+    "pointer": "line 96 context: Option<u64> = u64::MAX (D13, D15)"
+  },
+  {
+    "file": "ModelLimits/003.json",
+    "source": "aimux-core/src/model_catalogue.rs",
+    "pointer": "line 99 output: Option<u64> = 2^53+1 (D13)"
+  },
+  {
+    "file": "ModelLimits/004.json",
+    "source": "aimux-core/src/model_catalogue.rs",
+    "pointer": "line 99 output: explicit null folds to omitted (D16)"
+  },
+  {
     "file": "ModelMessage/001.json",
     "source": "bindings/go/roundtrip_test.go",
     "pointer": "line 95"

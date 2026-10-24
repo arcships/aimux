@@ -492,6 +492,19 @@
     "file": "ModelLimits/001.json"
   },
   {
+    "type": "ModelLimits",
+    "file": "ModelLimits/002.json"
+  },
+  {
+    "type": "ModelLimits",
+    "file": "ModelLimits/003.json"
+  },
+  {
+    "type": "ModelLimits",
+    "file": "ModelLimits/004.json",
+    "expect": "ModelLimits/004.expect.json"
+  },
+  {
     "type": "ModelMessage",
     "file": "ModelMessage/001.json"
   },
