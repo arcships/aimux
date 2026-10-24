@@ -17,6 +17,7 @@ use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::JsonObject;
 use aimux_core::transcription_model::{
@@ -81,8 +82,8 @@ impl Opts {
             None => None,
             Some(Value::Object(map)) => Some(map),
             Some(_) => {
-                return Err(AiMuxError::InvalidArgument(
-                    "Invalid argument for parameter providerOptions: xai.streaming must be an object".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "Invalid argument for parameter providerOptions: xai.streaming must be an object",
                 ));
             }
         };
@@ -159,7 +160,10 @@ impl TranscriptionModel for XaiTranscriptionModel {
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
                 .decode(data)
-                .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))?,
+                .map_err(|e| AiMuxError::InvalidArgument {
+                    message: format!("invalid base64: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                })?,
         };
         // xAI requires `file` to be the final multipart field.
         form.file(
@@ -251,11 +255,15 @@ mod stream {
         format_type: &str,
         xai: &Opts,
     ) -> Result<url::Url, AiMuxError> {
-        let mut url = url::Url::parse(&format!("{base_url}/stt"))
-            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base URL: {e}")))?;
+        let mut url = url::Url::parse(&format!("{base_url}/stt")).map_err(|e| {
+            AiMuxError::InvalidArgument {
+                message: format!("invalid base URL: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            }
+        })?;
         let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
         url.set_scheme(scheme)
-            .map_err(|()| AiMuxError::InvalidArgument("invalid base URL scheme".into()))?;
+            .map_err(|()| AiMuxError::invalid_argument("invalid base URL scheme"))?;
         let encoding = match format_type {
             "audio/pcmu" => "mulaw",
             "audio/pcma" => "alaw",
@@ -298,9 +306,8 @@ mod stream {
     ) -> Result<TranscriptionStreamResult, AiMuxError> {
         let xai = Opts::parse(options.provider_options.as_ref())?;
         if xai.multichannel == Some(true) && xai.channels.is_none() {
-            return Err(AiMuxError::InvalidArgument(
-                "providerOptions.xai.channels is required when providerOptions.xai.multichannel is true"
-                    .into(),
+            return Err(AiMuxError::invalid_argument(
+                "providerOptions.xai.channels is required when providerOptions.xai.multichannel is true",
             ));
         }
         let mut warnings = Vec::new();
@@ -384,7 +391,7 @@ mod stream {
                             Some(AudioChunk::Base64(data)) => {
                                 match base64::engine::general_purpose::STANDARD.decode(data) {
                                     Ok(bytes) => ws.send_binary(&bytes).await,
-                                    Err(e) => Err(AiMuxError::InvalidArgument(format!("invalid base64: {e}"))),
+                                    Err(e) => Err(AiMuxError::InvalidArgument { message: format!("invalid base64: {e}"), cause: Some(ErrorCause::source(&e)) }),
                                 }
                             }
                         };
@@ -473,7 +480,7 @@ mod stream {
                             }
                             // xAI STT errors are terminal: surface the server message.
                             Some("error") => {
-                                yield Err(AiMuxError::Other(
+                                yield Err(AiMuxError::other(
                                     raw.get("message").and_then(Value::as_str).unwrap_or("xAI STT error").to_owned(),
                                 ));
                                 ws.close().await;

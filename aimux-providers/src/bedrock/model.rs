@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::{StreamExt, stream::BoxStream};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
@@ -50,6 +51,7 @@ fn bedrock_event_stream_response_handler()
                 AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
                     response_headers: Some(headers.clone()),
                     is_retryable: true,
+                    cause: Some(aimux_core::ErrorCause::source(&error)),
                     ..aimux_core::ApiCallError::new(
                         error.to_string(),
                         url.clone(),
@@ -537,9 +539,10 @@ impl AmazonBedrockChatStream {
                     Err(error) => {
                         self.final_finish_reason = Some(FINISH_ERROR);
                         controller.enqueue(StreamPart::Error {
-                            error: AiMuxError::InvalidResponseData(format!(
-                                "{error}; usage: {usage}"
-                            )),
+                            error: AiMuxError::InvalidResponseData {
+                                message: format!("{error}; usage: {usage}"),
+                                cause: Some(ErrorCause::source(&error)),
+                            },
                         });
                         return;
                     }

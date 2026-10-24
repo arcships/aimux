@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use futures::{Stream, StreamExt};
 use serde_json::Value;
 
-use crate::envelope::{OpsError, ProtocolError};
+use crate::envelope::{OpsError, ProtocolError, SourceError};
 pub use crate::frame::FrameStream;
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 use crate::op::{Cancellation, OpDescriptor, OpMode};
@@ -210,15 +210,19 @@ fn validate_object(params: &Value) -> Result<(), OpsError> {
     if params.is_object() {
         Ok(())
     } else {
-        Err(OpsError::Protocol(ProtocolError::InvalidParams(
-            "operation params must be an object".into(),
+        Err(OpsError::Protocol(ProtocolError::invalid_params(
+            "operation params must be an object",
         )))
     }
 }
 
 pub(crate) fn decode<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, OpsError> {
-    serde_json::from_value(params)
-        .map_err(|error| OpsError::Protocol(ProtocolError::InvalidParams(error.to_string())))
+    serde_json::from_value(params).map_err(|error| {
+        OpsError::Protocol(ProtocolError::InvalidParams {
+            message: error.to_string(),
+            cause: Some(SourceError::new(&error)),
+        })
+    })
 }
 
 fn resolve(
@@ -364,9 +368,7 @@ pub(crate) async fn next_operation(
     match operation.next(Some(timeout)).await? {
         crate::operation::PollResult::Part(part) => serde_json::to_value(part)
             .map(PollResult::Part)
-            .map_err(|error| {
-                crate::envelope::BindingError::ResultSerialization(error.to_string()).into()
-            }),
+            .map_err(|error| crate::envelope::BindingError::result_serialization(&error).into()),
         crate::operation::PollResult::Ended => Ok(PollResult::Ended),
         crate::operation::PollResult::Timeout => Ok(PollResult::Timeout),
     }
@@ -380,8 +382,7 @@ where
     T: serde::Serialize + Send + 'static,
 {
     Box::pin(source.map(|event| {
-        serde_json::to_value(event?).map_err(|error| {
-            crate::envelope::BindingError::ResultSerialization(error.to_string()).into()
-        })
+        serde_json::to_value(event?)
+            .map_err(|error| crate::envelope::BindingError::result_serialization(&error).into())
     }))
 }

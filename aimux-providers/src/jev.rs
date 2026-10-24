@@ -98,8 +98,8 @@ impl Provider for JevProvider {
 
     fn decision_model(&self, model_id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
         if model_id.trim().is_empty() {
-            return Some(Err(AiMuxError::InvalidArgument(
-                "decision model ID cannot be empty".into(),
+            return Some(Err(AiMuxError::invalid_argument(
+                "decision model ID cannot be empty",
             )));
         }
         Some(Ok(Arc::new(JevDecisionModel {
@@ -143,7 +143,7 @@ impl DecisionModel for JevDecisionModel {
                 DecisionQuestion::Boolean { .. } => false,
             };
             if over_limit {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "question {id:?} exceeds TypeSafe criteria limits"
                 )));
             }
@@ -185,7 +185,7 @@ impl DecisionModel for JevDecisionModel {
         );
         result.map_err(|error| {
             aimux_provider_utils::invalid_response_api_call(
-                error.to_string(),
+                &error,
                 200,
                 &self.config.endpoint,
                 body,
