@@ -1795,3 +1795,26 @@ async fn responses_replays_hosted_tool_search_and_program_calls_without_storage(
         ])
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/convert-to-openai-responses-input.ts:1646-1683
+/// sends the `caller` provider option of a tool result on its
+/// `function_call_output`, linking a nested call to its program.
+#[tokio::test]
+async fn responses_function_call_output_keeps_the_program_caller() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let call = CallOptions::new(vec![
+        serde_json::from_value(json!({"role":"tool","content":[
+            {"type":"tool-result","toolCallId":"function_call_1","toolName":"get_inventory","output":{"type":"text","value":"42"},"providerOptions":{"openai":{"caller":{"type":"program","callerId":"program_call_1"}}}}
+        ]}))
+        .unwrap(),
+    ]);
+    provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap();
+    assert_eq!(
+        fetch.seen()[0].json_body()["input"],
+        json!([{"type":"function_call_output","call_id":"function_call_1","output":"42","caller":{"type":"program","caller_id":"program_call_1"}}])
+    );
+}

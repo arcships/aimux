@@ -1280,6 +1280,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An OpenAI (and Azure) Responses stream that never sees
   `response.created` finishes with `responseId: null` in its provider
   metadata, as the AI SDK does, instead of an empty string.
+- OpenAI Responses now sends a tool result's `caller` provider option on its
+  `function_call_output` (`{"type": "program", "caller_id": …}`), like the AI
+  SDK.
 - OpenAI Responses now replays a provider-executed tool search or program call
   in full (`tool_search_call`, `program`) when responses are not stored
   (`store: false`), instead of dropping it, like the AI SDK.

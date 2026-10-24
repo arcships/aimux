@@ -316,17 +316,7 @@ fn convert_responses_input_with_conversation(
                             if let Some(value) = openai_sub_option(ns, provider_options, "async") {
                                 item["async"] = value;
                             }
-                            if let Some(caller) = openai_sub_option(ns, provider_options, "caller")
-                            {
-                                let mut caller = map_tool_fields(
-                                    &caller,
-                                    &[("type", "type"), ("callerId", "caller_id")],
-                                );
-                                if caller["type"] != "program"
-                                    && let Some(object) = caller.as_object_mut()
-                                {
-                                    object.remove("caller_id");
-                                }
+                            if let Some(caller) = tool_caller(ns, provider_options) {
                                 item["caller"] = caller;
                             }
                             input.push(item);
@@ -525,11 +515,15 @@ fn convert_responses_input_with_conversation(
                     {
                         content_value = json!([{"type":"input_text", "text":content_value, "prompt_cache_breakpoint":breakpoint}]);
                     }
-                    input.push(json!({
+                    let mut item = json!({
                         "type": if custom { "custom_tool_call_output" } else { "function_call_output" },
                         "call_id": tool_call_id,
                         "output": content_value,
-                    }));
+                    });
+                    if !custom && let Some(caller) = tool_caller(ns, provider_options) {
+                        item["caller"] = caller;
+                    }
+                    input.push(item);
                 }
             }
         }
@@ -554,6 +548,21 @@ fn convert_responses_input_with_conversation(
     }
 
     Ok(ResponsesInputResult { input, warnings })
+}
+
+/// The `caller` provider option of a tool call or result, on the wire.
+fn tool_caller(
+    ns: ResponsesNamespace,
+    provider_options: &Option<SharedProviderOptions>,
+) -> Option<Value> {
+    let caller = openai_sub_option(ns, provider_options, "caller")?;
+    let mut caller = map_tool_fields(&caller, &[("type", "type"), ("callerId", "caller_id")]);
+    if caller["type"] != "program"
+        && let Some(object) = caller.as_object_mut()
+    {
+        object.remove("caller_id");
+    }
+    Some(caller)
 }
 
 fn provider_tool_kind<'a>(tools: Option<&'a [Tool]>, name: &str) -> Option<&'a str> {
