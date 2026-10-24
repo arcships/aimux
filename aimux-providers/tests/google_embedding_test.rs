@@ -48,32 +48,48 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
     }
 }
 
-/// TS: "should extract embedding" (batch endpoint)
-#[tokio::test]
-async fn should_extract_embedding() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/models/gemini-embedding-001:batchEmbedContents"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(batch_response_body()))
-        .mount(&server)
-        .await;
+mod google_embedding_model {
+    use super::*;
 
-    let provider = create_google(GoogleProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.embedding_model("gemini-embedding-001").unwrap();
+    /// upstream: @ai-sdk/google src/google-embedding-model.test.ts › GoogleEmbeddingModel › should extract embedding
+    #[tokio::test]
+    async fn should_extract_embedding() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/models/gemini-embedding-001:batchEmbedContents"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(batch_response_body()))
+            .mount(&server)
+            .await;
 
-    let result = model
-        .do_embed(&default_options(test_values()))
-        .await
-        .expect("should succeed");
-    assert_eq!(result.embeddings, dummy_embeddings());
+        let provider = create_google(GoogleProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.embedding_model("gemini-embedding-001").unwrap();
+
+        let result = model
+            .do_embed(&default_options(test_values()))
+            .await
+            .expect("should succeed");
+        assert_eq!(result.embeddings, dummy_embeddings());
+    }
+
+    /// upstream: @ai-sdk/google src/google-embedding-model.test.ts › GoogleEmbeddingModel › should expose the Google batch embedding API limit
+    #[test]
+    fn should_expose_max_embeddings_per_call() {
+        let provider = create_google(GoogleProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.embedding_model("gemini-embedding-001").unwrap();
+        assert_eq!(model.max_embeddings_per_call(), Some(100));
+    }
 }
 
-/// TS: "should expose the raw response"
+/// partial: `should expose the raw response`; full port in src/google/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_expose_raw_response() {
     let server = MockServer::start().await;
@@ -110,7 +126,7 @@ async fn should_expose_raw_response() {
     );
 }
 
-/// TS: "should pass the model and the values"
+/// partial: `should pass the model and the values`; full port in src/google/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_pass_model_and_values() {
     let server = MockServer::start().await;
@@ -149,7 +165,7 @@ async fn should_pass_model_and_values() {
     );
 }
 
-/// TS: "should pass headers"
+/// partial: `should pass headers`; full port in src/google/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -197,7 +213,7 @@ async fn should_pass_headers() {
     );
 }
 
-/// TS: "should use the batch embeddings endpoint"
+/// partial: `should use the batch embeddings endpoint`; full port in src/google/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_use_batch_endpoint() {
     let server = MockServer::start().await;
@@ -224,7 +240,7 @@ async fn should_use_batch_endpoint() {
     assert!(requests[0].url.as_str().ends_with(":batchEmbedContents"));
 }
 
-/// TS: "should use the single embeddings endpoint"
+/// partial: `should use the single embeddings endpoint`; full port in src/google/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_use_single_endpoint() {
     let server = MockServer::start().await;
@@ -252,18 +268,6 @@ async fn should_use_single_endpoint() {
     let requests = server.received_requests().await.expect("requests recorded");
     assert_eq!(requests.len(), 1);
     assert!(requests[0].url.as_str().ends_with(":embedContent"));
-}
-
-/// TS: "should expose the Google batch embedding API limit"
-#[test]
-fn should_expose_max_embeddings_per_call() {
-    let provider = create_google(GoogleProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.embedding_model("gemini-embedding-001").unwrap();
-    assert_eq!(model.max_embeddings_per_call(), Some(100));
 }
 
 // Remaining untranslated cases (multimodal `content` provider option):

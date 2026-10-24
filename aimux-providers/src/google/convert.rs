@@ -83,7 +83,7 @@ pub fn convert_to_google_messages(prompt: &LanguageModelPrompt) -> GooglePrompt 
     convert_to_google_messages_for_namespace(prompt, Namespace::Google, true)
 }
 
-fn convert_to_google_messages_for_namespace(
+pub(super) fn convert_to_google_messages_for_namespace(
     prompt: &LanguageModelPrompt,
     namespace: Namespace,
     supports_function_response_parts: bool,

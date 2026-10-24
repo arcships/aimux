@@ -104,7 +104,7 @@ fn parts(text: &str) -> Value {
     json!({ "content": { "role": "model", "parts": [{ "text": text }] } })
 }
 
-/// TS: uses Gemini structured output and forwards thinking options and cancellation
+/// partial: `uses Gemini structured output and forwards thinking options and cancellation`; full port in src/google/tests/evaluation.rs.
 #[tokio::test]
 async fn uses_structured_output_and_forwards_thinking_options() {
     let (model, mock) = setup(&fixture());
@@ -174,7 +174,7 @@ async fn uses_structured_output_and_forwards_thinking_options() {
     assert!(schema["properties"]["q1"].get("maximum").is_none());
 }
 
-/// TS: defaults to the minimum thinking level through the provider reasoning mapping
+/// upstream: @ai-sdk/google src/google-evaluation.test.ts › defaults to the minimum thinking level through the provider reasoning mapping
 #[tokio::test]
 async fn defaults_to_the_minimum_thinking_level() {
     let (model, mock) = setup(&fixture());
@@ -185,7 +185,7 @@ async fn defaults_to_the_minimum_thinking_level() {
     );
 }
 
-/// TS: ignores thought text while counting reasoning tokens in usage
+/// upstream: @ai-sdk/google src/google-evaluation.test.ts › ignores thought text while counting reasoning tokens in usage
 #[tokio::test]
 async fn ignores_thought_text_while_counting_reasoning_tokens() {
     let mut body = fixture();
@@ -205,7 +205,7 @@ async fn ignores_thought_text_while_counting_reasoning_tokens() {
     assert_eq!(result.usage.unwrap().output_tokens, Some(24 + 10));
 }
 
-/// TS: rejects %s even with valid JSON
+/// upstream: @ai-sdk/google src/google-evaluation.test.ts › rejects %s even with valid JSON
 #[tokio::test]
 async fn rejects_unfinished_generations_even_with_valid_json() {
     for finish_reason in ["SAFETY", "MAX_TOKENS"] {
@@ -221,7 +221,7 @@ async fn rejects_unfinished_generations_even_with_valid_json() {
     }
 }
 
-/// TS: validates score bounds locally
+/// upstream: @ai-sdk/google src/google-evaluation.test.ts › validates score bounds locally
 #[tokio::test]
 async fn validates_score_bounds_locally() {
     let (model, _) = setup(&with_candidate(fixture(), parts(r#"{"q0":"c1","q1":3}"#)));
@@ -232,7 +232,7 @@ async fn validates_score_bounds_locally() {
     );
 }
 
-/// TS: evaluates Boolean alongside Choice and Score in one Gemini request
+/// partial: `evaluates Boolean alongside Choice and Score in one Gemini request`; full port in src/google/tests/evaluation.rs.
 #[tokio::test]
 async fn evaluates_boolean_alongside_choice_and_score_in_one_request() {
     let (model, mock) = setup(&with_candidate(
@@ -266,7 +266,7 @@ async fn evaluates_boolean_alongside_choice_and_score_in_one_request() {
     assert_eq!(schema["required"], json!(["q0", "q1", "q2"]));
 }
 
-/// TS: rejects an aborted evaluation without a request
+/// upstream: @ai-sdk/google src/google-evaluation.test.ts › rejects an aborted evaluation without a request
 #[tokio::test]
 async fn rejects_an_aborted_evaluation_without_a_request() {
     let (model, mock) = setup(&fixture());
