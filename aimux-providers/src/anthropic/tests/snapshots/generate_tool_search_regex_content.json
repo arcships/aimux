@@ -1,0 +1,44 @@
+[
+  {
+    "input": "{\"pattern\":\"weather|SF|San Francisco|forecast|temperature|climate\",\"limit\":10}",
+    "providerExecuted": true,
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "type": "direct"
+        }
+      }
+    },
+    "toolCallId": "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
+    "toolName": "tool_search",
+    "type": "tool-call"
+  },
+  {
+    "result": [
+      {
+        "toolName": "get_temp_data",
+        "type": "tool_reference"
+      }
+    ],
+    "toolCallId": "srvtoolu_01SACvPAnp6ucMJsstB5qb3f",
+    "toolName": "tool_search",
+    "type": "tool-result"
+  },
+  {
+    "text": "I found a tool to get temperature data! Let me use it to get the weather information for San Francisco.",
+    "type": "text"
+  },
+  {
+    "input": "{\"location\":\"San Francisco, CA\",\"unit\":\"fahrenheit\"}",
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "type": "direct"
+        }
+      }
+    },
+    "toolCallId": "toolu_01X4r989CAhzqnFqDJn1gVvp",
+    "toolName": "get_temp_data",
+    "type": "tool-call"
+  }
+]
