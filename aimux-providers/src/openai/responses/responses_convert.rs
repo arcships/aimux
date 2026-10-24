@@ -427,6 +427,18 @@ fn reasoning_stream_metadata(
     provider_namespace(provider_key, inner).expect("provider metadata must be an object")
 }
 
+/// The item id an event refers to: the id the output item at the event's
+/// `output_index` started with, since OpenAI-compatible providers can rotate
+/// item ids between events (`resolveOutputItemId`), else the event's own.
+fn resolve_output_item_id(event: &Value, output_ids: &HashMap<usize, String>) -> String {
+    event
+        .get("output_index")
+        .and_then(Value::as_u64)
+        .and_then(|index| output_ids.get(&(index as usize)))
+        .cloned()
+        .unwrap_or_else(|| event["item_id"].as_str().unwrap_or_default().to_owned())
+}
+
 /// The metadata of a reasoning summary part that ends before its item does:
 /// only the item id, without the encrypted content the item's end carries.
 fn reasoning_item_metadata(provider_key: &str, item_id: &str) -> ProviderMetadata {
@@ -919,6 +931,7 @@ impl Transformer for OpenAIResponsesStream {
                                         &id,
                                         encrypted.as_deref(),
                                     );
+                                    output_ids.insert(output_index, id.clone());
                                     active_reasoning.insert(
                                         id.clone(),
                                         ReasoningState {
@@ -1073,11 +1086,7 @@ impl Transformer for OpenAIResponsesStream {
 
                     // ── reasoning_summary_part.added ──────────────────────────
                     "response.reasoning_summary_part.added" => {
-                        let item_id = parsed
-                            .get("item_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
                         let summary_index = parsed
                             .get("summary_index")
                             .and_then(serde_json::Value::as_u64)
@@ -1120,11 +1129,7 @@ impl Transformer for OpenAIResponsesStream {
 
                     // ── reasoning_summary_text.delta → ReasoningDelta ─────────
                     "response.reasoning_summary_text.delta" => {
-                        let item_id = parsed
-                            .get("item_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
                         let summary_index = parsed
                             .get("summary_index")
                             .and_then(serde_json::Value::as_u64)
@@ -1146,11 +1151,7 @@ impl Transformer for OpenAIResponsesStream {
 
                     // ── reasoning_summary_part.done ───────────────────────────
                     "response.reasoning_summary_part.done" => {
-                        let item_id = parsed
-                            .get("item_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
                         let summary_index = parsed
                             .get("summary_index")
                             .and_then(serde_json::Value::as_u64)
@@ -1289,11 +1290,13 @@ impl Transformer for OpenAIResponsesStream {
                                     }));
                                 }
                                 "reasoning" => {
-                                    let id = item
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
+                                    let id =
+                                        output_ids.remove(&output_index).unwrap_or_else(|| {
+                                            item.get("id")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("")
+                                                .to_string()
+                                        });
                                     if let Some(state) = active_reasoning.get_mut(&id) {
                                         state.encrypted_content = item
                                             .get("encrypted_content")

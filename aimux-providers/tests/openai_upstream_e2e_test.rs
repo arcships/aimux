@@ -1401,3 +1401,44 @@ async fn early_reasoning_summary_ends_carry_only_the_item_id() {
         );
     }
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1633-1644 keeps the id
+/// each output item started with by `output_index` (OpenAI-compatible
+/// providers can rotate item ids between events) and resolves the reasoning
+/// summary events (:2688, :2736, :2751) and the reasoning item's end (:2503)
+/// through it.
+#[tokio::test]
+async fn rotated_reasoning_item_ids_are_correlated_by_output_index() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}),
+        json!({"type":"response.reasoning_summary_part.added","item_id":"rs_2","output_index":0,"summary_index":0}),
+        json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_3","output_index":0,"summary_index":0,"delta":"thinking"}),
+        json!({"type":"response.reasoning_summary_part.done","item_id":"rs_4","output_index":0,"summary_index":0}),
+        json!({"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_5"}}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let ids: Vec<(&str, &str)> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::ReasoningStart { id, .. } => Some(("start", id.as_str())),
+            StreamPart::ReasoningDelta { id, .. } => Some(("delta", id.as_str())),
+            StreamPart::ReasoningEnd { id, .. } => Some(("end", id.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        [("start", "rs_1:0"), ("delta", "rs_1:0"), ("end", "rs_1:0")]
+    );
+}
