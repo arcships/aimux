@@ -1,5 +1,7 @@
 //! Tests ported from `@ai-sdk/openai` 4.0.83, one file per upstream test file.
 
+mod chat;
+mod completion;
 mod error;
 mod evaluation;
 mod forward_compatible_defaults;

@@ -1248,6 +1248,9 @@ mod tests {
         messages[0]["tool_calls"][0]["function"]["arguments"].clone()
     }
 
+    /// partial: `should stringify arguments to tool calls`; full port in src/openai/tests/chat/convert_to_chat_messages.rs.
+    /// partial: `should default missing tool call input to an empty object`; full port in src/openai/tests/chat/convert_to_chat_messages.rs.
+    /// partial: `should normalize malformed tool call input and preserve the tool error`; full port in src/openai/tests/chat/convert_to_chat_messages.rs.
     #[test]
     fn replayed_tool_arguments_follow_upstream() {
         assert_eq!(
