@@ -137,14 +137,14 @@ impl LanguageModel for PipelineModel {
             Behavior::ProviderErrorThenFinish => Ok(stream_result(
                 futures::stream::iter([
                     Ok(StreamPart::Error {
-                        error: AiMuxError::Other("provider error".into()),
+                        error: AiMuxError::other("provider error"),
                     }),
                     Ok(finish()),
                 ])
                 .chain(futures::stream::pending()),
             )),
             Behavior::ParseErrorThenDelta => Ok(stream_result(futures::stream::iter([
-                Err(AiMuxError::JsonParse("malformed SSE data".into())),
+                Err(AiMuxError::json_parse("malformed SSE data")),
                 Ok(delta("after-error")),
             ]))),
             Behavior::TransportErrorThenPending => Ok(stream_result(
@@ -383,7 +383,7 @@ async fn the_stream_continues_after_a_malformed_frame() {
         let parts: Vec<_> = result.stream.collect().await;
         let error = parts
             .iter()
-            .position(|part| matches!(part, Err(AiMuxError::JsonParse(_))));
+            .position(|part| matches!(part, Err(AiMuxError::JsonParse { .. })));
         let text = parts.iter().position(
             |part| matches!(part, Ok(TextStreamPart::TextDelta { text, .. }) if text == "after-error"),
         );
