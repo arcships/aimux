@@ -1305,6 +1305,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI structured-output and tool schemas: a singleton
+  `allOf: [{ "$ref": ... }]` (how Zod 4 writes a recursive reference)
+  becomes a direct `$ref`, and at the schema root is expanded from its local
+  definition, like the AI SDK; OpenAI rejects `allOf`.
 - OpenAI image models report file and mask input support by model id like
   the AI SDK: the editing models (`dall-e-2`, the `gpt-image` and
   `chatgpt-image-latest` ids it lists) `Some(true)`, `dall-e-3`

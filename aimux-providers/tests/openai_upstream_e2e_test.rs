@@ -123,6 +123,52 @@ async fn chat_prompt_cache_retention_warning_names_gpt_6_models() {
     );
 }
 
+/// A singleton `allOf: [{ $ref }]` (Zod 4's recursive reference) becomes a
+/// direct `$ref`, and is expanded from its definition at the schema root,
+/// like the AI SDK (`normalize-openai-json-schema.ts:176-208`).
+#[tokio::test]
+async fn chat_json_schema_unwraps_singleton_reference_all_of() {
+    let fetch = MockFetch::new(vec![Canned::json(&chat_response())]);
+    let person = json!({
+        "type": "object",
+        "properties": {
+            "firstName": {"type": "string"},
+            "relatives": {"type": "array", "items": {"allOf": [{"$ref": "#/definitions/person"}]}},
+        },
+        "required": ["firstName", "relatives"],
+        "additionalProperties": false,
+    });
+    let mut opts = options();
+    opts.response_format = Some(aimux_core::options::ResponseFormat::Json {
+        schema: Some(json!({
+            "allOf": [{"$ref": "#/definitions/person"}],
+            "definitions": {"person": person},
+        })),
+        name: None,
+        description: None,
+    });
+    provider(&fetch)
+        .chat("gpt-4o")
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    let direct = json!({
+        "type": "object",
+        "properties": {
+            "firstName": {"type": "string"},
+            "relatives": {"type": "array", "items": {"$ref": "#/definitions/person"}},
+        },
+        "required": ["firstName", "relatives"],
+        "additionalProperties": false,
+    });
+    let mut expected = direct.clone();
+    expected["definitions"] = json!({"person": direct});
+    assert_eq!(
+        fetch.seen()[0].json_body()["response_format"]["json_schema"]["schema"],
+        expected
+    );
+}
+
 /// TS: "should stream text deltas" (src/chat/openai-chat-language-model.test.ts)
 #[tokio::test]
 async fn chat_stream() {

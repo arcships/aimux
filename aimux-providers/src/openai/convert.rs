@@ -28,7 +28,7 @@ pub(crate) fn normalize_json_schema(
     schema: &Value,
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
-    fn walk(value: &mut Value, removed: &mut [bool; 2]) -> Result<(), AiMuxError> {
+    fn walk(value: &mut Value, removed: &mut [bool; 2], is_root: bool) -> Result<(), AiMuxError> {
         let Some(obj) = value.as_object_mut() else {
             return Ok(());
         };
@@ -58,7 +58,7 @@ pub(crate) fn normalize_json_schema(
         ] {
             if let Some(Value::Object(record)) = obj.get_mut(key) {
                 for child in record.values_mut().filter(|v| !v.is_array()) {
-                    walk(child, removed)?;
+                    walk(child, removed, false)?;
                 }
             }
         }
@@ -78,18 +78,60 @@ pub(crate) fn normalize_json_schema(
             if let Some(child) = obj.get_mut(key) {
                 if let Value::Array(children) = child {
                     for child in children {
-                        walk(child, removed)?;
+                        walk(child, removed, false)?;
                     }
                 } else {
-                    walk(child, removed)?;
+                    walk(child, removed, false)?;
                 }
+            }
+        }
+        // Zod 4 writes recursive references as `allOf: [{ $ref }]`; OpenAI
+        // has no `allOf`, so a singleton local reference becomes a direct
+        // `$ref`, expanded at the root where OpenAI requires an object.
+        let reference = match obj.get("allOf") {
+            Some(Value::Array(all_of)) if all_of.len() == 1 => all_of[0]
+                .as_object()
+                .filter(|item| item.len() == 1)
+                .and_then(|item| item.get("$ref"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        };
+        if let Some(reference) = reference {
+            if !is_root {
+                obj.remove("allOf");
+                obj.insert("$ref".into(), Value::String(reference));
+            } else if let Some(Value::Object(referenced)) = local_reference(&reference, obj) {
+                let mut expanded = referenced.clone();
+                obj.remove("allOf");
+                expanded.extend(std::mem::take(obj));
+                *obj = expanded;
             }
         }
         Ok(())
     }
+    /// `#/definitions/<name>` or `#/$defs/<name>` in `schema`.
+    fn local_reference<'a>(
+        reference: &str,
+        schema: &'a serde_json::Map<String, Value>,
+    ) -> Option<&'a Value> {
+        let (keyword, name) = reference
+            .strip_prefix("#/definitions/")
+            .map(|name| ("definitions", name))
+            .or_else(|| {
+                reference
+                    .strip_prefix("#/$defs/")
+                    .map(|name| ("$defs", name))
+            })?;
+        if name.is_empty() {
+            return None;
+        }
+        let name = name.replace("~1", "/").replace("~0", "~");
+        schema.get(keyword)?.get(&name)
+    }
     let mut result = schema.clone();
     let mut removed = [false; 2];
-    walk(&mut result, &mut removed)?;
+    walk(&mut result, &mut removed, true)?;
     for (index, feature, details) in [
         (
             0,
