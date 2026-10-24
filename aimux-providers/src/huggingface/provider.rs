@@ -1,29 +1,4 @@
-//! Hugging Face provider.
-//!
-//! [`create_huggingface`] is the Rust form of the AI SDK's `createHuggingFace`:
-//! it takes [`HuggingFaceProviderSettings`], validates the base URL, fixes the
-//! provider name and returns a [`HuggingFaceProvider`]. The API key is not read
-//! there; it is loaded in the request headers of every call, from the setting
-//! or from `HUGGINGFACE_API_KEY`. [`huggingface()`] is the default instance.
-//!
-//! The AI SDK's package serves the Responses API only
-//! ([`responses::HuggingFaceResponsesModel`], the lightest Responses
-//! implementation: function tools only, no built-in tools), and
-//! [`language_model`](Provider::language_model) returns it. There is no Chat
-//! Completions model in this package; the router's OpenAI-compatible endpoint
-//! is reachable through `create_openai_compatible` with
-//! `https://router.huggingface.co/v1`.
-//!
-//! Requests carry the user-agent of the pinned `@ai-sdk/huggingface@2.0.62`:
-//! `ai-sdk-provider-utils/5.0.53`, the provider-utils that version depends
-//! on, and no package part, since `createHuggingFace` does not call
-//! `withUserAgentSuffix` (huggingface-provider.ts:68-75).
-
-pub(crate) mod options;
-pub mod responses;
-
-pub use crate::shared::TransformRequestBody;
-pub use responses::HuggingFaceResponsesModel;
+//! The Hugging Face provider factory and default instance (`huggingface-provider.ts`).
 
 use std::sync::{Arc, OnceLock};
 
@@ -37,7 +12,9 @@ use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
+use super::responses::HuggingFaceResponsesModel;
 use crate::openai::config::OpenAIModelConfig;
+use crate::shared::TransformRequestBody;
 use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
@@ -216,6 +193,3 @@ impl ProviderDiscovery for HuggingFaceProvider {
         Box::pin(async move { crate::openai::model::list_models_once(&config).await })
     }
 }
-
-#[cfg(test)]
-mod tests;
