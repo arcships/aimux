@@ -1,8 +1,6 @@
 //! Frozen RFC-0039 §3.2 inventory, independent of the implementation table.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::Path;
 
 use aimux_ops::dispatch::descriptor;
 use aimux_ops::manifest::{manifest, manifest_digest};
@@ -200,11 +198,19 @@ fn rfc_inventory_has_exact_names_modes_and_handle_scopes() {
             strings(&op["allowedHandleKinds"]),
             "{name}: manifest and dispatcher disagree"
         );
-        assert_eq!(registered.request_type, op["requestType"].as_str().unwrap());
-        assert_eq!(registered.result_type, op["resultType"].as_str().unwrap());
         assert_eq!(
-            registered.event_type,
-            op.get("eventType").and_then(Value::as_str)
+            (registered.request_type.id)().into_owned(),
+            op["requestType"].as_str().unwrap()
+        );
+        assert_eq!(
+            (registered.result_type.id)().into_owned(),
+            op["resultType"].as_str().unwrap()
+        );
+        assert_eq!(
+            registered.event_type.map(|ty| (ty.id)().into_owned()),
+            op.get("eventType")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
         );
     }
 }
@@ -286,69 +292,30 @@ fn digest_is_stable_and_hashes_the_complete_canonical_manifest() {
     }
 }
 
-fn collect_type_names(path: &Path, names: &mut BTreeSet<String>) {
-    for entry in fs::read_dir(path).unwrap_or_else(|e| panic!("{}: {e}", path.display())) {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            collect_type_names(&path, names);
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            let source = fs::read_to_string(&path).unwrap();
-            // DTOs may be private to their ops family. Inspect definitions, not
-            // just public exports, without importing FFI into the canonical layer.
-            for line in source.lines() {
-                let line = line.trim_start();
-                if line.starts_with("//") || line.starts_with('*') {
-                    continue;
-                }
-                let tokens: Vec<_> = line
-                    .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                for pair in tokens.windows(2) {
-                    if matches!(pair[0], "struct" | "enum" | "type" | "trait") {
-                        names.insert(pair[1].to_owned());
-                    }
-                }
-            }
-        }
-    }
-}
-
 #[test]
 fn every_descriptor_type_reference_names_an_existing_type() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let mut names = BTreeSet::from([
-        "()".to_owned(),
-        "Value".to_owned(),
-        "String".to_owned(),
-        "bool".to_owned(),
-        "u64".to_owned(),
-        "u32".to_owned(),
-        "i64".to_owned(),
-        "i32".to_owned(),
-    ]);
-    for crate_name in [
-        "aimux-ops",
-        "aimux-core",
-        "aimux-providers",
-        "aimux-provider-utils",
-    ] {
-        collect_type_names(&root.join(crate_name).join("src"), &mut names);
-    }
     let manifest = manifest();
     for op in manifest["ops"].as_array().unwrap() {
-        for field in ["requestType", "resultType", "eventType"] {
-            let Some(reference) = op.get(field) else {
-                assert_eq!(field, "eventType", "{} missing {field}", op["name"]);
-                continue;
-            };
-            let reference = reference.as_str().expect("type reference string");
-            let leaf = reference.rsplit("::").next().unwrap();
-            assert!(
-                names.contains(leaf),
-                "{} {field} references undefined type {reference}",
-                op["name"]
-            );
+        for field in ["requestType", "resultType", "eventType", "terminalType"] {
+            if let Some(id) = op[field].as_str() {
+                let ty = manifest["types"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|ty| ty["id"] == id)
+                    .unwrap();
+                let direction = if field == "requestType" {
+                    "input"
+                } else {
+                    "output"
+                };
+                let name = ty[direction].as_str().unwrap();
+                assert!(
+                    manifest["typeDefs"][direction].get(name).is_some(),
+                    "{} {field} {id}",
+                    op["name"]
+                );
+            }
         }
     }
 }
@@ -390,19 +357,12 @@ fn metadata_and_owned_control_schemas_are_complete() {
             }
         }
     }
-    for id in [
-        "HandleId",
-        "StreamFrame",
-        "ErrorEnvelope",
-        "EmptyParams",
-        "OperationNextParams",
-        "TranscriptionStartParams",
-        "OperationStatus",
-        "OperationPollResult",
-        "CancelResult",
-    ] {
-        let ty = types[id];
-        assert!(ty["rustPath"].as_str().unwrap().starts_with("aimux_ops::"));
+    for ty in types.values() {
+        for direction in ["input", "output"] {
+            if let Some(name) = ty[direction].as_str() {
+                assert!(manifest["typeDefs"][direction].get(name).is_some());
+            }
+        }
     }
     for (id, valid, invalid) in [
         (
@@ -437,25 +397,22 @@ fn metadata_and_owned_control_schemas_are_complete() {
         ),
         (
             "OperationPollResult",
-            serde_json::json!({"type":"part","part":{}}),
+            serde_json::json!({"type":"part","part":{"type":"transcript-delta","delta":"hi"}}),
             serde_json::json!({"type":"part"}),
         ),
     ] {
-        let validator = jsonschema::validator_for(&types[id]["schema"]).unwrap();
+        let validator = type_validator(&manifest, id);
         assert!(validator.is_valid(&valid), "{id} rejects {valid}");
         assert!(!validator.is_valid(&invalid), "{id} admits {invalid}");
     }
-    assert!(
-        types["serde_json::Value"].get("schema").is_none(),
-        "business schema generation is G-d"
-    );
     let codes = manifest["errorCodes"].as_array().unwrap();
     assert_eq!(
         codes.iter().find(|code| code["code"] == 3).unwrap()["aliases"],
         serde_json::json!([
             "InvalidResponseData",
             "ToolCallNotFoundForApproval",
-            "ToolChoiceViolation"
+            "ToolChoiceViolation",
+            "TypeValidation"
         ])
     );
     assert_eq!(
@@ -474,9 +431,10 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
         .map(|ty| (ty["id"].as_str().unwrap(), ty))
         .collect();
     for ty in types.values() {
-        if ty["rustPath"].as_str().unwrap().starts_with("aimux_ops::") {
-            assert!(ty.get("schema").is_some(), "missing schema: {}", ty["id"]);
-            jsonschema::validator_for(&ty["schema"]).unwrap();
+        for direction in ["input", "output"] {
+            if let Some(name) = ty[direction].as_str() {
+                assert!(value["typeDefs"][direction].get(name).is_some());
+            }
         }
     }
     for (id, valid) in [
@@ -514,7 +472,7 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
         ),
         (
             "decision::DecisionDecideRequest",
-            serde_json::json!({"options":{},"abort":"18446744073709551615"}),
+            serde_json::json!({"options":{"state":"state","questions":{}},"abort":"18446744073709551615"}),
         ),
         (
             "files::UploadFileParams",
@@ -566,11 +524,16 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
         ),
         (
             "misc::OpenAiOutputRequest",
-            serde_json::json!({"result":{},"metadataNamespace":"openai"}),
+            serde_json::json!({"result":{"steps":[{
+                "callId":"call", "stepNumber":0, "model":{"provider":"test","modelId":"fallback"},
+                "content":[{"type":"text","text":"hello"}], "finishReason":"stop", "usage":{},
+                "performance":aimux_core::step_result::StepResultPerformance::default(),
+                "response":{"id":"response","timestamp":"2026-01-01T00:00:00.000Z","modelId":"","messages":[]}
+            }], "totalUsage":{}},"metadataNamespace":"openai"}),
         ),
     ] {
         let full_id = format!("aimux_ops::ops::{id}");
-        let validator = jsonschema::validator_for(&types[full_id.as_str()]["schema"]).unwrap();
+        let validator = type_validator(&value, &full_id);
         assert!(validator.is_valid(&valid), "{id} rejects {valid}");
         let mut unknown = valid.clone();
         unknown["unknown"] = serde_json::json!(true);
@@ -623,16 +586,39 @@ fn all_owned_types_publish_schemas_and_family_controls_are_strict() {
     ] {
         let full_id = format!("aimux_ops::ops::{id}");
         assert!(
-            !jsonschema::validator_for(&types[full_id.as_str()]["schema"])
-                .unwrap()
-                .is_valid(&invalid),
+            !type_validator(&value, &full_id).is_valid(&invalid),
             "{id} admits {invalid}"
         );
     }
-    let handles = jsonschema::validator_for(&types["HandleId"]["schema"]).unwrap();
+    let handles = jsonschema::validator_for(&serde_json::json!({
+        "typeDefs": value["typeDefs"], "$ref": "#/typeDefs/input/HandleId"
+    }))
+    .unwrap();
     assert!(handles.is_valid(&serde_json::json!("001")));
     assert!(!handles.is_valid(&serde_json::json!("18446744073709551616")));
     assert!(!handles.is_valid(&serde_json::json!(1)));
+}
+
+fn type_validator(manifest: &Value, id: &str) -> jsonschema::Validator {
+    let ty = manifest["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|ty| {
+            let actual = ty["id"].as_str().unwrap();
+            actual == id || actual.ends_with(&format!("::{id}"))
+        })
+        .unwrap_or_else(|| panic!("missing type {id}"));
+    let direction = if ty.get("input").is_some() {
+        "input"
+    } else {
+        "output"
+    };
+    let root = serde_json::json!({
+        "typeDefs": manifest["typeDefs"],
+        "$ref": format!("#/typeDefs/{}/{}", direction, ty[direction].as_str().unwrap())
+    });
+    jsonschema::validator_for(&root).unwrap()
 }
 
 #[test]

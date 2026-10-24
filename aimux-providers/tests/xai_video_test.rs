@@ -315,7 +315,9 @@ async fn do_start_fails_without_request_id() {
         .await
         .unwrap_err();
     match err {
-        AiMuxError::Other(message) => assert_eq!(message, "No request_id returned from xAI API."),
+        AiMuxError::Other { message, .. } => {
+            assert_eq!(message, "No request_id returned from xAI API.")
+        }
         other => panic!("unexpected error: {other:?}"),
     }
 }
@@ -735,7 +737,7 @@ async fn rejects_invalid_reference_voice_ids() {
             }),
         );
         match try_start(V15, &o).await {
-            Err(AiMuxError::InvalidArgument(_)) => {}
+            Err(AiMuxError::InvalidArgument { .. }) => {}
             Err(other) => panic!("unexpected error: {other:?}"),
             Ok(_) => panic!("expected InvalidArgument for {ids}"),
         }

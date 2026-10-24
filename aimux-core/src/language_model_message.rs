@@ -12,6 +12,7 @@ use crate::content::{
 };
 use crate::download::{DownloadFunction, DownloadedFile, PlannedDownload};
 use crate::error::AiMuxError;
+use crate::error::ErrorCause;
 use crate::language_model::SupportedUrls;
 use crate::message::{AssistantContent, ModelMessage, UserContent};
 use crate::shared::{
@@ -21,9 +22,9 @@ use crate::types::{NamespacedKind, Warning};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ts_rs::TS;
 
 /// The standardized prompt passed to `LanguageModel::do_generate` / `do_stream`.
 pub type LanguageModelPrompt = Vec<LanguageModelMessage>;
@@ -32,151 +33,123 @@ pub type LanguageModelPrompt = Vec<LanguageModelMessage>;
 ///
 /// `provider_options` is message-level (e.g. `anthropic.cacheControl`),
 /// mirroring `LanguageModelV4Message.providerOptions`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "role",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum LanguageModelMessage {
     System {
         content: String,
-        #[ts(optional)]
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     User {
         content: Vec<UserPart>,
-        #[ts(optional)]
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Assistant {
         content: Vec<AssistantPart>,
-        #[ts(optional)]
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Tool {
         content: Vec<ToolPart>,
-        #[ts(optional)]
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 }
 
 /// Text content part.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct TextPart {
     pub text: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// File content part (the only file part; `data` is a tagged `FileData`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct FilePart {
     pub data: FileData,
     pub media_type: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Reasoning / thinking content part.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
-#[ts(rename = "LanguageModelReasoningPart")]
+#[schemars(rename = "LanguageModelReasoningPart")]
 pub struct ReasoningPart {
     pub text: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Tool call content part.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolCallPart {
     pub tool_call_id: String,
     pub tool_name: String,
     pub input: Value,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_executed: Option<bool>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Tool result content part.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
-#[ts(rename = "LanguageModelToolResultPart")]
+#[schemars(rename = "LanguageModelToolResultPart")]
 pub struct ToolResultPart {
     pub tool_call_id: String,
     pub tool_name: String,
     pub output: ToolResultOutput,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The provider-facing result of a tool call.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
-#[ts(rename = "LanguageModelToolResultOutput")]
+#[schemars(rename = "LanguageModelToolResultOutput")]
 pub enum ToolResultOutput {
     Text {
         value: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     Json {
         value: Value,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ExecutionDenied {
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ErrorText {
         value: String,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
     ErrorJson {
         value: Value,
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
@@ -186,82 +159,71 @@ pub enum ToolResultOutput {
 }
 
 /// Content within a tool result.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolResultContent {
     Text(TextPart),
     File(FilePart),
     Custom {
-        #[ts(optional)]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_options: Option<SharedProviderOptions>,
     },
 }
 
 /// A file generated as part of reasoning.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningFilePart {
     pub data: GeneratedFileData,
     pub media_type: String,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Provider-specific content identified by its provider and kind.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct CustomPart {
     pub kind: NamespacedKind,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// The user's decision for a provider-executed tool approval request.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ToolApprovalResponsePart {
     pub approval_id: String,
     pub approved: bool,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_options: Option<SharedProviderOptions>,
 }
 
 /// Parts allowed in a user message.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum UserPart {
     Text(TextPart),
     File(FilePart),
 }
 
 /// Parts allowed in an assistant message.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum AssistantPart {
     Text(TextPart),
     File(FilePart),
@@ -273,13 +235,12 @@ pub enum AssistantPart {
 }
 
 /// Parts allowed in a tool message.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(
     tag = "type",
     rename_all = "kebab-case",
     rename_all_fields = "camelCase"
 )]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub enum ToolPart {
     ToolResult(ToolResultPart),
     ToolApprovalResponse(ToolApprovalResponsePart),
@@ -350,9 +311,8 @@ pub fn convert_file_part_data(
     match data {
         FilePartData::Tagged(FileData::Data {
             data: FileBytes::Base64(text),
-        }) if text.starts_with("data:") => Err(AiMuxError::InvalidPrompt(
-            "Data URLs are not valid inline data. Pass them as { type: \"url\", url } instead."
-                .into(),
+        }) if text.starts_with("data:") => Err(AiMuxError::invalid_prompt(
+            "Data URLs are not valid inline data. Pass them as { type: \"url\", url } instead.",
         )),
         FilePartData::Tagged(FileData::Url { url, original_url }) => {
             convert_url_to_file_part_data(url, original_url.clone())
@@ -417,7 +377,7 @@ fn convert_url_to_file_part_data(
             },
             Some(media_type.to_owned()),
         )),
-        _ => Err(AiMuxError::InvalidPrompt(format!(
+        _ => Err(AiMuxError::invalid_prompt(format!(
             "Invalid data URL format in content {url}"
         ))),
     }
@@ -667,8 +627,8 @@ fn assistant_part(
                 FileData::Data { data } => GeneratedFileData::Data { data },
                 FileData::Url { url, original_url } => GeneratedFileData::Url { url, original_url },
                 FileData::Reference { .. } | FileData::Text { .. } => {
-                    return Err(AiMuxError::InvalidPrompt(
-                        "Unsupported reasoning-file data type".into(),
+                    return Err(AiMuxError::invalid_prompt(
+                        "Unsupported reasoning-file data type",
                     ));
                 }
             };
@@ -726,7 +686,7 @@ fn tool_result_part(
             .or_else(|| context.tool_names.get(tool_call_id))
             .cloned()
             .ok_or_else(|| {
-                AiMuxError::InvalidPrompt(format!(
+                AiMuxError::invalid_prompt(format!(
                     "tool result {tool_call_id} has no tool name or preceding tool call"
                 ))
             })?,
@@ -816,8 +776,10 @@ fn deprecated_reference(warnings: &mut Vec<Warning>, kind: &str) {
 /// with the given spelling kept as `original_url` when normalizing changed
 /// it (`:666-676`, `:741-747`).
 fn normalized_url(given: &str) -> Result<FileData, AiMuxError> {
-    let parsed = url::Url::parse(given)
-        .map_err(|e| AiMuxError::InvalidPrompt(format!("Invalid URL: {given}: {e}")))?;
+    let parsed = url::Url::parse(given).map_err(|e| AiMuxError::InvalidPrompt {
+        message: format!("Invalid URL: {given}: {e}"),
+        cause: Some(ErrorCause::source(&e)),
+    })?;
     let normalized = parsed.to_string();
     Ok(FileData::Url {
         original_url: (normalized != given).then(|| given.to_owned()),
@@ -989,10 +951,9 @@ fn file_id_reference(
         user::ToolResultFileId::ByProvider(reference) => Ok(reference),
         user::ToolResultFileId::Id(id) => {
             let provider = provider.ok_or_else(|| {
-                AiMuxError::InvalidPrompt(
+                AiMuxError::invalid_prompt(
                     "Cannot convert string fileId to provider reference without a provider ID. \
-                     Use a Record<string, string> fileId or switch to the file-reference type."
-                        .into(),
+                     Use a Record<string, string> fileId or switch to the file-reference type.",
                 )
             })?;
             Ok(SharedProviderReference::from([(provider.to_owned(), id)]))
@@ -1563,8 +1524,8 @@ mod tests {
             convert_output(json!([{ "type": "file-id", "fileId": "file-1" }]), None).unwrap_err();
         assert_eq!(
             error.to_string(),
-            AiMuxError::InvalidPrompt(
-                "Cannot convert string fileId to provider reference without a provider ID. Use a Record<string, string> fileId or switch to the file-reference type.".into()
+            AiMuxError::invalid_prompt(
+                "Cannot convert string fileId to provider reference without a provider ID. Use a Record<string, string> fileId or switch to the file-reference type."
             )
             .to_string()
         );

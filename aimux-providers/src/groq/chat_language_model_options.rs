@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::options::CallOptions;
 
@@ -90,9 +91,10 @@ pub(crate) fn parse_groq_options(
         NAMESPACE,
         |groq| {
             serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument(format!(
-                    "invalid argument for parameter providerOptions: {error}"
-                ))
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid argument for parameter providerOptions: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             })
         },
     )

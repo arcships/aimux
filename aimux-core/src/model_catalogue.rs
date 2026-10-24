@@ -10,8 +10,8 @@
 //! combines them as needed (see RFC-0027 docs). All `ModelSpec` fields are
 //! advisory — aimux never auto-applies them in the request path.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Runtime discovery (provider `/models`)
@@ -23,18 +23,15 @@ use ts_rs::TS;
 /// Carries only what the provider returns — typically just `id`. Configuration
 /// comes from [`ModelSpec`] (community knowledge); the host merges the two as
 /// needed (RFC-0027). aimux itself does not combine them.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct RuntimeModel {
     /// Model identifier, e.g. `"gpt-4o"`.
     pub id: String,
     /// `owned_by` field from OpenAI-compatible `/models` responses.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owned_by: Option<String>,
     /// `created` unix timestamp from OpenAI-compatible `/models` responses.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<u64>,
 }
@@ -44,8 +41,7 @@ pub struct RuntimeModel {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Where a [`ModelSpec`] came from.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum CatalogueSource {
     /// `models.anya2a.com` (DeepChat PublicProviderConf, aggregates models.dev).
     #[default]
@@ -57,8 +53,7 @@ pub enum CatalogueSource {
 }
 
 /// Coarse model category, used to route to the right modality surface.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum ModelType {
     #[default]
     Chat,
@@ -77,8 +72,7 @@ pub enum ModelType {
 }
 
 /// A single input or output modality.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum Modality {
     Text,
     Image,
@@ -94,28 +88,23 @@ pub enum Modality {
 }
 
 /// Token / request limits for a model.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelLimits {
     /// Maximum total context window (input + output), in tokens.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<u64>,
     /// Maximum output tokens.
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<u64>,
     /// Maximum input tokens (when distinct from `context`).
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<u64>,
 }
 
 /// Input/output modality sets.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelModalities {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<Modality>,
@@ -124,9 +113,8 @@ pub struct ModelModalities {
 }
 
 /// Model-level capability flags (more precise than provider-level `supports_*`).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelCapabilities {
     /// Supports function/tool calling.
     #[serde(default)]
@@ -143,8 +131,7 @@ pub struct ModelCapabilities {
 }
 
 /// How reasoning / thinking is controlled for a model.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum ReasoningMode {
     /// Token-budget control (e.g. Anthropic `budget_tokens`).
     Budget,
@@ -163,8 +150,7 @@ pub enum ReasoningMode {
 }
 
 /// Visibility of reasoning output to the caller.
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[cfg_attr(feature = "ts-export", ts(export))]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum ReasoningVisibility {
     Hidden,
     Summary,
@@ -176,9 +162,8 @@ pub enum ReasoningVisibility {
 }
 
 /// Reasoning / thinking portrait for a model (advisory).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ReasoningSpec {
     /// Whether the model family supports reasoning at all.
     #[serde(default)]
@@ -187,45 +172,36 @@ pub struct ReasoningSpec {
     #[serde(default)]
     pub default_enabled: bool,
     /// Primary control mode.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<ReasoningMode>,
     /// Default effort level (when `mode` is Effort/Mixed).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort_default: Option<String>,
     /// Supported effort levels.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effort_options: Vec<String>,
     /// Minimum token budget (when `mode` is Budget/Mixed).
-    #[ts(optional, type = "number")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_min: Option<u64>,
     /// Interleaved reasoning (thinking blocks between tool calls).
     #[serde(default)]
     pub interleaved: bool,
     /// Output visibility.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<ReasoningVisibility>,
 }
 
 /// Pricing (advisory, read-only metadata). Units follow the source catalog
 /// (anya2a uses USD per 1M tokens).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelCost {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read: Option<f64>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write: Option<f64>,
 }
@@ -234,11 +210,9 @@ pub struct ModelCost {
 ///
 /// All fields are advisory — aimux never auto-applies them in the request path.
 /// The caller reads them to decide how to configure `GenerateTextOptions`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts-export", ts(export))]
 pub struct ModelSpec {
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     #[serde(default)]
@@ -249,20 +223,16 @@ pub struct ModelSpec {
     pub modalities: ModelModalities,
     #[serde(default)]
     pub capabilities: ModelCapabilities,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<ReasoningSpec>,
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<ModelCost>,
     #[serde(default)]
     pub source: CatalogueSource,
     /// Provider name (normalized to aimux registry spelling).
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     /// Verbatim source entry, preserved for forward compatibility / debugging.
-    #[ts(optional)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<serde_json::Value>,
 }

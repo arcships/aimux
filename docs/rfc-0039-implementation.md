@@ -249,8 +249,9 @@ retry; generation policy stays in core and bindings add no retry loop.
 | HandleExhausted | 306 |
 
 AiMux uses 1–20 with 4 reserved; Recording uses 100–105 and Binding 200–206.
-Code 3 aliases InvalidResponseData, ToolCallNotFoundForApproval and
-ToolChoiceViolation; code 6 aliases InvalidPrompt and MissingToolResults.
+Code 3 aliases InvalidResponseData, ToolCallNotFoundForApproval,
+ToolChoiceViolation and TypeValidation; code 6 aliases InvalidPrompt and
+MissingToolResults.
 
 ## Streams, Operation and limits
 
@@ -293,6 +294,7 @@ Recorder I/O uses spawn_blocking, and registry locks do not cross await/join.
 ② manifest::manifest → descriptors + kind/code/type catalogue + control schemas
 ③ manifest_digest → compact JSON, recursively sorted object keys, SHA-256
 ④ aimux-codegen → C header + seven language constant files + schema/ops/*.json
+                    + business schemas (schema/types/*.json) and every binding's DTOs
                     + tools/aimux-codegen/generated-files.json
 ⑤ language loaders/bridges + handwritten facades consume shared dispatch/ABI
 ```
@@ -303,9 +305,11 @@ embedded business fields have x-aimux-type references. Schema IDs use JSON Schem
 2020-12 with local resolvable refs. Strict controls reject unknown keys while
 providerOptions/metadata/explicit JSON stay open. `--check` builds temporary
 outputs and compares complete managed file sets and bytes without rewriting.
-The generator does not generate business DTOs, language facades, the operation
-registration code, this document or the complete eight-language vector corpus.
-Those stronger RFC generation goals remain G-d/G-i rather than implicit claims.
+Business types come from the Rust types through `schemars` into the manifest's
+`typeDefs`; the generator emits `schema/types/*.json` and the DTOs and codecs of
+every binding (RFC-0042 D8, G-d). It does not generate language facades, the
+operation registration code, this document or the complete eight-language vector
+corpus; the last remains G-i rather than an implicit claim.
 Separately, `bindings/flutter/tool/generate_ffi.py` consumes the C header to generate its
 FFI declarations and packaged header; Java's JNA declarations are handwritten
 and tested against the primitive signatures, not emitted by aimux-codegen.
@@ -326,7 +330,8 @@ documentation change or that their existence establishes release readiness.
 |---|---|
 | Dispatch, ownership, stream, error and manifest | `cargo test -p aimux-ops` (including ops_matrix, handle_lifecycle, stream_terminal, error_envelope_golden, manifest_contract) |
 | Native ABI and deletion | `cargo build -p aimux-ffi` then `cargo test -p aimux-ffi`; exports_smoke_test compares actual cdylib symbols |
-| Generated outputs and schemas | `cargo test -p aimux-codegen`; `cargo run -p aimux-codegen -- --check` |
+| Generated outputs and schemas | `cargo test -p aimux-codegen`; `cargo run -p aimux-codegen -- --check` (CI step "Ops manifest and generated artifact drift") |
+| Generated DTOs | `python3 scripts/check_dto_vectors.py <languages>` round-trips `contract-tests/dto` through each binding's generated codecs (CI runs it per binding) |
 | C/C++ | `bash scripts/test-c-abi.sh --run`; separate `--asan` mode; accepted live-stream branch needs configured provider parameters |
 | Go | `bindings/go/test-abi.sh` and `bindings/go/test-native.sh` (fixture and real-library results separate) |
 | Java / Kotlin | Gradle tests for each binding; cached-classpath local runners are separate fallback evidence |
@@ -360,15 +365,22 @@ inventory; the canonical business error union remains owned by RFC-0042.
 - **D9 — Retry-hint parser (§6.2):** The single parser lives in `aimux_core::error::retry_after_ms_from_headers` and is re-exported by ops because core retry policy cannot depend on an adapter-layer crate; a parsed invalid preferred number blocks fallback, while malformed text permits it.
 - **D10 — Current capability scope (§11.4):** Stdio, host fetch/token/model/telemetry callbacks, raw one-shot binary upload, native passthrough and skills/Batch/Evaluation operations are not exposed because they require separate capabilities beyond the existing engine.
 
-- **D11 — D8 delivery order (§0.1.7):** The maintainer accepted business Schema/DTO generation after the ops/ABI switch, with ts-rs and `scripts/gen_ts_types.py` retained as the transitional business generation chain. D8 under RFC-0042 must replace that chain and its drift gate; control schemas, headers and constants already come from the manifest. This is a delivery-order exception, not closure of G-d.
-- **D12 — Schema-2 retention (§7.1):** The maintainer accepted schema-2 read/write retention until the last PR of this series. That PR must migrate to schema 3 and remove schema-2 and earlier reading under RFC-0041; the switch must not remove it early or turn it into a permanent compatibility path.
+- **D11 — D8 delivery order (§0.1.7), delivered:** The maintainer accepted business Schema/DTO generation after the ops/ABI switch, with ts-rs and `scripts/gen_ts_types.py` retained as the transitional business generation chain. This was a delivery-order exception. #268 delivered D8: `aimux-codegen` generates the business schemas and every binding's DTOs, and ts-rs, `scripts/gen_ts_types.py` and their drift gate are removed. Generated types are checked by `cargo run -p aimux-codegen -- --check` (CI step "Ops manifest and generated artifact drift") and by `python3 scripts/check_dto_vectors.py <languages>`.
+- **D12 — Schema-2 retention (§7.1):** The maintainer accepted schema-2 read/write retention until a separate follow-up PR after #268. That PR migrates to schema 3 and removes schema-2 and earlier reading under RFC-0041, and it lands before the release; the switch must not remove it early or turn it into a permanent compatibility path.
+- **D13 — Integers above 2^53 in Node (RFC-0042 §7.2):** RFC-0042 §7.2 says a binding must not silently round an arbitrary JSON number to a float and that convenience projections validate explicitly. JavaScript numbers are IEEE doubles, so Node rounds integers above 2^53 when it decodes and re-encodes a DTO and does not validate them. The DTO vector checker therefore compares Node values as doubles (`DOUBLE_NUMBERS` in `scripts/check_dto_vectors.py`); `contract-tests/dto/ErrorEnvelope/001.json` holds 2^64-1 in `retryAfterMs`, which Node re-encodes as 18446744073709552000. Handle and sequence ids are decimal strings and are not affected.
+- **D14 — Single-value tags in Go:** Go decodes a single-value (literal) tag field as an ordinary string and accepts any value, while Java, Dart, Swift and Python reject any other value.
+- **D15 — u64 above 2^63-1 in Java and Dart:** Java and Dart hold integers as signed 64-bit values and cannot represent u64 above 2^63-1. The vector `ErrorEnvelope/001.json` is excluded for them (`INT64_NUMBERS` in `scripts/check_dto_vectors.py`); every other vector runs in all six checked languages.
+- **D16 — Explicit nulls in Node:** The Node binding exposes TypeScript declarations without a codec, so a value keeps exactly what `JSON.parse` produced: an explicit `null` on an ordinary optional field stays `null`, while the Rust types and the Go, Java, Swift, Dart and Python codecs fold it to an omitted key. The DTO vector checker compares Node with the input vector instead of a vector's `expect` file (`DECLARATION_ONLY` in `scripts/check_dto_vectors.py`); `contract-tests/dto/ErrorEnvelope/002.json` covers the case.
+- **D17 — Untagged unions are ordered (§7.3):** Tagged unions are disjoint `oneOf` branches keyed by a literal tag, but unions that serde decodes untagged (for example `ToolChoice`, a mode string or a tool object) are `anyOf` marked `x-aimux-codec: ordered-untagged`, and every codec takes the first branch that decodes, in schema order, exactly as serde does. Making them disjoint would change the wire shape the AI SDK defines.
+- **D18 — JNA declarations (§9.3):** The Java binding's JNA declarations for the 14 C ABI primitives (`bindings/java/src/main/java/ai/arcships/aimux/AimuxFFI.java`) are written by hand; `AbiContractTest` pins the exact set of 14 primitives and the portable `size_t` width and exercises them against the C fixture library; the generator owns the header, constants and DTOs. The primitive set is small and frozen with the ABI version, so a generated copy would add an emitter without removing a source of drift.
+- **D19 — Reference docs (§10.1, §10.2):** API reference pages under `docs/api/` are handwritten prose that links to the generated type files; only `docs/api/providers.md` is generated, by `scripts/gen_providers_doc.py`, and checked by the CI step "Providers doc generator drift". `aimux-codegen --check` therefore covers every generated code, schema and constant file but no document table.
 
 ## Registered gaps
 
 - **G-a — Process-wide capture:** Recorder, session-store attachment and inference state remain process-wide because owner-local capture requires a core runtime-context change.
-- **G-b — Recording compatibility:** Writers use schema 2 and readers accept schemas 1 and 2, as implemented in `aimux-core/src/recording.rs`, because migration to schema 3 and removal of old-schema reading are planned as the final step of this series under RFC-0041.
+- **G-b — Recording compatibility:** Writers use schema 2 and readers accept schemas 1 and 2, as implemented in `aimux-core/src/recording.rs`, because migration to schema 3 and removal of old-schema reading are scheduled for a separate follow-up PR after #268 under RFC-0041, to land before the release.
 - **G-c — Future capabilities:** `credential.create` and `replay.capabilities` have Future scope and return UnsupportedFunctionality as amended in RFC-0039 §0.2 on the basis of RFC-0041, because no credential-construction or Fetch/WebSocket/Download replay engine is implemented; replay retains existing Language/Decision model replay.
-- **G-d — Business schemas and DTO generation:** Business types have stable Rust type references but no complete generated schemas or language DTO chain because RFC-0042 owns that work; `scripts/gen_ts_types.py` remains for its existing outputs.
+- **G-d — Business schemas and DTO generation (closed by #268):** `aimux-codegen` generates the business schemas and every binding's DTOs from the Rust types (RFC-0042 D8); ts-rs and `scripts/gen_ts_types.py` are removed.
 - **G-e — Release installation evidence:** Release publishing orders ops before FFI and packages the header, but installation and execution of every platform asset are not established here because build and packaging definitions alone do not establish release closure.
 - **G-f — Provider metadata:** Complete package provenance, authoritative default methods for every package, general named vendor-method dispatch and registry/string-model lifting in text requests are absent because entries retain canonical Arcs and current factories/control DTOs do not supply all that metadata or lifting; owner-scoped reference metadata exists for registry-resolved models, and `provider.invoke` accepts only `listModels`.
 - **G-g — End-to-end memory bound:** Queue and wire limits do not bound every provider allocation or the existing unbounded core text pump because this layer controls admitted payloads rather than rewriting core streaming internals.

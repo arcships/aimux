@@ -470,7 +470,7 @@ mod do_generate {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, aimux_core::AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
+            matches!(&error, aimux_core::AiMuxError::InvalidResponseData { message: m, .. } if m == "Response did not contain any choices."),
             "{error:?}"
         );
     }

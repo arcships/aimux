@@ -1,0 +1,16 @@
+{
+  "type": "score",
+  "instructions": "Rate severity",
+  "criteria": [
+    {
+      "label": "low",
+      "includes": [
+        "minor inconvenience"
+      ]
+    },
+    [
+      "blocking",
+      "No workaround"
+    ]
+  ]
+}

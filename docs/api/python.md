@@ -342,7 +342,7 @@ The `aimux` package has two layers:
 | Layer | Source | Boundary |
 |------|------|------|
 | **Native (PyO3)** | `bindings/python/src/lib.rs` (`aimux.abi3.so`) | JSON strings in / JSON strings out |
-| **Typed wrapper** | `bindings/python/python/aimux/wrapper.py` | pydantic models / Python dicts |
+| **Typed wrapper** | `bindings/python/python/aimux/wrapper.py`, DTOs in `_types.py` | pydantic models / Python dicts |
 
 ### Native classes and factory functions
 
@@ -375,22 +375,20 @@ plus `generate_text_as_openai` / `stream_text_as_openai`, which return OpenAI
 
 ## Types
 
-The wrapper's types are pydantic models in `bindings/python/python/aimux/wrapper.py`:
+The wrapper's types are pydantic models that `aimux-codegen` generates from the
+Rust types into `bindings/python/python/aimux/_types.py` (with the error payloads
+in `_error_payloads.py`; do not edit them, run `cargo run -p aimux-codegen`).
+`aimux.wrapper` re-exports all of them:
 
 ```python
 from aimux.wrapper import (
-    # type aliases
-    Role, FinishReasonUnified, ReasoningEffort, MessageContent, ContentPart,
-    Tool, ToolChoice, ResponseFormat, StreamPart, GenerateContent, TextContent,
-    FileData, FilePartData, ReasoningFilePartData, FileBytes, Warning, AiMuxErrorValue,
-    GeneratedFile, LanguageModelFile,
+    # unions and aliases
+    ContentPart, Tool, ToolChoice, TextStreamPart, FileData, FilePartData,
+    FileBytes, FinishReasonUnified, ReasoningEffort, Warning,
     # pydantic models
-    InputTokenUsage, OutputTokenUsage, Usage, FinishReason, ResponseMetadata,
-    LanguageModelUsage, InputTokenDetails, OutputTokenDetails, ToolCall,
-    ModelMessage, FunctionTool, ProviderTool, TextContentPart,
-    GenerateTextOptions, GenerateTextResult, StepResult, StepResponse,
-    GenerateObjectResult,
-    RawToolCall, ToolCallRepairContext, RepairToolCall,
+    GenerateTextOptions, GenerateTextResult, StepResult, GenerateObjectResult,
+    ModelMessage, ToolCall, RawToolCall, LanguageModelUsage, GeneratedFile,
+    TextRequest,
     # functions
     generate_text, stream_text, parse_stream_part,
 )

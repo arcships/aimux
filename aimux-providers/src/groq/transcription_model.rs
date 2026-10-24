@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
@@ -96,7 +97,10 @@ impl TranscriptionModel for GroqTranscriptionModel {
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => {
                 base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data).map_err(
-                    |error| AiMuxError::InvalidArgument(format!("invalid base64: {error}")),
+                    |error| AiMuxError::InvalidArgument {
+                        message: format!("invalid base64: {error}"),
+                        cause: Some(ErrorCause::source(&error)),
+                    },
                 )?
             }
         };

@@ -1,5 +1,6 @@
 // Round trips for the message-content types against the generated wire shape:
 // `bindings/node/src/types/{ContentPart,FileData,FileBytes,ToolResultOutput}.ts`.
+import 'dart:convert';
 import 'package:aimux/types.dart';
 import 'package:test/test.dart';
 
@@ -9,14 +10,14 @@ void main() {
     // (shared-v4-file-data.ts:7-10): one base64 string in the JSON
     // (uint8-utils.ts:12-23), never an array of ints.
     test('binary is written as base64', () {
-      expect(FileBytesBinary(data: [0, 1, 2, 250, 255]).toJson(), 'AAEC+v8=');
-      expect(() => FileBytes.fromJson([104, 105]), throwsFormatException);
-      expect(decodeBase64Bytes('AAEC-v8'), [0, 1, 2, 250, 255]);
+      expect(FileBytes(base64Encode([0, 1, 2, 250, 255])).toJson(), 'AAEC+v8=');
+      expect(() => FileBytes.fromJson([104, 105]), throwsA(isA<TypeError>()));
+      expect(base64Decode(base64.normalize('AAEC-v8')), [0, 1, 2, 250, 255]);
     });
 
     test('base64 is a bare string', () {
-      expect(FileBytesBase64(data: 'aGk=').toJson(), 'aGk=');
-      expect((FileBytes.fromJson('aGk=') as FileBytesBase64).data, 'aGk=');
+      expect(FileBytes('aGk=').toJson(), 'aGk=');
+      expect(FileBytes.fromJson('aGk=').value, 'aGk=');
     });
   });
 
@@ -25,7 +26,10 @@ void main() {
       final cases = <Map<String, dynamic>>[
         {'type': 'data', 'data': 'aGk='},
         {'type': 'url', 'url': 'https://example.com/f.png', 'originalUrl': 'x'},
-        {'type': 'reference', 'reference': {'openai': 'file-abc'}},
+        {
+          'type': 'reference',
+          'reference': {'openai': 'file-abc'}
+        },
         {'type': 'text', 'text': 'hello world'},
       ];
       for (final json in cases) {
@@ -81,7 +85,7 @@ void main() {
         'data': 'aGk=',
         'mediaType': 'image/png',
       },
-      'reasoning': {'type': 'reasoning', 'text': 'thinking...', 'signature': 'sig'},
+      'reasoning': {'type': 'reasoning', 'text': 'thinking...'},
       'reasoning-file': {
         'type': 'reasoning-file',
         'data': {'type': 'data', 'data': 'aGk='},
@@ -90,7 +94,9 @@ void main() {
       'custom': {
         'type': 'custom',
         'kind': 'k',
-        'providerOptions': {'a': {'b': 1}},
+        'providerOptions': {
+          'a': {'b': 1}
+        },
       },
       'tool-approval-request': {
         'type': 'tool-approval-request',
@@ -118,42 +124,58 @@ void main() {
 
     for (final entry in cases.entries) {
       test(entry.key, () {
-        final part = ContentPart.fromJson(entry.value);
-        expect(part, isNot(isA<ContentPartUnknown>()));
-        expect(part.toJson(), entry.value);
+        final json = entry.value;
+        final part = switch (json['type']) {
+          'text' ||
+          'image' ||
+          'file' =>
+            UserContentPart.fromJson(json).toJson(),
+          'tool-result' => ToolContentPart.fromJson(json).toJson(),
+          _ => AssistantContentPart.fromJson(json).toJson(),
+        };
+        expect(part, entry.value);
       });
     }
 
     test('file-base64 / file-url / file-reference are not AI SDK parts', () {
       for (final tag in ['file-base64', 'file-url', 'file-reference']) {
         expect(
-            ContentPart.fromJson({
-              'type': tag,
-              'data': 'aGk=',
-              'url': 'https://example.com/f.png',
-              'mediaType': 'image/png',
-            }),
-            isA<ContentPartUnknown>());
+            () => UserContentPart.fromJson({
+                  'type': tag,
+                  'data': 'aGk=',
+                  'url': 'https://example.com/f.png',
+                  'mediaType': 'image/png',
+                }),
+            throwsFormatException);
       }
-      final bare = ContentPart.fromJson({
+      final bare = UserContentPart.fromJson({
         'type': 'file',
         'data': {'openai': 'file-abc'},
         'mediaType': 'application/pdf',
-      }) as ContentPartFile;
-      expect(bare.data, isA<FilePartDataReference>());
+      }) as UserContentPartFile;
+      expect(bare.data.toJson(), {'openai': 'file-abc'});
       expect(
-          ContentPartFile.bytes([104, 105], mediaType: 'text/plain').toJson(), {
-        'type': 'file',
-        'data': {'type': 'data', 'data': 'aGk='},
-        'mediaType': 'text/plain',
-      });
+          UserContentPart.fromJson({
+            'type': 'file',
+            'data': {
+              'type': 'data',
+              'data': base64Encode([104, 105])
+            },
+            'mediaType': 'text/plain',
+          }).toJson(),
+          {
+            'type': 'file',
+            'data': {'type': 'data', 'data': 'aGk='},
+            'mediaType': 'text/plain',
+          });
     });
 
     test('tool-result carries a typed output, not result/isError', () {
-      final part = ContentPartToolResult(
+      final part = ToolContentPartToolResult(
         toolCallId: 'call_1',
         toolName: 'get_weather',
-        output: ToolResultOutput.errorText('boom'),
+        output:
+            ToolResultOutput.fromJson({'type': 'error-text', 'value': 'boom'}),
       );
       final json = part.toJson();
       expect(json, isNot(contains('result')));
@@ -164,11 +186,17 @@ void main() {
     test('ToolResultOutput variants', () {
       for (final json in <Map<String, dynamic>>[
         {'type': 'text', 'value': 'ok'},
-        {'type': 'json', 'value': {'a': 1}},
+        {
+          'type': 'json',
+          'value': {'a': 1}
+        },
         {'type': 'execution-denied', 'reason': 'no'},
         {'type': 'execution-denied'},
         {'type': 'error-text', 'value': 'e'},
-        {'type': 'error-json', 'value': [1]},
+        {
+          'type': 'error-json',
+          'value': [1]
+        },
         {
           'type': 'content',
           'value': [
@@ -180,11 +208,9 @@ void main() {
       }
     });
 
-    test('unknown type passes through verbatim', () {
-      final json = {'type': 'future-variant', 'data': 'something'};
-      final part = ContentPart.fromJson(json);
-      expect(part, isA<ContentPartUnknown>());
-      expect(part.toJson(), json);
+    test('unknown type is rejected', () {
+      expect(() => UserContentPart.fromJson({'type': 'future-variant'}),
+          throwsFormatException);
     });
   });
 
@@ -196,13 +222,15 @@ void main() {
       for (final json in <Map<String, dynamic>>[
         {},
         {'body': null},
-        {'body': {'a': null}},
+        {
+          'body': {'a': null}
+        },
       ]) {
         expect(ResponseInfo.fromJson(json).toJson(), json);
         expect(RequestInfo.fromJson(json).toJson(), json);
       }
-      expect(const RequestInfo(hasBody: true).toJson(), {'body': null});
-      expect(const RequestInfo().toJson(), <String, dynamic>{});
+      expect(RequestInfo(body: const Field.of(null)).toJson(), {'body': null});
+      expect(RequestInfo().toJson(), <String, dynamic>{});
     });
 
     test('tool approval request inputSchemaInput', () {
@@ -212,8 +240,9 @@ void main() {
         'toolCallId': 'c1',
         'inputSchemaInput': null,
       };
-      final part = ContentPart.fromJson(json) as ContentPartToolApprovalRequest;
-      expect(part.hasInputSchemaInput, isTrue);
+      final part = AssistantContentPart.fromJson(json)
+          as AssistantContentPartToolApprovalRequest;
+      expect(part.inputSchemaInput.isPresent, isTrue);
       expect(part.toJson(), json);
     });
   });

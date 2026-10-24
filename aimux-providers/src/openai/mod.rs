@@ -246,7 +246,7 @@ impl std::fmt::Debug for OpenAIProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when the explicit `base_url` is not
+/// Returns `AiMuxError::invalid_argument` when the explicit `base_url` is not
 /// an `http(s)` URL with a host. That is the only way this fails: the key is
 /// loaded per request, and an invalid `OPENAI_BASE_URL` is reported by each
 /// request, not here.

@@ -3,6 +3,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 
 use super::chat_language_model_options::NAMESPACE;
@@ -33,15 +34,16 @@ pub(crate) fn parse_groq_transcription_options(
     crate::openai::convert::parse_chat_provider_options(provider_options, NAMESPACE, |groq| {
         let parsed: GroqTranscriptionModelOptions =
             serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument(format!(
-                    "invalid argument for parameter providerOptions: {error}"
-                ))
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid argument for parameter providerOptions: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             })?;
         if parsed
             .temperature
             .is_some_and(|t| !(0.0..=1.0).contains(&t))
         {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "invalid argument for parameter providerOptions: temperature must be between 0 and 1"
                     .to_string(),
             ));

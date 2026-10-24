@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_provider_utils::{FetchFunction, FetchRequest, default_fetch};
 use futures::TryStreamExt;
 use serde_json::{Value, json};
@@ -17,18 +18,26 @@ pub(super) async fn text(
 ) -> Result<String, AiMuxError> {
     let mut request = FetchRequest::new(
         method,
-        url.parse().map_err(|error| {
-            AiMuxError::InvalidArgument(format!("Invalid Google credential URL: {error}"))
+        url.parse().map_err(|error| AiMuxError::InvalidArgument {
+            message: format!("Invalid Google credential URL: {error}"),
+            cause: Some(ErrorCause::source(&error)),
         })?,
     );
     for (name, value) in headers {
         request.headers.insert(
-            reqwest::header::HeaderName::from_bytes(name.as_bytes())
-                .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?,
+            reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
+                AiMuxError::InvalidArgument {
+                    message: error.to_string(),
+                    cause: Some(ErrorCause::source(&error)),
+                }
+            })?,
             value
                 .parse()
                 .map_err(|error: reqwest::header::InvalidHeaderValue| {
-                    AiMuxError::InvalidArgument(error.to_string())
+                    AiMuxError::InvalidArgument {
+                        message: error.to_string(),
+                        cause: Some(ErrorCause::source(&error)),
+                    }
                 })?,
         );
     }
@@ -36,13 +45,12 @@ pub(super) async fn text(
         .unwrap_or_else(default_fetch)
         .fetch(request)
         .await
-        .map_err(|error| {
-            AiMuxError::InvalidResponseData(format!(
-                "Google credential source request failed: {error}"
-            ))
+        .map_err(|error| AiMuxError::InvalidResponseData {
+            message: format!("Google credential source request failed: {error}"),
+            cause: Some(ErrorCause::source(&error)),
         })?;
     if !response.status.is_success() {
-        return Err(AiMuxError::InvalidResponseData(format!(
+        return Err(AiMuxError::invalid_response_data(format!(
             "Google credential source returned HTTP {}",
             response.status
         )));
@@ -54,8 +62,14 @@ pub(super) async fn text(
             Ok(bytes)
         })
         .await
-        .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?;
-    String::from_utf8(bytes).map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))
+        .map_err(|error| AiMuxError::InvalidResponseData {
+            message: error.to_string(),
+            cause: Some(ErrorCause::source(&error)),
+        })?;
+    String::from_utf8(bytes).map_err(|error| AiMuxError::InvalidResponseData {
+        message: error.to_string(),
+        cause: Some(ErrorCause::source(&error)),
+    })
 }
 
 pub(super) async fn aws(
@@ -64,8 +78,8 @@ pub(super) async fn aws(
 ) -> Result<String, AiMuxError> {
     let source = &credentials["credential_source"];
     if required(source, "environment_id")? != "aws1" {
-        return Err(AiMuxError::InvalidArgument(
-            "Unsupported Google external AWS environment version".into(),
+        return Err(AiMuxError::invalid_argument(
+            "Unsupported Google external AWS environment version",
         ));
     }
     let region = std::env::var("AWS_REGION")
@@ -125,7 +139,10 @@ pub(super) async fn aws(
                 )
                 .await?,
             )
-            .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?;
+            .map_err(|error| AiMuxError::InvalidResponseData {
+                message: error.to_string(),
+                cause: Some(ErrorCause::source(&error)),
+            })?;
             (
                 required(&value, "AccessKeyId")?.into(),
                 required(&value, "SecretAccessKey")?.into(),
@@ -137,10 +154,12 @@ pub(super) async fn aws(
         }
     };
     let url = required(source, "regional_cred_verification_url")?.replace("{region}", &region);
-    let parsed =
-        url::Url::parse(&url).map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?;
+    let parsed = url::Url::parse(&url).map_err(|error| AiMuxError::InvalidArgument {
+        message: error.to_string(),
+        cause: Some(ErrorCause::source(&error)),
+    })?;
     let host = parsed.host_str().ok_or_else(|| {
-        AiMuxError::InvalidArgument("AWS credential verification URL has no host".into())
+        AiMuxError::invalid_argument("AWS credential verification URL has no host")
     })?;
     let host = parsed
         .port()
@@ -216,7 +235,9 @@ fn hex(value: &[u8]) -> String {
 
 pub(super) async fn executable(credentials: &Value) -> Result<String, AiMuxError> {
     if std::env::var("GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES").as_deref() != Ok("1") {
-        return Err(AiMuxError::InvalidArgument("Google external account executables require GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1".into()));
+        return Err(AiMuxError::invalid_argument(
+            "Google external account executables require GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1",
+        ));
     }
     let options = &credentials["credential_source"]["executable"];
     let output_file = options
@@ -227,9 +248,11 @@ pub(super) async fn executable(credentials: &Value) -> Result<String, AiMuxError
         && let Ok(output) = std::fs::read_to_string(path)
         && !output.is_empty()
     {
-        let value: Value = serde_json::from_str(&output).map_err(|error| {
-            AiMuxError::InvalidResponseData(format!("Invalid cached executable response: {error}"))
-        })?;
+        let value: Value =
+            serde_json::from_str(&output).map_err(|error| AiMuxError::InvalidResponseData {
+                message: format!("Invalid cached executable response: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            })?;
         validate_executable_response(&value)?;
         if value.get("success").and_then(Value::as_bool) == Some(true)
             && value
@@ -245,9 +268,8 @@ pub(super) async fn executable(credentials: &Value) -> Result<String, AiMuxError
         .and_then(Value::as_u64)
         .unwrap_or(30_000);
     if !(5_000..=120_000).contains(&timeout) {
-        return Err(AiMuxError::InvalidArgument(
-            "Google credential executable timeout must be between 5000 and 120000 milliseconds"
-                .into(),
+        return Err(AiMuxError::invalid_argument(
+            "Google credential executable timeout must be between 5000 and 120000 milliseconds",
         ));
     }
     let command = required(options, "command")?;
@@ -262,7 +284,7 @@ pub(super) async fn executable(credentials: &Value) -> Result<String, AiMuxError
         })
         .collect::<Vec<_>>();
     let program = components.first().ok_or_else(|| {
-        AiMuxError::InvalidArgument("Google credential executable command is empty".into())
+        AiMuxError::invalid_argument("Google credential executable command is empty")
     })?;
     let mut command = tokio::process::Command::new(program);
     command
@@ -292,23 +314,27 @@ pub(super) async fn executable(credentials: &Value) -> Result<String, AiMuxError
     }
     let output = tokio::time::timeout(std::time::Duration::from_millis(timeout), command.output())
         .await
-        .map_err(|_| {
-            AiMuxError::InvalidResponseData("Google credential executable timed out".into())
+        .map_err(|error| AiMuxError::InvalidResponseData {
+            message: "Google credential executable timed out".into(),
+            cause: Some(ErrorCause::source(&error)),
         })?
-        .map_err(|error| {
-            AiMuxError::InvalidResponseData(format!("Google credential executable failed: {error}"))
+        .map_err(|error| AiMuxError::InvalidResponseData {
+            message: format!("Google credential executable failed: {error}"),
+            cause: Some(ErrorCause::source(&error)),
         })?;
     if !output.status.success() {
-        return Err(AiMuxError::InvalidResponseData(format!(
+        return Err(AiMuxError::invalid_response_data(format!(
             "Google credential executable failed with {}",
             output.status
         )));
     }
     let mut bytes = output.stdout;
     bytes.extend(output.stderr);
-    let response: Value = serde_json::from_slice(&bytes).map_err(|error| {
-        AiMuxError::InvalidResponseData(format!("Invalid credential executable response: {error}"))
-    })?;
+    let response: Value =
+        serde_json::from_slice(&bytes).map_err(|error| AiMuxError::InvalidResponseData {
+            message: format!("Invalid credential executable response: {error}"),
+            cause: Some(ErrorCause::source(&error)),
+        })?;
     executable_response(&response, output_file.is_some())
 }
 
@@ -319,12 +345,12 @@ fn executable_response(response: &Value, output_file: bool) -> Result<String, Ai
         .and_then(Value::as_u64)
         .is_some_and(|version| version > 1)
     {
-        return Err(AiMuxError::InvalidResponseData(
-            "Google credential executable response requires version 1".into(),
+        return Err(AiMuxError::invalid_response_data(
+            "Google credential executable response requires version 1",
         ));
     }
     if response.get("success").and_then(Value::as_bool) != Some(true) {
-        return Err(AiMuxError::InvalidResponseData(format!(
+        return Err(AiMuxError::invalid_response_data(format!(
             "Google credential executable returned {}: {}",
             response["code"], response["message"]
         )));
@@ -334,8 +360,8 @@ fn executable_response(response: &Value, output_file: bool) -> Result<String, Ai
         || expiry
             .is_some_and(|expiry| expiry < (chrono::Utc::now().timestamp_millis() + 500) / 1000)
     {
-        return Err(AiMuxError::InvalidResponseData(
-            "Google credential executable response has missing or expired expiration_time".into(),
+        return Err(AiMuxError::invalid_response_data(
+            "Google credential executable response has missing or expired expiration_time",
         ));
     }
     let field = match required(response, "token_type")? {
@@ -344,8 +370,8 @@ fn executable_response(response: &Value, output_file: bool) -> Result<String, Ai
             "id_token"
         }
         _ => {
-            return Err(AiMuxError::InvalidResponseData(
-                "Unsupported Google credential executable token_type".into(),
+            return Err(AiMuxError::invalid_response_data(
+                "Unsupported Google credential executable token_type",
             ));
         }
     };
@@ -359,8 +385,8 @@ fn validate_executable_response(response: &Value) -> Result<(), AiMuxError> {
         .is_none_or(|version| version == 0)
         || response.get("success").and_then(Value::as_bool).is_none()
     {
-        return Err(AiMuxError::InvalidResponseData(
-            "Google credential executable response requires version and success".into(),
+        return Err(AiMuxError::invalid_response_data(
+            "Google credential executable response requires version and success",
         ));
     }
     if response.get("success").and_then(Value::as_bool) == Some(false) {
@@ -372,8 +398,8 @@ fn validate_executable_response(response: &Value) -> Result<(), AiMuxError> {
             "urn:ietf:params:oauth:token-type:id_token"
             | "urn:ietf:params:oauth:token-type:jwt" => "id_token",
             _ => {
-                return Err(AiMuxError::InvalidResponseData(
-                    "Unsupported Google credential executable token_type".into(),
+                return Err(AiMuxError::invalid_response_data(
+                    "Unsupported Google credential executable token_type",
                 ));
             }
         };

@@ -95,7 +95,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
         if self.model_id.contains("-live") {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Model '{}' only supports streaming transcription. Use stream_transcribe or a unary model.",
                 self.model_id
             )));
@@ -196,7 +196,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
     ) -> Option<futures::future::BoxFuture<'_, Result<TranscriptionStreamResult, AiMuxError>>> {
         Some(Box::pin(async move {
             if !self.model_id.contains("-live") {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "Model '{}' does not support streaming transcription. Use a live model.",
                     self.model_id
                 )));

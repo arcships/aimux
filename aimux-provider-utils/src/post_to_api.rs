@@ -181,6 +181,7 @@ async fn execute_exchange<T>(
                     url,
                     request_body_values,
                 )
+                .caused_by(error)
             }))),
         };
     }
@@ -198,6 +199,7 @@ async fn execute_exchange<T>(
                 url,
                 request_body_values,
             )
+            .caused_by(error)
         }))),
     }
 }
@@ -255,6 +257,45 @@ mod tests {
             }
             other => panic!("expected retryable ApiCall, got {other:?}"),
         }
+    }
+
+    /// A handler error on a 2xx response stays whole as the `ApiCallError`
+    /// cause: a nested aimux error, as `contract-tests/dto/AiMuxError/005.json`.
+    #[tokio::test]
+    async fn a_failed_success_handler_keeps_its_error_as_the_cause() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{"))
+            .mount(&server)
+            .await;
+        let request = HttpRequest {
+            url: server.uri(),
+            ..Default::default()
+        };
+        let handler = ResponseHandler::<serde_json::Value>::new(|_| async {
+            Err(AiMuxError::json_parse("Unexpected end of JSON input"))
+        });
+        let error = call_to_api_with_deadline(
+            request.prepare(HttpMethod::Post, HttpBody::Json(serde_json::json!({}))),
+            serde_json::json!({}),
+            handler,
+            create_status_code_error_response_handler(),
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap_err();
+
+        let vector: serde_json::Value =
+            serde_json::from_str(include_str!("../../contract-tests/dto/AiMuxError/005.json"))
+                .unwrap();
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["message"], vector["message"]);
+        assert_eq!(json["cause"], vector["cause"]);
+        assert!(matches!(
+            &error,
+            AiMuxError::ApiCall(detail)
+                if matches!(&detail.cause, Some(aimux_core::ErrorCause::AiMux(_)))
+        ));
     }
 
     /// Streaming handlers are exempt from the exchange response timeout.
