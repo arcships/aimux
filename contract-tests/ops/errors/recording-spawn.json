@@ -4,6 +4,8 @@
   "message": "failed to spawn recording writer thread: thread limit",
   "error": {
     "name": "Spawn",
-    "source": "thread limit"
+    "cause": {
+      "message": "thread limit"
+    }
   }
 }

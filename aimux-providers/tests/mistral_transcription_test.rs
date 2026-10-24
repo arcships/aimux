@@ -228,7 +228,7 @@ async fn should_pass_provider_options_as_mistral_multipart_fields() {
 async fn should_reject_context_bias_items_with_commas_or_whitespace() {
     let fetch = MockFetch::new(vec![]);
     let model = provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-    let Err(AiMuxError::InvalidArgument(message)) = model
+    let Err(AiMuxError::InvalidArgument { message, .. }) = model
         .do_generate(&wav(Some(json!({ "contextBias": ["AI SDK"] }))))
         .await
     else {
@@ -256,7 +256,7 @@ async fn should_reject_language_combined_with_timestamp_granularities() {
             "timestampGranularities": ["segment"],
         }))))
         .await;
-    assert!(matches!(result, Err(AiMuxError::InvalidArgument(_))));
+    assert!(matches!(result, Err(AiMuxError::InvalidArgument { .. })));
     assert!(fetch.seen().is_empty());
 }
 

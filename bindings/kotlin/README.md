@@ -60,9 +60,10 @@ The sealed `AimuxException` delegates `code`, `kind`, `errorName`, `error`,
 known core subtypes have corresponding Kotlin variants with typed Java
 `details`. `BindingError`, `ProtocolError` and `RecordingError` retain their Java
 domain errors. `UnknownError` preserves a future Java exception subtype.
-`javaError` is also the cause. Kotlin performs no JSON error decoding. Java's
-current decoder rejects unknown wire variants before a Kotlin projection can
-occur; those decoder failures propagate unchanged.
+`javaError` is also the cause, so the Java `ErrorCause` chain follows it.
+Kotlin performs no JSON error decoding. Java's current decoder rejects unknown
+wire variants before a Kotlin projection can occur; those decoder failures
+propagate unchanged.
 
 ## Breaking changes
 

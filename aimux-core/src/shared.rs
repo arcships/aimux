@@ -72,7 +72,7 @@ pub fn provider_namespace(
     object: Value,
 ) -> Result<SharedProviderMetadata, crate::AiMuxError> {
     let Value::Object(object) = object else {
-        return Err(crate::AiMuxError::InvalidArgument(format!(
+        return Err(crate::AiMuxError::invalid_argument(format!(
             "invalid {namespace} provider options: expected a JSON object"
         )));
     };

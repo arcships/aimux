@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning, provider_namespace};
 use aimux_core::transcription_model::{
@@ -73,21 +74,24 @@ fn parse_options(options: Option<&SharedProviderOptions>) -> Result<AzureOptions
     };
     // Optional in the upstream schema means absent, never explicitly null.
     if azure.values().any(Value::is_null) {
-        return Err(AiMuxError::InvalidArgument(
-            "Invalid Azure transcription options: null field".into(),
+        return Err(AiMuxError::invalid_argument(
+            "Invalid Azure transcription options: null field",
         ));
     }
     let parsed: AzureOptions =
         serde_json::from_value(Value::Object(azure.clone())).map_err(|error| {
-            AiMuxError::InvalidArgument(format!("Invalid Azure transcription options: {error}"))
+            AiMuxError::InvalidArgument {
+                message: format!("Invalid Azure transcription options: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            }
         })?;
     if parsed
         .locales
         .as_ref()
         .is_some_and(|locales| locales.len() != 1)
     {
-        return Err(AiMuxError::InvalidArgument(
-            "Azure transcription locales must contain one language".into(),
+        return Err(AiMuxError::invalid_argument(
+            "Azure transcription locales must contain one language",
         ));
     }
     Ok(parsed)
@@ -209,7 +213,7 @@ impl TranscriptionModel for AzureTranscriptionModel {
                     })
                     .collect();
                 if audio.ends_with('=') && !audio.len().is_multiple_of(4) {
-                    return Err(AiMuxError::InvalidArgument("invalid base64 padding".into()));
+                    return Err(AiMuxError::invalid_argument("invalid base64 padding"));
                 }
                 let config = base64::engine::general_purpose::GeneralPurposeConfig::new()
                     .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent)
@@ -221,7 +225,10 @@ impl TranscriptionModel for AzureTranscriptionModel {
                     ),
                     audio,
                 )
-                .map_err(|error| AiMuxError::InvalidArgument(format!("invalid base64: {error}")))?
+                .map_err(|error| AiMuxError::InvalidArgument {
+                    message: format!("invalid base64: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                })?
             }
         };
         let mut definition = json!({"enhancedMode": {

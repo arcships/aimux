@@ -53,7 +53,7 @@ impl EmbeddingModel for CohereEmbeddingModel {
     ) -> Result<EmbeddingResult, AiMuxError> {
         let cohere_options = parse_cohere_provider_options(options.provider_options.as_ref())?;
         if options.values.len() > 96 {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Too many values for a single embedding call: {} supports at most 96 values, received {}",
                 self.provider(),
                 options.values.len()
@@ -132,7 +132,7 @@ fn parse_cohere_provider_options(
                     .as_str()
                     .filter(|value| allowed.contains(value))
                     .map(str::to_owned)
-                    .ok_or_else(|| AiMuxError::InvalidArgument(format!("Invalid cohere.{key}")))
+                    .ok_or_else(|| AiMuxError::invalid_argument(format!("Invalid cohere.{key}")))
             })
             .transpose()
     };
@@ -143,7 +143,7 @@ fn parse_cohere_provider_options(
                 .as_f64()
                 .filter(|value| [256.0, 512.0, 1024.0, 1536.0].contains(value))
                 .map(|value| value as u32)
-                .ok_or_else(|| AiMuxError::InvalidArgument("Invalid cohere.outputDimension".into()))
+                .ok_or_else(|| AiMuxError::invalid_argument("Invalid cohere.outputDimension"))
         })
         .transpose()?;
     Ok(CohereEmbeddingProviderOptions {

@@ -134,7 +134,7 @@ impl std::fmt::Debug for FalProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_fal(settings: FalProviderSettings) -> Result<FalProvider, AiMuxError> {
@@ -836,7 +836,7 @@ impl VideoModel for FalVideoModel {
             .get("request_id")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(
+                AiMuxError::invalid_argument(
                     "fal operation reference is missing request_id".to_string(),
                 )
             })?;
@@ -879,7 +879,7 @@ impl VideoModel for FalVideoModel {
                 media_type: "video/mp4".to_string(),
             }]
         } else {
-            return Err(AiMuxError::InvalidResponseData(
+            return Err(AiMuxError::invalid_response_data(
                 "Fal video result missing video URL".to_string(),
             ));
         };

@@ -115,7 +115,7 @@ async fn region_comes_from_the_setting_or_aws_region_with_no_default() {
     let fetch = MockFetch::new(vec![]);
     let error = generate(&fetch, settings()).await.unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message) if message.contains("Invalid AWS region")),
+        matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.contains("Invalid AWS region")),
         "{error:?}"
     );
     assert!(fetch.seen().is_empty());

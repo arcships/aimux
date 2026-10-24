@@ -199,12 +199,11 @@ pub enum ReplayLiveResult {
 }
 
 fn invalid(message: impl Into<String>) -> OpsError {
-    ProtocolError::InvalidParams(message.into()).into()
+    ProtocolError::invalid_params(message).into()
 }
 
 fn serialize(value: impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
 }
 
 fn session(target: Target) -> Result<Arc<MockReplayModel>, OpsError> {

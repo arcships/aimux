@@ -10,6 +10,7 @@
 //! `transformRequestBody`) are kept as given. The shared model never compares
 //! a provider name.
 
+use aimux_core::SourceError;
 use futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,6 +19,7 @@ use aimux_core::types::{ProviderMetadata, Usage};
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_core::language_model::SupportedUrls;
 use aimux_provider_utils::{
     ExchangeContext, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
@@ -138,6 +140,12 @@ pub(crate) fn default_error_structure(data: &Value) -> ProviderErrorParts {
 pub(crate) struct ChatSettings {
     pub include_usage: bool,
     pub supports_structured_outputs: bool,
+    /// When set, only these chat models take structured outputs, whatever
+    /// `supports_structured_outputs` says. Ids compare exactly; an entry
+    /// ending in `*` matches every id with that prefix. A preset's
+    /// `profile.structured_output_models`, the vendor package's per-model
+    /// `supportsStructuredOutputs`.
+    pub structured_output_models: Option<&'static [String]>,
     /// `supportsMultiPartToolContent`: a `content` tool output is sent as an
     /// array of content parts instead of a JSON string.
     pub supports_multi_part_tool_content: bool,
@@ -168,6 +176,7 @@ impl Default for ChatSettings {
         Self {
             include_usage: false,
             supports_structured_outputs: false,
+            structured_output_models: None,
             supports_multi_part_tool_content: false,
             supported_urls: None,
             convert_usage: None,
@@ -183,6 +192,18 @@ impl Default for ChatSettings {
 }
 
 impl ChatSettings {
+    /// These settings for the chat model `model_id`.
+    pub(crate) fn for_model(mut self, model_id: &str) -> Self {
+        if let Some(models) = self.structured_output_models {
+            self.supports_structured_outputs = models.iter().any(|model| {
+                model
+                    .strip_suffix('*')
+                    .map_or(model == model_id, |prefix| model_id.starts_with(prefix))
+            });
+        }
+        self
+    }
+
     /// The URL patterns chat models fetch themselves.
     pub(crate) async fn supported_urls(&self) -> SupportedUrls {
         match &self.supported_urls {
@@ -233,9 +254,11 @@ impl CompatModelConfig {
     /// origin credentialed headers may be sent to.
     pub(crate) fn url(&self, path: &str) -> Result<(String, String), AiMuxError> {
         let base = self.base_url.resolve()?;
-        let mut url = url::Url::parse(&format!("{base}{path}")).map_err(|e| {
-            AiMuxError::InvalidArgument(format!("invalid request URL for {}: {e}", self.provider))
-        })?;
+        let mut url =
+            url::Url::parse(&format!("{base}{path}")).map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid request URL for {}: {e}", self.provider),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
         if let Some(params) = &self.query_params {
             // As the AI SDK does: the configured parameters replace whatever
             // query the base URL carried.
@@ -353,13 +376,61 @@ struct FetchUserAgent {
 #[async_trait::async_trait]
 impl Fetch for FetchUserAgent {
     async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        let value = reqwest::header::HeaderValue::try_from(self.user_agent.as_str())
-            .map_err(|_| FetchError::Other("invalid header value for user-agent".to_string()))?;
+        let value =
+            reqwest::header::HeaderValue::try_from(self.user_agent.as_str()).map_err(|error| {
+                FetchError::Other(SourceError::with_cause(
+                    "invalid header value for user-agent",
+                    &error,
+                ))
+            })?;
         request.headers.insert(reqwest::header::USER_AGENT, value);
         self.inner
             .clone()
             .unwrap_or_else(aimux_provider_utils::default_fetch)
             .fetch(request)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static MODELS: std::sync::LazyLock<Vec<String>> =
+        std::sync::LazyLock::new(|| vec!["qwen3.7-plus".to_string(), "kimi-k*".to_string()]);
+
+    fn supports(model_id: &str) -> bool {
+        ChatSettings {
+            supports_structured_outputs: true,
+            structured_output_models: Some(&MODELS),
+            ..ChatSettings::default()
+        }
+        .for_model(model_id)
+        .supports_structured_outputs
+    }
+
+    #[test]
+    fn a_model_list_matches_the_exact_id() {
+        assert!(supports("qwen3.7-plus"));
+        assert!(!supports("qwen3.7-plus-2026-09-01"));
+        assert!(!supports("qwen3.7-plusplus"));
+        assert!(!supports("qwen3.7"));
+    }
+
+    #[test]
+    fn an_entry_ending_in_a_star_matches_a_prefix() {
+        assert!(supports("kimi-k"));
+        assert!(supports("kimi-k2.5"));
+        assert!(!supports("kimi-latest"));
+        assert!(!supports("kimi"));
+    }
+
+    #[test]
+    fn without_a_model_list_the_flag_applies() {
+        let settings = ChatSettings {
+            supports_structured_outputs: true,
+            ..ChatSettings::default()
+        };
+        assert!(settings.for_model("any").supports_structured_outputs);
     }
 }
