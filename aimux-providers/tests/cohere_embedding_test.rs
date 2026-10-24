@@ -49,200 +49,204 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
     }
 }
 
-/// TS: "should extract embedding"
-#[tokio::test]
-async fn should_extract_embedding() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embed"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
+mod do_embed {
+    use super::*;
 
-    let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.embedding_model("embed-english-v3.0").unwrap();
+    /// upstream: @ai-sdk/cohere src/cohere-embedding-model.test.ts › doEmbed › should extract embedding
+    #[tokio::test]
+    async fn should_extract_embedding() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
+            .mount(&server)
+            .await;
 
-    let result = model
-        .do_embed(&default_options(test_values()))
-        .await
-        .expect("should succeed");
-    assert_eq!(result.embeddings.len(), 2);
-    assert_eq!(
-        result.embeddings[0],
-        vec![0.03302002, 0.020904541, -0.019744873, -0.0625, 0.04437256]
-    );
-    assert_eq!(
-        result.embeddings[1],
-        vec![
-            -0.04660034,
-            0.00037765503,
-            -0.061157227,
-            -0.08239746,
-            -0.010360718
-        ]
-    );
-}
+        let provider = create_cohere(CohereProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
-/// TS: "should expose the raw response"
-#[tokio::test]
-async fn should_expose_raw_response() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embed"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("test-header", "test-value")
-                .set_body_json(embedding_response_body()),
-        )
-        .mount(&server)
-        .await;
+        let result = model
+            .do_embed(&default_options(test_values()))
+            .await
+            .expect("should succeed");
+        assert_eq!(result.embeddings.len(), 2);
+        assert_eq!(
+            result.embeddings[0],
+            vec![0.03302002, 0.020904541, -0.019744873, -0.0625, 0.04437256]
+        );
+        assert_eq!(
+            result.embeddings[1],
+            vec![
+                -0.04660034,
+                0.00037765503,
+                -0.061157227,
+                -0.08239746,
+                -0.010360718
+            ]
+        );
+    }
 
-    let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.embedding_model("embed-english-v3.0").unwrap();
+    /// upstream: @ai-sdk/cohere src/cohere-embedding-model.test.ts › doEmbed › should expose the raw response
+    #[tokio::test]
+    async fn should_expose_raw_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embed"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("test-header", "test-value")
+                    .set_body_json(embedding_response_body()),
+            )
+            .mount(&server)
+            .await;
 
-    let result = model
-        .do_embed(&default_options(test_values()))
-        .await
-        .expect("should succeed");
-    let headers = result
-        .response
-        .as_ref()
-        .and_then(|r| r.headers.as_ref())
-        .expect("headers present");
-    assert_eq!(
-        headers.get("test-header").map(std::string::String::as_str),
-        Some("test-value")
-    );
-    assert_eq!(
-        result.response.unwrap().body,
-        Some(embedding_response_body())
-    );
-}
+        let provider = create_cohere(CohereProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
-/// TS: "should extract usage"
-#[tokio::test]
-async fn should_extract_usage() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embed"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
+        let result = model
+            .do_embed(&default_options(test_values()))
+            .await
+            .expect("should succeed");
+        let headers = result
+            .response
+            .as_ref()
+            .and_then(|r| r.headers.as_ref())
+            .expect("headers present");
+        assert_eq!(
+            headers.get("test-header").map(std::string::String::as_str),
+            Some("test-value")
+        );
+        assert_eq!(
+            result.response.unwrap().body,
+            Some(embedding_response_body())
+        );
+    }
 
-    let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.embedding_model("embed-english-v3.0").unwrap();
+    /// upstream: @ai-sdk/cohere src/cohere-embedding-model.test.ts › doEmbed › should extract usage
+    #[tokio::test]
+    async fn should_extract_usage() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
+            .mount(&server)
+            .await;
 
-    let result = model
-        .do_embed(&default_options(test_values()))
-        .await
-        .expect("should succeed");
-    let usage = result.usage.expect("usage should be present");
-    assert_eq!(usage.tokens, 10);
-}
+        let provider = create_cohere(CohereProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
-/// TS: "should pass the model and the values"
-#[tokio::test]
-async fn should_pass_model_and_values() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embed"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
+        let result = model
+            .do_embed(&default_options(test_values()))
+            .await
+            .expect("should succeed");
+        let usage = result.usage.expect("usage should be present");
+        assert_eq!(usage.tokens, 10);
+    }
 
-    let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.embedding_model("embed-english-v3.0").unwrap();
+    /// upstream: @ai-sdk/cohere src/cohere-embedding-model.test.ts › doEmbed › should pass the model and the values
+    #[tokio::test]
+    async fn should_pass_model_and_values() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
+            .mount(&server)
+            .await;
 
-    let _ = model
-        .do_embed(&default_options(test_values()))
-        .await
-        .expect("should succeed");
+        let provider = create_cohere(CohereProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-    assert_eq!(body["model"], "embed-english-v3.0");
-    assert_eq!(body["embedding_types"], json!(["float"]));
-    assert_eq!(body["input_type"], "search_query");
-    assert_eq!(
-        body["texts"],
-        json!(["sunny day at the beach", "rainy day in the city"])
-    );
-}
+        let _ = model
+            .do_embed(&default_options(test_values()))
+            .await
+            .expect("should succeed");
 
-/// TS: "should pass headers"
-#[tokio::test]
-async fn should_pass_headers() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embed"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
+        let requests = server.received_requests().await.expect("requests recorded");
+        assert_eq!(requests.len(), 1);
+        let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["model"], "embed-english-v3.0");
+        assert_eq!(body["embedding_types"], json!(["float"]));
+        assert_eq!(body["input_type"], "search_query");
+        assert_eq!(
+            body["texts"],
+            json!(["sunny day at the beach", "rainy day in the city"])
+        );
+    }
 
-    let provider = create_cohere(CohereProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        base_url: Some(server.uri()),
-        headers: Some(HashMap::from([(
-            "Custom-Provider-Header".to_string(),
-            Some("provider-header-value".to_string()),
-        )])),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.embedding_model("embed-english-v3.0").unwrap();
+    /// upstream: @ai-sdk/cohere src/cohere-embedding-model.test.ts › doEmbed › should pass headers
+    #[tokio::test]
+    async fn should_pass_headers() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
+            .mount(&server)
+            .await;
 
-    let mut request_headers = HashMap::new();
-    request_headers.insert(
-        "Custom-Request-Header".to_string(),
-        "request-header-value".to_string(),
-    );
+        let provider = create_cohere(CohereProviderSettings {
+            api_key: Some("test-api-key".to_string()),
+            base_url: Some(server.uri()),
+            headers: Some(HashMap::from([(
+                "Custom-Provider-Header".to_string(),
+                Some("provider-header-value".to_string()),
+            )])),
+            ..Default::default()
+        })
+        .unwrap();
+        let model = provider.embedding_model("embed-english-v3.0").unwrap();
 
-    let options = EmbeddingCallOptions {
-        values: test_values(),
-        abort_signal: None,
-        provider_options: None,
-        headers: Some(request_headers),
-        max_retries: None,
-        timeout: None,
-    };
+        let mut request_headers = HashMap::new();
+        request_headers.insert(
+            "Custom-Request-Header".to_string(),
+            "request-header-value".to_string(),
+        );
 
-    let _ = model.do_embed(&options).await.expect("should succeed");
+        let options = EmbeddingCallOptions {
+            values: test_values(),
+            abort_signal: None,
+            provider_options: None,
+            headers: Some(request_headers),
+            max_retries: None,
+            timeout: None,
+        };
 
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let h = &requests[0].headers;
-    assert_eq!(
-        h.get("custom-provider-header")
-            .and_then(|v| v.to_str().ok()),
-        Some("provider-header-value")
-    );
-    assert_eq!(
-        h.get("authorization").and_then(|v| v.to_str().ok()),
-        Some("Bearer test-api-key")
-    );
-    assert_eq!(
-        h.get("custom-request-header").and_then(|v| v.to_str().ok()),
-        Some("request-header-value")
-    );
+        let _ = model.do_embed(&options).await.expect("should succeed");
+
+        let requests = server.received_requests().await.expect("requests recorded");
+        assert_eq!(requests.len(), 1);
+        let h = &requests[0].headers;
+        assert_eq!(
+            h.get("custom-provider-header")
+                .and_then(|v| v.to_str().ok()),
+            Some("provider-header-value")
+        );
+        assert_eq!(
+            h.get("authorization").and_then(|v| v.to_str().ok()),
+            Some("Bearer test-api-key")
+        );
+        assert_eq!(
+            h.get("custom-request-header").and_then(|v| v.to_str().ok()),
+            Some("request-header-value")
+        );
+    }
 }
