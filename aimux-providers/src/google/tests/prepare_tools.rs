@@ -9,8 +9,9 @@ use serde_json::{Value, json};
 use aimux_core::options::CallOptions;
 use aimux_core::tool::{LanguageModelV4ToolChoice, Tool};
 
-use crate::google::convert::{build_request_body_with_warnings_for_namespace, prepare_all_tools};
+use crate::google::language_model::build_request_body_with_warnings_for_namespace;
 use crate::google::options::Namespace;
+use crate::google::prepare_tools::prepare_all_tools;
 
 fn tools(value: Value) -> Option<Vec<Tool>> {
     Some(serde_json::from_value(value).expect("tools deserialize"))

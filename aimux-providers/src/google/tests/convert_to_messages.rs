@@ -17,9 +17,9 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::options::CallOptions;
 
-use crate::google::convert::{
-    build_request_body_with_warnings_for_namespace, convert_to_google_messages_for_namespace,
-    validate_call_options_for_namespace,
+use crate::google::convert_to_messages::convert_to_google_messages_for_namespace;
+use crate::google::language_model::{
+    build_request_body_with_warnings_for_namespace, validate_call_options_for_namespace,
 };
 use crate::google::options::Namespace;
 

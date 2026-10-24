@@ -1,8 +1,10 @@
 //! Google image generation delegates to the Gemini language model.
 
-use super::convert::{build_request_body_with_warnings, convert_usage, validate_call_options};
+use super::api_types::GenerateContentResponse;
+use super::convert_usage::convert_usage;
+use super::image_settings::GoogleImageSettings;
+use super::language_model::{build_request_body_with_warnings, validate_call_options};
 use super::options::{GOOGLE, google_metadata};
-use super::types::GenerateContentResponse;
 use crate::shared::EndpointConfig;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
@@ -23,11 +25,6 @@ const MODELS_WITH_FILE_INPUTS: [&str; 3] = [
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
 ];
-
-#[derive(Debug, Clone, Default)]
-pub struct GoogleImageSettings {
-    pub max_images_per_call: Option<u32>,
-}
 
 pub struct GoogleImageModel {
     model_id: String,

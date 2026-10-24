@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 
-use crate::google::utils::{FinalizeResult, GoogleJsonAccumulator, PartialArg, ProcessResult};
+use crate::google::json_accumulator::{
+    FinalizeResult, GoogleJsonAccumulator, PartialArg, ProcessResult,
+};
 
 /// One upstream `partialArgs` entry (`{ jsonPath, stringValue, ... }`) as a
 /// [`PartialArg`].
@@ -837,5 +839,26 @@ mod google_json_accumulator {
             deltas.push(closing_delta);
             assert_eq!(deltas.join(""), final_json);
         }
+    }
+}
+
+// ── Older port (previously the inline test in `google/utils.rs`) ──
+
+mod older_utils {
+    use super::*;
+
+    /// partial: `should accumulate a complete string arg (no willContinue)`; full port in src/google/tests/json_accumulator.rs.
+    #[test]
+    fn smoke() {
+        let mut acc = GoogleJsonAccumulator::new();
+        let r = acc
+            .process_partial_args(&[PartialArg {
+                json_path: "$.location".to_string(),
+                string_value: Some("Boston".to_string()),
+                ..Default::default()
+            }])
+            .unwrap();
+        assert_eq!(r.text_delta, "{\"location\":\"Boston\"");
+        assert_eq!(r.current_json["location"], "Boston");
     }
 }

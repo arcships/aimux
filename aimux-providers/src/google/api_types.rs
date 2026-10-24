@@ -1,4 +1,5 @@
-//! Google Gemini API request/response types.
+//! The Gemini `generateContent` / `streamGenerateContent` response schemas
+//! that `google-language-model.ts` declares inline.
 //!
 //! These types model only the subset of the Gemini `generateContent` /
 //! `streamGenerateContent` responses that the Rust provider needs. The
@@ -10,6 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use super::error::GoogleErrorEnvelope;
 
 /// `deserialize_with` for a zod `.nullish()` array: `null` reads as empty.
 fn null_as_empty<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
@@ -145,21 +148,4 @@ pub struct StreamChunk {
 pub enum GoogleStreamEvent {
     Error(GoogleErrorEnvelope),
     Chunk(Box<StreamChunk>),
-}
-
-// ── Provider error response ──────────────────────────────────────────────────
-
-/// Google error envelope: `{ "error": { "code": 400, "message": "...", "status": "INVALID_ARGUMENT" } }`.
-#[derive(Debug, Deserialize)]
-pub struct GoogleErrorEnvelope {
-    pub error: GoogleError,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GoogleError {
-    #[serde(default)]
-    pub code: Option<i64>,
-    pub message: String,
-    #[serde(default)]
-    pub status: Option<String>,
 }

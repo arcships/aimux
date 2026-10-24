@@ -1,50 +1,7 @@
-//! Small Google-specific utility functions.
-//!
-//! Mirrors `get-model-path.ts`, `google-supported-file-url.ts`, and
-//! `google-json-accumulator.ts` from the TS SDK.
+//! `google-json-accumulator.ts`.
 
 use aimux_core::error::AiMuxError;
 use serde_json::{Map, Value};
-
-/// Resolve a model id into the URL path segment used by the Gemini API.
-///
-/// Mirrors `getModelPath` in `get-model-path.ts`:
-/// - Ids that already contain a `/` (e.g. `models/foo`, `tunedModels/bar`) are
-///   passed through unchanged.
-/// - Bare ids are prefixed with `models/`.
-#[must_use]
-pub fn get_model_path(model_id: &str) -> String {
-    if model_id.contains('/') {
-        model_id.to_string()
-    } else {
-        format!("models/{model_id}")
-    }
-}
-
-/// Whether a URL is supported as a file input by the Google Gemini API.
-///
-/// Mirrors `isSupportedFileUrl` in `google-supported-file-url.ts`:
-/// - `https://generativelanguage.googleapis.com/v1beta/files/...` → true
-/// - YouTube watch / youtu.be URLs → true
-/// - everything else → false
-#[must_use]
-pub fn is_supported_file_url(url: &str) -> bool {
-    if url.starts_with("https://generativelanguage.googleapis.com/v1beta/files/") {
-        return true;
-    }
-
-    static YOUTUBE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    YOUTUBE
-        .get_or_init(|| {
-            regex::Regex::new(
-                r"^https://(?:(?:www\.)?youtube\.com/watch\?v=[\w-]+(?:&[\w=&.-]*)?|youtu\.be/[\w-]+(?:\?[\w=&.-]*)?)$",
-            )
-            .expect("static YouTube URL pattern")
-        })
-        .is_match(url)
-}
-
-// ── JSON accumulator ─────────────────────────────────────────────────────────
 
 /// A single partial argument streamed by Google's API during tool-call
 /// function calling.
@@ -96,6 +53,10 @@ impl PartialArg {
 #[derive(Debug, Clone)]
 pub struct ProcessResult {
     /// The accumulated structured object so far.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "upstream returns it; only the tests read it")
+    )]
     pub current_json: Value,
     /// The JSON text fragment emitted by this call.
     pub text_delta: String,
@@ -540,24 +501,4 @@ fn parent_must_be(seg: &Segment) -> AiMuxError {
     AiMuxError::JsonParse(format!(
         "partial args path type conflict at {seg:?}: accumulated value does not match the path"
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// partial: `should accumulate a complete string arg (no willContinue)`; full port in src/google/tests/json_accumulator.rs.
-    #[test]
-    fn smoke() {
-        let mut acc = GoogleJsonAccumulator::new();
-        let r = acc
-            .process_partial_args(&[PartialArg {
-                json_path: "$.location".to_string(),
-                string_value: Some("Boston".to_string()),
-                ..Default::default()
-            }])
-            .unwrap();
-        assert_eq!(r.text_delta, "{\"location\":\"Boston\"");
-        assert_eq!(r.current_json["location"], "Boston");
-    }
 }
