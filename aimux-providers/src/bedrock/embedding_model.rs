@@ -9,19 +9,18 @@
 //! request/response payloads. This implementation adapts based on the model ID,
 //! matching the TS reference.
 
-use async_trait::async_trait;
-use serde_json::{Map, Value, json};
-
+use super::embedding_model_options::{
+    AmazonBedrockEmbeddingModelFamily, parse_bedrock_provider_options,
+};
+use super::options;
+use crate::shared::EndpointConfig;
 use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResult, EmbeddingUsage,
 };
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::SharedProviderOptions;
-
 use aimux_provider_utils::HttpBody;
-
-use super::{AmazonBedrockEmbeddingModelFamily, options};
-use crate::shared::EndpointConfig;
+use async_trait::async_trait;
+use serde_json::{Map, Value, json};
 
 /// An Amazon Bedrock embedding model (e.g. `"amazon.titan-embed-text-v2:0"`).
 ///
@@ -185,14 +184,14 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         let body_str = serde_json::to_string(&body).unwrap_or_default();
         let url = exchange.url(&format!(
             "/model/{}/invoke",
-            super::encode_model_id(&self.model_id)
+            super::provider::encode_model_id(&self.model_id)
         ));
 
         let resp = aimux_provider_utils::post_to_api(
             exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler(),
-            super::bedrock_failed_response_handler(),
+            super::error::bedrock_failed_response_handler(),
         )
         .await?;
 
@@ -306,105 +305,3 @@ impl EmbeddingModel for BedrockEmbeddingModel {
 }
 
 // ── Provider options parsing ─────────────────────────────────────────────────
-
-struct BedrockEmbeddingProviderOptions {
-    dimensions: Option<u32>,
-    normalize: Option<bool>,
-    embedding_dimension: Option<u32>,
-    embedding_purpose: Option<String>,
-    input_type: Option<String>,
-    truncate: Option<String>,
-    output_dimension: Option<u32>,
-}
-
-/// Parse Bedrock embedding provider options.
-///
-/// Reads the `amazonBedrock` key only.
-fn parse_bedrock_provider_options(
-    options: Option<&SharedProviderOptions>,
-) -> Result<BedrockEmbeddingProviderOptions, AiMuxError> {
-    let provider_opts = options::read(options);
-    if let Some(opts) = provider_opts {
-        let valid_dimensions = [
-            ("dimensions", &[1024, 512, 256][..]),
-            ("embeddingDimension", &[256, 384, 1024, 3072][..]),
-            ("outputDimension", &[256, 512, 1024, 1536][..]),
-        ]
-        .iter()
-        .all(|(key, allowed)| {
-            opts.get(*key).is_none_or(|v| {
-                v.as_f64()
-                    .is_some_and(|n| allowed.iter().any(|allowed| n == f64::from(*allowed)))
-            })
-        });
-        let valid_enums = [
-            (
-                "embeddingPurpose",
-                &[
-                    "GENERIC_INDEX",
-                    "TEXT_RETRIEVAL",
-                    "IMAGE_RETRIEVAL",
-                    "VIDEO_RETRIEVAL",
-                    "DOCUMENT_RETRIEVAL",
-                    "AUDIO_RETRIEVAL",
-                    "GENERIC_RETRIEVAL",
-                    "CLASSIFICATION",
-                    "CLUSTERING",
-                ][..],
-            ),
-            (
-                "inputType",
-                &[
-                    "search_document",
-                    "search_query",
-                    "classification",
-                    "clustering",
-                ][..],
-            ),
-            ("truncate", &["NONE", "START", "END"][..]),
-        ]
-        .iter()
-        .all(|(key, allowed)| {
-            opts.get(*key)
-                .is_none_or(|v| v.as_str().is_some_and(|s| allowed.contains(&s)))
-        });
-        if !valid_dimensions
-            || !valid_enums
-            || opts.get("normalize").is_some_and(|v| !v.is_boolean())
-        {
-            return Err(AiMuxError::invalid_argument(
-                "invalid amazonBedrock provider options",
-            ));
-        }
-    }
-
-    Ok(BedrockEmbeddingProviderOptions {
-        dimensions: provider_opts
-            .and_then(|o| o.get("dimensions"))
-            .and_then(serde_json::Value::as_f64)
-            .map(|d| d as u32),
-        normalize: provider_opts
-            .and_then(|o| o.get("normalize"))
-            .and_then(serde_json::Value::as_bool),
-        embedding_dimension: provider_opts
-            .and_then(|o| o.get("embeddingDimension"))
-            .and_then(serde_json::Value::as_f64)
-            .map(|d| d as u32),
-        embedding_purpose: provider_opts
-            .and_then(|o| o.get("embeddingPurpose"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        input_type: provider_opts
-            .and_then(|o| o.get("inputType"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        truncate: provider_opts
-            .and_then(|o| o.get("truncate"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        output_dimension: provider_opts
-            .and_then(|o| o.get("outputDimension"))
-            .and_then(serde_json::Value::as_f64)
-            .map(|d| d as u32),
-    })
-}

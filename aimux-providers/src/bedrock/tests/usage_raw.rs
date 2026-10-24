@@ -10,7 +10,7 @@ use aimux_provider_utils::Resolvable;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::bedrock::event_stream::encode_message;
+use crate::bedrock::event_stream_decoder::encode_message;
 use crate::bedrock::{AmazonBedrockProviderSettings, BedrockModel, create_amazon_bedrock};
 use crate::test_support::mock_fetch::{Canned, RouteFetch};
 

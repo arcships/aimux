@@ -13,7 +13,7 @@ use futures::stream::BoxStream;
 
 use aimux_core::error::AiMuxError;
 
-use crate::bedrock::event_stream::{EventStreamMessage, decode_stream, encode_message};
+use crate::bedrock::event_stream_decoder::{EventStreamMessage, decode_stream, encode_message};
 
 /// `createEvent(data)`: one `event` frame of event type `chunk`.
 fn create_event(data: &str) -> Vec<u8> {
@@ -105,5 +105,101 @@ mod create_amazon_bedrock_event_stream_decoder {
         let items = decode_all(vec![create_event("data")]).await;
 
         assert_eq!(data_of(items), vec!["data".to_string()]);
+    }
+}
+
+// ── Older aimux tests (previously the unit tests of `bedrock/event_stream.rs`) ──
+
+mod frame_round_trip_and_crc {
+    use crate::bedrock::event_stream_decoder::{decode_messages, encode_message, encode_messages};
+
+    #[test]
+    fn round_trip_single_message() {
+        let payload = r#"{"contentBlockIndex":0,"delta":{"text":"Hello"}}"#;
+        let encoded = encode_message("event", "contentBlockDelta", payload);
+        let decoded = decode_messages(&encoded);
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].message_type, "event");
+        assert_eq!(decoded[0].event_type, "contentBlockDelta");
+        assert_eq!(decoded[0].data, payload);
+    }
+
+    #[test]
+    fn round_trip_multiple_messages() {
+        let messages = vec![
+            ("event", "messageStart", r#"{"role":"assistant""#),
+            (
+                "event",
+                "contentBlockDelta",
+                r#"{"contentBlockIndex":0,"delta":{"text":"Hi"}}"#,
+            ),
+            ("event", "messageStop", r#"{"stopReason":"end_turn"}"#),
+        ];
+        let encoded = encode_messages(&messages);
+        let decoded = decode_messages(&encoded);
+        assert_eq!(decoded.len(), 3);
+        assert_eq!(decoded[0].event_type, "messageStart");
+        assert_eq!(decoded[1].event_type, "contentBlockDelta");
+        assert_eq!(decoded[2].event_type, "messageStop");
+    }
+
+    #[test]
+    fn corrupt_prelude_crc_is_rejected() {
+        let payload = r#"{"delta":{"text":"Hi"}}"#;
+        let mut encoded = encode_message("event", "contentBlockDelta", payload);
+        // Flip a byte in the prelude CRC (bytes 8..12).
+        encoded[8] ^= 0xFF;
+        let decoded = decode_messages(&encoded);
+        assert_eq!(
+            decoded.len(),
+            0,
+            "frame with bad prelude CRC must be dropped"
+        );
+    }
+
+    /// partial: `surfaces frame decode errors instead of stranding later frames`; full port in src/bedrock/tests/event_stream_decoder.rs.
+    #[test]
+    fn corrupt_message_crc_is_rejected() {
+        let payload = r#"{"delta":{"text":"Hi"}}"#;
+        let mut encoded = encode_message("event", "contentBlockDelta", payload);
+        // Flip the last byte (part of the trailing message CRC).
+        let last = encoded.len() - 1;
+        encoded[last] ^= 0xFF;
+        let decoded = decode_messages(&encoded);
+        assert_eq!(
+            decoded.len(),
+            0,
+            "frame with bad message CRC must be dropped"
+        );
+    }
+
+    #[test]
+    fn corrupt_payload_is_rejected_by_crc() {
+        let payload = r#"{"delta":{"text":"Hi"}}"#;
+        let mut encoded = encode_message("event", "contentBlockDelta", payload);
+        // Flip a byte in the payload region (middle of the frame).
+        let mid = encoded.len() / 2;
+        encoded[mid] ^= 0xFF;
+        let decoded = decode_messages(&encoded);
+        assert_eq!(
+            decoded.len(),
+            0,
+            "frame with corrupted payload must be caught by message CRC"
+        );
+    }
+
+    #[test]
+    fn valid_frame_before_corrupt_one_is_kept() {
+        // Two frames: first valid, second with a flipped payload byte.
+        let good = encode_message("event", "messageStart", r#"{"role":"assistant"}"#);
+        let mut bad = encode_message("event", "contentBlockDelta", r#"{"delta":{"text":"x"}}"#);
+        let bad_mid = bad.len() / 2;
+        bad[bad_mid] ^= 0xFF;
+        let mut buf = good.clone();
+        buf.extend_from_slice(&bad);
+        let decoded = decode_messages(&buf);
+        // First frame decodes; decoding stops (break) at the corrupt second frame.
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].event_type, "messageStart");
     }
 }

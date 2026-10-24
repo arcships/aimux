@@ -1,7 +1,7 @@
 //! Ports of `@ai-sdk/amazon-bedrock` 5.0.100 `src/amazon-bedrock-error.test.ts`.
 //!
 //! `amazonBedrockFailedResponseHandler` is `bedrock_failed_response_handler`
-//! in `bedrock/mod.rs`.
+//! in `bedrock/error.rs`.
 
 use bytes::Bytes;
 use reqwest::StatusCode;
@@ -12,7 +12,7 @@ use url::Url;
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{FetchResponse, ResponseHandlerInput};
 
-use crate::bedrock::bedrock_failed_response_handler;
+use crate::bedrock::error::bedrock_failed_response_handler;
 
 const URL: &str = "https://bedrock-runtime.us-east-1.amazonaws.com/model/test/invoke";
 
@@ -65,5 +65,42 @@ mod amazon_bedrock_failed_response_handler {
             get_error_message(&json!({ "type": "ValidationException", "message": "boom" })).await,
             "ValidationException: boom"
         );
+    }
+}
+
+// ── Older ports (previously `tests/bedrock_upstream_e2e_test.rs`) ──
+
+mod bedrock_upstream_e2e {
+    use crate::bedrock::tests::upstream_e2e_support::*;
+    use aimux_core::AiMuxError;
+
+    use aimux_core::language_model::LanguageModel;
+
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use serde_json::json;
+
+    /// partial: `prefixes the provider message when the error type is present`; full port in src/bedrock/tests/error.rs.
+    #[tokio::test]
+    async fn generate_error_response() {
+        let response = json!({"type":"ValidationException","message":"boom"});
+        let mut canned = Canned::json(&response);
+        canned.status = 400;
+        let fetch = MockFetch::new(vec![canned]);
+        let error = provider(&fetch)
+            .chat("test")
+            .do_generate(&options())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            fetch.seen()[0].json_body(),
+            json!({"messages":[{"role":"user","content":[{"text":"Hello"}]}]})
+        );
+        let AiMuxError::ApiCall(error) = error else {
+            panic!("expected API error")
+        };
+        assert_eq!(error.message, "ValidationException: boom");
+        assert_eq!(error.status_code, Some(400));
+        assert!(!error.is_retryable);
+        assert_eq!(error.data, Some(response));
     }
 }

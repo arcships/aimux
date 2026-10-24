@@ -24,7 +24,8 @@ use aimux_core::reranking_model::{
 };
 use aimux_provider_utils::HeaderMapOpt;
 
-use crate::bedrock::{Auth, BedrockRerankingModel};
+use crate::bedrock::BedrockRerankingModel;
+use crate::bedrock::sigv4_fetch::Auth;
 use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 
@@ -387,5 +388,51 @@ mod do_rerank {
                 expected_response()
             );
         }
+    }
+}
+
+// ── Older ports (previously `tests/bedrock_upstream_e2e_test.rs`) ──
+
+mod bedrock_upstream_e2e {
+    use crate::bedrock::tests::upstream_e2e_support::*;
+
+    use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
+
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use serde_json::json;
+
+    /// partial: `should send request with stringified json documents`; full port in src/bedrock/tests/reranking/reranking_model.rs.
+    #[tokio::test]
+    async fn rerank_json_documents_and_parse_ranking() {
+        let response = json!({"results":[{"index":0,"relevanceScore":0.5110583305358887},{"index":5,"relevanceScore":0.30241215229034424}]});
+        let fetch = MockFetch::new(vec![Canned::json(&response)]);
+        let mut opts = RerankingCallOptions::new(
+            "rainy day",
+            RerankingDocuments::Object {
+                values: vec![
+                    json!({"example":"sunny day at the beach"}),
+                    json!({"example":"rainy day in the city"}),
+                ],
+            },
+        );
+        opts.top_n = Some(2);
+        opts.provider_options = Some(serde_json::from_value(json!({"bedrock":{"nextToken":"test-token","additionalModelRequestFields":{"test":"test-value"}}})).unwrap());
+        let result = provider(&fetch)
+            .reranking("cohere.rerank-v3-5:0")
+            .do_rerank(&opts)
+            .await
+            .unwrap();
+        assert_eq!(fetch.seen()[0].url, "https://bedrock.test/rerank");
+        assert_eq!(
+            fetch.seen()[0].json_body(),
+            json!({"nextToken":"test-token","queries":[{"textQuery":{"text":"rainy day"},"type":"TEXT"}],"rerankingConfiguration":{"bedrockRerankingConfiguration":{"modelConfiguration":{"modelArn":"arn:aws:bedrock:us-west-2::foundation-model/cohere.rerank-v3-5:0","additionalModelRequestFields":{"test":"test-value"}},"numberOfResults":2},"type":"BEDROCK_RERANKING_MODEL"},"sources":[{"type":"INLINE","inlineDocumentSource":{"type":"JSON","jsonDocument":{"example":"sunny day at the beach"}}},{"type":"INLINE","inlineDocumentSource":{"type":"JSON","jsonDocument":{"example":"rainy day in the city"}}}]})
+        );
+        assert_eq!(result.ranking.len(), 2);
+        assert_eq!(result.ranking[0].index, 0);
+        assert_eq!(result.ranking[0].relevance_score, 0.5110583305358887);
+        assert_eq!(result.ranking[1].index, 5);
+        assert_eq!(result.ranking[1].relevance_score, 0.30241215229034424);
+        assert!(result.provider_metadata.is_none());
+        assert_eq!(result.response.unwrap().body.unwrap(), response);
     }
 }

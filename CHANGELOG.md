@@ -1165,6 +1165,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- `aimux_providers::bedrock` follows the upstream `@ai-sdk/amazon-bedrock`
+  file layout (RFC-0046). The sub-modules `bedrock::convert`,
+  `bedrock::embedding` and `bedrock::image` are no longer public, and
+  `bedrock::event_stream` is renamed `bedrock::event_stream_decoder`; use
+  `BedrockEmbeddingModel` and `BedrockImageModel`, re-exported at
+  `aimux_providers::bedrock`, instead of the `embedding` and `image` paths.
+  The helpers `bedrock::convert` exposed (`convert_prompt_to_bedrock`,
+  `normalize_tool_call_id`, `validate_prompt`, `supports_strict_tools`,
+  `prepare_tools`, `build_request_body_checked`, `map_finish_reason`,
+  `convert_usage`, `BedrockUsage`) are not reachable from outside the crate
+  any more and have no replacement. Exports at the crate root and the
+  `bedrock` module root are unchanged; `bedrock::reranking` stays public.
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's

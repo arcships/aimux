@@ -195,8 +195,10 @@ violation '"anthropic" literal outside aimux-providers/src/anthropic/options.rs 
 # ── Rule 7: Google, Vertex and Bedrock read their settings through the model config ─
 #
 # No `GoogleConfig` / `VertexProviderConfig` / `BedrockProviderConfig` /
-# `body_overrides` / `api_key_source` / `from_env`; `bedrock::sigv4` is gone
-# (signing is the `SigV4Fetch` decorator); and the canonical namespace keys
+# `body_overrides` / `api_key_source` / `from_env` (a test named
+# `provider_from_env_*` is not it); `bedrock::sigv4` is gone (signing is the
+# `SigV4Fetch` decorator; `bedrock::sigv4_fetch` is the port of
+# amazon-bedrock-sigv4-fetch.ts); and the canonical namespace keys
 # (`google`, `googleVertex`, `amazonBedrock`) are quoted only in the two
 # `options.rs` helpers (comments, unit tests and the SigV4 service name
 # aside). The historical `vertex` / `bedrock` aliases are not ported at all, so
@@ -204,12 +206,12 @@ violation '"anthropic" literal outside aimux-providers/src/anthropic/options.rs 
 gvb_family='aimux-providers/src/google aimux-providers/src/vertex aimux-providers/src/bedrock'
 rule7_hits="$(
     # shellcheck disable=SC2086
-    grep -rnE 'GoogleConfig\b|VertexProviderConfig|BedrockProviderConfig|VertexAuth\b|BedrockAuth\b|api_key_source|from_env|body_overrides' \
+    grep -rnE 'GoogleConfig\b|VertexProviderConfig|BedrockProviderConfig|VertexAuth\b|BedrockAuth\b|api_key_source|\bfrom_env\b|body_overrides' \
         $gvb_family --include='*.rs' || true
 )"
 violation 'Google / Vertex / Bedrock reads builder-era config state' "$rule7_hits"
 rule7b_hits="$(
-    search_removed 'bedrock::sigv4|bedrock/sigv4' | grep -v '^\./scripts/check_provider_boundaries\.sh:' || true
+    search_removed 'bedrock(::|/)sigv4\b' | grep -v '^\./scripts/check_provider_boundaries\.sh:' || true
 )"
 violation 'bedrock::sigv4 is back (use SigV4Fetch)' "$rule7b_hits"
 rule7c_hits="$(

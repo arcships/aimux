@@ -10,14 +10,14 @@ package = "@ai-sdk/amazon-bedrock"
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-anthropic-model-support.ts"
-rust = "bedrock/convert.rs"
+rust = "bedrock/anthropic_model_support.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-api-types.ts"
-rust = "bedrock/types.rs"
+rust = "bedrock/api_types.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -29,7 +29,7 @@ sub-feature = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-chat-language-model-options.ts"
-rust = "bedrock/convert.rs"
+rust = "bedrock/chat_language_model_options.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -39,7 +39,7 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-chat-language-model.ts"
-rust = "bedrock/model.rs"
+rust = "bedrock/chat_language_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -49,14 +49,14 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-embedding-model-options.ts"
-rust = "bedrock/embedding.rs"
+rust = "bedrock/embedding_model_options.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-embedding-model.ts"
-rust = "bedrock/embedding.rs"
+rust = "bedrock/embedding_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -66,14 +66,14 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-error.ts"
-rust = "bedrock/model.rs"
+rust = "bedrock/error.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-event-stream-decoder.ts"
-rust = "bedrock/event_stream.rs"
+rust = "bedrock/event_stream_decoder.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -83,7 +83,7 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-event-stream-response-handler.ts"
-rust = "bedrock/event_stream.rs"
+rust = "bedrock/event_stream_response_handler.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -94,28 +94,28 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-image-model-options.ts"
-rust = "bedrock/image.rs"
+rust = "bedrock/image_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-image-model.ts"
-rust = "bedrock/image.rs"
+rust = "bedrock/image_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-image-settings.ts"
-rust = "bedrock/image.rs"
+rust = "bedrock/image_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-prepare-tools.ts"
-rust = "bedrock/tools.rs"
+rust = "bedrock/prepare_tools.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -125,7 +125,7 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-provider.ts"
-rust = "bedrock/mod.rs"
+rust = "bedrock/provider.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -138,14 +138,14 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-reasoning-metadata.ts"
-rust = "bedrock/model.rs"
+rust = "bedrock/chat_language_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-sigv4-fetch.ts"
-rust = "bedrock/mod.rs"
+rust = "bedrock/sigv4_fetch.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -161,7 +161,7 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-stream-error.ts"
-rust = "bedrock/model.rs"
+rust = "bedrock/chat_language_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -188,14 +188,14 @@ reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is no
 
 [[bedrock.files]]
 upstream = "src/convert-amazon-bedrock-usage.ts"
-rust = "bedrock/convert.rs"
+rust = "bedrock/convert_usage.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/convert-to-amazon-bedrock-chat-messages.ts"
-rust = "bedrock/convert.rs"
+rust = "bedrock/convert_to_chat_messages.rs"
 status = "mapped"
 
 [bedrock.files.tests]
@@ -232,42 +232,42 @@ reason = "Bedrock Mantle is a registry preset (OpenAI-compatible chat), not the 
 
 [[bedrock.files]]
 upstream = "src/map-amazon-bedrock-finish-reason.ts"
-rust = "bedrock/convert.rs"
+rust = "bedrock/map_finish_reason.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/normalize-tool-call-id.ts"
-rust = "bedrock/convert.rs"
+rust = "bedrock/normalize_tool_call_id.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/reranking/amazon-bedrock-reranking-api.ts"
-rust = "bedrock/reranking.rs"
+rust = "bedrock/reranking/reranking_api.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/reranking/amazon-bedrock-reranking-model-options.ts"
-rust = "bedrock/reranking.rs"
+rust = "bedrock/reranking/reranking_model_options.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/reranking/amazon-bedrock-reranking-model.ts"
-rust = "bedrock/reranking.rs"
+rust = "bedrock/reranking/reranking_model.rs"
 status = "mapped"
 
 [bedrock.files.tests]
 
 [[bedrock.files]]
 upstream = "src/resolve-amazon-bedrock-base-url.ts"
-rust = "bedrock/mod.rs"
+rust = "bedrock/sigv4_fetch.rs"
 status = "mapped"
 
 [bedrock.files.tests]

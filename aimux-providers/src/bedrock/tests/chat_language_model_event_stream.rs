@@ -437,3 +437,68 @@ mod amazon_bedrock_chat_language_model_do_stream {
         );
     }
 }
+
+// ── Older ports (previously `tests/bedrock_remaining_test.rs`) ──
+//
+// Remaining Amazon Bedrock upstream tests, restored from the tool-types branch.
+//
+// Pinned translation sources (`amazon-bedrock/src/`):
+// - `normalize-tool-call-id.test.ts`
+// - `convert-amazon-bedrock-usage.test.ts` (raw echo)
+// - `amazon-bedrock-provider.test.ts` (factory/auth variants)
+// - `convert-to-amazon-bedrock-chat-messages.test.ts` (Mistral IDs)
+// - `amazon-bedrock-chat-language-model.test.ts` (request/response cases)
+
+mod bedrock_remaining {
+    use crate::bedrock::tests::remaining_support::*;
+
+    use futures::StreamExt;
+
+    use aimux_core::language_model::LanguageModel;
+
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+    /// TS: "surfaces event stream decoding failures" — a frame whose message
+    /// checksum does not match fails the stream with `@smithy/eventstream-codec`'s
+    /// message.
+    #[tokio::test]
+    async fn stream_message_checksum_mismatch_error() {
+        let mut body_bytes = crate::bedrock::event_stream_decoder::encode_message(
+            "event",
+            "contentBlockDelta",
+            r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+        );
+        let last = body_bytes.len() - 4;
+        let computed = u32::from_be_bytes(body_bytes[last..].try_into().unwrap());
+        body_bytes[last..].copy_from_slice(&(computed ^ 0xff).to_be_bytes());
+        let server = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![(
+                "content-type".into(),
+                "application/vnd.amazon.eventstream".into(),
+            )],
+            body: body_bytes,
+        }]);
+        let model = make_model(&server);
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let items: Vec<_> = result.stream.collect().await;
+        let error = items
+            .iter()
+            .find_map(|item| item.as_ref().err())
+            .expect("the stream fails");
+        assert!(
+            matches!(
+                error,
+                aimux_core::AiMuxError::InvalidResponseData { message, .. }
+                    if *message == format!(
+                        "The message checksum ({computed}) did not match the expected value of {}",
+                        computed ^ 0xff
+                    )
+            ),
+            "{error:?}"
+        );
+    }
+}
