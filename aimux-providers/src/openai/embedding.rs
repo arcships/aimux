@@ -139,7 +139,7 @@ struct OpenAIEmbeddingUsage {
 
 #[derive(Default, serde::Deserialize)]
 struct OpenAIEmbeddingProviderOptions {
-    dimensions: Option<f64>,
+    dimensions: Option<serde_json::Number>,
     user: Option<String>,
 }
 

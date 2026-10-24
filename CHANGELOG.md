@@ -1305,6 +1305,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI embeddings send `providerOptions.openai.dimensions` as the number
+  given, so `64` goes out as `64` like the AI SDK (it was sent as `64.0`).
 - OpenAI chat: the warning for a dropped `promptCacheRetention` uses the AI
   SDK's wording for the models it names.
 - The model catalogue keys specs by the names `create_provider` accepts.
