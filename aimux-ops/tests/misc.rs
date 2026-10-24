@@ -161,7 +161,7 @@ fn misc_metadata_preserves_the_existing_inventory() {
     ];
     for name in names {
         let descriptor = dispatch::descriptor(name).unwrap();
-        assert_ne!(descriptor.request_type, "serde_json::Value");
+        assert_ne!((descriptor.request_type.id)().into_owned(), "AnyValue");
         assert!(!descriptor.source_symbols.is_empty());
         assert_eq!(
             descriptor.allowed_handle_kinds,

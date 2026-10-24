@@ -10,27 +10,42 @@ use serde::Serialize;
 use crate::dispatch::EventStream;
 use crate::envelope::{ErrorEnvelope, OpsError, ProtocolError};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(serde::Deserialize))]
 pub enum Outcome {
     Success,
     Error,
     Cancelled,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[schemars(deny_unknown_fields)]
+#[cfg_attr(test, derive(serde::Deserialize))]
 pub enum StreamFrame {
     Event {
+        #[schemars(extend("x-aimux-codec" = "u64-string"))]
         seq: String,
+        #[schemars(with = "StreamEvent")]
         event: serde_json::Value,
     },
     End {
+        #[schemars(extend("x-aimux-codec" = "u64-string"))]
         seq: String,
         outcome: Outcome,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<ErrorEnvelope>,
     },
+}
+
+/// The two event formats carried by an operation stream.
+#[derive(schemars::JsonSchema)]
+#[schemars(untagged, extend("x-aimux-codec" = "ordered-untagged"))]
+#[allow(dead_code)]
+enum StreamEvent {
+    Text(Box<aimux_core::stream_part::TextStreamPart>),
+    OpenAi(aimux_core::openai_output::ChatCompletionChunk),
 }
 
 /// Pull-driven framing: at most one upstream item is read for each output item.

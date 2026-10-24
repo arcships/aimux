@@ -21,7 +21,7 @@ pub(super) fn parse_cohere_provider_options(
                     .as_str()
                     .filter(|value| allowed.contains(value))
                     .map(str::to_owned)
-                    .ok_or_else(|| AiMuxError::InvalidArgument(format!("Invalid cohere.{key}")))
+                    .ok_or_else(|| AiMuxError::invalid_argument(format!("Invalid cohere.{key}")))
             })
             .transpose()
     };
@@ -32,7 +32,7 @@ pub(super) fn parse_cohere_provider_options(
                 .as_f64()
                 .filter(|value| [256.0, 512.0, 1024.0, 1536.0].contains(value))
                 .map(|value| value as u32)
-                .ok_or_else(|| AiMuxError::InvalidArgument("Invalid cohere.outputDimension".into()))
+                .ok_or_else(|| AiMuxError::invalid_argument("Invalid cohere.outputDimension"))
         })
         .transpose()?;
     Ok(CohereEmbeddingProviderOptions {

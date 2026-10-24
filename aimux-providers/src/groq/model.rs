@@ -290,7 +290,7 @@ impl LanguageModel for GroqChatLanguageModel {
         let response = resp.value;
 
         let choice = response.choices.into_iter().next().ok_or_else(|| {
-            AiMuxError::InvalidResponseData("Response did not contain any choices.".to_string())
+            AiMuxError::invalid_response_data("Response did not contain any choices.")
         })?;
 
         let mut content = Vec::new();

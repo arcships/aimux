@@ -115,7 +115,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, AiMuxError::InvalidArgument(ref message) if message.contains("non-public")),
+            matches!(error, AiMuxError::InvalidArgument { ref message, .. } if message.contains("non-public")),
             "{error:?}"
         );
     }

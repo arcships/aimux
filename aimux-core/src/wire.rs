@@ -256,6 +256,30 @@ pub mod typed_vec {
     }
 }
 
+#[must_use]
+pub fn tagged_schema<T: schemars::JsonSchema + TypeTag>(
+    generator: &mut schemars::SchemaGenerator,
+) -> schemars::Schema {
+    let mut tag = schemars::json_schema!({
+        "type": "object", "properties": { "type": { "const": T::TYPE } }
+    });
+    if generator.contract().is_serialize() {
+        tag.insert("required".into(), serde_json::json!(["type"]));
+    }
+    schemars::json_schema!({ "allOf": [T::json_schema(generator), tag] })
+}
+
+#[must_use]
+pub fn read_tagged_schema<T: schemars::JsonSchema + TypeTag>(
+    generator: &mut schemars::SchemaGenerator,
+) -> schemars::Schema {
+    if generator.contract().is_serialize() {
+        T::json_schema(generator)
+    } else {
+        tagged_schema::<T>(generator)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

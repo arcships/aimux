@@ -159,8 +159,8 @@ impl StreamEvent {
                 return Ok(event);
             }
         }
-        Err(aimux_core::error::AiMuxError::InvalidResponseData(format!(
-            "Invalid Cohere stream event: {raw}"
-        )))
+        Err(aimux_core::error::AiMuxError::invalid_response_data(
+            format!("Invalid Cohere stream event: {raw}"),
+        ))
     }
 }

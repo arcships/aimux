@@ -54,7 +54,7 @@ impl EmbeddingModel for CohereEmbeddingModel {
     ) -> Result<EmbeddingResult, AiMuxError> {
         let cohere_options = parse_cohere_provider_options(options.provider_options.as_ref())?;
         if options.values.len() > 96 {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Too many values for a single embedding call: {} supports at most 96 values, received {}",
                 self.provider(),
                 options.values.len()

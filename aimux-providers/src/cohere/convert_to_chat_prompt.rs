@@ -206,8 +206,8 @@ fn image_part(
             .and_then(|options| options.get("detail"))
     {
         if !matches!(detail.as_str(), Some("auto" | "low" | "high")) {
-            return Err(AiMuxError::InvalidArgument(
-                "cohere.detail must be auto, low or high".into(),
+            return Err(AiMuxError::invalid_argument(
+                "cohere.detail must be auto, low or high",
             ));
         }
         image["detail"] = detail.clone();
