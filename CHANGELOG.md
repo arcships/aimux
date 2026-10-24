@@ -1210,6 +1210,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses map only the AI SDK's twelve provider tools
+  (`providerToolNames`) back to the caller's tool names; aimux mapped every
+  `openai.*` tool, so a `computer_call` without a `call_id` came back under
+  the name of a declared `openai.computer_use` tool instead of
+  `computer_use`.
 - OpenAI (and Azure) Responses computer tool calls build each action from
   the fields its type has and leave out a null `keys`, as the AI SDK's
   `mapComputerAction` does; aimux passed the wire action through, so

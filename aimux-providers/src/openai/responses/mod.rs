@@ -353,11 +353,29 @@ impl LanguageModel for OpenAIResponsesModel {
     }
 }
 
+/// The provider tools whose names the AI SDK maps back to the caller's tool
+/// names (`providerToolNames` in openai-responses-language-model.ts).
+const PROVIDER_TOOL_NAMES: &[&str] = &[
+    "code_interpreter",
+    "computer",
+    "file_search",
+    "image_generation",
+    "local_shell",
+    "shell",
+    "web_search",
+    "web_search_preview",
+    "mcp",
+    "apply_patch",
+    "tool_search",
+    "programmatic_tool_calling",
+];
+
 fn tool_name_mapping(options: &CallOptions) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for tool in options.tools.iter().flatten() {
         if let aimux_core::tool::Tool::Provider(tool) = tool
             && let Some(name) = tool.id.as_str().strip_prefix("openai.")
+            && PROVIDER_TOOL_NAMES.contains(&name)
         {
             names.insert(name.to_owned(), tool.name.clone());
         }

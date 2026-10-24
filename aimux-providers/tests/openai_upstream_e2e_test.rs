@@ -1057,3 +1057,42 @@ async fn computer_actions_leave_out_null_keys() {
         r#"{"actions":[{"type":"double_click","x":1,"y":2},{"type":"scroll","x":3,"y":4,"scrollX":0,"scrollY":5}],"pendingSafetyChecks":[],"status":"completed"}"#
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:378 maps the names of
+/// twelve provider tools back to the caller's tool names
+/// (`providerToolNames`); `computer_use` is not one of them, so a computer
+/// call without a `call_id` (line 1358) keeps the name `computer_use` even
+/// when the request declares an `openai.computer_use` tool with another name.
+#[tokio::test]
+async fn computer_use_results_keep_the_canonical_tool_name() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_computer_use",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{"type": "computer_call", "id": "computer_item", "status": "completed"}],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let mut options = options();
+    options.tools = Some(vec![Tool::Provider(aimux_core::tool::ProviderTool {
+        id: "openai.computer_use".parse().unwrap(),
+        name: "computerUse".into(),
+        args: serde_json::Map::new(),
+        supports_deferred_results: None,
+    })]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let names: Vec<&str> = result
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            GenerateContent::ToolCall(call) => Some(call.tool_name.as_str()),
+            GenerateContent::ToolResult(result) => Some(result.tool_name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(names, ["computer_use", "computer_use"]);
+}
