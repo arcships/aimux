@@ -1506,7 +1506,6 @@ providerOptions 的 namespace 不跟随 registry alias。将 `openai` 注册为 
 - 流中途重试：上游 `streamText` 的 `streamRetries` 与 `onError` 请求重试（§5、RFC-0031 §8.3）。现状与上游不设时相同，流返回后不重试。
 - 首块超时从 operation 开始计时，不从响应流开始（§5）。provider 在 `do_stream` 内等到首个 SSE 事件才返回，推迟计时会让返回 200 之后一直不发数据的流没有时间上限，所以保留这一差异，不再修改；要跟随上游，需先让每个 provider 在响应头到达时就返回。
 - `providers_from_config` 与结构化 env 引用（§3.3）；随绑定迁移那一层做。
-- catalogue 仍用 `replace('-', '_')` 猜 package，改为显式关联（§4.6）。
 - 生产代码禁用 panic / unwrap / expect 的 lint（§9.2）。
 - feature 组合矩阵 CI（§9.2）。
 - 协议 fixture 扩到四个家族以外，逐字段比对结果与流（§9.3）。

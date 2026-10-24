@@ -52,7 +52,7 @@ pub(super) fn parse_vertex_provider_options(
             ),
         ] {
             if !valid {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "Invalid Vertex embedding provider option: {name}"
                 )));
             }

@@ -65,7 +65,7 @@ async fn rejects_non_public_literal_urls_before_connecting() {
             .await
             .expect_err("non-public literal must be rejected");
         assert!(
-            matches!(error, AiMuxError::InvalidArgument(ref m) if m.contains("non-public")),
+            matches!(error, AiMuxError::InvalidArgument { message: ref m, .. } if m.contains("non-public")),
             "unexpected error for {url}: {error:?}"
         );
     }
@@ -142,7 +142,7 @@ async fn rejects_a_redirect_to_a_non_public_target() {
     .await
     .expect_err("redirect to metadata IP must be rejected");
     assert!(
-        matches!(error, AiMuxError::InvalidArgument(ref m) if m.contains("non-public")),
+        matches!(error, AiMuxError::InvalidArgument { message: ref m, .. } if m.contains("non-public")),
         "unexpected error: {error:?}"
     );
 }
@@ -171,7 +171,7 @@ async fn rejects_a_redirect_onto_a_foreign_loopback_origin() {
     .await
     .expect_err("foreign loopback origin must be rejected");
     assert!(
-        matches!(error, AiMuxError::InvalidArgument(ref m) if m.contains("non-public")),
+        matches!(error, AiMuxError::InvalidArgument { message: ref m, .. } if m.contains("non-public")),
         "unexpected error: {error:?}"
     );
 }

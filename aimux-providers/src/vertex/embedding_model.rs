@@ -72,7 +72,7 @@ impl EmbeddingModel for VertexEmbeddingModel {
         let vertex_options = parse_vertex_provider_options(options.provider_options.as_ref())?;
         let max = self.max_embeddings_per_call().unwrap_or(250);
         if options.values.len() > max as usize {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Too many embedding values for {} model {}: maximum {max}, received {}",
                 self.provider(),
                 self.model_id,

@@ -557,7 +557,7 @@ fn mid_stream_error() -> Vec<Part> {
     vec![
         Ok(start()),
         Ok(StreamPart::Error {
-            error: AiMuxError::InvalidResponseData("mid-stream failure".into()),
+            error: AiMuxError::invalid_response_data("mid-stream failure"),
         }),
     ]
 }
@@ -566,7 +566,7 @@ fn mid_stream_error() -> Vec<Part> {
 fn transport_error() -> Vec<Part> {
     vec![
         Ok(start()),
-        Err(AiMuxError::InvalidResponseData("transport failure".into())),
+        Err(AiMuxError::invalid_response_data("transport failure")),
     ]
 }
 
@@ -618,11 +618,11 @@ impl LanguageModel for Failing {
     }
 
     async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
-        Err(AiMuxError::Other("boom".into()))
+        Err(AiMuxError::other("boom"))
     }
 
     async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
-        Err(AiMuxError::Other("boom".into()))
+        Err(AiMuxError::other("boom"))
     }
 }
 
@@ -787,7 +787,7 @@ fn trace_layer_records_stream_part_error() {
         stats[0].errors, 1,
         "provider-reported stream error recorded"
     );
-    let expected = AiMuxError::InvalidResponseData("mid-stream failure".into()).to_string();
+    let expected = AiMuxError::invalid_response_data("mid-stream failure").to_string();
     assert_eq!(records(&store)[0].error, Some(expected));
 }
 
@@ -804,7 +804,7 @@ fn trace_layer_records_stream_transport_error() {
 
     let stats = store.aggregate(&TraceFilter::default());
     assert_eq!(stats[0].errors, 1, "transport error recorded");
-    let expected = AiMuxError::InvalidResponseData("transport failure".into()).to_string();
+    let expected = AiMuxError::invalid_response_data("transport failure").to_string();
     assert_eq!(records(&store)[0].error, Some(expected));
 }
 

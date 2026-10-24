@@ -38,6 +38,39 @@ void main() {
     expect((error.error as Map)['statusCode'], 429);
     expect(error.toJson().containsKey('retryable'), isFalse);
   });
+  test('cause is the payload cause chain', () {
+    final error = OpsException.fromJson({
+      'kind': 'aimux',
+      'code': 11,
+      'message': 'API call error: Cannot connect',
+      'error': {
+        'name': 'AI_APICallError',
+        'message': 'Cannot connect',
+        'cause': {
+          'message': 'tcp connect error',
+          'cause': {'message': 'Connection refused'},
+        },
+      },
+    });
+    expect(error.cause?['message'], 'tcp connect error');
+    expect((error.cause?['cause'] as Map)['message'], 'Connection refused');
+    expect(bindingFailure('x').cause, isNull);
+    final retry = OpsException.fromJson({
+      'kind': 'aimux',
+      'code': 10,
+      'message': 'r',
+      'error': {
+        'name': 'AI_RetryError',
+        'message': 'r',
+        'reason': 'maxRetriesExceeded',
+        'errors': [
+          {'name': 'AI_APICallError', 'message': 'first'},
+          {'name': 'AI_APICallError', 'message': 'last'},
+        ],
+      },
+    });
+    expect(retry.cause?['message'], 'last');
+  });
   test('malformed envelope is rejected', () {
     expect(() => OpsException.fromJson({'kind': 'aimux', 'code': 11}),
         throwsA(isA<TypeError>()));

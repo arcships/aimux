@@ -198,9 +198,8 @@ impl TranscriptionModel for VertexTranscriptionModel {
 
         // google-vertex-transcription-model.ts:113-120
         if !is_valid_hostname_part(&region) {
-            return Err(AiMuxError::InvalidArgument(
-                "Invalid Google Cloud Speech-to-Text region. Expected a single DNS label (letters, digits, and hyphens)."
-                    .to_string(),
+            return Err(AiMuxError::invalid_argument(
+                "Invalid Google Cloud Speech-to-Text region. Expected a single DNS label (letters, digits, and hyphens).",
             ));
         }
 

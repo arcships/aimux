@@ -62,7 +62,7 @@ fn xai_request_body(mut body: Value) -> Value {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` for an explicit `base_url` that is
+/// Returns `AiMuxError::invalid_argument` for an explicit `base_url` that is
 /// not an `http(s)` URL with a host. The project, location and token are
 /// resolved when a request is made.
 pub fn create_google_vertex_xai(

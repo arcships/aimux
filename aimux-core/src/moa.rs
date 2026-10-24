@@ -182,7 +182,7 @@ impl MoaModel {
             }
         }
         if texts.is_empty() {
-            return Err(AiMuxError::Other("moa: all reference models failed".into()));
+            return Err(AiMuxError::other("moa: all reference models failed"));
         }
         Ok((texts, usage, warnings))
     }
@@ -339,7 +339,7 @@ mod tests {
         async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
             let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
-                return Err(AiMuxError::Other(format!("{} failed", self.name)));
+                return Err(AiMuxError::other(format!("{} failed", self.name)));
             }
             if attempt <= self.retry_failures {
                 return Err(retryable_error(self.name));
@@ -366,7 +366,7 @@ mod tests {
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
             let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
-                return Err(AiMuxError::Other(format!("{} failed", self.name)));
+                return Err(AiMuxError::other(format!("{} failed", self.name)));
             }
             if attempt <= self.retry_failures {
                 return Err(retryable_error(self.name));
@@ -675,7 +675,7 @@ mod tests {
                     provider_metadata: None,
                 }),
                 // A transport error mid-stream.
-                Err(AiMuxError::Other("aggregator transport blew up".into())),
+                Err(AiMuxError::other("aggregator transport blew up")),
                 // A misbehaving aggregator that keeps going after the Err.
                 Ok(StreamPart::TextDelta {
                     id: "t2".into(),
@@ -743,7 +743,7 @@ mod tests {
             Ok(StreamResult {
                 stream: Box::pin(stream::iter([
                     Ok(StreamPart::StreamStart { warnings: vec![] }),
-                    Err(AiMuxError::JsonParse("malformed SSE data".into())),
+                    Err(AiMuxError::json_parse("malformed SSE data")),
                     Ok(StreamPart::TextDelta {
                         id: "t1".into(),
                         delta: "after-error".into(),
@@ -776,7 +776,7 @@ mod tests {
         let outcomes: Vec<_> = result.stream.collect().await;
         let error_index = outcomes
             .iter()
-            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse(_))))
+            .position(|outcome| matches!(outcome, Err(AiMuxError::JsonParse { .. })))
             .expect("parse error should be relayed");
 
         assert!(outcomes[error_index + 1..].iter().any(|outcome| matches!(

@@ -9,25 +9,25 @@ use aimux_provider_utils::validate_base_url;
 #[test]
 fn rejects_file_scheme() {
     let err = validate_base_url("file:///etc/passwd").unwrap_err();
-    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err:?}");
+    assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err:?}");
 }
 
 #[test]
 fn rejects_ftp_scheme() {
     let err = validate_base_url("ftp://example.com").unwrap_err();
-    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err:?}");
+    assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err:?}");
 }
 
 #[test]
 fn rejects_unparseable_input() {
     let err = validate_base_url("not a url").unwrap_err();
-    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err:?}");
+    assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err:?}");
 }
 
 #[test]
 fn rejects_empty_string() {
     let err = validate_base_url("").unwrap_err();
-    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err:?}");
+    assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err:?}");
 }
 
 #[test]
@@ -58,5 +58,5 @@ fn strips_trailing_slash_on_valid_url() {
 fn rejects_url_without_host() {
     // "https://" has no host and fails to parse into a usable URL.
     let err = validate_base_url("https:///").unwrap_err();
-    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err:?}");
+    assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err:?}");
 }

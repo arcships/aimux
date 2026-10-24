@@ -309,7 +309,7 @@ impl ProviderRecord {
     /// a recording is replayed by passing the model to `replay_with_model`.
     pub fn registry_id(&self) -> Result<&str, crate::error::AiMuxError> {
         if self.provider_id.is_empty() {
-            return Err(crate::error::AiMuxError::InvalidArgument(format!(
+            return Err(crate::error::AiMuxError::invalid_argument(format!(
                 "replay: the recording of `{}` has no provider_id (recordings written by \
                  aimux 0.5 or earlier carry none), so the model cannot be rebuilt from a \
                  registry; pass the model to replay_with_model",
@@ -2107,7 +2107,7 @@ mod tests {
 
     fn provider_error_part() -> Result<crate::stream_part::StreamPart, crate::AiMuxError> {
         Ok(crate::stream_part::StreamPart::Error {
-            error: crate::AiMuxError::Other("provider error".into()),
+            error: crate::AiMuxError::other("provider error"),
         })
     }
 
@@ -2195,16 +2195,13 @@ mod tests {
             provider_metadata: None,
         });
         let mut stream = capture_stream(
-            vec![
-                Err(crate::AiMuxError::JsonParse("bad frame".into())),
-                finish,
-            ],
+            vec![Err(crate::AiMuxError::json_parse("bad frame")), finish],
             &recorder,
         );
 
         assert!(matches!(
             stream.next().await,
-            Some(Err(crate::AiMuxError::JsonParse(_)))
+            Some(Err(crate::AiMuxError::JsonParse { .. }))
         ));
         assert!(recorder.0.lock().unwrap().is_empty());
         assert!(matches!(

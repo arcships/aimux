@@ -15,6 +15,7 @@ use crate::shared::EndpointConfig;
 use aimux_core::language_model_message::{FilePart, LanguageModelMessage, TextPart, UserPart};
 use aimux_core::options::CallOptions;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
@@ -90,8 +91,9 @@ impl VertexImageModel {
                         let file = FilePart {
                             data: FileData::Url {
                                 url: url::Url::parse(url)
-                                    .map_err(|error| {
-                                        AiMuxError::InvalidArgument(error.to_string())
+                                    .map_err(|error| AiMuxError::InvalidArgument {
+                                        message: error.to_string(),
+                                        cause: Some(ErrorCause::source(&error)),
                                     })?
                                     .to_string(),
                                 original_url: None,
