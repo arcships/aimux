@@ -981,7 +981,7 @@ pub fn prepare_responses_tools(
     prepare_responses_tools_for(tools, tool_choice, None, true)
 }
 
-fn prepare_responses_tools_for(
+pub(crate) fn prepare_responses_tools_for(
     tools: &Option<Vec<Tool>>,
     tool_choice: Option<&LanguageModelV4ToolChoice>,
     allowed_tools: Option<&Value>,
@@ -2353,6 +2353,7 @@ mod tests {
         .unwrap()
     }
 
+    /// partial: `should merge consecutive parts with same reasoning ID`; full port in src/openai/tests/responses/convert_to_responses_input.rs.
     /// Parts of one reasoning item become one input item: the summaries are
     /// appended and the last encrypted content wins (openai@4.0.83
     /// `convert-to-openai-responses-input.ts:1167-1220`).
@@ -2398,6 +2399,7 @@ mod tests {
         assert!(result.warnings.is_empty(), "{:?}", result.warnings);
     }
 
+    /// partial: `should warn when appending empty text to existing sequence`; full port in src/openai/tests/responses/convert_to_responses_input.rs.
     /// An empty part cannot extend an item that already has parts.
     #[test]
     fn an_empty_reasoning_part_is_not_appended_to_an_item() {

@@ -8,4 +8,5 @@ mod forward_compatible_defaults;
 mod language_model_capabilities;
 mod normalize_json_schema;
 mod provider;
+mod responses;
 mod stream_error;
