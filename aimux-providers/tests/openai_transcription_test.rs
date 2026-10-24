@@ -428,6 +428,72 @@ async fn should_handle_empty_segments() {
     assert_eq!(result.text, "Hello world");
 }
 
+/// The diarized fixture response (`__fixtures__/openai-diarized-transcription.json`).
+fn diarized_response() -> Value {
+    json!({
+        "task": "transcribe",
+        "duration": 3.2,
+        "text": "Hello from Alice. Hello from Bob.",
+        "segments": [
+            {"type": "transcript.text.segment", "id": "seg_001", "start": 0, "end": 1.5, "text": "Hello from Alice.", "speaker": "A"},
+            {"type": "transcript.text.segment", "id": "seg_002", "start": 1.5, "end": 3.2, "text": "Hello from Bob.", "speaker": "B"}
+        ]
+    })
+}
+
+/// Sends one transcription with `provider_options` and returns the form.
+async fn diarize_form(provider_options: Option<Value>) -> HashMap<String, String> {
+    let server = MockServer::start().await;
+    mock_json_response(&server, &diarized_response()).await;
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider
+        .transcription_model("gpt-4o-transcribe-diarize")
+        .unwrap()
+        .unwrap();
+    let mut options = transcription_options(mock_audio_data(), "audio/mpeg");
+    options.provider_options = provider_options
+        .map(|value| serde_json::from_value(value).expect("provider options are an object"));
+    model.do_generate(&options).await.unwrap();
+    let requests = server.received_requests().await.expect("requests recorded");
+    parse_multipart_form(&requests[0].body)
+}
+
+/// `gpt-4o-transcribe-diarize` defaults to `diarized_json` with `auto`
+/// chunking; `responseFormat` and `chunkingStrategy` (`"auto"` or a server-VAD
+/// object sent as snake_case JSON) are passed through
+/// (`transcription/openai-transcription-model.ts:196-259`).
+#[tokio::test]
+async fn diarization_response_format_and_chunking_strategy() {
+    let form = diarize_form(None).await;
+    assert_eq!(form["response_format"], "diarized_json");
+    assert_eq!(form["chunking_strategy"], "auto");
+    assert!(!form.contains_key("temperature"));
+
+    let form = diarize_form(Some(json!({
+        "openai": {"responseFormat": "json", "chunkingStrategy": "auto"}
+    })))
+    .await;
+    assert_eq!(form["response_format"], "json");
+    assert_eq!(form["chunking_strategy"], "auto");
+
+    let form = diarize_form(Some(json!({
+        "openai": {"chunkingStrategy": {
+            "type": "server_vad", "threshold": 0.7, "prefixPaddingMs": 400, "silenceDurationMs": 300
+        }}
+    })))
+    .await;
+    assert_eq!(form["response_format"], "diarized_json");
+    assert_eq!(
+        form["chunking_strategy"],
+        r#"{"type":"server_vad","threshold":0.7,"prefix_padding_ms":400,"silence_duration_ms":300}"#
+    );
+}
+
 /// TS: "should handle segments with missing optional fields"
 #[tokio::test]
 async fn should_handle_segments_with_missing_optional_fields() {

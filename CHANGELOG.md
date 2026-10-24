@@ -1305,6 +1305,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI transcription takes `providerOptions.openai.responseFormat` and
+  `chunkingStrategy` (`"auto"` or a server-VAD object, sent as snake_case
+  JSON), and `gpt-4o-transcribe-diarize` defaults to `diarized_json` with
+  `auto` chunking, like the AI SDK (both options were ignored).
 - An empty or blank base URL is rejected with the AI SDK's message,
   "baseURL must be a non-empty string." (`validate_base_url`; it said
   "base URL cannot be empty", and a blank value was reported as an

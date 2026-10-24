@@ -115,6 +115,32 @@ struct OpenAITranscriptionOptions {
     temperature: Option<f64>,
     /// The timestamp granularities to populate (`word` / `segment`).
     timestamp_granularities: Option<Vec<String>>,
+    /// `json`, `verbose_json` or `diarized_json`.
+    response_format: Option<String>,
+    /// `chunking_strategy` as sent: `auto` or a server-VAD object as JSON.
+    chunking_strategy: Option<String>,
+}
+
+/// `chunkingStrategy`: `"auto"`, or `{ type, threshold?, prefixPaddingMs?,
+/// silenceDurationMs? }` sent as snake_case JSON
+/// (`transcription/openai-transcription-model.ts:241-259`).
+fn chunking_strategy(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    let object = value.as_object()?;
+    let mut wire = serde_json::Map::new();
+    wire.insert("type".into(), object.get("type")?.clone());
+    for (key, wire_key) in [
+        ("threshold", "threshold"),
+        ("prefixPaddingMs", "prefix_padding_ms"),
+        ("silenceDurationMs", "silence_duration_ms"),
+    ] {
+        if let Some(value) = object.get(key).filter(|value| !value.is_null()) {
+            wire.insert(wire_key.into(), value.clone());
+        }
+    }
+    Some(Value::Object(wire).to_string())
 }
 
 /// Parse provider options from the shared options map.
@@ -155,6 +181,10 @@ fn parse_openai_options(
                     .collect(),
             );
         }
+        if let Some(format) = openai.get("responseFormat").and_then(|v| v.as_str()) {
+            opts.response_format = Some(format.to_string());
+        }
+        opts.chunking_strategy = openai.get("chunkingStrategy").and_then(chunking_strategy);
     }
     opts
 }
@@ -292,14 +322,21 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             .as_ref()
             .is_some_and(|options| options.contains_key("openai"));
 
+        let is_diarization_model = self.model_id == "gpt-4o-transcribe-diarize";
         // Upstream only selects a non-default format when its options exist.
         if self.model_id != "whisper-1" && has_openai_options {
-            let response_format = if is_gpt4o_transcribe_model {
+            let response_format = if let Some(format) = &openai_options.response_format {
+                format.as_str()
+            } else if is_diarization_model {
+                "diarized_json"
+            } else if is_gpt4o_transcribe_model {
                 "json"
             } else {
                 "verbose_json"
             };
             form.text("response_format", response_format)?;
+        } else if !has_openai_options && is_diarization_model {
+            form.text("response_format", "diarized_json")?;
         }
 
         if let Some(ref include) = openai_options.include {
@@ -329,6 +366,13 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         }
         if has_openai_options && openai_options.temperature.is_none() {
             form.text("temperature", "0")?;
+        }
+        let chunking_strategy = openai_options
+            .chunking_strategy
+            .as_deref()
+            .or(is_diarization_model.then_some("auto"));
+        if let Some(chunking_strategy) = chunking_strategy {
+            form.text("chunking_strategy", chunking_strategy)?;
         }
 
         let (body_bytes, content_type) = form.finish();
