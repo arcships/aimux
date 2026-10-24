@@ -81,7 +81,7 @@ fn decode_prefix(data: MediaTypeData<'_>, max_bytes: usize) -> Result<Cow<'_, [u
     };
     // Match atob: URL alphabet, ASCII whitespace, optional padding, and
     // noncanonical trailing bits are accepted; malformed input is an error.
-    let invalid = || AiMuxError::InvalidArgument("invalid base64 data".into());
+    let invalid = || AiMuxError::invalid_argument("invalid base64 data");
     let mut chars = data
         .encode_utf16()
         .take(max_bytes.div_ceil(3) * 4)

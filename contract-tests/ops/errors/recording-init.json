@@ -5,6 +5,8 @@
   "error": {
     "name": "Init",
     "path": "recordings/session.jsonl",
-    "source": "permission denied"
+    "cause": {
+      "message": "permission denied"
+    }
   }
 }

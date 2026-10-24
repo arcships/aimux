@@ -4,6 +4,8 @@ Headers and retry policy are projected by Rust, never recalculated here.
 """
 import re
 
+from ._error_payloads import ErrorEnvelope, payload_fields
+
 
 class AimuxError(Exception):
     """Base for failures in the aimux domain."""
@@ -21,11 +23,16 @@ class ProtocolError(Exception):
     """Failure in the protocol domain."""
 
 
+class SourceError(Exception):
+    """An underlying error that is not an aimux error (OS, TLS, JSON parser)."""
+
+
 class APICallError(AimuxError): pass
 class RetryError(AimuxError): pass
 class JSONParseError(AimuxError): pass
 class NoOutputGeneratedError(AimuxError): pass
 class InvalidResponseDataError(AimuxError): pass
+class TypeValidationError(AimuxError): pass
 class ToolCallNotFoundForApprovalError(AimuxError): pass
 class NoSuchToolError(AimuxError): pass
 class InvalidToolInputError(AimuxError): pass
@@ -51,6 +58,7 @@ _AIMUX_TYPES = {
     "AI_JSONParseError": JSONParseError,
     "AI_NoOutputGeneratedError": NoOutputGeneratedError,
     "AI_InvalidResponseDataError": InvalidResponseDataError,
+    "AI_TypeValidationError": TypeValidationError,
     "AI_ToolCallNotFoundForApprovalError": ToolCallNotFoundForApprovalError,
     "AI_NoSuchToolError": NoSuchToolError,
     "AI_InvalidToolInputError": InvalidToolInputError,
@@ -79,33 +87,44 @@ def _snake(name):
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
+def _source_error(payload):
+    """An underlying error `{message, cause?}` and the rest of its chain."""
+    error = SourceError(payload.get("message", ""))
+    error.error = payload
+    cause = payload.get("cause")
+    error.cause = _source_error(cause) if isinstance(cause, dict) else None
+    error.__cause__ = error.cause
+    return error
+
+
 def _payload_exception(payload, domain="aimux", message=None):
     cls = _AIMUX_TYPES.get(payload.get("name"), AimuxError) if domain == "aimux" else _DOMAINS[domain]
     error = cls(message if message is not None else payload.get("message", payload.get("name", "")))
     error.error = payload
-    for field, value in payload.items():
-        if field == "errors" and isinstance(value, list):
-            value = [from_envelope(item) if "kind" in item else _payload_exception(item) for item in value]
-        elif field in ("cause", "originalError") and isinstance(value, dict):
-            value = from_envelope(value) if "kind" in value else _payload_exception(value)
+    for field, value in payload_fields(payload, _payload_exception, from_envelope):
         setattr(error, _snake(field), value)
+    if isinstance(getattr(error, "cause", None), dict) and "name" not in error.cause:
+        error.cause = _source_error(error.cause)
     if isinstance(getattr(error, "cause", None), BaseException):
         error.__cause__ = error.cause
     if isinstance(error, RetryError):
         error.last_error = error.errors[-1] if error.errors else None
+        # Rust's `source()` of a retry error is its last attempt.
+        error.__cause__ = error.last_error
     return error
 
 
 def from_envelope(envelope):
     """Preserve the envelope and every payload field, including nested errors."""
-    error = _payload_exception(envelope["error"], envelope["kind"], envelope["message"])
+    view = ErrorEnvelope.from_json(envelope)
+    error = _payload_exception(view.error, view.kind, view.message)
     error.envelope = envelope
-    error.kind = envelope["kind"]
-    error.code = envelope["code"]
-    error.retry_after_ms = envelope.get("retryAfterMs")
+    error.kind = view.kind
+    error.code = view.code
+    error.retry_after_ms = view.retry_after_ms
     return error
 
 
 __all__ = [cls.__name__ for cls in _AIMUX_TYPES.values()] + [
-    "AimuxError", "RecordingError", "BindingError", "ProtocolError",
+    "AimuxError", "RecordingError", "BindingError", "ProtocolError", "SourceError",
 ]

@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
@@ -108,7 +109,7 @@ impl std::fmt::Debug for YouComProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_you_com(settings: YouComProviderSettings) -> Result<YouComProvider, AiMuxError> {
@@ -245,8 +246,12 @@ impl SearchModel for YouComSearchModel {
         let count = resolve_count(options.max_results);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
-        let mut url = url::Url::parse(&exchange.url("/v1/search"))
-            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid you_com endpoint: {e}")))?;
+        let mut url = url::Url::parse(&exchange.url("/v1/search")).map_err(|e| {
+            AiMuxError::InvalidArgument {
+                message: format!("invalid you_com endpoint: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            }
+        })?;
         url.query_pairs_mut()
             .append_pair("query", &options.query)
             .append_pair("count", &count.to_string());

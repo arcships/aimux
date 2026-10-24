@@ -628,7 +628,7 @@ mod deep_seek_chat_language_model {
                 .await
                 .unwrap_err();
             assert!(
-                matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
+                matches!(&error, AiMuxError::InvalidResponseData { message: m, .. } if m == "Response did not contain any choices."),
                 "{error:?}"
             );
         }

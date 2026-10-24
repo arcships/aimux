@@ -43,9 +43,7 @@ fn convert_image_part(
 ) -> Result<Value, AiMuxError> {
     if tool_result && let FileData::Reference { reference } = &part.data {
         let file_id = reference.get("deepseek").ok_or_else(|| {
-            AiMuxError::InvalidArgument(
-                "No provider reference found for provider 'deepseek'.".into(),
-            )
+            AiMuxError::invalid_argument("No provider reference found for provider 'deepseek'.")
         })?;
         return Ok(json!({ "type": "file", "file_id": file_id }));
     }
@@ -64,7 +62,7 @@ fn convert_image_part(
     match &part.data {
         FileData::Reference { reference } => {
             let file_id = reference.get("deepseek").ok_or_else(|| {
-                AiMuxError::InvalidArgument(
+                AiMuxError::invalid_argument(
                     "No provider reference found for provider 'deepseek'.".to_string(),
                 )
             })?;
@@ -73,12 +71,12 @@ fn convert_image_part(
         FileData::Url { url, .. } => {
             resolve_deepseek_image_media_type(part)?;
             if url.len() > 8192 {
-                return Err(AiMuxError::InvalidPrompt(
+                return Err(AiMuxError::invalid_prompt(
                     "DeepSeek image URLs must not exceed 8192 characters.".to_string(),
                 ));
             }
             if options.file_data == Some(true) {
-                return Err(AiMuxError::InvalidPrompt(
+                return Err(AiMuxError::invalid_prompt(
                     "DeepSeek `fileData` image parts require inline data, not a URL.".to_string(),
                 ));
             }
@@ -100,7 +98,7 @@ fn convert_image_part(
                 return Ok(image_url(&data_url));
             }
             if options.image_detail.is_some() {
-                return Err(AiMuxError::InvalidPrompt(
+                return Err(AiMuxError::invalid_prompt(
                     "DeepSeek `imageDetail` cannot be combined with `fileData`.".to_string(),
                 ));
             }
@@ -182,7 +180,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
         if options.prefix == Some(true)
             && !matches!(message, LanguageModelMessage::Assistant { .. })
         {
-            return Err(AiMuxError::InvalidPrompt(
+            return Err(AiMuxError::invalid_prompt(
                 "DeepSeek assistant prefix completion requires `prefix: true` on an assistant message."
                     .to_string(),
             ));
@@ -246,7 +244,7 @@ pub(crate) fn convert_to_deepseek_chat_messages(
             LanguageModelMessage::Assistant { content, .. } => {
                 if options.prefix == Some(true) {
                     if index != prompt.len() - 1 {
-                        return Err(AiMuxError::InvalidPrompt(
+                        return Err(AiMuxError::invalid_prompt(
                             "DeepSeek assistant prefix completion requires the prefixed assistant message to be the final message."
                                 .to_string(),
                         ));

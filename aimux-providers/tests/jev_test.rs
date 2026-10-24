@@ -367,7 +367,7 @@ async fn invalid_requests_never_reach_http() {
     ] {
         assert!(matches!(
             decide(model(&server).as_ref(), options).await,
-            Err(AiMuxError::InvalidArgument(_))
+            Err(AiMuxError::InvalidArgument { .. })
         ));
     }
     let mut provider_options = options();

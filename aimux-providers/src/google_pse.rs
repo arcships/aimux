@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::search_model::{
     SearchCallOptions, SearchModel, SearchResponse, SearchResult, SearchResultItem,
@@ -78,7 +79,7 @@ pub struct GooglePseProviderSettings {
     pub api_key: Option<Resolvable<String>>,
     /// The search-engine ID (`cx`). `None` uses
     /// `providerOptions.google_pse.cx` of the call, then `GOOGLE_CSE_ID`;
-    /// a call with none of them fails with `AiMuxError::InvalidArgument`.
+    /// a call with none of them fails with `AiMuxError::invalid_argument`.
     pub cx: Option<String>,
     /// Extra headers on every request. A `None` value removes the header.
     /// Per-call headers win over these.
@@ -113,7 +114,7 @@ impl std::fmt::Debug for GooglePseProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_google_pse(
@@ -265,7 +266,7 @@ impl SearchModel for GooglePseSearchModel {
     async fn do_search(&self, options: &SearchCallOptions) -> Result<SearchResult, AiMuxError> {
         let cx = resolve_cx(self.cx.as_deref(), options.provider_options.as_ref())
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(
+                AiMuxError::invalid_argument(
                     "Google PSE requires a `cx` (search-engine ID). Set the `cx` setting, the `GOOGLE_CSE_ID` \
                      environment variable or pass it via `provider_options[\"google_pse\"][\"cx\"]`."
                         .to_string(),
@@ -277,9 +278,11 @@ impl SearchModel for GooglePseSearchModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let api_key = self.credential.secret().await?.unwrap_or_default();
 
-        let mut url = url::Url::parse(exchange.base_url()).map_err(|e| {
-            AiMuxError::InvalidArgument(format!("invalid google_pse endpoint: {e}"))
-        })?;
+        let mut url =
+            url::Url::parse(exchange.base_url()).map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid google_pse endpoint: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
         {
             let mut qp = url.query_pairs_mut();
             qp.append_pair("key", &api_key)

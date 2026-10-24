@@ -1,6 +1,6 @@
 //! Partner and open models on Vertex AI through its OpenAI-compatible
 //! endpoint: the `maas` and `xai` sub-providers of `@ai-sdk/google-vertex`
-//! 5.0.98 (`src/maas/google-vertex-maas-provider.ts`,
+//! 5.0.100 (`src/maas/google-vertex-maas-provider.ts`,
 //! `src/xai/google-vertex-xai-provider.ts` and their `-node` wrappers).
 //!
 //! Each is `createOpenAICompatible` over
@@ -32,7 +32,7 @@ use crate::openai_compatible::{
 };
 
 use super::auth::{GoogleAuth, GoogleAuthOptions};
-use super::{LOCATION_ENV_VAR, PROJECT_ENV_VAR, location_host};
+use super::{LOCATION_ENV_VAR, PROJECT_ENV_VAR, check_location, location_host};
 
 /// Settings of [`create_google_vertex_maas`] and [`create_google_vertex_xai`]
 /// (the AI SDK's `GoogleVertexMaasProviderSettings` and
@@ -88,7 +88,7 @@ impl std::fmt::Debug for VertexPartnerProviderSettings {
 struct PartnerBaseUrl {
     project: Option<String>,
     location: Option<String>,
-    /// MaaS picks the location's host (google-vertex-maas-provider.ts:91-106);
+    /// MaaS picks the location's host (google-vertex-maas-provider.ts:79-93, :103-118);
     /// xAI always calls the global host (google-vertex-xai-provider.ts:159-164).
     regional_host: bool,
 }
@@ -98,12 +98,14 @@ impl ResolveBaseUrl for PartnerBaseUrl {
     ///
     /// # Errors
     ///
-    /// `AiMuxError::LoadSetting` when no project is set.
+    /// `AiMuxError::LoadSetting` when no project is set;
+    /// `AiMuxError::InvalidArgument` when a MaaS location is not one DNS label.
     fn resolve(&self) -> Result<String, AiMuxError> {
         let project = load_setting(self.project.as_deref(), PROJECT_ENV_VAR, "project")?;
         let location = load_optional_setting(self.location.as_deref(), LOCATION_ENV_VAR)
             .unwrap_or_else(|| "global".to_string());
         let host = if self.regional_host {
+            check_location(&location)?;
             location_host(&location)
         } else {
             "aiplatform.googleapis.com".to_string()
@@ -181,7 +183,7 @@ fn partner_parts(
     Ok((base_url, headers))
 }
 
-/// Upstream's `maxOutputTokensByModel` (google-vertex-maas-provider.ts:14-25):
+/// Upstream's `maxOutputTokensByModel` (google-vertex-maas-provider.ts:16-27):
 /// a default `max_tokens` for the models that need one.
 fn maas_request_body(mut body: Value) -> Value {
     let default = match body.get("model").and_then(Value::as_str) {
@@ -205,7 +207,7 @@ fn maas_request_body(mut body: Value) -> Value {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` for an explicit `base_url` that is
+/// Returns `AiMuxError::invalid_argument` for an explicit `base_url` that is
 /// not an `http(s)` URL with a host. The project, location and token are
 /// resolved when a request is made.
 pub fn create_google_vertex_maas(
@@ -288,7 +290,7 @@ fn xai_request_body(mut body: Value) -> Value {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` for an explicit `base_url` that is
+/// Returns `AiMuxError::invalid_argument` for an explicit `base_url` that is
 /// not an `http(s)` URL with a host. The project, location and token are
 /// resolved when a request is made.
 pub fn create_google_vertex_xai(

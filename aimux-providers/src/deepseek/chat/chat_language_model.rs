@@ -384,7 +384,7 @@ impl LanguageModel for DeepSeekChatLanguageModel {
         let data = resp.value;
 
         let choice = data.choices.into_iter().next().ok_or_else(|| {
-            AiMuxError::InvalidResponseData("Response did not contain any choices.".to_string())
+            AiMuxError::invalid_response_data("Response did not contain any choices.")
         })?;
 
         let mut metadata = Map::new();

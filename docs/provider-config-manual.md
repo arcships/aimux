@@ -154,6 +154,8 @@ const models = await p.listModels()
 const catalogue = await getModelSpecs()
 const spec = catalogue.specs?.['deepseek']?.['deepseek-v4']
 // → { limits: { context: 1000000 }, reasoning: { effort: 'high' }, ... } 或 undefined
+// specs 按 createProvider 接受的名字分组；anya2a 中没有对应 aimux provider 的条目放在
+// catalogue.unmapped，按 anya2a 自己的 provider id 分组，aimux 不猜名字
 
 // 4. 用户读 spec,按业务自己定 options
 const model = await p.model('deepseek-v4')

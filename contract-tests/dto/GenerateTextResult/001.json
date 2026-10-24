@@ -1,0 +1,138 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello, world!"
+    }
+  ],
+  "text": "Hello, world!",
+  "reasoning": [],
+  "files": [],
+  "sources": [],
+  "toolCalls": [],
+  "toolResults": [],
+  "finishReason": "stop",
+  "rawFinishReason": "stop",
+  "usage": {
+    "inputTokens": 12,
+    "inputTokenDetails": {
+      "noCacheTokens": 12
+    },
+    "outputTokens": 3,
+    "outputTokenDetails": {
+      "textTokens": 3
+    },
+    "totalTokens": 15
+  },
+  "totalUsage": {
+    "inputTokens": 12,
+    "inputTokenDetails": {
+      "noCacheTokens": 12
+    },
+    "outputTokens": 3,
+    "outputTokenDetails": {
+      "textTokens": 3
+    },
+    "totalTokens": 15
+  },
+  "warnings": [],
+  "request": {
+    "body": null
+  },
+  "response": {
+    "id": "resp-dto-1",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "modelId": "gpt-4o",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Hello, world!"
+          }
+        ]
+      }
+    ]
+  },
+  "responseMessages": [
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello, world!"
+        }
+      ]
+    }
+  ],
+  "providerMetadata": {
+    "openai": {
+      "serviceTier": "default",
+      "opaque": null
+    }
+  },
+  "steps": [
+    {
+      "callId": "call-dto-1",
+      "stepNumber": 0,
+      "model": {
+        "provider": "openai.chat",
+        "modelId": "gpt-4o"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello, world!"
+        }
+      ],
+      "finishReason": "stop",
+      "rawFinishReason": "stop",
+      "usage": {
+        "inputTokens": 12,
+        "inputTokenDetails": {
+          "noCacheTokens": 12
+        },
+        "outputTokens": 3,
+        "outputTokenDetails": {
+          "textTokens": 3
+        },
+        "totalTokens": 15
+      },
+      "performance": {
+        "effectiveOutputTokensPerSecond": 12.0,
+        "effectiveTotalTokensPerSecond": 60.0,
+        "stepTimeMs": 260.0,
+        "responseTimeMs": 250.0,
+        "toolExecutionMs": {}
+      },
+      "warnings": [],
+      "request": {
+        "body": null
+      },
+      "response": {
+        "id": "resp-dto-1",
+        "timestamp": "2026-01-01T00:00:00.000Z",
+        "modelId": "gpt-4o",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hello, world!"
+              }
+            ]
+          }
+        ]
+      },
+      "providerMetadata": {
+        "openai": {
+          "serviceTier": "default",
+          "opaque": null
+        }
+      }
+    }
+  ],
+  "output": "Hello, world!"
+}
