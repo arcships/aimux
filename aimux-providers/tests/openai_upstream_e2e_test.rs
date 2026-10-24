@@ -1261,3 +1261,57 @@ async fn a_refusal_message_part_rejects_the_response() {
         "{error:?}"
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:875
+/// (chunk) and :1490 (response) parse a logprobs entry as `{token, logprob,
+/// top_logprobs: [{token, logprob}]}`, so `bytes` never reaches
+/// `providerMetadata.openai.logprobs`
+/// (openai-responses-language-model.ts:1065 generate, :2685 stream).
+#[tokio::test]
+async fn responses_logprobs_metadata_has_no_bytes() {
+    let wire = json!([{"token":"N","logprob":-2.5,"bytes":[78],
+        "top_logprobs":[{"token":"N","logprob":-2.5,"bytes":[78]},{"token":"Y","logprob":-1.0,"bytes":[89]}]}]);
+    let expected = json!([[{"token":"N","logprob":-2.5,
+        "top_logprobs":[{"token":"N","logprob":-2.5},{"token":"Y","logprob":-1.0}]}]]);
+    let mut opts = options();
+    opts.provider_options = provider_namespace("openai", json!({"logprobs": 2})).ok();
+
+    let mut response = responses_response();
+    response["output"][0]["content"][0]["logprobs"] = wire.clone();
+    let fetch = MockFetch::new(vec![Canned::json(&response)]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(result.provider_metadata).unwrap()["openai"]["logprobs"],
+        expected
+    );
+
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1"}}),
+        json!({"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"N","logprobs":wire}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&opts)
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let Some(StreamPart::Finish {
+        provider_metadata, ..
+    }) = parts.last()
+    else {
+        panic!("no finish part: {parts:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(provider_metadata).unwrap()["openai"]["logprobs"],
+        expected
+    );
+}

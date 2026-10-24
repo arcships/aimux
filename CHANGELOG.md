@@ -1210,6 +1210,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses logprobs in provider metadata keep only
+  `token`, `logprob` and `top_logprobs` (each with `token` and `logprob`),
+  as the AI SDK's schema parses them, in generated and streamed results;
+  aimux passed `bytes` through.
 - An OpenAI (and Azure) Responses generate call whose message holds a part
   other than `output_text` (a `refusal`) fails with an `ApiCall` error
   ("Invalid JSON response"), as the AI SDK's response schema rejects it;

@@ -198,7 +198,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                                 .is_some_and(|n| n > 0)
                                 && let Some(value) = cp.get("logprobs")
                             {
-                                logprobs.push(value.clone());
+                                logprobs.push(logprobs_fields(value));
                             }
                             {
                                 content.push(GenerateContent::Text {
@@ -453,6 +453,27 @@ fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
         metadata["annotations"] = annotations.iter().map(annotation_fields).collect();
     }
     metadata
+}
+
+/// Logprobs as the AI SDK's schema parses them: each token keeps `token`,
+/// `logprob` and `top_logprobs` (each with `token` and `logprob`), so fields
+/// such as `bytes` are dropped.
+fn logprobs_fields(logprobs: &Value) -> Value {
+    let Some(entries) = logprobs.as_array() else {
+        return logprobs.clone();
+    };
+    let token = |entry: &Value| json!({"token": entry["token"], "logprob": entry["logprob"]});
+    entries
+        .iter()
+        .map(|entry| {
+            let mut output = token(entry);
+            output["top_logprobs"] = entry["top_logprobs"]
+                .as_array()
+                .map(|top| top.iter().map(token).collect())
+                .unwrap_or_else(|| entry["top_logprobs"].clone());
+            output
+        })
+        .collect()
 }
 
 /// The fields the AI SDK's annotation schema keeps for each annotation type
@@ -1006,7 +1027,7 @@ impl Transformer for OpenAIResponsesStream {
                             .is_some_and(|n| n > 0)
                             && let Some(value) = parsed.get("logprobs")
                         {
-                            logprobs.push(value.clone());
+                            logprobs.push(logprobs_fields(value));
                         }
                         let mut id = parsed
                             .get("item_id")
