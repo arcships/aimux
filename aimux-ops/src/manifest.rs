@@ -150,6 +150,7 @@ fn aliases(code: i32) -> &'static [&'static str] {
             "InvalidResponseData",
             "ToolCallNotFoundForApproval",
             "ToolChoiceViolation",
+            "TypeValidation",
         ],
         6 => &["InvalidPrompt", "MissingToolResults"],
         _ => &[],

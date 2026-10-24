@@ -5,6 +5,7 @@
 //! DTO declarations live in the `aimux-web` lib. The TypeScript emitter writes
 //! them to `web/src/types/generated/`. Never edit those files by hand.
 
+use aimux_core::ErrorCause;
 use aimux_core::content::{
     AssistantContentPart, ToolContentPart, ToolResultOutput, ToolResultPart, UserContentPart,
 };
@@ -69,7 +70,8 @@ fn to_assistant_part(p: &WireContentPart) -> AssistantContentPart {
 pub fn to_model_prompt(messages: &[WireMessage]) -> Result<ModelPrompt, AiMuxError> {
     let mut out = Vec::with_capacity(messages.len());
     for m in messages {
-        let invalid = |what: &str| AiMuxError::InvalidPrompt(format!("{} message: {what}", m.role));
+        let invalid =
+            |what: &str| AiMuxError::invalid_prompt(format!("{} message: {what}", m.role));
         let message = match m.role.as_str() {
             "system" => {
                 let [WireContentPart::Text { text }] = m.content.as_slice() else {
@@ -110,7 +112,7 @@ pub fn to_model_prompt(messages: &[WireMessage]) -> Result<ModelPrompt, AiMuxErr
                     .collect::<Result<_, _>>()?,
             ),
             other => {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "unknown message role '{other}' (expected system/user/assistant/tool)"
                 )));
             }
@@ -159,9 +161,10 @@ pub fn to_generate_options(
                 description,
             }) => Some(Output::Json { name, description }),
             Err(e) => {
-                return Err(AiMuxError::InvalidArgument(format!(
-                    "invalid responseFormat: {e}"
-                )));
+                return Err(AiMuxError::InvalidArgument {
+                    message: format!("invalid responseFormat: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                });
             }
         },
     };
@@ -213,7 +216,7 @@ pub fn resolve_api_key(
     custom_base_url: bool,
 ) -> Result<Option<String>, AiMuxError> {
     if custom_base_url && crate::model_builder::reads_ambient_credentials(provider) {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "provider '{provider}' reads credentials from the server environment, so the \
              console does not call it at a custom base_url — leave base_url empty"
         )));
@@ -223,18 +226,16 @@ pub fn resolve_api_key(
         return Ok(Some(String::new()));
     }
     if custom_base_url && spec.is_some_and(|s| s.starts_with("env:")) {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "env: key references are not sent to a custom base_url — pass that endpoint's \
-             own key in the request (loopback binds only) or leave api_key empty"
-                .into(),
+             own key in the request (loopback binds only) or leave api_key empty",
         ));
     }
     if custom_base_url && !allow_plaintext {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "a custom base_url only takes a key carried in the request, and plaintext keys \
              are accepted only while the console is bound to a loopback address — leave \
-             api_key empty to call that endpoint without a key"
-                .into(),
+             api_key empty to call that endpoint without a key",
         ));
     }
     match spec {
@@ -245,8 +246,8 @@ pub fn resolve_api_key(
         Some(s) if s.starts_with("env:") => {
             let var = &s[4..];
             if var.is_empty() {
-                return Err(AiMuxError::InvalidArgument(
-                    "empty env: reference (use env:VAR_NAME)".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "empty env: reference (use env:VAR_NAME)",
                 ));
             }
             // Only the provider's own key variable: any other name would let a
@@ -255,13 +256,13 @@ pub fn resolve_api_key(
             match registered_key_env(provider) {
                 Some(allowed) if allowed == var => {}
                 Some(allowed) => {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "env:{var} is not allowed for provider '{provider}' — only its \
                          registered key variable can be referenced (env:{allowed})"
                     )));
                 }
                 None => {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "provider '{provider}' has no registered key variable, so env: \
                          references are not accepted for it"
                     )));
@@ -269,17 +270,16 @@ pub fn resolve_api_key(
             }
             match std::env::var(var) {
                 Ok(v) => Ok(Some(v)),
-                Err(_) => Err(AiMuxError::InvalidArgument(format!(
+                Err(_) => Err(AiMuxError::invalid_argument(format!(
                     "environment variable `{var}` is not set"
                 ))),
             }
         }
         Some(s) if allow_plaintext => Ok(Some(s.to_string())),
-        Some(_) => Err(AiMuxError::InvalidArgument(
+        Some(_) => Err(AiMuxError::invalid_argument(
             "plaintext API keys are only accepted while the console is bound to a loopback \
              address — use env:VAR_NAME, save the key in Settings, or leave empty (the \
-             provider's registered env var is read automatically)"
-                .into(),
+             provider's registered env var is read automatically)",
         )),
     }
 }

@@ -249,8 +249,9 @@ retry; generation policy stays in core and bindings add no retry loop.
 | HandleExhausted | 306 |
 
 AiMux uses 1–20 with 4 reserved; Recording uses 100–105 and Binding 200–206.
-Code 3 aliases InvalidResponseData, ToolCallNotFoundForApproval and
-ToolChoiceViolation; code 6 aliases InvalidPrompt and MissingToolResults.
+Code 3 aliases InvalidResponseData, ToolCallNotFoundForApproval,
+ToolChoiceViolation and TypeValidation; code 6 aliases InvalidPrompt and
+MissingToolResults.
 
 ## Streams, Operation and limits
 

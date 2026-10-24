@@ -17,27 +17,43 @@ import java.util.*;
 public final class Catalogue {
     @JsonProperty("specs")
     private final Map<String, Map<String, ModelSpec>> specs;
+    /**
+     * Specs of source providers with no aimux provider, keyed by the
+     * source's own provider id then model id. The host maps them, if it
+     * wants them.
+     */
+    @JsonProperty("unmapped")
+    private final Map<String, Map<String, ModelSpec>> unmapped;
     @JsonProperty("updatedAt")
     private final Long updatedAt;
 
     @JsonCreator
     public Catalogue(
         @JsonProperty(value = "specs", required = true) Map<String, Map<String, ModelSpec>> specs,
+        @JsonProperty(value = "unmapped") Map<String, Map<String, ModelSpec>> unmapped,
         @JsonProperty(value = "updatedAt", required = true) Long updatedAt) {
         this.specs = specs == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(specs));
+        this.unmapped = unmapped == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(unmapped));
         this.updatedAt = updatedAt;
     }
 
     public static Builder builder() { return new Builder(); }
     public Map<String, Map<String, ModelSpec>> getSpecs() { return specs; }
+    public Map<String, Map<String, ModelSpec>> getUnmapped() { return unmapped; }
     public Long getUpdatedAt() { return updatedAt; }
 
     public static final class Builder {
         private Map<String, Map<String, ModelSpec>> specs;
+        private Map<String, Map<String, ModelSpec>> unmapped;
         private Long updatedAt;
 
         public Builder specs(Map<String, Map<String, ModelSpec>> value) {
             this.specs = value;
+            return this;
+        }
+
+        public Builder unmapped(Map<String, Map<String, ModelSpec>> value) {
+            this.unmapped = value;
             return this;
         }
 
@@ -46,6 +62,6 @@ public final class Catalogue {
             return this;
         }
 
-        public Catalogue build() { return new Catalogue(specs, updatedAt); }
+        public Catalogue build() { return new Catalogue(specs, unmapped, updatedAt); }
     }
 }

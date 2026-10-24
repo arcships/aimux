@@ -113,9 +113,8 @@ impl RecorderHandle {
                 recorder
                     .export_jsonl(&mut bytes)
                     .map_err(|e| OpsError::Recording(RecordingError::Write(e.to_string())))?;
-                String::from_utf8(bytes).map_err(|e| {
-                    OpsError::Binding(BindingError::ResultSerialization(e.to_string()))
-                })
+                String::from_utf8(bytes)
+                    .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
             }
             Backend::Jsonl(recorder) => {
                 recorder.try_flush().map_err(OpsError::Recording)?;
@@ -188,7 +187,7 @@ impl Recorder for RecorderHandle {
 }
 
 fn invalid(message: impl Into<String>) -> OpsError {
-    OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
+    OpsError::Protocol(ProtocolError::invalid_params(message))
 }
 
 #[derive(Serialize, schemars::JsonSchema)]
@@ -224,8 +223,7 @@ enum RecorderStats {
 }
 
 fn result(value: impl Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
 }
 
 fn recorder_entry(target: Target) -> Result<Arc<dyn Recorder>, OpsError> {
