@@ -10,7 +10,9 @@
 >
 > **Implements**: [RFC-0041](0041-replay-governance.md) §12 的 G1（schema/policy）、G2（leaf/session）、G3（消费闭包）。RFC-0041 已定的格式约束、匹配语义、离线鉴权与错误码不在这里重新设计，本文只定它留给实现的接口、切片和顺序。
 >
-> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §4.3、§4.4、§8.3、§9.1；[RFC-0039](0039-ops-bindings-contract.md) 登记项 D12、G-b、G-c、G-k（[实现说明](../docs/rfc-0039-implementation.md)）；[RFC-0042](0042-v4-type-boundaries.md)（DTO 与 codegen）；RFC-0044（[PR #279](https://github.com/arcships/aimux/pull/279)：crate 拆分、Fetch 观察点、`aimux-devtools`）。
+> **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §4.3、§4.4、§8.3、§9.1；[RFC-0039](0039-ops-bindings-contract.md) 登记项 D12、G-b、G-c、G-k（[实现说明](../docs/rfc-0039-implementation.md)）；[RFC-0042](0042-v4-type-boundaries.md)（DTO 与 codegen）；[RFC-0044](0044-crate-layering-and-dependency-inversion.md)（#279：crate 拆分、Fetch 观察点、`DiagnosticScope`、`aimux-devtools`）；[RFC-0046](0046-provider-protocol-abstraction.md)（#294：§5.9 的录制、回放类测试位置）。
+>
+> **评审结论**：维护者 2026-10-21 批准，§11 的问题已定（[评审](https://github.com/arcships/aimux/pull/325#pullrequestreview-5594462993)、[决定](https://github.com/arcships/aimux/pull/325#issuecomment-6307035442)）；2026-10-20 评审的七条意见在 §3、§4.3、§5、§7、§10 处理。
 
 ## 1. 决策摘要
 
@@ -95,7 +97,7 @@ Recording {
   schema: 3,
   callId, recordedAt,
   operation: "language-model" | "decision",
-  target: { modelRef?: "<registry key>:<modelId>", model: { provider, modelId } },
+  target: { modelRef?: { namespace, key, method, modelId }, model: { provider, modelId } },
   sessionId?, sessionStep?,
   capturePolicy: "metadata" | "payload",
   input: Captured<{ prompt, options }>,
@@ -108,8 +110,8 @@ Recording {
 Captured<T> = { type: "captured", value: T } | { type: "forbidden", reason } | { type: "missing", reason }
 Exchange {
   exchangeId: "<seq>.<attempt>.<index>",
-  phase: "model" | "auxiliary",
-  modelCall?: { seq, attempt },
+  phase: "prepare" | "model" | "auxiliary",
+  modelCall: { seq, attempt },                     // 所在 DiagnosticScope 的 model_call，操作本身是 seq 0
   exchangeIndex,                                   // 同一 (seq, attempt) 内从 1 递增
   boundary: "transport-leaf",
   request: { method, url, headers: [ { name, value? } ], body: Captured<base64> },
@@ -121,15 +123,22 @@ Exchange {
 }
 ```
 
-- **`seq`、`attempt` 与 `exchangeIndex`。** 取自 RFC-0044 §4.2 的 `DiagnosticScope`（[PR #279](https://github.com/arcships/aimux/pull/279)）：`model_call { seq, attempt, parent }` 和每个 (seq, attempt) 内的交换计数器，分配规则以那里为准，本文不另定。`exchangeId` 是这三个值的拼接。`stepLabel` 保留现在的 `router[0]:…` 文本，便于阅读。
-- **`target`。** `model` 是身份描述；`modelRef` 是操作收到的字符串模型 ID，ops 从 registry 解析出的模型填 `"<key>:<modelId>"`，直接传模型实例时缺省。不从 URL 或 `provider()` 推导。
+- **`seq`、`attempt` 与 `exchangeIndex`。** 取自 RFC-0044 §4.2 的 `DiagnosticScope`（[PR #279](https://github.com/arcships/aimux/pull/279)）：`model_call { seq, attempt, parent }` 和每个 (seq, attempt) 内的交换计数器，分配规则以那里为准，本文不另定。`exchangeId` 是这三个值的拼接。scope 总有 `model_call`，所以每个交换都带 `modelCall`，`phase` 为 `prepare`、`auxiliary` 的交换也一样；这比 RFC-0041 §4.1 的“可选 model_call”更严，`modelCalls` 因此包含操作本身的 seq 0。`stepLabel` 保留现在的 `router[0]:…` 文本，便于阅读。
+- **`target`。** `model` 是身份描述；`modelRef` 是 RFC-0041 §4.1 的 registry key、模型 ID 与命名方法，形状就是 ops `registry.languageModel` 等 op 已经收的结构化引用（`aimux-ops/src/ops/registry.rs:138` 的 `ModelRef`：`namespace`、`key`、`method`、`modelId`），不拼成 `"<key>:<modelId>"` 字符串：registry 的分隔符可配置（`aimux-core/src/provider_registry.rs:31`），key 和模型 ID 里都可能出现分隔符，拼接后拆不回来，也会丢掉 namespace 和 method。直接传模型实例时缺省。不从 URL 或 `provider()` 推导。
 - **headers。** 有序，保留重复项。`is_sensitive_key` 判定的头（Authorization、Cookie、各包的 key 头等）只留名字，`value` 缺省；URL 去掉 userinfo 和敏感 query。
+- **input。** `redact_json` 会改动的 input（prompt 或 options 里有敏感字段）整段记 `forbidden: sensitive-field`，不存脱敏后的副本。这条录制因此不能 live 回放：live 会把 input 原样发出去，脱敏副本里的 `[REDACTED]` 会被当成真实值发给厂商。
 - **请求体。** 存交给传输的原始字节。JSON 体里有敏感字段（`redact_json` 会改动它）时整段记 `forbidden: sensitive-field`，不存半脱敏的字节，这条录制因此不能 mock 回放（RFC-0041 §5 不让两个脱敏占位符判为相等）。
-- **响应分块。** 按到达顺序记录，`offsetUs` 以这次交换开始为原点。单次交换上限 8 MiB，超出部分只计 `originalBytes`，该录制不可 mock 回放。
+- **响应分块。** 按到达顺序记录，`offsetUs` 以这次交换开始为原点。分块在 Recorder 里按交换缓存到终态（完成屏障本来就要等终态），进入 writer 队列之前做 RFC-0041 §5 的资格判定：`content-type` 是 JSON 时整段解析后检查，是 SSE（`text/event-stream`）时逐个 `data:` 事件解析后检查，凡是 `redact_json` 会改动的就整段记 `forbidden: sensitive-field`；其他媒体类型、解析失败或无法判定的，同样整段 `forbidden`（`unknown-media` / `unparsed`）。所以错误响应体或流里带回的凭证不会进队列和文件。本期没有增量 sanitizer（§9），判定前的字节只在 Recorder 的有界内存里，计入 RFC-0041 §4.2 的 64 MiB 在途预算。
+- **大小。** writer 和 reader 用同一个单行上限 `RECORDING_LINE_LIMIT`（8 MiB，RFC-0041 §4.2、§5），即 `ReplayLimits::max_line_bytes` 的默认值。采集时按 base64 后的大小记账：一条录制里所有请求体和响应分块编码后的总量超过 6 MiB（给 JSON 结构留余量）时，后续的 body 只计 `originalBytes`、记 `truncated`；writer 序列化后若仍超过单行上限，把 `input` 和全部 body 改记 `missing: size-limit` 再写。因此 writer 写出的每一行 `ReplaySet::load` 都能读回，超限的录制只是不可回放，不会变成读不了的坏行。
 - **`capturePolicy`。** `metadata` 不存 input、请求体、响应分块（记 `forbidden: capture-policy`），仍记结构、时间、终态；`payload` 全存。`fixture` 导出不在本期（§9）。
 - **`outcome` 不包 `Captured`。** `status` 是完成屏障的一部分，任何策略下都要有。`decisionResult`、`errorValue` 只在 `payload` 下存。这是对 RFC-0041 §4.1 `outcome: Captured<…>` 的简化，登记见 §9。
-- **`replayability`。** 写入时计算，读者必须重算（`Recording::replayability()`），不信文件里的值。mock 需要：完整、传输已关闭、至少一个 model 交换、每个 model 交换的请求体和分块都已采集、有终态、未截断。live 需要 input 已采集。不满足的原因写成短字符串，如 `truncated:0.1.1`。
-- **读取。** 先读 `schema` 字段，不是 3 就返回 `UnsupportedRecordingSchema { found }`；其余字段严格解析（`deny_unknown_fields`），base64 非法、callId 重复或为空都是 `InvalidFixture`。
+- **`replayability`。** 写入时计算，读者必须重算（`Recording::replayability()`），不信文件里的值。mock 需要：完整、传输已关闭、至少一个 model 交换、每个 model 交换的请求体和分块都已采集、有终态、未截断。live 需要 input 是 `captured`（`forbidden: sensitive-field` 的 input 不行，见上）。不满足的原因写成短字符串，如 `truncated:0.1.1`。
+- **读取。** 先读 `schema` 字段，不是 3 就返回 `UnsupportedRecordingSchema { found }`；其余字段严格解析（`deny_unknown_fields`），base64 非法、callId 重复或为空都是 `InvalidFixture`。结构校验也在读取时做，违反任一条都是 `InvalidFixture`（RFC-0041 §4.1、§5）：
+  - `modelCalls` 的 `(seq, attempt)` 唯一，`parent` 指向已有条目且无环；
+  - 每个交换的 `modelCall` 指向 `modelCalls` 里的条目；`phase` 只说明交换的用途；
+  - `exchangeId` 等于 `<seq>.<attempt>.<exchangeIndex>`，`exchangeIndex` 在同一 `modelCall` 内从 1 严格递增；
+  - 每个交换都有 `terminal` 和 `timing.terminalOffsetUs`，没有响应的交换只能是 `error` 终态；`responseHeadOffsetUs ≤ 每个分块的 offsetUs ≤ terminalOffsetUs`，分块之间不逆序；
+  - `complete: true` 时 `outcome.status` 必须是 `success`、`error`、`cancelled` 之一，`transportClosed` 必须为 true。
 
 完成屏障、有界队列、drop-newest、Ring/JSONL、flush/try_flush 的语义沿用现状（`recording.rs:1177` 起）。JSONL 队列容量从 1024 提到 RFC-0041 §4.2 建议的 4096。
 
@@ -180,7 +189,7 @@ aimux_ops replay.offline { callId, provider?, matcher? }
 ```text
 aimux_ops replay.live { callId, target: model | registry }
  ├ model 目标：调用方给的模型句柄
- └ registry 目标：target.modelRef 按第一个 ":" 拆成 key 与 modelId，从 registry 取模型；没有 modelRef → InvalidParams
+ └ registry 目标：target.modelRef 的 namespace 必须等于 registry 句柄的 namespace，再按 key、method、modelId 精确取模型（同 ops 的 resolve_model，registry.rs:393，不拼接不拆分）；没有 modelRef 或 namespace 不符 → InvalidParams
  └ replay_with_model / replay_decision_with_model → 真实网络
 ```
 
@@ -191,7 +200,8 @@ live 不再需要 `rebuild_provider`。没有 `modelRef` 的录制（直接传�
 ### 5.1 公开接口
 
 ```rust
-pub struct ReplayLimits { pub max_line_bytes: usize /* 8 MiB */, pub max_total_bytes: usize /* 64 MiB */ }
+pub const RECORDING_LINE_LIMIT: usize = 8 * 1024 * 1024; // writer 与 reader 共用（§3）
+pub struct ReplayLimits { pub max_line_bytes: usize /* RECORDING_LINE_LIMIT */, pub max_total_bytes: usize /* 64 MiB */ }
 
 pub struct ReplaySet { /* 已校验的录制 */ }
 impl ReplaySet {
@@ -219,6 +229,7 @@ pub enum ReplayError {
     ReplayNotPossible { reasons }, OfflineConstructionUnavailable { provider },
     ReplayMiss { summary }, ReplayAmbiguous { exchange_ids }, ReplayOutOfOrder { exchange_id },
     ReplayUnusedExchange { exchange_ids }, ReplayCancelled, ReplayResourceLimit { what },
+    ReplayBeyondRecording { exchange_id },
 }
 impl ReplayError { pub fn code(&self) -> &'static str; }
 ```
@@ -236,7 +247,7 @@ RFC-0041 §7 的 Score、Prefix 在这里是选 scenario 的方式（`ReplaySet:
 
 ### 5.3 响应
 
-录下的 status 和 headers 原样返回，缺值的头不返回。body 是异步流，按序吐出录下的分块（`Immediate` 节奏：不等待录下的间隔，但每块之间都检查取消），最后吐出录下的终态：`eof` 正常结束；`error` 映射回对应的 `FetchError`；`abandoned` 映射为 `FetchError::Io`。没有响应只有错误终态的交换，`fetch` 直接返回那个错误。请求的 `AbortSignal` 和 `cancel()` 都会让挂起的 `fetch` 与正在读的 body 结束。录下的 429、5xx 是普通响应，走 provider 的错误解析和操作重试，不变成回放引擎错误。
+录下的 status 和 headers 原样返回，缺值的头不返回。body 是异步流，按序吐出录下的分块（`Immediate` 节奏：不等待录下的间隔，但每块之间都检查取消），最后吐出录下的终态：`eof` 正常结束；`error` 映射回对应的 `FetchError`（录下的 connect、timeout、io 照样可重试，因为录制里紧跟着的就是那次重试的 attempt）；`abandoned` 表示原操作读到这里就不再读了，回放时同一个操作也应该在这里停下，所以吐完录下的分块后如果还有人继续读，body 返回 `FetchError::Other("ReplayBeyondRecording: …")` 并把引擎错误记为 `ReplayBeyondRecording`。`Other` 不可重试（`aimux-provider-utils/src/fetch.rs:188`），不会触发录制里没有的重试，也就不会改变录下的 attempt 序列。没有响应只有错误终态的交换，`fetch` 直接返回那个错误。请求的 `AbortSignal` 和 `cancel()` 都会让挂起的 `fetch` 与正在读的 body 结束。录下的 429、5xx 是普通响应，走 provider 的错误解析和操作重试，不变成回放引擎错误。
 
 ## 6. 离线组装
 
@@ -262,7 +273,7 @@ pub fn create_offline_provider(name: &str, fetch: FetchFunction) -> Result<Arc<d
 | `replay.live` | registry 目标改用 `modelRef`（§4.3），删除 C6 移到 ops 的 `rebuild_provider` |
 
 - **错误。** `ReplayError` 进现有的 `recording` 错误域，编码从 106 起按声明顺序排；payload 的 `name` 是 `code()`。codegen 的错误码范围（`tools/aimux-codegen/src/lib.rs:134`）同步扩大。
-- **modelRef。** ops 的文本与 decision 处理函数在模型句柄带有唯一的 registry 引用（`ops/registry.rs` 的 `Metadata::Sources`）时，把 `"<key>:<modelId>"` 交给调用观测接口。
+- **modelRef。** ops 的文本与 decision 处理函数在模型句柄带有唯一的 registry 引用（`ops/registry.rs` 的 `Metadata::Sources`，元素就是 `ModelRef`）时，把这个结构原样交给调用观测接口；有多个引用（wrap、router 组合出来的句柄）时缺省。
 - **生成物。** C 头文件、八种绑定的 ops 常量和 DTO、`schema/`、Web 控制台的 TS 类型全部由 `cargo run -p aimux-codegen` 生成，CI 的 `--check` 把关；`contract-tests/dto/Recording/001.json` 由 `UPDATE_DTO_VECTORS=1 cargo test -p aimux-ops` 重写成 schema 3。
 - **手写绑定代码。** 只有测试和 README 引用录制与回放（Python `tests/gil_ops.py`、`test_ops_integration.py`；Node `__test__/contract.native.ts`、`native_scenarios.rs`；Go `wire_test.go`；Java、Kotlin 的错误码测试），换成 schema 3 数据和新 op。绑定 API 本身不加新方法：新 op 经已有的通用调用入口可用。
 - **aimux-replay。** `--mock` 用 `ReplaySet` + `ReplaySession` + `create_offline_provider`；live 用 `--provider` 或 `modelRef`，都没有就报错；`--dry-run` 打印重算的 replayability。
@@ -274,8 +285,8 @@ pub fn create_offline_provider(name: &str, fetch: FetchFunction) -> Result<Arc<d
 | 题目 | RFC-0041（已合并） | RFC-0044 | 本文 |
 |---|---|---|---|
 | 录制格式 | schema 3 字段与约束（§4） | 不改格式 | 给出完整形状与读取规则（§3） |
-| 采集位置 | `transport_leaf`（§4） | Fetch 观察点 + `DiagnosticScope`（C3） | 建在 C3 的观察点上（§4.1）；待讨论 Q1 |
-| 调用层事件 | operation/child/attempt 事件（§3） | (seq, attempt, parent) 与交换序号在 C3 的 `DiagnosticScope`（§4.2）；操作开始、结束事件由后续调用观测 RFC 定（§4.1） | 引用 §4.2，不另定；只列操作事件的要求（§4.1）；待讨论 Q3 |
+| 采集位置 | `transport_leaf`（§4） | Fetch 观察点 + `DiagnosticScope`（C3） | 建在 C3 的观察点上（§4.1，Q1 已定） |
+| 调用层事件 | operation/child/attempt 事件（§3） | (seq, attempt, parent) 与交换序号在 C3 的 `DiagnosticScope`（§4.2）；操作开始、结束事件由后续调用观测 RFC 定（§4.1） | 引用 §4.2，不另定；只列操作事件的要求（§4.1） |
 | 回放引擎 | `replay_fetch`、匹配、错误码（§3、§7、§8） | 归 `aimux-devtools`（C6） | 接口（§5）；crate 归属不在本文定 |
 | 离线组装 | 配方由 provider 包/descriptor 提供（§3、§6） | — | `create_offline_provider`（§6） |
 | `rebuild_provider` | 删除（§2、§12） | C6 时暂移到 ops，传输回放后删除 | C6 移入 ops 之后，由 §10 第 3 步随 live 改用 `modelRef` 在 ops 里删除 |
@@ -287,14 +298,14 @@ RFC-0044 C6 先把 `rebuild_provider` 移到 ops，§10 第 3 步排在 C6 之�
 
 - WebSocket 录制与回放：现在被录制的三个操作（generate_text、stream_text、decide）都不走 WebSocket，schema 3 本期不写 `wsSessions`。以后加的是可选字段，不改版本号（RFC-0041 §4）。
 - 下载与轮询回放：input 里有 URL 文件或图片的录制，离线回放返回 `ReplayNotPossible`，以保证不联网。
-- 流式增量 sanitizer（RFC-0041 §5）：`payload` 下响应分块原样存。请求 JSON 体只要含敏感字段，整段记 `forbidden`。
+- 流式增量 sanitizer（RFC-0041 §5）：响应分块在缓存到终态后整段判定（§3），含敏感字段、媒体类型未登记或无法判定的整段记 `forbidden`；请求 JSON 体只要含敏感字段，整段记 `forbidden`。
 - SigV4、Vertex ADC、Azure token 的离线配方（§6）。
 - `Recorded`、`Scaled` 节奏和虚拟时钟：只做 `Immediate`。
 - `fixture` 导出策略、`probe` / `diff` / `session` 治理命令、证据台账（RFC-0041 G4、G5）。
-- `outcome` 不包 `Captured`（§3）。
-- 采集上限：单次交换 8 MiB，JSONL 队列 4096 个事件，沿用 RFC-0041 §4.2 的建议值，没有压测数据。
+- `outcome` 不包 `Captured`（§3）。第 3 步落地时在 RFC-0041 §4.1 加一行修订引用本文，与 RFC-0039 §0.1.7、§7.1 的修订同样写法。
+- 采集上限：单行 8 MiB、每条录制 base64 后 6 MiB 的 body 预算（§3），64 MiB 在途、JSONL 队列 4096 个事件，沿用 RFC-0041 §4.2 的建议值，没有压测数据。
 
-已有真实录制 `aimux-providers/tests/fixtures/jev_systemone_live.jsonl`（schema 2，2026-10-06 经维护者认可的 live 采集）：见 Q4。
+已有真实录制 `aimux-providers/tests/fixtures/jev_systemone_live.jsonl`（schema 2，2026-10-06 经维护者认可的 live 采集）：按 Q4 转换（§10、§11）。
 
 ## 10. 实施计划
 
@@ -303,23 +314,28 @@ RFC-0044 C6 先把 `rebuild_provider` 移到 ops，§10 第 3 步排在 C6 之�
 | 0 | 本 RFC、RFC-0044 | 维护者接受 | — | eric |
 | 1 | RFC-0044 C3 | Fetch 观察点、`DiagnosticScope`；provider-utils 不再读录制上下文 | RFC-0044 | 包拆分 |
 | 2 | 调用观测 RFC → RFC-0044 C5、C6 | 调用层事件接口；新建 `aimux-devtools`，录制、回放搬入 | 1 | 包拆分 |
-| 3 | schema 3 写入侧 | §3 的类型与读取规则，观察者写 schema 3，删除 schema 1/2 读取、`ProviderRecord`、`MockReplayModel`，以及 C6 移到 ops 的 `rebuild_provider`；ops `recorder.create` 策略、`replay.create/inspect/dryRun/live` 改为 schema 3；aimux-replay 与 Web 的 mock 模式在此 PR 中暂时去掉，并在 PR 描述登记，由 4 补回；生成物与 DTO 向量 | 2 | 本线程 |
-| 4 | 传输回放 | §5、§6；ops `replay.offline`、`replay.capabilities`；aimux-replay `--mock` 与 Web mock 模式；依赖回放的 provider 测试在 ops 集成测试里改用 `ReplaySession`（§7）；Jev 录制按 Q4 处理；生成物 | 3 | 本线程 |
+| 3 | schema 3 写入侧与读取 | §3 的类型、读取与结构校验，`ReplaySet`（`load`、`get`、`select`，§5.1），观察者写 schema 3；删除 schema 1/2 读取、`ProviderRecord`、`MockReplayModel`、`MockDecisionReplayModel`（`aimux-core/src/decision_replay.rs:33`），以及 C6 移到 ops 的 `rebuild_provider`；ops `recorder.create` 策略，`replay.create/inspect/dryRun/live` 改用 `ReplaySet`；aimux-web 的录制导入导出（`api/traces.rs:74` 起）改读写 schema 3；aimux-replay 与 Web 的 mock 模式在此 PR 中暂时去掉，并在 PR 描述登记，由 4 补回；在 RFC-0041 §4.1 加 `outcome` 的修订行（§9）；生成物与 DTO 向量；PR 描述附 schema 2 fixture 的去向清单（见下） | 2 | 本线程 |
+| 4 | 传输回放 | `ReplaySession`、`ReplayFetch`（§5）、§6；ops `replay.offline`、`replay.capabilities`；aimux-replay `--mock` 与 Web mock 模式；依赖回放的 provider 测试在 ops 集成测试里改用 `ReplaySession`（§7），Jev 录制的 mock 回放断言随之恢复；生成物 | 3 | 本线程 |
 | 5 | 文档登记 | 关闭 RFC-0039 D12、G-b、G-c、G-k；对齐文档 §9.1 相应各行；§9 的未做项写进已知差距 | 4 | 本线程 |
 | 6 | 发版 | 首个写 schema 3 的发布冻结新增必需字段（RFC-0041 §4） | 5 | — |
 
-3、4、5 都要在发版前合入（RFC-0039 D12），每个 PR 只做一个方向，描述先给体系调用栈，再给本 PR 的改动。3 和 4 之间 master 上没有 mock 回放，这是两个未发布提交之间的短暂缺口，而不是过渡代码。如果维护者希望没有这个缺口，可以把 3 和 4 合成一个 PR，代价是 PR 变大。
+3、4、5 都要在发版前合入（RFC-0039 D12），每个 PR 只做一个方向，描述先给体系调用栈，再给本 PR 的改动。3 和 4 之间 master 上没有 mock 回放，这是两个未发布提交之间的短暂缺口，而不是过渡代码（Q5 已定分开）。`replay.create` 在第 3 步就用 `ReplaySet`，所以 `ReplaySet` 随第 3 步落地，第 4 步只加消费状态和 Fetch。
 
-## 11. 待讨论
+第 3 步对现有 schema 2 fixture 的处理：
 
-**Q1 采集位置。** 原提案：采集留在 `aimux-provider-utils/src/http.rs` 把 `FetchRequest` 交给传输的那一处（`http.rs:375`），由 http.rs 继续持有录制上下文。这个方案在本地分支（未推送）上已经实现，`aimux-core`、`aimux-provider-utils` 的测试通过。RFC-0044 改为在 Fetch 链最内层设观察点：它包住用户或默认的叶子 Fetch，位于鉴权之后、真正发出之前，和回放用的是同一个接口。观察点用 `DiagnosticScope` 关联调用，provider-utils 不再认识录制。本文按 RFC-0044 写 §4.1。
+| fixture | 现在的用途 | 去向 |
+|---|---|---|
+| `aimux-core/tests/fixtures/master_language_recordings.jsonl` | `master_recording_test.rs` 断言 0.5 写的 schema 2 能读、能 mock | 删除，连同这个测试：schema 2 不再可读（§1 第 1 条）。换成一条内联的 schema 2 行，断言 `UnsupportedRecordingSchema { found: 2 }` |
+| `aimux-core/tests/fixtures/master_decision_recordings.jsonl` | 同上，decision；是 Jev 录制的逐字节副本 | 删除，同上 |
+| `aimux-providers/tests/fixtures/jev_systemone_live.jsonl` | `decision_recording_test.rs` 的真实 live 录制 | 按 Q4 的 (b) 转换成 schema 3，转换脚本列在 PR 描述里；`inspect`、`dryRun` 断言在第 3 步，mock 回放断言在第 4 步恢复 |
+| `contract-tests/dto/Recording/001.json` | DTO 向量 | `UPDATE_DTO_VECTORS=1 cargo test -p aimux-ops` 重写成 schema 3（§7） |
 
-两种位置看到的请求不同，供判断：`http.rs:375` 交出的请求还没经过各包的装饰层，即 `SigV4Fetch`、`AnthropicAwsFetch`、Azure 的 `BearerTokenFetch`，以及 `shared::package_fetch` 的 `UserAgentFetch`。而回放 Fetch 作为 provider 的 `fetch` 设置传入，处在这些装饰层里面。所以按原提案录下的请求，与回放时收到的请求在签名头、`authorization`、`user-agent` 上不一致。§5.2 的 Exact 排除了 `user-agent` 和敏感头，可以掩盖前两项差别，但 SigV4 的 `x-amz-date`、`x-amz-content-sha256` 这类头仍会对不上。观察点放在叶子上时，两边看到的是同一份请求。原提案保留在这里待维护者判断。如果 RFC-0044 不采用观察点，就回到原提案，并把上述头加进 §5.2 的排除集合。
+## 11. 已定问题
 
-**Q2 schema 类型与 Recorder 的归属。** 原提案：在 `aimux-devtools` 建立之前，schema 3 类型、Recorder、Ring/JSONL 留在 `aimux-core::recording`，回放引擎放在 `aimux-provider-utils` 的独立 `replay` 模块，以后整体搬走。RFC-0044 §3.1 把它们放进 `aimux-devtools`，provider-utils 只放观察记录类型。本文按 RFC-0044 的顺序排（§10 先 C6 后 3）。是否允许先落在临时位置再搬，由维护者决定。
+维护者 2026-10-21 的决定（[#325 评论](https://github.com/arcships/aimux/pull/325#issuecomment-6307035442)）：
 
-**Q3 调用层事件。** 原提案：沿用 task-local 的 `RecordingContext`，由它分配 `(seq, attempt)`：根是 seq 0，`child(step)` 取下一个 seq 并记下 parent，`start_attempt()` 递增本 seq 的 attempt。RFC-0044 §4.2 已在 C3 定下 (seq, attempt, parent) 由 `aimux` 的 retry 循环和 router、MoA、composite 设置，和原提案的分配规则相同，这部分不再待定。剩下的是操作开始、结束等调用层事件的接法，RFC-0044 留给后续 RFC；本文只列要求（§4.1），不预先定接口。
-
-**Q4 Jev 真实录制。** 两种做法。(a) 维护者用真实 key 重新录一份 schema 3。(b) 用确定性的一次性映射转换现有文件：非流式 JSON 响应各记一个分块，`offsetUs` 取录下的延迟，`[REDACTED]` 头去掉值；转换脚本不进仓库，在 PR 里列出供审核。RFC-0041 §2 不允许偷偷转存历史流量。(b) 是公开转换，是否接受由维护者定。原提案是 (b)。
-
-**Q5 3 与 4 是否合并。** 见 §10 末段。原提案是分开。
+- **Q1 采集位置。** 采用 RFC-0044 的 Fetch 观察点，即 §4.1；原提案（采集留在 `http.rs:375`）删除。理由是观察点下录制和回放看到同一份请求：`http.rs:375` 交出的请求还没经过 `SigV4Fetch`、`AnthropicAwsFetch`、`BearerTokenFetch`、`UserAgentFetch` 这些装饰层，而回放 Fetch 在装饰层里面，SigV4 的 `x-amz-date`、`x-amz-content-sha256` 两边对不上。
+- **Q2 归属。** 按 §10 的顺序：第 2 步先建 `aimux-devtools`，第 3 步再写 schema 3，不先落在临时位置再搬。
+- **Q3 调用层事件。** `(seq, attempt, parent)` 与交换序号用 RFC-0044 §4.2 的 `DiagnosticScope`；操作开始、结束事件的接法由调用观测 RFC 定，本文只列要求（§4.1）。
+- **Q4 Jev 真实录制。** 用 (b)：确定性的一次性转换，非流式 JSON 响应各记一个分块，`offsetUs` 取录下的延迟，`[REDACTED]` 头去掉值；脚本不进仓库，在第 3 步的 PR 里列出供审核。脱敏头缺值已被 §5.2 排除出比较，转换后的录制可以回放。
+- **Q5 3 与 4 是否合并。** 分开（§10 末段）。
