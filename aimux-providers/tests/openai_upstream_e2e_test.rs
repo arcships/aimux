@@ -1666,3 +1666,36 @@ async fn responses_allowed_tools_error_names_the_dropped_entries() {
     );
     assert!(fetch.seen().is_empty());
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-prepare-tools.ts:174-178
+/// rejects two descriptions for one tool namespace, quoting its name.
+#[tokio::test]
+async fn responses_conflicting_namespace_descriptions_quote_the_namespace() {
+    let fetch = MockFetch::new(vec![Canned::json(&responses_response())]);
+    let namespaced = |name: &str, description: &str| {
+        Tool::Function(FunctionTool {
+            provider_options: Some(
+                serde_json::from_value(
+                    json!({"openai":{"namespace":{"name":"crm","description":description}}}),
+                )
+                .unwrap(),
+            ),
+            ..FunctionTool::new(name, json!({"type":"object","properties":{}}))
+        })
+    };
+    let mut call = options();
+    call.tools = Some(vec![
+        namespaced("get_customer", "CRM tools"),
+        namespaced("list_orders", "Other CRM tools"),
+    ]);
+    let error = provider(&fetch)
+        .responses("gpt-5.4")
+        .do_generate(&call)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::UnsupportedFunctionality(message)
+            if message == "conflicting descriptions for OpenAI tool namespace \"crm\""),
+        "{error:?}"
+    );
+}

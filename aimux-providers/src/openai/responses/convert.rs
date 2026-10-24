@@ -1034,7 +1034,7 @@ fn prepare_responses_tools_for(
                         {
                             if group["description"] != description {
                                 return Err(AiMuxError::UnsupportedFunctionality(format!(
-                                    "conflicting descriptions for OpenAI tool namespace {name}"
+                                    "conflicting descriptions for OpenAI tool namespace \"{name}\""
                                 )));
                             }
                             if let Some(items) = group["tools"].as_array_mut() {
