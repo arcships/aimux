@@ -281,3 +281,33 @@ async fn realtime_session_takes_the_streaming_options() {
         serde_json::json!(["item.input_audio_transcription.logprobs"])
     );
 }
+
+/// `stream-start` warns about each REST-only option that is set
+/// (`transcription/openai-transcription-model.ts:395-410`).
+#[tokio::test]
+async fn realtime_stream_start_warns_about_rest_only_options() {
+    let (parts, _) = replay_with(serde_json::json!({"openai": {
+        "prompt": "context prompt",
+        "temperature": 0.5,
+        "language": "en",
+    }}))
+    .await;
+    let Some(TranscriptionStreamPart::StreamStart { warnings }) = parts.first() else {
+        panic!("expected stream-start first, got {parts:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(warnings).unwrap(),
+        serde_json::json!([
+            {
+                "type": "unsupported",
+                "feature": "providerOptions.openai.prompt",
+                "details": "OpenAI streaming transcription does not support prompt.",
+            },
+            {
+                "type": "unsupported",
+                "feature": "providerOptions.openai.temperature",
+                "details": "OpenAI streaming transcription does not support temperature.",
+            },
+        ])
+    );
+}

@@ -545,6 +545,27 @@ impl OpenAITranscriptionModel {
 
         let openai_options = parse_openai_options(options.provider_options.as_ref());
 
+        // Options of the REST endpoint only, read from the raw options
+        // (`transcription/openai-transcription-model.ts:395-410`).
+        let raw_openai = options
+            .provider_options
+            .as_ref()
+            .and_then(|options| options.get("openai"));
+        let warnings: Vec<Warning> = ["include", "prompt", "temperature", "timestampGranularities"]
+            .into_iter()
+            .filter(|option| {
+                raw_openai
+                    .and_then(|openai| openai.get(*option))
+                    .is_some_and(|value| !value.is_null())
+            })
+            .map(|option| Warning::Unsupported {
+                feature: format!("providerOptions.openai.{option}"),
+                details: Some(format!(
+                    "OpenAI streaming transcription does not support {option}."
+                )),
+            })
+            .collect();
+
         // wss URL from the REST base URL (https→wss / http→ws), matching the
         // AI SDK's toWebSocketUrl.
         let ws_url = self.config.ws_url("/realtime?intent=transcription")?;
@@ -638,7 +659,7 @@ impl OpenAITranscriptionModel {
         let error_request = session_update.clone();
 
         let stream = async_stream::stream! {
-            yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
+            yield Ok(TranscriptionStreamPart::StreamStart { warnings });
 
             loop {
                 // Audio arm disabled once exhausted (select! precondition).

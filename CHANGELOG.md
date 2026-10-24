@@ -1305,6 +1305,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI realtime transcription's `stream-start` warns about each REST-only
+  provider option that is set (`include`, `prompt`, `temperature`,
+  `timestampGranularities`), like the AI SDK; they were ignored silently.
 - OpenAI realtime transcription configures the session from
   `providerOptions.openai.streaming` (`delay` and `include`) like the AI
   SDK; it put the REST `include` option into the session instead.
