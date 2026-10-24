@@ -11,133 +11,133 @@ package = "@ai-sdk/openai"
 
 [[openai.files]]
 upstream = "src/chat/convert-openai-chat-usage.ts"
-rust = "openai/model.rs"
+rust = "openai/chat/convert_chat_usage.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/convert-to-openai-chat-messages.ts"
-rust = "openai/convert.rs"
+rust = "openai/chat/convert_to_chat_messages.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/get-response-metadata.ts"
-rust = "openai/model.rs"
+rust = "openai/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/map-openai-finish-reason.ts"
-rust = "openai/convert.rs"
+rust = "openai/chat/map_finish_reason.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/openai-chat-api.ts"
-rust = "openai/types.rs"
+rust = "openai/chat/chat_api.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/openai-chat-language-model-options.ts"
-rust = "openai/options.rs"
+rust = "openai/chat/chat_language_model_options.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/openai-chat-language-model.ts"
-rust = "openai/model.rs"
+rust = "openai/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/openai-chat-prepare-tools.ts"
-rust = "openai/convert.rs"
+rust = "openai/chat/chat_prepare_tools.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/chat/openai-chat-prompt.ts"
-rust = "openai/convert.rs"
+rust = "openai/chat/convert_to_chat_messages.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/completion/convert-openai-completion-usage.ts"
-rust = "openai/completion.rs"
+rust = "openai/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/completion/convert-to-openai-completion-prompt.ts"
-rust = "openai/completion.rs"
+rust = "openai/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/completion/get-response-metadata.ts"
-rust = "openai/completion.rs"
+rust = "openai/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/completion/map-openai-finish-reason.ts"
-rust = "openai/completion.rs"
+rust = "openai/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/completion/openai-completion-api.ts"
-rust = "openai/completion.rs"
+rust = "openai/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/completion/openai-completion-language-model-options.ts"
-rust = "openai/completion.rs"
+rust = "openai/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/completion/openai-completion-language-model.ts"
-rust = "openai/completion.rs"
+rust = "openai/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/embedding/openai-embedding-api.ts"
-rust = "openai/embedding.rs"
+rust = "openai/embedding/embedding_api.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/embedding/openai-embedding-model-options.ts"
-rust = "openai/embedding.rs"
+rust = "openai/embedding/embedding_model_options.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/embedding/openai-embedding-model.ts"
-rust = "openai/embedding.rs"
+rust = "openai/embedding/embedding_model.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -147,21 +147,21 @@ sub-feature = [
 
 [[openai.files]]
 upstream = "src/files/openai-files-api.ts"
-rust = "openai/files.rs"
+rust = "openai/files/files_api.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/files/openai-files-options.ts"
-rust = "openai/files.rs"
+rust = "openai/files/files_options.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/files/openai-files.ts"
-rust = "openai/files.rs"
+rust = "openai/files/files.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -183,21 +183,21 @@ sub-feature = [
 
 [[openai.files]]
 upstream = "src/image/openai-image-api.ts"
-rust = "openai/image.rs"
+rust = "openai/image/image_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/image/openai-image-model-options.ts"
-rust = "openai/image.rs"
+rust = "openai/image/image_model_options.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/image/openai-image-model.ts"
-rust = "openai/image.rs"
+rust = "openai/image/image_model.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -245,7 +245,7 @@ reason = "no OpenAI live (realtime voice) model; aimux has realtime transcriptio
 
 [[openai.files]]
 upstream = "src/normalize-openai-json-schema.ts"
-rust = "openai/convert.rs"
+rust = "openai/normalize_json_schema.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -265,28 +265,28 @@ status = "mapped"
 
 [[openai.files]]
 upstream = "src/openai-error.ts"
-rust = "openai/mod.rs"
+rust = "openai/error.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/openai-language-model-capabilities.ts"
-rust = "openai/convert_common.rs"
+rust = "openai/language_model_capabilities.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/openai-provider.ts"
-rust = "openai/mod.rs"
+rust = "openai/provider.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/openai-stream-error.ts"
-rust = "openai/mod.rs"
+rust = "openai/stream_error.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -339,14 +339,14 @@ reason = "no OpenAI realtime speech-to-speech model; aimux has realtime transcri
 
 [[openai.files]]
 upstream = "src/responses/convert-openai-responses-usage.ts"
-rust = "openai/responses/convert.rs"
+rust = "openai/responses/convert_responses_usage.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/responses/convert-to-openai-responses-input.ts"
-rust = "openai/responses/convert.rs"
+rust = "openai/responses/convert_to_responses_input.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -370,14 +370,14 @@ reason = "no expansion of the internal `parallel` function-call wrapper (expandP
 
 [[openai.files]]
 upstream = "src/responses/map-openai-responses-finish-reason.ts"
-rust = "openai/responses/convert.rs"
+rust = "openai/responses/map_responses_finish_reason.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/responses/openai-responses-api.ts"
-rust = "openai/responses/types.rs"
+rust = "openai/responses/responses_api.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -394,14 +394,14 @@ ts-only = [
 
 [[openai.files]]
 upstream = "src/responses/openai-responses-language-model-options.ts"
-rust = "openai/responses/mod.rs"
+rust = "openai/responses/responses_language_model_options.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/responses/openai-responses-language-model.ts"
-rust = "openai/responses/mod.rs"
+rust = "openai/responses/responses_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -415,7 +415,7 @@ sub-feature = [
 
 [[openai.files]]
 upstream = "src/responses/openai-responses-prepare-tools.ts"
-rust = "openai/responses/convert.rs"
+rust = "openai/responses/responses_prepare_tools.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -425,7 +425,7 @@ sub-feature = [
 
 [[openai.files]]
 upstream = "src/responses/openai-responses-provider-metadata.ts"
-rust = "openai/responses/provider_events.rs"
+rust = "openai/responses/responses_language_model.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -456,133 +456,133 @@ reason = "no speech translation model (#275)"
 
 [[openai.files]]
 upstream = "src/speech/openai-speech-api.ts"
-rust = "openai/speech.rs"
+rust = "openai/speech/speech_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/speech/openai-speech-model-options.ts"
-rust = "openai/speech.rs"
+rust = "openai/speech/speech_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/speech/openai-speech-model.ts"
-rust = "openai/speech.rs"
+rust = "openai/speech/speech_model.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/apply-patch.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/apply_patch.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/code-interpreter.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/code_interpreter.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/computer.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/computer.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/custom.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/custom.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/file-search.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/file_search.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/image-generation.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/image_generation.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/local-shell.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/local_shell.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/mcp.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/mcp.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/programmatic-tool-calling.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/programmatic_tool_calling.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/shell.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/shell.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/tool-search.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/tool_search.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/web-search-preview.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/web_search_preview.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/tool/web-search.ts"
-rust = "openai/tools.rs"
+rust = "openai/tool/web_search.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/transcription/openai-transcription-api.ts"
-rust = "openai/transcription.rs"
+rust = "openai/transcription/transcription_api.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/transcription/openai-transcription-model-options.ts"
-rust = "openai/transcription.rs"
+rust = "openai/transcription/transcription_model_options.rs"
 status = "mapped"
 
 [openai.files.tests]
 
 [[openai.files]]
 upstream = "src/transcription/openai-transcription-model.ts"
-rust = "openai/transcription.rs"
+rust = "openai/transcription/transcription_model.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -597,3 +597,13 @@ ts-only = [
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[[openai.files]]
+rust = "openai/decision.rs"
+status = "aimux"
+reason = "the native Decisions API; upstream decides through the Responses model"
+
+[[openai.files]]
+rust = "openai/responses/tool_args.rs"
+status = "aimux"
+reason = "the provider tool argument schemas of tool/*.ts, validated in one place"

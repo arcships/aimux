@@ -61,7 +61,7 @@ rule1_hits="$(
     { grep -rnE "$rule1_pattern" aimux-providers/src --include='*.rs' || true; } |
         grep -v 'HttpRequest::new(' |
         grep -v '^aimux-providers/src/replay\.rs:' |
-        grep -vE '^aimux-providers/src/(elevenlabs\.rs|openai/transcription\.rs):[0-9]+: *timeout: options\.timeout,$' ||
+        grep -vE '^aimux-providers/src/(elevenlabs\.rs|openai/transcription/transcription_model\.rs):[0-9]+: *timeout: options\.timeout,$' ||
         true
 )"
 violation 'aimux-providers/src reads options.max_retries / timeout / session_id / call_id' "$rule1_hits"
@@ -143,9 +143,12 @@ rule4_hits="$(
 violation 'provider-name comparison in a shared protocol package (aimux-providers/src/{openai,openai_compatible,anthropic,google,bedrock,cohere})' "$rule4_hits"
 
 # `"groq"` / `"deepseek"` literals belong to their own packages and the registry.
+# The vendor tests are skipped: a decision test checks that another preset has
+# no decision model.
 rule4b_hits="$(
     grep -rnE '"(groq|deepseek)"' \
-        aimux-providers/src/openai aimux-providers/src/openai_compatible --include='*.rs' || true
+        aimux-providers/src/openai aimux-providers/src/openai_compatible --include='*.rs' \
+        --exclude-dir=tests || true
 )"
 violation 'groq / deepseek literal in the shared OpenAI or compatible package' "$rule4b_hits"
 

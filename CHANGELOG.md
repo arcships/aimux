@@ -1165,6 +1165,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- OpenAI's sub-modules follow the `@ai-sdk/openai` files (RFC-0046 §4.2):
+  `openai::convert`, `openai::model`, `openai::responses::convert`,
+  `openai::responses::responses_convert` and `openai::responses::types` are no
+  longer public. `openai::model::OpenAIModel` is `openai::OpenAIModel`, as the
+  crate root already exports it. The Responses types of `responses::convert`
+  and `responses::types` are at `openai::responses`:
+  `openai::responses::{PreparedResponsesTools, parse_usage, ResponsesUsage,
+  ResponsesInputTokensDetails, ResponsesOutputTokensDetails}`, next to the
+  functions it already exported. The Chat Completions helpers of `convert`
+  (`SystemMessageMode`, `ToolWarning`, `PreparedTools`, `prepare_tools`,
+  `convert_prompt_to_openai_messages_with_mode_fallible`, `RequestBodyResult`,
+  `build_request_body_with_warnings`, `parse_finish_reason`) and the shared
+  Responses parser of `responses_convert` (`ResponsesEventStream`,
+  `build_responses_generate_result`, `build_responses_event_stream`) become
+  crate-internal, with no public replacement; `build_request_body` and
+  `build_header_list`, which nothing in the workspace called, are removed.
+  `openai::completion`, `openai::decision`, `openai::embedding`,
+  `openai::files`, `openai::image`, `openai::responses`, `openai::speech`,
+  `openai::tools` and `openai::transcription` keep their paths.
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's

@@ -6,7 +6,7 @@
 use aimux_core::options::CallOptions;
 use serde_json::{Map, Value, json};
 
-use crate::openai::convert::build_request_body_with_warnings;
+use crate::openai::chat::chat_language_model::build_request_body_with_warnings;
 
 /// `prepareChatTools({ tools, toolChoice })`: `input` holds the upstream
 /// `tools` / `toolChoice` literals.

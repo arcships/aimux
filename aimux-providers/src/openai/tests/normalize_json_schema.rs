@@ -1,7 +1,7 @@
 use aimux_core::error::AiMuxError;
 use serde_json::{Value, json};
 
-use crate::openai::convert::normalize_json_schema;
+use crate::openai::normalize_json_schema::normalize_json_schema;
 
 /// `normalizeOpenAIJsonSchema(schema)` as `{ schema, warnings }`.
 fn normalize(schema: &Value) -> Result<Value, AiMuxError> {

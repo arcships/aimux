@@ -1,4 +1,6 @@
-//! OpenAI provider.
+//! OpenAI provider (`@ai-sdk/openai`). One file per upstream file, named after
+//! it without the `openai-` prefix, in the upstream sub-directories; this file
+//! is `index.ts`.
 //!
 //! [`create_openai`] is the Rust form of the AI SDK's `createOpenAI`: it takes
 //! [`OpenAIProviderSettings`], validates the base URL, fixes the provider name
@@ -10,471 +12,64 @@
 //! same wire format are served by [`crate::openai_compatible`] (and the
 //! registry presets built on it).
 
+mod chat;
 pub mod completion;
 pub(crate) mod config;
-pub mod convert;
-mod convert_common;
 pub mod decision;
 pub mod embedding;
+mod error;
 pub mod files;
 pub mod image;
-pub mod model;
-pub(crate) mod options;
+mod language_model_capabilities;
+mod normalize_json_schema;
+mod provider;
 pub mod responses;
 pub mod speech;
+mod stream_error;
+mod tool;
 pub mod tools;
 pub mod transcription;
-mod types;
 
+pub use chat::OpenAIModel;
 pub use completion::OpenAICompletionModel;
 pub use decision::OpenAIDecisionModel;
 pub use embedding::OpenAIEmbeddingModel;
 pub use files::OpenAIFiles;
 pub use image::OpenAIImageModel;
-pub use model::OpenAIModel;
+pub use provider::{OpenAIProvider, OpenAIProviderSettings, create_openai, openai};
 pub use responses::OpenAIResponsesModel;
 pub use speech::OpenAISpeechModel;
 pub use tools::{OpenAIComputerAction, OpenAIComputerSafetyCheck};
 pub use transcription::OpenAITranscriptionModel;
 
-use std::sync::{Arc, OnceLock};
+// Paths the other vendors (Azure, the OpenAI-compatible wrappers, the default
+// registry) import.
+pub(crate) use error::openai_failed_response_handler;
+pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
+pub(crate) use stream_error::openai_stream_error;
 
-use futures::future::BoxFuture;
-use serde_json::Value;
-
-use crate::shared::ProviderHeaders;
-use aimux_core::decision_model::DecisionModel;
-use aimux_core::embedding_model::EmbeddingModel;
-use aimux_core::error::AiMuxError;
-use aimux_core::files_model::Files;
-use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::model_catalogue::RuntimeModel;
-use aimux_core::provider::{Provider, ProviderDiscovery};
-use aimux_core::speech_model::SpeechModel;
-use aimux_core::transcription_model::TranscriptionModel;
-use aimux_provider_utils::{
-    DecisionLanguageModel, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
-};
-
-use crate::shared::Credential;
-
-use config::OpenAIModelConfig;
-
-pub(crate) fn openai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
-{
-    aimux_provider_utils::create_json_error_response_handler(|data| {
-        let error = data.get("error").unwrap_or(data);
-        aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            provider_code: error
-                .get("code")
-                .or_else(|| error.get("type"))
-                .and_then(|value| match value {
-                    Value::String(value) => Some(value.clone()),
-                    Value::Number(value) => Some(value.to_string()),
-                    _ => None,
-                }),
-        }
-    })
-}
-
-/// The `ApiCallError` of an OpenAI stream error frame, as upstream's
-/// `createOpenAIProviderStreamError` builds it (@ai-sdk/openai 4.0.83
-/// src/openai-stream-error.ts:18-37): an HTTP status in `code` is the status,
-/// otherwise one is inferred from `code`/`type` (`getStatusCode`, :235-267);
-/// `insufficient_quota` is never retryable (:303-315).
-pub(crate) fn openai_stream_error(
-    error: &Value,
-    url: &str,
-    request_body_values: Value,
-    response_headers: std::collections::HashMap<String, String>,
-) -> AiMuxError {
-    let response_failed = error.get("type").and_then(Value::as_str) == Some("response.failed");
-    let payload = if response_failed {
-        error
-            .get("response")
-            .and_then(|response| response.get("error"))
-            .unwrap_or(error)
-    } else {
-        error.get("error").unwrap_or(error)
+/// The chat helpers the other vendors' converters reuse.
+pub(crate) mod convert {
+    pub(crate) use super::chat::chat_language_model_options::{
+        parse_chat_provider_options, parse_option_fields,
     };
-    let message = payload
-        .get("message")
-        .and_then(Value::as_str)
-        .unwrap_or("OpenAI stream failed before any output was generated")
-        .to_owned();
-    let provider_code = payload.get("code").and_then(|value| match value {
-        Value::String(value) => Some(value.clone()),
-        Value::Number(value) => Some(value.to_string()),
-        _ => None,
-    });
-    // Upstream types a `response.failed` frame as `response.failed`, not by
-    // its inner error (`parseStreamError`, openai-stream-error.ts:207-217).
-    let error_type = if response_failed {
-        "response.failed"
-    } else {
-        payload
-            .get("type")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
+    pub(crate) use super::chat::convert_to_chat_messages::{
+        tool_result_content_value, tool_result_to_content,
     };
-    let discriminator = format!(
-        "{} {error_type}",
-        provider_code.as_deref().unwrap_or_default()
-    )
-    .to_ascii_lowercase();
-    let explicit_status = payload
-        .get("code")
-        .and_then(|value| {
-            value
-                .as_u64()
-                .and_then(|value| u16::try_from(value).ok())
-                .or_else(|| {
-                    value
-                        .as_str()
-                        .filter(|value| {
-                            value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit())
-                        })
-                        .and_then(|value| value.parse::<u16>().ok())
-                })
-        })
-        .filter(|value| (400..=599).contains(value));
-    let status = explicit_status.unwrap_or_else(|| {
-        if ["insufficient_quota", "rate_limit"]
-            .iter()
-            .any(|term| discriminator.contains(term))
-        {
-            429
-        } else if discriminator.contains("authentication") {
-            401
-        } else if discriminator.contains("permission") {
-            403
-        } else if discriminator.contains("not_found") {
-            404
-        } else if ["invalid", "bad_request", "context_length"]
-            .iter()
-            .any(|term| discriminator.contains(term))
-        {
-            400
-        } else if discriminator.contains("overload") {
-            503
-        } else if discriminator.contains("timeout") {
-            504
-        } else {
-            500
-        }
-    });
-    let quota = provider_code.as_deref() == Some("insufficient_quota")
-        || error_type == "insufficient_quota";
-    let mut result = aimux_provider_utils::stream_error_api_call(
-        message,
-        provider_code,
-        Some(status),
-        error,
-        url,
-        request_body_values,
-        response_headers,
-    );
-    if quota && let AiMuxError::ApiCall(details) = &mut result {
-        details.is_retryable = false;
-    }
-    result
 }
 
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
-pub(crate) const API_KEY_ENV_VAR: &str = "OPENAI_API_KEY";
-
-/// Settings of [`create_openai`] (the AI SDK's `OpenAIProviderSettings`).
-///
-/// Every field is optional. The base URL (including `OPENAI_BASE_URL`) and
-/// name are resolved when the provider is created; `api_key` and `headers` are evaluated
-/// on every request.
-#[derive(Clone, Default)]
-pub struct OpenAIProviderSettings {
-    /// Base URL for the API calls. `None` reads `OPENAI_BASE_URL` when the
-    /// provider is created, else `https://api.openai.com/v1`; a trailing
-    /// slash is removed. An invalid explicit value fails [`create_openai`];
-    /// an invalid `OPENAI_BASE_URL` fails every request instead.
-    pub base_url: Option<String>,
-    /// The API key. `None` loads `OPENAI_API_KEY` when a request is made and
-    /// fails that request with `AiMuxError::LoadApiKey` if it is unset. An
-    /// explicit value is used as given, `""` included: it never falls back to
-    /// the environment.
-    pub api_key: Option<String>,
-    /// Sent as `OpenAI-Organization`.
-    pub organization: Option<String>,
-    /// Sent as `OpenAI-Project`.
-    pub project: Option<String>,
-    /// Extra headers on every request. A `None` value removes the header,
-    /// including one of the fixed ones. Per-call headers win over these.
-    pub headers: Option<HeaderMapOpt>,
-    /// The provider name, the prefix of every model's `provider()` string.
-    /// Default `"openai"`.
-    pub name: Option<String>,
-    /// The transport: a mock, a signing decorator, a proxy-aware client.
-    /// `None` uses the process default, resolved per request.
-    pub fetch: Option<FetchFunction>,
-    /// Custom socket connector for streaming transcription.
-    #[cfg(feature = "realtime")]
-    pub web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
+/// The model listing and the chat stream test driver the other vendors reuse.
+pub(crate) mod model {
+    #[cfg(test)]
+    pub(crate) use super::chat::chat_language_model::chat_test_stream;
+    pub(crate) use super::provider::list_models_once;
 }
 
-impl std::fmt::Debug for OpenAIProviderSettings {
-    /// Never prints the key or header values.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OpenAIProviderSettings")
-            .field("base_url", &self.base_url)
-            .field("api_key", &self.api_key.is_some())
-            .field("organization", &self.organization)
-            .field("project", &self.project)
-            .field(
-                "headers",
-                &self.headers.as_ref().map(std::collections::HashMap::len),
-            )
-            .field("name", &self.name)
-            .field("fetch", &self.fetch.is_some())
-            .finish()
-    }
-}
-
-/// Create an OpenAI provider.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` when the explicit `base_url` is not
-/// an `http(s)` URL with a host. That is the only way this fails: the key is
-/// loaded per request, and an invalid `OPENAI_BASE_URL` is reported by each
-/// request, not here.
-pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
-    let base_url = crate::shared::base_url_setting(
-        settings.base_url.as_deref(),
-        "OPENAI_BASE_URL",
-        DEFAULT_BASE_URL,
-        validate_base_url,
-    )?;
-    let name = settings.name.unwrap_or_else(|| "openai".to_string());
-    Ok(OpenAIProvider {
-        name,
-        base_url,
-        headers: ProviderHeaders::bearer(
-            Credential::explicit_or_env(
-                settings.api_key.map(Resolvable::Value),
-                API_KEY_ENV_VAR,
-                "OpenAI",
-            ),
-            [
-                ("OpenAI-Organization", settings.organization),
-                ("OpenAI-Project", settings.project),
-            ]
-            .into_iter()
-            .filter_map(|(name, value)| value.map(|value| (name.to_string(), value)))
-            .collect(),
-            settings.headers,
-        )
-        .with_user_agent(
-            crate::shared::aisdk_pins::OPENAI.name,
-            crate::shared::aisdk_pins::OPENAI.version,
-        ),
-        fetch: Some(crate::shared::package_fetch(
-            settings.fetch,
-            crate::shared::aisdk_pins::OPENAI,
-        )),
-        #[cfg(feature = "realtime")]
-        web_socket: settings.web_socket,
-        tools: tools::OpenAITools,
-    })
-}
-
-/// The default provider: `create_openai` with default settings, created on
-/// first use. `OPENAI_BASE_URL` is read at creation (an invalid value fails
-/// each request, not the creation); the key is loaded per request.
-pub fn openai() -> &'static OpenAIProvider {
-    static DEFAULT: OnceLock<OpenAIProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_openai(OpenAIProviderSettings::default())
-            .expect("default settings have no explicit base URL to reject")
-    })
-}
-
-/// An OpenAI provider (the AI SDK's `OpenAIProvider`). Cheap to clone the
-/// models out of; it holds no HTTP client.
-pub struct OpenAIProvider {
-    name: String,
-    /// The validated base URL, or the error of an invalid `OPENAI_BASE_URL`,
-    /// which every request reports.
-    base_url: Result<String, AiMuxError>,
-    headers: ProviderHeaders,
-    fetch: Option<FetchFunction>,
-    #[cfg(feature = "realtime")]
-    web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
-    /// The provider tools (`openai.tools` in the AI SDK).
-    pub tools: tools::OpenAITools,
-}
-
-impl OpenAIProvider {
-    fn model_config(&self, method: &str) -> OpenAIModelConfig {
-        let mut config = OpenAIModelConfig::fixed(
-            format!("{}.{method}", self.name),
-            self.base_url.clone().unwrap_or_default(),
-            self.headers.clone(),
-            self.fetch.clone(),
-            None,
-        );
-        config.supported_urls = config::supported_urls(method);
-        if method == "responses" {
-            config.responses.file_id_prefixes = vec!["file-"];
-        }
-        if let Err(error) = &self.base_url {
-            config.url = config::OpenAIUrl::Invalid(error.clone());
-        }
-        config
-    }
-
-    /// A chat-completions model; `provider()` is `"{name}.chat"`.
-    #[must_use]
-    pub fn chat(&self, model_id: &str) -> OpenAIModel {
-        OpenAIModel::from_config(model_id.to_string(), self.model_config("chat"))
-    }
-
-    /// A text-completion model; `provider()` is `"{name}.completion"`.
-    #[must_use]
-    pub fn completion(&self, model_id: &str) -> OpenAICompletionModel {
-        OpenAICompletionModel::from_native_config(
-            model_id.to_string(),
-            self.model_config("completion"),
-        )
-    }
-
-    /// A Responses API model; `provider()` is `"{name}.responses"`.
-    #[must_use]
-    pub fn responses(&self, model_id: &str) -> OpenAIResponsesModel {
-        let mut config = self.model_config("responses");
-        config.responses.file_id_prefixes = vec!["file-"];
-        OpenAIResponsesModel::from_config(model_id.to_string(), config)
-    }
-
-    /// An embedding model; `provider()` is `"{name}.embedding"`.
-    #[must_use]
-    pub fn embedding(&self, model_id: &str) -> OpenAIEmbeddingModel {
-        OpenAIEmbeddingModel::from_config(model_id.to_string(), self.model_config("embedding"))
-    }
-
-    /// A native Decisions model (an aimux extension: the AI SDK's OpenAI
-    /// provider has no native decision endpoint). Its `provider()` is
-    /// `"openai"`. It is the provider's [`decision_model`](Provider::decision_model).
-    ///
-    /// # Errors
-    ///
-    /// `InvalidArgument` for an empty model id.
-    pub fn decision(&self, model_id: &str) -> Result<OpenAIDecisionModel, AiMuxError> {
-        OpenAIDecisionModel::from_config(model_id, self.model_config("decision"))
-    }
-
-    /// Decisions from structured Responses output; `provider()` is
-    /// `"{name}.evaluation"` (`@ai-sdk/openai@4.0.83
-    /// src/openai-provider.ts:355-358`, `evaluationModel`).
-    #[must_use]
-    pub fn evaluation(&self, model_id: &str) -> DecisionLanguageModel {
-        DecisionLanguageModel::new(
-            Arc::new(self.responses(model_id)),
-            Some(format!("{}.evaluation", self.name)),
-        )
-    }
-
-    /// An image model; `provider()` is `"{name}.image"`.
-    #[must_use]
-    pub fn image(&self, model_id: &str) -> OpenAIImageModel {
-        OpenAIImageModel::from_config(model_id.to_string(), self.model_config("image"))
-    }
-
-    /// A speech (TTS) model; `provider()` is `"{name}.speech"`.
-    #[must_use]
-    pub fn speech(&self, model_id: &str) -> OpenAISpeechModel {
-        OpenAISpeechModel::from_config(model_id.to_string(), self.model_config("speech"))
-    }
-
-    /// A transcription (STT) model; `provider()` is `"{name}.transcription"`.
-    #[must_use]
-    pub fn transcription(&self, model_id: &str) -> OpenAITranscriptionModel {
-        let model = OpenAITranscriptionModel::from_config(
-            model_id.to_string(),
-            self.model_config("transcription"),
-        );
-        #[cfg(feature = "realtime")]
-        let model = model.with_web_socket(self.web_socket.clone());
-        model
-    }
-
-    /// The files interface; `provider()` is `"{name}.files"`.
-    #[must_use]
-    pub fn files(&self) -> OpenAIFiles {
-        OpenAIFiles::from_config(self.model_config("files"))
-    }
-
-    /// The provider as a function: the default language model for an id. The
-    /// AI SDK's callable provider; it returns the Responses model, the same
-    /// model as [`responses`](Self::responses) and
-    /// [`language_model`](Provider::language_model).
-    #[must_use]
-    pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
-        Arc::new(self.responses(model_id))
-    }
-}
-
-impl Provider for OpenAIProvider {
-    fn discovery(&self) -> Option<&dyn ProviderDiscovery> {
-        Some(self)
-    }
-
-    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-        Ok(self.call(model_id))
-    }
-
-    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
-        Ok(Arc::new(self.embedding(model_id)))
-    }
-
-    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
-        Ok(Arc::new(self.image(model_id)))
-    }
-
-    /// The native Decisions model; the registry takes it before the
-    /// evaluation model (`ai@7.0.128 src/registry/provider-registry.ts:447-461`),
-    /// which stays reachable as [`OpenAIProvider::evaluation`].
-    fn decision_model(&self, model_id: &str) -> Option<Result<Arc<dyn DecisionModel>, AiMuxError>> {
-        Some(
-            self.decision(model_id)
-                .map(|model| Arc::new(model) as Arc<dyn DecisionModel>),
-        )
-    }
-
-    fn transcription_model(
-        &self,
-        model_id: &str,
-    ) -> Option<Result<Arc<dyn TranscriptionModel>, AiMuxError>> {
-        Some(Ok(Arc::new(self.transcription(model_id))))
-    }
-
-    fn speech_model(&self, model_id: &str) -> Option<Result<Arc<dyn SpeechModel>, AiMuxError>> {
-        Some(Ok(Arc::new(self.speech(model_id))))
-    }
-
-    fn files(&self) -> Option<Arc<dyn Files>> {
-        Some(Arc::new(self.files()))
-    }
-}
-
-impl ProviderDiscovery for OpenAIProvider {
-    /// `GET {base_url}/models`: one exchange, no retry.
-    fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
-        let config = self.model_config("models");
-        Box::pin(async move { model::list_models_once(&config).await })
-    }
+/// The chat options parser Azure reuses.
+pub(crate) mod options {
+    pub(crate) use super::chat::chat_language_model_options::{
+        ChatOptionsParser, parse_chat_options,
+    };
 }
 
 #[cfg(test)]

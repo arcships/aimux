@@ -1,9 +1,9 @@
 //! The upstream zod chunk/response schemas have no Rust type: aimux reads each
 //! Responses event as JSON in the stream reducer
-//! (`responses_convert::build_responses_event_stream`), so a chunk the schema
+//! (`responses_language_model::build_responses_event_stream`), so a chunk the schema
 //! accepts must pass through the reducer without an `error` part, and a chunk
 //! it rejects must surface one (as upstream's `doStream` does for a chunk that
-//! fails validation). Usage is the one typed part (`types::ResponsesUsage`,
+//! fails validation). Usage is the one typed part (`responses_api::ResponsesUsage`,
 //! read with `parse_usage` and reported raw by `convert_responses_usage`).
 
 use std::collections::HashMap;
@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::openai::responses::convert::parse_usage;
 use crate::openai::responses::convert_responses_usage;
-use crate::openai::responses::responses_convert::build_responses_event_stream;
+use crate::openai::responses::convert_responses_usage::parse_usage;
+use crate::openai::responses::responses_language_model::build_responses_event_stream;
 
 /// Run one chunk through the stream reducer (after a `response.created`
 /// chunk, so the reducer's first-event error check is not what is tested)
