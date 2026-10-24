@@ -426,7 +426,7 @@ mod api_routing {
                 .await
                 .unwrap_err();
             assert!(
-                matches!(error, AiMuxError::InvalidArgument(_)),
+                matches!(error, AiMuxError::InvalidArgument { .. }),
                 "{azure}: {error:?}"
             );
             assert_eq!(harness.fetch_calls(), 0, "{azure}");
@@ -533,7 +533,10 @@ mod speech_requests {
             .unwrap_err();
         // The AI SDK's error also names `argument: 'resourceName'`; aimux's
         // InvalidArgument carries only a message, so the variant is checked.
-        assert!(matches!(error, AiMuxError::InvalidArgument(_)), "{error:?}");
+        assert!(
+            matches!(error, AiMuxError::InvalidArgument { .. }),
+            "{error:?}"
+        );
         assert_eq!(harness.fetch_calls(), 0);
     }
 

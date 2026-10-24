@@ -55,7 +55,11 @@ function json(value: unknown): string {
     if (serialized === undefined) throw new TypeError('Parameters must be JSON data')
     return serialized
   } catch (error) {
-    throw new AimuxError({ kind: 'binding', code: 202, message: `params: ${String(error)}`, error: { name: 'InvalidWireJson', argument: 'params', message: String(error) } })
+    // The payload carries the serializer's error as the native decoder does;
+    // `Error.cause` is that error itself, with its stack.
+    const wire = new AimuxError({ kind: 'binding', code: 202, message: `params: ${String(error)}`, error: { name: 'InvalidWireJson', argument: 'params', message: String(error), cause: { message: String(error) } } })
+    Object.defineProperty(wire, 'cause', { value: error, writable: true, configurable: true })
+    throw wire
   }
 }
 

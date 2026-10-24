@@ -2,6 +2,7 @@
 //! (azure-transcription-model-options.ts): the API to use plus the Speech
 //! options.
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 use serde::{Deserialize, Serialize};
@@ -48,21 +49,24 @@ pub(super) fn parse_options(
     };
     // Optional in the upstream schema means absent, never explicitly null.
     if azure.values().any(Value::is_null) {
-        return Err(AiMuxError::InvalidArgument(
-            "Invalid Azure transcription options: null field".into(),
+        return Err(AiMuxError::invalid_argument(
+            "Invalid Azure transcription options: null field",
         ));
     }
     let parsed: AzureOptions =
         serde_json::from_value(Value::Object(azure.clone())).map_err(|error| {
-            AiMuxError::InvalidArgument(format!("Invalid Azure transcription options: {error}"))
+            AiMuxError::InvalidArgument {
+                message: format!("Invalid Azure transcription options: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            }
         })?;
     if parsed
         .locales
         .as_ref()
         .is_some_and(|locales| locales.len() != 1)
     {
-        return Err(AiMuxError::InvalidArgument(
-            "Azure transcription locales must contain one language".into(),
+        return Err(AiMuxError::invalid_argument(
+            "Azure transcription locales must contain one language",
         ));
     }
     Ok(parsed)

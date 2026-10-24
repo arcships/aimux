@@ -411,7 +411,8 @@ fn metadata_and_owned_control_schemas_are_complete() {
         serde_json::json!([
             "InvalidResponseData",
             "ToolCallNotFoundForApproval",
-            "ToolChoiceViolation"
+            "ToolChoiceViolation",
+            "TypeValidation"
         ])
     );
     assert_eq!(

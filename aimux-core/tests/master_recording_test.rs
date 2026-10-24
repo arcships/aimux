@@ -122,14 +122,14 @@ async fn what_cannot_be_replayed_fails_at_replay_time() {
     let err = replay_with_model(&recordings[1], &mock, None)
         .await
         .unwrap_err();
-    assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
+    assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err}");
     assert!(err.to_string().contains("recorded prompt"), "{err}");
 
     // ... and master's call options (`tool_choice: "auto"`), naming the writer.
     let err = replay_with_model(&recordings[0], &mock, None)
         .await
         .unwrap_err();
-    assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
+    assert!(matches!(err, AiMuxError::JsonParse { .. }), "{err}");
     assert!(err.to_string().contains("aimux 0.5 or earlier"), "{err}");
 }
 
@@ -177,7 +177,7 @@ async fn master_decision_recordings_load_and_explain_at_replay() {
     let err = replay_decision_with_model(&recordings[0], &mock)
         .await
         .unwrap_err();
-    assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
+    assert!(matches!(err, AiMuxError::JsonParse { .. }), "{err}");
     assert!(err.to_string().contains("aimux 0.5 or earlier"), "{err}");
 
     // The same call in this version's shape (the V4 Jev fixture) finds no

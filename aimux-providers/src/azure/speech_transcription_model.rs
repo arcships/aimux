@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::provider_namespace;
 use aimux_core::transcription_model::{
@@ -76,7 +77,7 @@ pub(super) async fn do_generate(
                 })
                 .collect();
             if audio.ends_with('=') && !audio.len().is_multiple_of(4) {
-                return Err(AiMuxError::InvalidArgument("invalid base64 padding".into()));
+                return Err(AiMuxError::invalid_argument("invalid base64 padding"));
             }
             let config = base64::engine::general_purpose::GeneralPurposeConfig::new()
                 .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent)
@@ -88,7 +89,10 @@ pub(super) async fn do_generate(
                 ),
                 audio,
             )
-            .map_err(|error| AiMuxError::InvalidArgument(format!("invalid base64: {error}")))?
+            .map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("invalid base64: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            })?
         }
     };
     let mut definition = json!({"enhancedMode": {

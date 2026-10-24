@@ -101,7 +101,7 @@ impl EmbeddingModel for BedrockEmbeddingModel {
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
         if options.values.len() > self.max_embeddings_per_call().unwrap_or(1) as usize {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Too many embedding values for amazon-bedrock model {}: maximum {} per call",
                 self.model_id,
                 self.max_embeddings_per_call().unwrap_or(1)
@@ -372,8 +372,8 @@ fn parse_bedrock_provider_options(
             || !valid_enums
             || opts.get("normalize").is_some_and(|v| !v.is_boolean())
         {
-            return Err(AiMuxError::InvalidArgument(
-                "invalid amazonBedrock provider options".into(),
+            return Err(AiMuxError::invalid_argument(
+                "invalid amazonBedrock provider options",
             ));
         }
     }
