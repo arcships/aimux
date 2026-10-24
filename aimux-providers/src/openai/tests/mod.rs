@@ -2,9 +2,12 @@
 
 mod chat;
 mod completion;
+mod embedding;
 mod error;
 mod evaluation;
+mod files;
 mod forward_compatible_defaults;
+mod image;
 mod language_model_capabilities;
 mod normalize_json_schema;
 mod provider;

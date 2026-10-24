@@ -67,53 +67,84 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
 // doEmbed
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: "should extract embedding"
-#[tokio::test]
-async fn should_extract_embedding() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embeddings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
+mod do_embed {
+    use super::*;
 
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.embedding_model("text-embedding-3-large").unwrap();
+    /// upstream: @ai-sdk/openai src/embedding/openai-embedding-model.test.ts › doEmbed › should extract embedding
+    #[tokio::test]
+    async fn should_extract_embedding() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
+            .mount(&server)
+            .await;
 
-    let result = model
-        .do_embed(&default_options(test_values()))
-        .await
-        .expect("should succeed");
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.embedding_model("text-embedding-3-large").unwrap();
 
-    assert_eq!(result.embeddings.len(), 2);
-    assert_eq!(
-        result.embeddings[0],
-        vec![
-            0.0057293195,
-            -0.012727811,
-            0.020042092,
-            -0.013437585,
-            0.022833068
-        ]
-    );
-    assert_eq!(
-        result.embeddings[1],
-        vec![
-            -0.037104916,
-            -0.05178114,
-            -0.008340587,
-            0.001164541,
-            -0.0035253682
-        ]
-    );
+        let result = model
+            .do_embed(&default_options(test_values()))
+            .await
+            .expect("should succeed");
+
+        assert_eq!(result.embeddings.len(), 2);
+        assert_eq!(
+            result.embeddings[0],
+            vec![
+                0.0057293195,
+                -0.012727811,
+                0.020042092,
+                -0.013437585,
+                0.022833068
+            ]
+        );
+        assert_eq!(
+            result.embeddings[1],
+            vec![
+                -0.037104916,
+                -0.05178114,
+                -0.008340587,
+                0.001164541,
+                -0.0035253682
+            ]
+        );
+    }
+
+    /// upstream: @ai-sdk/openai src/embedding/openai-embedding-model.test.ts › doEmbed › should extract usage
+    #[tokio::test]
+    async fn should_extract_usage() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/embeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
+            .mount(&server)
+            .await;
+
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.embedding_model("text-embedding-3-large").unwrap();
+
+        let result = model
+            .do_embed(&default_options(test_values()))
+            .await
+            .expect("should succeed");
+
+        let usage = result.usage.expect("usage should be present");
+        assert_eq!(usage.tokens, 12);
+    }
 }
 
-/// TS: "should expose the raw response headers"
+/// partial: `should expose the raw response headers`; full port in src/openai/tests/embedding/embedding_model.rs.
 #[tokio::test]
 async fn should_expose_raw_response_headers() {
     let server = MockServer::start().await;
@@ -151,7 +182,7 @@ async fn should_expose_raw_response_headers() {
     );
 }
 
-/// TS: "should expose the raw response body"
+/// partial: `should expose the raw response body`; full port in src/openai/tests/embedding/embedding_model.rs.
 #[tokio::test]
 async fn should_expose_raw_response_body() {
     let server = MockServer::start().await;
@@ -183,34 +214,7 @@ async fn should_expose_raw_response_body() {
     assert_eq!(body["data"].as_array().unwrap().len(), 2);
 }
 
-/// TS: "should extract usage"
-#[tokio::test]
-async fn should_extract_usage() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/embeddings"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
-        .mount(&server)
-        .await;
-
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.embedding_model("text-embedding-3-large").unwrap();
-
-    let result = model
-        .do_embed(&default_options(test_values()))
-        .await
-        .expect("should succeed");
-
-    let usage = result.usage.expect("usage should be present");
-    assert_eq!(usage.tokens, 12);
-}
-
-/// TS: "should pass the model and the values"
+/// partial: `should pass the model and the values`; full port in src/openai/tests/embedding/embedding_model.rs.
 #[tokio::test]
 async fn should_pass_model_and_values() {
     let server = MockServer::start().await;
@@ -278,8 +282,8 @@ async fn should_pass_integer_dimensions_as_an_integer() {
     assert_eq!(body["dimensions"], json!(64));
 }
 
-/// TS: "should pass headers" — verifies that Authorization, OpenAI-Organization,
-/// OpenAI-Project, config-level headers, and request-level headers are all sent.
+/// partial: `should pass headers`; full port in src/openai/tests/embedding/embedding_model.rs.
+/// Verifies that Authorization, OpenAI-Organization, OpenAI-Project, config-level headers, and request-level headers are all sent.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
