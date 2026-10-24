@@ -14,6 +14,16 @@
       "default": {},
       "type": "object"
     },
+    "unmapped": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "$ref": "ModelSpec.json"
+        },
+        "type": "object"
+      },
+      "description": "Specs of source providers with no aimux provider, keyed by the\nsource's own provider id then model id. The host maps them, if it\nwants them.",
+      "type": "object"
+    },
     "updatedAt": {
       "default": 0,
       "format": "uint64",

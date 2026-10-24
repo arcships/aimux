@@ -8,6 +8,7 @@ use aimux_core::tool::RawToolCall;
 use async_trait::async_trait;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::CallOptions;
@@ -410,13 +411,16 @@ impl Transformer for CohereChatStream {
                     }) {
                         Ok(value) if !contains_prototype_key(&value) => value.to_string(),
                         Ok(_) => {
-                            controller.error(AiMuxError::InvalidResponseData(
-                                "Object contains forbidden prototype property".into(),
+                            controller.error(AiMuxError::invalid_response_data(
+                                "Object contains forbidden prototype property",
                             ));
                             return;
                         }
                         Err(error) => {
-                            controller.error(AiMuxError::JsonParse(error.to_string()));
+                            controller.error(AiMuxError::JsonParse {
+                                message: error.to_string(),
+                                cause: Some(ErrorCause::source(&error)),
+                            });
                             return;
                         }
                     };

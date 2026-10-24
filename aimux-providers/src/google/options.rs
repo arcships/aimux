@@ -20,9 +20,10 @@ pub(crate) const GOOGLE_VERTEX: &str = "googleVertex";
 pub(crate) const VERTEX_VIDEO_METADATA_KEYS: [&str; 3] = [GOOGLE_VERTEX, "google-vertex", "vertex"];
 
 /// Which provider's namespaces a model reads and writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Namespace {
     /// The public Gemini API: reads and writes `google`.
+    #[default]
     Google,
     /// Vertex AI: reads `googleVertex`, `vertex`, then `google`; writes both Vertex keys.
     Vertex,

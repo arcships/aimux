@@ -22,7 +22,8 @@ use aimux_provider_utils::{
 };
 use std::sync::OnceLock;
 
-use crate::google::GoogleSpeechModel;
+use crate::google::options::Namespace;
+use crate::google::{GoogleModel, GoogleSpeechModel};
 use crate::shared::{
     Endpoint, EndpointConfig, ResolveEndpoint, SupportedUrlsSource, TransformRequestBody,
     is_valid_hostname_part,
@@ -36,7 +37,6 @@ mod auth_external;
 mod embedding;
 mod gemini_transcription;
 pub mod image;
-mod model;
 mod partner_provider;
 mod transcription;
 mod video;
@@ -50,7 +50,9 @@ pub use auth::{GoogleAuthOptions, GoogleAuthScopes};
 pub use embedding::VertexEmbeddingModel;
 pub use gemini_transcription::VertexGeminiTranscriptionModel;
 pub use image::VertexImageModel;
-pub use model::VertexModel;
+/// The Vertex AI Gemini model: the Gemini API's model reading the Vertex
+/// namespaces, as `@ai-sdk/google-vertex` reuses `GoogleLanguageModel`.
+pub type VertexModel = GoogleModel;
 pub use partner_provider::{
     VertexMaasProviderSettings, VertexPartnerProviderSettings, VertexXaiProvider,
     VertexXaiProviderSettings, create_google_vertex_maas, create_google_vertex_xai,
@@ -112,6 +114,9 @@ pub struct VertexProviderSettings {
     /// Rewrites every JSON request body once, after it is serialized and
     /// before it is sent.
     pub transform_request_body: Option<TransformRequestBody>,
+    /// Generates IDs for tool calls and sources of the Gemini models that
+    /// have no provider ID.
+    pub generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 impl std::fmt::Debug for VertexProviderSettings {
@@ -130,6 +135,7 @@ impl std::fmt::Debug for VertexProviderSettings {
                 "transform_request_body",
                 &self.transform_request_body.is_some(),
             )
+            .field("generate_id", &self.generate_id.is_some())
             .finish()
     }
 }
@@ -148,10 +154,9 @@ fn location_host(location: &str) -> String {
 /// (@ai-sdk/google-vertex@5.0.100 google-vertex-provider-base.ts:230-245).
 pub(crate) fn check_location(location: &str) -> Result<(), AiMuxError> {
     if !is_valid_hostname_part(location) {
-        return Err(AiMuxError::InvalidArgument(
+        return Err(AiMuxError::invalid_argument(
             "Invalid Google Vertex location. Expected a single DNS label (letters, digits, and hyphens). \
-             Use `base_url` for custom endpoints."
-                .to_string(),
+             Use `base_url` for custom endpoints.",
         ));
     }
     Ok(())
@@ -183,7 +188,7 @@ impl ProjectLocationSource {
     /// The project and location of one request.
     pub(crate) async fn resolve(&self) -> Result<ProjectLocation, AiMuxError> {
         if self.resolver.express_key().await?.is_some() {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Google Vertex {} models do not support Express Mode API keys. \
                  Use standard Google Cloud credentials instead.",
                 self.what
@@ -210,7 +215,7 @@ impl ResolveEndpoint for GeminiEndpoint {
     /// The base URL and provider headers of one request.
     async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
         if self.tuned && self.resolver.express_key().await?.is_some() {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Google Vertex tuned models do not support Express Mode API keys. \
                  Use standard Google Cloud credentials instead."
                     .to_string(),
@@ -396,6 +401,7 @@ pub fn create_google_vertex(
         #[cfg(feature = "realtime")]
         web_socket: settings.web_socket,
         transform_request_body: settings.transform_request_body,
+        generate_id: settings.generate_id,
     })
 }
 
@@ -419,6 +425,7 @@ pub struct VertexProvider {
     #[cfg(feature = "realtime")]
     web_socket: Option<Arc<dyn aimux_provider_utils::ws::WsConnector>>,
     transform_request_body: Option<TransformRequestBody>,
+    generate_id: Option<Arc<dyn Fn() -> String + Send + Sync>>,
 }
 
 /// The URL patterns the Vertex models fetch themselves
@@ -463,17 +470,19 @@ impl VertexProvider {
     /// A Gemini model (e.g. `"gemini-2.0-flash"`, or a tuned
     /// `"endpoints/{id}"`); `provider()` is `"google.vertex.chat"`.
     ///
-    /// A tuned model fails its requests with `AiMuxError::InvalidArgument` in
+    /// A tuned model fails its requests with `AiMuxError::invalid_argument` in
     /// Express mode.
     #[must_use]
     pub fn chat(&self, model_id: &str) -> VertexModel {
-        VertexModel::from_config(
+        GoogleModel::from_config(
             model_id.to_string(),
             self.model_config(
                 "google.vertex.chat",
                 model_id.starts_with(ENDPOINT_MODEL_PREFIX),
             ),
+            Namespace::Vertex,
         )
+        .with_generate_id(self.generate_id.clone())
     }
 
     /// An embedding model (e.g. `"textembedding-gecko@001"`); `provider()` is

@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_core::decision_model::*;
 use async_trait::async_trait;
 use indexmap::IndexMap;
@@ -90,8 +91,8 @@ impl RuntimeDecisionModel {
             )));
         }
         if model_id.trim().is_empty() {
-            return Err(AiMuxError::InvalidArgument(
-                "decision model ID cannot be empty".into(),
+            return Err(AiMuxError::invalid_argument(
+                "decision model ID cannot be empty",
             ));
         }
         Ok(Self {
@@ -115,7 +116,7 @@ impl RuntimeDecisionModel {
             )));
         }
         if let Some(max) = limits.max_images.filter(|max| images.len() > *max) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "{provider} accepts at most {max} decision images"
             )));
         }
@@ -123,7 +124,7 @@ impl RuntimeDecisionModel {
             .max_questions
             .filter(|max| request.questions.len() > *max)
         {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "{provider} accepts at most {max} decision questions"
             )));
         }
@@ -139,7 +140,7 @@ impl RuntimeDecisionModel {
                 DecisionQuestion::Boolean { .. } => true,
             };
             if !within {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "question {id:?} exceeds {provider} criteria limits"
                 )));
             }
@@ -167,7 +168,7 @@ impl RuntimeDecisionModel {
                     DecisionQuestion::Boolean { .. } => true,
                 };
                 if !valid || (provider == "vllm" && request.questions.len() > 64) {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "{provider} SystemOne question or candidate limit exceeded"
                     )));
                 }
@@ -180,9 +181,8 @@ impl RuntimeDecisionModel {
             };
             let count: usize = request.questions.values().map(candidate_count).sum();
             if state_len > 50_000 || count > 512 {
-                return Err(AiMuxError::InvalidArgument(
-                    "Laya state exceeds 50,000 characters or questions exceed 512 total options"
-                        .into(),
+                return Err(AiMuxError::invalid_argument(
+                    "Laya state exceeds 50,000 characters or questions exceed 512 total options",
                 ));
             }
         }
@@ -214,20 +214,18 @@ impl RuntimeDecisionModel {
         if provider == "vllm" {
             if let Some(extensions) = options.remove("questions") {
                 let extensions = extensions.as_object().ok_or_else(|| {
-                    AiMuxError::InvalidArgument("vllm.questions must be an object".into())
+                    AiMuxError::invalid_argument("vllm.questions must be an object")
                 })?;
                 for (id, extension) in extensions {
                     let target = body["questions"].get_mut(id).ok_or_else(|| {
-                        AiMuxError::InvalidArgument(format!("unknown vllm question {id}"))
+                        AiMuxError::invalid_argument(format!("unknown vllm question {id}"))
                     })?;
                     let extension = extension.as_object().ok_or_else(|| {
-                        AiMuxError::InvalidArgument(
-                            "vllm question extensions must be objects".into(),
-                        )
+                        AiMuxError::invalid_argument("vllm question extensions must be objects")
                     })?;
                     for (key, value) in extension {
                         if !matches!(key.as_str(), "depends_on" | "ask_if" | "alone") {
-                            return Err(AiMuxError::InvalidArgument(format!(
+                            return Err(AiMuxError::invalid_argument(format!(
                                 "unsupported vllm question option {key}"
                             )));
                         }
@@ -267,9 +265,8 @@ impl RuntimeDecisionModel {
                         .bytes()
                         .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
                 {
-                    return Err(AiMuxError::InvalidArgument(
-                        "Cloudflare question IDs require 1–100 ASCII letters, digits, _, . or -"
-                            .into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "Cloudflare question IDs require 1–100 ASCII letters, digits, _, . or -",
                     ));
                 }
             }
@@ -289,7 +286,7 @@ impl RuntimeDecisionModel {
             _ => None,
         };
         if body_limit.is_some_and(|limit| body.to_string().len() > limit) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "{provider} decision request exceeds body limit"
             )));
         }
@@ -313,7 +310,7 @@ impl RuntimeDecisionModel {
                 let allowed = matches!(image.media_type.as_str(), "image/png" | "image/jpeg")
                     || (provider != "localai" && image.media_type == "image/webp");
                 if !allowed || (provider != "localai" && inline.decoded_len > 4 * 1024 * 1024) {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "{provider} unsupported image format or image exceeds 4 MiB"
                     )));
                 }
@@ -336,13 +333,13 @@ impl RuntimeDecisionModel {
             });
         }
         if restricted && total > 8 * 1024 * 1024 {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "{provider} images exceed 8 MiB decoded"
             )));
         }
         if provider == "localai" && encoded_total > 12 * 1024 * 1024 {
-            return Err(AiMuxError::InvalidArgument(
-                "LocalAI image URLs exceed 12 MiB".into(),
+            return Err(AiMuxError::invalid_argument(
+                "LocalAI image URLs exceed 12 MiB",
             ));
         }
         body["images"] = json!(wire);
@@ -410,8 +407,10 @@ impl RuntimeDecisionModel {
         let latency = raw.get("latency_ms").filter(|v| v.is_number()).cloned();
         let mut result = crate::systemone::convert_response(
             request,
-            serde_json::from_value(data)
-                .map_err(|e| invalid(format!("{provider} SystemOne: {e}")))?,
+            serde_json::from_value(data).map_err(|e| AiMuxError::InvalidResponseData {
+                message: format!("{provider} SystemOne: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?,
             raw,
             headers,
             crate::systemone::ResponseProfile {
@@ -468,8 +467,8 @@ impl RuntimeDecisionModel {
                     criteria,
                 } => {
                     if !(2..=26).contains(&criteria.len()) {
-                        return Err(AiMuxError::InvalidArgument(
-                            "SGLang decisions choices require 2–26 options".into(),
+                        return Err(AiMuxError::invalid_argument(
+                            "SGLang decisions choices require 2–26 options",
                         ));
                     }
                     let options: Vec<_> = criteria
@@ -489,8 +488,8 @@ impl RuntimeDecisionModel {
                     criteria,
                 } => {
                     if criteria.len() > 10 {
-                        return Err(AiMuxError::InvalidArgument(
-                            "SGLang decisions scores support at most 10 levels".into(),
+                        return Err(AiMuxError::invalid_argument(
+                            "SGLang decisions scores support at most 10 levels",
                         ));
                     }
                     json!({"id":id,"type":"score","question":instructions,"levels":criteria})
@@ -521,7 +520,7 @@ pub(crate) fn copy_options(
 ) -> Result<(), AiMuxError> {
     for (key, value) in options {
         if !allowed.contains(&key.as_str()) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "unsupported decision option {key}"
             )));
         }

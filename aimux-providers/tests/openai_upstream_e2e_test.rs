@@ -738,7 +738,7 @@ async fn image_edit_url_files_are_downloaded_through_the_guard() {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, AiMuxError::InvalidArgument(ref message) if message.contains("non-public")),
+            matches!(error, AiMuxError::InvalidArgument { ref message, .. } if message.contains("non-public")),
             "{error:?}"
         );
         assert!(fetch.seen().is_empty());

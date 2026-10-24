@@ -10,6 +10,7 @@ class ErrorsTest {
         is NoOutputGeneratedError -> "NoOutputGeneratedError"
         is JSONParseError -> "JSONParseError"
         is InvalidResponseDataError -> "InvalidResponseDataError"
+        is TypeValidationError -> "TypeValidationError"
         is ToolCallNotFoundForApprovalError -> "ToolCallNotFoundForApprovalError"
         is InvalidArgumentError -> "InvalidArgumentError"
         is InvalidPromptError -> "InvalidPromptError"
@@ -37,11 +38,12 @@ class ErrorsTest {
 
     @Test
     fun `every Java core subtype maps to an exhaustive sealed variant`() {
-        val codes = listOf(18, 2, 3, 3, 5, 6, 19, 20, 7, 8, 9, 10, 11, 14, 12, 13, 15, 16, 17, 6, 3, 1)
+        val codes = listOf(18, 2, 3, 3, 3, 5, 6, 19, 20, 7, 8, 9, 10, 11, 14, 12, 13, 15, 16, 17, 6, 3, 1)
         val variants = listOf(
             "NoOutputGeneratedError",
             "JSONParseError",
             "InvalidResponseDataError",
+            "TypeValidationError",
             "ToolCallNotFoundForApprovalError",
             "InvalidArgumentError",
             "InvalidPromptError",

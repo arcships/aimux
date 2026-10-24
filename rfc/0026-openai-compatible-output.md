@@ -362,6 +362,8 @@ struct ToolCallAccum {
 }
 ```
 
+`stream_text` 把 `ResponseMetadata` 并进步结果，`TextStreamPart` 流要到步结束才带出 id 与 model。`stream_text_as_openai` 和 ops 的 `text.streamOpenAI` 因此用 `ResponseIdentity::observe` 包住模型，记下 provider 流里的 `ResponseMetadata`，再交给 `to_chat_completion_stream_with_identity`：首帧等到第一段内容（或流结束、出错）才发，所有 chunk 用 provider 报的 id 与 model；provider 没报时用生成的 `chatcmpl-…` 和请求的模型名。
+
 #### StreamPart → ChatCompletionChunk 映射
 
 | `StreamPart` 变体 | 产出 chunk | 状态更新 |

@@ -1,6 +1,6 @@
 //! Fetch error normalization.
 
-use aimux_core::{AiMuxError, ApiCallError};
+use aimux_core::{AiMuxError, ApiCallError, ErrorCause};
 
 use crate::fetch::FetchError;
 
@@ -24,7 +24,9 @@ pub fn handle_fetch_error(
 
 /// Convert a transport failure into the public error model: an abort stays an
 /// abort; everything else is an `ApiCall` error with no status (no response
-/// arrived), retryable exactly when [`FetchError::is_retryable`] says so.
+/// arrived), retryable exactly when [`FetchError::is_retryable`] says so, with
+/// the transport error and its source chain as its `cause` (the AI SDK's
+/// `handleFetchError`, `@ai-sdk/provider-utils` `handle-fetch-error.ts`).
 #[must_use]
 pub(crate) fn fetch_error_to_ai_mux_error(
     error: FetchError,
@@ -35,6 +37,7 @@ pub(crate) fn fetch_error_to_ai_mux_error(
         FetchError::Aborted => AiMuxError::Aborted("request aborted".into()),
         other => AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: other.is_retryable(),
+            cause: Some(ErrorCause::source(&other)),
             ..ApiCallError::new(other.to_string(), url, request_body_values.clone())
         })),
     }

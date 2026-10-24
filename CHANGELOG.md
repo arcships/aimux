@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Errors keep their cause, as the AI SDK's `cause`. `ApiCallError` has
+  `cause` (`.caused_by(..)`): the transport error with its whole source chain
+  down to the OS error, the body parse error, or the error a response handler
+  returned; `invalid_response_api_call` takes that error instead of a
+  message, its text becoming the message. `JsonParse`, `NoOutputGenerated`, `InvalidResponseData`,
+  `InvalidArgument`, `InvalidPrompt` and `Other` are `{ message, cause }`
+  (build them with `AiMuxError::json_parse(..)`, `invalid_argument(..)`, ...),
+  and `InvalidToolInput.cause` is the parse or validation error itself instead
+  of its text. A value that fails its schema is the new `TypeValidation`
+  error (`AI_TypeValidationError`, with the value), the cause of an
+  `InvalidToolInput` or of a structured output that does not match. A cause
+  is a nested `AiMuxError` or a `SourceError` chain of an OS, TLS or parser
+  error, and is what `source()` returns; `RetryError::source()` is the last
+  attempt. `FetchError` and download errors carry a `SourceError` without the
+  request URL, so their messages lose it too: `error sending request for url
+  (…)` is now `error sending request`. Other messages are unchanged.
+
+- The ops error envelope carries the cause in all four domains, as the
+  payload's optional `cause`: the recording domain's `source` string becomes
+  `cause: { message, cause? }`, and the binding and protocol domains keep the
+  JSON parser's or serializer's error (`InvalidWireJson`,
+  `ResultSerialization`, `InvalidParams`, now struct variants). Every binding
+  exposes it natively: Node `error.cause` (`AimuxCauseError` for a nested
+  error, `AimuxSourceError` for an underlying one), Python `__cause__` (a
+  nested error is its own exception class, an underlying error is
+  `aimux.SourceError`), Java/Kotlin `getCause()` (`ErrorCause`), Go `Unwrap()`
+  (`*aimux.Cause`), Swift and Flutter `cause`; a retry error's cause is its
+  last attempt. The C++ wrapper throws `aimux::NativeError`
+  (a `std::runtime_error`) with the error code and the envelope JSON.
+
 - aimux's public JSON equals the AI SDK's JSON. Struct fields serialize
   camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
   AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,
@@ -1180,6 +1210,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The model catalogue keys specs by the names `create_provider` accepts.
+  anya2a provider ids map through an explicit table of the same vendor's
+  providers, checked by hand (13 old aliases named providers that do not
+  exist, such as `vertex`, `bedrock` and `xiaomi`), or map to themselves when
+  they are a provider name; the rest, and an alias whose target the catalogue
+  also lists under its own id, go to `Catalogue::unmapped` under the anya2a id
+  instead of a name guessed from the spelling. `normalize_provider_name`
+  returns `None` for them, and each mapped `ModelSpec` carries its
+  `provider`.
+- Vertex AI Gemini models are the Google model reading the Vertex
+  namespaces, as `@ai-sdk/google-vertex` reuses `GoogleLanguageModel`; the
+  separate Vertex copy is removed (`VertexModel` is now an alias of
+  `GoogleModel`). Code execution, server tool calls and sources take their
+  ids from `generate_id` (new on `VertexProviderSettings`); stream text and
+  reasoning ids count only text and reasoning blocks; code execution carries
+  no server-tool metadata; an empty `thoughtSignature` adds no metadata;
+  `serviceTier: null` stays in the provider metadata; stream usage comes from
+  the parsed chunk; and the request builder's warnings (reasoning mapping,
+  thought-signature sentinel) are no longer dropped. Both models now read
+  `"candidates": null` as no candidates, stream function-call arguments
+  sent as `partialArgs`, and leave an empty `thoughtSignature` out of server
+  tool metadata.
+- Open Responses and the Codex subscription stream honor
+  `include_raw_chunks`: each SSE chunk is sent as `StreamPart::Raw` before
+  the parts made from it, as the AI SDK's Open Responses model and aimux's
+  OpenAI Responses stream do. Both ignored the option.
+- Presets of vendors with an AI SDK package follow its
+  `supportsStructuredOutputs`: Together AI sends a `json_schema` response
+  format only for `deepseek-ai/DeepSeek-V4-Flash-0731`, Moonshot (`moonshotai`
+  and `kimi`) only for `kimi-k*` and seven `moonshot-v1-*` models, and Vercel
+  and v0 never, as `@ai-sdk/togetherai`, `@ai-sdk/moonshotai` and
+  `@ai-sdk/vercel` do; other models send `json_object` with an `unsupported`
+  warning. Registry rows declare this in `profile.structured_output_models`
+  (exact ids, or a prefix ending in `*`); rows without it keep sending a
+  schema to every model.
+- Mistral with `structuredOutputs: false` and a JSON schema adds the schema
+  instruction to the system prompt and asks for `json_object`, as the AI SDK
+  does; it sent the bare `json_object` mode with no instruction.
+  `aimux-provider-utils` gains `inject_json_instruction` and
+  `inject_json_instruction_into_messages` (the AI SDK's
+  `injectJsonInstruction*`), which Mistral and Bedrock now share. The
+  Mistral pin moves to `@ai-sdk/mistral` 4.0.55, the first release with this
+  behavior: the user-agent reads `ai-sdk-mistral/4.0.55
+  ai-sdk-provider-utils/5.0.52`, and an `error` finish reason maps to
+  `error` instead of `other`.
 - Google Vertex checks that a location going into a host name is one DNS
   label (letters, digits and hyphens), as the AI SDK does: the Gemini and
   Claude models, MaaS and the Speech-to-Text models (whose `region` provider
@@ -1192,6 +1267,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release depends on the locked `@ai-sdk/google` 4.0.87. The Vertex user
   agent now reads `ai-sdk-google-vertex/5.0.100 ai-sdk-provider-utils/5.0.53`,
   and the MaaS and xAI models send `ai-sdk-openai-compatible/3.0.61`.
+- `stream_text_as_openai` and the bindings' OpenAI-format text stream carry
+  the provider's response id and model in every chunk again, as aimux 0.5
+  did; they sent a generated `chatcmpl-…` id and the requested model name.
+  The role frame now waits for the first content so that it has them. New
+  `ResponseIdentity` and `to_chat_completion_stream_with_identity` do the
+  same for a caller's own `stream_text` stream.
 - `default_providers()`, `openai()` and `anthropic()` no longer panic on an
   invalid `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`. The variable is still
   read when the provider is created, as the AI SDK does; an invalid value now

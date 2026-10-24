@@ -353,7 +353,7 @@ async fn repair_returning_none_keeps_the_original_failure() {
 async fn repair_failure_keeps_both_typed_errors() {
     let repair = ToolCallRepair::new(|context| async move {
         assert_eq!(context.input_schema("weather"), weather_tool_schema());
-        Err(AiMuxError::Other("repair model failed".into()))
+        Err(AiMuxError::other("repair model failed"))
     });
 
     let call = parse_tool_call(
@@ -369,7 +369,7 @@ async fn repair_failure_keeps_both_typed_errors() {
         call.error,
         Some(AiMuxError::ToolCallRepair { original_error, cause })
             if matches!(*original_error, AiMuxError::InvalidToolInput { .. })
-                && matches!(*cause, AiMuxError::Other(_))
+                && matches!(*cause, AiMuxError::Other { .. })
     ));
 }
 
