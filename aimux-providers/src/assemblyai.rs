@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
 use aimux_core::shared::{SharedProviderMetadata, Warning};
@@ -128,7 +129,7 @@ impl std::fmt::Debug for AssemblyAIProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_assemblyai(
@@ -249,8 +250,12 @@ fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
     match audio {
         AudioInput::Binary(bytes) => Ok(bytes.clone()),
         AudioInput::Base64(b64) => {
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(|e| {
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid base64: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                }
+            })
         }
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }

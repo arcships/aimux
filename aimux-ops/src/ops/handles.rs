@@ -13,10 +13,11 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, resolve_secondary};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
-#[derive(Clone, Copy, Default, Deserialize)]
+#[derive(Clone, Copy, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[schemars(rename = "MiddlewareAuditMode")]
 pub enum AuditMode {
     #[default]
     Disabled,
@@ -26,23 +27,25 @@ pub enum AuditMode {
 
 use crate::ops::operation::EmptyParams;
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 struct HandleResult {
     handle: HandleId,
     kind: HandleKind,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", deny_unknown_fields)]
 enum TransportParams {
     #[serde(rename = "fetch")]
     Fetch {
         #[serde(default, deserialize_with = "deserialize_proxy")]
+        #[schemars(with = "TransportProxy")]
         proxy: ProxyConfig,
     },
     #[serde(rename = "ws")]
     WebSocket {
         #[serde(default, deserialize_with = "deserialize_proxy")]
+        #[schemars(with = "TransportProxy")]
         proxy: ProxyConfig,
     },
     #[serde(rename = "download")]
@@ -54,6 +57,16 @@ enum TransportParams {
 
 // ProxyConfig is the canonical settings type, but its serde reader is open.
 // Close the control object without defining a second transport settings type.
+#[derive(schemars::JsonSchema)]
+#[schemars(schema_with = "transport_proxy_schema")]
+pub(super) struct TransportProxy;
+
+fn transport_proxy_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let mut schema = <ProxyConfig as schemars::JsonSchema>::json_schema(generator);
+    schema.insert("additionalProperties".into(), false.into());
+    schema
+}
+
 fn deserialize_proxy<'de, D>(deserializer: D) -> Result<ProxyConfig, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -73,13 +86,13 @@ where
     serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct CredentialParams {
     kind: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MiddlewareParams {
     kind: String,
@@ -91,7 +104,7 @@ struct MiddlewareParams {
 fn params<T: DeserializeOwned>(value: Value) -> Result<T, OpsError> {
     // Do not echo caller-supplied data (in particular credential material).
     serde_json::from_value(value)
-        .map_err(|_| OpsError::Protocol(ProtocolError::InvalidParams("invalid parameters".into())))
+        .map_err(|_| OpsError::Protocol(ProtocolError::invalid_params("invalid parameters")))
 }
 
 fn unsupported(message: &'static str) -> OpsError {
@@ -102,7 +115,7 @@ fn insert(ctx: &Ctx, entry: Entry) -> Result<Value, OpsError> {
     let kind = entry.kind();
     let id = HandleRegistry::global().insert(ctx.owner, entry)?;
     serde_json::to_value(HandleResult { handle: id, kind })
-        .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+        .map_err(|error| BindingError::result_serialization(&error).into())
 }
 
 fn abort_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
@@ -160,8 +173,8 @@ fn middleware_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
             return Err(unsupported("requested built-in middleware is unavailable"));
         }
         let id = request.trace_store.ok_or_else(|| {
-            OpsError::Protocol(ProtocolError::InvalidParams(
-                "traceStore must be a decimal handle string".into(),
+            OpsError::Protocol(ProtocolError::invalid_params(
+                "traceStore must be a decimal handle string",
             ))
         })?;
         // Use the same owner-aware resolver as dispatch, including when the
@@ -170,7 +183,7 @@ fn middleware_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
             HandleRegistry::global(),
             &ctx,
             &serde_json::to_value(id)
-                .map_err(|error| BindingError::ResultSerialization(error.to_string()))?,
+                .map_err(|error| BindingError::result_serialization(&error))?,
             &[HandleKind::TraceStore],
         )?
         else {
@@ -237,8 +250,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "EmptyParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -256,8 +269,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::Abort],
-        request_type: "EmptyParams",
-        result_type: "()",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<()>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -275,8 +288,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::handles::TransportParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<TransportParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -299,8 +312,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::handles::CredentialParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<CredentialParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Future,
         terminal_type: None,
@@ -318,8 +331,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::handles::MiddlewareParams",
-        result_type: "aimux_ops::ops::handles::HandleResult",
+        request_type: TypeRef::of::<MiddlewareParams>(),
+        result_type: TypeRef::of::<HandleResult>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -361,8 +374,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
             HandleKind::ReplaySession,
             HandleKind::Decision,
         ],
-        request_type: "EmptyParams",
-        result_type: "()",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<()>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,

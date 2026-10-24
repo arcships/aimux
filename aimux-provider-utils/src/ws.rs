@@ -35,6 +35,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use aimux_core::AbortSignal;
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::options::TimeoutConfiguration;
+use aimux_core::{ErrorCause, SourceError};
 
 /// A request to open a WebSocket connection.
 #[derive(Debug)]
@@ -154,9 +155,14 @@ fn abort_error(abort: &Option<AbortSignal>) -> AiMuxError {
         .unwrap_or_else(|| AiMuxError::Aborted("request aborted".into()))
 }
 
-fn ws_error(url: &str, msg: impl std::fmt::Display) -> AiMuxError {
+fn ws_error(
+    url: &str,
+    msg: impl std::fmt::Display,
+    source: Option<&(dyn std::error::Error + 'static)>,
+) -> AiMuxError {
     AiMuxError::ApiCall(Box::new(ApiCallError {
         is_retryable: true,
+        cause: source.map(ErrorCause::source),
         ..ApiCallError::new(
             msg.to_string(),
             crate::http::sanitized_request_url(url),
@@ -272,11 +278,9 @@ fn resolve_proxy(
     let Some(raw) = raw else {
         return Ok(None);
     };
-    let proxy = url::Url::parse(&raw).map_err(|e| {
-        AiMuxError::InvalidArgument(format!(
-            "invalid proxy URL {}: {e}",
-            sanitized_proxy_url(&raw)
-        ))
+    let proxy = url::Url::parse(&raw).map_err(|e| AiMuxError::InvalidArgument {
+        message: format!("invalid proxy URL {}: {e}", sanitized_proxy_url(&raw)),
+        cause: Some(ErrorCause::source(&e)),
     })?;
     let scheme = proxy.scheme().to_ascii_lowercase();
     if scheme != "http" {
@@ -292,7 +296,7 @@ fn resolve_proxy(
     let host = proxy
         .host_str()
         .ok_or_else(|| {
-            AiMuxError::InvalidArgument(format!(
+            AiMuxError::invalid_argument(format!(
                 "proxy URL has no host: {}",
                 sanitized_proxy_url(&raw)
             ))
@@ -448,7 +452,10 @@ async fn connect_through_proxy(
             .with_safe_default_protocol_versions()
             .map_err(|e| {
                 ConnectError::Tungstenite(tokio_tungstenite::tungstenite::Error::Io(
-                    std::io::Error::other(format!("building rustls client config: {e}")),
+                    std::io::Error::other(SourceError::with_cause(
+                        format!("building rustls client config: {e}"),
+                        &e,
+                    )),
                 ))
             })?
             .with_root_certificates(roots)
@@ -511,18 +518,25 @@ async fn connect_tungstenite(
     req: &WebSocketRequest,
     config: &crate::fetch::ProxyConfig,
 ) -> Result<WsConnection, AiMuxError> {
-    let mut http_req = req
-        .url
-        .as_str()
-        .into_client_request()
-        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid WebSocket URL: {e}")))?;
+    let mut http_req =
+        req.url
+            .as_str()
+            .into_client_request()
+            .map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid WebSocket URL: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
     for (k, v) in &req.headers {
         http_req.headers_mut().insert(
             tokio_tungstenite::tungstenite::http::HeaderName::try_from(k.as_str()).map_err(
-                |e| AiMuxError::InvalidArgument(format!("invalid WS header name {k}: {e}")),
+                |e| AiMuxError::InvalidArgument {
+                    message: format!("invalid WS header name {k}: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                },
             )?,
-            HeaderValue::from_str(v).map_err(|e| {
-                AiMuxError::InvalidArgument(format!("invalid WS header value for {k}: {e}"))
+            HeaderValue::from_str(v).map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid WS header value for {k}: {e}"),
+                cause: Some(ErrorCause::source(&e)),
             })?,
         );
     }
@@ -530,7 +544,10 @@ async fn connect_tungstenite(
         http_req.headers_mut().insert(
             "Sec-WebSocket-Protocol",
             HeaderValue::from_str(&req.subprotocols.join(", ")).map_err(|e| {
-                AiMuxError::InvalidArgument(format!("invalid WS subprotocols: {e}"))
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid WS subprotocols: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                }
             })?,
         );
     }
@@ -547,8 +564,10 @@ async fn connect_tungstenite(
 
     // Proxy resolution (RFC-0034 §2): the connector's ProxyConfig.
     // no_proxy hits and a proxy-less config keep the direct path unchanged.
-    let target = url::Url::parse(&req.url)
-        .map_err(|e| AiMuxError::InvalidArgument(format!("invalid WebSocket URL: {e}")))?;
+    let target = url::Url::parse(&req.url).map_err(|e| AiMuxError::InvalidArgument {
+        message: format!("invalid WebSocket URL: {e}"),
+        cause: Some(ErrorCause::source(&e)),
+    })?;
     let proxy = {
         let target_host = target.host_str().unwrap_or_default();
         let target_port = target.port_or_known_default().unwrap_or(80);
@@ -615,7 +634,11 @@ async fn connect_tungstenite(
                 })));
             }
             Err(ConnectError::Tungstenite(e)) => {
-                return Err(ws_error(&req.url, format!("websocket connect failed: {e}")));
+                return Err(ws_error(
+                    &req.url,
+                    format!("websocket connect failed: {e}"),
+                    Some(&e),
+                ));
             }
         },
     };
@@ -682,7 +705,7 @@ impl WsConnection {
                 Err(AiMuxError::Timeout("websocket send exceeded total timeout".into()))
             }
             res = self.stream.send(Message::Text(text.to_string())) => {
-                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}")))
+                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}"), Some(&e)))
             }
         }
     }
@@ -702,7 +725,7 @@ impl WsConnection {
                 Err(AiMuxError::Timeout("websocket send exceeded total timeout".into()))
             }
             res = self.stream.send(Message::Binary(bytes.to_vec())) => {
-                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}")))
+                res.map_err(|e| ws_error(&self.url, format!("websocket send failed: {e}"), Some(&e)))
             }
         }
     }
@@ -752,12 +775,18 @@ impl WsConnection {
                         let detail = frame
                             .map(|f| format!(" (code {}: {})", u16::from(f.code), f.reason))
                             .unwrap_or_default();
-                        return Some(Err(ws_error(&self.url, format!(
-                            "websocket closed by peer{detail}"
-                        ))));
+                        return Some(Err(ws_error(
+                            &self.url,
+                            format!("websocket closed by peer{detail}"),
+                            None,
+                        )));
                     }
                     Some(Err(e)) => {
-                        return Some(Err(ws_error(&self.url, format!("websocket error: {e}"))));
+                        return Some(Err(ws_error(
+                            &self.url,
+                            format!("websocket error: {e}"),
+                            Some(&e),
+                        )));
                     }
                 },
             }

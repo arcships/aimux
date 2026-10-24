@@ -155,7 +155,7 @@ async fn sessions_export_and_idempotent_clear_preserve_ffi_query_semantics() {
         .await
         .unwrap_err();
     assert!(
-        matches!(error.unprojected(), OpsError::AiMux(aimux_core::AiMuxError::InvalidArgument(message)) if message == "unknown session")
+        matches!(error.unprojected(), OpsError::AiMux(aimux_core::AiMuxError::InvalidArgument { message, .. }) if message == "unknown session")
     );
     let envelope = serde_json::to_value(error.envelope(SystemTime::now())).unwrap();
     assert_eq!(envelope["kind"], "aimux");
@@ -235,7 +235,7 @@ async fn invalid_controls_fail_before_mutation() {
         assert!(
             matches!(
                 error.unprojected(),
-                OpsError::Protocol(ProtocolError::InvalidParams(_))
+                OpsError::Protocol(ProtocolError::InvalidParams { .. })
             ),
             "{op}: {error}"
         );
@@ -407,8 +407,11 @@ fn six_trace_descriptors_publish_concrete_types_and_a5_fields() {
             matches!(name, "trace.create" | "trace.clear")
         );
         assert!(!descriptor.source_symbols.is_empty());
-        for ty in [descriptor.request_type, descriptor.result_type] {
-            assert_ne!(ty, "serde_json::Value");
+        for ty in [
+            (descriptor.request_type.id)().into_owned(),
+            (descriptor.result_type.id)().into_owned(),
+        ] {
+            assert_ne!(ty, "AnyValue");
             assert!(
                 manifest["types"]
                     .as_array()

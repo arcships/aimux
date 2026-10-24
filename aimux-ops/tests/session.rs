@@ -365,24 +365,29 @@ fn descriptors_publish_concrete_types_and_complete_metadata() {
             "aimux_ops::ops::session::SessionStoreHandle",
             true,
         ),
-        ("sessionStore.attach", "EmptyParams", "()", true),
+        (
+            "sessionStore.attach",
+            "aimux_ops::ops::operation::EmptyParams",
+            "null",
+            true,
+        ),
         (
             "sessionStore.list",
-            "EmptyParams",
-            "aimux_ops::ops::session::SessionViews",
+            "aimux_ops::ops::operation::EmptyParams",
+            "[aimux_core::session::SessionView]",
             false,
         ),
         (
             "sessionStore.calls",
             "aimux_ops::ops::session::SessionStoreCallsParams",
-            "aimux_ops::ops::session::SessionCalls",
+            "[aimux_core::session::SessionCall]",
             false,
         ),
     ] {
         let op = descriptor(name).unwrap();
         assert_eq!(op.mode, OpMode::Call);
-        assert_eq!(op.request_type, request);
-        assert_eq!(op.result_type, result);
+        assert_eq!((op.request_type.id)().into_owned(), request);
+        assert_eq!((op.result_type.id)().into_owned(), result);
         assert_eq!(op.scope, Scope::Current);
         assert_eq!(op.cancellation, Cancellation::None);
         assert_eq!(op.request_byte_policy, RequestBytePolicy::Json);

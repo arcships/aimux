@@ -72,7 +72,7 @@ impl Auth {
     pub(crate) fn host_region(&self) -> Result<String, AiMuxError> {
         let region = self.region()?;
         if !is_valid_hostname_part(&region) {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Invalid AWS region. Expected a single DNS label (letters, digits, and hyphens). \
                  Use `base_url` for custom endpoints."
                     .to_string(),
