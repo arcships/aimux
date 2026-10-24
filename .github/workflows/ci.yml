@@ -725,11 +725,11 @@ jobs:
           ABIS: ${{ matrix.abis }}
         run: |
           flutter build apk --debug
-          apk=build/app/outputs/flutter-apk/app-debug.apk
+          contents=$(unzip -l build/app/outputs/flutter-apk/app-debug.apk)
           for abi in $ABIS; do
-            unzip -l "$apk" | grep -q "lib/$abi/libaimux_ffi\.so" || {
+            grep -q "lib/$abi/libaimux_ffi\.so" <<< "$contents" || {
               echo "Missing lib/$abi/libaimux_ffi.so in the APK" >&2
-              unzip -l "$apk" | grep 'lib/'
+              grep 'lib/' <<< "$contents"
               exit 1
             }
           done
