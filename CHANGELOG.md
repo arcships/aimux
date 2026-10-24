@@ -1305,6 +1305,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI image models report file and mask input support by model id like
+  the AI SDK: the editing models (`dall-e-2`, the `gpt-image` and
+  `chatgpt-image-latest` ids it lists) `Some(true)`, `dall-e-3`
+  `Some(false)`, other ids and every Azure deployment unknown (all were
+  unknown).
 - Evaluation models built on structured language-model output (OpenAI
   `evaluation`, Anthropic and Google evaluation models) name their JSON
   response format `evaluation`, as the AI SDK does; it was `decision`.
