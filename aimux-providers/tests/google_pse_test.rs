@@ -171,7 +171,7 @@ async fn missing_cx_returns_invalid_argument_error() {
 
     let result = model.do_search(&opts("rust language")).await;
     assert!(
-        matches!(result, Err(AiMuxError::InvalidArgument(ref m)) if m.contains("cx")),
+        matches!(result, Err(AiMuxError::InvalidArgument { message: ref m, .. }) if m.contains("cx")),
         "expected InvalidArgument error mentioning cx, got {result:?}"
     );
 

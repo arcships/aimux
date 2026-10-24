@@ -79,7 +79,7 @@ func TestParseStreamPartRejectsInvalid(t *testing.T) {
 }
 
 func TestNamespaceMapsKeepValues(t *testing.T) {
-	roundTripDTO[TypedToolCall](t, `{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,"providerMetadata":{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}},"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":"missing city"}}`)
+	roundTripDTO[TypedToolCall](t, `{"type":"tool-call","toolCallId":"call-1","toolName":"weather","input":{"town":"SG"},"dynamic":true,"invalid":true,"providerMetadata":{"zeta":{"z":1,"a":2},"alpha":{},"mid":{}},"error":{"name":"AI_InvalidToolInputError","toolName":"weather","toolInput":"{\"town\":\"SG\"}","cause":{"message":"missing city"}}}`)
 	roundTripDTO[UploadFileResult](t, `{"providerReference":{"openai":"file-abc123","anthropic":"file-xyz789","google":"files/1"},"warnings":[]}`)
 }
 

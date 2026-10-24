@@ -325,7 +325,7 @@ mod anthropic_aws_provider_authentication {
         async fn wraps_credential_provider_rejections_with_a_guided_message() {
             let _env = stub_default_env();
             let credentials = Resolvable::from_async_fn(|| async {
-                Err::<AwsCredentials, _>(AiMuxError::Other("STS denied".into()))
+                Err::<AwsCredentials, _>(AiMuxError::other("STS denied"))
             });
             let fetch = MockFetch::new(vec![]);
             let provider = create_anthropic_aws(AnthropicAwsProviderSettings {

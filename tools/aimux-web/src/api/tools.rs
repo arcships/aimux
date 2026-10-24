@@ -19,7 +19,7 @@ pub async fn run(
 ) -> Response {
     match agents::execute(&name, &input) {
         Ok(result) => Json(json!({ "tool": name, "result": result })).into_response(),
-        Err(e) => err_response(AiMuxError::InvalidArgument(e)),
+        Err(e) => err_response(AiMuxError::invalid_argument(e)),
     }
 }
 

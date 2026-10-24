@@ -134,7 +134,7 @@ impl std::fmt::Debug for AnthropicAwsProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host, or, with no `base_url`, an explicit `region` is not a
 /// single DNS label. Those are the only ways this fails: the region, the
 /// workspace id and the credentials are loaded per request, not here.

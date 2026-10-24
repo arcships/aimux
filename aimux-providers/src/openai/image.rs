@@ -11,6 +11,7 @@
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
@@ -193,7 +194,7 @@ fn validate_image_options(options: &SharedProviderOptions, edit: bool) -> Result
         if let Some(value) = options.get(name)
             && !value.as_str().is_some_and(|value| values.contains(&value))
         {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "invalid openai image option: {name}"
             )));
         }
@@ -213,13 +214,13 @@ fn validate_image_options(options: &SharedProviderOptions, edit: bool) -> Result
             .as_f64()
             .is_some_and(|value| (0.0..=100.0).contains(&value) && value.fract() == 0.0)
     {
-        return Err(AiMuxError::InvalidArgument(
-            "invalid openai image option: outputCompression".into(),
+        return Err(AiMuxError::invalid_argument(
+            "invalid openai image option: outputCompression",
         ));
     }
     if options.get("user").is_some_and(|value| !value.is_string()) {
-        return Err(AiMuxError::InvalidArgument(
-            "invalid openai image option: user".into(),
+        return Err(AiMuxError::invalid_argument(
+            "invalid openai image option: user",
         ));
     }
     Ok(())
@@ -334,8 +335,9 @@ async fn image_file_to_bytes(
                 ImageFileData::Binary(bytes) => bytes.clone(),
                 ImageFileData::Base64(value) => {
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
-                        .map_err(|error| {
-                            AiMuxError::InvalidArgument(format!("invalid base64: {error}"))
+                        .map_err(|error| AiMuxError::InvalidArgument {
+                            message: format!("invalid base64: {error}"),
+                            cause: Some(ErrorCause::source(&error)),
                         })?
                 }
             };

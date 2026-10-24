@@ -116,7 +116,7 @@ async fn deepseek_names_its_own_provider_utils() {
     );
 }
 
-/// mistral-provider.ts:118-127; `@ai-sdk/mistral@4.0.54` depends on 5.0.51.
+/// mistral-provider.ts:118-127; `@ai-sdk/mistral@4.0.55` depends on 5.0.52.
 #[tokio::test]
 async fn mistral_names_its_own_provider_utils() {
     let (fetch, transport) = transport();
@@ -128,7 +128,7 @@ async fn mistral_names_its_own_provider_utils() {
     .unwrap();
     assert_eq!(
         sent_user_agent(&provider, "mistral-small-latest", &fetch).await,
-        "ai-sdk-mistral/4.0.54 ai-sdk-provider-utils/5.0.51"
+        "ai-sdk-mistral/4.0.55 ai-sdk-provider-utils/5.0.52"
     );
 }
 

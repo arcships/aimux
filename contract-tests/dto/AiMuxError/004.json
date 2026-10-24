@@ -1,0 +1,25 @@
+{
+  "name": "AI_APICallError",
+  "url": "https://example.test/v1",
+  "requestBodyValues": {
+    "input": null
+  },
+  "statusCode": 429,
+  "providerCode": "rate_limit",
+  "message": "slow down",
+  "responseBody": "{\"error\":null}",
+  "responseHeaders": {
+    "retry-after-ms": "1500"
+  },
+  "data": null,
+  "isRetryable": true,
+  "cause": {
+    "message": "error sending request",
+    "cause": {
+      "message": "tcp connect error",
+      "cause": {
+        "message": "Connection refused (os error 111)"
+      }
+    }
+  }
+}

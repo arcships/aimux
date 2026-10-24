@@ -370,7 +370,7 @@ fn insert(owner: Owner, entry: Entry) -> Result<Value, OpsError> {
     let kind = entry.kind();
     let handle = HandleRegistry::global().insert(owner, entry)?;
     serde_json::to_value(HandleResult { handle, kind })
-        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 fn get(owner: Owner, handle: HandleId, kind: HandleKind) -> Result<Entry, OpsError> {
@@ -420,8 +420,8 @@ fn create_package(
             || settings.project.is_some()
             || !settings.params.is_empty()
         {
-            return Err(OpsError::AiMux(AiMuxError::InvalidArgument(
-                "Jev accepts apiKey, endpoint, headers and probabilitySource settings".into(),
+            return Err(OpsError::AiMux(AiMuxError::invalid_argument(
+                "Jev accepts apiKey, endpoint, headers and probabilitySource settings",
             )));
         }
         let mut config = match settings.api_key {
@@ -446,8 +446,8 @@ fn create_package(
         );
     }
     if settings.endpoint.is_some() || settings.probability_source.is_some() {
-        return Err(OpsError::AiMux(AiMuxError::InvalidArgument(
-            "endpoint and probabilitySource settings require the Jev provider".into(),
+        return Err(OpsError::AiMux(AiMuxError::invalid_argument(
+            "endpoint and probabilitySource settings require the Jev provider",
         )));
     }
     let mut headers = settings.headers;
@@ -557,9 +557,8 @@ fn invoke(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
             },
             None => discovery.list_models().await,
         }.map_err(OpsError::AiMux)?;
-        serde_json::to_value(models).map_err(|error| {
-            OpsError::Binding(BindingError::ResultSerialization(error.to_string()))
-        })
+        serde_json::to_value(models)
+            .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
     })
 }
 
@@ -775,7 +774,7 @@ mod tests {
                         owned_by: None,
                         created: None,
                     }]),
-                    Discovery::Error => Err(AiMuxError::InvalidArgument("discovery failed".into())),
+                    Discovery::Error => Err(AiMuxError::invalid_argument("discovery failed")),
                     Discovery::Pending => futures::future::pending().await,
                 }
             })
@@ -862,7 +861,7 @@ mod tests {
         ] {
             assert!(matches!(
                 call(owner, HandleId(0), "provider.create", params).await,
-                Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+                Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
             ));
         }
     }
@@ -905,7 +904,7 @@ mod tests {
                 json!({"package":"openai", "settings":{}})
             )
             .await,
-            Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
         ));
     }
 
@@ -977,7 +976,7 @@ mod tests {
                 json!({"method":"languageModel"})
             )
             .await,
-            Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
         ));
     }
 
@@ -1013,7 +1012,7 @@ mod tests {
                 json!({"method":"listModels", "args":{}})
             )
             .await,
-            Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
         ));
         assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
@@ -1024,7 +1023,7 @@ mod tests {
         let (provider, _) = mock(owner, Discovery::Error);
         assert!(
             matches!(call(owner, provider, "provider.invoke", json!({"method":"listModels"})).await,
-            Err(OpsError::AiMux(AiMuxError::InvalidArgument(message))) if message == "discovery failed")
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { message, .. })) if message == "discovery failed")
         );
         let provider = handle(
             owner,
@@ -1311,7 +1310,7 @@ mod tests {
         ] {
             assert!(matches!(
                 call(owner, HandleId(0), "provider.custom", params).await,
-                Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+                Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
             ));
         }
     }

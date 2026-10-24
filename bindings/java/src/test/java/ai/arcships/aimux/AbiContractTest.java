@@ -180,7 +180,7 @@ class AbiContractTest {
     }
 
     @Test void exceptionSubtypesCoverEveryDomainVariantAndUseNameDiscriminator() {
-        String[] names = {"AI_Error", "AI_JSONParseError", "AI_InvalidResponseDataError",
+        String[] names = {"AI_Error", "AI_JSONParseError", "AI_InvalidResponseDataError", "AI_TypeValidationError",
             "AI_ToolCallNotFoundForApprovalError", "AI_InvalidArgumentError", "AI_InvalidPromptError",
             "AI_TokenExpiredError", "AI_UnsupportedFunctionalityError", "AI_NoSuchModelError",
             "AI_NoSuchProviderError", "AI_APICallError", "TimeoutError", "AbortError", "AI_RetryError",

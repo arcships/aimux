@@ -136,7 +136,7 @@ mod anthropic_aws_region_validation {
             );
 
             assert!(
-                matches!(&error, AiMuxError::InvalidArgument(message) if message.contains("Invalid AWS region")),
+                matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.contains("Invalid AWS region")),
                 "region {region:?}: {error:?}"
             );
             assert_eq!(wire_name(&error), "AI_InvalidArgumentError");
@@ -171,7 +171,7 @@ mod anthropic_aws_region_validation {
         );
 
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message) if message.contains("Invalid AWS region")),
+            matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.contains("Invalid AWS region")),
             "{error:?}"
         );
         assert!(fetch.seen().is_empty());

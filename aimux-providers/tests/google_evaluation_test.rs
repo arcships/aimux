@@ -215,7 +215,7 @@ async fn rejects_unfinished_generations_even_with_valid_json() {
         ));
         let error = model.do_decide(&options()).await.unwrap_err();
         assert!(
-            matches!(error, AiMuxError::InvalidResponseData(_)),
+            matches!(error, AiMuxError::InvalidResponseData { .. }),
             "got {error:?}"
         );
     }
@@ -227,7 +227,7 @@ async fn validates_score_bounds_locally() {
     let (model, _) = setup(&with_candidate(fixture(), parts(r#"{"q0":"c1","q1":3}"#)));
     let error = model.do_decide(&options()).await.unwrap_err();
     assert!(
-        matches!(error, AiMuxError::InvalidResponseData(_)),
+        matches!(error, AiMuxError::InvalidResponseData { .. }),
         "got {error:?}"
     );
 }

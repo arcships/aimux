@@ -274,13 +274,13 @@ pub fn decode_stream(
             while buffer.len() >= 4 {
                 let length = u32::from_be_bytes(buffer[..4].try_into().expect("four bytes")) as usize;
                 if length < 16 {
-                    yield Err(aimux_core::AiMuxError::InvalidResponseData("Invalid Amazon Bedrock event-stream frame length".into()));
+                    yield Err(aimux_core::AiMuxError::invalid_response_data("Invalid Amazon Bedrock event-stream frame length"));
                     return;
                 }
                 if buffer.len() < length { break; }
                 let decoded = decode_messages(&buffer[..length]);
                 let Some(message) = decoded.into_iter().next() else {
-                    yield Err(aimux_core::AiMuxError::InvalidResponseData("Invalid Amazon Bedrock event-stream frame".into()));
+                    yield Err(aimux_core::AiMuxError::invalid_response_data("Invalid Amazon Bedrock event-stream frame"));
                     return;
                 };
                 buffer.drain(..length);
@@ -288,7 +288,7 @@ pub fn decode_stream(
             }
         }
         if !buffer.is_empty() {
-            yield Err(aimux_core::AiMuxError::InvalidResponseData(format!("Incomplete Amazon Bedrock event-stream frame: {} buffered bytes remain at end of stream.", buffer.len())));
+            yield Err(aimux_core::AiMuxError::invalid_response_data(format!("Incomplete Amazon Bedrock event-stream frame: {} buffered bytes remain at end of stream.", buffer.len())));
         }
     })
 }

@@ -11,6 +11,15 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// `deserialize_with` for a zod `.nullish()` array: `null` reads as empty.
+fn null_as_empty<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 // ── Non-streaming response (`generateContent`) ───────────────────────────────
 
 /// Top-level Gemini `generateContent` response.
@@ -20,7 +29,8 @@ pub struct GenerateContentResponse {
     /// Stable response id (used as `ResponseMetadata::id`).
     #[serde(default)]
     pub response_id: Option<String>,
-    #[serde(default)]
+    /// Absent or `null` reads as no candidates (zod `.nullish()` upstream).
+    #[serde(default, deserialize_with = "null_as_empty")]
     pub candidates: Vec<Candidate>,
     #[serde(default)]
     pub usage_metadata: Option<GoogleUsageMetadata>,

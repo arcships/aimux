@@ -350,7 +350,7 @@ async fn subscription_generate_returns_parse_error_without_a_completed_event() {
         .await
         .unwrap_err();
 
-    assert!(matches!(error, AiMuxError::JsonParse(_)));
+    assert!(matches!(error, AiMuxError::JsonParse { .. }));
 }
 
 #[tokio::test]
@@ -378,6 +378,44 @@ async fn subscription_stream_forces_store_false() {
     let (body, _) = first_request(&server).await;
     assert_eq!(body["stream"], true);
     assert_eq!(body["store"], false);
+}
+
+/// The subscription stream honors `include_raw_chunks` as the API-key
+/// (OpenAI Responses) stream does: each chunk as `Raw` before its parts.
+#[tokio::test]
+async fn subscription_stream_sends_raw_chunks_when_asked() {
+    let server = MockServer::start().await;
+    mock_sse_response(&server, &sse_body(TEXT_STREAM_EVENTS)).await;
+    let provider = codex_provider(
+        CodexMode::ChatGptAccount {
+            token: Resolvable::Value("account-token".to_string()),
+            account_id: None,
+        },
+        server.uri(),
+        None,
+    );
+    let mut options = default_options(test_prompt());
+    options.include_raw_chunks = Some(true);
+    let parts = collect_stream(
+        provider
+            .responses("gpt-5.2-codex")
+            .do_stream(&options)
+            .await
+            .expect("should succeed"),
+    )
+    .await;
+    let raw: Vec<Value> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::Raw { raw_value } => Some(raw_value.clone()),
+            _ => None,
+        })
+        .collect();
+    let expected: Vec<Value> = TEXT_STREAM_EVENTS
+        .iter()
+        .map(|event| serde_json::from_str(event).unwrap())
+        .collect();
+    assert_eq!(raw, expected);
 }
 
 #[tokio::test]

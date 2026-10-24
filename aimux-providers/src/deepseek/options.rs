@@ -6,6 +6,7 @@
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{JsonObject, SharedProviderOptions};
 
@@ -106,13 +107,16 @@ fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
     match namespace {
         None => Ok(T::default()),
         Some(options) => serde_json::from_value(Value::Object(options.clone())).map_err(|error| {
-            AiMuxError::InvalidArgument(format!("invalid provider options for \"{name}\": {error}"))
+            AiMuxError::InvalidArgument {
+                message: format!("invalid provider options for \"{name}\": {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            }
         }),
     }
 }
 
 fn invalid(name: &str, message: &str) -> AiMuxError {
-    AiMuxError::InvalidArgument(format!(
+    AiMuxError::invalid_argument(format!(
         "invalid provider options for \"{name}\": {message}"
     ))
 }
