@@ -1,5 +1,7 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.util.Objects;
@@ -16,35 +18,41 @@ public final class TypedModel implements AutoCloseable {
     public TypedModel(Model model) { this.model = Objects.requireNonNull(model, "model"); }
     @Override public void close() { model.close(); }
 
-    public Types.GenerateTextResult generate(String paramsJson) {
-        return decode(model.generate(paramsJson), Types.GenerateTextResult.class);
+    public GenerateTextResult generate(String paramsJson) {
+        return decode(model.generate(paramsJson), GenerateTextResult.class);
     }
 
-    public Types.GenerateObjectResult generateObject(String paramsJson) {
-        return decode(model.generateObject(paramsJson), Types.GenerateObjectResult.class);
+    public GenerateObjectResult generateObject(String paramsJson) {
+        return decode(model.generateObject(paramsJson), GenerateObjectResult.class);
     }
 
-    public Types.GenerateTextResult consume(String paramsJson) {
-        return decode(model.consume(paramsJson), Types.GenerateTextResult.class);
+    public GenerateTextResult consume(String paramsJson) {
+        return decode(model.consume(paramsJson), GenerateTextResult.class);
     }
 
-    public Types.ChatCompletion generateOpenAI(String paramsJson) {
-        return decode(model.generateOpenAI(paramsJson), Types.ChatCompletion.class);
+    public ChatCompletion generateOpenAI(String paramsJson) {
+        return decode(model.generateOpenAI(paramsJson), ChatCompletion.class);
     }
 
-    public Future<Types.GenerateTextResult> generateAsync(String paramsJson, Executor executor) {
-        return new DecodedFuture<>(model.generateAsync(paramsJson, executor), Types.GenerateTextResult.class);
+    public Future<GenerateTextResult> generateAsync(String paramsJson, Executor executor) {
+        return new DecodedFuture<>(model.generateAsync(paramsJson, executor), GenerateTextResult.class);
     }
 
-    public void stream(String paramsJson, Consumer<Types.StreamPart> consumer) {
+    public void stream(String paramsJson, Consumer<TextStreamPart> consumer) {
         Objects.requireNonNull(consumer, "consumer");
         model.stream(paramsJson, frame -> {
-            if (!frame.isEnd()) consumer.accept(decode(frame.getEvent(), Types.StreamPart.class));
+            if (frame instanceof StreamFrame.Event) {
+                StreamEvent event = ((StreamFrame.Event) frame).getEvent();
+                if (!(event instanceof StreamEvent.TextStreamPart)) {
+                    throw new IllegalStateException("Expected text stream event");
+                }
+                consumer.accept(((StreamEvent.TextStreamPart) event).getValue());
+            }
         });
     }
 
     private static <T> T decode(JsonNode value, Class<T> type) {
-        try { return Types.AimuxJson.MAPPER.treeToValue(value, type); }
+        try { return DtoJson.MAPPER.treeToValue(value, type); }
         catch (IOException e) { throw new IllegalStateException("Invalid " + type.getSimpleName(), e); }
     }
 

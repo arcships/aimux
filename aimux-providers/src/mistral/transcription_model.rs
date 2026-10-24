@@ -10,6 +10,7 @@ use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::{Map, Number, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderMetadata;
 use aimux_core::transcription_model::{
@@ -98,10 +99,9 @@ impl TranscriptionModel for MistralTranscriptionModel {
         // the combination locally provides a stable SDK error instead of an
         // API 4xx.
         if mistral.language.is_some() && mistral.timestamp_granularities.is_some() {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "providerOptions.mistral.language cannot be combined with \
-                 providerOptions.mistral.timestampGranularities"
-                    .into(),
+                 providerOptions.mistral.timestampGranularities",
             ));
         }
 
@@ -110,7 +110,10 @@ impl TranscriptionModel for MistralTranscriptionModel {
             AudioInput::Binary(bytes) => bytes.clone(),
             AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
                 .decode(data)
-                .map_err(|error| AiMuxError::InvalidArgument(format!("invalid base64: {error}")))?,
+                .map_err(|error| AiMuxError::InvalidArgument {
+                    message: format!("invalid base64: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                })?,
         };
         let mut form = MultipartForm::new();
         form.text("model", &self.model_id)?;
@@ -156,8 +159,8 @@ impl TranscriptionModel for MistralTranscriptionModel {
                 .as_deref()
                 .is_some_and(|kind| kind != "transcription_segment")
         }) {
-            return Err(AiMuxError::InvalidResponseData(
-                "Invalid transcription segment type".into(),
+            return Err(AiMuxError::invalid_response_data(
+                "Invalid transcription segment type",
             ));
         }
 

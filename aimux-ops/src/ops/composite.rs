@@ -13,9 +13,11 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode, resolve_secondary};
 use crate::envelope::{OpsError, ProtocolError};
 use crate::handle::{Entry, HandleKind, HandleRegistry, Owner};
-use crate::op::{Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{
+    Cancellation, OPS_VERSION, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef,
+};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RouterParams {
     children: Vec<String>,
@@ -26,14 +28,14 @@ struct RouterParams {
     model_id: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 enum Strategy {
     Rule {},
     Weighted { weights: Vec<f64> },
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 enum Fallback {
     #[default]
@@ -41,7 +43,7 @@ enum Fallback {
     None,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MoaParams {
     references: Vec<String>,
@@ -51,7 +53,7 @@ struct MoaParams {
 }
 
 fn invalid(message: impl Into<String>) -> OpsError {
-    OpsError::Protocol(ProtocolError::InvalidParams(message.into()))
+    OpsError::Protocol(ProtocolError::invalid_params(message))
 }
 
 fn language(ctx: &Ctx, id: &str) -> Result<Arc<dyn LanguageModel>, OpsError> {
@@ -124,8 +126,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: OPS_VERSION,
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::composite::RouterParams",
-        result_type: "HandleId",
+        request_type: TypeRef::of::<RouterParams>(),
+        result_type: TypeRef::of::<crate::handle::HandleId>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -143,8 +145,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: OPS_VERSION,
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::composite::MoaParams",
-        result_type: "HandleId",
+        request_type: TypeRef::of::<MoaParams>(),
+        result_type: TypeRef::of::<crate::handle::HandleId>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,

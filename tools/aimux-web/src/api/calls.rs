@@ -50,7 +50,7 @@ async fn run(state: AppState, req: WireCallRequest) -> Result<Response, AiMuxErr
             .get(&key)
             .cloned()
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(format!(
+                AiMuxError::invalid_argument(format!(
                     "mock mode requested for '{key}' but no recordings are loaded for it — \
                      POST /api/mock/load first (recordings must include this provider/model)"
                 ))

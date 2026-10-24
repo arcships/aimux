@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_core::decision_model::*;
 use async_trait::async_trait;
 use indexmap::IndexMap;
@@ -40,8 +41,8 @@ impl OpenAIDecisionModel {
         config: OpenAIModelConfig,
     ) -> Result<Self, AiMuxError> {
         if model_id.trim().is_empty() {
-            return Err(AiMuxError::InvalidArgument(
-                "decision model ID cannot be empty".into(),
+            return Err(AiMuxError::invalid_argument(
+                "decision model ID cannot be empty",
             ));
         }
         Ok(Self {
@@ -104,8 +105,8 @@ fn score_level(level: Option<&DecisionInput>) -> Result<Value, AiMuxError> {
         _ => return Err(unsupported()),
     };
     if level.label.trim().is_empty() {
-        return Err(AiMuxError::InvalidArgument(
-            "OpenAI score level label cannot be blank".into(),
+        return Err(AiMuxError::invalid_argument(
+            "OpenAI score level label cannot be blank",
         ));
     }
     let mut wire = json!({"label": level.label});
@@ -130,7 +131,10 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
     {
         None => ProviderOptions::default(),
         Some(openai) => serde_json::from_value(Value::Object(openai.clone())).map_err(|error| {
-            AiMuxError::InvalidArgument(format!("OpenAI decision options: {error}"))
+            AiMuxError::InvalidArgument {
+                message: format!("OpenAI decision options: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            }
         })?,
     };
     let state = match &options.state {
@@ -138,9 +142,7 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
         other => serde_json::to_string(other)?,
     };
     if provider_options.images.len() > MAX_IMAGES {
-        return Err(AiMuxError::InvalidArgument(
-            "too many decision images".into(),
-        ));
+        return Err(AiMuxError::invalid_argument("too many decision images"));
     }
     let input = if provider_options.images.is_empty() {
         json!(state)
@@ -151,9 +153,7 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
             let mut part = json!({"type":"input_image", "image_url":inline.data_url});
             if let Some(detail) = &image.detail {
                 if !matches!(detail.as_str(), "low" | "high" | "auto" | "original") {
-                    return Err(AiMuxError::InvalidArgument(
-                        "invalid OpenAI image detail".into(),
-                    ));
+                    return Err(AiMuxError::invalid_argument("invalid OpenAI image detail"));
                 }
                 part["detail"] = json!(detail);
             }
@@ -164,12 +164,12 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
     };
     for (id, values) in &provider_options.choice_values {
         let Some(DecisionQuestion::Choice { criteria, .. }) = options.questions.get(id) else {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "OpenAI choiceValues name {id:?}, which is not a choice question"
             )));
         };
         if let Some(label) = values.keys().find(|label| !criteria.contains_key(*label)) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "OpenAI choiceValues for {id:?} name an unknown option {label:?}"
             )));
         }
@@ -194,8 +194,8 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
                 criteria,
             } => {
                 if !(2..=255).contains(&criteria.len()) {
-                    return Err(AiMuxError::InvalidArgument(
-                        "OpenAI choices require 2–255 options".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "OpenAI choices require 2–255 options",
                     ));
                 }
                 let overrides = provider_options.choice_values.get(id);
@@ -211,7 +211,7 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
                     .collect();
                 let mut unique = HashSet::new();
                 if !native.iter().all(|(_, value)| unique.insert(value)) {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "question {id:?} has duplicate native values"
                     )));
                 }
@@ -239,8 +239,8 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut labels = HashSet::new();
                 if levels.iter().any(|level| !labels.insert(&level["label"])) {
-                    return Err(AiMuxError::InvalidArgument(
-                        "duplicate OpenAI score level label".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "duplicate OpenAI score level label",
                     ));
                 }
                 json!({"type":"score", "instructions":text(instructions)?, "levels":levels})
@@ -252,8 +252,8 @@ fn request_body(model: &str, options: &DecisionCallOptions) -> Result<Request, A
     let mut body = json!({"model":model, "input":input, "questions":questions});
     if let Some(identifier) = provider_options.safety_identifier {
         if identifier.chars().count() > 128 {
-            return Err(AiMuxError::InvalidArgument(
-                "safetyIdentifier exceeds 128 characters".into(),
+            return Err(AiMuxError::invalid_argument(
+                "safetyIdentifier exceeds 128 characters",
             ));
         }
         body["safety_identifier"] = json!(identifier);
@@ -468,8 +468,12 @@ impl DecisionModel for OpenAIDecisionModel {
         let Request { body, values } = request_body(&self.model_id, options)?;
         let url = self.config.url("/decisions")?;
         crate::decision_support::post(&self.config, options, &url, body, |raw, headers| {
-            let data = serde_json::from_value(raw.clone())
-                .map_err(|e| invalid(format!("OpenAI decisions: {e}")))?;
+            let data = serde_json::from_value(raw.clone()).map_err(|e| {
+                AiMuxError::InvalidResponseData {
+                    message: format!("OpenAI decisions: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                }
+            })?;
             convert_response(data, raw, headers, options, &values)
         })
         .await

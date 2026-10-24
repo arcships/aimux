@@ -22,7 +22,7 @@
 6. provider/model/fetch/token/telemetry 的任意宿主控制流回调在**所有八种接口**后置。结果流的搬运 callback、取消通知和 RFC-0035 已有宿主侧修复能力仍在范围内。
 7. D8（业务 DTO 与语言类型生成）在本次 ops/ABI 切换之后按 RFC-0042 交付，不是切换前提。切换时 descriptor → manifest → codegen 负责控制对象 Schema、头文件及操作常量；业务类型暂由现有 ts-rs / `scripts/gen_ts_types.py` 链生成，并保留其漂移门禁。D8 完成时业务 Schema 与语言 DTO 收束到同源生成链，同时删除过渡 ts-rs 链及其门禁；不长期维护两份业务类型权威。
 8. 当前切换只交付已有能力的清理、V4 对齐和缺陷修复。stdio 服务、新的一次性二进制上传接口、任意 native passthrough、新模态均需单独通过后续范围门禁。
-9. 一次性替换整个依赖闭包；不发布旧/新 ABI 并存的 minor，不添加 deprecated alias 或配置归一化 shim。schema-2 录制读写作为明确的临时顺序例外保留到本系列最后一个 PR，届时迁至 schema 3 并移除 schema-2 及更早格式的读取（§7.1）。
+9. 一次性替换整个依赖闭包；不发布旧/新 ABI 并存的 minor，不添加 deprecated alias 或配置归一化 shim。schema-2 录制读写作为明确的临时顺序例外保留到 #268 之后单独的后续 PR，该 PR 在发版前迁至 schema 3 并移除 schema-2 及更早格式的读取（§7.1）。
 
 ### 0.2 精确替代清单
 
@@ -294,14 +294,13 @@ Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现�
 {
   "kind": "aimux",
   "code": 11,
-  "message": "API call failed",
-  "error": {"type": "api-call", "message": "rate limited", "statusCode": 429},
-  "retryable": true,
+  "message": "API call error: HTTP 429: slow down",
+  "error": {"name": "AI_APICallError", "statusCode": 429, "message": "slow down", "isRetryable": true},
   "retryAfterMs": 1500
 }
 ```
 
-示例仅展示投影字段；`error` 完整联合定义归 RFC-0042。JSON 字段采用 camelCase；旧讨论中的 `retry_after_ms` 表示派生概念，新 wire 只有 `retryAfterMs`，不同时提供 snake_case alias。
+示例仅展示投影字段（完整样本见 `contract-tests/ops/errors/aimux-api-call.json`）；`error` 以 `name` 区分变体，可否重试由 payload 自身的 `isRetryable` 表达，信封没有顶层 `retryable`。`error` 完整联合定义归 RFC-0042。JSON 字段采用 camelCase；旧讨论中的 `retry_after_ms` 表示派生概念，新 wire 只有 `retryAfterMs`，不同时提供 snake_case alias。
 
 - `kind=aimux|recording|binding|protocol`，每种都有 discriminator 明确的 payload。Node/Python 也用 binding 域表达参数/序列化错误，不伪装 provider API 失败。
 - 保留既有有意义的错误码区间与 golden 含义：AiMux 1–17、Recording 100–105、桥接 200–206。新增类型由 manifest 分配未占用值，禁止重用历史 code=4 等保留槽；ops 协议错误使用独立登记区间。
@@ -315,7 +314,7 @@ Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现�
 1. 在错误首次跨共享 dispatch 边界时记录一次可注入时钟 `now`；相同 error 的各 adapter 共用该投影。
 2. 仅对 ApiCall payload 使用其规范 response headers；先尝试 `retry-after-ms` 数值，再尝试 `retry-after` 秒值，再尝试 HTTP-date 减 now。
 3. 接受有限且非负的数值；毫秒向零截断，checked 范围；NaN、Infinity、超界、过去日期不产生 hint，不把无效值钳成一个巨大有效延迟。负 ms 优先项按上游语义判定无 hint，golden 固定规则，不由语言另定。
-4. Retry 聚合错误保留每次尝试的错误和 hint；顶层 retryable=false、无顶层 hint，除非未来规范显式改变。不能偷偷从最后一次错误复制一个 hint，诱导宿主重试整个已经耗尽预算的操作。
+4. Retry 聚合错误保留每次尝试的错误和 hint；外层 `AI_RetryError` 不带 `isRetryable`，信封也没有顶层 `retryAfterMs`，除非未来规范显式改变。不能偷偷从最后一次错误复制一个 hint，诱导宿主重试整个已经耗尽预算的操作。
 5. hint 是服务端建议，不构成自动重试授权；超时/Abort 不重试。操作层仍检查剩余预算、重试次数、是否已产生语义数据、是否可能重复提交收费任务。
 
 现实现有 `retry_after_hint()` 可作行为基线，但其浮点/溢出边界须在重构的统一 helper 内规范化；不得复制八个解析器。测试用固定时钟覆盖 ms、秒小数、HTTP-date、过去日期、大小写规范化、无 header、错误格式、零、极大值、Retry nesting。
@@ -342,11 +341,11 @@ Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现�
 | `abiVersion` | C 符号、布局、调用约定、所有权 | major 不同立即拒绝加载；minor 只追加，不能改变已有布局 |
 | `opsVersion` | 信封、op 语义、handle kind、流终结、V4 类型兼容性与控制规则 | `major.minor`；major 必须相同，选择双方最高公共 minor；每版本明确支持的 type revision/能力 |
 | `manifestRevision` / `digest` | 本次 op/type/package/capability 实例、schema/type revision | 修订标识 + canonical JSON SHA-256；不是独立握手协议版本；digest 不同可继续按 ops/requiredOps/类型能力协商，不伪称二进制相同 |
-| `recordingSchema` | 录制格式 | 由 RFC-0041 定义；schema-2 读写保留至本系列最后一个 PR，届时切换 schema 3 并移除 schema-2 读取；它不是 live ops 握手的附加版本 |
+| `recordingSchema` | 录制格式 | 由 RFC-0041 定义；schema-2 读写保留至 #268 之后单独的后续 PR，该 PR 在发版前切换 schema 3 并移除 schema-2 读取；它不是 live ops 握手的附加版本 |
 
 RFC-0042 的 schema/type revision 与固定 SDK 基线记录在 manifest，由 ops 兼容矩阵解释；不额外引入 dataFormatVersion/data_format_version 握手。冻结的是明示版本，不是把某一 SDK npm patch 号当永久 ABI。V4 新 variant 是否为 additive 必须由数据规范和兼容测试决定；不能因为 JSON 能解析就认为有语义兼容。
 
-本次切换保留现有 schema-2 写入以及 schema-1/schema-2 读取，作为系列内过渡，不视为长期兼容承诺。系列最后一个 PR 必须完成 schema-3 迁移并删除 schema-2（及更早 schema）读取路径；不能在本次切换提前删除，也不能在最后一个 PR 后继续保留。
+本次切换保留现有 schema-2 写入以及 schema-1/schema-2 读取，作为系列内过渡，不视为长期兼容承诺。#268 之后单独的后续 PR 必须在发版前完成 schema-3 迁移并删除 schema-2（及更早 schema）读取路径；不能在本次切换提前删除，也不能在该 PR 之后继续保留。
 
 manifest JSON 的 `digest` 为 canonical manifest 的 SHA-256，计算时排除 `digest` 字段自身；生成常量继续命名为 `MANIFEST_DIGEST`。
 

@@ -1,5 +1,6 @@
 package ai.arcships.aimux;
 
+import ai.arcships.aimux.types.*;
 import com.sun.jna.Pointer;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.ReferenceQueue;
@@ -42,6 +43,10 @@ abstract class NativeHandle implements AutoCloseable {
         try (Lease lease = admit(); Abort abort = aimux.createAbort(); Lease signal = abort.admit()) {
             return aimux.call(lease.id, op, params, signal.id);
         }
+    }
+
+    public final <T> T call(String op, Object params, Class<T> resultType) {
+        return DtoJson.decode(call(op, DtoJson.stringify(params)), resultType);
     }
 
     public final com.fasterxml.jackson.databind.JsonNode call(String op, String paramsJson, Abort abort) {

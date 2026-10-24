@@ -52,7 +52,7 @@ impl EmbeddingModel for MistralEmbeddingModel {
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
         if options.values.len() > 32 {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "{} model {} supports at most 32 embeddings per call; received {}",
                 self.provider(),
                 self.model_id,

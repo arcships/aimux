@@ -1,0 +1,6 @@
+{
+  "type": "tool-call",
+  "toolCallId": "c",
+  "toolName": "t",
+  "input": {}
+}

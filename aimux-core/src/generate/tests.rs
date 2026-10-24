@@ -400,7 +400,7 @@ async fn generate_text_derives_its_result_from_the_step() {
     // reading the output is a NoOutputGeneratedError.
     assert!(matches!(
         result.output(),
-        Err(AiMuxError::NoOutputGenerated(message)) if message == "No output generated."
+        Err(AiMuxError::NoOutputGenerated { message, .. }) if message == "No output generated."
     ));
 }
 
@@ -480,7 +480,7 @@ async fn generate_text_parses_the_output() {
     ));
     let error = generate_text(&model, "hi", options()).await.unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::JsonParse(message)
+        matches!(&error, AiMuxError::JsonParse { message, .. }
             if message.starts_with("No object generated: could not parse the response.")),
         "{error:?}"
     );
@@ -517,7 +517,7 @@ async fn a_stream_output_failure_only_fails_the_output() {
     .await
     .unwrap();
     assert_eq!(result.text(), "not json");
-    assert!(matches!(result.output(), Err(AiMuxError::JsonParse(_))));
+    assert!(matches!(result.output(), Err(AiMuxError::JsonParse { .. })));
     assert!(
         serde_json::to_value(&result)
             .unwrap()
@@ -607,7 +607,7 @@ async fn an_incomplete_stream_without_output_is_an_error() {
     assert_eq!(kinds, ["start", "error"]);
     assert!(matches!(
         &parts[1],
-        TextStreamPart::Error { error: AiMuxError::NoOutputGenerated(message) }
+        TextStreamPart::Error { error: AiMuxError::NoOutputGenerated { message, .. } }
             if message == "No output generated. The model stream ended without a finish chunk."
     ));
 
@@ -673,7 +673,7 @@ async fn generate_object_wraps_the_output() {
     ));
     assert!(matches!(
         generate_object(&model, "hi", GenerateTextOptions::default()).await,
-        Err(AiMuxError::JsonParse(_))
+        Err(AiMuxError::JsonParse { .. })
     ));
 }
 
@@ -1080,18 +1080,14 @@ const UPSTREAM_STREAM_PART_TYPES: [&str; 26] = [
     "raw",
 ];
 
-/// NP2-5: `TextStreamPart` has exactly the AI SDK's 26 part types, in the
-/// union's order (stream-text-result.ts:581-607). The variant tags are read
-/// from the exported TypeScript type.
 #[test]
 fn the_stream_part_set_is_the_ai_sdks() {
-    let ts = <TextStreamPart as ts_rs::TS>::inline(&ts_rs::Config::default());
-    let tags: Vec<String> = ts
-        .match_indices("{ \"type\": \"")
-        .filter_map(|(index, tag)| {
-            let rest = &ts[index + tag.len()..];
-            Some(rest[..rest.find('"')?].to_owned())
-        })
+    let schema = schemars::schema_for!(TextStreamPart).to_value();
+    let tags: Vec<_> = schema["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|variant| variant["properties"]["type"]["const"].as_str().unwrap())
         .collect();
     assert_eq!(tags, UPSTREAM_STREAM_PART_TYPES);
 }
@@ -1481,7 +1477,7 @@ async fn the_default_prompt_download_is_guarded() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message)
+        matches!(&error, AiMuxError::InvalidArgument { message, .. }
             if message == "download URL targets a non-public address: 127.0.0.1"),
         "{error:?}"
     );

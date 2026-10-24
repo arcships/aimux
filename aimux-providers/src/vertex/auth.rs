@@ -1,8 +1,10 @@
 //! Application default Google credentials and OAuth access-token generation.
 
+use aimux_core::SourceError;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
     FetchFunction, HttpBody, HttpRequest, Resolvable, create_binary_response_handler,
@@ -157,14 +159,16 @@ impl GoogleAuth {
         let Some(path) = path else {
             return Ok(None);
         };
-        let data = std::fs::read(path).map_err(|error| {
-            AiMuxError::InvalidArgument(format!(
-                "Could not read Google application credentials: {error}"
-            ))
+        let data = std::fs::read(path).map_err(|error| AiMuxError::InvalidArgument {
+            message: format!("Could not read Google application credentials: {error}"),
+            cause: Some(ErrorCause::source(&error)),
         })?;
-        serde_json::from_slice(&data).map(Some).map_err(|error| {
-            AiMuxError::InvalidArgument(format!("Invalid Google application credentials: {error}"))
-        })
+        serde_json::from_slice(&data)
+            .map(Some)
+            .map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("Invalid Google application credentials: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            })
     }
 
     pub(super) async fn access_token(&self) -> Result<String, AiMuxError> {
@@ -221,8 +225,8 @@ impl GoogleAuth {
                             Instant::now()
                                 .checked_add(Duration::from_millis(remaining as u64))
                                 .ok_or_else(|| {
-                                    AiMuxError::InvalidResponseData(
-                                        "Google OAuth token expiry is out of range".into(),
+                                    AiMuxError::invalid_response_data(
+                                        "Google OAuth token expiry is out of range",
                                     )
                                 })
                         })
@@ -256,8 +260,8 @@ impl GoogleAuth {
                 )
             });
         if !external && response.access_token.is_empty() {
-            return Err(AiMuxError::InvalidResponseData(
-                "Could not refresh Google access token".into(),
+            return Err(AiMuxError::invalid_response_data(
+                "Could not refresh Google access token",
             ));
         }
         let threshold = self
@@ -277,8 +281,8 @@ impl GoogleAuth {
                             .saturating_sub(Duration::from_millis(threshold)),
                     )
                     .ok_or_else(|| {
-                        AiMuxError::InvalidResponseData(
-                            "Google OAuth token expiry is out of range".into(),
+                        AiMuxError::invalid_response_data(
+                            "Google OAuth token expiry is out of range",
                         )
                     })
             })
@@ -350,17 +354,15 @@ impl GoogleAuth {
                                 .filter(|line| !line.starts_with("-----"))
                                 .collect::<String>(),
                         )
-                        .map_err(|_| {
-                            AiMuxError::InvalidArgument(
-                                "Invalid Google service-account private key encoding".into(),
-                            )
+                        .map_err(|error| AiMuxError::InvalidArgument {
+                            message: "Invalid Google service-account private key encoding".into(),
+                            cause: Some(ErrorCause::source(&error)),
                         })?;
                     let key_pair = RsaKeyPair::from_pkcs8(&der)
                         .or_else(|_| RsaKeyPair::from_der(&der))
-                        .map_err(|_| {
-                            AiMuxError::InvalidArgument(
-                                "Invalid Google service-account RSA private key".into(),
-                            )
+                        .map_err(|error| AiMuxError::InvalidArgument {
+                            message: "Invalid Google service-account RSA private key".into(),
+                            cause: Some(SourceError::from(error.to_string()).into()),
                         })?;
                     let mut signature = vec![0; key_pair.public().modulus_len()];
                     key_pair
@@ -370,10 +372,9 @@ impl GoogleAuth {
                             unsigned.as_bytes(),
                             &mut signature,
                         )
-                        .map_err(|_| {
-                            AiMuxError::InvalidArgument(
-                                "Could not sign Google service-account assertion".into(),
-                            )
+                        .map_err(|error| AiMuxError::InvalidArgument {
+                            message: "Could not sign Google service-account assertion".into(),
+                            cause: Some(SourceError::from(error.to_string()).into()),
                         })?;
                     let assertion = format!("{unsigned}.{}", encoding.encode(signature));
                     self.exchange(
@@ -423,8 +424,8 @@ impl GoogleAuth {
                         == Some("impersonated_service_account") =>
                 {
                     let source = credentials.get("source_credentials").ok_or_else(|| {
-                        AiMuxError::InvalidArgument(
-                            "Google impersonation credentials require source_credentials".into(),
+                        AiMuxError::invalid_argument(
+                            "Google impersonation credentials require source_credentials",
                         )
                     })?;
                     let token = self.credential_token(Some(source.clone())).await?;
@@ -465,11 +466,11 @@ impl GoogleAuth {
                     } else {
                         format!("http://{host}")
                     };
-                    let mut url = url::Url::parse(&host).map_err(|error| {
-                        AiMuxError::InvalidArgument(format!(
-                            "Invalid Google metadata host: {error}"
-                        ))
-                    })?;
+                    let mut url =
+                        url::Url::parse(&host).map_err(|error| AiMuxError::InvalidArgument {
+                            message: format!("Invalid Google metadata host: {error}"),
+                            cause: Some(ErrorCause::source(&error)),
+                        })?;
                     url.set_path("/computeMetadata/v1/instance/service-accounts/default/token");
                     url.set_query(None);
                     let scopes = self
@@ -496,8 +497,8 @@ impl GoogleAuth {
                     if !response.response_headers.iter().any(|(name, value)| {
                         name.eq_ignore_ascii_case("Metadata-Flavor") && value == "Google"
                     }) {
-                        return Err(AiMuxError::InvalidResponseData(
-                            "Invalid Google metadata response Metadata-Flavor header".into(),
+                        return Err(AiMuxError::invalid_response_data(
+                            "Invalid Google metadata response Metadata-Flavor header",
                         ));
                     }
                     response.value
@@ -508,12 +509,12 @@ impl GoogleAuth {
 
     async fn gdch_token(&self, credentials: &Value) -> Result<TokenResponse, AiMuxError> {
         if required(credentials, "format_version")? != "1" {
-            return Err(AiMuxError::InvalidArgument(
-                "Google GDCH credentials require format_version 1".into(),
+            return Err(AiMuxError::invalid_argument(
+                "Google GDCH credentials require format_version 1",
             ));
         }
         let client = self.options.client_options.as_ref();
-        let audience = client.and_then(|options| options.get("apiAudience")).and_then(Value::as_str).filter(|value| !value.is_empty()).ok_or_else(|| AiMuxError::InvalidArgument("Audience cannot be null or empty for GDCH service account credentials; provide client_options.apiAudience".into()))?;
+        let audience = client.and_then(|options| options.get("apiAudience")).and_then(Value::as_str).filter(|value| !value.is_empty()).ok_or_else(|| AiMuxError::invalid_argument("Audience cannot be null or empty for GDCH service account credentials; provide client_options.apiAudience"))?;
         let fetch = match (
             self.fetch.clone(),
             credentials
@@ -536,9 +537,9 @@ impl GoogleAuth {
             .and_then(Value::as_i64)
             .filter(|value| *value != 0)
             .unwrap_or(3600);
-        let expiry = now.checked_add(lifetime).ok_or_else(|| {
-            AiMuxError::InvalidArgument("Invalid Google GDCH token lifetime".into())
-        })?;
+        let expiry = now
+            .checked_add(lifetime)
+            .ok_or_else(|| AiMuxError::invalid_argument("Invalid Google GDCH token lifetime"))?;
         let header =
             json!({"alg": "ES256", "typ": "JWT", "kid": required(credentials, "private_key_id")?});
         let claims =
@@ -556,8 +557,9 @@ impl GoogleAuth {
                     .filter(|line| !line.starts_with("-----"))
                     .collect::<String>(),
             )
-            .map_err(|_| {
-                AiMuxError::InvalidArgument("Invalid Google GDCH private key encoding".into())
+            .map_err(|error| AiMuxError::InvalidArgument {
+                message: "Invalid Google GDCH private key encoding".into(),
+                cause: Some(ErrorCause::source(&error)),
             })?;
         if key.contains("BEGIN EC PRIVATE KEY") {
             let mut wrapped = vec![
@@ -573,17 +575,23 @@ impl GoogleAuth {
             &der,
             &random,
         )
-        .map_err(|_| AiMuxError::InvalidArgument("Invalid Google GDCH P-256 private key".into()))?;
-        let signature = pair.sign(&random, unsigned.as_bytes()).map_err(|_| {
-            AiMuxError::InvalidArgument("Could not sign Google GDCH assertion".into())
+        .map_err(|error| AiMuxError::InvalidArgument {
+            message: "Invalid Google GDCH P-256 private key".into(),
+            cause: Some(SourceError::from(error.to_string()).into()),
+        })?;
+        let signature = pair.sign(&random, unsigned.as_bytes()).map_err(|error| {
+            AiMuxError::InvalidArgument {
+                message: "Could not sign Google GDCH assertion".into(),
+                cause: Some(SourceError::from(error.to_string()).into()),
+            }
         })?;
         let assertion = format!("{unsigned}.{}", encoding.encode(signature.as_ref()));
         let response = post_to_api(HttpRequest { url: token_url.into(), response_timeout: Some(Duration::from_secs(10)), fetch, ..Default::default() }, HttpBody::Json(json!({"audience": audience, "grant_type": "urn:ietf:params:oauth:token-type:token-exchange", "requested_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": assertion, "subject_token_type": "urn:k8s:params:oauth:token-type:serviceaccount"})), create_json_response_handler::<TokenResponse>(), crate::google::google_failed_response_handler()).await?.value;
         if response.access_token.is_empty()
             || response.expires_in.is_none_or(|seconds| seconds == 0)
         {
-            return Err(AiMuxError::InvalidResponseData(
-                "Google GDCH token response requires access_token and expires_in".into(),
+            return Err(AiMuxError::invalid_response_data(
+                "Google GDCH token response requires access_token and expires_in",
             ));
         }
         Ok(response)
@@ -591,9 +599,7 @@ impl GoogleAuth {
 
     async fn external_token(&self, credentials: &Value) -> Result<TokenResponse, AiMuxError> {
         let source = credentials.get("credential_source").ok_or_else(|| {
-            AiMuxError::InvalidArgument(
-                "Google external credentials require credential_source".into(),
-            )
+            AiMuxError::invalid_argument("Google external credentials require credential_source")
         })?;
         let file = source
             .get("file")
@@ -608,9 +614,8 @@ impl GoogleAuth {
             || (url.is_some() && certificate.is_some())
             || (file.is_some() && certificate.is_some())
         {
-            return Err(AiMuxError::InvalidArgument(
-                "Google identity pool credentials require exactly one of file, URL or certificate"
-                    .into(),
+            return Err(AiMuxError::invalid_argument(
+                "Google identity pool credentials require exactly one of file, URL or certificate",
             ));
         }
         let parse_format = source.get("environment_id").is_none()
@@ -627,8 +632,9 @@ impl GoogleAuth {
         } else if source.get("executable").is_some() {
             super::auth_external::executable(credentials).await?
         } else if let Some(file) = file {
-            std::fs::read_to_string(file).map_err(|error| {
-                AiMuxError::InvalidArgument(format!("Could not read Google subject token: {error}"))
+            std::fs::read_to_string(file).map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("Could not read Google subject token: {error}"),
+                cause: Some(ErrorCause::source(&error)),
             })?
         } else if let Some(url) = url {
             let headers = source
@@ -642,8 +648,8 @@ impl GoogleAuth {
                                 .as_str()
                                 .map(|value| (name.clone(), value.to_string()))
                                 .ok_or_else(|| {
-                                    AiMuxError::InvalidArgument(
-                                        "Google credential_source headers must be strings".into(),
+                                    AiMuxError::invalid_argument(
+                                        "Google credential_source headers must be strings",
                                     )
                                 })
                         })
@@ -663,8 +669,9 @@ impl GoogleAuth {
             )
             .await?
             .value;
-            String::from_utf8(bytes.to_vec()).map_err(|_| {
-                AiMuxError::InvalidResponseData("Google subject token is not UTF-8".into())
+            String::from_utf8(bytes.to_vec()).map_err(|error| AiMuxError::InvalidResponseData {
+                message: "Google subject token is not UTF-8".into(),
+                cause: Some(ErrorCause::source(&error)),
             })?
         } else {
             return Err(AiMuxError::UnsupportedFunctionality(
@@ -685,9 +692,10 @@ impl GoogleAuth {
                 "text" => token,
                 "json" => {
                     let value: Value = serde_json::from_str(&token).map_err(|error| {
-                        AiMuxError::InvalidResponseData(format!(
-                            "Invalid Google subject-token JSON: {error}"
-                        ))
+                        AiMuxError::InvalidResponseData {
+                            message: format!("Invalid Google subject-token JSON: {error}"),
+                            cause: Some(ErrorCause::source(&error)),
+                        }
                     })?;
                     required(
                         &value,
@@ -703,8 +711,8 @@ impl GoogleAuth {
             }
         };
         if token.is_empty() {
-            return Err(AiMuxError::InvalidResponseData(
-                "Unable to parse Google subject token".into(),
+            return Err(AiMuxError::invalid_response_data(
+                "Unable to parse Google subject token",
             ));
         }
         let token_auth = GoogleAuth::new(self.options.clone(), fetch);
@@ -752,9 +760,8 @@ impl GoogleAuth {
             .expect("static workforce audience pattern")
             .is_match(audience)
             {
-                return Err(AiMuxError::InvalidArgument(
-                    "workforce_pool_user_project must not be set for non-workforce credentials"
-                        .into(),
+                return Err(AiMuxError::invalid_argument(
+                    "workforce_pool_user_project must not be set for non-workforce credentials",
                 ));
             }
             if credentials
@@ -821,8 +828,8 @@ impl GoogleAuth {
             == Some("impersonated_service_account")
         {
             if url.len() > 256 {
-                return Err(AiMuxError::InvalidArgument(
-                    "Google impersonation target principal is too long".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "Google impersonation target principal is too long",
                 ));
             }
             let target = url
@@ -835,9 +842,7 @@ impl GoogleAuth {
                 })
                 .filter(|target| !target.is_empty())
                 .ok_or_else(|| {
-                    AiMuxError::InvalidArgument(
-                        "Invalid Google impersonation target principal".into(),
-                    )
+                    AiMuxError::invalid_argument("Invalid Google impersonation target principal")
                 })?;
             let endpoint = credentials
                 .get("endpoint")
@@ -868,9 +873,10 @@ impl GoogleAuth {
         .value;
         let expiry =
             chrono::DateTime::parse_from_rfc3339(&response.expire_time).map_err(|error| {
-                AiMuxError::InvalidResponseData(format!(
-                    "Invalid Google impersonation expiry: {error}"
-                ))
+                AiMuxError::InvalidResponseData {
+                    message: format!("Invalid Google impersonation expiry: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             })?;
         Ok(TokenResponse {
             access_token: response.access_token,
@@ -902,8 +908,8 @@ impl GoogleAuth {
         let client = self.options.client_options.as_ref();
         if let Some(options) = client {
             let Some(options) = options.as_object() else {
-                return Err(AiMuxError::InvalidArgument(
-                    "Google auth client_options must be an object".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "Google auth client_options must be an object",
                 ));
             };
             for (name, value) in options {
@@ -911,7 +917,7 @@ impl GoogleAuth {
                     "projectId" | "project_id" | "quotaProjectId" | "quota_project_id"
                     | "universeDomain" | "universe_domain" | "apiKey" => {
                         if !value.is_string() && !value.is_null() {
-                            return Err(AiMuxError::InvalidArgument(format!(
+                            return Err(AiMuxError::invalid_argument(format!(
                                 "Google auth client option {name} must be a string"
                             )));
                         }
@@ -946,7 +952,9 @@ impl GoogleAuth {
                         .and_then(|options| options.get("credentials"))
                         .is_some_and(|value| !value.is_null())
                 {
-                    AiMuxError::InvalidArgument("API Keys and Credentials are mutually exclusive authentication methods and cannot be used together.".into())
+                    AiMuxError::invalid_argument(
+                        "API Keys and Credentials are mutually exclusive authentication methods and cannot be used together.",
+                    )
                 } else {
                     AiMuxError::UnsupportedFunctionality("Google auth API-key clients cannot generate OAuth access tokens; use the Vertex provider api_key setting".into())
                 },
@@ -997,7 +1005,7 @@ pub(super) fn required<'a>(credentials: &'a Value, name: &str) -> Result<&'a str
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            AiMuxError::InvalidArgument(format!("Google application credentials require {name}"))
+            AiMuxError::invalid_argument(format!("Google application credentials require {name}"))
         })
 }
 

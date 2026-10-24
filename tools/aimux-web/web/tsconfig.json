@@ -15,7 +15,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@aimux/types/*": ["../../../bindings/node/src/types/*"]
+      "@aimux/types": ["../../../bindings/node/src/generated/types.ts"],
+      "@aimux/types/*": ["../../../bindings/node/src/generated/types.ts"]
     },
     "types": ["vite/client", "node"]
   },

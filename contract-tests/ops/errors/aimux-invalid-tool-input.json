@@ -6,6 +6,9 @@
     "name": "AI_InvalidToolInputError",
     "toolName": "weather",
     "toolInput": "{",
-    "cause": "JSON parsing failed"
+    "cause": {
+      "name": "AI_JSONParseError",
+      "message": "JSON parsing failed"
+    }
   }
 }

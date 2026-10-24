@@ -1,0 +1,9 @@
+BasedOnStyle: LLVM
+Language: Java
+IndentWidth: 4
+ColumnLimit: 0
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+SpaceAfterCStyleCast: true
+IndentCaseLabels: true
+ReflowComments: false

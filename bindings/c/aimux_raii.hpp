@@ -19,11 +19,26 @@ struct ErrorDeleter {
 using String = std::unique_ptr<char, StringDeleter>;
 using Error = std::unique_ptr<aimux_error_t, ErrorDeleter>;
 
+/* A native error: `what()` is the envelope message, `json()` the whole
+ * envelope, whose `error.cause` carries the cause chain. */
+class NativeError : public std::runtime_error {
+public:
+    NativeError(const char *message, std::int32_t code, std::string json)
+        : std::runtime_error(message), code_(code), json_(std::move(json)) {}
+    std::int32_t code() const noexcept { return code_; }
+    const std::string &json() const noexcept { return json_; }
+private:
+    std::int32_t code_;
+    std::string json_;
+};
+
 inline void check(aimux_error_t *raw) {
     Error error(raw);
     if (!error) return;
     String message(aimux_error_message(error.get()));
-    throw std::runtime_error(message ? message.get() : "aimux call failed");
+    String json(aimux_error_json(error.get()));
+    throw NativeError(message ? message.get() : "aimux call failed",
+                      aimux_error_code(error.get()), json ? json.get() : "");
 }
 class Handle {
 public:

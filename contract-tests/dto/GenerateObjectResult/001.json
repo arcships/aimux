@@ -1,0 +1,22 @@
+{
+  "object": {
+    "answer": 42
+  },
+  "finishReason": "stop",
+  "usage": {
+    "inputTokens": 3,
+    "inputTokenDetails": {
+      "cacheReadTokens": 1
+    },
+    "outputTokens": 2,
+    "outputTokenDetails": {},
+    "totalTokens": 5
+  },
+  "warnings": [],
+  "request": {},
+  "response": {
+    "id": "r",
+    "timestamp": "2026-01-01T00:00:00.000Z",
+    "modelId": "gpt-4o"
+  }
+}

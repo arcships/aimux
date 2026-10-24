@@ -137,10 +137,11 @@ impl LanguageModel for MistralModel {
         let response_headers = resp.response_headers;
         let data: ChatCompletionResponse = resp.value;
 
-        let choice =
-            data.choices.into_iter().next().ok_or_else(|| {
-                AiMuxError::InvalidResponseData("no choices in response".to_string())
-            })?;
+        let choice = data
+            .choices
+            .into_iter()
+            .next()
+            .ok_or_else(|| AiMuxError::invalid_response_data("no choices in response"))?;
 
         // Build content array.
         let mut content = Vec::new();

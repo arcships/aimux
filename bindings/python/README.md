@@ -5,6 +5,12 @@ retries, recording, replay and operation lifecycle run in the shared Rust layer.
 The package requires CPython 3.9 or newer. Install `arcships-aimux[typed]` for
 optional Pydantic schemas and text helpers in `aimux.wrapper`.
 
+The typed layer exports generated Rust wire DTOs from `aimux._types`.
+Text helpers accept a `TextRequest`, for example
+`generate_text(model, TextRequest(prompt="Hello", options=Options()))`.
+Stream helpers yield generated `TextStreamPart` or `ChatCompletionChunk` values.
+Use `base64_wire(value, decode=True)` to read bytes from a base64 wire string.
+
 ```python
 from aimux import Client
 
@@ -69,15 +75,18 @@ PyO3 0.22 limits subinterpreter imports; this package does not extend support.
 
 `AimuxError` subclasses preserve the shared `envelope`, `error`, `kind`, `code`
 and optional `retry_after_ms`. Payload attributes use snake_case. Retry
-`errors` retain typed attempts in order; `last_error` is the last attempt.
-Typed causes also appear as `__cause__`. Recording, binding and protocol errors
+`errors` retain typed attempts in order; `last_error` is the last attempt and
+also the retry error's `__cause__`.
+Every `cause` also appears as `__cause__`: an aimux cause as its typed
+subclass, an underlying OS, TLS or parser error as `SourceError`, each with its
+own `__cause__` down the chain. Recording, binding and protocol errors
 have separate bases. Python never recomputes retry hints or performs retries.
 
 `ABI_VERSION`, `OPS_VERSION`, `manifest` and `manifest_digest()` are public.
 Import checks the exact ABI/ops versions and digest pinned in the generated
 metadata. `verify_contract(other_digest)` checks an additional consumer pin.
 Recorder/session/infer state is process-wide. Recording schema migration,
-transport replay, credential creation, generated business schemas and complete
+transport replay, credential creation and complete
 platform install verification are outside this package's current guarantees.
 
 ## Development checks

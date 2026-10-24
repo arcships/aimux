@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use crate::error::AiMuxError;
+use crate::error::ErrorCause;
 use crate::generate::{
     GenerateTextOptions, GenerateTextResult, generate_text_from_language_model_prompt,
 };
@@ -88,9 +89,7 @@ impl ReplayMatcher for ExactMatcher {
                     && r.provider.model_id == self.model_id
                     && canonical_keys_match(&canonical_recording_key(r), &needle)
             })
-            .ok_or_else(|| {
-                AiMuxError::InvalidArgument("mock replay: no exact matching recording".into())
-            })
+            .ok_or_else(|| AiMuxError::invalid_argument("mock replay: no exact matching recording"))
     }
 }
 
@@ -245,7 +244,7 @@ impl ReplayMatcher for ScoreMatcher {
             }
         }
         best.map(|(r, _)| r).ok_or_else(|| {
-            AiMuxError::InvalidArgument("mock replay: no scoring match for this input".into())
+            AiMuxError::invalid_argument("mock replay: no scoring match for this input")
         })
     }
 }
@@ -387,7 +386,7 @@ impl ReplayMatcher for PrefixMatcher {
             }
         }
         best.map(|(r, _)| r).ok_or_else(|| {
-            AiMuxError::InvalidArgument("mock replay: no prefix match for this input".into())
+            AiMuxError::invalid_argument("mock replay: no prefix match for this input")
         })
     }
 }
@@ -440,32 +439,35 @@ impl MockReplayModel {
     ///
     /// # Errors
     ///
-    /// Returns `AiMuxError::InvalidArgument` when the file cannot be read,
+    /// Returns `AiMuxError::invalid_argument` when the file cannot be read,
     /// contains no recordings, or holds a recording of an unsupported schema,
     /// and `JsonParse` when a line is not valid JSON.
     pub fn from_jsonl(path: &str) -> Result<Self, AiMuxError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| AiMuxError::InvalidArgument(format!("mock replay: {e}")))?;
+        let content = std::fs::read_to_string(path).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("mock replay: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
         let mut recordings = Vec::new();
         for (idx, line) in content.lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
             }
             let rec: Recording = serde_json::from_str(line).map_err(|e| {
-                let msg = format!("mock replay line {}: {e}", idx + 1);
+                let message = format!("mock replay line {}: {e}", idx + 1);
+                let cause = Some(ErrorCause::source(&e));
                 // Well-formed JSON that is not a current-schema `Recording`
                 // (including an old `schema`) is a bad argument, not a parse error.
                 if e.classify() == serde_json::error::Category::Data {
-                    AiMuxError::InvalidArgument(msg)
+                    AiMuxError::InvalidArgument { message, cause }
                 } else {
-                    AiMuxError::JsonParse(msg)
+                    AiMuxError::JsonParse { message, cause }
                 }
             })?;
             recordings.push(rec);
         }
         if recordings.is_empty() {
-            return Err(AiMuxError::InvalidArgument(
-                "mock replay: empty recording file".into(),
+            return Err(AiMuxError::invalid_argument(
+                "mock replay: empty recording file",
             ));
         }
         let provider = recordings[0].provider.provider.clone();
@@ -498,10 +500,13 @@ impl MockReplayModel {
                 if unreadable == 0 {
                     return error;
                 }
-                AiMuxError::InvalidArgument(format!(
-                    "{error}; {unreadable} recording(s) of this model hold a prompt this \
+                AiMuxError::InvalidArgument {
+                    message: format!(
+                        "{error}; {unreadable} recording(s) of this model hold a prompt this \
                      version cannot read (written by aimux 0.5 or earlier) and never match"
-                ))
+                    ),
+                    cause: Some(error.into()),
+                }
             })
     }
 }
@@ -544,8 +549,8 @@ fn last_response(rec: &Recording) -> Result<&crate::recording::ResponseRecord, A
             return Ok(resp);
         }
     }
-    Err(AiMuxError::InvalidArgument(
-        "mock replay: recording has no successful (2xx, finalized, error-free) response".into(),
+    Err(AiMuxError::invalid_argument(
+        "mock replay: recording has no successful (2xx, finalized, error-free) response",
     ))
 }
 
@@ -606,8 +611,9 @@ fn parse_finish(raw: Option<&str>) -> (FinishReasonUnified, Option<String>) {
 fn u32_from_json(v: &serde_json::Value, field: &str) -> Result<Option<u32>, AiMuxError> {
     v.as_u64()
         .map(|n| {
-            u32::try_from(n).map_err(|_| {
-                AiMuxError::JsonParse(format!("mock replay: usage '{field}' overflows u32: {n}"))
+            u32::try_from(n).map_err(|error| AiMuxError::JsonParse {
+                message: format!("mock replay: usage '{field}' overflows u32: {n}"),
+                cause: Some(ErrorCause::source(&error)),
             })
         })
         .transpose()
@@ -654,9 +660,11 @@ fn rebuild_generate_result(rec: &Recording) -> Result<GenerateResult, AiMuxError
     let body = resp
         .body
         .as_deref()
-        .ok_or_else(|| AiMuxError::InvalidArgument("mock replay: response has no body".into()))?;
-    let v: serde_json::Value = serde_json::from_str(body)
-        .map_err(|e| AiMuxError::JsonParse(format!("mock replay: {e}")))?;
+        .ok_or_else(|| AiMuxError::invalid_argument("mock replay: response has no body"))?;
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| AiMuxError::JsonParse {
+        message: format!("mock replay: {e}"),
+        cause: Some(ErrorCause::source(&e)),
+    })?;
 
     // A7:必须有 choices[0].message 才算 OpenAI chat.completions;否则 Unsupported。
     let message = v
@@ -750,7 +758,7 @@ fn rebuild_stream_result(rec: &Recording) -> Result<StreamResult, AiMuxError> {
     let body = resp
         .body
         .as_deref()
-        .ok_or_else(|| AiMuxError::InvalidArgument("mock replay: response has no body".into()))?;
+        .ok_or_else(|| AiMuxError::invalid_argument("mock replay: response has no body"))?;
 
     let mut parts: Vec<Result<StreamPart, AiMuxError>> = Vec::new();
     parts.push(Ok(StreamPart::StreamStart { warnings: vec![] }));
@@ -1020,9 +1028,9 @@ pub struct ReplayOverrides {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` for a recording whose prompt this
+/// Returns `AiMuxError::invalid_argument` for a recording whose prompt this
 /// version cannot read ([`InputRecord::unreadable_prompt`](crate::recording::InputRecord::unreadable_prompt)),
-/// `AiMuxError::JsonParse` when the recorded call options cannot be
+/// `AiMuxError::json_parse` when the recorded call options cannot be
 /// deserialized or hold snake_case keys this version would ignore (options
 /// written by aimux 0.5 or earlier), and propagates errors from the
 /// generation pipeline.
@@ -1032,12 +1040,12 @@ pub async fn replay_with_model(
     overrides: Option<&ReplayOverrides>,
 ) -> Result<GenerateTextResult, AiMuxError> {
     if recording.input.operation != crate::recording::RecordingOperation::LanguageModel {
-        return Err(AiMuxError::InvalidArgument(
-            "language replay requires a language-model recording".into(),
+        return Err(AiMuxError::invalid_argument(
+            "language replay requires a language-model recording",
         ));
     }
     if let Some(error) = recording.input.unreadable_prompt() {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "language replay: this version cannot read the recorded prompt (recordings \
              written by aimux 0.5 or earlier use another prompt format): {error}"
         )));
@@ -1051,7 +1059,7 @@ pub async fn replay_with_model(
     };
     let unread = snake_case_option_keys(&recording.input.options);
     if !unread.is_empty() {
-        return Err(AiMuxError::JsonParse(format!(
+        return Err(AiMuxError::json_parse(format!(
             "mock replay: input options invalid{older}: this version reads the options \
              camelCase and would ignore {}",
             unread.join(", ")
@@ -1060,12 +1068,16 @@ pub async fn replay_with_model(
     // 1. 从录制输入重建 CallOptions(round-trip:录制时由 CallOptions 序列化)
     //    and the operation settings recorded next to them.
     let options = readable_options(&recording.input.options);
-    let mut call_options: CallOptions = serde_json::from_value(options.clone()).map_err(|e| {
-        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-    })?;
-    let settings: OperationSettings = serde_json::from_value(options).map_err(|e| {
-        AiMuxError::JsonParse(format!("mock replay: input options invalid{older}: {e}"))
-    })?;
+    let mut call_options: CallOptions =
+        serde_json::from_value(options.clone()).map_err(|e| AiMuxError::JsonParse {
+            message: format!("mock replay: input options invalid{older}: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
+    let settings: OperationSettings =
+        serde_json::from_value(options).map_err(|e| AiMuxError::JsonParse {
+            message: format!("mock replay: input options invalid{older}: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
 
     // 2. 应用 overrides。
     if let Some(o) = overrides {
@@ -1606,7 +1618,7 @@ mod tests {
                 .await
                 .unwrap_err()
         });
-        assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
+        assert!(matches!(err, AiMuxError::JsonParse { .. }), "{err}");
         assert!(err.to_string().contains("overflows u32"), "{err}");
     }
 
@@ -2121,6 +2133,6 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let err =
             rt.block_on(async { replay_with_model(&rec, &EchoModel, None).await.unwrap_err() });
-        assert!(matches!(err, AiMuxError::JsonParse(_)), "{err}");
+        assert!(matches!(err, AiMuxError::JsonParse { .. }), "{err}");
     }
 }
