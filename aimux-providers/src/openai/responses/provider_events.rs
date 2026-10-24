@@ -100,7 +100,7 @@ pub(crate) fn provider_tool_content(
         "local_shell_call" => vec![call(
             call_id,
             name("local_shell"),
-            json!({"action": part["action"]}).to_string(),
+            json!({"action": local_shell_action(&part["action"])}).to_string(),
             None,
             None,
             metadata(),
@@ -271,6 +271,32 @@ pub(crate) fn web_search_output(action: &Value) -> Value {
         }
         _ => json!({}),
     }
+}
+
+/// A local shell action with its fields in the AI SDK's order: the schema's
+/// (`type`, `command`, `timeout_ms`, `user`, `working_directory`, `env`) for a
+/// generated call, and the same order under the camel-case names the stream
+/// writes (`timeoutMs`, `workingDirectory`).
+fn local_shell_action(action: &Value) -> Value {
+    let Some(object) = action.as_object() else {
+        return action.clone();
+    };
+    let mut output = serde_json::Map::new();
+    for field in [
+        "type",
+        "command",
+        "timeout_ms",
+        "timeoutMs",
+        "user",
+        "working_directory",
+        "workingDirectory",
+        "env",
+    ] {
+        if let Some(value) = object.get(field) {
+            output.insert(field.to_owned(), value.clone());
+        }
+    }
+    Value::Object(output)
 }
 
 /// An apply patch operation with the fields of its type in the order of the

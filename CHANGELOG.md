@@ -1210,6 +1210,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OpenAI (and Azure) Responses local shell tool inputs list the action's
+  fields in the AI SDK's order (`type`, `command`, timeout, `user`, working
+  directory, `env`), in generated and streamed calls; aimux kept the wire
+  order and moved the renamed stream fields to the end.
 - OpenAI (and Azure) Responses apply patch tool inputs list the operation's
   fields as `type`, `path`, `diff`, the AI SDK's schema order, in generated
   and streamed calls; aimux kept the wire order.

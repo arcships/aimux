@@ -1187,3 +1187,37 @@ async fn apply_patch_input_lists_operation_fields_in_schema_order() {
         r#"{"callId":"call_1","operation":{"type":"create_file","path":"a.md","diff":"+hello\n"}}"#
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83 src/responses/openai-responses-api.ts:147
+/// parses a local shell action as `{type, command, timeout_ms, user,
+/// working_directory, env}`, and
+/// src/responses/openai-responses-language-model.ts:998 stringifies the
+/// parsed action into the tool input, so its keys follow that order.
+#[tokio::test]
+async fn local_shell_input_lists_action_fields_in_schema_order() {
+    let fetch = MockFetch::new(vec![Canned::json(&json!({
+        "id": "resp_local_shell",
+        "created_at": 1,
+        "model": "test-model",
+        "output": [{
+            "type": "local_shell_call",
+            "id": "lsh_1",
+            "call_id": "call_1",
+            "status": "completed",
+            "action": {"type": "exec", "command": ["ls"], "env": {}, "working_directory": "/root"}
+        }],
+        "usage": {"input_tokens": 1, "output_tokens": 1}
+    }))]);
+    let result = provider(&fetch)
+        .responses("test-model")
+        .do_generate(&options())
+        .await
+        .unwrap();
+    let Some(GenerateContent::ToolCall(call)) = result.content.first() else {
+        panic!("expected a tool call: {:?}", result.content);
+    };
+    assert_eq!(
+        call.input,
+        r#"{"action":{"type":"exec","command":["ls"],"working_directory":"/root","env":{}}}"#
+    );
+}
