@@ -208,7 +208,7 @@ impl Harness {
         for item in controller.drain() {
             match item {
                 Ok(part) => self.parts.extend(project(part)),
-                Err(AiMuxError::InvalidResponseData(message)) => result = Err(message),
+                Err(AiMuxError::InvalidResponseData { message, .. }) => result = Err(message),
                 Err(error) => panic!("unexpected stream error: {error:?}"),
             }
         }

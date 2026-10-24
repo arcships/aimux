@@ -107,7 +107,7 @@ impl std::fmt::Debug for LumaProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_luma(settings: LumaProviderSettings) -> Result<LumaProvider, AiMuxError> {
@@ -235,8 +235,8 @@ impl ImageModel for LumaImageModel {
             // Validate all files are URL-based
             for file in files {
                 if !matches!(file, ImageFile::Url { .. }) {
-                    return Err(AiMuxError::InvalidArgument(
-                        "Luma AI only supports URL-based images.".into(),
+                    return Err(AiMuxError::invalid_argument(
+                        "Luma AI only supports URL-based images.",
                     ));
                 }
             }
@@ -271,8 +271,8 @@ impl ImageModel for LumaImageModel {
                 }
                 "modify_image" => {
                     if files.len() > 1 {
-                        return Err(AiMuxError::InvalidArgument(
-                            "Luma AI modify_image only supports a single input image.".into(),
+                        return Err(AiMuxError::invalid_argument(
+                            "Luma AI modify_image only supports a single input image.",
                         ));
                     }
                     let url = if let ImageFile::Url { url } = &files[0] {
@@ -294,8 +294,8 @@ impl ImageModel for LumaImageModel {
                 _ => {
                     // image (default)
                     if files.len() > 4 {
-                        return Err(AiMuxError::InvalidArgument(
-                            "Luma AI image supports up to 4 reference images.".into(),
+                        return Err(AiMuxError::invalid_argument(
+                            "Luma AI image supports up to 4 reference images.",
                         ));
                     }
                     let arr: Vec<Value> = files
@@ -322,8 +322,8 @@ impl ImageModel for LumaImageModel {
         }
 
         if options.mask.is_some() {
-            return Err(AiMuxError::InvalidArgument(
-                "Luma AI does not support mask-based image editing.".into(),
+            return Err(AiMuxError::invalid_argument(
+                "Luma AI does not support mask-based image editing.",
             ));
         }
 
@@ -371,9 +371,7 @@ impl ImageModel for LumaImageModel {
         let generation_id = submit_body
             .get("id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                AiMuxError::InvalidResponseData("missing id in Luma response".to_string())
-            })?
+            .ok_or_else(|| AiMuxError::invalid_response_data("missing id in Luma response"))?
             .to_string();
 
         // Poll for completion.
@@ -401,7 +399,7 @@ impl ImageModel for LumaImageModel {
                         .and_then(|v| v.as_str())
                         .map(|url| PollStep::Ready(url.to_string()))
                         .ok_or_else(|| {
-                            AiMuxError::InvalidResponseData(format!(
+                            AiMuxError::invalid_response_data(format!(
                                 "Luma generation {generation_id} completed without assets.image"
                             ))
                         });

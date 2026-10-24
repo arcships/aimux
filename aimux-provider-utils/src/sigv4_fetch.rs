@@ -19,6 +19,8 @@ use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
+use aimux_core::SourceError;
+
 use crate::fetch::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, RequestCredentials,
 };
@@ -427,7 +429,10 @@ impl Fetch for SigV4Fetch {
             return self.inner.fetch(request).await;
         }
         let credentials = self.credentials.resolve().await.map_err(|error| {
-            FetchError::Other(format!("failed to resolve AWS credentials: {error}"))
+            FetchError::Other(SourceError::with_cause(
+                format!("failed to resolve AWS credentials: {error}"),
+                &error,
+            ))
         })?;
         let mut extra_headers = Vec::with_capacity(request.headers.len());
         for (name, value) in &request.headers {
@@ -438,8 +443,11 @@ impl Fetch for SigV4Fetch {
             if unsigned {
                 continue;
             }
-            let value = value.to_str().map_err(|_| {
-                FetchError::Other(format!("cannot sign non-ASCII header value for {name}"))
+            let value = value.to_str().map_err(|error| {
+                FetchError::Other(SourceError::with_cause(
+                    format!("cannot sign non-ASCII header value for {name}"),
+                    &error,
+                ))
             })?;
             extra_headers.push((name.as_str().to_string(), value.to_string()));
         }
@@ -455,10 +463,16 @@ impl Fetch for SigV4Fetch {
         );
         for (name, value) in signed.headers {
             let name = http::HeaderName::try_from(name.as_str()).map_err(|error| {
-                FetchError::Other(format!("invalid signed header name {name}: {error}"))
+                FetchError::Other(SourceError::with_cause(
+                    format!("invalid signed header name {name}: {error}"),
+                    &error,
+                ))
             })?;
             let value = http::HeaderValue::try_from(value.as_str()).map_err(|error| {
-                FetchError::Other(format!("invalid signed header value for {name}: {error}"))
+                FetchError::Other(SourceError::with_cause(
+                    format!("invalid signed header value for {name}: {error}"),
+                    &error,
+                ))
             })?;
             request.headers.insert(name, value);
         }
@@ -918,7 +932,7 @@ mod tests {
             .fetch(FetchRequest::new(Method::GET, URL.parse().unwrap()))
             .await
             .unwrap_err();
-        assert!(matches!(&error, FetchError::Other(m) if m.contains("AWS_ACCESS_KEY_ID")));
+        assert!(matches!(&error, FetchError::Other(m) if m.message.contains("AWS_ACCESS_KEY_ID")));
         assert!(capture.0.lock().unwrap().is_none());
     }
 }

@@ -21,6 +21,24 @@ struct WireTests {
 #if !AIMUX_STANDALONE
     @Test
 #endif
+    static func testErrorCauseIsThePayloadCause() throws {
+        let error = try JSONDecoder().decode(AimuxError.self, from: Data(#"""
+            {"kind":"aimux","code":11,"message":"API call error: Cannot connect","error":{"name":"AI_APICallError",
+             "message":"Cannot connect","cause":{"message":"tcp connect error","cause":{"message":"Connection refused"}}}}
+            """#.utf8))
+        try require(error.cause?["message"] == .string("tcp connect error"))
+        try require(error.cause?["cause"]?["message"] == .string("Connection refused"))
+        try require(AimuxError.binding("x").cause == nil)
+        let retry = try JSONDecoder().decode(AimuxError.self, from: Data(#"""
+            {"kind":"aimux","code":10,"message":"r","error":{"name":"AI_RetryError","message":"r","reason":"maxRetriesExceeded",
+             "errors":[{"name":"AI_APICallError","message":"first"},{"name":"AI_APICallError","message":"last"}]}}
+            """#.utf8))
+        try require(retry.cause?["message"] == .string("last"))
+    }
+
+#if !AIMUX_STANDALONE
+    @Test
+#endif
     static func testToolCallProviderMetadataRoundTrip() throws {
         let original = ToolCall(
             input: jv(#"{"location":"Tokyo"}"#),

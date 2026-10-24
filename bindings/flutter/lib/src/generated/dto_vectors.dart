@@ -121,6 +121,10 @@ Object? roundTripDto(String type, Object? value) {
       return EmbeddingUsage.fromJson(value as Map<String, dynamic>).toJson();
     case 'EmptyParams':
       return EmptyParams.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ErrorCause':
+      return ErrorCause.fromJson(value).toJson();
+    case 'ErrorCauseInput':
+      return ErrorCauseInput.fromJson(value).toJson();
     case 'ErrorDomain':
       return ErrorDomain.fromJson(value).toJson();
     case 'ErrorEnvelope':
@@ -464,6 +468,8 @@ Object? roundTripDto(String type, Object? value) {
       return Size.fromJson(value).toJson();
     case 'Source':
       return Source.fromJson(value as Map<String, dynamic>).toJson();
+    case 'SourceError':
+      return SourceError.fromJson(value as Map<String, dynamic>).toJson();
     case 'SpeechCallOptions':
       return SpeechCallOptions.fromJson(value as Map<String, dynamic>).toJson();
     case 'SpeechRequest':

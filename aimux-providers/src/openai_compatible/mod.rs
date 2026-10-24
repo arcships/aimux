@@ -136,7 +136,7 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. The key is not read
 /// here.
 pub fn create_openai_compatible(

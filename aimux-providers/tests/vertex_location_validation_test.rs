@@ -104,7 +104,7 @@ async fn rejects(kind: Kind, location: Option<&str>, base_url: Option<&str>) -> 
         .expect_err("the mock answers nothing");
     let rejected = matches!(
         &error,
-        AiMuxError::InvalidArgument(message) if message.starts_with("Invalid Google Vertex location.")
+        AiMuxError::InvalidArgument { message, .. } if message.starts_with("Invalid Google Vertex location.")
     );
     if rejected {
         assert!(
@@ -191,7 +191,7 @@ async fn express_mode_ignores_the_location() {
     .await
     .expect_err("the mock answers nothing");
     assert!(
-        !matches!(&error, AiMuxError::InvalidArgument(message) if message.starts_with("Invalid Google Vertex location.")),
+        !matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.starts_with("Invalid Google Vertex location.")),
         "{error:?}"
     );
     assert_eq!(fetch.seen().len(), 1);
@@ -218,7 +218,7 @@ async fn transcription_validates_the_location_with_a_custom_url() {
         let options = TranscriptionCallOptions::new(AudioInput::Binary(vec![0, 1, 2]), "audio/wav");
         let error = model.do_generate(&options).await.unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message) if message.starts_with("Invalid Google Vertex location.")),
+            matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.starts_with("Invalid Google Vertex location.")),
             "{model_id}: {error:?}"
         );
         assert!(fetch.seen().is_empty(), "{model_id}");
@@ -246,7 +246,7 @@ async fn transcription_validates_the_region_option() {
     );
     let error = model.do_generate(&options).await.unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message) if message.starts_with("Invalid Google Cloud Speech-to-Text region.")),
+        matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.starts_with("Invalid Google Cloud Speech-to-Text region.")),
         "{error:?}"
     );
     assert!(fetch.seen().is_empty());

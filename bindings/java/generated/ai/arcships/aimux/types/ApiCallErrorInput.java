@@ -34,6 +34,13 @@ import java.util.*;
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 public final class ApiCallErrorInput {
     /**
+     * The error this failure was built from (`APICallError.cause`): the
+     * transport error with its source chain, the body parse error, or the
+     * aimux error a response handler returned.
+     */
+    @JsonProperty("cause")
+    private final ErrorCauseInput cause;
+    /**
      * Parsed provider error data.
      */
     @JsonProperty("data")
@@ -97,6 +104,7 @@ public final class ApiCallErrorInput {
 
     @JsonCreator
     public ApiCallErrorInput(
+        @JsonProperty(value = "cause") ErrorCauseInput cause,
         @JsonProperty(value = "data") FieldPresence<JsonNode> data,
         @JsonProperty(value = "isRetryable") Boolean isRetryable,
         @JsonProperty(value = "message", required = true) String message,
@@ -106,6 +114,7 @@ public final class ApiCallErrorInput {
         @JsonProperty(value = "responseHeaders") Map<String, String> responseHeaders,
         @JsonProperty(value = "statusCode") Integer statusCode,
         @JsonProperty(value = "url", required = true) String url) {
+        this.cause = cause;
         this.data = data == null ? FieldPresence.absent() : data;
         this.isRetryable = isRetryable;
         this.message = message;
@@ -118,6 +127,7 @@ public final class ApiCallErrorInput {
     }
 
     public static Builder builder() { return new Builder(); }
+    public ErrorCauseInput getCause() { return cause; }
     public JsonNode getData() { return data.getValue() == null ? null : data.getValue().deepCopy(); }
     public boolean hasData() { return data.isPresent(); }
     public Boolean getIsRetryable() { return isRetryable; }
@@ -130,6 +140,7 @@ public final class ApiCallErrorInput {
     public String getUrl() { return url; }
 
     public static final class Builder {
+        private ErrorCauseInput cause;
         private FieldPresence<JsonNode> data = FieldPresence.absent();
         private Boolean isRetryable;
         private String message;
@@ -139,6 +150,11 @@ public final class ApiCallErrorInput {
         private Map<String, String> responseHeaders;
         private Integer statusCode;
         private String url;
+
+        public Builder cause(ErrorCauseInput value) {
+            this.cause = value;
+            return this;
+        }
 
         public Builder data(JsonNode value) {
             this.data = FieldPresence.of(value == null ? null : value.deepCopy());
@@ -190,6 +206,6 @@ public final class ApiCallErrorInput {
             return this;
         }
 
-        public ApiCallErrorInput build() { return new ApiCallErrorInput(data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
+        public ApiCallErrorInput build() { return new ApiCallErrorInput(cause, data, isRetryable, message, providerCode, requestBodyValues, responseBody, responseHeaders, statusCode, url); }
     }
 }

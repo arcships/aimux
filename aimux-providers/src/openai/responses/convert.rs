@@ -11,6 +11,7 @@
 //! - `map-openai-responses-finish-reason.ts` -> [`map_responses_finish_reason`]
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use serde_json::{Value, json};
 
 use aimux_core::language_model_message::{
@@ -564,8 +565,12 @@ fn provider_tool_call_input(
 ) -> Result<Option<Value>, AiMuxError> {
     let parsed;
     let args = if kind != "custom" && args.is_string() {
-        parsed = serde_json::from_str(args.as_str().unwrap_or_default())
-            .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?;
+        parsed = serde_json::from_str(args.as_str().unwrap_or_default()).map_err(|error| {
+            AiMuxError::InvalidArgument {
+                message: error.to_string(),
+                cause: Some(ErrorCause::source(&error)),
+            }
+        })?;
         &parsed
     } else {
         args
@@ -591,7 +596,7 @@ fn provider_tool_call_input(
                 .get("actions")
                 .and_then(Value::as_array)
                 .cloned()
-                .ok_or_else(|| AiMuxError::InvalidArgument("computer actions".into()))?;
+                .ok_or_else(|| AiMuxError::invalid_argument("computer actions"))?;
             for action in &mut actions {
                 if action["type"] == "scroll"
                     && let Some(object) = action.as_object_mut()
@@ -610,8 +615,10 @@ fn provider_tool_call_input(
         }
         "tool_search" => {
             let args = if let Some(text) = args.as_str() {
-                serde_json::from_str(text)
-                    .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?
+                serde_json::from_str(text).map_err(|error| AiMuxError::InvalidArgument {
+                    message: error.to_string(),
+                    cause: Some(ErrorCause::source(&error)),
+                })?
             } else {
                 args.clone()
             };
@@ -658,7 +665,7 @@ fn provider_tool_result_input(
                 .get("output")
                 .and_then(Value::as_array)
                 .cloned()
-                .ok_or_else(|| AiMuxError::InvalidArgument("shell output".into()))?;
+                .ok_or_else(|| AiMuxError::invalid_argument("shell output"))?;
             for item in &mut output {
                 if let Some(outcome) = item.get_mut("outcome").and_then(Value::as_object_mut)
                     && let Some(code) = outcome.remove("exitCode")
@@ -740,7 +747,10 @@ fn convert_user_part(
             }
             FileData::Reference { reference } => {
                 let file_id = reference.get(ns.write_key()).ok_or_else(|| {
-                    AiMuxError::InvalidArgument(format!("No file reference for {}", ns.write_key()))
+                    AiMuxError::invalid_argument(format!(
+                        "No file reference for {}",
+                        ns.write_key()
+                    ))
                 })?;
                 let mut part = json!({ "type": if file.media_type.split('/').next() == Some("image") { "input_image" } else { "input_file" }, "file_id": file_id });
                 if part["type"] == "input_image"
@@ -1008,18 +1018,15 @@ fn prepare_responses_tools_for(
                         &mut tool_warnings,
                     );
                     if let Some(namespace) = opts.get("namespace") {
-                        let name =
-                            namespace
-                                .get("name")
-                                .and_then(Value::as_str)
-                                .ok_or_else(|| {
-                                    AiMuxError::InvalidArgument("tool namespace name".into())
-                                })?;
+                        let name = namespace
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| AiMuxError::invalid_argument("tool namespace name"))?;
                         let description = namespace
                             .get("description")
                             .and_then(Value::as_str)
                             .ok_or_else(|| {
-                                AiMuxError::InvalidArgument("tool namespace description".into())
+                                AiMuxError::invalid_argument("tool namespace description")
                             })?;
                         if let Some(group) = prepared
                             .iter_mut()
@@ -1117,7 +1124,7 @@ fn prepare_allowed_tools(
     tools: &[Tool],
     warnings: &mut Vec<Warning>,
 ) -> Result<Value, AiMuxError> {
-    let invalid = || AiMuxError::InvalidArgument("allowedTools".into());
+    let invalid = || AiMuxError::invalid_argument("allowedTools");
     let names = allowed
         .get("toolNames")
         .and_then(Value::as_array)
@@ -1424,7 +1431,7 @@ fn map_shell_environment(environment: &Value) -> Result<Value, AiMuxError> {
         if let Some(skills) = environment.get("skills").and_then(Value::as_array) {
             value["skills"] = Value::Array(skills.iter().map(|skill| {
                 if skill["type"] == "skillReference" {
-                    let id = skill.get("providerReference").and_then(|reference| reference.get("openai")).and_then(Value::as_str).ok_or_else(|| AiMuxError::InvalidArgument("No skill reference for openai".into()))?;
+                    let id = skill.get("providerReference").and_then(|reference| reference.get("openai")).and_then(Value::as_str).ok_or_else(|| AiMuxError::invalid_argument("No skill reference for openai"))?;
                     Ok(json!({"type":"skill_reference", "skill_id":id, "version":skill.get("version").cloned().unwrap_or_else(|| json!("latest"))}))
                 } else {
                     let mut value = map_tool_fields(skill, &[("name", "name"), ("description", "description")]);

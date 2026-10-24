@@ -172,7 +172,7 @@ impl Default for StreamOptions {
 
 fn json<T: Serialize>(value: T) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|e| OpsError::Binding(BindingError::ResultSerialization(e.to_string())))
+        .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
 }
 
 fn language(target: Target) -> Result<Arc<dyn LanguageModel>, OpsError> {
@@ -583,7 +583,7 @@ mod tests {
                     return futures::future::pending().await;
                 }
                 if self.setup_error {
-                    return Err(AiMuxError::Other("setup failed".into()));
+                    return Err(AiMuxError::other("setup failed"));
                 }
                 let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> =
                     if self.pending {
@@ -690,12 +690,12 @@ mod tests {
         model.parts.insert(
             1,
             Ok(StreamPart::Error {
-                error: AiMuxError::Other("provider warning".into()),
+                error: AiMuxError::other("provider warning"),
             }),
         );
         model
             .parts
-            .insert(2, Err(AiMuxError::JsonParse("malformed frame".into())));
+            .insert(2, Err(AiMuxError::json_parse("malformed frame")));
         let events = stream(ctx(), model.entry(), request())
             .unwrap()
             .collect::<Vec<_>>()
@@ -717,7 +717,7 @@ mod tests {
             let mut model = MockModel::new("before");
             model
                 .parts
-                .insert(3, Err(AiMuxError::Other("connection lost".into())));
+                .insert(3, Err(AiMuxError::other("connection lost")));
             let mut events = if openai {
                 stream_openai(ctx(), model.entry(), request())
             } else {
@@ -726,7 +726,7 @@ mod tests {
             .unwrap();
             let mut errors = 0;
             while let Some(event) = events.next().await {
-                if let Err(OpsError::AiMux(AiMuxError::Other(message))) = event {
+                if let Err(OpsError::AiMux(AiMuxError::Other { message, .. })) = event {
                     assert_eq!(message, "connection lost");
                     errors += 1;
                     assert!(events.next().await.is_none());
@@ -752,7 +752,7 @@ mod tests {
             .await;
             assert_eq!(events.len(), 1);
             assert!(
-                matches!(&events[0], Err(OpsError::AiMux(AiMuxError::Other(message))) if message == "setup failed")
+                matches!(&events[0], Err(OpsError::AiMux(AiMuxError::Other { message, .. })) if message == "setup failed")
             );
         }
     }
@@ -762,7 +762,7 @@ mod tests {
         let mut model = MockModel::new("after");
         model
             .parts
-            .insert(1, Err(AiMuxError::JsonParse("malformed frame".into())));
+            .insert(1, Err(AiMuxError::json_parse("malformed frame")));
         let events = stream_openai(
             ctx(),
             model.entry(),
@@ -1076,11 +1076,11 @@ mod tests {
                 match case {
                     "recoverable" => model
                         .parts
-                        .insert(1, Err(AiMuxError::JsonParse("malformed frame".into()))),
+                        .insert(1, Err(AiMuxError::json_parse("malformed frame"))),
                     "setup" => model.setup_error = true,
                     "runtime" => model
                         .parts
-                        .insert(3, Err(AiMuxError::Other("connection lost".into()))),
+                        .insert(3, Err(AiMuxError::other("connection lost"))),
                     "large" => model.parts.insert(
                         3,
                         Ok(StreamPart::TextDelta {

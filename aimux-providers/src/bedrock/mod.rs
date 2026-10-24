@@ -264,7 +264,7 @@ impl Auth {
                 load_setting(None, REGION_ENV_VAR, "region")?
             };
         if !is_valid_hostname_part(&region) {
-            return Err(AiMuxError::InvalidArgument(
+            return Err(AiMuxError::invalid_argument(
                 "Invalid Amazon Bedrock region. Expected a single DNS label (letters, digits, and \
                  hyphens). Use `base_url` for custom endpoints."
                     .to_string(),
@@ -404,7 +404,7 @@ impl Fetch for ProcessDefaultFetch {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when an explicit `base_url` is not an
+/// Returns `AiMuxError::invalid_argument` when an explicit `base_url` is not an
 /// `http(s)` URL with a host. That is the only way this fails: the region, the
 /// key and the credentials are loaded per request, not here.
 pub fn create_amazon_bedrock(

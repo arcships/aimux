@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
 use aimux_core::shared::{FileBytes, SharedProviderOptions};
@@ -46,14 +47,15 @@ fn parse_google_files_options(
         return Ok(GoogleFilesUploadOptions::default());
     };
     let options: GoogleFilesUploadOptions = serde_json::from_value(Value::Object(google.clone()))
-        .map_err(|error| {
-        AiMuxError::InvalidArgument(format!("Invalid Google file options: {error}"))
+        .map_err(|error| AiMuxError::InvalidArgument {
+        message: format!("Invalid Google file options: {error}"),
+        cause: Some(ErrorCause::source(&error)),
     })?;
     if options.poll_interval_ms.is_some_and(|value| value <= 0.0)
         || options.poll_timeout_ms.is_some_and(|value| value <= 0.0)
     {
-        return Err(AiMuxError::InvalidArgument(
-            "Google file polling intervals must be positive".into(),
+        return Err(AiMuxError::invalid_argument(
+            "Google file polling intervals must be positive",
         ));
     }
     Ok(options)
@@ -65,8 +67,12 @@ fn data_to_bytes(data: &UploadFileData) -> Result<Vec<u8>, AiMuxError> {
         UploadFileData::Data { data } => match data {
             FileBytes::Binary(bytes) => Ok(bytes.clone()),
             FileBytes::Base64(b64) => {
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                    .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
+                    |e| AiMuxError::InvalidArgument {
+                        message: format!("invalid base64: {e}"),
+                        cause: Some(ErrorCause::source(&e)),
+                    },
+                )
             }
         },
         UploadFileData::Text { text } => Ok(text.as_bytes().to_vec()),
@@ -242,7 +248,7 @@ impl Files for GoogleFiles {
             .get("x-goog-upload-url")
             .cloned()
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData(
+                AiMuxError::invalid_response_data(
                     "No upload URL returned from initiation request".to_string(),
                 )
             })?;
@@ -313,8 +319,12 @@ impl Files for GoogleFiles {
             }
 
             sleep_or_abort(
-                Duration::try_from_secs_f64(poll_interval_ms / 1000.0)
-                    .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?,
+                Duration::try_from_secs_f64(poll_interval_ms / 1000.0).map_err(|error| {
+                    AiMuxError::InvalidArgument {
+                        message: error.to_string(),
+                        cause: Some(ErrorCause::source(&error)),
+                    }
+                })?,
                 options.abort_signal.as_ref(),
             )
             .await?;

@@ -113,6 +113,10 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmbeddingUsage.class));
             case "EmptyParams":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, EmptyParams.class));
+            case "ErrorCause":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ErrorCause.class));
+            case "ErrorCauseInput":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ErrorCauseInput.class));
             case "ErrorDomain":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, ErrorDomain.class));
             case "ErrorEnvelope":
@@ -413,6 +417,8 @@ public final class DtoTypes {
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Size.class));
             case "Source":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, Source.class));
+            case "SourceError":
+                return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SourceError.class));
             case "SpeechCallOptions":
                 return DtoJson.MAPPER.valueToTree(DtoJson.MAPPER.treeToValue(value, SpeechCallOptions.class));
             case "SpeechRequest":

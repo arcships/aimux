@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::content::{AssistantContentPart, ToolContentPart};
-use crate::error::AiMuxError;
+use crate::error::{AiMuxError, ErrorCause, SourceError};
+use crate::output::{json_parse_error, type_validation_error, validator_error};
 use crate::result::ContentPart;
 use crate::tool::{RawToolCall, Tool, ToolCall};
 
@@ -277,22 +278,26 @@ fn parse_and_validate_tool_call(
     let Tool::Function(function_tool) = tool else {
         return Ok((input, None));
     };
+    let invalid = |cause: ErrorCause| AiMuxError::InvalidToolInput {
+        tool_name: tool_call.tool_name.clone(),
+        tool_input: tool_call.input.clone(),
+        cause,
+    };
     let validator = jsonschema::validator_for(&function_tool.input_schema).map_err(|error| {
-        AiMuxError::InvalidToolInput {
-            tool_name: tool_call.tool_name.clone(),
-            tool_input: tool_call.input.clone(),
-            cause: format!("input schema is invalid: {error}"),
-        }
+        invalid(
+            SourceError {
+                message: format!("input schema is invalid: {error}"),
+                cause: Some(Box::new(validator_error(&error))),
+            }
+            .into(),
+        )
     })?;
-    // Cause wording matches the AI SDK's `TypeValidationError` template;
-    // `Value` Display is compact JSON, the `JSON.stringify` equivalent.
-    validator
-        .validate(&input)
-        .map_err(|error| AiMuxError::InvalidToolInput {
-            tool_name: tool_call.tool_name.clone(),
-            tool_input: tool_call.input.clone(),
-            cause: format!("Type validation failed: Value: {input}.\nError message: {error}"),
-        })?;
+    // The cause is the AI SDK's `TypeValidationError`.
+    validator.validate(&input).map_err(|error| {
+        invalid(
+            type_validation_error(&input, &error.to_string(), Some(validator_error(&error))).into(),
+        )
+    })?;
     Ok((input, None))
 }
 
@@ -300,25 +305,25 @@ fn parse_json_input(tool_call: &RawToolCall) -> Result<Value, AiMuxError> {
     if tool_call.input.trim().is_empty() {
         return Ok(Value::Object(serde_json::Map::new()));
     }
-    // Cause wording matches the AI SDK's `JSONParseError` template.
-    let value: Value =
-        parse_input_text(&tool_call.input).map_err(|error| AiMuxError::InvalidToolInput {
-            tool_name: tool_call.tool_name.clone(),
-            tool_input: tool_call.input.clone(),
-            cause: format!(
-                "JSON parsing failed: Text: {}.\nError message: {error}",
-                tool_call.input
-            ),
-        })?;
+    // The cause is the AI SDK's `JSONParseError`.
+    let invalid = |parse_error: AiMuxError| AiMuxError::InvalidToolInput {
+        tool_name: tool_call.tool_name.clone(),
+        tool_input: tool_call.input.clone(),
+        cause: parse_error.into(),
+    };
+    let value: Value = parse_input_text(&tool_call.input).map_err(|error| {
+        invalid(json_parse_error(
+            &tool_call.input,
+            &error.to_string(),
+            Some(&error),
+        ))
+    })?;
     if contains_forbidden_prototype(&value) {
-        return Err(AiMuxError::InvalidToolInput {
-            tool_name: tool_call.tool_name.clone(),
-            tool_input: tool_call.input.clone(),
-            cause: format!(
-                "JSON parsing failed: Text: {}.\nError message: Object contains forbidden prototype property",
-                tool_call.input
-            ),
-        });
+        return Err(invalid(json_parse_error(
+            &tool_call.input,
+            "Object contains forbidden prototype property",
+            None,
+        )));
     }
     Ok(value)
 }
@@ -481,7 +486,7 @@ impl From<ToolCallRepairReply> for RepairOutcome {
             ToolCallRepairReply::Repaired { tool_call } => RepairOutcome::Repaired(tool_call),
             ToolCallRepairReply::Unchanged => RepairOutcome::Unchanged,
             ToolCallRepairReply::Failed { message } => {
-                RepairOutcome::Failed(AiMuxError::Other(message))
+                RepairOutcome::Failed(AiMuxError::other(message))
             }
         }
     }
@@ -524,13 +529,13 @@ pub(crate) fn original_tool_call_text(input: &Value, error: &AiMuxError) -> Opti
 /// call instead.
 fn raw_from_invalid(tool_call: &ToolCall) -> Result<(RawToolCall, AiMuxError), AiMuxError> {
     if tool_call.invalid != Some(true) {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "tool call '{}' is not invalid; nothing to repair",
             tool_call.tool_call_id
         )));
     }
     let error = tool_call.error.clone().ok_or_else(|| {
-        AiMuxError::InvalidArgument(format!(
+        AiMuxError::invalid_argument(format!(
             "invalid tool call '{}' carries no error",
             tool_call.tool_call_id
         ))
@@ -560,7 +565,7 @@ fn raw_from_invalid(tool_call: &ToolCall) -> Result<(RawToolCall, AiMuxError), A
 /// repair, so reaching this point with `None` is a caller mistake.
 fn required_tools(tools: Option<&[Tool]>) -> Result<&[Tool], AiMuxError> {
     tools.ok_or_else(|| {
-        AiMuxError::InvalidArgument(
+        AiMuxError::invalid_argument(
             "tool calls made without a tool set are not repairable".to_string(),
         )
     })
@@ -601,7 +606,7 @@ pub fn tool_call_repair_inputs(
 ///
 /// # Errors
 ///
-/// [`AiMuxError::InvalidArgument`] when `tool_call` is not an invalid call, or
+/// [`AiMuxError::invalid_argument`] when `tool_call` is not an invalid call, or
 /// carries no error.
 pub fn tool_call_repair_context(
     tool_call: &ToolCall,
@@ -639,7 +644,7 @@ pub fn tool_call_repair_context(
 ///
 /// # Errors
 ///
-/// [`AiMuxError::InvalidArgument`] when `tools` is `None` (the call was never
+/// [`AiMuxError::invalid_argument`] when `tools` is `None` (the call was never
 /// repairable — [`tool_call_repair_context`] already answered `None` for it),
 /// or when `tool_call` is not an invalid call, or carries no error.
 pub fn apply_tool_call_repair(
@@ -673,7 +678,7 @@ pub fn apply_tool_call_repair(
 ///
 /// # Errors
 ///
-/// [`AiMuxError::InvalidArgument`] when `tools` is `None`, when the document
+/// [`AiMuxError::invalid_argument`] when `tools` is `None`, when the document
 /// is not a text result, when `tool_call_id` is missing or ambiguous, when
 /// the matched call is not invalid, or when a replacement id conflicts with
 /// another call.
@@ -684,7 +689,10 @@ pub fn apply_tool_call_repair_to_result(
     reply: ToolCallRepairReply,
 ) -> Result<Value, AiMuxError> {
     let mut result: crate::generate::GenerateTextResult = serde_json::from_value(result.clone())
-        .map_err(|error| AiMuxError::InvalidArgument(format!("result: {error}")))?;
+        .map_err(|error| AiMuxError::InvalidArgument {
+            message: format!("result: {error}"),
+            cause: Some(ErrorCause::source(&error)),
+        })?;
 
     // Calls and the transcript are keyed by id here, so a duplicated id
     // cannot be patched unambiguously; refuse rather than rewrite the first
@@ -694,11 +702,11 @@ pub fn apply_tool_call_repair_to_result(
         .iter()
         .filter(|call| call.tool_call_id == tool_call_id);
     let original = (*matching.next().ok_or_else(|| {
-        AiMuxError::InvalidArgument(format!("result: no tool call '{tool_call_id}'"))
+        AiMuxError::invalid_argument(format!("result: no tool call '{tool_call_id}'"))
     })?)
     .clone();
     if matching.next().is_some() {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "result: tool call id '{tool_call_id}' is not unique"
         )));
     }
@@ -709,7 +717,7 @@ pub fn apply_tool_call_repair_to_result(
             .iter()
             .any(|call| call.tool_call_id == repaired.tool_call_id)
     {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "result: repaired tool call id '{}' already exists",
             repaired.tool_call_id
         )));
@@ -805,8 +813,10 @@ pub fn apply_tool_call_repair_to_result(
         });
     }
 
-    serde_json::to_value(&result)
-        .map_err(|error| AiMuxError::InvalidArgument(format!("result: {error}")))
+    serde_json::to_value(&result).map_err(|error| AiMuxError::InvalidArgument {
+        message: format!("result: {error}"),
+        cause: Some(ErrorCause::source(&error)),
+    })
 }
 
 #[cfg(test)]
@@ -931,6 +941,81 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// `parse-tool-call.ts:259-262`: unparseable input has the
+    /// `JSONParseError` (with the parser's error) as its cause.
+    #[tokio::test]
+    async fn unparseable_input_is_caused_by_the_json_parse_error() {
+        let tools = weather_tools();
+        let call = parse_tool_call(raw_call("call-1", "{"), Some(&tools), None, &[], None).await;
+        let Some(AiMuxError::InvalidToolInput { cause, .. }) = &call.error else {
+            panic!("{:?}", call.error);
+        };
+        let ErrorCause::AiMux(parse_error) = cause else {
+            panic!("{cause:?}");
+        };
+        let AiMuxError::JsonParse {
+            message,
+            cause: Some(ErrorCause::Source(parser_error)),
+        } = parse_error.as_ref()
+        else {
+            panic!("{parse_error:?}");
+        };
+        assert!(
+            message.starts_with("JSON parsing failed: Text: {."),
+            "{message}"
+        );
+        assert!(message.ends_with(&parser_error.message), "{message}");
+        assert_eq!(
+            serde_json::to_value(cause).unwrap()["name"],
+            "AI_JSONParseError"
+        );
+    }
+
+    /// `validate-types.ts:79`: input of the wrong shape has the
+    /// `TypeValidationError`, with the value and the validator's error, as
+    /// its cause.
+    #[tokio::test]
+    async fn mismatched_input_is_caused_by_the_type_validation_error() {
+        let tools = weather_tools();
+        let call = parse_tool_call(
+            raw_call("call-1", r#"{"town":"SG"}"#),
+            Some(&tools),
+            None,
+            &[],
+            None,
+        )
+        .await;
+        let Some(AiMuxError::InvalidToolInput { cause, .. }) = &call.error else {
+            panic!("{:?}", call.error);
+        };
+        let ErrorCause::AiMux(validation) = cause else {
+            panic!("{cause:?}");
+        };
+        let AiMuxError::TypeValidation {
+            message,
+            value,
+            cause: Some(ErrorCause::Source(validator_error)),
+        } = validation.as_ref()
+        else {
+            panic!("{validation:?}");
+        };
+        assert_eq!(**value, serde_json::json!({"town": "SG"}));
+        assert_eq!(
+            message,
+            &format!(
+                "Type validation failed: Value: {{\"town\":\"SG\"}}.\nError message: {}",
+                validator_error.message
+            )
+        );
+        assert!(
+            validator_error.message.contains("city"),
+            "{validator_error:?}"
+        );
+        let json = serde_json::to_value(cause).unwrap();
+        assert_eq!(json["name"], "AI_TypeValidationError");
+        assert_eq!(json["value"], serde_json::json!({"town": "SG"}));
     }
 
     /// The AI SDK parses tool input with `JSON.parse` (`ai`

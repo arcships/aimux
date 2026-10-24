@@ -60,6 +60,8 @@
     "bindings/java/generated/ai/arcships/aimux/types/EmbeddingResult.java",
     "bindings/java/generated/ai/arcships/aimux/types/EmbeddingUsage.java",
     "bindings/java/generated/ai/arcships/aimux/types/EmptyParams.java",
+    "bindings/java/generated/ai/arcships/aimux/types/ErrorCause.java",
+    "bindings/java/generated/ai/arcships/aimux/types/ErrorCauseInput.java",
     "bindings/java/generated/ai/arcships/aimux/types/ErrorDomain.java",
     "bindings/java/generated/ai/arcships/aimux/types/ErrorEnvelope.java",
     "bindings/java/generated/ai/arcships/aimux/types/Fallback.java",
@@ -211,6 +213,7 @@
     "bindings/java/generated/ai/arcships/aimux/types/SessionView.java",
     "bindings/java/generated/ai/arcships/aimux/types/Size.java",
     "bindings/java/generated/ai/arcships/aimux/types/Source.java",
+    "bindings/java/generated/ai/arcships/aimux/types/SourceError.java",
     "bindings/java/generated/ai/arcships/aimux/types/SpeechCallOptions.java",
     "bindings/java/generated/ai/arcships/aimux/types/SpeechRequest.java",
     "bindings/java/generated/ai/arcships/aimux/types/SpeechResponse.java",
@@ -370,6 +373,8 @@
     "schema/types/EmbeddingResult.json",
     "schema/types/EmbeddingUsage.json",
     "schema/types/EmptyParams.json",
+    "schema/types/ErrorCause.json",
+    "schema/types/ErrorCauseInput.json",
     "schema/types/ErrorDomain.json",
     "schema/types/ErrorEnvelope.json",
     "schema/types/Fallback.json",
@@ -520,6 +525,7 @@
     "schema/types/SessionView.json",
     "schema/types/Size.json",
     "schema/types/Source.json",
+    "schema/types/SourceError.json",
     "schema/types/SpeechCallOptions.json",
     "schema/types/SpeechRequest.json",
     "schema/types/SpeechResponse.json",
@@ -626,5 +632,5 @@
     "tools/aimux-web/web/src/types/generated/WireOptions.ts",
     "tools/aimux-web/web/src/types/generated/WireTool.ts"
   ],
-  "manifestDigest": "e4592032b90bb079b2ba41f5325efa8430b63d8200d865d5e068706b68420173"
+  "manifestDigest": "ea0b3f034cbe16915bc0dff64291bebea9c3bd08e62ef1e284a5b3317c9f1d89"
 }
