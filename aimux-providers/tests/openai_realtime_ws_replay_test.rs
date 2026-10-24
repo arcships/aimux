@@ -24,11 +24,14 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::Role;
 
+/// URL, headers and subprotocols of one connect request.
+type Connect = (String, Vec<(String, String)>, Vec<String>);
+
 /// What the in-process server saw.
 #[derive(Default)]
 struct Seen {
-    /// URL and headers of every connect request, in order.
-    connects: Vec<(String, Vec<(String, String)>)>,
+    /// Every connect request, in order.
+    connects: Vec<Connect>,
     /// Every text frame the client sent, parsed.
     frames: Vec<Value>,
     /// Whether the client closed the socket.
@@ -44,11 +47,11 @@ struct ReplayConnector {
 #[async_trait::async_trait]
 impl WsConnector for ReplayConnector {
     async fn connect(&self, request: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
-        self.seen
-            .lock()
-            .unwrap()
-            .connects
-            .push((request.url.clone(), request.headers.clone()));
+        self.seen.lock().unwrap().connects.push((
+            request.url.clone(),
+            request.headers.clone(),
+            request.subprotocols.clone(),
+        ));
         let (client_io, server_io) = tokio::io::duplex(64 * 1024);
         let client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
         let server = WebSocketStream::from_raw_socket(server_io, Role::Server, None).await;
@@ -173,11 +176,20 @@ async fn realtime_transcription_replays_through_injected_web_socket() {
     let seen = seen.lock().unwrap();
     assert!(seen.closed, "client did not close the session");
     assert_eq!(seen.connects.len(), 1, "with_web_socket connector not used");
-    let (url, headers) = &seen.connects[0];
+    let (url, headers, subprotocols) = &seen.connects[0];
     assert_eq!(url, "wss://replay.invalid/v1/realtime?intent=transcription");
-    assert!(headers.iter().any(|(name, value)| {
-        name.eq_ignore_ascii_case("authorization") && value == "Bearer sk-replay-test"
-    }));
+    // The key rides the `openai-insecure-api-key` subprotocol and the
+    // Authorization header is dropped: OpenAI rejects a handshake that sends
+    // both (`transcription/openai-transcription-model.ts:620-652`).
+    assert_eq!(
+        subprotocols,
+        &["realtime", "openai-insecure-api-key.sk-replay-test"]
+    );
+    assert!(
+        !headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+    );
 
     // Frames the server saw: session.update, two appends, commit.
     let types: Vec<&str> = seen

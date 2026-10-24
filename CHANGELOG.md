@@ -1305,6 +1305,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenAI Responses now warns about `async: true` on a model without async tool
   calling with the quoted tool name and "Async tool calling is only supported
   by GPT-6 and later models.", like the AI SDK.
+- OpenAI realtime transcription authenticates through the WebSocket
+  subprotocols like the AI SDK: it offers `realtime` and
+  `openai-insecure-api-key.<key>` (the bearer token of the last
+  `authorization` header, scheme case-insensitive) and leaves the
+  `authorization` header out, keeping every other header; with no bearer
+  header it offers `realtime` alone. It sent the key as an `Authorization`
+  header and offered no subprotocol.
 - OpenAI transcription returns diarized segments with their speaker in
   `providerMetadata.openai.segments` (`text`, `startSecond`, `endSecond`,
   `speaker`), like the AI SDK; the speaker was dropped.

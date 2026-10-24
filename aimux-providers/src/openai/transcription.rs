@@ -487,6 +487,38 @@ impl TranscriptionModel for OpenAITranscriptionModel {
     }
 }
 
+/// The bearer token rides the `openai-insecure-api-key.<token>` subprotocol
+/// next to `realtime`, and the `authorization` header is dropped: OpenAI
+/// rejects handshakes that send both auth channels. Without a bearer
+/// `authorization` only `realtime` is offered and the headers are kept
+/// (`getOpenAIRealtimeConnection`,
+/// `transcription/openai-transcription-model.ts:620-652`).
+#[cfg(feature = "realtime")]
+fn realtime_connection(headers: Vec<(String, String)>) -> (Vec<String>, Vec<(String, String)>) {
+    let token = headers
+        .iter()
+        .rfind(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .and_then(|(_, value)| {
+            // The HTTP auth scheme is case-insensitive.
+            let (scheme, token) = value.split_once(char::is_whitespace)?;
+            let token = token.trim_start();
+            (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then(|| token.to_string())
+        });
+    match token {
+        None => (vec!["realtime".to_string()], headers),
+        Some(token) => (
+            vec![
+                "realtime".to_string(),
+                format!("openai-insecure-api-key.{token}"),
+            ],
+            headers
+                .into_iter()
+                .filter(|(name, _)| !name.eq_ignore_ascii_case("authorization"))
+                .collect(),
+        ),
+    }
+}
+
 impl OpenAITranscriptionModel {
     /// Streaming transcription over the realtime WebSocket (RFC-0028 §3.2).
     ///
@@ -561,10 +593,11 @@ impl OpenAITranscriptionModel {
         // Spawn the connect before entering the stream so connection errors
         // surface from do_stream's Result (clear contract: connect failure =
         // Err, not an in-stream error part).
+        let (subprotocols, headers) = realtime_connection(std::mem::take(&mut header_list));
         let req = WebSocketRequest {
             url: ws_url.clone(),
-            headers: std::mem::take(&mut header_list),
-            subprotocols: Vec::new(),
+            headers,
+            subprotocols,
             abort_signal: abort.clone(),
             timeout: options.timeout,
             connector: self.web_socket.clone(),
