@@ -1210,6 +1210,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A streamed SSE event that is not JSON yields `JsonParse` reading
+  `JSON parsing failed: Text: <event data>.\nError message: <parser message>`,
+  the AI SDK's `JSONParseError` message, as `@ai-sdk/openai-compatible`
+  3.0.62 and the other AI SDK providers do; it carried only the parser
+  message. This covers every stream read through
+  `create_event_source_response_handler`.
+- Anthropic throws a first-chunk stream error with the error's data as the
+  `ApiCallError` response body and a 500 status when its type maps to none,
+  as the AI SDK does; it used the whole SSE frame as the body and no status.
+- Anthropic streams the `tool_use` blocks a `message_start` already carries
+  (deferred programmatic tool calls) as tool input and tool-call parts with
+  their caller, as the AI SDK does; it dropped them.
+- Anthropic streams keep reading after `message_stop`: each later
+  `message_start` … `message_stop` round in the response streams its
+  response metadata, parts and own finish, with the output usage carried
+  over until a `message_delta` reports it, as the AI SDK does; it ended the
+  stream at the first `message_stop`.
+- Anthropic streamed code-execution tool calls keep their input as the
+  streamed text, with the `type` injected into the first delta, as the AI SDK
+  does; it re-serialized that input as compact JSON.
+- Anthropic joins the `anthropic-beta` header in insertion order (the
+  prompt's betas, the provider options', the tools', the provider and call
+  headers', then `anthropicBeta`), as the AI SDK does; it sorted the list.
+  `AnthropicPromptConversion::betas`, `PreparedTools::betas` and
+  `RequestBodyResult::betas` are `IndexSet`s, and `anthropicBeta` moves to
+  `RequestBodyResult::option_betas`.
+- Anthropic knows the Vertex ids `claude-sonnet-4@…` and `claude-opus-4@…`
+  (64000 and 32000 max output tokens), as the AI SDK does; it took them for
+  unknown models, sending 128000 `max_tokens` with an unknown-model warning.
+- Anthropic sends `providerOptions.anthropic.safeguards` as `safeguards`
+  (`classifierContext` as `classifier_context`) with the
+  `dangerous-tool-use-2026-09-03` beta, as the AI SDK does; it validated the
+  option and then left it out of the request.
+- Anthropic leaves `citations` out of a web_fetch tool result whose document
+  has none, as the AI SDK does; it emitted `"citations": null` there and sent
+  it back in the next request.
+- Anthropic surfaces a server-side `fallback` content block as an
+  `anthropic.fallback` custom part (generate and stream) and sends such an
+  assistant part back as a `fallback` block, a boundary that keeps reasoning
+  blocks apart, warning when its `from.model` / `to.model` are missing, as the
+  AI SDK does; it dropped the block both ways.
+- Anthropic warns `provider executed tool result for tool <name> is not
+  supported` when it sends an MCP tool result back as `mcp_tool_result`, as
+  the AI SDK does; it sent the block without the warning.
+- Anthropic names the output type when it drops a provider-executed tool
+  result it cannot send back (`provider executed tool result output type text
+  for tool advisor is not supported`), and reports a result of an unknown
+  tool as unsupported whatever its output, as the AI SDK does; it left the
+  type out.
+- Anthropic omits the `caller` of a historical tool call or result whose
+  source code execution call is missing from the history (before the last
+  user message), with a warning, as the AI SDK does; it sent the orphaned
+  caller, which Anthropic rejects.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not
