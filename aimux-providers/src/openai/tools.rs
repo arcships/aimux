@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use aimux_core::ErrorCause;
 use aimux_core::{AiMuxError, tool::ProviderTool, types::NamespacedKind};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -521,14 +522,16 @@ fn openai_id(kind: &str) -> NamespacedKind {
 }
 
 fn provider_tool(kind: &str, args: impl Serialize) -> Result<ProviderTool, AiMuxError> {
-    let args = serde_json::to_value(args)
-        .map_err(|error| AiMuxError::InvalidArgument(error.to_string()))?;
+    let args = serde_json::to_value(args).map_err(|error| AiMuxError::InvalidArgument {
+        message: error.to_string(),
+        cause: Some(ErrorCause::source(&error)),
+    })?;
     super::responses::tool_args::validate_tool_args(kind, &args)?;
     Ok(ProviderTool {
         id: openai_id(kind),
         name: kind.to_owned(),
         args: args.as_object().cloned().ok_or_else(|| {
-            AiMuxError::InvalidArgument("provider tool arguments must be an object".into())
+            AiMuxError::invalid_argument("provider tool arguments must be an object")
         })?,
         supports_deferred_results: None,
     })

@@ -62,6 +62,7 @@ use aimux_provider_utils::{
 };
 
 use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
+use options::Namespace;
 
 pub(crate) fn google_stream_error(
     error: &types::GoogleError,
@@ -232,7 +233,7 @@ impl std::fmt::Debug for GoogleProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_google(settings: GoogleProviderSettings) -> Result<GoogleProvider, AiMuxError> {
@@ -310,8 +311,12 @@ impl GoogleProvider {
     /// (`"google.generative-ai"` by default).
     #[must_use]
     pub fn chat(&self, model_id: &str) -> GoogleModel {
-        GoogleModel::from_config(model_id.to_string(), self.model_config(self.name.clone()))
-            .with_generate_id(self.generate_id.clone())
+        GoogleModel::from_config(
+            model_id.to_string(),
+            self.model_config(self.name.clone()),
+            Namespace::Google,
+        )
+        .with_generate_id(self.generate_id.clone())
     }
 
     /// Alias of [`chat`](Self::chat), matching `generativeAI`.

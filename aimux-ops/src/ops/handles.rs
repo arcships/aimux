@@ -104,7 +104,7 @@ struct MiddlewareParams {
 fn params<T: DeserializeOwned>(value: Value) -> Result<T, OpsError> {
     // Do not echo caller-supplied data (in particular credential material).
     serde_json::from_value(value)
-        .map_err(|_| OpsError::Protocol(ProtocolError::InvalidParams("invalid parameters".into())))
+        .map_err(|_| OpsError::Protocol(ProtocolError::invalid_params("invalid parameters")))
 }
 
 fn unsupported(message: &'static str) -> OpsError {
@@ -115,7 +115,7 @@ fn insert(ctx: &Ctx, entry: Entry) -> Result<Value, OpsError> {
     let kind = entry.kind();
     let id = HandleRegistry::global().insert(ctx.owner, entry)?;
     serde_json::to_value(HandleResult { handle: id, kind })
-        .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+        .map_err(|error| BindingError::result_serialization(&error).into())
 }
 
 fn abort_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
@@ -173,8 +173,8 @@ fn middleware_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
             return Err(unsupported("requested built-in middleware is unavailable"));
         }
         let id = request.trace_store.ok_or_else(|| {
-            OpsError::Protocol(ProtocolError::InvalidParams(
-                "traceStore must be a decimal handle string".into(),
+            OpsError::Protocol(ProtocolError::invalid_params(
+                "traceStore must be a decimal handle string",
             ))
         })?;
         // Use the same owner-aware resolver as dispatch, including when the
@@ -183,7 +183,7 @@ fn middleware_create(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
             HandleRegistry::global(),
             &ctx,
             &serde_json::to_value(id)
-                .map_err(|error| BindingError::ResultSerialization(error.to_string()))?,
+                .map_err(|error| BindingError::result_serialization(&error))?,
             &[HandleKind::TraceStore],
         )?
         else {

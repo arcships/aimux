@@ -196,7 +196,7 @@ mod tests {
         ] {
             assert!(matches!(
                 parse::<RuntimeConfigureParams>(params),
-                Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+                Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
             ));
         }
         assert!(parse::<RuntimeDescribeParams>(json!({"credentials": true})).is_err());

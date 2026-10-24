@@ -8,6 +8,7 @@
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
 };
@@ -54,7 +55,7 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
         options: &EmbeddingCallOptions,
     ) -> Result<EmbeddingResult, AiMuxError> {
         if options.values.len() > 2048 {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "too many embedding values: {} exceeds 2048",
                 options.values.len()
             )));
@@ -93,8 +94,13 @@ impl EmbeddingModel for OpenAIEmbeddingModel {
 
         let raw_value: Value = resp.value;
 
-        let parsed: OpenAIEmbeddingResponse = serde_json::from_value(raw_value.clone())
-            .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?;
+        let parsed: OpenAIEmbeddingResponse =
+            serde_json::from_value(raw_value.clone()).map_err(|error| {
+                AiMuxError::InvalidResponseData {
+                    message: error.to_string(),
+                    cause: Some(ErrorCause::source(&error)),
+                }
+            })?;
         let embeddings = parsed.data.into_iter().map(|item| item.embedding).collect();
         let usage = parsed.usage.map(|usage| EmbeddingUsage {
             tokens: usage.prompt_tokens as u32,
@@ -147,12 +153,15 @@ fn parse_openai_provider_options(
                 .is_some_and(|value| !value.is_number())
                 || value.get("user").is_some_and(|value| !value.is_string())
             {
-                return Err(AiMuxError::InvalidArgument(
-                    "invalid openai embedding options".into(),
+                return Err(AiMuxError::invalid_argument(
+                    "invalid openai embedding options",
                 ));
             }
             serde_json::from_value(Value::Object(value.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument(format!("invalid openai embedding options: {error}"))
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid openai embedding options: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             })
         }
         None => Ok(OpenAIEmbeddingProviderOptions::default()),
