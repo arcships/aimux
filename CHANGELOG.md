@@ -1145,6 +1145,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- `aimux_providers::anthropic` follows the upstream `@ai-sdk/anthropic` file
+  layout (RFC-0046). The sub-modules `anthropic::cache_control`,
+  `anthropic::convert`, `anthropic::model`, `anthropic::stream`,
+  `anthropic::types` and `anthropic::usage` are no longer public; use
+  `AnthropicMessagesModel`, re-exported at `aimux_providers::anthropic`,
+  instead of `anthropic::model::AnthropicMessagesModel`. What the other
+  modules exposed (`CacheControlValidator`, `AnthropicPromptConversion`,
+  `convert_prompt_to_anthropic_full_fallible`,
+  `build_request_body_with_warnings`, `parse_stop_reason`, `AnthropicResponse`
+  and the other wire types, `convert_anthropic_usage`, `usage_from_anthropic`)
+  is not reachable from outside the crate any more and has no replacement.
+  `anthropic::files`, `prepare_tools`, `sanitize_json_schema`, `skills` and
+  `tool_name_mapping` stay public. Exports at the crate root and the
+  `anthropic` module root are unchanged.
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
