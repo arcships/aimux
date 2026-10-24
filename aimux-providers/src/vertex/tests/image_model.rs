@@ -113,10 +113,10 @@ fn provider_options(value: Value) -> SharedProviderOptions {
 /// The message of an error, without the variant's display prefix.
 fn message(error: &AiMuxError) -> String {
     match error {
-        AiMuxError::InvalidArgument(message)
+        AiMuxError::InvalidArgument { message, .. }
         | AiMuxError::UnsupportedFunctionality(message)
-        | AiMuxError::InvalidPrompt(message)
-        | AiMuxError::InvalidResponseData(message) => message.clone(),
+        | AiMuxError::InvalidPrompt { message, .. }
+        | AiMuxError::InvalidResponseData { message, .. } => message.clone(),
         other => other.to_string(),
     }
 }

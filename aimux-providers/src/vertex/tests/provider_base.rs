@@ -421,7 +421,7 @@ mod google_vertex_provider_base {
         // request, before anything is sent.
         let error = model.do_generate(&prompt()).await.unwrap_err();
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(_)),
+            matches!(&error, AiMuxError::InvalidArgument { .. }),
             "{error:?}"
         );
         assert!(

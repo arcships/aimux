@@ -505,7 +505,7 @@ mod region_validation {
             // `AI_InvalidArgumentError` with `argument: 'region'`: aimux's
             // invalid-argument error names the argument in its message.
             assert!(
-                matches!(&error, AiMuxError::InvalidArgument(message) if message.contains("region")),
+                matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.contains("region")),
                 "{namespace}: {error:?}"
             );
             assert!(fetch.seen().is_empty(), "{namespace}: fetch was called");

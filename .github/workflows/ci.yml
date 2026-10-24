@@ -145,6 +145,8 @@ jobs:
             $(job node-binding bindings/node)
             $(job python-binding bindings/python)
             $(job ffi-build aimux-ffi bindings/go)
+            $(job ffi-sanitizers aimux-ffi)
+            $(job ffi-linux-arm aimux-ffi)
             $(job jvm-bindings aimux-ffi bindings/java bindings/kotlin)
             $(job flutter-binding aimux-ffi bindings/flutter)
             $(job flutter-example-build aimux-ffi bindings/flutter)
@@ -458,6 +460,8 @@ jobs:
   ffi-sanitizers:
     name: C ABI (ASan + LSan)
     runs-on: ubuntu-latest
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['ffi-sanitizers']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -479,6 +483,8 @@ jobs:
   ffi-linux-arm:
     name: aimux-ffi (aarch64-unknown-linux-gnu)
     runs-on: ubuntu-24.04-arm
+    needs: changes
+    if: fromJSON(needs.changes.outputs.run)['ffi-linux-arm']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -802,6 +808,8 @@ jobs:
       - node-binding
       - python-binding
       - ffi-build
+      - ffi-sanitizers
+      - ffi-linux-arm
       - jvm-bindings
       - flutter-binding
       - flutter-example-build

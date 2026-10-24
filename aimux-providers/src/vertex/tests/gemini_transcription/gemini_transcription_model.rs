@@ -106,8 +106,8 @@ fn generate_options(audio: Vec<u8>, provider_options_value: Value) -> Transcript
 /// The message of an error, without the variant's display prefix.
 fn message(error: &AiMuxError) -> String {
     match error {
-        AiMuxError::InvalidArgument(message)
-        | AiMuxError::InvalidResponseData(message)
+        AiMuxError::InvalidArgument { message, .. }
+        | AiMuxError::InvalidResponseData { message, .. }
         | AiMuxError::UnsupportedFunctionality(message) => message.clone(),
         AiMuxError::ApiCall(error) => error.message.clone(),
         other => other.to_string(),

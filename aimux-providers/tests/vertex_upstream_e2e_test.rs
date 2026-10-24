@@ -483,7 +483,7 @@ async fn executable_credential_without_the_opt_in_fails_and_spawns_nothing() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message)
+        matches!(&error, AiMuxError::InvalidArgument { message, .. }
             if message.contains("GOOGLE_EXTERNAL_ACCOUNT_ALLOW_EXECUTABLES=1")),
         "{error:?}"
     );

@@ -279,7 +279,7 @@ mod google_vertex_anthropic_provider_node {
         let fetch = MockFetch::new(vec![messages_response()]);
         let provider = create_google_vertex_anthropic(VertexAnthropicProviderSettings {
             generate_auth_token: Some(Resolvable::from_async_fn(|| async {
-                Err(AiMuxError::Other("token mint failed".into()))
+                Err(AiMuxError::other("token mint failed"))
             })),
             ..settings(&fetch)
         })

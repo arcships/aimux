@@ -473,7 +473,7 @@ mod google_vertex_embedding_model {
         // aimux reports `TooManyEmbeddingValuesForCallError` as an invalid
         // argument with the same meaning.
         assert!(
-            matches!(&error, AiMuxError::InvalidArgument(message)
+            matches!(&error, AiMuxError::InvalidArgument { message, .. }
                 if message.starts_with("Too many embedding values")),
             "{error:?}"
         );

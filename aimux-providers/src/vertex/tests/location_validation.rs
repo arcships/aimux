@@ -31,7 +31,7 @@ use aimux_provider_utils::Resolvable;
 fn is_location_error(error: &AiMuxError) -> bool {
     matches!(
         error,
-        AiMuxError::InvalidArgument(message) if message.starts_with("Invalid Google Vertex location.")
+        AiMuxError::InvalidArgument { message, .. } if message.starts_with("Invalid Google Vertex location.")
     )
 }
 

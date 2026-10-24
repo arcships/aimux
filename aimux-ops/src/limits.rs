@@ -461,7 +461,7 @@ pub fn check_wire_item(value: &impl serde::Serialize, maximum: usize) -> Result<
         return if counter.exceeded {
             Err(resource_limit("wire item exceeds byte budget"))
         } else {
-            Err(crate::envelope::BindingError::ResultSerialization(error.to_string()).into())
+            Err(crate::envelope::BindingError::result_serialization(&error).into())
         };
     }
     Ok(counter.bytes)

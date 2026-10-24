@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use serde_json::Value;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
     ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
@@ -81,6 +82,7 @@ fn stability_successful_response_handler() -> aimux_provider_utils::ResponseHand
                     status_code: Some(status),
                     response_headers: Some(headers.clone()),
                     response_body: Some(String::from_utf8_lossy(&bytes).into_owned()),
+                    cause: Some(aimux_core::ErrorCause::source(&error)),
                     ..aimux_core::ApiCallError::new(
                         format!("Invalid JSON response: {error}"),
                         input.url,
@@ -167,7 +169,7 @@ impl std::fmt::Debug for StabilityProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_stability(
@@ -373,12 +375,13 @@ impl ImageModel for StabilityImageModel {
         let image_bytes = match resp.value {
             StabilitySuccess::Json(v) => {
                 let b64 = v.get("image").and_then(|i| i.as_str()).ok_or_else(|| {
-                    AiMuxError::InvalidResponseData(
-                        "Stability response missing `image` field".into(),
-                    )
+                    AiMuxError::invalid_response_data("Stability response missing `image` field")
                 })?;
                 base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
-                    |e| AiMuxError::InvalidResponseData(format!("invalid base64 image: {e}")),
+                    |e| AiMuxError::InvalidResponseData {
+                        message: format!("invalid base64 image: {e}"),
+                        cause: Some(ErrorCause::source(&e)),
+                    },
                 )?
             }
             StabilitySuccess::Binary(bytes) => bytes.to_vec(),

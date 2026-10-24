@@ -144,9 +144,8 @@ async fn start_with(options: VideoCallOptions) -> Value {
 /// The message of an error, without the variant's display prefix.
 fn message(error: &AiMuxError) -> String {
     match error {
-        AiMuxError::InvalidArgument(message) | AiMuxError::InvalidResponseData(message) => {
-            message.clone()
-        }
+        AiMuxError::InvalidArgument { message, .. }
+        | AiMuxError::InvalidResponseData { message, .. } => message.clone(),
         other => other.to_string(),
     }
 }
