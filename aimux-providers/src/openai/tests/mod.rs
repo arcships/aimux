@@ -12,4 +12,6 @@ mod language_model_capabilities;
 mod normalize_json_schema;
 mod provider;
 mod responses;
+mod speech;
 mod stream_error;
+mod transcription;

@@ -216,6 +216,7 @@ async fn collect(
 
 // ── tests ───────────────────────────────────────────────────────────────────
 
+/// partial: `should stream gpt-realtime-whisper using OpenAI realtime transcription`; full port in src/openai/tests/transcription/transcription_model.rs.
 /// Happy path: connect → session.update → appends → commit → deltas →
 /// completed → final + finish → client close(1000).
 #[tokio::test]
@@ -598,6 +599,7 @@ async fn stream_first_chunk_timeout_fires() {
     );
 }
 
+/// partial: `should error the stream with the server message on error events`; full port in src/openai/tests/transcription/transcription_model.rs.
 /// The server emits a realtime `error` event — the provider message must
 /// propagate verbatim and readable (not wrapped in transport noise), and the
 /// session must terminate there (#118).
