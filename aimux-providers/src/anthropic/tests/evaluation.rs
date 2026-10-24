@@ -276,7 +276,7 @@ async fn rejects_s_even_with_valid_json() {
         let (model, _) = setup(fixture_with(json!({ "stop_reason": stop_reason })));
         let error = model.do_decide(&options()).await.unwrap_err();
         assert!(
-            matches!(error, AiMuxError::InvalidResponseData(_)),
+            matches!(error, AiMuxError::InvalidResponseData { .. }),
             "{stop_reason}: {error:?}"
         );
     }
@@ -290,7 +290,7 @@ async fn validates_score_bounds_locally() {
     })));
     let error = model.do_decide(&options()).await.unwrap_err();
     assert!(
-        matches!(error, AiMuxError::InvalidResponseData(_)),
+        matches!(error, AiMuxError::InvalidResponseData { .. }),
         "{error:?}"
     );
 }

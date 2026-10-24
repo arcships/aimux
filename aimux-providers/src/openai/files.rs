@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
 use aimux_core::shared::{FileBytes, SharedProviderOptions};
@@ -56,8 +57,12 @@ fn data_to_bytes(data: &UploadFileData) -> Result<Vec<u8>, AiMuxError> {
         UploadFileData::Data { data } => match data {
             FileBytes::Binary(bytes) => Ok(bytes.clone()),
             FileBytes::Base64(b64) => {
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                    .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
+                    |e| AiMuxError::InvalidArgument {
+                        message: format!("invalid base64: {e}"),
+                        cause: Some(ErrorCause::source(&e)),
+                    },
+                )
             }
         },
         UploadFileData::Text { text } => Ok(text.as_bytes().to_vec()),

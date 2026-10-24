@@ -165,7 +165,7 @@ mod create_anthropic {
                 ..Default::default()
             });
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(msg)) if msg == "baseURL must be a non-empty string.")
+                matches!(result, Err(AiMuxError::InvalidArgument { message: msg, .. }) if msg == "baseURL must be a non-empty string.")
             );
         }
     }
@@ -208,7 +208,7 @@ mod anthropic_provider_authentication {
                 ..Default::default()
             });
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(msg)) if msg == "Both apiKey and authToken were provided. Please use only one authentication method.")
+                matches!(result, Err(AiMuxError::InvalidArgument { message: msg, .. }) if msg == "Both apiKey and authToken were provided. Please use only one authentication method.")
             );
         }
     }

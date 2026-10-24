@@ -725,7 +725,7 @@ mod prepare_tools {
                 None,
             );
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(_))),
+                matches!(result, Err(AiMuxError::InvalidArgument { .. })),
                 "{args}: {result:?}"
             );
         }

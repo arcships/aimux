@@ -53,7 +53,7 @@ impl Router for RuleRouter {
         models: &[ChildModel],
     ) -> Result<usize, AiMuxError> {
         if models.is_empty() {
-            return Err(AiMuxError::Other("router: no models configured".into()));
+            return Err(AiMuxError::other("router: no models configured"));
         }
         Ok(0)
     }
@@ -85,7 +85,7 @@ impl Router for WeightedRouter {
         models: &[ChildModel],
     ) -> Result<usize, AiMuxError> {
         if models.is_empty() {
-            return Err(AiMuxError::Other("router: no models configured".into()));
+            return Err(AiMuxError::other("router: no models configured"));
         }
         // Pick the child with the highest weight. On ties, prefer the earliest
         // index (matches `RuleRouter`'s "child 0 first" expectation when all
@@ -210,7 +210,7 @@ impl RouterModel {
         if idx < self.models.len() {
             Ok(idx)
         } else {
-            Err(AiMuxError::InvalidArgument(format!(
+            Err(AiMuxError::invalid_argument(format!(
                 "{from}: router returned out-of-bounds index {idx} (models: {})",
                 self.models.len()
             )))
@@ -313,7 +313,7 @@ mod tests {
         async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
             let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
-                return Err(AiMuxError::Other(format!("{} always fails", self.name)));
+                return Err(AiMuxError::other(format!("{} always fails", self.name)));
             }
             if attempt <= self.retry_failures {
                 return Err(retryable_error(self.name));
@@ -337,7 +337,7 @@ mod tests {
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
             let attempt = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
             if self.fail {
-                return Err(AiMuxError::Other(format!("{} always fails", self.name)));
+                return Err(AiMuxError::other(format!("{} always fails", self.name)));
             }
             if attempt <= self.retry_failures {
                 return Err(retryable_error(self.name));
@@ -569,7 +569,7 @@ mod tests {
         );
         let err = router.do_generate(&opts()).await.unwrap_err();
         match err {
-            AiMuxError::InvalidArgument(msg) => {
+            AiMuxError::InvalidArgument { message: msg, .. } => {
                 assert!(msg.contains("out-of-bounds"), "got: {msg}");
             }
             other => panic!("expected InvalidArgument, got {other:?}"),
@@ -692,7 +692,7 @@ mod tests {
                     .lock()
                     .unwrap()
                     .push(RecordingContext::current().and_then(|context| context.step()));
-                Err(AiMuxError::Other("probe fails".into()))
+                Err(AiMuxError::other("probe fails"))
             }
             async fn do_stream(&self, _: &CallOptions) -> Result<StreamResult, AiMuxError> {
                 unreachable!()
