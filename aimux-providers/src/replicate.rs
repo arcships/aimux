@@ -107,7 +107,7 @@ impl std::fmt::Debug for ReplicateProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_replicate(
@@ -543,9 +543,7 @@ impl VideoModel for ReplicateVideoModel {
         let prediction_id = prediction
             .get("id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                AiMuxError::InvalidResponseData("Replicate prediction missing id".to_string())
-            })?
+            .ok_or_else(|| AiMuxError::invalid_response_data("Replicate prediction missing id"))?
             .to_string();
 
         Ok(VideoOperationStart {
@@ -569,7 +567,7 @@ impl VideoModel for ReplicateVideoModel {
             .get("prediction_id")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(
+                AiMuxError::invalid_argument(
                     "replicate operation reference is missing prediction_id".to_string(),
                 )
             })?;
@@ -631,7 +629,7 @@ impl VideoModel for ReplicateVideoModel {
                 vec![]
             };
         if videos.is_empty() {
-            return Err(AiMuxError::InvalidResponseData(
+            return Err(AiMuxError::invalid_response_data(
                 "Replicate prediction succeeded without a usable output URL".to_string(),
             ));
         }

@@ -8,6 +8,7 @@ import 'package:ffi/ffi.dart';
 
 import '../generated/ops.dart' as ops;
 import '../errors.dart';
+import 'generated/types.dart';
 import 'ffi.g.dart';
 
 DynamicLibrary openLibrary(String? path, {bool bridge = false}) {
@@ -172,9 +173,8 @@ Object? _execute(NativeRequest r) {
       return null;
     case 'push':
       final bytes = r.bytes!;
-      final ptr = bytes.isEmpty
-          ? nullptr.cast<Uint8>()
-          : calloc<Uint8>(bytes.length);
+      final ptr =
+          bytes.isEmpty ? nullptr.cast<Uint8>() : calloc<Uint8>(bytes.length);
       try {
         if (bytes.isNotEmpty) ptr.asTypedList(bytes.length).setAll(0, bytes);
         api.checkError(api.ffi.operationPush(r.handle, ptr, bytes.length));
@@ -193,12 +193,17 @@ Object? _execute(NativeRequest r) {
           case 1:
             final ptr = out.value;
             out.value = nullptr;
-            return {'state': 'part', 'part': jsonDecode(api.takeString(ptr))};
+            return OperationPollResultPart(
+                    part_: TranscriptionStreamPart.fromJson(
+                        jsonDecode(api.takeString(ptr))))
+                .toJson();
           case 2:
           case 3:
             if (out.value != nullptr)
               throw const FormatException('JSON on empty poll');
-            return {'state': state.value == 2 ? 'ended' : 'timeout'};
+            return state.value == 2
+                ? OperationPollResultEnded().toJson()
+                : OperationPollResultTimeout().toJson();
           default:
             throw FormatException('Invalid poll state: ${state.value}');
         }

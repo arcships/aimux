@@ -81,73 +81,135 @@ func TestAllModalitiesTypedRoundTrip(t *testing.T) {
 		roundTripDTO[GenerateTextOptions](t, `{"output":{"type":"json"},"temperature":0,"providerOptions":{"z":{"n":null},"a":{}}}`)
 	})
 	t.Run("embedding", func(t *testing.T) {
-		roundTripDTO[EmbeddingResult](t, `{"embeddings":[[0.5,0.25],[1,-1]],"usage":{"tokens":2},"providerMetadata":null}`)
+		roundTripDTO[EmbeddingResult](t, `{"embeddings":[[0.5,0.25],[1,-1]],"usage":{"tokens":2},"warnings":[]}`)
 	})
 	t.Run("image", func(t *testing.T) {
-		roundTripDTO[ImageResult](t, `{"images":["AAEC"],"response":{},"providerMetadata":null}`)
+		roundTripDTO[ImageResult](t, `{"images":["AAEC"],"response":{},"warnings":[]}`)
 	})
 	t.Run("speech", func(t *testing.T) {
-		roundTripDTO[SpeechResult](t, `{"audio":"AAEC","response":{"body":null},"providerMetadata":{}}`)
+		roundTripDTO[SpeechResult](t, `{"audio":"AAEC","response":{"body":null},"providerMetadata":{},"warnings":[],"usage":null}`)
 	})
 	t.Run("transcription", func(t *testing.T) {
-		roundTripDTO[TranscriptionResult](t, `{"text":"hello","segments":[{"text":"hi","startSecond":0,"endSecond":1}],"response":{},"providerMetadata":null}`)
+		roundTripDTO[TranscriptionResult](t, `{"text":"hello","segments":[{"text":"hi","startSecond":0,"endSecond":1}],"response":{},"warnings":[]}`)
 	})
 	t.Run("reranking", func(t *testing.T) {
-		roundTripDTO[RerankingResult](t, `{"ranking":[{"index":0,"relevanceScore":0.5}],"providerMetadata":null}`)
+		roundTripDTO[RerankingResult](t, `{"ranking":[{"index":0,"relevanceScore":0.5}],"warnings":[]}`)
 	})
 	t.Run("video", func(t *testing.T) {
-		roundTripDTO[VideoResult](t, `{"videos":[{"type":"binary","data":"AAEC","mediaType":"video/mp4"}],"response":{},"providerMetadata":null}`)
+		roundTripDTO[VideoResult](t, `{"videos":[{"type":"binary","data":"AAEC","mediaType":"video/mp4"}],"response":{},"warnings":[]}`)
 	})
 	t.Run("search", func(t *testing.T) {
-		roundTripDTO[SearchResult](t, `{"results":[{"title":"found","url":"https://example.com","score":0}],"providerMetadata":null}`)
+		roundTripDTO[SearchResult](t, `{"results":[{"title":"found","url":"https://example.com","score":0}],"warnings":[]}`)
 	})
 	t.Run("files", func(t *testing.T) {
-		roundTripDTO[UploadFileResult](t, `{"providerReference":{"z":"f1","a":"f2"},"providerMetadata":null}`)
+		roundTripDTO[UploadFileResult](t, `{"providerReference":{"z":"f1","a":"f2"},"warnings":[]}`)
 	})
 }
 
-func TestWireDTOKeepsNullMissingAndUnknownFields(t *testing.T) {
-	// Ordinary *string decodes both null and absence as nil. WireDTO retains
-	// the canonical document independently of that typed view.
-	raw := `{"text":"hello","voice":null,"providerOptions":{"n":null},"future":18446744073709551615}`
-	var dto WireDTO[SpeechCallOptions]
+func TestGeneratedOptionalFieldsAndLargeNumbers(t *testing.T) {
+	raw := `{"text":"hello","voice":null,"providerOptions":{"vendor":{"future":18446744073709551615}}}`
+	var dto SpeechCallOptions
 	if err := json.Unmarshal([]byte(raw), &dto); err != nil {
 		t.Fatal(err)
 	}
-	value, err := dto.Value()
-	if err != nil || value.Text != "hello" || value.Voice != nil {
-		t.Fatalf("typed view: %+v, %v", value, err)
+	if dto.Voice != nil {
+		t.Fatal("null voice must decode to nil")
 	}
-	if field, present := dto.Field("voice"); !present || string(field) != "null" {
-		t.Fatalf("explicit null: %s,%v", field, present)
+	if dto.Language != nil {
+		t.Fatal("absent language became present")
 	}
-	if field, present := dto.Field("language"); present || field != nil {
-		t.Fatalf("absent field: %s,%v", field, present)
-	}
+	voice := "new voice"
+	dto.Voice = &voice
 	encoded, err := json.Marshal(dto)
-	if err != nil || string(encoded) != raw {
-		t.Fatalf("lossy typed DTO: %s,%v", encoded, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Mutating the original native-buffer copy or a typed view cannot change
-	// the immutable wire document.
-	value.ProviderOptions[0] = '['
-	encoded, err = json.Marshal(dto)
-	if err != nil || string(encoded) != raw {
-		t.Fatalf("typed view aliases wire storage: %s,%v", encoded, err)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["voice"]) != `"new voice"` {
+		t.Fatalf("typed mutation not encoded: %s", encoded)
+	}
+	var options map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(fields["providerOptions"], &options); err != nil {
+		t.Fatal(err)
+	}
+	if string(options["vendor"]["future"]) != "18446744073709551615" {
+		t.Fatal("rounded opaque number")
 	}
 }
 
-func TestWireDTOCopiedValueDoesNotAliasOnDecode(t *testing.T) {
-	var original WireDTO[SpeechCallOptions]
-	if err := json.Unmarshal([]byte(`{"text":"original","voice":null}`), &original); err != nil {
+func TestGeneratedRejectsInvalidFieldType(t *testing.T) {
+	var original SpeechCallOptions
+	if err := json.Unmarshal([]byte(`{"text":4}`), &original); err == nil {
+		t.Fatal("accepted invalid text")
+	}
+}
+
+func TestGeneratedOptionalFieldsOmitNilAndKeepEmpty(t *testing.T) {
+	for _, c := range []struct{ input, want string }{
+		{`{}`, `{}`},
+		{`{"providerOptions":null,"temperature":null,"tools":null}`, `{}`},
+		{`{"providerOptions":{},"temperature":0,"tools":[]}`, `{"providerOptions":{},"temperature":0,"tools":[]}`},
+	} {
+		var options GenerateTextOptions
+		if err := json.Unmarshal([]byte(c.input), &options); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(options)
+		if err != nil || string(raw) != c.want {
+			t.Fatalf("%s: got %s, %v; want %s", c.input, raw, err, c.want)
+		}
+	}
+}
+
+func TestGeneratedPresenceKeepsNullAndAbsence(t *testing.T) {
+	for _, c := range []struct {
+		raw           string
+		present, null bool
+	}{
+		{`{}`, false, false},
+		{`{"body":null}`, true, true},
+		{`{"body":{"n":18446744073709551615}}`, true, false},
+	} {
+		roundTripDTO[RequestInfo](t, c.raw)
+		var request RequestInfo
+		if err := json.Unmarshal([]byte(c.raw), &request); err != nil {
+			t.Fatal(err)
+		}
+		if request.Body.Present != c.present || request.Body.Null != c.null {
+			t.Fatalf("%s: %+v", c.raw, request.Body)
+		}
+	}
+}
+
+func TestUntaggedObjectBranchSelection(t *testing.T) {
+	var result ReplayLiveResult
+	raw := `{"answers":{},"usage":{},"warnings":[],"response":{}}`
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		t.Fatal(err)
 	}
-	copied := original
-	if err := json.Unmarshal([]byte(`{"text":"changed"}`), &copied); err != nil {
-		t.Fatal(err)
+	if _, ok := result.Value.(ReplayLiveResultBranchDecideResult); !ok {
+		t.Fatalf("selected %T for a decision result", result.Value)
 	}
-	raw, err := json.Marshal(original)
-	if err != nil || string(raw) != `{"text":"original","voice":null}` {
-		t.Fatalf("copied DTO mutated original: %s,%v", raw, err)
+	for _, raw := range []string{`{}`, `null`, `[]`} {
+		if err := json.Unmarshal([]byte(raw), &result); err == nil {
+			t.Fatalf("accepted invalid result %s", raw)
+		}
+	}
+}
+
+func TestUnionIgnoresUnrelatedSecondaryTag(t *testing.T) {
+	for _, extra := range []string{`null`, `123`, `{"ignored":true}`} {
+		var part TextStreamPart
+		raw := `{"type":"text-delta","id":"i","text":"ok","sourceType":` + extra + `}`
+		if err := json.Unmarshal([]byte(raw), &part); err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		delta, ok := part.Value.(TextStreamPartVariantTextDelta)
+		if !ok || delta.Text != "ok" {
+			t.Fatalf("%s: %+v", raw, part.Value)
+		}
 	}
 }

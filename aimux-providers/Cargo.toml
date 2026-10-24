@@ -13,6 +13,7 @@ documentation = "https://docs.rs/aimux-providers"
 exclude = ["tests/cassettes/**", "tests/cassettes"]
 
 [dependencies]
+schemars = { workspace = true }
 aimux-core = { workspace = true }
 aimux-stream = { workspace = true }
 aimux-provider-utils = { workspace = true }

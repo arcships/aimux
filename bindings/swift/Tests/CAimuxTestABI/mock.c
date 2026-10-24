@@ -43,7 +43,7 @@ aimux_error_t *aimux_manifest_json(char **out) {
 aimux_error_t *aimux_call(uint64_t id, const char *op, const char *params, uint64_t abort, char **out) {
     background(); *out = NULL;
     if (!strcmp(op, AIMUX_OP_ABORT_CREATE) || !strcmp(op, AIMUX_OP_PROVIDER_CREATE)) {
-        char value[128]; snprintf(value, sizeof(value), "{\"handle\":\"%llu\"}", (unsigned long long)aimux_test_new_handle());
+        char value[128]; snprintf(value, sizeof(value), "{\"handle\":\"%llu\",\"kind\":\"%s\"}", (unsigned long long)aimux_test_new_handle(), !strcmp(op, AIMUX_OP_ABORT_CREATE) ? "Abort" : "Provider");
         *out = owned(value); return NULL;
     }
     if (!strcmp(op, AIMUX_OP_OPERATION_CANCEL)) {
@@ -77,7 +77,7 @@ aimux_error_t *aimux_stream(uint64_t id, const char *op, const char *params, uin
             char *big = malloc(1048578); memset(big, 'x', 1048577); big[1048577] = 0;
             cb(big, ctx); free(big); break;
         }
-        char frame[256]; snprintf(frame, sizeof(frame), "{\"type\":\"event\",\"seq\":\"%u\",\"event\":{\"type\":\"text-delta\",\"text\":\"你好 🌍\",\"n\":%d}}", seq++, i);
+        char frame[256]; snprintf(frame, sizeof(frame), "{\"type\":\"event\",\"seq\":\"%u\",\"event\":{\"type\":\"text-delta\",\"text\":\"你好 🌍\",\"id\":\"%d\"}}", seq++, i);
         atomic_fetch_add(&emitted, 1); cb(frame, ctx);
     }
     if (!strcmp(op, "idle") || !strcmp(op, "connecting")) {

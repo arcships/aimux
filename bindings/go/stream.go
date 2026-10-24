@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strconv"
 	"sync/atomic"
 )
 
@@ -151,8 +152,8 @@ func (s *Stream) receive(raw []byte) {
 		s.fail(localError("binding", 206, "CallbackFailure", err.Error()))
 		return
 	}
-	seq, err := decimalUint64(frame.Seq)
-	if err != nil || (s.hasSeq && seq <= s.seq) || s.terminal != nil {
+	seq, err := strconv.ParseUint(frame.Seq, 10, 64)
+	if err != nil || strconv.FormatUint(seq, 10) != frame.Seq || (s.hasSeq && seq <= s.seq) || s.terminal != nil {
 		s.fail(localError("binding", 206, "CallbackFailure", "invalid stream sequence or frame after terminal"))
 		return
 	}

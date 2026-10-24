@@ -26,11 +26,11 @@ static DESCRIPTOR: OpDescriptor = OpDescriptor {
     since_ops_version: "1.0",
     mode: OpMode::Stream,
     allowed_handle_kinds: &[],
-    request_type: "Value",
-    result_type: "()",
-    event_type: Some("Value"),
+    request_type: aimux_ops::op::TypeRef::of::<serde_json::Value>(),
+    result_type: aimux_ops::op::TypeRef::of::<()>(),
+    event_type: Some(aimux_ops::op::TypeRef::of::<Value>()),
     scope: Scope::Current,
-    terminal_type: Some("StreamFrame"),
+    terminal_type: Some(aimux_ops::op::TypeRef::of::<aimux_ops::StreamFrame>()),
     runtime_handle_fields: &[],
     required_capabilities: &[],
     cancellation: Cancellation::Abort,
@@ -45,7 +45,7 @@ fn accept(_: Ctx, _: Target, params: Value) -> Result<EventStream, OpsError> {
         .get("fault")
         .is_some_and(|fault| fault["stage"] == "preflight")
     {
-        return Err(ProtocolError::InvalidParams("mock invalid params".into()).into());
+        return Err(ProtocolError::invalid_params("mock invalid params").into());
     }
     Ok(SOURCE
         .lock()

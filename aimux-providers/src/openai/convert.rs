@@ -219,7 +219,7 @@ pub fn prepare_tools(
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when a message part cannot be
+/// Returns `AiMuxError::invalid_argument` when a message part cannot be
 /// converted (e.g. an unsupported file part shape or a missing provider
 /// reference).
 pub fn convert_prompt_to_openai_messages_with_mode_fallible(
@@ -280,7 +280,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
     let (data_b64, url) = match data {
         FileData::Reference { reference } => {
             let file_id = resolve_provider_reference(reference, "openai")
-                .map_err(AiMuxError::InvalidArgument)?;
+                .map_err(AiMuxError::invalid_argument)?;
             let mut part = json!({ "type": "file", "file": { "file_id": file_id } });
             if let Some(bpt) = prompt_cache_breakpoint {
                 part["prompt_cache_breakpoint"] = bpt;
@@ -314,8 +314,8 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
             let full_mt = resolve_full_media_type(file)?;
             json!({ "url": format!("data:{};base64,{}", full_mt, b64) })
         } else {
-            return Err(AiMuxError::InvalidArgument(
-                "image part has no data or url".into(),
+            return Err(AiMuxError::invalid_argument(
+                "image part has no data or url",
             ));
         };
 
@@ -341,8 +341,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
                 "audio file parts with URLs".into(),
             ));
         }
-        let b64 =
-            data_b64.ok_or_else(|| AiMuxError::InvalidArgument("audio part has no data".into()))?;
+        let b64 = data_b64.ok_or_else(|| AiMuxError::invalid_argument("audio part has no data"))?;
         let full_mt = resolve_full_media_type(file)?;
         let format = match full_mt.as_str() {
             "audio/wav" => "wav",
@@ -378,7 +377,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
         ));
     }
 
-    let b64 = data_b64.ok_or_else(|| AiMuxError::InvalidArgument("PDF part has no data".into()))?;
+    let b64 = data_b64.ok_or_else(|| AiMuxError::invalid_argument("PDF part has no data"))?;
     let fname = filename
         .map(std::string::ToString::to_string)
         .unwrap_or_else(|| format!("part-{part_index}.pdf"));
@@ -644,7 +643,7 @@ pub(crate) fn parse_option_fields(
             parsed.insert(
                 key.clone(),
                 result.map_err(|()| {
-                    AiMuxError::InvalidArgument(format!("invalid {provider} provider options"))
+                    AiMuxError::invalid_argument(format!("invalid {provider} provider options"))
                 })?,
             );
         }

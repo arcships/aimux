@@ -216,7 +216,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let data = resp.value;
 
         let choice = data.choices.into_iter().next().ok_or_else(|| {
-            AiMuxError::InvalidResponseData("Response did not contain any choices.".to_string())
+            AiMuxError::invalid_response_data("Response did not contain any choices.")
         })?;
 
         let mut content = Vec::new();
@@ -644,7 +644,7 @@ impl Transformer for OpenAICompatibleChatStream {
 
         if self.final_finish_reason.is_none() {
             controller.enqueue(StreamPart::Error {
-                error: AiMuxError::InvalidResponseData(
+                error: AiMuxError::invalid_response_data(
                     "Response stream ended without a finish reason.".to_string(),
                 ),
             });
@@ -872,6 +872,7 @@ mod tests {
                 derive: None,
             }],
             user_agent: ("openai-compatible", "3.0.62"),
+            structured_output_models: None,
         }));
         let lazy = BaseUrl::Preset {
             descriptor,
@@ -880,7 +881,10 @@ mod tests {
         let provider = provider(lazy, ChatSettings::default());
         let model = provider.chat("m");
         let error = model.do_generate(&hello()).await.unwrap_err();
-        assert!(matches!(error, AiMuxError::InvalidArgument(_)), "{error:?}");
+        assert!(
+            matches!(error, AiMuxError::InvalidArgument { .. }),
+            "{error:?}"
+        );
         // SAFETY: as above.
         unsafe { std::env::set_var(VAR, server.uri()) };
         let result = model.do_generate(&hello()).await;

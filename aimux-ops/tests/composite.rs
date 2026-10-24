@@ -66,7 +66,7 @@ impl LanguageModel for FailingChild {
         'b: 'f,
         Self: 'f,
     {
-        Box::pin(async { Err(AiMuxError::Other("mock stream".into())) })
+        Box::pin(async { Err(AiMuxError::other("mock stream")) })
     }
 }
 
@@ -450,10 +450,13 @@ fn descriptors_publish_concrete_types_and_all_secondary_slots() {
         assert_eq!(op.scope, Scope::Current);
         assert!(op.allowed_handle_kinds.is_empty());
         assert_eq!(
-            op.request_type,
+            (op.request_type.id)().into_owned(),
             format!("aimux_ops::ops::composite::{request}")
         );
-        assert_eq!(op.result_type, "HandleId");
+        assert_eq!(
+            (op.result_type.id)().into_owned(),
+            "aimux_ops::handle::HandleId"
+        );
         assert_eq!(
             op.runtime_handle_fields
                 .iter()
