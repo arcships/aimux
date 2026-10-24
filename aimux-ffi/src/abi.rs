@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use aimux_ops::dispatch::PollResult;
 use aimux_ops::dispatch::{self, Ctx};
-use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError, ProtocolError};
+use aimux_ops::envelope::{BindingError, ErrorEnvelope, OpsError, ProtocolError, SourceError};
 use aimux_ops::frame::{Outcome, StreamFrame};
 use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 use futures::{Stream, StreamExt};
@@ -28,8 +28,8 @@ fn null_pointer(argument: &'static str) -> OpsError {
     OpsError::Binding(BindingError::NullPointer { argument })
 }
 
-fn serialization(message: impl ToString) -> OpsError {
-    OpsError::Binding(BindingError::ResultSerialization(message.to_string()))
+fn serialization(error: impl std::error::Error + 'static) -> OpsError {
+    OpsError::Binding(BindingError::result_serialization(&error))
 }
 
 fn finish(result: Result<()>) -> *mut aimux_error_t {
@@ -60,6 +60,7 @@ unsafe fn params(value: *const c_char) -> Result<Value> {
         OpsError::Binding(BindingError::InvalidWireJson {
             argument: "params_json".into(),
             message: error.to_string(),
+            cause: Some(SourceError::new(&error)),
         })
     })
 }
@@ -275,8 +276,8 @@ pub extern "C" fn aimux_operation_next_part(
             return Err(null_pointer("out_state"));
         }
         let timeout = u64::try_from(timeout_ms).map_err(|_| {
-            OpsError::Protocol(ProtocolError::InvalidParams(
-                "timeout_ms must be nonnegative".into(),
+            OpsError::Protocol(ProtocolError::invalid_params(
+                "timeout_ms must be nonnegative",
             ))
         })?;
         let result = block_on(async {

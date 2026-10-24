@@ -9,6 +9,14 @@ public struct AimuxError: Error, Codable, Equatable, Sendable, LocalizedError {
     public var message: String { envelope.message }
     public var error: JSONValue { envelope.error }
     public var errorDescription: String? { message }
+    /// The payload's cause: a nested AI SDK error (with `name`) or an
+    /// underlying OS, TLS or parser error as `{message, cause?}`. A retry
+    /// error's cause is its last attempt, the AI SDK `lastError`.
+    public var cause: JSONValue? {
+        if let cause = error["cause"] { return cause }
+        guard error["name"] == .string("AI_RetryError") else { return nil }
+        return error["errors"]?.arrayValue?.last
+    }
 
     public init(_ envelope: ErrorEnvelope) { self.envelope = envelope }
     public init(from decoder: any Decoder) throws { envelope = try ErrorEnvelope(from: decoder) }

@@ -227,7 +227,10 @@ async fn invalid_controls_fail_before_mutation() {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, OpsError::Protocol(ProtocolError::InvalidParams(_))),
+            matches!(
+                &error,
+                OpsError::Protocol(ProtocolError::InvalidParams { .. })
+            ),
             "{op}: {error}"
         );
         assert_eq!(error.code(), 301);

@@ -48,6 +48,8 @@ queue holds at most 256 frames / 8 MiB; each serialized frame is at most 1 MiB.
 `StreamLimits` allows smaller budgets. Full queues block native callbacks.
 Terminals have a separate slot; errors throw once after buffered events.
 `AimuxError` retains domain, code, message and unknown JSON fields.
+`cause` is the payload's cause: a nested AI SDK error, or an OS, TLS or parser
+error as `{message, cause?}`. A retry error's cause is its last attempt.
 
 Task cancellation signals Abort. Exiting a loop releases its temporary iterator
 and cancels production even while the sequence remains alive. Stored iterators

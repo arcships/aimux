@@ -24,6 +24,10 @@ class ProtocolError(Exception):
     """Failure in the protocol domain."""
 
 
+class SourceError(Exception):
+    """An underlying error that is not an aimux error (OS, TLS, JSON parser)."""
+
+
 class APICallError(AimuxError): pass
 class RetryError(AimuxError): pass
 class JSONParseError(AimuxError): pass
@@ -84,16 +88,30 @@ def _snake(name):
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
+def _source_error(payload):
+    """An underlying error `{message, cause?}` and the rest of its chain."""
+    error = SourceError(payload.get("message", ""))
+    error.error = payload
+    cause = payload.get("cause")
+    error.cause = _source_error(cause) if isinstance(cause, dict) else None
+    error.__cause__ = error.cause
+    return error
+
+
 def _payload_exception(payload, domain="aimux", message=None):
     cls = _AIMUX_TYPES.get(payload.get("name"), AimuxError) if domain == "aimux" else _DOMAINS[domain]
     error = cls(message if message is not None else payload.get("message", payload.get("name", "")))
     error.error = payload
     for field, value in payload_fields(payload, _payload_exception, from_envelope):
         setattr(error, _snake(field), value)
+    if isinstance(getattr(error, "cause", None), dict) and "name" not in error.cause:
+        error.cause = _source_error(error.cause)
     if isinstance(getattr(error, "cause", None), BaseException):
         error.__cause__ = error.cause
     if isinstance(error, RetryError):
         error.last_error = error.errors[-1] if error.errors else None
+        # Rust's `source()` of a retry error is its last attempt.
+        error.__cause__ = error.last_error
     return error
 
 
@@ -108,5 +126,5 @@ def from_envelope(envelope):
 
 
 __all__ = [cls.__name__ for cls in _AIMUX_TYPES.values()] + [
-    "AimuxError", "RecordingError", "BindingError", "ProtocolError",
+    "AimuxError", "RecordingError", "BindingError", "ProtocolError", "SourceError",
 ]

@@ -158,8 +158,7 @@ fn operation(target: Target) -> Result<std::sync::Arc<Operation>, OpsError> {
     }
 }
 fn serialize(value: impl serde::Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
 }
 fn start(ctx: Ctx, target: Target, params: Value) -> CallFuture {
     Box::pin(async move {
@@ -172,9 +171,7 @@ fn start(ctx: Ctx, target: Target, params: Value) -> CallFuture {
                     .any(|key| key != "formatType" && key != "rate")
             })
         {
-            return Err(
-                ProtocolError::InvalidParams("unknown inputAudioFormat field".into()).into(),
-            );
+            return Err(ProtocolError::invalid_params("unknown inputAudioFormat field").into());
         }
         if params
             .get("timeout")
@@ -185,7 +182,7 @@ fn start(ctx: Ctx, target: Target, params: Value) -> CallFuture {
                 })
             })
         {
-            return Err(ProtocolError::InvalidParams("unknown timeout field".into()).into());
+            return Err(ProtocolError::invalid_params("unknown timeout field").into());
         }
         let request: TranscriptionStartParams = decode(params)?;
         let Target::Handle(Entry::Transcription(model)) = target else {

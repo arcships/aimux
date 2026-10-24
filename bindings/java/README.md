@@ -71,7 +71,10 @@ cause after native return. Exceptions never cross the C callback.
 Domain exceptions select subclasses by `error.name`; unfamiliar variants use the
 domain's `Unknown` subclass and retain their payload. Retryability comes from
 `error.isRetryable`; a retry delay comes from `error.responseHeaders` (for example
-`retry-after`), as with the AI SDK. The Java adapter performs no retries.
+`retry-after`), as with the AI SDK.
+The payload's `cause` is `getCause()`: an `ErrorCause` (`getErrorName()` is
+empty for an OS, TLS or parser error) whose own cause continues the chain. A
+retry error's cause is its last attempt. The Java adapter performs no retries.
 
 `TranscriptionSession` uses binary push, `operation.inputDone` and native polling.
 `next(timeoutMs)` returns `PART`, `ENDED`, or `TIMEOUT`; timeouts must be

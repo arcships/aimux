@@ -109,7 +109,7 @@ fn reject_unknown(value: &Value, allowed: &[&str]) -> Result<(), OpsError> {
         for field in fields.keys() {
             if !allowed.contains(&field.as_str()) {
                 return Err(
-                    ProtocolError::InvalidParams(format!("unknown field `{field}`")).into(),
+                    ProtocolError::invalid_params(format!("unknown field `{field}`")).into(),
                 );
             }
         }
@@ -129,8 +129,7 @@ fn invalid_target(target: &Target, expected: HandleKind) -> OpsError {
 }
 
 fn serialize(value: impl serde::Serialize) -> Result<Value, OpsError> {
-    serde_json::to_value(value)
-        .map_err(|error| BindingError::ResultSerialization(error.to_string()).into())
+    serde_json::to_value(value).map_err(|error| BindingError::result_serialization(&error).into())
 }
 
 fn upload(ctx: Ctx, target: Target, params: Value) -> CallFuture {

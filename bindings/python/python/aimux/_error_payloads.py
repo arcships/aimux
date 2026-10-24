@@ -25,8 +25,17 @@ _ENVELOPE_KEYS = frozenset(["code", "error", "kind", "message"])
 _ERROR_TAG = "name"
 
 _NESTED_ERROR_FIELDS = {
+    "AI_APICallError": frozenset(["cause"]),
     "AI_RetryError": frozenset(["errors"]),
+    "AI_JSONParseError": frozenset(["cause"]),
+    "AI_NoOutputGeneratedError": frozenset(["cause"]),
+    "AI_InvalidResponseDataError": frozenset(["cause"]),
+    "AI_TypeValidationError": frozenset(["cause"]),
+    "AI_InvalidToolInputError": frozenset(["cause"]),
     "AI_ToolCallRepairError": frozenset(["cause", "originalError"]),
+    "AI_InvalidArgumentError": frozenset(["cause"]),
+    "AI_InvalidPromptError": frozenset(["cause"]),
+    "AI_Error": frozenset(["cause"]),
 }
 
 

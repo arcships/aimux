@@ -76,8 +76,11 @@ PyO3 0.22 limits subinterpreter imports; this package does not extend support.
 `AimuxError` subclasses preserve the shared `envelope`, `error`, `kind` and
 `code`. Payload attributes use snake_case; a retry delay is read from
 `error.response_headers` (for example `retry-after`), as with the AI SDK. Retry
-`errors` retain typed attempts in order; `last_error` is the last attempt.
-Typed causes also appear as `__cause__`. Recording, binding and protocol errors
+`errors` retain typed attempts in order; `last_error` is the last attempt and
+also the retry error's `__cause__`.
+Every `cause` also appears as `__cause__`: an aimux cause as its typed
+subclass, an underlying OS, TLS or parser error as `SourceError`, each with its
+own `__cause__` down the chain. Recording, binding and protocol errors
 have separate bases. Python never performs retries.
 
 `ABI_VERSION`, `OPS_VERSION`, `manifest` and `manifest_digest()` are public.

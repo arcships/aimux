@@ -63,6 +63,8 @@ return. No callback exception crosses the C boundary.
 names/fields. AI SDK payloads keep their `name`, flat fields, `isRetryable` and
 `responseHeaders`; read `retry-after` there, as with the AI SDK. The binding does
 not invent HTTP status or retry policy.
+`cause` is the payload's cause: a nested AI SDK error, or an OS, TLS or parser
+error as `{message, cause?}`. A retry error's cause is its last attempt.
 `TranscriptionOperation` wraps the new push/next primitives and typed
 part/ended/timeout states. `ToolCallRepair` exposes the three pure DTO ops.
 `DecisionModel` exposes `decision.decide` and `decision.capabilities` over an

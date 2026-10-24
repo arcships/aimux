@@ -47,7 +47,7 @@ fn invalid_params(result: Result<Value, OpsError>) {
     let error = result.unwrap_err();
     assert!(matches!(
         &error,
-        OpsError::Protocol(ProtocolError::InvalidParams(_))
+        OpsError::Protocol(ProtocolError::InvalidParams { .. })
     ));
 }
 fn invalid_handle(result: Result<Value, OpsError>, actual: Option<HandleKind>) -> Value {

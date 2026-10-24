@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request URL, so their messages lose it too: `error sending request for url
   (…)` is now `error sending request`. Other messages are unchanged.
 
+- The ops error envelope carries the cause in all four domains, as the
+  payload's optional `cause`: the recording domain's `source` string becomes
+  `cause: { message, cause? }`, and the binding and protocol domains keep the
+  JSON parser's or serializer's error (`InvalidWireJson`,
+  `ResultSerialization`, `InvalidParams`, now struct variants). Every binding
+  exposes it natively: Node `error.cause` (`AimuxCauseError` for a nested
+  error, `AimuxSourceError` for an underlying one), Python `__cause__` (a
+  nested error is its own exception class, an underlying error is
+  `aimux.SourceError`), Java/Kotlin `getCause()` (`ErrorCause`), Go `Unwrap()`
+  (`*aimux.Cause`), Swift and Flutter `cause`; a retry error's cause is its
+  last attempt. The C++ wrapper throws `aimux::NativeError`
+  (a `std::runtime_error`) with the error code and the envelope JSON.
+
 - aimux's public JSON equals the AI SDK's JSON. Struct fields serialize
   camelCase (`toolCallId`, `providerOptions`, `inputTokens`); unions carry the
   AI SDK's tag and strings (`{"type":"text-delta"}`, `"tool-call"`,

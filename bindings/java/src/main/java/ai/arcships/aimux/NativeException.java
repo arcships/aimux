@@ -5,13 +5,18 @@ import ai.arcships.aimux.types.DtoJson;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-/** Structured error envelope, retaining the complete AI SDK or domain payload. */
+/**
+ * Structured error envelope, retaining the complete AI SDK or domain payload.
+ * The payload's {@code cause} is {@link #getCause()}, as an {@link ErrorCause}.
+ */
 public abstract class NativeException extends RuntimeException {
     private final ErrorEnvelope envelope;
 
     NativeException(ErrorEnvelope envelope) {
         super(envelope.getMessage());
         this.envelope = envelope;
+        ErrorCause cause = ErrorCause.of(envelope.getError());
+        if (cause != null) initCause(cause);
     }
 
     public final String getKind() { return DtoJson.MAPPER.convertValue(envelope.getKind(), String.class); }
