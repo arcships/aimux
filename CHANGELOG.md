@@ -1210,6 +1210,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `tool-input-end` of a streamed OpenAI (and Azure) Responses function
+  call with a `namespace` carries `providerMetadata.<key>.namespace`, as the
+  AI SDK's does; aimux only put it on the tool call.
 - OpenAI (and Azure) Responses logprobs in provider metadata keep only
   `token`, `logprob` and `top_logprobs` (each with `token` and `logprob`),
   as the AI SDK's schema parses them, in generated and streamed results;

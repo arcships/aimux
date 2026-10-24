@@ -1222,7 +1222,19 @@ impl Transformer for OpenAIResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("{}")
                                         .to_string();
-                                    controller.tool_input_end(call_id.clone());
+                                    controller.enqueue(StreamPart::ToolInputEnd {
+                                        id: call_id.clone(),
+                                        provider_metadata: item
+                                            .get("namespace")
+                                            .filter(|namespace| !namespace.is_null())
+                                            .map(|namespace| {
+                                                provider_namespace(
+                                                    provider_key,
+                                                    json!({ "namespace": namespace }),
+                                                )
+                                                .expect("provider metadata must be an object")
+                                            }),
+                                    });
                                     let input = arguments;
                                     controller.enqueue(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: call_id,

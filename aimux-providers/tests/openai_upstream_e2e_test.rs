@@ -1315,3 +1315,39 @@ async fn responses_logprobs_metadata_has_no_bytes() {
         expected
     );
 }
+
+/// Upstream: @ai-sdk/openai 4.0.83
+/// src/responses/openai-responses-language-model.ts:1986 gives the
+/// `tool-input-end` of a streamed function call with a `namespace` the
+/// provider metadata `{ namespace }`.
+#[tokio::test]
+async fn a_streamed_namespaced_function_call_ends_its_input_with_the_namespace() {
+    let fetch = MockFetch::new(vec![sse(vec![
+        json!({"type":"response.created","response":{"id":"resp_1","created_at":1,"model":"test-model"}}),
+        json!({"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1",
+            "call_id":"call_1","name":"get_weather","arguments":"{}","status":"completed","namespace":"weather_ns"}}),
+        json!({"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":1}}}),
+    ])]);
+    let parts = provider(&fetch)
+        .responses("test-model")
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .map(|part| part.unwrap())
+        .collect::<Vec<_>>()
+        .await;
+    let metadata = parts
+        .iter()
+        .find_map(|part| match part {
+            StreamPart::ToolInputEnd {
+                provider_metadata, ..
+            } => Some(provider_metadata),
+            _ => None,
+        })
+        .expect("a tool-input-end part");
+    assert_eq!(
+        serde_json::to_value(metadata).unwrap(),
+        json!({"openai": {"namespace": "weather_ns"}})
+    );
+}
