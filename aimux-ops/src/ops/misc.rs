@@ -1,5 +1,6 @@
 //! Catalogue, host-side repair, subscription refresh and OpenAI output conversion.
 
+use aimux_core::ErrorCause;
 use std::time::Duration;
 
 use aimux_core::{
@@ -207,15 +208,15 @@ struct OpenAiOutputRequest {
 fn params<T: DeserializeOwned>(value: Value) -> Result<T, OpsError> {
     // Avoid including request values (especially refresh tokens) in error messages.
     serde_json::from_value(value).map_err(|_| {
-        OpsError::Protocol(ProtocolError::InvalidParams(
-            "request does not match the operation schema".into(),
+        OpsError::Protocol(ProtocolError::invalid_params(
+            "request does not match the operation schema",
         ))
     })
 }
 
 fn output(value: &impl Serialize) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|e| OpsError::Binding(BindingError::ResultSerialization(e.to_string())))
+        .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
 }
 
 fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
@@ -239,9 +240,10 @@ fn catalogue_fetch(ctx: Ctx, _target: Target, value: Value) -> CallFuture {
         .await
         .map_err(OpsError::AiMux)?;
         let raw = serde_json::from_str(&String::from_utf8_lossy(&response.value)).map_err(|e| {
-            OpsError::AiMux(AiMuxError::JsonParse(format!(
-                "get_model_specs: invalid source JSON: {e}"
-            )))
+            OpsError::AiMux(AiMuxError::JsonParse {
+                message: format!("get_model_specs: invalid source JSON: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })
         })?;
         let catalogue =
             aimux_providers::catalogue::parse_anya2a_all(&raw).map_err(OpsError::AiMux)?;
@@ -333,8 +335,8 @@ fn to_openai(_ctx: Ctx, target: Target, value: Value) -> CallFuture {
         };
         let request: OpenAiOutputRequest = params(value)?;
         if request.metadata_namespace.is_empty() {
-            return Err(OpsError::Protocol(ProtocolError::InvalidParams(
-                "metadataNamespace must not be empty".into(),
+            return Err(OpsError::Protocol(ProtocolError::invalid_params(
+                "metadataNamespace must not be empty",
             )));
         }
         // Core's result facts remain private. Restrict the canonical wire
@@ -442,7 +444,7 @@ mod tests {
             json!({"refreshToken":{"secret":true},"clientId":"c"}),
         ] {
             match params::<CodexRefreshRequest>(value) {
-                Err(OpsError::Protocol(ProtocolError::InvalidParams(message))) => {
+                Err(OpsError::Protocol(ProtocolError::InvalidParams { message, .. })) => {
                     assert!(!message.contains("secret"))
                 }
                 _ => panic!("expected InvalidParams"),
@@ -506,7 +508,7 @@ mod tests {
         }
         assert!(matches!(
             repair_apply(ctx(), entry(), json!({"toolCall":call,"reply":reply()})).await,
-            Err(OpsError::AiMux(AiMuxError::InvalidArgument(_)))
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
         ));
     }
 
@@ -574,7 +576,7 @@ mod tests {
         ] {
             assert!(matches!(
                 catalogue_fetch(ctx(), entry(), json!({"sourceUrl":url})).await,
-                Err(OpsError::AiMux(AiMuxError::InvalidArgument(_)))
+                Err(OpsError::AiMux(AiMuxError::InvalidArgument { .. }))
             ));
         }
     }

@@ -37,7 +37,7 @@ pub(crate) fn validated_mistral_options(
             _ => true,
         };
         if !valid {
-            return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+            return Err(aimux_core::AiMuxError::invalid_argument(format!(
                 "Invalid mistral provider option {key}"
             )));
         }
@@ -48,7 +48,7 @@ pub(crate) fn validated_mistral_options(
 /// The `parseProviderOptions` failure: an `InvalidArgumentError` naming the
 /// provider, with the offending key as the cause.
 fn invalid(key: &str) -> AiMuxError {
-    AiMuxError::InvalidArgument(format!("invalid mistral provider options: {key}"))
+    AiMuxError::invalid_argument(format!("invalid mistral provider options: {key}"))
 }
 
 /// One optional key, converted by `get`; a present value of the wrong shape

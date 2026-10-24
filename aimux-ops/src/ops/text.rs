@@ -10,7 +10,8 @@ use aimux_core::generate::{
 };
 use aimux_core::message::ModelPrompt;
 use aimux_core::openai_output::{
-    ChatCompletionChunk, OpenAiStreamOptions, to_chat_completion_stream,
+    ChatCompletionChunk, OpenAiStreamOptions, ResponseIdentity,
+    to_chat_completion_stream_with_identity,
 };
 use aimux_core::stream_part::TextStreamPart;
 use aimux_core::{AbortSignal, AiMuxError, LanguageModel};
@@ -171,7 +172,7 @@ impl Default for StreamOptions {
 
 fn json<T: Serialize>(value: T) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|e| OpsError::Binding(BindingError::ResultSerialization(e.to_string())))
+        .map_err(|e| OpsError::Binding(BindingError::result_serialization(&e)))
 }
 
 fn language(target: Target) -> Result<Arc<dyn LanguageModel>, OpsError> {
@@ -302,9 +303,12 @@ fn start_stream(
 ) -> EventStream {
     let signal = request.options.core.abort_signal.clone();
     let setup = async move {
+        // The OpenAI chunks carry the response id and model the provider reports.
+        let identity = ResponseIdentity::default();
+        let observed = identity.observe(model.as_ref());
         let result = cancellable(
             signal.clone(),
-            stream_text(model.as_ref(), request.prompt, request.options.core),
+            stream_text(&observed, request.prompt, request.options.core),
         )
         .await?;
         let native = NativeEvents::new(result.stream, signal);
@@ -315,8 +319,12 @@ fn start_stream(
                     native,
                     sender: Some(sender),
                 };
-                let converted =
-                    to_chat_completion_stream(Box::pin(input), model.model_id(), options);
+                let converted = to_chat_completion_stream_with_identity(
+                    Box::pin(input),
+                    model.model_id(),
+                    options,
+                    identity,
+                );
                 Box::pin(OpenAiEvents {
                     chunks: converted.stream,
                     terminal,
@@ -468,7 +476,7 @@ mod tests {
     use aimux_core::options::CallOptions;
     use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
     use aimux_core::stream_part::StreamPart;
-    use aimux_core::types::{FinishReason, FinishReasonUnified, Usage};
+    use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage};
     use serde_json::json;
     use std::sync::Mutex;
     use std::time::SystemTime;
@@ -575,7 +583,7 @@ mod tests {
                     return futures::future::pending().await;
                 }
                 if self.setup_error {
-                    return Err(AiMuxError::Other("setup failed".into()));
+                    return Err(AiMuxError::other("setup failed"));
                 }
                 let stream: Pin<Box<dyn Stream<Item = Result<StreamPart, AiMuxError>> + Send>> =
                     if self.pending {
@@ -682,12 +690,12 @@ mod tests {
         model.parts.insert(
             1,
             Ok(StreamPart::Error {
-                error: AiMuxError::Other("provider warning".into()),
+                error: AiMuxError::other("provider warning"),
             }),
         );
         model
             .parts
-            .insert(2, Err(AiMuxError::JsonParse("malformed frame".into())));
+            .insert(2, Err(AiMuxError::json_parse("malformed frame")));
         let events = stream(ctx(), model.entry(), request())
             .unwrap()
             .collect::<Vec<_>>()
@@ -709,7 +717,7 @@ mod tests {
             let mut model = MockModel::new("before");
             model
                 .parts
-                .insert(3, Err(AiMuxError::Other("connection lost".into())));
+                .insert(3, Err(AiMuxError::other("connection lost")));
             let mut events = if openai {
                 stream_openai(ctx(), model.entry(), request())
             } else {
@@ -718,7 +726,7 @@ mod tests {
             .unwrap();
             let mut errors = 0;
             while let Some(event) = events.next().await {
-                if let Err(OpsError::AiMux(AiMuxError::Other(message))) = event {
+                if let Err(OpsError::AiMux(AiMuxError::Other { message, .. })) = event {
                     assert_eq!(message, "connection lost");
                     errors += 1;
                     assert!(events.next().await.is_none());
@@ -744,7 +752,7 @@ mod tests {
             .await;
             assert_eq!(events.len(), 1);
             assert!(
-                matches!(&events[0], Err(OpsError::AiMux(AiMuxError::Other(message))) if message == "setup failed")
+                matches!(&events[0], Err(OpsError::AiMux(AiMuxError::Other { message, .. })) if message == "setup failed")
             );
         }
     }
@@ -754,7 +762,7 @@ mod tests {
         let mut model = MockModel::new("after");
         model
             .parts
-            .insert(1, Err(AiMuxError::JsonParse("malformed frame".into())));
+            .insert(1, Err(AiMuxError::json_parse("malformed frame")));
         let events = stream_openai(
             ctx(),
             model.entry(),
@@ -778,6 +786,29 @@ mod tests {
                 .any(|v| v["choices"][0]["delta"]["content"] == "after")
         );
         assert!(events.iter().all(|v| v.get("usage").is_none()));
+    }
+
+    #[tokio::test]
+    async fn openai_stream_carries_the_reported_response_id_and_model() {
+        let mut model = MockModel::new("hi");
+        model.parts.insert(
+            1,
+            Ok(StreamPart::ResponseMetadata(ResponseMetadata {
+                id: Some("chatcmpl-upstream".into()),
+                timestamp: None,
+                model_id: Some("gpt-4o-2026-08-06".into()),
+            })),
+        );
+        let events = stream_openai(ctx(), model.entry(), request())
+            .unwrap()
+            .collect::<Vec<_>>()
+            .await;
+        let events = events.into_iter().map(Result::unwrap).collect::<Vec<_>>();
+        assert!(!events.is_empty());
+        for event in &events {
+            assert_eq!(event["id"], "chatcmpl-upstream");
+            assert_eq!(event["model"], "gpt-4o-2026-08-06");
+        }
     }
 
     #[tokio::test]
@@ -1045,11 +1076,11 @@ mod tests {
                 match case {
                     "recoverable" => model
                         .parts
-                        .insert(1, Err(AiMuxError::JsonParse("malformed frame".into()))),
+                        .insert(1, Err(AiMuxError::json_parse("malformed frame"))),
                     "setup" => model.setup_error = true,
                     "runtime" => model
                         .parts
-                        .insert(3, Err(AiMuxError::Other("connection lost".into()))),
+                        .insert(3, Err(AiMuxError::other("connection lost"))),
                     "large" => model.parts.insert(
                         3,
                         Ok(StreamPart::TextDelta {

@@ -369,7 +369,7 @@ async fn should_reject_a_response_without_choices() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidResponseData(m) if m == "Response did not contain any choices."),
+        matches!(&error, AiMuxError::InvalidResponseData { message: m, .. } if m == "Response did not contain any choices."),
         "{error:?}"
     );
 }

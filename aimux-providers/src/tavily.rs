@@ -90,7 +90,7 @@ impl std::fmt::Debug for TavilyProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_tavily(settings: TavilyProviderSettings) -> Result<TavilyProvider, AiMuxError> {
