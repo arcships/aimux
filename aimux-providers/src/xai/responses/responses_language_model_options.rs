@@ -20,7 +20,7 @@ pub(super) fn validate_value(
     if valid(value) {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "Invalid xai option {key}: {value}"
         )))
     }

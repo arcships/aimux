@@ -197,7 +197,7 @@ impl VideoModel for VertexVideoModel {
             .and_then(|v| v.as_str())
             .filter(|name| !name.is_empty())
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData("No operation name returned from API".to_string())
+                AiMuxError::invalid_response_data("No operation name returned from API")
             })?
             .to_string();
 
@@ -222,7 +222,7 @@ impl VideoModel for VertexVideoModel {
             .get("operationName")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                AiMuxError::InvalidArgument(
+                AiMuxError::invalid_argument(
                     "google.vertex operation reference is missing operationName".to_string(),
                 )
             })?;
@@ -264,7 +264,7 @@ impl VideoModel for VertexVideoModel {
             .and_then(Value::as_array)
             .filter(|outputs| !outputs.is_empty())
             .ok_or_else(|| {
-                AiMuxError::InvalidResponseData(format!(
+                AiMuxError::invalid_response_data(format!(
                     "No videos in response. Response: {raw_body}"
                 ))
             })?;
@@ -322,7 +322,7 @@ impl VideoModel for VertexVideoModel {
             .collect();
 
         if videos.is_empty() {
-            return Err(AiMuxError::InvalidResponseData(
+            return Err(AiMuxError::invalid_response_data(
                 "No valid videos in response".to_string(),
             ));
         }

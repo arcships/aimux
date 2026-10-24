@@ -247,7 +247,7 @@ fn validate_provider_tool(tool: &aimux_core::tool::ProviderTool) -> Result<(), A
         _ => &[],
     } {
         if !args.contains_key(*key) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Missing {key} for {}",
                 tool.name
             )));

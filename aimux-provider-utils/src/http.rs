@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use futures::{Stream, StreamExt, stream::BoxStream};
 
+use aimux_core::ErrorCause;
 use aimux_core::recording::{
     HttpExchange, HttpRecord, RecordingContext, ResponseRecord, TimingRecord,
 };
@@ -401,9 +402,11 @@ fn redirect_error(
     request: &PreparedRequest,
     message: impl Into<String>,
     status: http::StatusCode,
+    cause: Option<ErrorCause>,
 ) -> AiMuxError {
     AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(status.as_u16()),
+        cause,
         ..api_call_error(request, message)
     }))
 }
@@ -471,15 +474,26 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
         let Some(location) = response.headers.get(http::header::LOCATION) else {
             return Ok(response);
         };
-        let location = location
-            .to_str()
-            .map(str::to_owned)
-            .map_err(|_| redirect_error(request, "redirect location is not valid UTF-8", status))?;
-        let base = url::Url::parse(&current.url)
-            .map_err(|e| AiMuxError::InvalidArgument(format!("invalid request URL: {e}")))?;
-        let next = base
-            .join(&location)
-            .map_err(|e| redirect_error(request, format!("invalid redirect URL: {e}"), status))?;
+        let location = location.to_str().map(str::to_owned).map_err(|error| {
+            redirect_error(
+                request,
+                "redirect location is not valid UTF-8",
+                status,
+                Some(ErrorCause::source(&error)),
+            )
+        })?;
+        let base = url::Url::parse(&current.url).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("invalid request URL: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
+        let next = base.join(&location).map_err(|e| {
+            redirect_error(
+                request,
+                format!("invalid redirect URL: {e}"),
+                status,
+                Some(ErrorCause::source(&e)),
+            )
+        })?;
         // Fetch treats a redirect to a non-HTTP(S) scheme (data:, file:, ...)
         // as a network error; following one would let the redirecting server
         // fabricate a response outside the transport.
@@ -488,11 +502,12 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
                 request,
                 format!("redirect to non-HTTP scheme: {}", next.scheme()),
                 status,
+                None,
             ));
         }
         let next = next.to_string();
         if redirect_count == MAX_REDIRECTS {
-            return Err(redirect_error(request, "too many redirects", status));
+            return Err(redirect_error(request, "too many redirects", status, None));
         }
         // Dropping the unconsumed 3xx body releases its connection before a
         // potentially slow DNS check for the next hop.
@@ -534,15 +549,23 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
 /// later entry for the same (case-insensitive) name replaces an earlier one —
 /// a request never goes out with duplicate `Authorization` headers.
 fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxError> {
-    let url = url::Url::parse(&request.url)
-        .map_err(|error| AiMuxError::InvalidArgument(format!("invalid request URL: {error}")))?;
+    let url = url::Url::parse(&request.url).map_err(|error| AiMuxError::InvalidArgument {
+        message: format!("invalid request URL: {error}"),
+        cause: Some(ErrorCause::source(&error)),
+    })?;
     let mut headers = http::HeaderMap::new();
     for (name, value) in &request.headers {
-        let header_name = http::HeaderName::try_from(name)
-            .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header name: {name}")))?;
+        let header_name =
+            http::HeaderName::try_from(name).map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("invalid header name: {name}"),
+                cause: Some(ErrorCause::source(&error)),
+            })?;
         // The value is never echoed: it is commonly a credential.
-        let header_value = http::HeaderValue::try_from(value)
-            .map_err(|_| AiMuxError::InvalidArgument(format!("invalid header value for {name}")))?;
+        let header_value =
+            http::HeaderValue::try_from(value).map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("invalid header value for {name}"),
+                cause: Some(ErrorCause::source(&error)),
+            })?;
         headers.insert(header_name, header_value);
     }
     if request.provider_utils_user_agent {
@@ -562,8 +585,11 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
         let user_agent = crate::headers::user_agent_value(current, &suffix);
         headers.insert(
             http::header::USER_AGENT,
-            http::HeaderValue::try_from(user_agent).map_err(|_| {
-                AiMuxError::InvalidArgument("invalid header value for user-agent".to_string())
+            http::HeaderValue::try_from(user_agent).map_err(|error| {
+                AiMuxError::InvalidArgument {
+                    message: "invalid header value for user-agent".into(),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             })?,
         );
     }
@@ -575,13 +601,19 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
                     http::HeaderValue::from_static("application/json"),
                 );
             }
-            Bytes::from(serde_json::to_vec(value).map_err(|error| {
-                AiMuxError::InvalidArgument(format!("request body is not serializable: {error}"))
-            })?)
+            Bytes::from(
+                serde_json::to_vec(value).map_err(|error| AiMuxError::InvalidArgument {
+                    message: format!("request body is not serializable: {error}"),
+                    cause: Some(ErrorCause::source(&error)),
+                })?,
+            )
         }
         HttpBody::Bytes(bytes, content_type) => {
-            let content_type = http::HeaderValue::try_from(content_type).map_err(|_| {
-                AiMuxError::InvalidArgument(format!("invalid content type: {content_type}"))
+            let content_type = http::HeaderValue::try_from(content_type).map_err(|error| {
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid content type: {content_type}"),
+                    cause: Some(ErrorCause::source(&error)),
+                }
             })?;
             headers.insert(http::header::CONTENT_TYPE, content_type);
             Bytes::copy_from_slice(bytes)

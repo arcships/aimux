@@ -157,7 +157,7 @@ async fn empty_messages_are_an_invalid_prompt() {
     .await
     .unwrap_err();
     assert!(
-        matches!(&error, AiMuxError::InvalidPrompt(message) if message == "messages must not be empty"),
+        matches!(&error, AiMuxError::InvalidPrompt { message, .. } if message == "messages must not be empty"),
         "{error:?}"
     );
     let error = stream_text(
@@ -167,7 +167,10 @@ async fn empty_messages_are_an_invalid_prompt() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(error, AiMuxError::InvalidPrompt(_)), "{error:?}");
+    assert!(
+        matches!(error, AiMuxError::InvalidPrompt { .. }),
+        "{error:?}"
+    );
 }
 
 // `generate-text.ts:1155-1176`: a `required` choice needs some tool call, a

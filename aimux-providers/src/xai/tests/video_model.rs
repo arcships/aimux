@@ -1123,7 +1123,7 @@ mod xai_video_model {
             let (result, _) =
                 do_start_answered(V15, &options, Canned::json(&create_video_response())).await;
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(_))),
+                matches!(result, Err(AiMuxError::InvalidArgument { .. })),
                 "{result:?}"
             );
         }
@@ -1142,7 +1142,7 @@ mod xai_video_model {
             let (result, _) =
                 do_start_answered(V15, &options, Canned::json(&create_video_response())).await;
             assert!(
-                matches!(result, Err(AiMuxError::InvalidArgument(_))),
+                matches!(result, Err(AiMuxError::InvalidArgument { .. })),
                 "{result:?}"
             );
         }
@@ -1245,7 +1245,7 @@ mod xai_video_model {
                 .await
                 .unwrap_err();
             match err {
-                AiMuxError::Other(message) => {
+                AiMuxError::Other { message, .. } => {
                     assert_eq!(message, "No request_id returned from xAI API.")
                 }
                 other => panic!("unexpected error: {other:?}"),
@@ -1892,7 +1892,7 @@ async fn rejects_invalid_reference_voice_ids() {
             }),
         );
         match try_start(V15, &o).await {
-            Err(AiMuxError::InvalidArgument(_)) => {}
+            Err(AiMuxError::InvalidArgument { .. }) => {}
             Err(other) => panic!("unexpected error: {other:?}"),
             Ok(_) => panic!("expected InvalidArgument for {ids}"),
         }

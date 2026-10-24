@@ -29,8 +29,8 @@ pub fn rebuild_decision_provider(
 ) -> Result<Arc<dyn aimux_core::DecisionModel>, AiMuxError> {
     let provider_id = p.registry_id()?;
     if p.model_id.is_empty() {
-        return Err(AiMuxError::InvalidArgument(
-            "decision replay: empty provider/model identity".into(),
+        return Err(AiMuxError::invalid_argument(
+            "decision replay: empty provider/model identity",
         ));
     }
     let model = registry
@@ -38,8 +38,8 @@ pub fn rebuild_decision_provider(
         .decision_model(&p.model_id)
         .unwrap_or_else(|| Err(AiMuxError::no_such_model(&p.model_id, "decisionModel")))?;
     if model.provider() != p.provider {
-        return Err(AiMuxError::InvalidArgument(
-            "decision replay: registered model provider differs from recording".into(),
+        return Err(AiMuxError::invalid_argument(
+            "decision replay: registered model provider differs from recording",
         ));
     }
     Ok(model)
@@ -61,15 +61,15 @@ pub fn rebuild_provider(
 ) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
     p.registry_id()?;
     if p.model_id.is_empty() {
-        return Err(AiMuxError::InvalidArgument(
-            "mock replay: provider record has empty model_id".into(),
+        return Err(AiMuxError::invalid_argument(
+            "mock replay: provider record has empty model_id",
         ));
     }
     let model = registry
         .provider(&p.provider_id)?
         .language_model(&p.model_id)?;
     if model.provider() != p.provider {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "mock replay: the recording was made with `{}` but provider '{}' rebuilds `{}`; \
              pass the model to replay_with_model",
             p.provider,
@@ -91,7 +91,7 @@ mod tests {
         let err = rebuild_provider(&ProviderRecord::new("groq", "groq.chat", ""), &registry)
             .err()
             .unwrap();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
+        assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err}");
     }
 
     /// A recording written by master (aimux 0.5, schema 2) has no
@@ -109,7 +109,7 @@ mod tests {
         let err = rebuild_provider(&recording.provider, &registry)
             .err()
             .unwrap();
-        assert!(matches!(err, AiMuxError::InvalidArgument(_)), "{err}");
+        assert!(matches!(err, AiMuxError::InvalidArgument { .. }), "{err}");
         assert!(err.to_string().contains("no provider_id"), "{err}");
         assert!(err.to_string().contains("aimux 0.5"), "{err}");
         let err = rebuild_decision_provider(&recording.provider, &registry)

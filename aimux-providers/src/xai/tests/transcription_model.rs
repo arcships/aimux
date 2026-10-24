@@ -816,7 +816,7 @@ mod socket {
                 .unwrap()
                 .push((request.url.clone(), request.headers.clone()));
             if let Some(message) = &self.fail {
-                return Err(AiMuxError::Other(message.clone()));
+                return Err(AiMuxError::other(message.clone()));
             }
             let socket = self
                 .socket
@@ -979,7 +979,7 @@ mod do_stream {
         assert!(
             matches!(
                 &error,
-                AiMuxError::InvalidArgument(message)
+                AiMuxError::InvalidArgument { message, .. }
                     if message == "providerOptions.xai.channels is required when providerOptions.xai.multichannel is true"
             ),
             "{error:?}"
@@ -1459,7 +1459,7 @@ async fn should_require_channels_when_streaming_multichannel_audio() {
         .unwrap_err();
 
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message) if message.contains(
+        matches!(&error, AiMuxError::InvalidArgument { message, .. } if message.contains(
             "providerOptions.xai.channels is required when providerOptions.xai.multichannel is true"
         )),
         "got {error:?}"
@@ -1569,7 +1569,7 @@ async fn should_error_the_stream_with_the_server_message_on_error_events() {
     ));
     assert_eq!(run.parts.len(), 2, "parts: {:?}", run.parts);
     assert!(
-        matches!(&run.parts[1], Err(AiMuxError::Other(message)) if message == "invalid sample_rate"),
+        matches!(&run.parts[1], Err(AiMuxError::Other { message, .. }) if message == "invalid sample_rate"),
         "got {:?}",
         run.parts[1]
     );

@@ -20,7 +20,7 @@ use super::responses_language_model_options::validate_value;
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when a part cannot be converted.
+/// Returns `AiMuxError::invalid_argument` when a part cannot be converted.
 pub fn convert_to_xai_responses_input(
     prompt: &LanguageModelPrompt,
 ) -> Result<(Vec<Value>, Vec<Warning>), AiMuxError> {
@@ -73,7 +73,7 @@ pub fn convert_to_xai_responses_input(
                                         reference,
                                         crate::xai::options::NAMESPACE,
                                     )
-                                    .map_err(AiMuxError::InvalidArgument)?;
+                                    .map_err(AiMuxError::invalid_argument)?;
                                     json!({ "type": "input_file", "file_id": file_id })
                                 }
                                 FileData::Text { .. } => {
