@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_core::decision_model::{DecisionCallOptions, DecisionQuestion};
 use aimux_core::shared::{ResponseInfo, SharedProviderMetadata};
 use aimux_provider_utils::HttpRequest;
@@ -41,7 +42,7 @@ impl std::str::FromStr for DecisionProbabilitySource {
             "native" => Ok(Self::Native),
             "logit_scoring" => Ok(Self::LogitScoring),
             "model_estimate" => Ok(Self::ModelEstimate),
-            _ => Err(AiMuxError::InvalidArgument(format!(
+            _ => Err(AiMuxError::invalid_argument(format!(
                 "unknown decision probability source: {value:?}"
             ))),
         }
@@ -70,8 +71,10 @@ pub(crate) fn take_images(
 ) -> Result<Vec<DecisionImage>, AiMuxError> {
     match options.remove("images") {
         None | Some(Value::Null) => Ok(Vec::new()),
-        Some(images) => serde_json::from_value(images)
-            .map_err(|e| AiMuxError::InvalidArgument(format!("decision images: {e}"))),
+        Some(images) => serde_json::from_value(images).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("decision images: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        }),
     }
 }
 
@@ -141,20 +144,21 @@ pub(crate) struct InlineImage {
 
 pub(crate) fn inline_image(image: &DecisionImage) -> Result<InlineImage, AiMuxError> {
     if !image.media_type.starts_with("image/") || image.media_type.contains([';', ',']) {
-        return Err(AiMuxError::InvalidArgument(
-            "decision image requires an image MIME type".into(),
+        return Err(AiMuxError::invalid_argument(
+            "decision image requires an image MIME type",
         ));
     }
     // The image's bytes are a base64 string, read as the AI SDK reads
     // base64 (`convertBase64ToUint8Array`) and sent on verbatim.
     let decoded_len = aimux_core::wire::decode_base64(&image.data)
-        .map_err(|e| AiMuxError::InvalidArgument(format!("decision image base64: {e}")))?
+        .map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("decision image base64: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?
         .len();
     let base64 = image.data.clone();
     if decoded_len == 0 {
-        return Err(AiMuxError::InvalidArgument(
-            "decision image is empty".into(),
-        ));
+        return Err(AiMuxError::invalid_argument("decision image is empty"));
     }
     Ok(InlineImage {
         data_url: format!("data:{};base64,{base64}", image.media_type),
@@ -205,19 +209,12 @@ pub(crate) async fn post<T>(
     let raw = response.value;
     let headers = response.response_headers;
     convert(raw.clone(), headers.clone()).map_err(|error| {
-        aimux_provider_utils::invalid_response_api_call(
-            error.to_string(),
-            200,
-            url,
-            body,
-            raw,
-            headers,
-        )
+        aimux_provider_utils::invalid_response_api_call(&error, 200, url, body, raw, headers)
     })
 }
 
 pub(crate) fn invalid(message: impl Into<String>) -> AiMuxError {
-    AiMuxError::InvalidResponseData(message.into())
+    AiMuxError::invalid_response_data(message.into())
 }
 
 /// What a native provider reports beyond the V4 result, under its provider

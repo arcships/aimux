@@ -511,7 +511,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
         let data = resp.value;
 
         let choice = data.choices.into_iter().next().ok_or_else(|| {
-            AiMuxError::InvalidResponseData("Response did not contain any choices.".to_string())
+            AiMuxError::invalid_response_data("Response did not contain any choices.")
         })?;
 
         let mut content = Vec::new();
@@ -940,7 +940,7 @@ impl Transformer for OpenAICompatibleChatStream {
 
         if self.final_finish_reason.is_none() {
             controller.enqueue(StreamPart::Error {
-                error: AiMuxError::InvalidResponseData(
+                error: AiMuxError::invalid_response_data(
                     "Response stream ended without a finish reason.".to_string(),
                 ),
             });

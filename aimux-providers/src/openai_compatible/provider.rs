@@ -12,6 +12,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use aimux_core::ErrorCause;
+use aimux_core::SourceError;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::ImageModel;
@@ -113,7 +115,7 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. The key is not read
 /// here.
 pub fn create_openai_compatible(
@@ -420,9 +422,11 @@ impl CompatModelConfig {
     /// origin credentialed headers may be sent to.
     pub(crate) fn url(&self, path: &str) -> Result<(String, String), AiMuxError> {
         let base = self.base_url.resolve()?;
-        let mut url = url::Url::parse(&format!("{base}{path}")).map_err(|e| {
-            AiMuxError::InvalidArgument(format!("invalid request URL for {}: {e}", self.provider))
-        })?;
+        let mut url =
+            url::Url::parse(&format!("{base}{path}")).map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid request URL for {}: {e}", self.provider),
+                cause: Some(ErrorCause::source(&e)),
+            })?;
         if let Some(params) = &self.query_params {
             // As the AI SDK does: the configured parameters replace whatever
             // query the base URL carried.
@@ -540,8 +544,13 @@ struct FetchUserAgent {
 #[async_trait::async_trait]
 impl Fetch for FetchUserAgent {
     async fn fetch(&self, mut request: FetchRequest) -> Result<FetchResponse, FetchError> {
-        let value = reqwest::header::HeaderValue::try_from(self.user_agent.as_str())
-            .map_err(|_| FetchError::Other("invalid header value for user-agent".to_string()))?;
+        let value =
+            reqwest::header::HeaderValue::try_from(self.user_agent.as_str()).map_err(|error| {
+                FetchError::Other(SourceError::with_cause(
+                    "invalid header value for user-agent",
+                    &error,
+                ))
+            })?;
         request.headers.insert(reqwest::header::USER_AGENT, value);
         self.inner
             .clone()

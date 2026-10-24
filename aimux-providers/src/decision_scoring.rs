@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use aimux_core::AiMuxError;
+use aimux_core::ErrorCause;
 use aimux_core::decision_model::*;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -39,8 +40,12 @@ pub(crate) async fn score(
     options: Map<String, Value>,
     images: &[DecisionImage],
 ) -> Result<DecisionResult, AiMuxError> {
-    let options: Options = serde_json::from_value(Value::Object(options))
-        .map_err(|e| AiMuxError::InvalidArgument(format!("candidate scoring options: {e}")))?;
+    let options: Options = serde_json::from_value(Value::Object(options)).map_err(|e| {
+        AiMuxError::InvalidArgument {
+            message: format!("candidate scoring options: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        }
+    })?;
     if !images.is_empty() {
         return Err(AiMuxError::UnsupportedFunctionality("pre-encoded scoring accepts text token IDs only; use the runtime's native decision endpoint for images".into()));
     }
@@ -52,20 +57,22 @@ pub(crate) async fn score(
     .iter()
     .any(|s| s.trim().is_empty())
     {
-        return Err(AiMuxError::InvalidArgument("candidate scoring requires modelRevision, tokenizerRevision and promptFormatVersion provenance".into()));
+        return Err(AiMuxError::invalid_argument(
+            "candidate scoring requires modelRevision, tokenizerRevision and promptFormatVersion provenance",
+        ));
     }
     let temperature = options.temperature.unwrap_or(1.0);
     if !temperature.is_finite()
         || temperature <= 0.0
         || (model.provider() == "vllm" && temperature != 1.0)
     {
-        return Err(AiMuxError::InvalidArgument(
-            "scoring temperature must be positive; vLLM generative_scoring only supports 1".into(),
+        return Err(AiMuxError::invalid_argument(
+            "scoring temperature must be positive; vLLM generative_scoring only supports 1",
         ));
     }
     if options.encoded.len() != request.questions.len() {
-        return Err(AiMuxError::InvalidArgument(
-            "encoded questions must exactly match decision question IDs".into(),
+        return Err(AiMuxError::invalid_argument(
+            "encoded questions must exactly match decision question IDs",
         ));
     }
     let mut encoded = Vec::new();
@@ -73,15 +80,14 @@ pub(crate) async fn score(
         let entry = options
             .encoded
             .get(id)
-            .ok_or_else(|| AiMuxError::InvalidArgument(format!("missing encoding for {id}")))?;
+            .ok_or_else(|| AiMuxError::invalid_argument(format!("missing encoding for {id}")))?;
         let count = candidate_count(question);
         if entry.prompt_token_ids.is_empty()
             || entry.label_token_ids.len() != count
             || entry.label_token_ids.iter().collect::<HashSet<_>>().len() != count
         {
-            return Err(AiMuxError::InvalidArgument(
-                "each encoding requires a nonempty prompt and one distinct token ID per candidate"
-                    .into(),
+            return Err(AiMuxError::invalid_argument(
+                "each encoding requires a nonempty prompt and one distinct token ID per candidate",
             ));
         }
         encoded.push(entry);
@@ -96,8 +102,13 @@ pub(crate) async fn score(
             &format!("{base}/score"),
             body,
             |raw, headers| {
-                let scores: Vec<Vec<f64>> = serde_json::from_value(raw["scores"].clone())
-                    .map_err(|e| invalid(format!("SGLang score matrix: {e}")))?;
+                let scores: Vec<Vec<f64>> =
+                    serde_json::from_value(raw["scores"].clone()).map_err(|e| {
+                        AiMuxError::InvalidResponseData {
+                            message: format!("SGLang score matrix: {e}"),
+                            cause: Some(ErrorCause::source(&e)),
+                        }
+                    })?;
                 let response_model = raw["model"].as_str().unwrap_or_default().to_owned();
                 result_from_distributions(
                     request,

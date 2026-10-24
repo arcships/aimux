@@ -5,6 +5,7 @@
 //! with `encoding_format: "float"`, the `dimensions` and `user` options read
 //! from the compatible namespaces and then the provider's own.
 
+use aimux_core::ErrorCause;
 use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
 };
@@ -54,7 +55,7 @@ impl EmbeddingModel for OpenAICompatibleEmbeddingModel {
         let compatible_options =
             embedding_options(options, self.config.provider_options_name(), &mut warnings)?;
         if options.values.len() > self.max_embeddings_per_call().unwrap_or(2048) as usize {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Too many embedding values for {} / {}: maximum 2048, received {}",
                 self.provider(),
                 self.model_id(),
@@ -117,7 +118,10 @@ impl EmbeddingModel for OpenAICompatibleEmbeddingModel {
                 .get("providerMetadata")
                 .map(|metadata| serde_json::from_value(metadata.clone()))
                 .transpose()
-                .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?,
+                .map_err(|error| AiMuxError::InvalidResponseData {
+                    message: error.to_string(),
+                    cause: Some(ErrorCause::source(&error)),
+                })?,
             response: Some(EmbeddingResponse {
                 headers: Some(response_headers),
                 body: Some(raw_value),

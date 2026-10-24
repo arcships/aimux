@@ -120,7 +120,7 @@ impl OpenAICompatibleCompletionModel {
                         _ => true,
                     };
                     if !valid {
-                        return Err(AiMuxError::InvalidArgument(format!(
+                        return Err(AiMuxError::invalid_argument(format!(
                             "invalid {namespace} provider option {key}"
                         )));
                     }
@@ -225,7 +225,7 @@ fn parse_response(
     native: bool,
     streaming: bool,
 ) -> Result<CompletionResponse, AiMuxError> {
-    let invalid = || AiMuxError::InvalidResponseData("invalid completion response".into());
+    let invalid = || AiMuxError::invalid_response_data("invalid completion response");
     if let Some(usage) = value.get("usage").filter(|value| !value.is_null())
         && !["prompt_tokens", "completion_tokens", "total_tokens"]
             .iter()
@@ -310,7 +310,7 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
             .choices
             .drain(..)
             .next()
-            .ok_or_else(|| AiMuxError::InvalidResponseData("no choices in response".into()))?;
+            .ok_or_else(|| AiMuxError::invalid_response_data("no choices in response"))?;
         let provider_metadata = self.native().then(|| {
             provider_namespace(
                 "openai",

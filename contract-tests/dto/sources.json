@@ -15,6 +15,36 @@
     "pointer": "/script/0/event/error"
   },
   {
+    "file": "AiMuxError/004.json",
+    "source": "contract-tests/ops/errors/aimux-api-call.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxError/005.json",
+    "source": "aimux-provider-utils/src/post_to_api.rs",
+    "pointer": "line 265"
+  },
+  {
+    "file": "AiMuxError/006.json",
+    "source": "contract-tests/ops/errors/aimux-invalid-tool-input.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxError/007.json",
+    "source": "contract-tests/ops/errors/aimux-invalid-response-data.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxError/008.json",
+    "source": "contract-tests/ops/errors/aimux-type-validation.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxError/009.json",
+    "source": "aimux-core/tests/error_value_golden_test.rs",
+    "pointer": "line 351"
+  },
+  {
     "file": "AiMuxErrorInput/001.json",
     "source": "bindings/flutter/test/typed_round_trip_test.dart",
     "pointer": "line 36/error"
@@ -28,6 +58,36 @@
     "file": "AiMuxErrorInput/003.json",
     "source": "contract-tests/ops/scenarios/recoverable-error-part.json",
     "pointer": "/script/0/event/error"
+  },
+  {
+    "file": "AiMuxErrorInput/004.json",
+    "source": "contract-tests/ops/errors/aimux-api-call.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxErrorInput/005.json",
+    "source": "aimux-provider-utils/src/post_to_api.rs",
+    "pointer": "line 265"
+  },
+  {
+    "file": "AiMuxErrorInput/006.json",
+    "source": "contract-tests/ops/errors/aimux-invalid-tool-input.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxErrorInput/007.json",
+    "source": "contract-tests/ops/errors/aimux-invalid-response-data.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxErrorInput/008.json",
+    "source": "contract-tests/ops/errors/aimux-type-validation.json",
+    "pointer": "/error"
+  },
+  {
+    "file": "AiMuxErrorInput/009.json",
+    "source": "aimux-core/tests/error_value_golden_test.rs",
+    "pointer": "line 351"
   },
   {
     "file": "AnyValue/001.json",

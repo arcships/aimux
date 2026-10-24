@@ -29,7 +29,7 @@ pub(super) fn embedding_options(
         ] {
             if let Some(value) = object.get(setting) {
                 if !valid(value) {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "invalid providerOptions.{key}.{setting}"
                     )));
                 }

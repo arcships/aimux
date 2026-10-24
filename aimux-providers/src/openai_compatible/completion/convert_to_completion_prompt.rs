@@ -13,8 +13,8 @@ pub(super) fn completion_prompt(options: &CallOptions) -> Result<String, AiMuxEr
                 text.push_str("\n\n");
             }
             LanguageModelMessage::System { .. } => {
-                return Err(AiMuxError::InvalidPrompt(
-                    "Unexpected system message in prompt".into(),
+                return Err(AiMuxError::invalid_prompt(
+                    "Unexpected system message in prompt",
                 ));
             }
             LanguageModelMessage::User { content, .. } => {

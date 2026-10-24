@@ -11,6 +11,7 @@
 use std::net::IpAddr;
 
 use crate::error::AiMuxError;
+use crate::error::ErrorCause;
 
 /// Compare scheme, host, and effective port. Unparseable inputs are never
 /// same-origin. Public so providers can build credential allowlists on top
@@ -61,31 +62,33 @@ fn host_ip_literal(host: &str) -> Option<IpAddr> {
 /// Callers that resolve DNS afterwards rely on this having rejected every
 /// non-public literal, so keep this the single literal-check site.
 pub fn validate_download_url(url: &str) -> Result<url::Url, AiMuxError> {
-    let parsed = url::Url::parse(url)
-        .map_err(|error| AiMuxError::InvalidArgument(format!("invalid download URL: {error}")))?;
+    let parsed = url::Url::parse(url).map_err(|error| AiMuxError::InvalidArgument {
+        message: format!("invalid download URL: {error}"),
+        cause: Some(ErrorCause::source(&error)),
+    })?;
     if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "download URL must use HTTP or HTTPS: {}",
             redacted(&parsed)
         )));
     }
     let host = parsed
         .host_str()
-        .ok_or_else(|| AiMuxError::InvalidArgument("download URL has no host".into()))?;
+        .ok_or_else(|| AiMuxError::invalid_argument("download URL has no host"))?;
     let normalized_host = host.to_ascii_lowercase();
     let normalized_host = normalized_host.trim_end_matches('.');
     if normalized_host == "localhost"
         || normalized_host.ends_with(".local")
         || normalized_host.ends_with(".localhost")
     {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "download URL targets a disallowed hostname: {normalized_host}"
         )));
     }
     if let Some(address) = host_ip_literal(normalized_host)
         && !is_public_download_address(address)
     {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "download URL targets a non-public address: {address}"
         )));
     }
@@ -108,18 +111,19 @@ pub async fn validate_download_target(
     let parsed = validate_download_url(url)?;
     let host = parsed
         .host_str()
-        .ok_or_else(|| AiMuxError::InvalidArgument("download URL has no host".into()))?;
+        .ok_or_else(|| AiMuxError::invalid_argument("download URL has no host"))?;
     if let Some(address) = host_ip_literal(host) {
         // validate_download_url above already rejected non-public literals.
         return Ok(vec![address]);
     }
     let port = parsed
         .port_or_known_default()
-        .ok_or_else(|| AiMuxError::InvalidArgument("download URL has no known port".into()))?;
+        .ok_or_else(|| AiMuxError::invalid_argument("download URL has no known port"))?;
     let addresses: Vec<_> = tokio::net::lookup_host((host, port))
         .await
-        .map_err(|error| {
-            AiMuxError::InvalidArgument(format!("download URL host could not be resolved: {error}"))
+        .map_err(|error| AiMuxError::InvalidArgument {
+            message: format!("download URL host could not be resolved: {error}"),
+            cause: Some(ErrorCause::source(&error)),
         })?
         .map(|address| address.ip())
         .collect();
@@ -131,14 +135,14 @@ fn validate_resolved_download_addresses(
     addresses: Vec<IpAddr>,
 ) -> Result<Vec<IpAddr>, AiMuxError> {
     if addresses.is_empty() {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "download URL host did not resolve to an address: {host}"
         )));
     }
     let mut validated = Vec::with_capacity(addresses.len());
     for address in addresses {
         if !is_public_download_address(address) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "download URL resolves to a non-public address: {address}"
             )));
         }
@@ -369,7 +373,7 @@ mod tests {
         let empty = validate_resolved_download_addresses("empty.example", Vec::new())
             .expect_err("an empty DNS answer must fail closed");
         assert!(
-            matches!(empty, AiMuxError::InvalidArgument(ref message) if message.contains("did not resolve"))
+            matches!(empty, AiMuxError::InvalidArgument { ref message, .. } if message.contains("did not resolve"))
         );
 
         let mixed = validate_resolved_download_addresses(
@@ -378,7 +382,7 @@ mod tests {
         )
         .expect_err("one private answer must reject the entire DNS result");
         assert!(
-            matches!(mixed, AiMuxError::InvalidArgument(ref message) if message.contains("non-public"))
+            matches!(mixed, AiMuxError::InvalidArgument { ref message, .. } if message.contains("non-public"))
         );
 
         let all = validate_resolved_download_addresses(
