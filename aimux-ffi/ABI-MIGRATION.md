@@ -15,7 +15,7 @@ migration is separate. Decision coverage is provided by `decision.decide` /
 | `aimux_error_code` | Same-name RFC §4.1 primitive, implemented only in abi.rs | abi_primitives; tests/c/primitives.c and tests/c/raii.cpp |
 | `aimux_error_message` | Same-name RFC §4.1 primitive, implemented only in abi.rs | abi_primitives; tests/c/primitives.c and tests/c/raii.cpp |
 | `aimux_error_status` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
-| `aimux_error_retry_ms` | aimux_error_json: ErrorEnvelope.error.responseHeaders (`retry-after`, as with the AI SDK); no derived hint, no field getter aliases | error_envelope_golden; abi_primitives |
+| `aimux_error_retry_ms` | aimux_error_json: ErrorEnvelope.error.responseHeaders (`retry-after-ms`, then `retry-after`, as with the AI SDK); no derived hint, no field getter aliases | error_envelope_golden; abi_primitives |
 | `aimux_error_retryable` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
 | `aimux_error_provider_code` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |
 | `aimux_error_provider_message` | aimux_error_json: ErrorEnvelope.error; no field getter aliases | error_envelope_golden; abi_primitives |

@@ -1172,6 +1172,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `retryMs` and Python `retry_ms`. Read the delay from `error.responseHeaders`
   (`retry-after-ms`, `retry-after`), as with the AI SDK; core still reads those
   headers itself when it retries and when a provider poll waits (#334).
+  Python's generated models now fold an explicit `null` on an optional field
+  to an omitted key, as Rust and the other codecs do; only JSON values and
+  presence fields keep it. The language guides under `docs/api/` still
+  describe the 0.5 API and say so at the top (#277).
 
 ### Added
 
