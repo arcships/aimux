@@ -50,7 +50,8 @@ Provider changes also run the generator and boundary checks CI runs in the
 
 ```bash
 python3 scripts/gen_providers_doc.py --check  # docs/api/providers.md
-python3 scripts/gen_ts_types.py --check       # ts-rs types for the Node binding
+cargo run -p aimux-codegen -- --check         # generated DTOs, schemas, constants
+python3 scripts/check_dto_vectors.py          # language DTO round-trips
 bash scripts/check_provider_boundaries.sh     # factory-shape rules for provider packages
 ```
 

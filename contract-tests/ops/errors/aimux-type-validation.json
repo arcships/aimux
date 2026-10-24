@@ -1,0 +1,15 @@
+{
+  "kind": "aimux",
+  "code": 3,
+  "message": "Type validation failed: Value: {\"town\":\"SG\"}.\nError message: \"city\" is a required property",
+  "error": {
+    "name": "AI_TypeValidationError",
+    "message": "Type validation failed: Value: {\"town\":\"SG\"}.\nError message: \"city\" is a required property",
+    "value": {
+      "town": "SG"
+    },
+    "cause": {
+      "message": "\"city\" is a required property"
+    }
+  }
+}

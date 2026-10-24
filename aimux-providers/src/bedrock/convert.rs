@@ -23,7 +23,7 @@ use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_core::tool::{FunctionTool, Tool};
 use aimux_core::types::{FinishReason, FinishReasonUnified};
-use aimux_provider_utils::is_full_media_type;
+use aimux_provider_utils::{inject_json_instruction_into_messages, is_full_media_type};
 use base64::Engine;
 use serde_json::{Value, json};
 
@@ -752,8 +752,8 @@ fn validate_part_options(
         if let Some(value) = options.get("guardContent")
             && !value.is_boolean()
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock guardContent".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock guardContent",
             ));
         }
         if let Some(value) = options.get("guardContentQualifiers")
@@ -766,15 +766,15 @@ fn validate_part_options(
                 })
             })
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock guardContentQualifiers".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock guardContentQualifiers",
             ));
         }
         if let Some(value) = options.get("citations")
             && (!value.is_object() || value.get("enabled").is_some_and(|v| !v.is_boolean()))
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock citations".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock citations",
             ));
         }
         if reasoning {
@@ -783,7 +783,7 @@ fn validate_part_options(
                     && !value.is_string()
                     && !value.is_null()
                 {
-                    return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+                    return Err(aimux_core::AiMuxError::invalid_argument(format!(
                         "Invalid Bedrock {key}"
                     )));
                 }
@@ -1294,16 +1294,16 @@ pub fn build_request_body_checked(
             .as_str()
             .is_some_and(|v| ["outputFormat", "jsonTool", "auto"].contains(&v))
     {
-        return Err(aimux_core::AiMuxError::InvalidArgument(
-            "Invalid Anthropic structuredOutputMode".into(),
+        return Err(aimux_core::AiMuxError::invalid_argument(
+            "Invalid Anthropic structuredOutputMode",
         ));
     }
     if anthropic_options
         .and_then(|p| p.get("disableParallelToolUse"))
         .is_some_and(|v| !v.is_boolean())
     {
-        return Err(aimux_core::AiMuxError::InvalidArgument(
-            "Invalid Anthropic disableParallelToolUse".into(),
+        return Err(aimux_core::AiMuxError::invalid_argument(
+            "Invalid Anthropic disableParallelToolUse",
         ));
     }
     let structured_mode = bedrock
@@ -1513,24 +1513,15 @@ pub fn build_request_body_checked(
         }
     }
     if uses_json_instruction {
-        let instruction = format!(
-            "JSON schema:\n{}\nYou MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text.",
-            schema.unwrap()
+        // @ai-sdk/amazon-bedrock@5.0.100 amazon-bedrock-chat-language-model.ts:614-621
+        prompt = inject_json_instruction_into_messages(
+            &prompt,
+            schema,
+            None,
+            Some(
+                "You MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text.",
+            ),
         );
-        if let Some(LanguageModelMessage::System { content, .. }) = prompt.first_mut() {
-            if !content.is_empty() {
-                content.push_str("\n\n");
-            }
-            content.push_str(&instruction);
-        } else {
-            prompt.insert(
-                0,
-                LanguageModelMessage::System {
-                    content: instruction,
-                    provider_options: None,
-                },
-            );
-        }
     }
     let (system, messages) = convert_prompt(&prompt, model_id.contains("mistral."))?;
     let mut body = json!({"messages":messages});
@@ -1588,7 +1579,7 @@ fn validate_options(
         if let Some(value) = options.get(key)
             && !value.as_str().is_some_and(|v| choices.contains(&v))
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+            return Err(aimux_core::AiMuxError::invalid_argument(format!(
                 "Invalid Bedrock {key}"
             )));
         }
@@ -1596,8 +1587,8 @@ fn validate_options(
     if let Some(value) = options.get("additionalModelRequestFields")
         && !value.is_object()
     {
-        return Err(aimux_core::AiMuxError::InvalidArgument(
-            "Invalid Bedrock additionalModelRequestFields".into(),
+        return Err(aimux_core::AiMuxError::invalid_argument(
+            "Invalid Bedrock additionalModelRequestFields",
         ));
     }
     if let Some(value) = options.get("anthropicBeta")
@@ -1605,14 +1596,14 @@ fn validate_options(
             .as_array()
             .is_some_and(|a| a.iter().all(Value::is_string))
     {
-        return Err(aimux_core::AiMuxError::InvalidArgument(
-            "Invalid Bedrock anthropicBeta".into(),
+        return Err(aimux_core::AiMuxError::invalid_argument(
+            "Invalid Bedrock anthropicBeta",
         ));
     }
     if let Some(reasoning) = options.get("reasoningConfig") {
         if !reasoning.is_object() {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock reasoningConfig".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock reasoningConfig",
             ));
         }
         for (key, choices) in [
@@ -1626,7 +1617,7 @@ fn validate_options(
             if let Some(value) = reasoning.get(key)
                 && !value.as_str().is_some_and(|v| choices.contains(&v))
             {
-                return Err(aimux_core::AiMuxError::InvalidArgument(format!(
+                return Err(aimux_core::AiMuxError::invalid_argument(format!(
                     "Invalid Bedrock reasoningConfig.{key}"
                 )));
             }
@@ -1634,8 +1625,8 @@ fn validate_options(
         if let Some(budget) = reasoning.get("budgetTokens")
             && !budget.is_number()
         {
-            return Err(aimux_core::AiMuxError::InvalidArgument(
-                "Invalid Bedrock reasoningConfig.budgetTokens".into(),
+            return Err(aimux_core::AiMuxError::invalid_argument(
+                "Invalid Bedrock reasoningConfig.budgetTokens",
             ));
         }
     }

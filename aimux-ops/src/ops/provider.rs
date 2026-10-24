@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError, ProtocolError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry, Middleware, Owner};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 
 const CREATE_HANDLES: &[(&str, &[HandleKind])] = &[
     ("settings.fetch", &[HandleKind::Fetch]),
@@ -52,8 +52,8 @@ const CUSTOM_HANDLES: &[(&str, &[HandleKind])] = &[
 const fn descriptor(
     name: &'static str,
     kinds: &'static [HandleKind],
-    request_type: &'static str,
-    result_type: &'static str,
+    request_type: TypeRef,
+    result_type: TypeRef,
     side_effects: bool,
     cancellable: bool,
     source_symbols: &'static [&'static str],
@@ -88,8 +88,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.create",
         &[],
-        "aimux_ops::ops::provider::ProviderCreateParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderCreateParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &[
@@ -101,8 +101,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.default",
         &[],
-        "aimux_ops::ops::provider::ProviderDefaultParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderDefaultParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &[
@@ -114,8 +114,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.model",
         &[HandleKind::Provider],
-        "aimux_ops::ops::provider::ProviderModelParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderModelParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &["aimux_core::provider::Provider"],
@@ -124,8 +124,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.invoke",
         &[HandleKind::Provider],
-        "aimux_ops::ops::provider::ProviderInvokeParams",
-        "aimux_ops::ops::provider::ProviderInvokeResult",
+        TypeRef::of::<ProviderInvokeParams>(),
+        TypeRef::of::<ProviderInvokeResult>(),
         false,
         true,
         &["aimux_core::provider::ProviderDiscovery::list_models"],
@@ -134,8 +134,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.wrap",
         &[HandleKind::Provider],
-        "aimux_ops::ops::provider::ProviderWrapParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderWrapParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &["aimux_core::wrap_provider::wrap_provider"],
@@ -144,8 +144,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
     descriptor(
         "provider.custom",
         &[],
-        "aimux_ops::ops::provider::ProviderCustomParams",
-        "aimux_ops::ops::provider::HandleResult",
+        TypeRef::of::<ProviderCustomParams>(),
+        TypeRef::of::<HandleResult>(),
         true,
         false,
         &["aimux_core::custom_provider::custom_provider"],
@@ -163,7 +163,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
     );
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderCreateParams {
     package: String,
@@ -171,13 +171,13 @@ struct ProviderCreateParams {
     settings: ProviderSettings,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderDefaultParams {
     package: String,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderSettings {
     api_key: Option<String>,
@@ -195,14 +195,14 @@ struct ProviderSettings {
     probability_source: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderModelParams {
     method: Option<String>,
     model_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderInvokeParams {
     method: String,
@@ -212,7 +212,7 @@ struct ProviderInvokeParams {
 
 type ProviderInvokeResult = Vec<aimux_core::model_catalogue::RuntimeModel>;
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderWrapParams {
     #[serde(default)]
@@ -221,7 +221,7 @@ struct ProviderWrapParams {
     image_model_middleware: Vec<HandleId>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ProviderCustomParams {
     #[serde(default)]
@@ -251,7 +251,7 @@ struct ProviderCustomParams {
     image_model_middleware: Vec<HandleId>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 struct HandleResult {
     handle: HandleId,
@@ -370,7 +370,7 @@ fn insert(owner: Owner, entry: Entry) -> Result<Value, OpsError> {
     let kind = entry.kind();
     let handle = HandleRegistry::global().insert(owner, entry)?;
     serde_json::to_value(HandleResult { handle, kind })
-        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 fn get(owner: Owner, handle: HandleId, kind: HandleKind) -> Result<Entry, OpsError> {
@@ -420,8 +420,8 @@ fn create_package(
             || settings.project.is_some()
             || !settings.params.is_empty()
         {
-            return Err(OpsError::AiMux(AiMuxError::InvalidArgument(
-                "Jev accepts apiKey, endpoint, headers and probabilitySource settings".into(),
+            return Err(OpsError::AiMux(AiMuxError::invalid_argument(
+                "Jev accepts apiKey, endpoint, headers and probabilitySource settings",
             )));
         }
         let mut config = match settings.api_key {
@@ -446,8 +446,8 @@ fn create_package(
         );
     }
     if settings.endpoint.is_some() || settings.probability_source.is_some() {
-        return Err(OpsError::AiMux(AiMuxError::InvalidArgument(
-            "endpoint and probabilitySource settings require the Jev provider".into(),
+        return Err(OpsError::AiMux(AiMuxError::invalid_argument(
+            "endpoint and probabilitySource settings require the Jev provider",
         )));
     }
     let mut headers = settings.headers;
@@ -557,9 +557,8 @@ fn invoke(ctx: Ctx, entry: Target, params: Value) -> CallFuture {
             },
             None => discovery.list_models().await,
         }.map_err(OpsError::AiMux)?;
-        serde_json::to_value(models).map_err(|error| {
-            OpsError::Binding(BindingError::ResultSerialization(error.to_string()))
-        })
+        serde_json::to_value(models)
+            .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
     })
 }
 
@@ -775,7 +774,7 @@ mod tests {
                         owned_by: None,
                         created: None,
                     }]),
-                    Discovery::Error => Err(AiMuxError::InvalidArgument("discovery failed".into())),
+                    Discovery::Error => Err(AiMuxError::invalid_argument("discovery failed")),
                     Discovery::Pending => futures::future::pending().await,
                 }
             })
@@ -862,7 +861,7 @@ mod tests {
         ] {
             assert!(matches!(
                 call(owner, HandleId(0), "provider.create", params).await,
-                Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+                Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
             ));
         }
     }
@@ -905,7 +904,7 @@ mod tests {
                 json!({"package":"openai", "settings":{}})
             )
             .await,
-            Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
         ));
     }
 
@@ -977,7 +976,7 @@ mod tests {
                 json!({"method":"languageModel"})
             )
             .await,
-            Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
         ));
     }
 
@@ -1013,7 +1012,7 @@ mod tests {
                 json!({"method":"listModels", "args":{}})
             )
             .await,
-            Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+            Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
         ));
         assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
@@ -1024,7 +1023,7 @@ mod tests {
         let (provider, _) = mock(owner, Discovery::Error);
         assert!(
             matches!(call(owner, provider, "provider.invoke", json!({"method":"listModels"})).await,
-            Err(OpsError::AiMux(AiMuxError::InvalidArgument(message))) if message == "discovery failed")
+            Err(OpsError::AiMux(AiMuxError::InvalidArgument { message, .. })) if message == "discovery failed")
         );
         let provider = handle(
             owner,
@@ -1311,7 +1310,7 @@ mod tests {
         ] {
             assert!(matches!(
                 call(owner, HandleId(0), "provider.custom", params).await,
-                Err(OpsError::Protocol(ProtocolError::InvalidParams(_)))
+                Err(OpsError::Protocol(ProtocolError::InvalidParams { .. }))
             ));
         }
     }

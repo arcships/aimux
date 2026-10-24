@@ -9,22 +9,22 @@ use serde_json::Value;
 use crate::dispatch::{CallFuture, Ctx, Handler, Target, decode};
 use crate::envelope::{BindingError, OpsError};
 use crate::handle::{Entry, HandleId, HandleKind, HandleRegistry};
-use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope};
+use crate::op::{Cancellation, OpDescriptor, OpMode, RequestBytePolicy, Scope, TypeRef};
 use crate::ops::operation::EmptyParams;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SessionStoreCreateParams {
     infer: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SessionStoreCallsParams {
     session_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 struct SessionStoreHandle {
     handle: HandleId,
 }
@@ -38,8 +38,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[],
-        request_type: "aimux_ops::ops::session::SessionStoreCreateParams",
-        result_type: "aimux_ops::ops::session::SessionStoreHandle",
+        request_type: TypeRef::of::<SessionStoreCreateParams>(),
+        result_type: TypeRef::of::<SessionStoreHandle>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -57,8 +57,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::SessionStore],
-        request_type: "EmptyParams",
-        result_type: "()",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<()>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -76,8 +76,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::SessionStore],
-        request_type: "EmptyParams",
-        result_type: "aimux_ops::ops::session::SessionViews",
+        request_type: TypeRef::of::<crate::ops::operation::EmptyParams>(),
+        result_type: TypeRef::of::<SessionViews>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -95,8 +95,8 @@ pub(crate) static OPS: &[OpDescriptor] = &[
         since_ops_version: "1.0",
         mode: OpMode::Call,
         allowed_handle_kinds: &[HandleKind::SessionStore],
-        request_type: "aimux_ops::ops::session::SessionStoreCallsParams",
-        result_type: "aimux_ops::ops::session::SessionCalls",
+        request_type: TypeRef::of::<SessionStoreCallsParams>(),
+        result_type: TypeRef::of::<SessionCalls>(),
         event_type: None,
         scope: Scope::Current,
         terminal_type: None,
@@ -120,7 +120,7 @@ pub(crate) fn register(r: &mut Vec<(&'static OpDescriptor, Handler)>) {
 
 fn json(value: impl Serialize) -> Result<Value, OpsError> {
     serde_json::to_value(value)
-        .map_err(|error| OpsError::Binding(BindingError::ResultSerialization(error.to_string())))
+        .map_err(|error| OpsError::Binding(BindingError::result_serialization(&error)))
 }
 
 fn store(target: Target) -> Result<Arc<SessionStore>, OpsError> {

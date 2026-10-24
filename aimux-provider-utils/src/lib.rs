@@ -20,6 +20,7 @@ pub mod get_from_api;
 pub mod handle_fetch_error;
 pub mod headers;
 pub mod http;
+pub mod inject_json_instruction;
 pub mod logging;
 pub mod media_type;
 pub mod multipart;
@@ -49,6 +50,7 @@ pub use headers::{
     HeaderMapOpt, HeadersFn, combine_headers, normalize_headers, with_user_agent_suffix,
 };
 pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
+pub use inject_json_instruction::{inject_json_instruction, inject_json_instruction_into_messages};
 pub use logging::{init_logging, redact_error_context};
 pub use media_type::{
     MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,

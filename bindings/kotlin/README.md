@@ -7,7 +7,8 @@ facade in `ai.arcships.aimux.kotlin`.
 
 ```kotlin
 import ai.arcships.aimux.Aimux
-import ai.arcships.aimux.StreamFrame
+import ai.arcships.aimux.types.StreamFrame
+import ai.arcships.aimux.types.Outcome
 import ai.arcships.aimux.kotlin.aimuxCall
 import ai.arcships.aimux.kotlin.aimuxFlow
 import kotlinx.coroutines.flow.collect
@@ -27,7 +28,7 @@ suspend fun generate() {
 }
 ```
 
-Use the Java provider/model, `Types`, and `MultimodalTypes` objects directly.
+Use the Java provider/model and generated `ai.arcships.aimux.types` classes directly.
 They pass unchanged between Java and Kotlin; Java retains ownership and
 `close()` semantics. Generic Java `Resource` operations expose all registered
 ops, including Decision. For example, obtain a Decision resource from a Jev
@@ -55,13 +56,14 @@ task returns. A native operation that ignores Abort can delay Flow cleanup.
 The channel bounds frame count; native stream limits govern frame byte sizes.
 
 The sealed `AimuxException` delegates `code`, `kind`, `errorName`, `error`,
-`envelope` and nullable unsigned `retryAfterMs` (`BigInteger`) to Java. All 22
+`envelope` and nullable `retryAfterMs` (`Long`) to Java. All 22
 known core subtypes have corresponding Kotlin variants with typed Java
 `details`. `BindingError`, `ProtocolError` and `RecordingError` retain their Java
 domain errors. `UnknownError` preserves a future Java exception subtype.
-`javaError` is also the cause. Kotlin performs no JSON error decoding. Java's
-current decoder rejects unknown wire variants before a Kotlin projection can
-occur; those decoder failures propagate unchanged.
+`javaError` is also the cause, so the Java `ErrorCause` chain follows it.
+Kotlin performs no JSON error decoding. Java's current decoder rejects unknown
+wire variants before a Kotlin projection can occur; those decoder failures
+propagate unchanged.
 
 ## Breaking changes
 

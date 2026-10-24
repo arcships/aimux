@@ -193,6 +193,7 @@ where
                 status_code: Some(status),
                 response_body: Some(raw.to_string()),
                 response_headers: Some(headers.clone()),
+                cause: Some(aimux_core::ErrorCause::source(&error)),
                 ..aimux_core::ApiCallError::new(
                     format!("Invalid JSON response: {error}"),
                     url,

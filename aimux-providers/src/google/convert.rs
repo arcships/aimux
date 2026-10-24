@@ -1025,7 +1025,7 @@ pub fn build_request_body_with_warnings(
     build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
 }
 
-fn build_request_body_with_warnings_for_namespace(
+pub(crate) fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: Namespace,
@@ -1041,7 +1041,7 @@ fn build_request_body_with_warnings_for_namespace(
             None => true,
             Some(Value::Bool(value)) => *value,
             Some(_) => {
-                return Err(AiMuxError::InvalidArgument(format!(
+                return Err(AiMuxError::invalid_argument(format!(
                     "invalid {} provider options",
                     provider_options.unwrap().0
                 )));
@@ -1427,11 +1427,12 @@ pub(crate) fn validate_call_options_for_namespace(
             _ => {}
         }
     }
-    let Some(values) = Namespace::Google.read_in(options.provider_options.as_ref()) else {
+    let Some(values) = namespace.read_in(options.provider_options.as_ref()) else {
         return Ok(());
     };
-    let invalid =
-        |name: &str| AiMuxError::InvalidArgument(format!("Invalid Google provider option: {name}"));
+    let invalid = |name: &str| {
+        AiMuxError::invalid_argument(format!("Invalid Google provider option: {name}"))
+    };
     for name in [
         "structuredOutputs",
         "audioTimestamp",
@@ -1622,7 +1623,7 @@ fn validate_file_part(
     if let FileData::Reference { reference } = &file.data
         && !reference.contains_key(GOOGLE)
     {
-        return Err(AiMuxError::InvalidArgument(format!(
+        return Err(AiMuxError::invalid_argument(format!(
             "No provider reference found for provider 'google'. Available providers: {}",
             reference.keys().cloned().collect::<Vec<_>>().join(", ")
         )));

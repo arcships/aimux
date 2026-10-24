@@ -136,7 +136,7 @@ impl std::fmt::Debug for OpenAICompatibleProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. The key is not read
 /// here.
 pub fn create_openai_compatible(
@@ -281,7 +281,9 @@ impl OpenAICompatibleProvider {
     /// A chat-completions model; `provider()` is `"{name}.chat"`.
     #[must_use]
     pub fn chat(&self, model_id: &str) -> OpenAICompatibleChatModel {
-        OpenAICompatibleChatModel::from_config(model_id.to_string(), self.model_config("chat"))
+        let mut config = self.model_config("chat");
+        config.chat = config.chat.for_model(model_id);
+        OpenAICompatibleChatModel::from_config(model_id.to_string(), config)
     }
 
     /// A text-completion model; `provider()` is `"{name}.completion"`.

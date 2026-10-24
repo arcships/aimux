@@ -1358,7 +1358,7 @@ async fn should_handle_streaming_errors() {
         .position(|outcome| {
             matches!(
                 outcome,
-                Err(AiMuxError::JsonParse(_) | AiMuxError::InvalidResponseData(_))
+                Err(AiMuxError::JsonParse { .. } | AiMuxError::InvalidResponseData { .. })
             )
         })
         .expect("malformed frame should surface as a parse error item");

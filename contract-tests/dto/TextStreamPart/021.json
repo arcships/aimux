@@ -1,0 +1,9 @@
+{
+  "type": "finish",
+  "finishReason": "stop",
+  "totalUsage": {
+    "inputTokens": 3,
+    "inputTokenDetails": {},
+    "outputTokenDetails": {}
+  }
+}

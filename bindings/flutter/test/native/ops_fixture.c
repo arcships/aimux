@@ -101,7 +101,7 @@ static void *produce(void *data) {
         for (int i = 0; i < 1000 && !atomic_load(&aborted[a->abort]); i++) {
             char frame[180];
             snprintf(frame, sizeof(frame),
-                "{\"type\":\"event\",\"seq\":\"%d\",\"event\":{\"type\":\"text-delta\",\"text\":\"%d\"}}", i, i);
+                "{\"type\":\"event\",\"seq\":\"%d\",\"event\":{\"type\":\"text-delta\",\"id\":\"t\",\"text\":\"%d\"}}", i, i);
             atomic_fetch_add(&produced, 1);
             a->event(frame, a->ctx);
         }
@@ -136,7 +136,7 @@ aimux_error_t *aimux_operation_next_part(uint64_t operation, int64_t timeout,
     (void)operation;
     *out = NULL; *state = 0;
     if (timeout == 99) return failure();
-    if (timeout == 1) { *out = copy("{\"type\":\"transcript\"}"); *state = 1; }
+    if (timeout == 1) { *out = copy("{\"type\":\"transcript-final\",\"text\":\"hello\"}"); *state = 1; }
     else if (timeout == 2) *state = 2;
     else *state = 3;
     return NULL;
