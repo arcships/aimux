@@ -107,6 +107,7 @@ fn anthropic_test_provider_with(
     settings: AnthropicProviderSettings,
 ) -> AnthropicProvider {
     create_anthropic(AnthropicProviderSettings {
+        base_url: Some("https://api.anthropic.com/v1".into()),
         api_key: Some("test-api-key".into()),
         fetch: Some(mock.transport()),
         generate_id: settings
@@ -343,6 +344,7 @@ fn test_provider_with_ids(
     start: usize,
 ) -> crate::anthropic::AnthropicProvider {
     create_anthropic(AnthropicProviderSettings {
+        base_url: Some("https://api.anthropic.com/v1".into()),
         api_key: Some("test-api-key".into()),
         generate_id: Some(mock_id_from("id", start)),
         fetch: Some(mock.transport()),
@@ -354,6 +356,7 @@ fn test_provider_with_ids(
 /// `createAnthropic({ apiKey: 'test-api-key' })`.
 fn plain_provider(mock: &Arc<MockFetch>) -> crate::anthropic::AnthropicProvider {
     create_anthropic(AnthropicProviderSettings {
+        base_url: Some("https://api.anthropic.com/v1".into()),
         api_key: Some("test-api-key".into()),
         fetch: Some(mock.transport()),
         ..Default::default()
@@ -2748,6 +2751,7 @@ mod anthropic_language_model {
                 "anthropic-text"
             ))]);
             let provider = create_anthropic(AnthropicProviderSettings {
+                base_url: Some("https://api.anthropic.com/v1".into()),
                 api_key: Some("test-api-key".into()),
                 headers: Some(
                     [(
@@ -3109,6 +3113,7 @@ mod anthropic_language_model {
                 "usage": { "input_tokens": 4, "output_tokens": 30 },
             }))]);
             let mock_provider = create_anthropic(AnthropicProviderSettings {
+                base_url: Some("https://api.anthropic.com/v1".into()),
                 api_key: Some("test-api-key".into()),
                 fetch: Some(mock.transport()),
                 generate_id: Some(Arc::new(|| "test-text-citation-id".to_string())),
@@ -8592,6 +8597,7 @@ mod anthropic_language_model {
                 .push(("test-header".into(), "test-value".into()));
             let mock = server(vec![response]);
             let provider = create_anthropic(AnthropicProviderSettings {
+                base_url: Some("https://api.anthropic.com/v1".into()),
                 api_key: Some("test-api-key".into()),
                 headers: Some(
                     [(
@@ -8638,6 +8644,7 @@ mod anthropic_language_model {
                 r#"{"type":"message_stop"}"#,
             ])]);
             let provider = create_anthropic(AnthropicProviderSettings {
+                base_url: Some("https://api.anthropic.com/v1".into()),
                 api_key: Some("test-api-key".into()),
                 headers: Some(
                     [(
@@ -11486,6 +11493,7 @@ mod anthropic_language_model {
             provider_name: &str,
         ) -> AnthropicMessagesModel {
             create_anthropic(AnthropicProviderSettings {
+                base_url: Some("https://api.anthropic.com/v1".into()),
                 api_key: Some("test-api-key".into()),
                 name: Some(provider_name.into()),
                 generate_id: Some(mock_id_from("id", 0)),
@@ -14010,6 +14018,7 @@ mod mid_conversation_tool_changes {
             &serde_json::from_str::<Value>(ANTHROPIC_TEXT).unwrap(),
         )]);
         let provider = create_anthropic(AnthropicProviderSettings {
+            base_url: Some("https://api.anthropic.com/v1".into()),
             api_key: Some("test-api-key".into()),
             fetch: Some(server.transport()),
             ..Default::default()

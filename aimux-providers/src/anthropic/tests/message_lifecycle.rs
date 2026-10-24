@@ -27,6 +27,7 @@ fn create_model(chunks: &str) -> AnthropicMessagesModel {
         body: body.into_bytes(),
     }]);
     create_anthropic(AnthropicProviderSettings {
+        base_url: Some("https://api.anthropic.com/v1".into()),
         api_key: Some("test-api-key".into()),
         fetch: Some(fetch.transport()),
         ..Default::default()
