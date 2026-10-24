@@ -7,6 +7,7 @@
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
 };
@@ -50,7 +51,7 @@ fn embedding_options(
         ] {
             if let Some(value) = object.get(setting) {
                 if !valid(value) {
-                    return Err(AiMuxError::InvalidArgument(format!(
+                    return Err(AiMuxError::invalid_argument(format!(
                         "invalid providerOptions.{key}.{setting}"
                     )));
                 }
@@ -109,7 +110,7 @@ impl EmbeddingModel for OpenAICompatibleEmbeddingModel {
         let compatible_options =
             embedding_options(options, self.config.provider_options_name(), &mut warnings)?;
         if options.values.len() > self.max_embeddings_per_call().unwrap_or(2048) as usize {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Too many embedding values for {} / {}: maximum 2048, received {}",
                 self.provider(),
                 self.model_id(),
@@ -172,7 +173,10 @@ impl EmbeddingModel for OpenAICompatibleEmbeddingModel {
                 .get("providerMetadata")
                 .map(|metadata| serde_json::from_value(metadata.clone()))
                 .transpose()
-                .map_err(|error| AiMuxError::InvalidResponseData(error.to_string()))?,
+                .map_err(|error| AiMuxError::InvalidResponseData {
+                    message: error.to_string(),
+                    cause: Some(ErrorCause::source(&error)),
+                })?,
             response: Some(EmbeddingResponse {
                 headers: Some(response_headers),
                 body: Some(raw_value),

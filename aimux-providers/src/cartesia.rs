@@ -28,6 +28,7 @@ use std::sync::OnceLock;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::{SharedProviderOptions, Warning};
 use aimux_core::speech_model::{
@@ -122,7 +123,7 @@ impl std::fmt::Debug for CartesiaProviderSettings {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when `base_url` is not an `http(s)`
+/// Returns `AiMuxError::invalid_argument` when `base_url` is not an `http(s)`
 /// URL with a host. That is the only way this fails: the key is loaded per
 /// request, not here.
 pub fn create_cartesia(settings: CartesiaProviderSettings) -> Result<CartesiaProvider, AiMuxError> {
@@ -555,7 +556,7 @@ fn build_request(
     let mut warnings = Vec::new();
 
     let voice = options.voice.as_deref().ok_or_else(|| {
-        AiMuxError::InvalidArgument(
+        AiMuxError::invalid_argument(
             "Cartesia speech models require a `voice` to be set.".to_string(),
         )
     })?;
@@ -726,8 +727,12 @@ fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
     match audio {
         AudioInput::Binary(bytes) => Ok(bytes.clone()),
         AudioInput::Base64(b64) => {
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
-                .map_err(|e| AiMuxError::InvalidArgument(format!("invalid base64: {e}")))
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(|e| {
+                AiMuxError::InvalidArgument {
+                    message: format!("invalid base64: {e}"),
+                    cause: Some(ErrorCause::source(&e)),
+                }
+            })
         }
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }

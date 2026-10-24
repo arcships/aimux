@@ -212,10 +212,10 @@ fn request_headers(seen: &Seen) -> Value {
 fn error_json(error: &AiMuxError) -> Value {
     match error {
         AiMuxError::ApiCall(detail) => detail.data.clone().unwrap_or(Value::Null),
-        AiMuxError::InvalidResponseData(message) => {
+        AiMuxError::InvalidResponseData { message, .. } => {
             json!({ "name": "AI_InvalidResponseDataError", "message": message })
         }
-        AiMuxError::JsonParse(message) => {
+        AiMuxError::JsonParse { message, .. } => {
             json!({ "name": "AI_JSONParseError", "message": message })
         }
         other => json!({ "name": format!("{other:?}"), "message": other.to_string() }),
@@ -500,7 +500,7 @@ mod do_generate {
             .unwrap_err();
 
         assert!(
-            matches!(&error, AiMuxError::InvalidResponseData(message) if message == "Response did not contain any choices."),
+            matches!(&error, AiMuxError::InvalidResponseData { message, .. } if message == "Response did not contain any choices."),
             "{error:?}"
         );
     }

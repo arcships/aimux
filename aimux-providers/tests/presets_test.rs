@@ -260,7 +260,7 @@ async fn a_template_parameter_must_be_a_plain_host_segment() {
         },
     );
     assert!(
-        matches!(result, Err(AiMuxError::InvalidArgument(message)) if message.contains("branch_host"))
+        matches!(result, Err(AiMuxError::InvalidArgument { message, .. }) if message.contains("branch_host"))
     );
     assert!(mock.seen().is_empty());
 }
@@ -369,7 +369,7 @@ async fn an_invalid_base_url_variable_fails_the_request_not_the_factory() {
         panic!("an ftp:// base URL must fail the request");
     };
     assert!(
-        matches!(&error, AiMuxError::InvalidArgument(message)
+        matches!(&error, AiMuxError::InvalidArgument { message, .. }
             if message.contains("OLLAMA_BASE_URL") && message.contains("http or https")),
         "{error:?}"
     );

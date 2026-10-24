@@ -297,7 +297,7 @@ fn validate_value(
     if valid(value) {
         Ok(())
     } else {
-        Err(AiMuxError::InvalidArgument(format!(
+        Err(AiMuxError::invalid_argument(format!(
             "Invalid xai option {key}: {value}"
         )))
     }
@@ -405,7 +405,7 @@ fn validate_provider_tool(tool: &aimux_core::tool::ProviderTool) -> Result<(), A
         _ => &[],
     } {
         if !args.contains_key(*key) {
-            return Err(AiMuxError::InvalidArgument(format!(
+            return Err(AiMuxError::invalid_argument(format!(
                 "Missing {key} for {}",
                 tool.name
             )));
@@ -421,7 +421,7 @@ fn validate_provider_tool(tool: &aimux_core::tool::ProviderTool) -> Result<(), A
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::InvalidArgument` when a part cannot be converted.
+/// Returns `AiMuxError::invalid_argument` when a part cannot be converted.
 pub fn convert_to_xai_responses_input(
     prompt: &LanguageModelPrompt,
 ) -> Result<(Vec<Value>, Vec<Warning>), AiMuxError> {
@@ -474,7 +474,7 @@ pub fn convert_to_xai_responses_input(
                                         reference,
                                         crate::xai::options::NAMESPACE,
                                     )
-                                    .map_err(AiMuxError::InvalidArgument)?;
+                                    .map_err(AiMuxError::invalid_argument)?;
                                     json!({ "type": "input_file", "file_id": file_id })
                                 }
                                 FileData::Text { .. } => {
