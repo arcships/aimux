@@ -410,6 +410,7 @@ fn factory_is_explicit_and_preserves_the_provider_boundary() {
     assert!(other.decision_model("any").is_none());
 }
 
+/// partial: `evaluates through the configured Responses API with strict structured output`; full port in src/openai/tests/evaluation.rs.
 /// `@ai-sdk/openai@4.0.83 src/openai-provider.ts:355-358`: the evaluation
 /// model decides through the Responses model as `"{name}.evaluation"`, with
 /// the structured output named `evaluation` (`src/openai-evaluation.test.ts:77`).

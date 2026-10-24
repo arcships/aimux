@@ -476,3 +476,6 @@ impl ProviderDiscovery for OpenAIProvider {
         Box::pin(async move { model::list_models_once(&config).await })
     }
 }
+
+#[cfg(test)]
+mod tests;

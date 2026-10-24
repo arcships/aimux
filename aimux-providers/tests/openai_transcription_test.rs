@@ -140,87 +140,217 @@ fn fixture_response() -> Value {
 // (openai-transcription-model.test.ts → describe('doGenerate'))
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: "should reject gpt-realtime-whisper for non-streaming transcription"
-#[tokio::test]
-async fn should_reject_gpt_realtime_whisper_for_non_streaming() {
-    let server = MockServer::start().await;
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider
-        .transcription_model("gpt-realtime-whisper")
-        .unwrap()
-        .unwrap();
+mod do_generate {
+    use super::*;
 
-    let result = model
-        .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+    /// upstream: @ai-sdk/openai src/transcription/openai-transcription-model.test.ts › doGenerate › should reject gpt-realtime-whisper for non-streaming transcription
+    #[tokio::test]
+    async fn should_reject_gpt_realtime_whisper_for_non_streaming() {
+        let server = MockServer::start().await;
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider
+            .transcription_model("gpt-realtime-whisper")
+            .unwrap()
+            .unwrap();
+
+        let result = model
+            .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+            .await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AiMuxError::UnsupportedFunctionality(msg) => {
+                assert!(msg.contains("gpt-realtime-whisper"));
+            }
+            e => panic!("expected Unsupported error, got: {e:?}"),
+        }
+    }
+
+    /// upstream: @ai-sdk/openai src/transcription/openai-transcription-model.test.ts › doGenerate › should pass the model
+    #[tokio::test]
+    async fn should_pass_the_model() {
+        let server = MockServer::start().await;
+        mock_json_response(&server, &fixture_response()).await;
+
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.transcription_model("whisper-1").unwrap().unwrap();
+
+        model
+            .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+            .await
+            .unwrap();
+
+        let requests = server.received_requests().await.expect("requests recorded");
+        assert_eq!(requests.len(), 1);
+        let form = parse_multipart_form(&requests[0].body);
+        assert_eq!(form.get("model").unwrap(), "whisper-1");
+    }
+
+    /// upstream: @ai-sdk/openai src/transcription/openai-transcription-model.test.ts › doGenerate › should default whisper-1 to verbose_json response format
+    #[tokio::test]
+    async fn should_default_whisper_1_to_verbose_json() {
+        let server = MockServer::start().await;
+        mock_json_response(&server, &fixture_response()).await;
+
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.transcription_model("whisper-1").unwrap().unwrap();
+
+        let result = model
+            .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+            .await
+            .unwrap();
+
+        let requests = server.received_requests().await.expect("requests recorded");
+        assert_eq!(requests.len(), 1);
+        let form = parse_multipart_form(&requests[0].body);
+        assert_eq!(form.get("model").unwrap(), "whisper-1");
+        assert_eq!(form.get("response_format").unwrap(), "verbose_json");
+        assert_eq!(result.duration_in_seconds, Some(36.709999084472656));
+    }
+
+    /// upstream: @ai-sdk/openai src/transcription/openai-transcription-model.test.ts › doGenerate › should extract the transcription text
+    #[tokio::test]
+    async fn should_extract_the_transcription_text() {
+        let server = MockServer::start().await;
+        mock_json_response(&server, &fixture_response()).await;
+
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.transcription_model("whisper-1").unwrap().unwrap();
+
+        let result = model
+            .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            result.text,
+            "Galileo was an American robotic space program that studied the planet Jupiter and its moons, as well as several other solar system bodies."
+        );
+    }
+
+    /// upstream: @ai-sdk/openai src/transcription/openai-transcription-model.test.ts › doGenerate › should include response data with timestamp, modelId and headers
+    #[tokio::test]
+    async fn should_include_response_data() {
+        let server = MockServer::start().await;
+        mock_json_response_with_headers(
+            &server,
+            &fixture_response(),
+            &[
+                ("x-request-id", "test-request-id"),
+                ("x-ratelimit-remaining", "123"),
+            ],
+        )
         .await;
 
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        AiMuxError::UnsupportedFunctionality(msg) => {
-            assert!(msg.contains("gpt-realtime-whisper"));
-        }
-        e => panic!("expected Unsupported error, got: {e:?}"),
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.transcription_model("whisper-1").unwrap().unwrap();
+
+        let result = model
+            .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+            .await
+            .unwrap();
+
+        assert!(result.response.timestamp.is_some());
+        assert_eq!(result.response.model_id, Some("whisper-1".to_string()));
+        let headers = result.response.headers.as_ref().unwrap();
+        assert_eq!(headers.get("content-type").unwrap(), "application/json");
+        assert_eq!(headers.get("x-request-id").unwrap(), "test-request-id");
+        assert_eq!(headers.get("x-ratelimit-remaining").unwrap(), "123");
+    }
+
+    /// upstream: @ai-sdk/openai src/transcription/openai-transcription-model.test.ts › doGenerate › should use real date when no custom date provider is specified
+    #[tokio::test]
+    async fn should_use_real_date() {
+        let server = MockServer::start().await;
+        mock_json_response(&server, &fixture_response()).await;
+
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.transcription_model("whisper-1").unwrap().unwrap();
+
+        let result = model
+            .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+            .await
+            .unwrap();
+
+        assert!(result.response.timestamp.is_some());
+        assert_eq!(result.response.model_id, Some("whisper-1".to_string()));
+    }
+
+    /// upstream: @ai-sdk/openai src/transcription/openai-transcription-model.test.ts › doGenerate › should handle segments with missing optional fields
+    #[tokio::test]
+    async fn should_handle_segments_with_missing_optional_fields() {
+        let server = MockServer::start().await;
+        mock_json_response(
+            &server,
+            &json!({
+                "task": "transcribe",
+                "text": "Test",
+                "segments": [
+                    {
+                        "id": 0, "seek": 0, "start": 0.0, "end": 1.0,
+                        "text": "Test", "tokens": [1234],
+                        "temperature": 0.0, "avg_logprob": -0.5,
+                        "compression_ratio": 1.0, "no_speech_prob": 0.1
+                    }
+                ],
+                "_request_id": "req_1234"
+            }),
+        )
+        .await;
+
+        let settings = OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(server.uri()),
+            ..Default::default()
+        };
+        let provider = create_openai(settings).unwrap();
+        let model = provider.transcription_model("whisper-1").unwrap().unwrap();
+
+        let result = model
+            .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
+            .await
+            .unwrap();
+
+        assert_eq!(result.segments.len(), 1);
+        assert_eq!(result.segments[0].text, "Test");
+        assert_eq!(result.segments[0].start_second, 0.0);
+        assert_eq!(result.segments[0].end_second, 1.0);
+        assert_eq!(result.language, None);
+        assert_eq!(result.duration_in_seconds, None);
     }
 }
 
-/// TS: "should pass the model"
-#[tokio::test]
-async fn should_pass_the_model() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, &fixture_response()).await;
-
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
-
-    model
-        .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
-        .await
-        .unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let form = parse_multipart_form(&requests[0].body);
-    assert_eq!(form.get("model").unwrap(), "whisper-1");
-}
-
-/// TS: "should default whisper-1 to verbose_json response format"
-#[tokio::test]
-async fn should_default_whisper_1_to_verbose_json() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, &fixture_response()).await;
-
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
-
-    let result = model
-        .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
-        .await
-        .unwrap();
-
-    let requests = server.received_requests().await.expect("requests recorded");
-    assert_eq!(requests.len(), 1);
-    let form = parse_multipart_form(&requests[0].body);
-    assert_eq!(form.get("model").unwrap(), "whisper-1");
-    assert_eq!(form.get("response_format").unwrap(), "verbose_json");
-    assert_eq!(result.duration_in_seconds, Some(36.709999084472656));
-}
-
-/// TS: "should pass headers"
+/// partial: `should pass headers`; full port in src/openai/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -273,90 +403,7 @@ async fn should_pass_headers() {
     );
 }
 
-/// TS: "should extract the transcription text"
-#[tokio::test]
-async fn should_extract_the_transcription_text() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, &fixture_response()).await;
-
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
-
-    let result = model
-        .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        result.text,
-        "Galileo was an American robotic space program that studied the planet Jupiter and its moons, as well as several other solar system bodies."
-    );
-}
-
-/// TS: "should include response data with timestamp, modelId and headers"
-#[tokio::test]
-async fn should_include_response_data() {
-    let server = MockServer::start().await;
-    mock_json_response_with_headers(
-        &server,
-        &fixture_response(),
-        &[
-            ("x-request-id", "test-request-id"),
-            ("x-ratelimit-remaining", "123"),
-        ],
-    )
-    .await;
-
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
-
-    let result = model
-        .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
-        .await
-        .unwrap();
-
-    assert!(result.response.timestamp.is_some());
-    assert_eq!(result.response.model_id, Some("whisper-1".to_string()));
-    let headers = result.response.headers.as_ref().unwrap();
-    assert_eq!(headers.get("content-type").unwrap(), "application/json");
-    assert_eq!(headers.get("x-request-id").unwrap(), "test-request-id");
-    assert_eq!(headers.get("x-ratelimit-remaining").unwrap(), "123");
-}
-
-/// TS: "should use real date when no custom date provider is specified"
-#[tokio::test]
-async fn should_use_real_date() {
-    let server = MockServer::start().await;
-    mock_json_response(&server, &fixture_response()).await;
-
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
-
-    let result = model
-        .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
-        .await
-        .unwrap();
-
-    assert!(result.response.timestamp.is_some());
-    assert_eq!(result.response.model_id, Some("whisper-1".to_string()));
-}
-
-/// TS: "should work when no words, language, or duration are returned"
+/// partial: `should work when no words, language, or duration are returned`; full port in src/openai/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn should_work_without_optional_fields() {
     let server = MockServer::start().await;
@@ -394,7 +441,7 @@ async fn should_work_without_optional_fields() {
     assert_eq!(headers.get("content-type").unwrap(), "application/json");
 }
 
-/// TS: "should handle empty segments array"
+/// partial: `should handle empty segments array`; full port in src/openai/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn should_handle_empty_segments() {
     let server = MockServer::start().await;
@@ -525,47 +572,4 @@ async fn diarized_segments_carry_the_speaker_in_provider_metadata() {
             {"text": "Hello from Bob.", "startSecond": 1.5, "endSecond": 3.2, "speaker": "B"}
         ]}})
     );
-}
-
-/// TS: "should handle segments with missing optional fields"
-#[tokio::test]
-async fn should_handle_segments_with_missing_optional_fields() {
-    let server = MockServer::start().await;
-    mock_json_response(
-        &server,
-        &json!({
-            "task": "transcribe",
-            "text": "Test",
-            "segments": [
-                {
-                    "id": 0, "seek": 0, "start": 0.0, "end": 1.0,
-                    "text": "Test", "tokens": [1234],
-                    "temperature": 0.0, "avg_logprob": -0.5,
-                    "compression_ratio": 1.0, "no_speech_prob": 0.1
-                }
-            ],
-            "_request_id": "req_1234"
-        }),
-    )
-    .await;
-
-    let settings = OpenAIProviderSettings {
-        api_key: Some("test-api-key".into()),
-        base_url: Some(server.uri()),
-        ..Default::default()
-    };
-    let provider = create_openai(settings).unwrap();
-    let model = provider.transcription_model("whisper-1").unwrap().unwrap();
-
-    let result = model
-        .do_generate(&transcription_options(mock_audio_data(), "audio/wav"))
-        .await
-        .unwrap();
-
-    assert_eq!(result.segments.len(), 1);
-    assert_eq!(result.segments[0].text, "Test");
-    assert_eq!(result.segments[0].start_second, 0.0);
-    assert_eq!(result.segments[0].end_second, 1.0);
-    assert_eq!(result.language, None);
-    assert_eq!(result.duration_in_seconds, None);
 }

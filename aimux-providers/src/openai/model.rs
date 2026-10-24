@@ -92,7 +92,7 @@ fn logprobs_content(logprobs: &Value) -> Option<Value> {
 /// verbatim in `Usage.raw` (M10, RFC-0016). Vendor-specific fields not part
 /// of `UsageResponse` (e.g. prompt-cache hit counters) survive only
 /// through this raw value.
-fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
+pub(super) fn convert_usage(usage: &UsageResponse, usage_raw: Option<&Value>) -> Usage {
     let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
     let completion_tokens = usage.completion_tokens.unwrap_or(0);
 
@@ -795,6 +795,7 @@ mod stream_tests {
         );
     }
 
+    /// partial: `should forward error stream parts after output has started`; full port in src/openai/tests/chat/chat_language_model.rs.
     #[test]
     fn an_error_frame_is_an_error_part_and_the_stream_finishes_with_error() {
         let parts = run(
