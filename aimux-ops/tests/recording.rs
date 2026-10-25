@@ -1,7 +1,7 @@
 //! Recording family tests through production dispatch and owner resolution.
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use aimux_core::recording::{self, Recorder, Recording, RecordingError, RingRecorder};
 use aimux_ops::dispatch::{self, Ctx};
@@ -10,11 +10,7 @@ use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 use serde_json::{Value, json};
 
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 
 async fn call(
@@ -155,8 +151,8 @@ async fn owner_resolution_and_strict_controls_precede_side_effects() {
             .await
             .unwrap_err();
         assert_eq!(
-            serde_json::to_value(foreign_error.envelope(SystemTime::now())).unwrap(),
-            serde_json::to_value(unknown_error.envelope(SystemTime::now())).unwrap()
+            serde_json::to_value(foreign_error.envelope()).unwrap(),
+            serde_json::to_value(unknown_error.envelope()).unwrap()
         );
         assert_eq!(foreign_error.code(), 203);
         assert_eq!(
@@ -271,7 +267,7 @@ async fn jsonl_dispatch_exports_real_data_and_preserves_recording_errors() {
     let error = call(owner, handle, "recorder.export", json!({}))
         .await
         .unwrap_err();
-    let envelope = error.envelope(SystemTime::now());
+    let envelope = error.envelope();
     assert_eq!(envelope.code, 105);
     assert_eq!(envelope.error["name"], "Write");
     drop(recorder);
@@ -373,10 +369,7 @@ async fn stalled_flush_leaves_single_thread_runtime_and_registry_responsive() {
     release.send(()).unwrap();
     let error = task.await.unwrap().unwrap_err();
     assert_eq!(error.code(), 104);
-    assert_eq!(
-        error.envelope(SystemTime::now()).error["name"],
-        "FlushTimeout"
-    );
+    assert_eq!(error.envelope().error["name"], "FlushTimeout");
     HandleRegistry::global().release_owner(owner);
 }
 

@@ -238,7 +238,7 @@ struct ContractTests {
     static func unknownErrorPreserved() async throws {
         do { _ = try await AimuxRuntime.call("error"); throw CheckFailure(description: "Missing error") }
         catch let error as AimuxError {
-            try require(error.kind == "aimux" && error.code == 1 && error.retryAfterMs == 123)
+            try require(error.kind == "aimux" && error.code == 1)
             try require(error.message == "未来错误 🌍")
             let expected: JSONValue = .object([
                 "name": .string("AI_FutureError"),

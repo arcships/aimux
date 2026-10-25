@@ -67,14 +67,14 @@ returns. A Consumer Throwable is latched once, triggers Abort, suppresses furthe
 Consumer calls, and becomes `BindingException.CallbackFailure` with the original
 cause after native return. Exceptions never cross the C callback.
 
-`NativeException` retains `kind`, `code`, message, the full `error` payload and
-optional `retryAfterMs` as `Long`. Domain exceptions select
-subclasses by `error.name`; unfamiliar variants use the domain's `Unknown`
-subclass and retain their payload. Retryability comes from `error.isRetryable`.
+`NativeException` retains `kind`, `code`, message and the full `error` payload.
+Domain exceptions select subclasses by `error.name`; unfamiliar variants use the
+domain's `Unknown` subclass and retain their payload. Retryability comes from
+`error.isRetryable`; a retry delay comes from `error.responseHeaders` (for example
+`retry-after`), as with the AI SDK.
 The payload's `cause` is `getCause()`: an `ErrorCause` (`getErrorName()` is
 empty for an OS, TLS or parser error) whose own cause continues the chain. A
-retry error's cause is its last attempt.
-A missing retry hint differs from zero. The Java adapter performs no retries.
+retry error's cause is its last attempt. The Java adapter performs no retries.
 
 `TranscriptionSession` uses binary push, `operation.inputDone` and native polling.
 `next(timeoutMs)` returns `PART`, `ENDED`, or `TIMEOUT`; timeouts must be
