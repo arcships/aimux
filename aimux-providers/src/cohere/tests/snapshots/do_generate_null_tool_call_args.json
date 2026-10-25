@@ -1,0 +1,8 @@
+[
+  {
+    "input": "{}",
+    "toolCallId": "currentTime_tf4dywn8wgnk",
+    "toolName": "currentTime",
+    "type": "tool-call"
+  }
+]

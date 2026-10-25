@@ -91,37 +91,73 @@ fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHa
     })
 }
 
-fn huggingface_stream_error(
-    event: &Value,
-    url: &str,
-    request_body_values: Value,
-    response_headers: HashMap<String, String>,
-) -> Option<AiMuxError> {
-    let error = event.get("error").filter(|value| !value.is_null())?;
-    let message = error
-        .as_str()
-        .or_else(|| error.get("message").and_then(Value::as_str))
-        .unwrap_or("Hugging Face stream failed");
-    let status_code = error
-        .get("status")
-        .or_else(|| error.get("code"))
-        .and_then(Value::as_u64)
-        .and_then(|status| u16::try_from(status).ok())
-        .filter(|status| (400..=599).contains(status));
-    let provider_code = error
-        .get("code")
-        .or_else(|| error.get("type"))
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    Some(aimux_provider_utils::stream_error_api_call(
-        message,
-        provider_code,
-        status_code,
-        event,
-        url,
-        request_body_values,
-        response_headers,
-    ))
+/// An in-stream error event, read like upstream
+/// `createHuggingFaceResponsesStreamError`: only `error` and `response.failed`
+/// events, with a string message.
+struct HuggingFaceStreamError<'a> {
+    message: &'a str,
+    event_type: &'a str,
+    code: Option<String>,
+    details: &'a Value,
+}
+
+impl<'a> HuggingFaceStreamError<'a> {
+    fn parse(event: &'a Value) -> Option<Self> {
+        let event_type = event.get("type").and_then(Value::as_str)?;
+        let details = match event_type {
+            "response.failed" => event.get("response")?.get("error")?,
+            "error" => event
+                .get("error")
+                .filter(|error| error.is_object())
+                .unwrap_or(event),
+            _ => return None,
+        };
+        let message = details.get("message").and_then(Value::as_str)?;
+        let code = details.get("code").and_then(|code| match code {
+            Value::String(code) => Some(code.clone()),
+            Value::Number(code) => Some(code.to_string()),
+            _ => None,
+        });
+        Some(Self {
+            message,
+            event_type,
+            code,
+            details,
+        })
+    }
+
+    /// The finish reason's `raw`: the code, else the event type.
+    fn raw_finish_reason(&self) -> String {
+        self.code
+            .clone()
+            .unwrap_or_else(|| self.event_type.to_string())
+    }
+
+    fn into_error(
+        self,
+        event: &Value,
+        url: &str,
+        request_body_values: Value,
+        response_headers: HashMap<String, String>,
+    ) -> AiMuxError {
+        let status_code = self
+            .details
+            .get("status")
+            .or_else(|| self.details.get("code"))
+            .and_then(Value::as_u64)
+            .and_then(|status| u16::try_from(status).ok())
+            .filter(|status| (400..=599).contains(status));
+        let provider_code = Some(self.raw_finish_reason());
+        aimux_provider_utils::stream_error_api_call(
+            self.message,
+            provider_code,
+            status_code,
+            event,
+            url,
+            request_body_values,
+            response_headers,
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,10 +270,9 @@ impl LanguageModel for HuggingFaceResponsesModel {
             first_event => first_event,
         };
         if let Some(Ok(event)) = first_event.as_ref()
-            && let Some(error) =
-                huggingface_stream_error(event, &endpoint, body.clone(), response_headers.clone())
+            && let Some(error) = HuggingFaceStreamError::parse(event)
         {
-            return Err(error);
+            return Err(error.into_error(event, &endpoint, body.clone(), response_headers.clone()));
         }
         let stream = pipe_through(
             futures::stream::iter(first_event).chain(sse_stream),
@@ -312,12 +347,17 @@ impl HuggingFaceResponsesStream {
         } = *self;
         match event {
             Ok(parsed) => {
-                if let Some(error) = huggingface_stream_error(
-                    &parsed,
-                    &self.ctx.url,
-                    self.ctx.request_body.clone(),
-                    self.ctx.response_headers.clone(),
-                ) {
+                if let Some(error) = HuggingFaceStreamError::parse(&parsed) {
+                    *finish_reason = FinishReason {
+                        unified: FinishReasonUnified::Error,
+                        raw: Some(error.raw_finish_reason()),
+                    };
+                    let error = error.into_error(
+                        &parsed,
+                        &self.ctx.url,
+                        self.ctx.request_body.clone(),
+                        self.ctx.response_headers.clone(),
+                    );
                     controller.enqueue(StreamPart::Error { error });
                     self.finished = true;
                     return;
@@ -446,9 +486,7 @@ impl HuggingFaceResponsesStream {
                                         provider_metadata: None,
                                     }));
 
-                                    if let Some(output) =
-                                        item.get("output").and_then(|v| v.as_str())
-                                    {
+                                    if let Some(output) = non_empty_output(item) {
                                         controller.enqueue(StreamPart::ToolResult(ToolResult {
                                             tool_call_id: call_id,
                                             tool_name: name.clone(),
@@ -534,6 +572,10 @@ impl HuggingFaceResponsesStream {
                 }
             }
             Err(error) => {
+                *finish_reason = FinishReason {
+                    unified: FinishReasonUnified::Error,
+                    raw: None,
+                };
                 if error.is_recoverable_stream_error() {
                     controller.enqueue_error(error);
                 } else {
@@ -1008,6 +1050,18 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     dynamic: None,
                     provider_metadata: None,
                 }));
+
+                if let Some(output) = non_empty_output(part) {
+                    content.push(GenerateContent::ToolResult(ToolResult {
+                        tool_call_id: call_id.to_string(),
+                        tool_name: name.to_string(),
+                        result: Value::String(output.to_string()),
+                        is_error: None,
+                        preliminary: None,
+                        dynamic: None,
+                        provider_metadata: None,
+                    }));
+                }
             }
 
             "mcp_call" => {
@@ -1023,18 +1077,18 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     tool_name: name.to_string(),
                     input,
                     provider_executed: Some(true),
-                    dynamic: Some(true),
+                    dynamic: None,
                     provider_metadata: None,
                 }));
 
-                if let Some(output) = part.get("output").filter(|v| !v.is_null()) {
+                if let Some(output) = non_empty_output(part) {
                     content.push(GenerateContent::ToolResult(ToolResult {
                         tool_call_id: id.to_string(),
                         tool_name: name.to_string(),
-                        result: output.clone(),
+                        result: Value::String(output.to_string()),
                         is_error: None,
                         preliminary: None,
-                        dynamic: Some(true),
+                        dynamic: None,
                         provider_metadata: None,
                     }));
                 }
@@ -1048,7 +1102,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     tool_name: "list_tools".to_string(),
                     input: json!({ "server_label": server_label }).to_string(),
                     provider_executed: Some(true),
-                    dynamic: Some(true),
+                    dynamic: None,
                     provider_metadata: None,
                 }));
 
@@ -1059,7 +1113,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                         result: json!({ "tools": tools }),
                         is_error: None,
                         preliminary: None,
-                        dynamic: Some(true),
+                        dynamic: None,
                         provider_metadata: None,
                     }));
                 }
@@ -1070,6 +1124,14 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
     }
 
     Ok(content)
+}
+
+/// `part.output` when JavaScript reads it as true (`if (part.output)`): a
+/// non-empty string.
+fn non_empty_output(part: &Value) -> Option<&str> {
+    part.get("output")
+        .and_then(Value::as_str)
+        .filter(|output| !output.is_empty())
 }
 
 /// Parse the finish reason from a Responses API JSON body.
