@@ -1,0 +1,53 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "66dec7d7-45e6-427c-8fd9-7d6375d12046",
+    "type": "response-metadata"
+  },
+  {
+    "id": "currentTime_y46ar19t5gvw",
+    "toolName": "currentTime",
+    "type": "tool-input-start"
+  },
+  {
+    "id": "currentTime_y46ar19t5gvw",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{}",
+    "toolCallId": "currentTime_y46ar19t5gvw",
+    "toolName": "currentTime",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "raw": "TOOL_CALL",
+      "unified": "tool-calls"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "noCache": 1445,
+        "total": 1445
+      },
+      "outputTokens": {
+        "text": 43,
+        "total": 43
+      },
+      "raw": {
+        "billed_units": {
+          "input_tokens": 46,
+          "output_tokens": 14
+        },
+        "cached_tokens": 704,
+        "tokens": {
+          "input_tokens": 1445,
+          "output_tokens": 43
+        }
+      }
+    }
+  }
+]

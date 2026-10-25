@@ -1,0 +1,279 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "c9117d7f-a7e4-499f-b643-a2a1e139687b",
+    "type": "response-metadata"
+  },
+  {
+    "id": "0",
+    "type": "reasoning-start"
+  },
+  {
+    "delta": "The",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " user",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " is",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " asking",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " for",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " the",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " sum",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " of",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " 2",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " and",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " 2",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ".",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " Since",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " this",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " is",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " a",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " straightforward",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " arithmetic",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " problem",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ",",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " I",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " don",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "'t",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " need",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " to",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " use",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " any",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " tools",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ".",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " I",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " can",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " calculate",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " the",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " answer",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " directly",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ".",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "id": "0",
+    "type": "reasoning-end"
+  },
+  {
+    "id": "1",
+    "type": "text-start"
+  },
+  {
+    "delta": "The",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " answer",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " 2",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " +",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " 2",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " is",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " 4",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "id": "1",
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "raw": "COMPLETE",
+      "unified": "stop"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "noCache": 1394,
+        "total": 1394
+      },
+      "outputTokens": {
+        "text": 54,
+        "total": 54
+      },
+      "raw": {
+        "billed_units": {
+          "input_tokens": 8,
+          "output_tokens": 50
+        },
+        "cached_tokens": 1360,
+        "tokens": {
+          "input_tokens": 1394,
+          "output_tokens": 54
+        }
+      }
+    }
+  }
+]
