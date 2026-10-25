@@ -654,10 +654,9 @@ fn mcp_tool_result_round_trip_warns_like_upstream() {
 
 /// An MCP tool named like a provider tool (`web_search` here) gets no
 /// unsupported-result warning: upstream's MCP branch has no `break` and falls
-/// into `if (providerToolName === 'web_search')`, which breaks before the
+/// into `if (providerToolName === 'web_search')`, which pushes a
+/// `web_search_tool_result` after the `mcp_tool_result` and breaks before the
 /// warning (convert-to-anthropic-prompt.ts:1026-1046, 1284-1336, 1435-1438).
-/// Upstream also pushes a `web_search_tool_result` there; only the
-/// `mcp_tool_result` and the missing warning are checked here.
 #[test]
 fn mcp_tool_named_like_a_provider_tool_does_not_warn() {
     let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
@@ -688,15 +687,102 @@ fn mcp_tool_named_like_a_provider_tool_does_not_warn() {
     )
     .unwrap();
     assert_eq!(
-        result.messages[0]["content"][1],
-        json!({
+        result.messages[0]["content"],
+        json!([
+            {
+                "type": "mcp_tool_use",
+                "id": "mcptoolu_2",
+                "name": "web_search",
+                "server_name": "search",
+                "input": {},
+            },
+            {
+                "type": "mcp_tool_result",
+                "tool_use_id": "mcptoolu_2",
+                "is_error": false,
+                "content": [{
+                    "url": "https://example.com", "title": "Example", "pageAge": null,
+                    "encryptedContent": "abc", "type": "web_search_result",
+                }],
+            },
+            {
+                "type": "web_search_tool_result",
+                "tool_use_id": "mcptoolu_2",
+                "content": [{
+                    "url": "https://example.com", "title": "Example", "page_age": null,
+                    "encrypted_content": "abc", "type": "web_search_result",
+                }],
+            },
+        ])
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+}
+
+/// An `error-json` result of an MCP tool named like a tool search tool is sent
+/// as an `mcp_tool_result` and warned about: upstream's MCP branch falls into
+/// the tool search check, which takes only `json`
+/// (convert-to-anthropic-prompt.ts:1026-1046, 1338-1350). A `json` result adds
+/// the `tool_search_tool_result` with no warning.
+#[test]
+fn mcp_tool_named_like_tool_search_warns_for_error_json() {
+    let prompt = |output: serde_json::Value| -> LanguageModelPrompt {
+        serde_json::from_value(json!([{
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool-call",
+                    "toolCallId": "mcptoolu_3",
+                    "toolName": "tool_search_tool_regex",
+                    "input": {},
+                    "providerExecuted": true,
+                    "providerOptions": { "anthropic": { "type": "mcp-tool-use", "serverName": "search" } },
+                },
+                {
+                    "type": "tool-result",
+                    "toolCallId": "mcptoolu_3",
+                    "toolName": "tool_search_tool_regex",
+                    "output": output,
+                },
+            ],
+        }]))
+        .unwrap()
+    };
+
+    let result = aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full_fallible(
+        &prompt(json!({ "type": "error-json", "value": { "errorCode": "unavailable" } })),
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        result.messages[0]["content"].as_array().unwrap()[1..],
+        [json!({
             "type": "mcp_tool_result",
-            "tool_use_id": "mcptoolu_2",
-            "is_error": false,
-            "content": [{
-                "url": "https://example.com", "title": "Example", "pageAge": null,
-                "encryptedContent": "abc", "type": "web_search_result",
-            }],
+            "tool_use_id": "mcptoolu_3",
+            "is_error": true,
+            "content": { "errorCode": "unavailable" },
+        })]
+    );
+    assert_eq!(
+        result.warnings,
+        vec![Warning::Other {
+            message: "provider executed tool result output type error-json for tool tool_search_tool_regex is not supported".into()
+        }]
+    );
+
+    let result = aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full_fallible(
+        &prompt(json!({ "type": "json", "value": [{ "type": "tool-reference", "toolName": "get_weather" }] })),
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        result.messages[0]["content"][2],
+        json!({
+            "type": "tool_search_tool_result",
+            "tool_use_id": "mcptoolu_3",
+            "content": {
+                "type": "tool_search_tool_search_result",
+                "tool_references": [{ "type": "tool_reference", "tool_name": "get_weather" }],
+            },
         })
     );
     assert!(result.warnings.is_empty(), "{:?}", result.warnings);

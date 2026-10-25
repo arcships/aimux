@@ -1283,9 +1283,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assistant part back as a `fallback` block, a boundary that keeps reasoning
   blocks apart, warning when its `from.model` / `to.model` are missing, as the
   AI SDK does; it dropped the block both ways.
-- Anthropic warns `provider executed tool result for tool <name> is not
-  supported` when it sends an MCP tool result back as `mcp_tool_result`, as
-  the AI SDK does; it sent the block without the warning.
+- Anthropic sends an MCP tool result back as `mcp_tool_result` and then
+  handles it as the AI SDK does under the tool's name: a provider tool name
+  (`web_fetch`, `web_search`, tool search, `advisor`) also adds that tool's
+  result block, tool search warns about an `error-json` result, and any other
+  name warns `provider executed tool result for tool <name> is not
+  supported`; it sent only the `mcp_tool_result`, without the warning.
 - Anthropic names the output type when it drops a provider-executed tool
   result it cannot send back (`provider executed tool result output type text
   for tool advisor is not supported`), and reports a result of an unknown
