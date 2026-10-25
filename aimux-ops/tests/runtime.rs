@@ -1,7 +1,5 @@
 //! Runtime family through the real shared dispatch boundary.
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime};
 
 use aimux_ops::dispatch::{self, Ctx};
 use aimux_ops::envelope::{OpsError, ProtocolError};
@@ -9,11 +7,7 @@ use aimux_ops::handle::{HandleId, Owner};
 use serde_json::{Value, json};
 
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 
 #[tokio::test]
@@ -69,9 +63,8 @@ async fn strict_controls_fail_before_configuration() {
         let error = dispatch::call(ctx(Owner::CProcess), HandleId(0), name, params)
             .await
             .unwrap_err();
-        assert!(matches!(error, OpsError::Projected(_)));
         assert!(matches!(
-            error.unprojected(),
+            &error,
             OpsError::Protocol(ProtocolError::InvalidParams { .. })
         ));
         assert_eq!(error.code(), 301);
@@ -99,48 +92,15 @@ async fn configuration_summary_and_frozen_proxy_preserve_transport_and_privacy()
     .await
     .unwrap_err();
     assert!(matches!(
-        error.unprojected(),
+        &error,
         OpsError::Protocol(ProtocolError::InvalidState(_))
     ));
     assert_eq!(error.code(), 304);
-    assert!(
-        !error
-            .envelope(SystemTime::now())
-            .error
-            .to_string()
-            .contains("secret")
-    );
+    assert!(!error.envelope().error.to_string().contains("secret"));
     assert!(Arc::ptr_eq(
         &before,
         &aimux_provider_utils::fetch::default_fetch()
     ));
-}
-
-#[tokio::test]
-async fn configuration_error_is_projected_once_by_dispatch() {
-    static CLOCK_READS: AtomicUsize = AtomicUsize::new(0);
-    fn now() -> SystemTime {
-        CLOCK_READS.fetch_add(1, Ordering::SeqCst);
-        SystemTime::UNIX_EPOCH + Duration::from_secs(10)
-    }
-    let mut context = ctx(Owner::CProcess);
-    context.now = now;
-    let _ = aimux_provider_utils::fetch::default_fetch();
-    let error = dispatch::call(
-        context,
-        HandleId(0),
-        "runtime.configure",
-        json!({"proxy":{"http_url":"http://different.invalid:9999"}}),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(error, OpsError::Projected(_)));
-    assert_eq!(CLOCK_READS.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        error.envelope(SystemTime::UNIX_EPOCH),
-        error.envelope(SystemTime::now())
-    );
-    assert_eq!(CLOCK_READS.load(Ordering::SeqCst), 1);
 }
 
 #[test]
