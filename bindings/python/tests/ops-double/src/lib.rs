@@ -6,7 +6,6 @@ use std::sync::{
     Mutex, OnceLock,
     atomic::{AtomicU64, AtomicUsize, Ordering},
 };
-use std::time::SystemTime;
 
 pub mod handle {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,8 +50,6 @@ pub mod envelope {
         pub code: i32,
         pub message: String,
         pub error: Value,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub retry_after_ms: Option<u64>,
     }
     #[derive(Debug)]
     pub enum BindingError {
@@ -75,7 +72,7 @@ pub mod envelope {
         Fixture(ErrorEnvelope),
     }
     impl OpsError {
-        pub fn envelope(&self, _now: SystemTime) -> ErrorEnvelope {
+        pub fn envelope(&self) -> ErrorEnvelope {
             let (kind, code, error) = match self {
                 Self::AiMux(error) => ("aimux", 18, serde_json::to_value(error).unwrap()),
                 Self::Binding(BindingError::InvalidWireJson { argument, message }) => (
@@ -113,7 +110,6 @@ pub mod envelope {
                 code,
                 message: error.to_string(),
                 error,
-                retry_after_ms: None,
             }
         }
     }
@@ -163,7 +159,6 @@ fn fixture_error(code: i32, kind: &str, error: Value) -> envelope::ErrorEnvelope
         code,
         message: "fixture failure".into(),
         error,
-        retry_after_ms: None,
     }
 }
 pub mod dispatch {
@@ -183,7 +178,6 @@ pub mod dispatch {
     pub struct Ctx {
         pub owner: handle::Owner,
         pub abort: Option<aimux_core::AbortSignal>,
-        pub now: fn() -> SystemTime,
     }
     pub type FrameStream = std::pin::Pin<Box<dyn futures::Stream<Item = StreamFrame> + Send>>;
     fn validate(ctx: &Ctx, id: handle::HandleId) -> Result<(), OpsError> {
