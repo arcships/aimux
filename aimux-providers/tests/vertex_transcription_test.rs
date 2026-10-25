@@ -60,6 +60,7 @@ async fn mock_response(server: &MockServer, body: &Value, headers: &[(&str, &str
         .await;
 }
 
+/// partial: `should send the model, languageCodes, features and base64 content`; full port in src/vertex/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_send_model_language_codes_features_and_base64() {
     let server = MockServer::start().await;
@@ -86,6 +87,7 @@ async fn should_send_model_language_codes_features_and_base64() {
     assert_eq!(body["content"], "AQIDBAUGBwg=");
 }
 
+/// partial: `should extract text, segments, language and duration`; full port in src/vertex/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_extract_text_segments_language_and_duration() {
     let server = MockServer::start().await;
@@ -111,6 +113,7 @@ async fn should_extract_text_segments_language_and_duration() {
     assert_eq!(result.duration_in_seconds, Some(1.0));
 }
 
+/// partial: `should pass headers and user agent`; full port in src/vertex/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -158,6 +161,7 @@ async fn should_pass_headers() {
     );
 }
 
+/// partial: `should include response data with timestamp, modelId and headers`; full port in src/vertex/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;
@@ -184,6 +188,7 @@ async fn should_include_response_data() {
     );
 }
 
+/// partial: `should return empty text and segments when there are no results`; full port in src/vertex/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_handle_no_results() {
     let server = MockServer::start().await;

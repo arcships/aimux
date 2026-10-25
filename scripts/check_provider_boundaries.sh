@@ -219,7 +219,7 @@ rule7b_hits="$(
 violation 'bedrock::sigv4 is back (use SigV4Fetch)' "$rule7b_hits"
 rule7c_hits="$(
     # Non-test, non-comment lines of every file but the two helpers.
-    find $gvb_family -name '*.rs' ! -name options.rs -print0 |
+    find $gvb_family -name '*.rs' ! -name options.rs ! -path '*/tests/*' -print0 |
         xargs -0 awk '
             FNR == 1 { in_tests = 0 }
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
@@ -250,7 +250,7 @@ rule8_hits="$(
 violation 'Azure / xAI / Mistral / Cohere / Hugging Face / Codex / Open Responses / Voyage / ElevenLabs reads builder-era config state' "$rule8_hits"
 rule8b_hits="$(
     # Non-test, non-comment lines of every file but the options helpers.
-    find $vendor_family -name '*.rs' ! -name options.rs -print0 |
+    find $vendor_family -name '*.rs' ! -name options.rs ! -path '*/tests/*' -print0 |
         xargs -0 awk '
             FNR == 1 { in_tests = 0 }
             /^#\[cfg\(test\)\]/ { in_tests = 1 }

@@ -1247,6 +1247,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed WebSocket connect in xAI streaming transcription arrives as the
+  stream's error, as `@ai-sdk/xai` 5.0.12 reports it: `do_stream` still
+  awaits the connect but no longer fails on it, and the caller's audio
+  stream is dropped.
+- Dropping an xAI streaming transcription before it finishes sends the
+  WebSocket close frame, as cancelling the stream does in `@ai-sdk/xai`
+  5.0.12, also when the stream is dropped before it is first polled; before,
+  only the transport was released.
 - A streamed SSE event that is not JSON yields `JsonParse` reading
   `JSON parsing failed: Text: <event data>.\nError message: <parser message>`,
   the AI SDK's `JSONParseError` message, as `@ai-sdk/openai-compatible`
