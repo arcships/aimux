@@ -184,9 +184,10 @@ impl DecisionModel for DecisionLanguageModel {
             },
         ]);
         call.reasoning = Some(ReasoningEffort::None);
+        // `@ai-sdk/openai@4.0.83 src/openai-evaluation.test.ts:77`.
         call.response_format = Some(ResponseFormat::Json {
             schema: Some(schema),
-            name: Some("decision".to_string()),
+            name: Some("evaluation".to_string()),
             description: None,
         });
         call.abort_signal.clone_from(&options.abort_signal);
