@@ -28,12 +28,14 @@ pub fn without_trailing_slash_opt(url: Option<&str>) -> Option<String> {
 ///
 /// # Errors
 ///
-/// Returns `AiMuxError::invalid_argument` when the URL cannot be parsed, the
-/// scheme is not `http`/`https`, or the host is missing.
+/// Returns `AiMuxError::invalid_argument` when the URL is empty or blank
+/// (`"baseURL must be a non-empty string."`), cannot be parsed, the scheme is
+/// not `http`/`https`, or the host is missing.
 pub fn validate_base_url(url: &str) -> Result<String, aimux_core::AiMuxError> {
-    if url.is_empty() {
+    // `validateBaseURL` in `@ai-sdk/provider-utils`.
+    if url.trim().is_empty() {
         return Err(aimux_core::AiMuxError::invalid_argument(
-            "base URL cannot be empty".to_string(),
+            "baseURL must be a non-empty string.".to_string(),
         ));
     }
     let parsed = url::Url::parse(url).map_err(|e| aimux_core::AiMuxError::InvalidArgument {
