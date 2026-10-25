@@ -87,7 +87,7 @@ aimux 是 **provider 接入与治理的运行时**：
 | 项 | 内容 |
 |---|---|
 | C1 | ops 协议入口 + `dispatch`，**同一 dispatch 同时服务 FFI 与 stdio CLI**；导出数量不再固定为 9 个，按对齐文档 §6.2–§6.3 的函数组设计；旧符号按切换门一次替换，不共存（调整：见 [docs/aisdk-architecture-alignment.md §0.7](docs/aisdk-architecture-alignment.md#07-与-roadmap--rfc-0036-既有承诺的关系)） |
-| C3 | `aimux_error_*` 访问器 → 错误 JSON 信封（含派生 `retry_after_ms`） |
+| C3 | `aimux_error_*` 访问器 → 错误 JSON 信封（不含派生 retry hint，读 `error.responseHeaders`，#334） |
 | D1–D7 | 8 种绑定迁到 ops 薄封装。D1 Kotlin（只依赖 Java artifact）与 D5 Flutter ffigen 过渡版不依赖 C1，可在 0.6/0.7 提前做 |
 | D8 | 类型镜像生成：serde → JSON Schema → 各语言，`--check` 门禁扩到全部输出 |
 | P | stdio 入口往返开销纳入性能门禁 |

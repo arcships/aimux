@@ -1,9 +1,8 @@
-//! Provider operations through shared dispatch and cached error envelopes.
+//! Provider operations through shared dispatch and error envelopes.
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
-use std::time::{Duration, SystemTime};
 
 use aimux_core::custom_provider::{CustomProviderOptions, custom_provider};
 use aimux_core::model_catalogue::RuntimeModel;
@@ -16,11 +15,7 @@ use futures::future::BoxFuture;
 use serde_json::{Value, json};
 
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 fn id(value: &Value) -> HandleId {
     serde_json::from_value(value["handle"].clone()).unwrap()
@@ -112,7 +107,7 @@ async fn jev_preserves_constructor_errors_and_rejects_unavailable_settings() {
         .unwrap_err();
         assert_eq!(error.code(), 5);
         assert!(matches!(
-            error.unprojected(),
+            &error,
             OpsError::AiMux(AiMuxError::InvalidArgument { .. })
         ));
     }
@@ -241,11 +236,11 @@ async fn every_secondary_slot_hides_foreign_owner_and_matches_unknown() {
             let foreign_error = call(ctx(owner), handle, name, make(foreign.0.to_string()))
                 .await
                 .unwrap_err()
-                .envelope(SystemTime::UNIX_EPOCH);
+                .envelope();
             let unknown_error = call(ctx(owner), handle, name, make(u64::MAX.to_string()))
                 .await
                 .unwrap_err()
-                .envelope(SystemTime::UNIX_EPOCH);
+                .envelope();
             assert_eq!(foreign_error.code, 203, "{name}:{path}");
             assert_eq!(
                 serde_json::to_value(foreign_error).unwrap(),
@@ -322,34 +317,24 @@ async fn invoke_resolves_abort_before_any_discovery_call() {
 }
 
 #[tokio::test]
-async fn handler_errors_are_projected_once_at_dispatch() {
-    static CLOCK: AtomicUsize = AtomicUsize::new(0);
-    fn now() -> SystemTime {
-        CLOCK.fetch_add(1, Ordering::SeqCst);
-        SystemTime::UNIX_EPOCH
-    }
+async fn handler_errors_dispatch_as_envelopes() {
     let owner = Owner::new_node().unwrap();
     let provider = insert(
         owner,
         Entry::Provider(Arc::new(custom_provider(CustomProviderOptions::default()))),
     );
-    let mut context = ctx(owner);
-    context.now = now;
     let error = call(
-        context,
+        ctx(owner),
         provider,
         "provider.model",
         json!({"method":"unknown","modelId":"x"}),
     )
     .await
     .unwrap_err();
-    assert!(matches!(error, OpsError::Projected(_)));
-    assert_eq!(CLOCK.load(Ordering::SeqCst), 1);
-    let envelope = error.envelope(SystemTime::UNIX_EPOCH + Duration::from_secs(999));
+    let envelope = error.envelope();
     assert_eq!(envelope.kind, aimux_ops::envelope::ErrorDomain::AiMux);
     assert_eq!(envelope.code, 8);
     assert_eq!(envelope.error["name"], "AI_UnsupportedFunctionalityError");
-    assert_eq!(CLOCK.load(Ordering::SeqCst), 1);
     HandleRegistry::global().release_owner(owner);
 }
 
