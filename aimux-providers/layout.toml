@@ -2,6 +2,503 @@
 # One table per vendor with an upstream package; versions come from
 # fixtures/aisdk/VERSIONS.json. `rust` paths are relative to src/.
 
+[mistral]
+package = "@ai-sdk/mistral"
+
+[[mistral.files]]
+upstream = "src/convert-mistral-usage.ts"
+rust = "mistral/model.rs"
+status = "mapped"
+
+[mistral.files.tests]
+ts-only = [
+  { case = "convertMistralUsage › should return undefined values when usage is null", reason = "convert_usage takes a non-null usage; a missing usage is an Option at the call site, and a stream without usage ends with Usage::default()" },
+]
+
+[[mistral.files]]
+upstream = "src/convert-to-mistral-chat-messages.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/get-response-metadata.ts"
+rust = "mistral/model.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/index.ts"
+rust = "mistral/mod.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/map-mistral-finish-reason.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-chat-language-model-options.ts"
+rust = "mistral/options.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-chat-language-model.ts"
+rust = "mistral/model.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-chat-prompt.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-embedding-model-options.ts"
+rust = "mistral/embedding.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-embedding-model.ts"
+rust = "mistral/embedding.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-error.ts"
+rust = "mistral/mod.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-prepare-tools.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-provider.ts"
+rust = "mistral/mod.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-speech-model-options.ts"
+rust = "mistral/options.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-speech-model.ts"
+rust = "mistral/speech.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-transcription-model-options.ts"
+rust = "mistral/options.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-transcription-model.ts"
+rust = "mistral/transcription.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[vertex]
+package = "@ai-sdk/google-vertex"
+# One aimux entry point: the edge entries (edge/, */edge/) and the *-node entries map to
+# the same Rust file as the provider they wrap. google-vertex-language-model.test.ts and
+# google-vertex-location-validation.test.ts have no source file of their own name; every
+# case in them is ported, so they need no exclusions.
+
+[[vertex.files]]
+upstream = "src/anthropic/edge/google-vertex-anthropic-provider-edge.ts"
+rust = "vertex/anthropic_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/anthropic/edge/index.ts"
+rust = "vertex/anthropic_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/anthropic/google-vertex-anthropic-options.ts"
+rust = "vertex/anthropic_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/anthropic/google-vertex-anthropic-provider-node.ts"
+rust = "vertex/anthropic_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/anthropic/google-vertex-anthropic-provider.ts"
+rust = "vertex/anthropic_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+sub-feature = [
+  { case = "google-vertex-anthropic-provider › should include googleVertexAnthropicTools (subset of anthropicTools)", issue = 275, reason = "VertexAnthropicProvider has no tools (no googleVertexAnthropicTools set)" },
+]
+ts-only = [
+  { case = "google-vertex-anthropic-provider › should throw an error when using new keyword", reason = "JavaScript `new` on a callable provider" },
+]
+
+[[vertex.files]]
+upstream = "src/anthropic/index.ts"
+rust = "vertex/anthropic_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/edge/google-vertex-auth-edge.ts"
+rust = "vertex/auth.rs"
+status = "mapped"
+
+[vertex.files.tests]
+sub-feature = [
+  { case = "Google Vertex Edge Auth › should load credentials from environment variables", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should throw error when client email is missing", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should throw error when private key is missing", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should work with or without private key ID", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should handle newlines in private key from env vars", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+]
+ts-only = [
+  { case = "Google Vertex Edge Auth › should throw error with invalid credentials", reason = "the edge auth module's own error text (Token request failed: …); aimux has one auth path, which follows google-auth-library" },
+  { case = "Google Vertex Edge Auth › should throw error when token request fails", reason = "the edge auth module's own error text (Token request failed: …); aimux has one auth path, which follows google-auth-library" },
+  { case = "Google Vertex Edge Auth › should include correct user-agent header", reason = "the edge auth module's own token-request user agent; aimux has one auth path, which follows google-auth-library" },
+]
+
+[[vertex.files]]
+upstream = "src/edge/google-vertex-provider-edge.ts"
+rust = "vertex/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/edge/index.ts"
+rust = "vertex/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/gemini-transcription/google-vertex-gemini-transcription-model-options.ts"
+rust = "vertex/gemini_transcription.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/gemini-transcription/google-vertex-gemini-transcription-model.ts"
+rust = "vertex/gemini_transcription.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-auth-google-auth-library.ts"
+rust = "vertex/auth.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-cloud-tts-speech-model.ts"
+status = "missing"
+issue = 275
+
+[[vertex.files]]
+upstream = "src/google-vertex-config.ts"
+rust = "vertex/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-embedding-model-options.ts"
+rust = "vertex/embedding.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-embedding-model.ts"
+rust = "vertex/embedding.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-error.ts"
+rust = "google/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-image-model-options.ts"
+rust = "vertex/image.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-image-model.ts"
+rust = "vertex/image.rs"
+status = "mapped"
+
+[vertex.files.tests]
+sub-feature = [
+  { case = "GoogleVertexImageModel › doGenerate › should classify prompt blocks as terminal", issue = 275, reason = "ImageResult has no is_retryable" },
+]
+
+[[vertex.files]]
+upstream = "src/google-vertex-image-settings.ts"
+rust = "vertex/image.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-options.ts"
+rust = "vertex/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-provider-base.ts"
+rust = "vertex/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+sub-feature = [
+  { case = "google-vertex-provider-base › should configure the tool result download size limit", issue = 275, reason = "VertexProviderSettings has no tool result download setting (downloadToolResultFiles)" },
+  { case = "google-vertex-provider-base › should create an interactions model targeting the location-scoped interactions resource", issue = 275, reason = "no VertexProvider::interactions (Google interactions model)" },
+  { case = "google-vertex-provider-base › should throw for interactions models when an Express Mode API key is set", issue = 275, reason = "no VertexProvider::interactions (Google interactions model)" },
+  { case = "google-vertex-provider-base › should route chirp speech models to the Cloud Text-to-Speech model", issue = 275, reason = "no Vertex Cloud Text-to-Speech model; speech(\"chirp…\") returns UnsupportedFunctionality" },
+  { case = "google-vertex-provider-base › should throw for chirp speech models when an Express Mode API key is set", issue = 275, reason = "no Vertex Cloud Text-to-Speech model; speech(\"chirp…\") returns UnsupportedFunctionality" },
+  { case = "google-vertex-provider-base › should expose tools", issue = 275, reason = "no VertexProvider::tools (googleSearch, urlContext, codeExecution builders)" },
+]
+ts-only = [
+  { case = "google-vertex-provider-base › should throw an error when using new keyword", reason = "JavaScript `new` on a callable provider" },
+]
+
+[[vertex.files]]
+upstream = "src/google-vertex-provider.ts"
+rust = "vertex/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-speech-model-options.ts"
+rust = "google/speech.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-tools.ts"
+status = "missing"
+issue = 275
+
+[[vertex.files]]
+upstream = "src/google-vertex-transcription-model-options.ts"
+rust = "vertex/transcription.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-transcription-model.ts"
+rust = "vertex/transcription.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-video-model-options.ts"
+rust = "vertex/video.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/google-vertex-video-model.ts"
+rust = "vertex/video.rs"
+status = "mapped"
+
+[vertex.files.tests]
+sub-feature = [
+  { case = "GoogleVertexVideoModel › doStatus › should return error status on operation error", issue = 275, reason = "VideoOperationStatus has no Error variant; a failed operation is Err(ApiCall)" },
+]
+
+[[vertex.files]]
+upstream = "src/google-vertex-video-settings.ts"
+rust = "vertex/video.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/index.ts"
+rust = "vertex/mod.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/maas/edge/google-vertex-maas-provider-edge.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+ts-only = [
+  { case = "google-vertex-maas-provider-edge › should create provider with auth wrapper", reason = "checks the arguments handed to the mocked base provider (fetch: Function, headers: undefined); aimux has no separate base/wrapper layer" },
+  { case = "google-vertex-maas-provider-edge › should set headers to undefined in base provider call", reason = "checks the arguments handed to the mocked base provider; aimux has no separate base/wrapper layer" },
+]
+
+[[vertex.files]]
+upstream = "src/maas/edge/index.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/maas/google-vertex-maas-options.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/maas/google-vertex-maas-provider-node.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+ts-only = [
+  { case = "google-vertex-maas-provider-node › should create provider with auth wrapper", reason = "checks the arguments handed to the mocked base provider (fetch: Function, headers: undefined); aimux has no separate base/wrapper layer" },
+  { case = "google-vertex-maas-provider-node › should set headers to undefined in base provider call", reason = "checks the arguments handed to the mocked base provider; aimux has no separate base/wrapper layer" },
+]
+
+[[vertex.files]]
+upstream = "src/maas/google-vertex-maas-provider.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+ts-only = [
+  { case = "google-vertex-maas-provider › should not call createOpenAICompatible at provider creation time", reason = "counts calls to the mocked createOpenAICompatible; aimux builds the OpenAI-compatible provider eagerly" },
+  { case = "google-vertex-maas-provider › should cache the provider after first access", reason = "counts calls to the mocked createOpenAICompatible; aimux builds the OpenAI-compatible provider eagerly" },
+  { case = "google-vertex-maas-provider › should not pass headers to openai-compatible provider", reason = "checks the arguments handed to the mocked createOpenAICompatible; aimux applies the headers in its fetch layer" },
+]
+
+[[vertex.files]]
+upstream = "src/maas/index.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+
+[[vertex.files]]
+upstream = "src/xai/edge/google-vertex-xai-provider-edge.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+ts-only = [
+  { case = "google-vertex-xai-provider-edge › should create provider with auth wrapper", reason = "checks the arguments handed to the mocked base provider (fetch: Function, headers: undefined); aimux has no separate base/wrapper layer" },
+]
+
+[[vertex.files]]
+upstream = "src/xai/edge/index.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/xai/google-vertex-xai-options.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
+[[vertex.files]]
+upstream = "src/xai/google-vertex-xai-provider-node.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+ts-only = [
+  { case = "google-vertex-xai-provider-node › should create provider with auth wrapper", reason = "checks the arguments handed to the mocked base provider (fetch: Function, headers: undefined); aimux has no separate base/wrapper layer" },
+]
+
+[[vertex.files]]
+upstream = "src/xai/google-vertex-xai-provider.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+ts-only = [
+  { case = "google-vertex-xai-provider › should not call createOpenAICompatible at provider creation time", reason = "counts calls to the mocked createOpenAICompatible; aimux builds the OpenAI-compatible provider eagerly" },
+  { case = "google-vertex-xai-provider › should cache the OpenAI-compatible provider after first access", reason = "counts calls to the mocked createOpenAICompatible; aimux builds the OpenAI-compatible provider eagerly" },
+  { case = "google-vertex-xai-provider › should throw an error when using new keyword", reason = "JavaScript `new` on a callable provider" },
+]
+
+[[vertex.files]]
+upstream = "src/xai/index.ts"
+rust = "vertex/partner_provider.rs"
+status = "mapped"
+
+[vertex.files.tests]
+
 [open_responses]
 package = "@ai-sdk/open-responses"
 
