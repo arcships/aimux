@@ -1,0 +1,54 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "b3999b8c93e04e11bcbff7bcab829667",
+    "modelId": "mistral-small-latest",
+    "timestamp": "2026-01-22T13:34:14.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "gSIMJiOkT",
+    "toolName": "weather",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"location\": \"San Francisco\"}",
+    "id": "gSIMJiOkT",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "gSIMJiOkT",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"location\": \"San Francisco\"}",
+    "toolCallId": "gSIMJiOkT",
+    "toolName": "weather",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "raw": "tool_calls",
+      "unified": "tool-calls"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "noCache": 124,
+        "total": 124
+      },
+      "outputTokens": {
+        "text": 22,
+        "total": 22
+      },
+      "raw": {
+        "completion_tokens": 22,
+        "prompt_tokens": 124,
+        "total_tokens": 146
+      }
+    }
+  }
+]

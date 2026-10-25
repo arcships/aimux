@@ -252,6 +252,16 @@ async fn embedding_generate() {
 }
 
 /// TS: "should send the correct request body" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// Azure deployment names do not identify the model family, so file and mask
+/// support stay unknown (`azure-openai-provider.ts:372-376`).
+#[test]
+fn image_input_capabilities_are_unknown_for_deployments() {
+    let fetch = MockFetch::new(vec![]);
+    let model = provider(&fetch).image("dall-e-2");
+    assert_eq!(model.supports_file_inputs(), None);
+    assert_eq!(model.supports_mask_inputs(), None);
+}
+
 /// TS: "should extract the generated images" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
 #[tokio::test]
 async fn image_generate() {
