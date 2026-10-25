@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `FileSearchArgs::max_num_results` (OpenAI and Azure file search tool) is an
+  `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` goes out
+  as `5`, as the AI SDK sends it, not `5.0`. Code that set it from an `f64`
+  passes an integer now.
+
 - Errors keep their cause, as the AI SDK's `cause`. `ApiCallError` has
   `cause` (`.caused_by(..)`): the transport error with its whole source chain
   down to the OS error, the body parse error, or the error a response handler
@@ -1223,11 +1228,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An OpenAI (and Azure) Responses stream that never sees
   `response.created` finishes with `responseId: null` in its provider
   metadata, as the AI SDK does, instead of an empty string.
-
-- The OpenAI (and Azure) file search tool sends `max_num_results` as an
-  integer, as the AI SDK does: `FileSearchArgs::max_num_results` is an
-  `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` no longer
-  goes out as `5.0`.
 
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
