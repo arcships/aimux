@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
 
 use aimux_ops::dispatch::{
     self, CallFuture, Ctx, Dispatcher, EventStream, Handler, ResourceRegistry, Target,
@@ -67,11 +66,7 @@ fn stream_probe(_: Ctx, _: Target, _: Value) -> Result<EventStream, OpsError> {
     )])))
 }
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 fn invalid(
     result: Result<(), OpsError>,
@@ -80,7 +75,7 @@ fn invalid(
     label: &str,
 ) {
     let error = result.expect_err(label);
-    match error.unprojected() {
+    match &error {
         OpsError::Binding(BindingError::InvalidHandle {
             expected: found,
             actual: kind,
@@ -115,7 +110,7 @@ async fn invoke(
                 .await
                 .unwrap_err();
             assert!(matches!(
-                error.unprojected(),
+                &error,
                 OpsError::Protocol(ProtocolError::InvalidOp(_))
             ));
             // Native binary admission uses this identical owner-aware typed resolver.

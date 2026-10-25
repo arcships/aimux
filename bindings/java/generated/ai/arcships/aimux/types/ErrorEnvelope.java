@@ -23,21 +23,17 @@ public final class ErrorEnvelope {
     private final ErrorDomain kind;
     @JsonProperty("message")
     private final String message;
-    @JsonProperty("retryAfterMs")
-    private final Long retryAfterMs;
 
     @JsonCreator
     public ErrorEnvelope(
         @JsonProperty(value = "code", required = true) Integer code,
         @JsonProperty(value = "error", required = true) JsonNode error,
         @JsonProperty(value = "kind", required = true) ErrorDomain kind,
-        @JsonProperty(value = "message", required = true) String message,
-        @JsonProperty(value = "retryAfterMs") Long retryAfterMs) {
+        @JsonProperty(value = "message", required = true) String message) {
         this.code = code;
         this.error = error == null ? null : error.deepCopy();
         this.kind = kind;
         this.message = message;
-        this.retryAfterMs = retryAfterMs;
     }
 
     public static Builder builder() { return new Builder(); }
@@ -45,14 +41,12 @@ public final class ErrorEnvelope {
     public JsonNode getError() { return error == null ? null : error.deepCopy(); }
     public ErrorDomain getKind() { return kind; }
     public String getMessage() { return message; }
-    public Long getRetryAfterMs() { return retryAfterMs; }
 
     public static final class Builder {
         private Integer code;
         private JsonNode error;
         private ErrorDomain kind;
         private String message;
-        private Long retryAfterMs;
 
         public Builder code(Integer value) {
             this.code = value;
@@ -74,11 +68,6 @@ public final class ErrorEnvelope {
             return this;
         }
 
-        public Builder retryAfterMs(Long value) {
-            this.retryAfterMs = value;
-            return this;
-        }
-
-        public ErrorEnvelope build() { return new ErrorEnvelope(code, error, kind, message, retryAfterMs); }
+        public ErrorEnvelope build() { return new ErrorEnvelope(code, error, kind, message); }
     }
 }

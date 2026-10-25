@@ -1171,6 +1171,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vertex::image::VertexImageModel`. Exports at the crate root and the
   `vertex` module root are unchanged.
 
+- The ops error envelope is `{kind, code, message, error}`: the derived
+  `retryAfterMs` is removed, together with the clock and cached projection
+  behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
+  `aimux_ops::retry_hint`). It replaced 0.5's `aimux_error_retry_ms`, Node
+  `retryMs` and Python `retry_ms`. Read the delay from `error.responseHeaders`
+  (`retry-after-ms`, `retry-after`), as with the AI SDK; core still reads those
+  headers itself when it retries and when a provider poll waits (#334).
+  Python's generated models now fold an explicit `null` on an optional field
+  to an omitted key, as Rust and the other codecs do; only JSON values and
+  presence fields keep it. The language guides under `docs/api/` still
+  describe the 0.5 API and say so at the top (#277).
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
@@ -1216,6 +1228,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A streamed SSE event that is not JSON yields `JsonParse` reading
+  `JSON parsing failed: Text: <event data>.\nError message: <parser message>`,
+  the AI SDK's `JSONParseError` message, as `@ai-sdk/openai-compatible`
+  3.0.62 and the other AI SDK providers do; it carried only the parser
+  message. This covers every stream read through
+  `create_event_source_response_handler`.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not
