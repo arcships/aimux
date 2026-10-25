@@ -187,13 +187,12 @@ impl OpenAIResponsesModel {
                             "text file parts".into(),
                         ));
                     }
-                    FileData::Reference { reference }
-                        if !reference.contains_key(profile.namespace.write_key()) =>
-                    {
-                        return Err(AiMuxError::invalid_argument(format!(
-                            "No file reference for {}",
-                            profile.namespace.write_key()
-                        )));
+                    FileData::Reference { reference } => {
+                        crate::openai::convert::resolve_provider_reference(
+                            reference,
+                            profile.namespace.write_key(),
+                        )
+                        .map_err(AiMuxError::invalid_argument)?;
                     }
                     FileData::Data { .. } if user => {
                         aimux_provider_utils::resolve_full_media_type(file)?;
@@ -325,13 +324,16 @@ impl LanguageModel for OpenAIResponsesModel {
         let response_headers = resp.response_headers;
 
         let mut sse_stream = resp.value;
-        let first_event = match sse_stream.next().await {
-            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
-            first_event => first_event,
-        };
+        let events_before_output = responses_convert::read_until_output(
+            &mut sse_stream,
+            &endpoint,
+            &body,
+            &response_headers,
+        )
+        .await?;
         let stream = responses_convert::build_responses_event_stream_with_tools(
-            first_event,
-            sse_stream,
+            None,
+            futures::stream::iter(events_before_output).chain(sse_stream),
             provider_key,
             warnings,
             store_flag,
@@ -353,11 +355,29 @@ impl LanguageModel for OpenAIResponsesModel {
     }
 }
 
+/// The provider tools whose names the AI SDK maps back to the caller's tool
+/// names (`providerToolNames` in openai-responses-language-model.ts).
+const PROVIDER_TOOL_NAMES: &[&str] = &[
+    "code_interpreter",
+    "computer",
+    "file_search",
+    "image_generation",
+    "local_shell",
+    "shell",
+    "web_search",
+    "web_search_preview",
+    "mcp",
+    "apply_patch",
+    "tool_search",
+    "programmatic_tool_calling",
+];
+
 fn tool_name_mapping(options: &CallOptions) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for tool in options.tools.iter().flatten() {
         if let aimux_core::tool::Tool::Provider(tool) = tool
             && let Some(name) = tool.id.as_str().strip_prefix("openai.")
+            && PROVIDER_TOOL_NAMES.contains(&name)
         {
             names.insert(name.to_owned(), tool.name.clone());
         }
