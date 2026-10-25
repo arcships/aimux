@@ -99,9 +99,12 @@ def _handshake(sock: socket.socket) -> None:
             raise EOFError("client vanished mid-handshake")
         buf += chunk
     key = None
+    protocols = []
     for line in buf.decode("latin-1").split("\r\n"):
         if line.lower().startswith("sec-websocket-key:"):
             key = line.split(":", 1)[1].strip()
+        elif line.lower().startswith("sec-websocket-protocol:"):
+            protocols = [p.strip() for p in line.split(":", 1)[1].split(",")]
     if key is None:
         raise ValueError("no Sec-WebSocket-Key in request")
     accept = base64.b64encode(
@@ -113,7 +116,10 @@ def _handshake(sock: socket.socket) -> None:
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
             f"Sec-WebSocket-Accept: {accept}\r\n"
-            "\r\n"
+            # The realtime API answers the `realtime` subprotocol the client
+            # offers; a WebSocket client fails when an offer gets no answer.
+            + ("Sec-WebSocket-Protocol: realtime\r\n" if "realtime" in protocols else "")
+            + "\r\n"
         ).encode()
     )
 

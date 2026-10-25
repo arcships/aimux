@@ -24,11 +24,14 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::Role;
 
+/// URL, headers and subprotocols of one connect request.
+type Connect = (String, Vec<(String, String)>, Vec<String>);
+
 /// What the in-process server saw.
 #[derive(Default)]
 struct Seen {
-    /// URL and headers of every connect request, in order.
-    connects: Vec<(String, Vec<(String, String)>)>,
+    /// Every connect request, in order.
+    connects: Vec<Connect>,
     /// Every text frame the client sent, parsed.
     frames: Vec<Value>,
     /// Whether the client closed the socket.
@@ -44,11 +47,11 @@ struct ReplayConnector {
 #[async_trait::async_trait]
 impl WsConnector for ReplayConnector {
     async fn connect(&self, request: &WebSocketRequest) -> Result<WsConnection, AiMuxError> {
-        self.seen
-            .lock()
-            .unwrap()
-            .connects
-            .push((request.url.clone(), request.headers.clone()));
+        self.seen.lock().unwrap().connects.push((
+            request.url.clone(),
+            request.headers.clone(),
+            request.subprotocols.clone(),
+        ));
         let (client_io, server_io) = tokio::io::duplex(64 * 1024);
         let client = WebSocketStream::from_raw_socket(client_io, Role::Client, None).await;
         let server = WebSocketStream::from_raw_socket(server_io, Role::Server, None).await;
@@ -173,11 +176,20 @@ async fn realtime_transcription_replays_through_injected_web_socket() {
     let seen = seen.lock().unwrap();
     assert!(seen.closed, "client did not close the session");
     assert_eq!(seen.connects.len(), 1, "with_web_socket connector not used");
-    let (url, headers) = &seen.connects[0];
+    let (url, headers, subprotocols) = &seen.connects[0];
     assert_eq!(url, "wss://replay.invalid/v1/realtime?intent=transcription");
-    assert!(headers.iter().any(|(name, value)| {
-        name.eq_ignore_ascii_case("authorization") && value == "Bearer sk-replay-test"
-    }));
+    // The key rides the `openai-insecure-api-key` subprotocol and the
+    // Authorization header is dropped: OpenAI rejects a handshake that sends
+    // both (`transcription/openai-transcription-model.ts:620-652`).
+    assert_eq!(
+        subprotocols,
+        &["realtime", "openai-insecure-api-key.sk-replay-test"]
+    );
+    assert!(
+        !headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+    );
 
     // Frames the server saw: session.update, two appends, commit.
     let types: Vec<&str> = seen
@@ -204,4 +216,98 @@ async fn realtime_transcription_replays_through_injected_web_socket() {
     assert_eq!(session["audio"]["input"]["format"]["rate"], 24_000);
     assert_eq!(seen.frames[1]["audio"], "AQID");
     assert_eq!(seen.frames[2]["audio"], "BAUG");
+}
+
+/// Streams the fixture with `provider_options`; returns the parts and the
+/// `session.update` the client sent.
+async fn replay_with(provider_options: Value) -> (Vec<TranscriptionStreamPart>, Value) {
+    let seen = Arc::new(Mutex::new(Seen::default()));
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("sk-replay-test".to_string()),
+        base_url: Some("https://replay.invalid/v1".into()),
+        web_socket: Some(Arc::new(ReplayConnector {
+            seen: Arc::clone(&seen),
+            events: fixture_events(),
+        })),
+        ..Default::default()
+    })
+    .expect("valid settings");
+    let options = TranscriptionStreamOptions {
+        audio: Box::pin(futures::stream::iter(vec![AudioChunk::Binary(vec![
+            1, 2, 3,
+        ])])),
+        input_audio_format: InputAudioFormat {
+            format_type: "audio/pcm".to_string(),
+            rate: Some(24_000),
+        },
+        provider_options: Some(serde_json::from_value(provider_options).unwrap()),
+        abort_signal: None,
+        headers: None,
+        include_raw_chunks: false,
+        timeout: None,
+    };
+    let result = provider
+        .transcription("gpt-realtime-whisper")
+        .do_stream(options)
+        .expect("the OpenAI transcription model streams")
+        .await
+        .expect("stream opens");
+    let parts = result
+        .stream
+        .map(|part| part.expect("no stream error"))
+        .collect()
+        .await;
+    let session = seen.lock().unwrap().frames[0].clone();
+    (parts, session)
+}
+
+/// `providerOptions.openai.streaming.delay` and `.include` configure the
+/// realtime session; the REST `include` does not
+/// (`transcription/openai-transcription-model.ts:580-617`).
+#[tokio::test]
+async fn realtime_session_takes_the_streaming_options() {
+    let (_, session) = replay_with(serde_json::json!({"openai": {
+        "language": "en",
+        "include": ["logprobs"],
+        "streaming": {"delay": "low", "include": ["item.input_audio_transcription.logprobs"]},
+    }}))
+    .await;
+    assert_eq!(
+        session["session"]["audio"]["input"]["transcription"],
+        serde_json::json!({"model": "gpt-realtime-whisper", "language": "en", "delay": "low"})
+    );
+    assert_eq!(
+        session["session"]["include"],
+        serde_json::json!(["item.input_audio_transcription.logprobs"])
+    );
+}
+
+/// `stream-start` warns about each REST-only option that is set
+/// (`transcription/openai-transcription-model.ts:395-410`).
+#[tokio::test]
+async fn realtime_stream_start_warns_about_rest_only_options() {
+    let (parts, _) = replay_with(serde_json::json!({"openai": {
+        "prompt": "context prompt",
+        "temperature": 0.5,
+        "language": "en",
+    }}))
+    .await;
+    let Some(TranscriptionStreamPart::StreamStart { warnings }) = parts.first() else {
+        panic!("expected stream-start first, got {parts:?}");
+    };
+    assert_eq!(
+        serde_json::to_value(warnings).unwrap(),
+        serde_json::json!([
+            {
+                "type": "unsupported",
+                "feature": "providerOptions.openai.prompt",
+                "details": "OpenAI streaming transcription does not support prompt.",
+            },
+            {
+                "type": "unsupported",
+                "feature": "providerOptions.openai.temperature",
+                "details": "OpenAI streaming transcription does not support temperature.",
+            },
+        ])
+    );
 }
