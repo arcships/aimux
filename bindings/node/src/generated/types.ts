@@ -1489,7 +1489,6 @@ export interface ErrorEnvelope {
   error: unknown
   kind: ErrorDomain
   message: string
-  retryAfterMs?: number
 }
 
 export type Fallback = "on-error" | "none"
