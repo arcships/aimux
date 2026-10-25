@@ -14,6 +14,9 @@
 //!
 //! Every test builds the model through the Groq package
 //! (`create_groq(..).chat(model)`), so it exercises `GroqChatLanguageModel`.
+//!
+//! A `partial:` marker names an upstream case the test covers only in part,
+//! with the file that has the full port or the reason it cannot match.
 
 use aimux_core::tool::RawToolCall;
 use futures::StreamExt;
@@ -90,81 +93,26 @@ fn text_completion_body() -> Value {
     })
 }
 
-/// The groq-text fixture (inline).
+/// `__fixtures__/groq-text.json`, as upstream reads it.
 fn groq_text_body() -> Value {
-    json!({
-        "id": "chatcmpl-09d64d2a-ed1c-4473-829f-78db43f45d13",
-        "object": "chat.completion",
-        "created": 1770770798,
-        "model": "llama-3.3-70b-versatile",
-        "choices": [{
-            "index": 0,
-            "message": { "role": "assistant", "content": "Luminaria holiday response text." },
-            "logprobs": null,
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": 45,
-            "completion_tokens": 607,
-            "total_tokens": 652
-        }
-    })
+    serde_json::from_str(include_str!("../src/groq/tests/fixtures/groq-text.json"))
+        .expect("fixture is JSON")
 }
 
-/// The groq-reasoning fixture (inline).
+/// `__fixtures__/groq-reasoning.json`, as upstream reads it.
 fn groq_reasoning_body() -> Value {
-    json!({
-        "id": "chatcmpl-73cf8a54-d54e-400c-88b8-603d1a346d96",
-        "object": "chat.completion",
-        "created": 1770770833,
-        "model": "qwen/qwen3-32b",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "The word \"strawberry\" contains 3 R's.",
-                "reasoning": "Okay, so the user is asking how many times the letter r appears in the word strawberry."
-            },
-            "logprobs": null,
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": 17,
-            "completion_tokens": 649,
-            "total_tokens": 666,
-            "completion_tokens_details": {
-                "reasoning_tokens": 570
-            }
-        }
-    })
+    serde_json::from_str(include_str!(
+        "../src/groq/tests/fixtures/groq-reasoning.json"
+    ))
+    .expect("fixture is JSON")
 }
 
-/// The groq-tool-call fixture (inline).
+/// `__fixtures__/groq-tool-call.json`, as upstream reads it.
 fn groq_tool_call_body() -> Value {
-    json!({
-        "id": "chatcmpl-1fd017fc-60b8-44eb-a736-375b8e1bc3e7",
-        "object": "chat.completion",
-        "created": 1770770815,
-        "model": "llama-3.3-70b-versatile",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "tool_calls": [{
-                    "id": "ax9fskhev",
-                    "type": "function",
-                    "function": { "name": "weather", "arguments": "{}" }
-                }]
-            },
-            "logprobs": null,
-            "finish_reason": "tool_calls"
-        }],
-        "usage": {
-            "prompt_tokens": 218,
-            "completion_tokens": 15,
-            "total_tokens": 233
-        }
-    })
+    serde_json::from_str(include_str!(
+        "../src/groq/tests/fixtures/groq-tool-call.json"
+    ))
+    .expect("fixture is JSON")
 }
 
 /// Build a single SSE `data: <json>\n\n` event string.
@@ -295,14 +243,15 @@ mod convert_to_groq_chat_messages {
             model.do_generate(&default_options(prompt)).await.unwrap();
 
             let body = first_request_body(&server).await;
-            let msg = &body["messages"][0];
-            assert_eq!(msg["role"], "user");
-            assert_eq!(msg["content"][0]["type"], "text");
-            assert_eq!(msg["content"][0]["text"], "Hello");
-            assert_eq!(msg["content"][1]["type"], "image_url");
             assert_eq!(
-                msg["content"][1]["image_url"]["url"],
-                "data:image/png;base64,AAECAw=="
+                body["messages"],
+                json!([{
+                    "content": [
+                        { "text": "Hello", "type": "text" },
+                        { "image_url": { "url": "data:image/png;base64,AAECAw==" }, "type": "image_url" }
+                    ],
+                    "role": "user"
+                }])
             );
         }
 
@@ -320,8 +269,10 @@ mod convert_to_groq_chat_messages {
                 .unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["messages"][0]["role"], "user");
-            assert_eq!(body["messages"][0]["content"], "Hello");
+            assert_eq!(
+                body["messages"],
+                json!([{ "content": "Hello", "role": "user" }])
+            );
         }
     }
 
@@ -363,23 +314,21 @@ mod convert_to_groq_chat_messages {
             model.do_generate(&default_options(prompt)).await.unwrap();
 
             let body = first_request_body(&server).await;
-            // Assistant message
-            assert_eq!(body["messages"][0]["role"], "assistant");
-            assert_eq!(body["messages"][0]["content"], "");
-            assert_eq!(body["messages"][0]["tool_calls"][0]["id"], "quux");
-            assert_eq!(body["messages"][0]["tool_calls"][0]["type"], "function");
             assert_eq!(
-                body["messages"][0]["tool_calls"][0]["function"]["name"],
-                "thwomp"
+                body["messages"],
+                json!([
+                    {
+                        "content": "",
+                        "role": "assistant",
+                        "tool_calls": [{
+                            "function": { "arguments": r#"{"foo":"bar123"}"#, "name": "thwomp" },
+                            "id": "quux",
+                            "type": "function"
+                        }]
+                    },
+                    { "content": r#"{"oof":"321rab"}"#, "role": "tool", "tool_call_id": "quux" }
+                ])
             );
-            assert_eq!(
-                body["messages"][0]["tool_calls"][0]["function"]["arguments"],
-                r#"{"foo":"bar123"}"#
-            );
-            // Tool message
-            assert_eq!(body["messages"][1]["role"], "tool");
-            assert_eq!(body["messages"][1]["tool_call_id"], "quux");
-            assert_eq!(body["messages"][1]["content"], r#"{"oof":"321rab"}"#);
         }
 
         /// upstream: @ai-sdk/groq src/convert-to-groq-chat-messages.test.ts › tool calls › should send reasoning if present
@@ -409,14 +358,19 @@ mod convert_to_groq_chat_messages {
             model.do_generate(&default_options(prompt)).await.unwrap();
 
             let body = first_request_body(&server).await;
-            let msg = &body["messages"][0];
-            assert_eq!(msg["role"], "assistant");
-            assert_eq!(msg["content"], "");
             assert_eq!(
-                msg["reasoning"],
-                "I think the tool will return the correct value."
+                body["messages"],
+                json!([{
+                    "content": "",
+                    "reasoning": "I think the tool will return the correct value.",
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "function": { "arguments": r#"{"foo":"bar123"}"#, "name": "thwomp" },
+                        "id": "quux",
+                        "type": "function"
+                    }]
+                }])
             );
-            assert_eq!(msg["tool_calls"][0]["function"]["name"], "thwomp");
         }
 
         /// upstream: @ai-sdk/groq src/convert-to-groq-chat-messages.test.ts › tool calls › should not include reasoning field when no reasoning content is present
@@ -437,14 +391,14 @@ mod convert_to_groq_chat_messages {
             model.do_generate(&default_options(prompt)).await.unwrap();
 
             let body = first_request_body(&server).await;
-            let msg = &body["messages"][0];
-            assert_eq!(msg["role"], "assistant");
-            assert_eq!(msg["content"], "Hello, how can I help you?");
-            assert!(msg.get("reasoning").is_none() || msg["reasoning"].is_null());
+            assert_eq!(
+                body["messages"],
+                json!([{ "content": "Hello, how can I help you?", "role": "assistant" }])
+            );
         }
 
         /// Groq does not support provider file references.
-        /// upstream: @ai-sdk/groq src/convert-to-groq-chat-messages.test.ts › tool calls › should throw for file parts with provider references
+        /// partial: `should throw for file parts with provider references`; upstream checks the message `'file parts with provider references' functionality not supported`, and aimux's `UnsupportedFunctionality` carries only the functionality name (the message field is tracked in #275).
         #[tokio::test]
         async fn file_reference_unsupported() {
             let server = MockServer::start().await;
@@ -515,10 +469,14 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(20));
-        assert_eq!(result.usage.input_tokens.no_cache, Some(20));
-        assert_eq!(result.usage.output_tokens.total, Some(10));
-        assert_eq!(result.usage.output_tokens.text, Some(10));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 10, "text": 10 },
+                "raw": { "prompt_tokens": 20, "completion_tokens": 10 }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should extract reasoning tokens from completion_tokens_details
@@ -553,10 +511,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(79));
-        assert_eq!(result.usage.output_tokens.total, Some(40));
-        assert_eq!(result.usage.output_tokens.reasoning, Some(21));
-        assert_eq!(result.usage.output_tokens.text, Some(19)); // 40 - 21
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 79, "noCache": 79 },
+                "outputTokens": { "total": 40, "text": 19, "reasoning": 21 },
+                "raw": {
+                    "prompt_tokens": 79,
+                    "completion_tokens": 40,
+                    "completion_tokens_details": { "reasoning_tokens": 21 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle zero reasoning tokens
@@ -591,8 +557,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.output_tokens.reasoning, Some(0));
-        assert_eq!(result.usage.output_tokens.text, Some(10));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 10, "text": 10, "reasoning": 0 },
+                "raw": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 10,
+                    "completion_tokens_details": { "reasoning_tokens": 0 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle all tokens being reasoning tokens
@@ -627,9 +603,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.output_tokens.total, Some(50));
-        assert_eq!(result.usage.output_tokens.text, Some(0)); // 50 - 50
-        assert_eq!(result.usage.output_tokens.reasoning, Some(50));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 50, "text": 0, "reasoning": 50 },
+                "raw": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 50,
+                    "completion_tokens_details": { "reasoning_tokens": 50 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should map cached_tokens to cacheRead and subtract from noCache
@@ -664,9 +649,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(4641));
-        assert_eq!(result.usage.input_tokens.no_cache, Some(33)); // 4641 - 4608
-        assert_eq!(result.usage.input_tokens.cache_read, Some(4608));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 4641, "noCache": 33, "cacheRead": 4608 },
+                "outputTokens": { "total": 1817, "text": 1817 },
+                "raw": {
+                    "prompt_tokens": 4641,
+                    "completion_tokens": 1817,
+                    "prompt_tokens_details": { "cached_tokens": 4608 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should treat zero cached_tokens as a cache miss (cacheRead 0)
@@ -701,8 +695,10 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.cache_read, Some(0));
-        assert_eq!(result.usage.input_tokens.no_cache, Some(20));
+        assert_eq!(
+            serde_json::to_value(&result.usage.input_tokens).unwrap(),
+            json!({ "total": 20, "noCache": 20, "cacheRead": 0 })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle missing prompt_tokens and completion_tokens
@@ -733,8 +729,14 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(0));
-        assert_eq!(result.usage.output_tokens.total, Some(0));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 0, "noCache": 0 },
+                "outputTokens": { "total": 0, "text": 0 },
+                "raw": {}
+            })
+        );
     }
 }
 
@@ -767,16 +769,22 @@ mod groq_prepare_tools {
                 tools: Some(vec![Tool::from(tool)]),
                 ..default_options(test_prompt())
             };
-            model.do_generate(&options).await.unwrap();
+            let result = model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["tools"][0]["type"], "function");
-            assert_eq!(body["tools"][0]["function"]["name"], "testFunction");
             assert_eq!(
-                body["tools"][0]["function"]["description"],
-                "A test function"
+                body["tools"],
+                json!([{
+                    "type": "function",
+                    "function": {
+                        "name": "testFunction",
+                        "description": "A test function",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                }])
             );
-            assert_eq!(body["tools"][0]["function"]["parameters"]["type"], "object");
+            assert!(body.get("tool_choice").is_none());
+            assert!(result.warnings.is_empty());
         }
 
         /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › should add warnings for unsupported provider-defined tools
@@ -799,13 +807,17 @@ mod groq_prepare_tools {
             };
             let result = model.do_generate(&options).await.unwrap();
 
-            // The unsupported tool should produce a warning.
-            assert!(result.warnings.iter().any(|w| match w {
-                aimux_core::types::Warning::Unsupported { feature, .. } => {
-                    feature.contains("some.unsupported_tool")
-                }
-                _ => false,
-            }));
+            let body = first_request_body(&server).await;
+            // Upstream's prepared `tools: []`: no tool reaches the request.
+            assert!(body.get("tools").is_none_or(|tools| *tools == json!([])));
+            assert!(body.get("tool_choice").is_none());
+            assert_eq!(
+                serde_json::to_value(&result.warnings).unwrap(),
+                json!([{
+                    "feature": "provider-defined tool some.unsupported_tool",
+                    "type": "unsupported"
+                }])
+            );
         }
 
         mod strict_mode_for_function_tools {
@@ -834,7 +846,18 @@ mod groq_prepare_tools {
                 model.do_generate(&options).await.unwrap();
 
                 let body = first_request_body(&server).await;
-                assert_eq!(body["tools"][0]["function"]["strict"], true);
+                assert_eq!(
+                    body["tools"],
+                    json!([{
+                        "type": "function",
+                        "function": {
+                            "name": "testFunction",
+                            "description": "A test function",
+                            "parameters": { "type": "object", "properties": {} },
+                            "strict": true
+                        }
+                    }])
+                );
             }
 
             /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › strict mode for function tools › should pass through strict mode when strict is false
@@ -860,7 +883,18 @@ mod groq_prepare_tools {
                 model.do_generate(&options).await.unwrap();
 
                 let body = first_request_body(&server).await;
-                assert_eq!(body["tools"][0]["function"]["strict"], false);
+                assert_eq!(
+                    body["tools"],
+                    json!([{
+                        "type": "function",
+                        "function": {
+                            "name": "testFunction",
+                            "description": "A test function",
+                            "parameters": { "type": "object", "properties": {} },
+                            "strict": false
+                        }
+                    }])
+                );
             }
 
             /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › strict mode for function tools › should not include strict when strict is undefined
@@ -881,7 +915,17 @@ mod groq_prepare_tools {
                 model.do_generate(&options).await.unwrap();
 
                 let body = first_request_body(&server).await;
-                assert!(body["tools"][0]["function"].get("strict").is_none());
+                assert_eq!(
+                    body["tools"],
+                    json!([{
+                        "type": "function",
+                        "function": {
+                            "name": "testFunction",
+                            "description": "A test function",
+                            "parameters": { "type": "object", "properties": {} }
+                        }
+                    }])
+                );
             }
         }
 
@@ -965,8 +1009,10 @@ mod groq_prepare_tools {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["tool_choice"]["type"], "function");
-            assert_eq!(body["tool_choice"]["function"]["name"], "testFunction");
+            assert_eq!(
+                body["tool_choice"],
+                json!({ "type": "function", "function": { "name": "testFunction" } })
+            );
         }
 
         mod browser_search_tool {
@@ -990,10 +1036,11 @@ mod groq_prepare_tools {
                     tools: Some(vec![tool]),
                     ..default_options(test_prompt())
                 };
-                model.do_generate(&options).await.unwrap();
+                let result = model.do_generate(&options).await.unwrap();
 
                 let body = first_request_body(&server).await;
-                assert_eq!(body["tools"][0]["type"], "browser_search");
+                assert_eq!(body["tools"], json!([{ "type": "browser_search" }]));
+                assert!(result.warnings.is_empty());
             }
 
             /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › browser search tool › should warn when browser search is used with unsupported model
@@ -1016,15 +1063,16 @@ mod groq_prepare_tools {
                 };
                 let result = model.do_generate(&options).await.unwrap();
 
-                assert!(result.warnings.iter().any(|w| match w {
-                    aimux_core::types::Warning::Unsupported {
-                        feature, details, ..
-                    } => {
-                        feature.contains("groq.browser_search")
-                            && details.as_ref().is_some_and(|d| d.contains("gemma2-9b-it"))
-                    }
-                    _ => false,
-                }));
+                let body = first_request_body(&server).await;
+                assert!(body.get("tools").is_none_or(|tools| *tools == json!([])));
+                assert_eq!(
+                    serde_json::to_value(&result.warnings).unwrap(),
+                    json!([{
+                        "details": "Browser search is only supported on the following models: openai/gpt-oss-20b, openai/gpt-oss-120b. Current model: gemma2-9b-it",
+                        "feature": "provider-defined tool groq.browser_search",
+                        "type": "unsupported"
+                    }])
+                );
             }
 
             /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › browser search tool › should handle mixed tools with model validation
@@ -1048,19 +1096,31 @@ mod groq_prepare_tools {
                     tools: Some(vec![Tool::from(func_tool), browser_tool]),
                     ..default_options(test_prompt())
                 };
-                model.do_generate(&options).await.unwrap();
+                let result = model.do_generate(&options).await.unwrap();
 
                 let body = first_request_body(&server).await;
-                assert_eq!(body["tools"][0]["type"], "function");
-                assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-                assert_eq!(body["tools"][1]["type"], "browser_search");
+                assert_eq!(
+                    body["tools"],
+                    json!([
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "test-tool",
+                                "description": "A test tool",
+                                "parameters": { "type": "object", "properties": {} }
+                            }
+                        },
+                        { "type": "browser_search" }
+                    ])
+                );
+                assert!(result.warnings.is_empty());
             }
 
             /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › browser search tool › should validate all browser search supported models
             #[tokio::test]
             async fn browser_search_all_supported_models() {
                 let model_ids = browser_search_model_ids();
-                assert_eq!(model_ids.len(), 2);
+                assert_eq!(model_ids, ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]);
                 for model_id in model_ids {
                     let server = MockServer::start().await;
                     mock_json(&server, text_completion_body()).await;
@@ -1077,10 +1137,11 @@ mod groq_prepare_tools {
                         tools: Some(vec![tool]),
                         ..default_options(test_prompt())
                     };
-                    model.do_generate(&options).await.unwrap();
+                    let result = model.do_generate(&options).await.unwrap();
 
                     let body = first_request_body(&server).await;
-                    assert_eq!(body["tools"][0]["type"], "browser_search");
+                    assert_eq!(body["tools"], json!([{ "type": "browser_search" }]));
+                    assert!(result.warnings.is_empty());
                 }
             }
         }
@@ -1127,7 +1188,7 @@ mod groq_chat_language_model {
         mod text {
             use super::*;
 
-            /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › text › should extract text content
+            /// partial: `should extract text content`; full port in src/groq/tests/chat_language_model.rs.
             #[tokio::test]
             async fn extracts_text_content() {
                 let server = MockServer::start().await;
@@ -1162,16 +1223,20 @@ mod groq_chat_language_model {
                     .unwrap();
 
                 let body = first_request_body(&server).await;
-                assert_eq!(body["model"], "gemma2-9b-it");
-                assert_eq!(body["messages"][0]["role"], "user");
-                assert_eq!(body["messages"][0]["content"], "Hello");
+                assert_eq!(
+                    body,
+                    json!({
+                        "messages": [{ "content": "Hello", "role": "user" }],
+                        "model": "gemma2-9b-it"
+                    })
+                );
             }
         }
 
         mod tool_call {
             use super::*;
 
-            /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › tool call › should extract tool call content
+            /// partial: `should extract tool call content`; full port in src/groq/tests/chat_language_model.rs.
             #[tokio::test]
             async fn extracts_tool_call() {
                 let server = MockServer::start().await;
@@ -1202,7 +1267,7 @@ mod groq_chat_language_model {
         mod reasoning {
             use super::*;
 
-            /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › reasoning › should extract reasoning content
+            /// partial: `should extract reasoning content`; full port in src/groq/tests/chat_language_model.rs.
             #[tokio::test]
             async fn extracts_reasoning() {
                 let server = MockServer::start().await;
@@ -1331,7 +1396,7 @@ mod groq_chat_language_model {
                 let server = MockServer::start().await;
                 mock_json(&server, groq_text_body()).await;
 
-                let model = make_provider(&server);
+                let model = model_at(&server, "openai/gpt-oss-120b");
 
                 let provider_opts =
                     provider_namespace("groq", json!({"reasoningEffort": "high"})).unwrap();
@@ -1340,10 +1405,11 @@ mod groq_chat_language_model {
                     provider_options: Some(provider_opts),
                     ..default_options(test_prompt())
                 };
-                model.do_generate(&options).await.unwrap();
+                let result = model.do_generate(&options).await.unwrap();
 
                 let body = first_request_body(&server).await;
                 assert_eq!(body["reasoning_effort"], "high");
+                assert!(result.warnings.is_empty());
             }
         }
 
@@ -1360,8 +1426,14 @@ mod groq_chat_language_model {
                 .await
                 .unwrap();
 
-            assert_eq!(result.usage.input_tokens.total, Some(45));
-            assert_eq!(result.usage.output_tokens.total, Some(607));
+            assert_eq!(
+                serde_json::to_value(&result.usage).unwrap(),
+                json!({
+                    "inputTokens": { "total": 45, "noCache": 45 },
+                    "outputTokens": { "total": 607, "text": 607 },
+                    "raw": { "completion_tokens": 607, "prompt_tokens": 45, "total_tokens": 652 }
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should support partial usage
@@ -1392,8 +1464,14 @@ mod groq_chat_language_model {
                 .await
                 .unwrap();
 
-            assert_eq!(result.usage.input_tokens.total, Some(20));
-            assert_eq!(result.usage.output_tokens.total, Some(0));
+            assert_eq!(
+                serde_json::to_value(&result.usage).unwrap(),
+                json!({
+                    "inputTokens": { "total": 20, "noCache": 20 },
+                    "outputTokens": { "total": 0, "text": 0 },
+                    "raw": { "prompt_tokens": 20, "total_tokens": 20 }
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should extract cached input tokens
@@ -1429,9 +1507,19 @@ mod groq_chat_language_model {
                 .await
                 .unwrap();
 
-            assert_eq!(result.usage.input_tokens.total, Some(20));
-            assert_eq!(result.usage.input_tokens.cache_read, Some(15));
-            assert_eq!(result.usage.input_tokens.no_cache, Some(5)); // 20 - 15
+            assert_eq!(
+                serde_json::to_value(&result.usage).unwrap(),
+                json!({
+                    "inputTokens": { "total": 20, "noCache": 5, "cacheRead": 15 },
+                    "outputTokens": { "total": 5, "text": 5 },
+                    "raw": {
+                        "completion_tokens": 5,
+                        "prompt_tokens": 20,
+                        "prompt_tokens_details": { "cached_tokens": 15 },
+                        "total_tokens": 25
+                    }
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should extract reasoning tokens from completion_tokens_details
@@ -1447,10 +1535,19 @@ mod groq_chat_language_model {
                 .await
                 .unwrap();
 
-            assert_eq!(result.usage.input_tokens.total, Some(17));
-            assert_eq!(result.usage.output_tokens.total, Some(649));
-            assert_eq!(result.usage.output_tokens.reasoning, Some(570));
-            assert_eq!(result.usage.output_tokens.text, Some(79)); // 649 - 570
+            assert_eq!(
+                serde_json::to_value(&result.usage).unwrap(),
+                json!({
+                    "inputTokens": { "total": 17, "noCache": 17 },
+                    "outputTokens": { "total": 649, "text": 79, "reasoning": 570 },
+                    "raw": {
+                        "completion_tokens": 649,
+                        "completion_tokens_details": { "reasoning_tokens": 570 },
+                        "prompt_tokens": 17,
+                        "total_tokens": 666
+                    }
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should support unknown finish reason
@@ -1509,9 +1606,16 @@ mod groq_chat_language_model {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["reasoning_format"], "hidden");
-            assert_eq!(body["user"], "test-user-id");
-            assert_eq!(body["parallel_tool_calls"], false);
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "parallel_tool_calls": false,
+                    "reasoning_format": "hidden",
+                    "user": "test-user-id"
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass serviceTier provider option
@@ -1530,7 +1634,14 @@ mod groq_chat_language_model {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["service_tier"], "flex");
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "service_tier": "flex"
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass performance serviceTier provider option
@@ -1550,7 +1661,14 @@ mod groq_chat_language_model {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["service_tier"], "performance");
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "service_tier": "performance"
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass tools and toolChoice
@@ -1581,9 +1699,27 @@ mod groq_chat_language_model {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["tool_choice"]["type"], "function");
-            assert_eq!(body["tool_choice"]["function"]["name"], "test-tool");
-            assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "tool_choice": { "function": { "name": "test-tool" }, "type": "function" },
+                    "tools": [{
+                        "function": {
+                            "name": "test-tool",
+                            "parameters": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "additionalProperties": false,
+                                "properties": { "value": { "type": "string" } },
+                                "required": ["value"],
+                                "type": "object"
+                            }
+                        },
+                        "type": "function"
+                    }]
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass response format information as json_schema when structuredOutputs enabled by default
@@ -1611,9 +1747,28 @@ mod groq_chat_language_model {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["response_format"]["type"], "json_schema");
-            assert_eq!(body["response_format"]["json_schema"]["name"], "test-name");
-            assert_eq!(body["response_format"]["json_schema"]["strict"], true);
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "response_format": {
+                        "json_schema": {
+                            "description": "test description",
+                            "name": "test-name",
+                            "schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "additionalProperties": false,
+                                "properties": { "value": { "type": "string" } },
+                                "required": ["value"],
+                                "type": "object"
+                            },
+                            "strict": true
+                        },
+                        "type": "json_schema"
+                    }
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass response format information as json_object when structuredOutputs explicitly disabled
@@ -1634,6 +1789,7 @@ mod groq_chat_language_model {
                         "properties": { "value": { "type": "string" } },
                         "required": ["value"],
                         "additionalProperties": false,
+                        "$schema": "http://json-schema.org/draft-07/schema#"
                     })),
                     name: Some("test-name".to_string()),
                     description: Some("test description".to_string()),
@@ -1643,14 +1799,22 @@ mod groq_chat_language_model {
             let result = model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["response_format"]["type"], "json_object");
-
-            // Should have a warning about structuredOutputs
-            assert!(result.warnings.iter().any(|w| match w {
-                aimux_core::types::Warning::Unsupported { feature, .. } =>
-                    feature == "responseFormat",
-                _ => false,
-            }));
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "response_format": { "type": "json_object" }
+                })
+            );
+            assert_eq!(
+                serde_json::to_value(&result.warnings).unwrap(),
+                json!([{
+                    "details": "JSON response format schema is only supported with structuredOutputs",
+                    "feature": "responseFormat",
+                    "type": "unsupported"
+                }])
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should send strict: false when strictJsonSchema is explicitly disabled
@@ -1671,6 +1835,7 @@ mod groq_chat_language_model {
                         "properties": { "value": { "type": "string" } },
                         "required": ["value"],
                         "additionalProperties": false,
+                        "$schema": "http://json-schema.org/draft-07/schema#"
                     })),
                     name: Some("test-name".to_string()),
                     description: Some("test description".to_string()),
@@ -1680,7 +1845,28 @@ mod groq_chat_language_model {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["response_format"]["json_schema"]["strict"], false);
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "response_format": {
+                        "json_schema": {
+                            "description": "test description",
+                            "name": "test-name",
+                            "schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "additionalProperties": false,
+                                "properties": { "value": { "type": "string" } },
+                                "required": ["value"],
+                                "type": "object"
+                            },
+                            "strict": false
+                        },
+                        "type": "json_schema"
+                    }
+                })
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should send request body
@@ -1713,7 +1899,7 @@ mod groq_chat_language_model {
         mod text {
             use super::*;
 
-            /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › text › should stream text
+            /// partial: `should stream text`; full port in src/groq/tests/chat_language_model.rs.
             #[tokio::test]
             async fn streams_text() {
                 let server = MockServer::start().await;
@@ -1780,13 +1966,17 @@ mod groq_chat_language_model {
                 .unwrap();
 
             let req_body = first_request_body(&server).await;
-            assert_eq!(req_body["model"], "gemma2-9b-it");
-            assert_eq!(req_body["stream"], true);
-            // Groq should NOT send stream_options
-            assert!(req_body.get("stream_options").is_none());
+            assert_eq!(
+                req_body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it",
+                    "stream": true
+                })
+            );
         }
 
-        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call deltas when tool call arguments are passed in the first chunk
+        /// partial: `should stream tool call deltas when tool call arguments are passed in the first chunk`; full port in src/groq/tests/chat_language_model.rs.
         #[tokio::test]
         async fn streams_tool_call_deltas() {
             let server = MockServer::start().await;
@@ -1847,7 +2037,7 @@ mod groq_chat_language_model {
             assert_eq!(finish.unwrap().unified, FinishReasonUnified::ToolCalls);
         }
 
-        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should handle error stream parts
+        /// partial: `should handle error stream parts`; upstream snapshots the JavaScript `APICallError` object, and aimux's error has its own serialized shape, so the test checks its message, status and retryability.
         #[tokio::test]
         async fn handles_error_stream() {
             let server = MockServer::start().await;
@@ -1894,7 +2084,7 @@ mod groq_chat_language_model {
             }
         }
 
-        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call that is sent in one chunk
+        /// partial: `should stream tool call that is sent in one chunk`; full port in src/groq/tests/chat_language_model.rs.
         #[tokio::test]
         async fn streams_tool_call_one_chunk() {
             let server = MockServer::start().await;
@@ -1958,28 +2148,24 @@ mod groq_chat_language_model {
                     .await
                     .unwrap();
                 let parts = collect_stream(result).await;
-                let reasoning: Vec<String> = parts
+                let reasoning: Vec<Value> = parts
                     .iter()
-                    .filter_map(|p| match p {
-                        StreamPart::ReasoningStart { id, .. } => Some(format!("start {id}")),
-                        StreamPart::ReasoningDelta { id, delta, .. } => Some(format!("delta {id} {delta}")),
-                        StreamPart::ReasoningEnd { id, .. } => Some(format!("end {id}")),
-                        _ => None,
-                    })
+                    .map(|part| serde_json::to_value(part).unwrap())
+                    .filter(|part| part["type"].as_str().is_some_and(|kind| kind.starts_with("reasoning-")))
                     .collect();
                 assert_eq!(
                     reasoning,
                     [
-                        "start reasoning-0",
-                        "delta reasoning-0 Think ",
-                        "delta reasoning-0 more...",
-                        "end reasoning-0"
+                        json!({ "type": "reasoning-start", "id": "reasoning-0" }),
+                        json!({ "type": "reasoning-delta", "id": "reasoning-0", "delta": "Think " }),
+                        json!({ "type": "reasoning-delta", "id": "reasoning-0", "delta": "more..." }),
+                        json!({ "type": "reasoning-end", "id": "reasoning-0" }),
                     ]
                 );
             }
         }
 
-        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should handle unparsable stream parts
+        /// partial: `should handle unparsable stream parts`; upstream snapshots the JavaScript `JSONParseError` and its `SyntaxError` text, which aimux's parse error does not reproduce, so the test checks the part types and the finish part.
         #[tokio::test]
         async fn unparsable_chunk_is_an_error_part_and_finish_reason_error() {
             let server = MockServer::start().await;
@@ -1990,36 +2176,40 @@ mod groq_chat_language_model {
             .await;
             let model = make_provider(&server);
 
-            let options = CallOptions {
-                include_raw_chunks: Some(true),
-                ..default_options(test_prompt())
-            };
-            let result = model.do_stream(&options).await.unwrap();
+            let result = model
+                .do_stream(&default_options(test_prompt()))
+                .await
+                .unwrap();
             let parts = collect_stream(result).await;
 
-            assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
-            assert!(matches!(&parts[1], StreamPart::Raw { raw_value } if raw_value.is_null()));
-            assert!(matches!(parts[2], StreamPart::Error { .. }), "{parts:?}");
-            match &parts[3] {
+            assert_eq!(parts.len(), 3, "{parts:?}");
+            assert!(
+                matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty())
+            );
+            assert!(matches!(parts[1], StreamPart::Error { .. }), "{parts:?}");
+            match &parts[2] {
                 StreamPart::Finish {
                     finish_reason,
                     usage,
-                    ..
+                    provider_metadata,
                 } => {
                     assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
                     assert_eq!(finish_reason.raw, None);
-                    assert_eq!(usage.input_tokens.total, None);
+                    assert_eq!(
+                        serde_json::to_value(usage).unwrap(),
+                        serde_json::to_value(aimux_core::types::Usage::default()).unwrap()
+                    );
+                    assert!(provider_metadata.is_none());
                 }
                 other => panic!("expected Finish, got {other:?}"),
             }
-            assert_eq!(parts.len(), 4);
         }
     }
 
     mod do_stream_with_raw_chunks {
         use super::*;
 
-        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream with raw chunks › should stream raw chunks when includeRawChunks is true
+        /// partial: `should stream raw chunks when includeRawChunks is true`; full port in src/groq/tests/chat_language_model.rs.
         #[tokio::test]
         async fn streams_raw_chunks() {
             let server = MockServer::start().await;

@@ -186,7 +186,7 @@ mod groq_transcription_model {
             assert_eq!(result.response.body, Some(Value::String(body.to_string())));
         }
 
-        /// upstream: @ai-sdk/groq src/groq-transcription-model.test.ts › doGenerate › should include response data with timestamp, modelId and headers
+        /// partial: `should include response data with timestamp, modelId and headers`; upstream injects `currentDate: () => new Date(0)`, which the Rust model has no hook for, so the test checks the timestamp is the clock's time during the call.
         #[tokio::test]
         async fn should_include_response_data_with_timestamp_model_id_and_headers() {
             let server = serve(
@@ -214,7 +214,7 @@ mod groq_transcription_model {
             assert_eq!(headers["x-ratelimit-remaining"], "123");
         }
 
-        /// upstream: @ai-sdk/groq src/groq-transcription-model.test.ts › doGenerate › should use real date when no custom date provider is specified
+        /// partial: `should use real date when no custom date provider is specified`; upstream injects `currentDate: () => new Date(0)`, which the Rust model has no hook for, so the test checks the timestamp is the clock's time during the call.
         #[tokio::test]
         async fn should_use_real_date_when_no_custom_date_provider_is_specified() {
             let server = serve(ResponseTemplate::new(200).set_body_json(json_body())).await;

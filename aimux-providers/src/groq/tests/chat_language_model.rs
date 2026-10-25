@@ -1,6 +1,7 @@
 //! Ports of `src/groq-chat-language-model.test.ts` from `@ai-sdk/groq@4.0.52`:
-//! the response-metadata, header, structured-output, tool-call and reasoning
-//! cases that the `groq_test.rs` suite does not cover.
+//! the snapshot, response-metadata, header, structured-output, tool-call,
+//! reasoning and raw-chunk cases. `groq_test.rs` has the request-body cases and
+//! older, partial versions of some cases here (marked `partial:` there).
 //!
 //! Harness differences from the TypeScript (expectations are unchanged):
 //! - `toMatchSnapshot` values are the `.snap` entries in `snapshots/`, with
@@ -22,7 +23,8 @@
 //!   provider is needed.
 //! - `request.body` is a JSON string upstream; here it is the body value, and
 //!   its compact text keeps the key order the request was built in
-//!   (`preserve_order`).
+//!   (`preserve_order`). The snapshot files hold that string parsed.
+//! - Dates printed bare in snapshots are their `toISOString()` strings.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -42,10 +44,18 @@ use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 const MODEL: &str = "gemma2-9b-it";
 const CHAT_COMPLETIONS_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const TEXT_FIXTURE: &str = include_str!("fixtures/groq-text.json");
+const TOOL_CALL_FIXTURE: &str = include_str!("fixtures/groq-tool-call.json");
+const REASONING_FIXTURE: &str = include_str!("fixtures/groq-reasoning.json");
 const TEXT_CHUNKS: &str = include_str!("fixtures/groq-text.chunks.txt");
 const TOOL_CALL_CHUNKS: &str = include_str!("fixtures/groq-tool-call.chunks.txt");
 const REASONING_CHUNKS: &str = include_str!("fixtures/groq-reasoning.chunks.txt");
+/// The last chunk of the tool-call streaming tests: finish reason and `x_groq` usage.
+const X_GROQ_TOOL_CALLS_FINISH: &str = r#"{"id":"chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798","object":"chat.completion.chunk","created":1729171479,"model":"gemma2-9b-it","system_fingerprint":"fp_10c08bf97d","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}],"x_groq":{"id":"req_01jadadp0femyae9kav1gpkhe8","usage":{"queue_time":0.061348671,"prompt_tokens":18,"prompt_time":0.000211569,"completion_tokens":439,"completion_time":0.798181818,"total_tokens":457,"total_time":0.798393387}}}"#;
 
+const SNAPSHOT_DO_GENERATE_TEXT: &str = include_str!("snapshots/do_generate_text.json");
+const SNAPSHOT_DO_GENERATE_TOOL_CALL: &str = include_str!("snapshots/do_generate_tool_call.json");
+const SNAPSHOT_DO_GENERATE_REASONING: &str = include_str!("snapshots/do_generate_reasoning.json");
+const SNAPSHOT_DO_STREAM_TEXT: &str = include_str!("snapshots/do_stream_text.json");
 const SNAPSHOT_DO_STREAM_TOOL_CALL: &str = include_str!("snapshots/do_stream_tool_call.json");
 const SNAPSHOT_DO_STREAM_REASONING: &str = include_str!("snapshots/do_stream_reasoning.json");
 
@@ -219,6 +229,20 @@ fn request_headers() -> HashMap<String, String> {
     )])
 }
 
+/// The `test-tool` function tool of the tool-call streaming tests.
+fn test_tool() -> Tool {
+    Tool::Function(FunctionTool::new("test-tool", value_schema()))
+}
+
+/// The usage of the `x_groq` chunk in the tool-call streaming tests.
+fn x_groq_tool_call_usage() -> Value {
+    json!({
+        "inputTokens": {"noCache": 18, "total": 18},
+        "outputTokens": {"text": 439, "total": 439},
+        "raw": {"completion_tokens": 439, "prompt_tokens": 18, "total_tokens": 457}
+    })
+}
+
 /// All parts of a stream, each serialized as the AI SDK writes it.
 async fn stream_parts(result: StreamResult) -> Vec<Value> {
     result
@@ -232,6 +256,51 @@ async fn stream_parts(result: StreamResult) -> Vec<Value> {
 
 mod do_generate {
     use super::*;
+
+    mod text {
+        use super::*;
+
+        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › text › should extract text content
+        #[tokio::test]
+        async fn should_extract_text_content() {
+            let fetch = json_fetch(&json_value(TEXT_FIXTURE));
+            let result = model(&fetch).do_generate(&options()).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_TEXT)
+            );
+        }
+    }
+
+    mod tool_call {
+        use super::*;
+
+        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › tool call › should extract tool call content
+        #[tokio::test]
+        async fn should_extract_tool_call_content() {
+            let fetch = json_fetch(&json_value(TOOL_CALL_FIXTURE));
+            let result = model(&fetch).do_generate(&options()).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_TOOL_CALL)
+            );
+        }
+    }
+
+    mod reasoning {
+        use super::*;
+
+        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › reasoning › should extract reasoning content
+        #[tokio::test]
+        async fn should_extract_reasoning_content() {
+            let fetch = json_fetch(&json_value(REASONING_FIXTURE));
+            let result = model(&fetch).do_generate(&options()).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_REASONING)
+            );
+        }
+    }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should send additional response information
     #[tokio::test]
@@ -448,6 +517,21 @@ mod do_generate {
 mod do_stream {
     use super::*;
 
+    mod text {
+        use super::*;
+
+        /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › text › should stream text
+        #[tokio::test]
+        async fn should_stream_text() {
+            let fetch = chunks_fetch(TEXT_CHUNKS, &[]);
+            let result = model(&fetch).do_stream(&options()).await.unwrap();
+            assert_eq!(
+                Value::Array(stream_parts(result).await),
+                json_value(SNAPSHOT_DO_STREAM_TEXT)
+            );
+        }
+    }
+
     mod tool_call {
         use super::*;
 
@@ -563,6 +647,116 @@ mod do_stream {
         );
     }
 
+    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call deltas when tool call arguments are passed in the first chunk
+    #[tokio::test]
+    async fn should_stream_tool_call_deltas_when_tool_call_arguments_are_passed_in_the_first_chunk()
+    {
+        let deltas = [
+            "{\\\"",
+            "va",
+            "lue",
+            "\\\":\\\"",
+            "Spark",
+            "le",
+            " Day",
+            "\\\"}",
+        ];
+        let mut payloads: Vec<String> = deltas
+            .iter()
+            .enumerate()
+            .map(|(index, delta)| {
+                let delta = if index == 0 {
+                    format!(
+                        r#"{{"role":"assistant","content":null,"tool_calls":[{{"index":0,"id":"call_O17Uplv4lJvD6DVdIvFFeRMw","type":"function","function":{{"name":"test-tool","arguments":"{delta}"}}}}]}}"#
+                    )
+                } else {
+                    format!(r#"{{"tool_calls":[{{"index":0,"function":{{"arguments":"{delta}"}}}}]}}"#)
+                };
+                format!(
+                    r#"{{"id":"chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798","object":"chat.completion.chunk","created":1711357598,"model":"gemma2-9b-it","system_fingerprint":"fp_3bc1b5746c","choices":[{{"index":0,"delta":{delta},"finish_reason":null}}]}}"#
+                )
+            })
+            .collect();
+        payloads.push(X_GROQ_TOOL_CALLS_FINISH.to_string());
+        let payloads: Vec<&str> = payloads.iter().map(String::as_str).collect();
+        let fetch = MockFetch::new(vec![sse_response(&payloads, &[])]);
+        let mut opts = options();
+        opts.tools = Some(vec![test_tool()]);
+        let result = model(&fetch).do_stream(&opts).await.unwrap();
+
+        let id = "call_O17Uplv4lJvD6DVdIvFFeRMw";
+        let mut expected = vec![
+            json!({"type": "stream-start", "warnings": []}),
+            json!({
+                "id": "chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798",
+                "modelId": "gemma2-9b-it",
+                "timestamp": "2024-03-25T09:06:38.000Z",
+                "type": "response-metadata"
+            }),
+            json!({"id": id, "toolName": "test-tool", "type": "tool-input-start"}),
+        ];
+        for delta in ["{\"", "va", "lue", "\":\"", "Spark", "le", " Day", "\"}"] {
+            expected.push(json!({"delta": delta, "id": id, "type": "tool-input-delta"}));
+        }
+        expected.extend([
+            json!({"id": id, "type": "tool-input-end"}),
+            json!({
+                "input": "{\"value\":\"Sparkle Day\"}",
+                "toolCallId": id,
+                "toolName": "test-tool",
+                "type": "tool-call"
+            }),
+            json!({
+                "finishReason": {"raw": "tool_calls", "unified": "tool-calls"},
+                "type": "finish",
+                "usage": x_groq_tool_call_usage()
+            }),
+        ]);
+        assert_eq!(stream_parts(result).await, expected);
+    }
+
+    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call that is sent in one chunk
+    #[tokio::test]
+    async fn should_stream_tool_call_that_is_sent_in_one_chunk() {
+        let fetch = MockFetch::new(vec![sse_response(
+            &[
+                r#"{"id":"chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798","object":"chat.completion.chunk","created":1711357598,"model":"gemma2-9b-it","system_fingerprint":"fp_3bc1b5746c","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_O17Uplv4lJvD6DVdIvFFeRMw","type":"function","function":{"name":"test-tool","arguments":"{\"value\":\"Sparkle Day\"}"}}]},"finish_reason":null}]}"#,
+                X_GROQ_TOOL_CALLS_FINISH,
+            ],
+            &[],
+        )]);
+        let mut opts = options();
+        opts.tools = Some(vec![test_tool()]);
+        let result = model(&fetch).do_stream(&opts).await.unwrap();
+        let id = "call_O17Uplv4lJvD6DVdIvFFeRMw";
+        assert_eq!(
+            Value::Array(stream_parts(result).await),
+            json!([
+                {"type": "stream-start", "warnings": []},
+                {
+                    "id": "chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798",
+                    "modelId": "gemma2-9b-it",
+                    "timestamp": "2024-03-25T09:06:38.000Z",
+                    "type": "response-metadata"
+                },
+                {"id": id, "toolName": "test-tool", "type": "tool-input-start"},
+                {"delta": "{\"value\":\"Sparkle Day\"}", "id": id, "type": "tool-input-delta"},
+                {"id": id, "type": "tool-input-end"},
+                {
+                    "input": "{\"value\":\"Sparkle Day\"}",
+                    "toolCallId": id,
+                    "toolName": "test-tool",
+                    "type": "tool-call"
+                },
+                {
+                    "finishReason": {"raw": "tool_calls", "unified": "tool-calls"},
+                    "type": "finish",
+                    "usage": x_groq_tool_call_usage()
+                }
+            ])
+        );
+    }
+
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should expose the raw response headers
     #[tokio::test]
     async fn should_expose_the_raw_response_headers() {
@@ -609,6 +803,86 @@ mod do_stream {
         assert_eq!(
             body.to_string(),
             r#"{"model":"gemma2-9b-it","messages":[{"role":"user","content":"Hello"}],"stream":true}"#
+        );
+    }
+}
+
+// ── doStream with raw chunks ────────────────────────────────────────────────
+
+mod do_stream_with_raw_chunks {
+    use super::*;
+
+    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream with raw chunks › should stream raw chunks when includeRawChunks is true
+    #[tokio::test]
+    async fn should_stream_raw_chunks_when_include_raw_chunks_is_true() {
+        let fetch = MockFetch::new(vec![sse_response(
+            &[
+                r#"{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#,
+                r#"{"id":"chatcmpl-456","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}"#,
+                r#"{"id":"chatcmpl-789","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"x_groq":{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}}"#,
+            ],
+            &[],
+        )]);
+        let mut opts = options();
+        opts.include_raw_chunks = Some(true);
+        let result = model(&fetch).do_stream(&opts).await.unwrap();
+        assert_eq!(
+            Value::Array(stream_parts(result).await),
+            json!([
+                {"type": "stream-start", "warnings": []},
+                {
+                    "rawValue": {
+                        "choices": [{"delta": {"content": "Hello"}, "finish_reason": null, "index": 0}],
+                        "created": 1234567890,
+                        "id": "chatcmpl-123",
+                        "model": "gemma2-9b-it",
+                        "object": "chat.completion.chunk"
+                    },
+                    "type": "raw"
+                },
+                {
+                    "id": "chatcmpl-123",
+                    "modelId": "gemma2-9b-it",
+                    "timestamp": "2009-02-13T23:31:30.000Z",
+                    "type": "response-metadata"
+                },
+                {"id": "txt-0", "type": "text-start"},
+                {"delta": "Hello", "id": "txt-0", "type": "text-delta"},
+                {
+                    "rawValue": {
+                        "choices": [{"delta": {"content": " world"}, "finish_reason": null, "index": 0}],
+                        "created": 1234567890,
+                        "id": "chatcmpl-456",
+                        "model": "gemma2-9b-it",
+                        "object": "chat.completion.chunk"
+                    },
+                    "type": "raw"
+                },
+                {"delta": " world", "id": "txt-0", "type": "text-delta"},
+                {
+                    "rawValue": {
+                        "choices": [{"delta": {}, "finish_reason": "stop", "index": 0}],
+                        "created": 1234567890,
+                        "id": "chatcmpl-789",
+                        "model": "gemma2-9b-it",
+                        "object": "chat.completion.chunk",
+                        "x_groq": {
+                            "usage": {"completion_tokens": 5, "prompt_tokens": 10, "total_tokens": 15}
+                        }
+                    },
+                    "type": "raw"
+                },
+                {"id": "txt-0", "type": "text-end"},
+                {
+                    "finishReason": {"raw": "stop", "unified": "stop"},
+                    "type": "finish",
+                    "usage": {
+                        "inputTokens": {"noCache": 10, "total": 10},
+                        "outputTokens": {"text": 5, "total": 5},
+                        "raw": {"completion_tokens": 5, "prompt_tokens": 10, "total_tokens": 15}
+                    }
+                }
+            ])
         );
     }
 }
