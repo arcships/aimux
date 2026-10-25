@@ -1040,15 +1040,17 @@ async fn a_stream_without_response_created_finishes_with_a_null_response_id() {
 /// Upstream: @ai-sdk/openai 4.0.83
 /// src/responses/openai-responses-language-model.ts:2735-2749 gives every
 /// `reasoning-delta` the reasoning item's id as `providerMetadata.<key>.itemId`,
-/// as it does for `reasoning-start` and `reasoning-end`.
+/// as it does for `reasoning-start` and `reasoning-end`: the id the item
+/// started with at its `output_index` (`resolveOutputItemId`), even when the
+/// provider rotates the id on later events.
 #[tokio::test]
 async fn reasoning_deltas_carry_the_item_id() {
     let fetch = MockFetch::new(vec![sse(vec![
         json!({"type":"response.output_item.added","output_index":0,
             "item":{"id":"rs_1","type":"reasoning","summary":[]}}),
-        json!({"type":"response.reasoning_summary_part.added","item_id":"rs_1","output_index":0,
+        json!({"type":"response.reasoning_summary_part.added","item_id":"rs_2","output_index":0,
             "summary_index":0,"part":{"type":"summary_text","text":""}}),
-        json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,
+        json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_3","output_index":0,
             "summary_index":0,"delta":"Thinking"}),
     ])]);
     let parts: Vec<_> = provider(&fetch)
