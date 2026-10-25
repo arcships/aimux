@@ -1232,6 +1232,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `supports_mask_inputs: false` (also in the ops capabilities), as
   `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
   every id.
+- Amazon Bedrock with no `fetch` setting uses the process default transport
+  current at each request, as its settings document and the AI SDK does with
+  `globalThis.fetch`, instead of the one current when the provider was
+  created; a later `set_default_transport` now reaches existing providers and
+  their chat, embedding, image and reranking models.
+- Amazon Bedrock's warning for `maxOutputTokens` dropped under Nova 2 high
+  reasoning names the model (`maxOutputTokens is not supported by <model>
+  when high reasoning is enabled and will be ignored`), as the AI SDK does;
+  it left the model out.
+- Amazon Bedrock models that reject sampling parameters warn about
+  `temperature`, `topK` and `topP` in that order, as the AI SDK does; aimux
+  warned `temperature`, `topP`, `topK`. The thinking and OpenAI warnings keep
+  their order.
+- Amazon Bedrock `do_generate` gives a tool call whose `toolUseId` is empty a
+  generated id, as the AI SDK does and as aimux's stream already did; it
+  kept the empty id.
+- Amazon Bedrock's `convert_usage` keeps `raw` as the usage object Bedrock
+  sent, explicit `null` keys included, as the AI SDK does; it rebuilt it from
+  the parsed fields and dropped them (doGenerate and doStream patched `raw`
+  back from the response JSON afterwards). A usage field of the wrong type is
+  now reported with its name (`totalTokens: invalid type: …`).
+- Amazon Bedrock names unsupported file parts as the AI SDK does: a provider
+  reference is `file parts with provider references`, a URL that is not
+  `s3:` or not an image or video is `File URL data` (checked for `s3:` before
+  its media type), and a tool-result file that is neither inline data nor an
+  `s3:` image or video is `tool result file data of type "<type>"`. They were
+  `File reference data`, `file media type or data: …` (after the media type
+  was checked) and `tool result file data`.
+- Amazon Bedrock streams that fail an event-stream checksum end with
+  `@smithy/eventstream-codec`'s message, as the AI SDK does: `The prelude
+  checksum specified in the message (…) does not match the calculated CRC32
+  checksum (…)` or `The message checksum (…) did not match the expected value
+  of …`. Both were reported as `Invalid Amazon Bedrock event-stream frame`.
 - A failed WebSocket connect in xAI streaming transcription arrives as the
   stream's error, as `@ai-sdk/xai` 5.0.12 reports it: `do_stream` still
   awaits the connect but no longer fails on it, and the caller's audio

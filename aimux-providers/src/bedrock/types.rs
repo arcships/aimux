@@ -77,32 +77,74 @@ pub struct BedrockToolUse {
     pub input: Value,
 }
 
-/// Usage block.
+/// Usage block. `raw` keeps the object as Bedrock sent it, explicit `null`s
+/// and unknown keys included, as upstream passes the usage object through
+/// (convert-amazon-bedrock-usage.ts); it is `None` for a usage built in code.
 #[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", try_from = "serde_json::Map<String, Value>")]
 pub struct BedrockUsage {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
     #[serde(
-        default,
         rename = "cacheReadInputTokens",
         skip_serializing_if = "Option::is_none"
     )]
     pub cache_read_input_tokens: Option<u32>,
     #[serde(
-        default,
         rename = "cacheWriteInputTokens",
         skip_serializing_if = "Option::is_none"
     )]
     pub cache_write_input_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_details: Option<Vec<BedrockCacheDetail>>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
+    #[serde(skip)]
+    pub raw: Option<serde_json::Map<String, Value>>,
+}
+
+impl TryFrom<serde_json::Map<String, Value>> for BedrockUsage {
+    type Error = String;
+
+    fn try_from(raw: serde_json::Map<String, Value>) -> Result<Self, String> {
+        fn field<T: serde::de::DeserializeOwned>(
+            raw: &serde_json::Map<String, Value>,
+            key: &str,
+        ) -> Result<Option<T>, String> {
+            match raw.get(key) {
+                None | Some(Value::Null) => Ok(None),
+                Some(value) => T::deserialize(value)
+                    .map(Some)
+                    .map_err(|error| format!("{key}: {error}")),
+            }
+        }
+        const KNOWN: [&str; 6] = [
+            "inputTokens",
+            "outputTokens",
+            "totalTokens",
+            "cacheReadInputTokens",
+            "cacheWriteInputTokens",
+            "cacheDetails",
+        ];
+        Ok(Self {
+            input_tokens: field(&raw, "inputTokens")?,
+            output_tokens: field(&raw, "outputTokens")?,
+            total_tokens: field(&raw, "totalTokens")?,
+            cache_read_input_tokens: field(&raw, "cacheReadInputTokens")?,
+            cache_write_input_tokens: field(&raw, "cacheWriteInputTokens")?,
+            cache_details: field(&raw, "cacheDetails")?,
+            extra: raw
+                .iter()
+                .filter(|(key, _)| !KNOWN.contains(&key.as_str()))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+            raw: Some(raw),
+        })
+    }
 }
 
 // ── Error response ───────────────────────────────────────────────────────────
