@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::SystemTime;
 
 use aimux_core::{AbortSignal, AiMuxError};
 use futures::Stream;
@@ -54,18 +53,16 @@ pub struct FrameStream {
     events: Option<EventStream>,
     cancelled: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
     abort: Option<AbortSignal>,
-    now: fn() -> SystemTime,
     seq: u64,
 }
 
 impl FrameStream {
     #[must_use]
-    pub fn new(events: EventStream, abort: Option<AbortSignal>, now: fn() -> SystemTime) -> Self {
+    pub fn new(events: EventStream, abort: Option<AbortSignal>) -> Self {
         Self {
             events: Some(events),
             cancelled: abort.as_ref().map(|abort| Box::pin(abort.cancelled()) as _),
             abort,
-            now,
             seq: 0,
         }
     }
@@ -76,11 +73,7 @@ impl FrameStream {
         Poll::Ready(Some(StreamFrame::End {
             seq: self.seq.to_string(),
             outcome,
-            error: error.map(|error| {
-                error
-                    .project_with_clock(self.now)
-                    .envelope(SystemTime::UNIX_EPOCH)
-            }),
+            error: error.map(|error| error.envelope()),
         }))
     }
 }
@@ -118,12 +111,11 @@ impl Stream for FrameStream {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => this.end(Outcome::Success, None),
             Poll::Ready(Some(Err(error))) => {
-                let outcome =
-                    if matches!(error.unprojected(), OpsError::AiMux(AiMuxError::Aborted(_))) {
-                        Outcome::Cancelled
-                    } else {
-                        Outcome::Error
-                    };
+                let outcome = if matches!(error, OpsError::AiMux(AiMuxError::Aborted(_))) {
+                    Outcome::Cancelled
+                } else {
+                    Outcome::Error
+                };
                 this.end(outcome, Some(error))
             }
             Poll::Ready(Some(Ok(event))) => {
