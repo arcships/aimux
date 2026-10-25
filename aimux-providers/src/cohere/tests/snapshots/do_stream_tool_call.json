@@ -1,0 +1,138 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "2941521a-b87a-45f6-9b0d-235fd66c3025",
+    "type": "response-metadata"
+  },
+  {
+    "id": "weather_e8p4pn45zt0t",
+    "toolName": "weather",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"",
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "location",
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\":",
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " \"",
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "San",
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " Francisco",
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\"}",
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "weather_e8p4pn45zt0t",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"location\":\"San Francisco\"}",
+    "toolCallId": "weather_e8p4pn45zt0t",
+    "toolName": "weather",
+    "type": "tool-call"
+  },
+  {
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "toolName": "cityAttractions",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"",
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "city",
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\":",
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " \"",
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "San",
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": " Francisco",
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-delta"
+  },
+  {
+    "delta": "\"}",
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "cityAttractions_pyxssbwnq9fq",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"city\":\"San Francisco\"}",
+    "toolCallId": "cityAttractions_pyxssbwnq9fq",
+    "toolName": "cityAttractions",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "raw": "TOOL_CALL",
+      "unified": "tool-calls"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "noCache": 1549,
+        "total": 1549
+      },
+      "outputTokens": {
+        "text": 95,
+        "total": 95
+      },
+      "raw": {
+        "billed_units": {
+          "input_tokens": 119,
+          "output_tokens": 44
+        },
+        "cached_tokens": 1504,
+        "tokens": {
+          "input_tokens": 1549,
+          "output_tokens": 95
+        }
+      }
+    }
+  }
+]
