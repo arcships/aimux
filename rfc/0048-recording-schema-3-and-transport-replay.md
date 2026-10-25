@@ -12,7 +12,7 @@
 >
 > **Related**: [对齐文档](../docs/aisdk-architecture-alignment.md) §4.3、§4.4、§8.3、§9.1；[RFC-0039](0039-ops-bindings-contract.md) 登记项 D12、G-b、G-c、G-k（[实现说明](../docs/rfc-0039-implementation.md)）；[RFC-0042](0042-v4-type-boundaries.md)（DTO 与 codegen）；[RFC-0044](0044-crate-layering-and-dependency-inversion.md)（#279：crate 拆分、Fetch 观察点、`DiagnosticScope`、`aimux-devtools`）；[RFC-0046](0046-provider-protocol-abstraction.md)（#294：§5.9 的录制、回放类测试位置）。
 >
-> **评审结论**：维护者 2026-10-21 批准，§11 的问题已定（[评审](https://github.com/arcships/aimux/pull/325#pullrequestreview-5594462993)、[决定](https://github.com/arcships/aimux/pull/325#issuecomment-6307035442)）；2026-10-20 评审的七条意见在 §3、§4.3、§5、§7、§10 处理；2026-10-25 两轮评审的意见在 §3、§4.2、§5、§6、§7、§9、§10 处理。
+> **评审结论**：维护者 2026-10-21 批准，§11 的问题已定（[评审](https://github.com/arcships/aimux/pull/325#pullrequestreview-5594462993)、[决定](https://github.com/arcships/aimux/pull/325#issuecomment-6307035442)）；2026-10-20 评审的七条意见在 §3、§4.3、§5、§7、§10 处理；2026-10-25 三轮评审的意见在 §3、§4.2、§5、§6、§7、§9、§10、§11 处理。
 
 ## 1. 决策摘要
 
@@ -136,14 +136,14 @@ Exchange {
   - `outcome.errorDetail` 是错误的 message 和 AI SDK JSON。它们由同一录制里已有的数据派生（如 `APICallError` 的 `url`、`requestBodyValues`、`statusCode`、`responseHeaders`、`responseBody`，message 取自响应体），所以跟着来源判定，不另做文本扫描：`metadata` 下记 `forbidden: capture-policy`；`payload` 下只有错误是已登记的类型、每个字段都能对应到本录制里 `captured` 的来源（请求体、响应分块、有值的头、处理过的 URL）、整段过 `redact_json` 也不被改动时才记 `captured`，`responseHeaders` 只留来源里有值的头；其余情况（message 是任意文字、来源被禁止或对应不上）整段 `forbidden: unverified-text`。status 不是 `error` 时记 `not-applicable`。mock 回放不读它：错误由 provider 重新解析录下的响应得到，`errorDetail` 只是证据。
   - 传输错误终态只存 `kind`，不存文字。叶子 Fetch（reqwest 或用户的 fetch）的错误文字是任意文本，没有能证明安全的解析器，按 RFC-0041 §5 只能整段禁止；一个总是 `forbidden` 的字段没有用处，所以 schema 3 不设它。回放按 `kind` 还原 `FetchError`（§5.3），登记见 §9。
   - `decisionResult` 在 `metadata` 下禁止，`payload` 下整段过 `redact_json`，会被改动就 `forbidden: sensitive-field`；`operation` 不是 `decision` 或 status 不是 `success` 时记 `not-applicable`。
-- **`Captured` 的四种状态。** `captured` 有值；`forbidden` 是策略禁止，reason 为 `capture-policy`、`sensitive-field`、`unknown-media`、`unparsed`、`unverified-text` 之一；`missing` 是应该有却没拿到（`size-limit`、`dropped`、`not-observed`）；`not-applicable` 是这次调用本来就没有这个值：没有 body 的请求、没有响应的交换的 `chunks`、非错误结果的 `errorDetail`、language-model 操作或非成功结果的 `decisionResult`。RFC-0041 §4.1 要求不能用 null 同时表示未请求、被禁止和丢失，`not-applicable` 就是其中“未请求”一类；RFC-0041 只列了前三种，登记见 §9。
+- **`Captured` 的四种状态。** `captured` 有值；`forbidden` 是策略禁止，reason 为 `capture-policy`、`sensitive-field`、`unknown-media`、`unparsed`、`unverified-text` 之一；`missing` 是应该有却没拿到（`size-limit`、`dropped`、`not-observed`）；`not-applicable` 是这次调用本来就没有这个值：没有 body 的请求、没有响应的交换的 `chunks`、非错误结果的 `errorDetail`、language-model 操作或非成功结果的 `decisionResult`。RFC-0041 §4.1 要求不能用 null 同时表示未请求、被禁止和丢失，`not-applicable` 就是其中“未请求”一类；RFC-0041 只列了前三种，登记见 §9。writer 按固定顺序取第一个成立的状态：① 这个值本来不存在 → `not-applicable`；② 策略是 `metadata` → `forbidden: capture-policy`；③ 资格判定不通过 → `forbidden: <原因>`；④ 超出大小预算或没观察到 → `missing`；⑤ `captured`。所以 `metadata` 下没有 body 的请求仍记 `not-applicable`，成功调用的 `errorDetail` 也是。值存不存在本身是结构信息（请求有没有 body、有没有响应、status 是什么），这些在 `metadata` 下本来就记，不泄露正文；reader 也因此能按下面的规则逐项核对。
 - **`outcome` 只部分包 `Captured`。** `status`、`finishReason`、`usage`、`error` 是结构信息，任何策略下都要有；会带正文的 `errorDetail`、`decisionResult` 用 `Captured`。RFC-0041 §4.1 写的是整个 `outcome: Captured<…>`，这里只包会带正文的部分，登记见 §9。
-- **`replayability`。** 写入时计算，读者必须重算（`Recording::replayability(policy)`，`policy` 同 §5.1 的 `ExchangePolicyLookup`，区分哪些只留名字的头是 authentication），不信文件里的值。mock 需要：完整、传输已关闭、至少一个 model 交换、每个 model 交换有终态、未截断、分块是 `captured`（没有响应的错误终态交换是 `not-applicable`，也可以）。请求体或 header 值不可用只影响 Exact，不影响 mock：这类原因写成 `exact:<exchangeId>:<what>`（如 `exact:0.1.1:header:x-trace`），`ReplaySession::new` 用 Exact 时遇到就返回 `ReplayNotPossible`，用 Sequential 不受影响（§5.2）。`prepare`、`auxiliary` 交换没采集不影响 mock（§5.2 不让它们挡住 model 交换）。live 需要 input 是 `captured`（`forbidden: sensitive-field` 的 input 不行，见上）。不满足的原因写成短字符串，如 `truncated:0.1.1`。
+- **`replayability`。** 写入时计算，读者必须重算（`Recording::replayability(policy)`，`policy` 同 §5.1 的 `ExchangePolicyLookup`，区分哪些只留名字的头是 authentication），不信文件里的值。按 RFC-0041 §4.3，`mock` 指传输回放：给 `ReplaySession` 当 Fetch 用（§5），不需要操作的 input。mock 需要：完整、传输已关闭、至少一个 model 交换、每个 model 交换有终态、未截断、分块是 `captured`（没有响应的错误终态交换是 `not-applicable`，也可以）。用录下的 input 重跑整个操作（`replay.offline`，§4.2）还要 input 是 `captured`；不是时原因写成 `operation:input:<reason>`，不影响 `mock`，`replay.offline` 遇到它且调用方没给 input 就返回 `ReplayNotPossible`。两种范围在 `replay.inspect` 里分开报。请求体或 header 值不可用只影响 Exact，不影响 mock：这类原因写成 `exact:<exchangeId>:<what>`（如 `exact:0.1.1:header:x-trace`），`ReplaySession::new` 用 Exact 时遇到就返回 `ReplayNotPossible`，用 Sequential 不受影响（§5.2）。`prepare`、`auxiliary` 交换没采集不影响 mock（§5.2 不让它们挡住 model 交换）。live 需要 input 是 `captured`（`forbidden: sensitive-field` 的 input 不行，见上）。不满足的原因写成短字符串，如 `truncated:0.1.1`。
 - **读取。** 先读 `schema` 字段，不是 3 就返回 `UnsupportedRecordingSchema { found }`；其余字段严格解析（`deny_unknown_fields`），base64 非法、callId 重复或为空都是 `InvalidFixture`。严格解析的代价是 schema 3 的字段集合在首个写出它的发布（§10 第 6 步）后封闭：之后加任何字段，可选的也算，都升 schema 版本，旧 reader 返回 `UnsupportedRecordingSchema`，而不是悄悄忽略看不懂的数据（RFC-0041 §4“冻结后的不兼容变更必须升版本”）。结构校验也在读取时做，违反任一条都是 `InvalidFixture`（RFC-0041 §4.1、§5）：
   - `modelCalls` 的 `(seq, attempt)` 唯一，`parent` 指向已有条目且无环；
   - 每个交换的 `modelCall` 指向 `modelCalls` 里的条目；`phase` 只说明交换的用途；
   - `exchangeId` 等于 `<seq>.<attempt>.<exchangeIndex>`，`exchangeIndex` 在同一 `modelCall` 内从 1 严格递增；
-  - 每个交换都有 `terminal` 和 `timing.terminalOffsetUs`，没有响应的交换只能是 `error` 终态；`responseHeadOffsetUs ≤ 每个分块的 offsetUs ≤ terminalOffsetUs`，分块之间不逆序；
+  - `complete: true` 时每个交换都有 `terminal` 和 `timing.terminalOffsetUs`。`complete: false` 的录制里可以有没终结的交换（recorder 关闭超时、pending 被淘汰时 writer 照样写出，`recording.rs:1267`、`:1704`），它们缺 `terminal` 和 `terminalOffsetUs`，这不是坏 fixture；replayability 记 `unfinished:<exchangeId>`。有 `terminal` 的交换必须有 `terminalOffsetUs`；没有响应又已终结的交换只能是 `error` 终态；时间顺序 `responseHeadOffsetUs ≤ 每个分块的 offsetUs ≤ terminalOffsetUs` 只检查存在的值，分块之间不逆序；
   - `complete: true` 时 `transportClosed` 必须为 true、每个交换都有终态。`complete` 描述记录是否完整，不描述调用是否成功（RFC-0041 §4.2），所以不限制 `outcome.status`：四个值 `success`、`error`、`cancelled`、`incomplete` 都可以和 `complete: true` 同时出现。例如流在 Finish 之前 EOF，观测流写 `incomplete`（`aimux-core/src/recording.rs:1863`），但交换都已终结、传输已关闭，这是一条完整的录制，回放得到同样的 EOF；`incomplete` 本身不影响 replayability；
   - `not-applicable` 只出现在上一条列出的位置，并且与事实一致：请求有 body 时请求体不能是它，有 `response` 的交换 `chunks` 不能是它，status 为 `error` 时 `errorDetail` 不能是它，decision 操作成功时 `decisionResult` 不能是它。
 
@@ -189,9 +189,10 @@ aimux_ops replay.offlineModel { session, seq?, provider? }            新 op，�
 router、MoA：宿主对每个子调用 seq 取 replay.offlineModel，再用已有的 composite.router / composite.moa 组装
 （组合策略不在录制里，RFC-0041 §9.1 与对齐文档 §4.4 要求由宿主给出组合定义）
 
-aimux_ops replay.offline { session, model? }                          新 op
+aimux_ops replay.offline { session, model?, input? }                  新 op
  └ model 缺省 = replay.offlineModel(session, seq 0)；录制有子调用（modelCalls 里有 parent）而没给 model → ReplayNotPossible{"composite-needs-model"}
- └ replay_with_model / replay_decision_with_model（用录下的 input 重跑操作）
+ └ input = 参数 input，缺省用录下的 input；录下的不是 captured 又没给 → ReplayNotPossible{"operation:input:…"}（§3）
+ └ replay_with_model / replay_decision_with_model（用这个 input 重跑操作）
    └ provider 编码请求 → helper
      └ ReplayFetch::fetch(request)                 ← 叶子 Fetch，永不联网；所有子模型共用这一个会话
        ├ ① 在候选交换里匹配（§5.2）；没有 → ReplayMiss，多个且响应不同 → ReplayAmbiguous
@@ -380,5 +381,8 @@ RFC-0044 C6 先把 `rebuild_provider` 移到 ops，§10 第 3 步排在 C6 之�
 - **Q1 采集位置。** 采用 RFC-0044 的 Fetch 观察点，即 §4.1；原提案（采集留在 `http.rs:375`）删除。理由是观察点下录制和回放看到同一份请求：`http.rs:375` 交出的请求还没经过 `SigV4Fetch`、`AnthropicAwsFetch`、`BearerTokenFetch`、`UserAgentFetch` 这些装饰层，而回放 Fetch 在装饰层里面，SigV4 的 `x-amz-date`、`x-amz-content-sha256` 两边对不上。
 - **Q2 归属。** 按 §10 的顺序：第 2 步先建 `aimux-devtools`，第 3 步再写 schema 3，不先落在临时位置再搬。
 - **Q3 调用层事件。** `(seq, attempt, parent)` 与交换序号用 RFC-0044 §4.2 的 `DiagnosticScope`；操作开始、结束事件的接法由调用观测 RFC 定，本文只列要求（§4.1）。
-- **Q4 Jev 真实录制。** 用 (b)：确定性的一次性转换，非流式 JSON 响应各记一个分块，`offsetUs` 取录下的延迟，`[REDACTED]` 头去掉值；脚本不进仓库，在第 3 步的 PR 里列出供审核。脱敏头缺值已被 §5.2 排除出比较，转换后的录制可以回放。按 2026-10-25 改写后的 §5.2 核对过：Jev 的请求头只有 `Authorization`，属于 authentication 集合，两边都排除；响应里没登记的头（`cf-ray`、`x-typesafe-request-id` 等）按 §3 只留名字，回放不返回，不影响 Exact。
+- **Q4 Jev 真实录制。** 用 (b)：确定性的一次性转换，非流式 JSON 响应各记一个分块，`offsetUs` 取录下的延迟，`[REDACTED]` 头去掉值；脚本不进仓库，在第 3 步的 PR 里列出供审核。脱敏头缺值已被 §5.2 排除出比较，转换后的录制可以回放。按 2026-10-25 改写后的 §5.2 核对过（以下是转换的细则，Q4 的决定不变）：
+  - 请求头要还原成叶子 Fetch 看到的样子。schema 2 的请求头在 `http.rs:375` 之前采集，只有 provider 自己设的 `Authorization`；`build_fetch_request`（`aimux-provider-utils/src/http.rs:551`）随后才加 `user-agent`（`:585`）和 JSON 体的 `content-type: application/json`（`:598`，请求没有时才加）。转换照这段代码补上这两个头，否则回放请求带着 `content-type`、录制里没有，Exact 会 miss。`content-type` 是 semantic，`user-agent` 是 proven-nonsemantic，`Authorization` 属于 authentication、两边都排除。
+  - 响应里没登记的头（`cf-ray`、`x-typesafe-request-id` 等）按 §3 只留名字，回放不返回，不影响 Exact。
+  - 第 4 步的 Jev 测试用 Exact 消费转换后的录制，并 `verify_consumed()`，转换结果由这条测试验证，不靠人工比对。
 - **Q5 3 与 4 是否合并。** 分开（§10 末段）。
