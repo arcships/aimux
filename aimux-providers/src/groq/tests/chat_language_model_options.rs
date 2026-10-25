@@ -8,7 +8,7 @@
 
 use serde_json::{Value, json};
 
-use crate::groq::options::GroqLanguageModelChatOptions;
+use crate::groq::chat_language_model_options::GroqLanguageModelChatOptions;
 
 /// The schema check of one `groqLanguageModelChatOptions` input.
 fn safe_parse(input: Value) -> Result<GroqLanguageModelChatOptions, serde_json::Error> {

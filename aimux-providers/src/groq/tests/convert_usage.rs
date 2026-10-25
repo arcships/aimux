@@ -1,13 +1,16 @@
-//! Upstream `convert-groq-usage.test.ts` (the cases that are not in the
-//! integration tests).
+//! Upstream `convert-groq-usage.test.ts`: direct calls, plus the older cases
+//! (formerly `tests/groq_test.rs`) checked through `do_generate`'s `usage` on a
+//! wiremock `MockServer` ([`super::support`]).
 //!
 //! `undefined` in the upstream expectations is an absent key in the serialized
 //! `Usage`, since serde skips `None`; the expected JSON therefore omits it.
 
 use serde_json::{Value, json};
 
-use crate::groq::types::GroqUsage;
-use crate::groq::usage::convert_groq_usage;
+use crate::groq::api_types::GroqUsage;
+use crate::groq::convert_usage::convert_groq_usage;
+
+use super::support::*;
 
 /// `convertGroqUsage(usage)` for a Groq usage object, as its serialized form.
 fn convert_json(usage: Value) -> Value {
@@ -140,6 +143,304 @@ mod convert_groq_usage {
             json!({
                 "total": 20,
                 "noCache": 20,
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should convert basic usage without token details
+    #[tokio::test]
+    async fn basic_usage() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": { "prompt_tokens": 20, "completion_tokens": 10 }
+            }),
+        )
+        .await;
+
+        let model = make_provider(&server);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 10, "text": 10 },
+                "raw": { "prompt_tokens": 20, "completion_tokens": 10 }
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should extract reasoning tokens from completion_tokens_details
+    #[tokio::test]
+    async fn reasoning_tokens() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 79,
+                    "completion_tokens": 40,
+                    "completion_tokens_details": { "reasoning_tokens": 21 }
+                }
+            }),
+        )
+        .await;
+
+        let model = make_provider(&server);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 79, "noCache": 79 },
+                "outputTokens": { "total": 40, "text": 19, "reasoning": 21 },
+                "raw": {
+                    "prompt_tokens": 79,
+                    "completion_tokens": 40,
+                    "completion_tokens_details": { "reasoning_tokens": 21 }
+                }
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle zero reasoning tokens
+    #[tokio::test]
+    async fn zero_reasoning_tokens() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 10,
+                    "completion_tokens_details": { "reasoning_tokens": 0 }
+                }
+            }),
+        )
+        .await;
+
+        let model = make_provider(&server);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 10, "text": 10, "reasoning": 0 },
+                "raw": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 10,
+                    "completion_tokens_details": { "reasoning_tokens": 0 }
+                }
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle all tokens being reasoning tokens
+    #[tokio::test]
+    async fn all_reasoning_tokens() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 50,
+                    "completion_tokens_details": { "reasoning_tokens": 50 }
+                }
+            }),
+        )
+        .await;
+
+        let model = make_provider(&server);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 50, "text": 0, "reasoning": 50 },
+                "raw": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 50,
+                    "completion_tokens_details": { "reasoning_tokens": 50 }
+                }
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should map cached_tokens to cacheRead and subtract from noCache
+    #[tokio::test]
+    async fn cached_tokens() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 4641,
+                    "completion_tokens": 1817,
+                    "prompt_tokens_details": { "cached_tokens": 4608 }
+                }
+            }),
+        )
+        .await;
+
+        let model = make_provider(&server);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 4641, "noCache": 33, "cacheRead": 4608 },
+                "outputTokens": { "total": 1817, "text": 1817 },
+                "raw": {
+                    "prompt_tokens": 4641,
+                    "completion_tokens": 1817,
+                    "prompt_tokens_details": { "cached_tokens": 4608 }
+                }
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should treat zero cached_tokens as a cache miss (cacheRead 0)
+    #[tokio::test]
+    async fn zero_cached_tokens() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 10,
+                    "prompt_tokens_details": { "cached_tokens": 0 }
+                }
+            }),
+        )
+        .await;
+
+        let model = make_provider(&server);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&result.usage.input_tokens).unwrap(),
+            json!({ "total": 20, "noCache": 20, "cacheRead": 0 })
+        );
+    }
+
+    /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle missing prompt_tokens and completion_tokens
+    #[tokio::test]
+    async fn missing_tokens() {
+        let server = MockServer::start().await;
+        mock_json(
+            &server,
+            json!({
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1711115037,
+                "model": "gemma2-9b-it",
+                "choices": [{
+                    "index": 0,
+                    "message": { "role": "assistant", "content": "" },
+                    "finish_reason": "stop"
+                }],
+                "usage": {}
+            }),
+        )
+        .await;
+
+        let model = make_provider(&server);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 0, "noCache": 0 },
+                "outputTokens": { "total": 0, "text": 0 },
+                "raw": {}
             })
         );
     }

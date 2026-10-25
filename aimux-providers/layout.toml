@@ -692,28 +692,28 @@ package = "@ai-sdk/groq"
 
 [[groq.files]]
 upstream = "src/convert-groq-usage.ts"
-rust = "groq/usage.rs"
+rust = "groq/convert_usage.rs"
 status = "mapped"
 
 [groq.files.tests]
 
 [[groq.files]]
 upstream = "src/convert-to-groq-chat-messages.ts"
-rust = "groq/convert.rs"
+rust = "groq/convert_to_chat_messages.rs"
 status = "mapped"
 
 [groq.files.tests]
 
 [[groq.files]]
 upstream = "src/get-response-metadata.ts"
-rust = "groq/model.rs"
+rust = "groq/chat_language_model.rs"
 status = "mapped"
 
 [groq.files.tests]
 
 [[groq.files]]
 upstream = "src/groq-api-types.ts"
-rust = "groq/convert.rs"
+rust = "groq/api_types.rs"
 status = "mapped"
 
 [groq.files.tests]
@@ -727,7 +727,7 @@ status = "mapped"
 
 [[groq.files]]
 upstream = "src/groq-chat-language-model-options.ts"
-rust = "groq/options.rs"
+rust = "groq/chat_language_model_options.rs"
 status = "mapped"
 
 [groq.files.tests]
@@ -737,14 +737,14 @@ ts-only = [
 
 [[groq.files]]
 upstream = "src/groq-chat-language-model.ts"
-rust = "groq/model.rs"
+rust = "groq/chat_language_model.rs"
 status = "mapped"
 
 [groq.files.tests]
 
 [[groq.files]]
 upstream = "src/groq-config.ts"
-rust = "groq/mod.rs"
+rust = "groq/provider.rs"
 status = "mapped"
 
 [groq.files.tests]
@@ -765,21 +765,21 @@ status = "mapped"
 
 [[groq.files]]
 upstream = "src/groq-provider.ts"
-rust = "groq/mod.rs"
+rust = "groq/provider.rs"
 status = "mapped"
 
 [groq.files.tests]
 
 [[groq.files]]
 upstream = "src/groq-transcription-model-options.ts"
-rust = "groq/options.rs"
+rust = "groq/transcription_model_options.rs"
 status = "mapped"
 
 [groq.files.tests]
 
 [[groq.files]]
 upstream = "src/groq-transcription-model.ts"
-rust = "groq/transcription.rs"
+rust = "groq/transcription_model.rs"
 status = "mapped"
 
 [groq.files.tests]
@@ -793,7 +793,7 @@ status = "mapped"
 
 [[groq.files]]
 upstream = "src/map-groq-finish-reason.ts"
-rust = "groq/finish_reason.rs"
+rust = "groq/map_finish_reason.rs"
 status = "mapped"
 
 [groq.files.tests]
