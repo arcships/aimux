@@ -1,0 +1,16 @@
+[
+  {
+    "content": [
+      {
+        "text": "Hello",
+        "type": "text"
+      }
+    ],
+    "role": "user"
+  },
+  {
+    "content": "Hello!",
+    "prefix": true,
+    "role": "assistant"
+  }
+]
