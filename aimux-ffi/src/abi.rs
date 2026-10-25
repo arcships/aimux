@@ -4,7 +4,7 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::future::Future;
 use std::ptr;
 use std::sync::OnceLock;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use aimux_ops::dispatch::PollResult;
 use aimux_ops::dispatch::{self, Ctx};
@@ -36,10 +36,7 @@ fn finish(result: Result<()>) -> *mut aimux_error_t {
     match result {
         Ok(()) => ptr::null_mut(),
         Err(error) => Box::into_raw(Box::new(aimux_error_t {
-            envelope: match error {
-                OpsError::Projected(projected) => projected.envelope,
-                error => error.envelope(SystemTime::now()),
-            },
+            envelope: error.envelope(),
         })),
     }
 }
@@ -80,7 +77,6 @@ fn context(abort: u64) -> Result<Ctx> {
     let mut ctx = Ctx {
         owner: Owner::CProcess,
         abort: None,
-        now: SystemTime::now,
     };
     if abort != 0 {
         let entry = dispatch::resolve_secondary(
@@ -179,7 +175,7 @@ async fn deliver_frames(
                         StreamFrame::Event { seq, .. } | StreamFrame::End { seq, .. } => seq,
                     },
                     outcome: Outcome::Error,
-                    error: Some(error.envelope(SystemTime::now())),
+                    error: Some(error.envelope()),
                 };
                 let json = json_string(&end)?;
                 callback(json.as_ptr(), context);
@@ -198,7 +194,7 @@ async fn deliver_frames(
     let end = StreamFrame::End {
         seq: next_seq.to_string(),
         outcome: Outcome::Error,
-        error: Some(error.envelope(SystemTime::now())),
+        error: Some(error.envelope()),
     };
     let json = json_string(&end)?;
     callback(json.as_ptr(), context);
@@ -375,7 +371,7 @@ pub extern "C" fn aimux_error_message(error: *const aimux_error_t) -> *mut c_cha
         .map_or(ptr::null_mut(), CString::into_raw)
 }
 
-/// Return the saved JSON envelope, without recomputing retry hints.
+/// Return the saved JSON envelope.
 #[must_use]
 #[unsafe(no_mangle)]
 pub extern "C" fn aimux_error_json(error: *const aimux_error_t) -> *mut c_char {
@@ -478,8 +474,7 @@ mod tests {
                 seq: "0".into(),
                 outcome: Outcome::Error,
                 error: Some(
-                    OpsError::Protocol(ProtocolError::InvalidState("failed".into()))
-                        .envelope(SystemTime::now()),
+                    OpsError::Protocol(ProtocolError::InvalidState("failed".into())).envelope(),
                 ),
             }],
             vec![],
@@ -629,29 +624,6 @@ mod tests {
         unsafe {
             aimux_free_string(message);
             aimux_free_string(raw);
-        }
-        aimux_error_free(error);
-    }
-
-    #[test]
-    fn opaque_error_keeps_the_dispatch_retry_projection() {
-        use aimux_core::error::{AiMuxError, ApiCallError};
-        use std::time::UNIX_EPOCH;
-        let mut api = ApiCallError::new("retry later", "https://example.test", Value::Null);
-        api.response_headers = Some(std::collections::HashMap::from([(
-            "retry-after".into(),
-            "Tue, 14 Nov 2023 22:13:22 GMT".into(),
-        )]));
-        let saved = OpsError::from(AiMuxError::ApiCall(Box::new(api)))
-            .project(UNIX_EPOCH + Duration::from_secs(1_700_000_000));
-        let error = finish(Err(saved));
-        for _ in 0..2 {
-            let raw = aimux_error_json(error);
-            let value: Value =
-                serde_json::from_str(unsafe { CStr::from_ptr(raw) }.to_str().unwrap()).unwrap();
-            assert_eq!(value["retryAfterMs"], 2000);
-            assert_eq!(aimux_error_code(error), 11);
-            unsafe { aimux_free_string(raw) };
         }
         aimux_error_free(error);
     }

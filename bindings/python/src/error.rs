@@ -1,11 +1,10 @@
 //! Project the shared envelope once; Python only constructs exception objects.
-use std::time::SystemTime;
 
 use aimux_ops::envelope::{ErrorEnvelope, OpsError};
 use pyo3::prelude::*;
 
 pub(crate) fn ops_error(py: Python<'_>, error: OpsError) -> PyErr {
-    envelope_error(py, &error.envelope(SystemTime::now()))
+    envelope_error(py, &error.envelope())
 }
 
 pub(crate) fn envelope_error(py: Python<'_>, envelope: &ErrorEnvelope) -> PyErr {

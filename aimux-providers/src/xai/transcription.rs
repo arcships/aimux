@@ -386,7 +386,10 @@ mod stream {
             &options,
             model.web_socket.clone(),
         ))
-        .await;
+        .await
+        // The guard is built here, outside the stream body, so a stream
+        // dropped before its first poll still closes the socket.
+        .map(|ws| Socket(Some(ws)));
 
         let expected_done = if xai.multichannel == Some(true) {
             xai.channels.unwrap_or(1) as usize
@@ -399,7 +402,7 @@ mod stream {
 
         let stream = async_stream::stream! {
             let mut ws = match connected {
-                Ok(ws) => Socket(Some(ws)),
+                Ok(ws) => ws,
                 Err(e) => {
                     yield Err(e);
                     return;

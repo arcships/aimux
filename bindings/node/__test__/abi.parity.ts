@@ -56,7 +56,7 @@ test('Node dispatch and the C ABI agree on provider, registry, devtools and erro
         results.push({ result })
       } catch (error) {
         assert.ok(error instanceof AimuxError)
-        results.push({ error: { kind: error.kind, code: error.code, message: error.message, error: error.error, ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }) } })
+        results.push({ error: { kind: error.kind, code: error.code, message: error.message, error: error.error } })
       }
     }
     assert.deepEqual(results, JSON.parse(python.stdout))

@@ -371,10 +371,13 @@ impl Kind {
 }
 
 impl Ty {
-    pub(crate) fn accepts_null(&self) -> bool {
+    /// Whether an optional field of this type keeps an explicit `null` apart
+    /// from an omitted key. Only JSON values and presence fields do; a plain
+    /// `Option` folds it, as Rust does.
+    pub(crate) fn keeps_null(&self) -> bool {
         match self {
-            Self::Nullable(_) | Self::Json | Self::Codec(Codec::Presence, _) => true,
-            Self::Codec(_, inner) => inner.accepts_null(),
+            Self::Json | Self::Codec(Codec::Presence, _) => true,
+            Self::Nullable(inner) | Self::Codec(_, inner) => inner.keeps_null(),
             _ => false,
         }
     }
