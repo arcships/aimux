@@ -1,0 +1,121 @@
+{
+  "content": [
+    {
+      "input": "{\"location\":\"San Francisco\"}",
+      "toolCallId": "weather_dqgshstja6p9",
+      "toolName": "weather",
+      "type": "tool-call"
+    },
+    {
+      "input": "{\"city\":\"San Francisco\"}",
+      "toolCallId": "cityAttractions_dcxfx4myvx68",
+      "toolName": "cityAttractions",
+      "type": "tool-call"
+    }
+  ],
+  "finishReason": {
+    "raw": "TOOL_CALL",
+    "unified": "tool-calls"
+  },
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": "you are a friendly bot!",
+          "role": "system"
+        },
+        {
+          "content": "Hello",
+          "role": "user"
+        }
+      ],
+      "model": "command-r-plus",
+      "tools": [
+        {
+          "function": {
+            "name": "test-tool",
+            "parameters": {
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "additionalProperties": false,
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "body": {
+      "finish_reason": "TOOL_CALL",
+      "id": "f201af17-e24a-4396-8f6a-98e8bf9c3432",
+      "message": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"location\":\"San Francisco\"}",
+              "name": "weather"
+            },
+            "id": "weather_dqgshstja6p9",
+            "type": "function"
+          },
+          {
+            "function": {
+              "arguments": "{\"city\":\"San Francisco\"}",
+              "name": "cityAttractions"
+            },
+            "id": "cityAttractions_dcxfx4myvx68",
+            "type": "function"
+          }
+        ],
+        "tool_plan": "I will use the weather tool to find out the weather in San Francisco. I will also use the cityAttractions tool to find out what attractions are in San Francisco."
+      },
+      "usage": {
+        "billed_units": {
+          "input_tokens": 119,
+          "output_tokens": 52
+        },
+        "cached_tokens": 992,
+        "tokens": {
+          "input_tokens": 1549,
+          "output_tokens": 103
+        }
+      }
+    },
+    "headers": {
+      "content-length": "693",
+      "content-type": "application/json"
+    }
+  },
+  "usage": {
+    "inputTokens": {
+      "noCache": 1549,
+      "total": 1549
+    },
+    "outputTokens": {
+      "text": 103,
+      "total": 103
+    },
+    "raw": {
+      "billed_units": {
+        "input_tokens": 119,
+        "output_tokens": 52
+      },
+      "cached_tokens": 992,
+      "tokens": {
+        "input_tokens": 1549,
+        "output_tokens": 103
+      }
+    }
+  },
+  "warnings": []
+}
