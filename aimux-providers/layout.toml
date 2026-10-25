@@ -813,6 +813,119 @@ upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
 
+[cohere]
+package = "@ai-sdk/cohere"
+
+[[cohere.files]]
+upstream = "src/cohere-chat-language-model-options.ts"
+rust = "cohere/convert.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/cohere-chat-language-model.ts"
+rust = "cohere/model.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/cohere-chat-prompt.ts"
+rust = "cohere/convert.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/cohere-embedding-model-options.ts"
+rust = "cohere/embedding.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/cohere-embedding-model.ts"
+rust = "cohere/embedding.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/cohere-error.ts"
+rust = "cohere/mod.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/cohere-prepare-tools.ts"
+rust = "cohere/convert.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/cohere-provider.ts"
+rust = "cohere/mod.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/convert-cohere-usage.ts"
+rust = "cohere/model.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/convert-to-cohere-chat-prompt.ts"
+rust = "cohere/convert.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/index.ts"
+rust = "cohere/mod.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/map-cohere-finish-reason.ts"
+rust = "cohere/convert.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/reranking/cohere-reranking-api.ts"
+rust = "cohere/reranking.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/reranking/cohere-reranking-model-options.ts"
+rust = "cohere/reranking.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/reranking/cohere-reranking-model.ts"
+rust = "cohere/reranking.rs"
+status = "mapped"
+
+[cohere.files.tests]
+
+[[cohere.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
 [azure]
 package = "@ai-sdk/azure"
 
