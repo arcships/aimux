@@ -22,7 +22,7 @@ static aimux_error_t *failure(int code, const char *json) {
     aimux_error_t *e = malloc(sizeof(*e)); e->code = code; e->json = strdup(json);
     atomic_fetch_add(&errors, 1); return e;
 }
-static const char *unknown = "{\"kind\":\"aimux\",\"code\":1,\"message\":\"未来错误 🌍\",\"error\":{\"name\":\"AI_FutureError\",\"opaque\":{\"newField\":[true,null,7]}},\"retryAfterMs\":123}";
+static const char *unknown = "{\"kind\":\"aimux\",\"code\":1,\"message\":\"未来错误 🌍\",\"error\":{\"name\":\"AI_FutureError\",\"opaque\":{\"newField\":[true,null,7]}}}";
 uint64_t aimux_test_new_handle(void) { return BASE + atomic_fetch_add(&next_id, 1); }
 int aimux_test_drops(uint64_t id) { return atomic_load(&drops[index_of(id)]); }
 int aimux_test_active(void) { return atomic_load(&active); }
