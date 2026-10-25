@@ -57,7 +57,7 @@ DTO and all language projections require additional evidence (G-i).
 |---|---|
 | `abort.create` | `aimux-ops/tests/handles.rs#abort_is_idempotent_and_signals_another_thread` |
 | `abort.signal` | `aimux-ops/tests/handles.rs#abort_is_idempotent_and_signals_another_thread` |
-| `auth.codexRefresh` | `aimux-ops/tests/misc.rs#invalid_auth_request_is_projected_once_without_token_values` |
+| `auth.codexRefresh` | `aimux-ops/tests/misc.rs#invalid_auth_request_error_has_no_token_values` |
 | `catalogue.fetch` | `aimux-ops/src/ops/misc.rs#catalogue_rejects_untrusted_sources_before_io` |
 | `composite.moa` | `aimux-ops/tests/composite.rs#moa_retains_references_and_aggregator_and_completes` |
 | `composite.router` | `aimux-ops/tests/composite.rs#dropped_router_children_keep_working_with_independent_retry_budgets` |

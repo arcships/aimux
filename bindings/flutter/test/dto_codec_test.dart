@@ -13,12 +13,11 @@ void main() {
       'kind': 'aimux',
       'code': 11,
       'message': 'retry',
-      'error': null,
-      'retryAfterMs': value['max'],
+      'error': {'name': 'AI_APICallError', 'max': value['max']},
     });
-    expect(error.retryAfterMs, value['max']);
-    expect(
-        (jsonDecode(jsonEncode(error)) as Map)['retryAfterMs'], value['max']);
+    expect((error.error as Map)['max'], value['max']);
+    expect(((jsonDecode(jsonEncode(error)) as Map)['error'] as Map)['max'],
+        value['max']);
   });
 
   test('presence distinguishes absent, explicit null, and a value', () {
