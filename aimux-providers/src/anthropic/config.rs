@@ -9,7 +9,8 @@
 //! body envelope) is data here, never a branch in the model. It has no getters
 //! for the credential or the settings that produced it.
 
-use std::collections::{BTreeSet, HashMap};
+use indexmap::IndexSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -214,8 +215,12 @@ impl AnthropicModelConfig {
         (self.hooks.failed_response_handler)()
     }
 
-    /// Resolve the provider headers, add the `anthropic-beta` header for
-    /// `betas`, merge beta values with per-call headers (case-insensitive) and return the list that goes on the wire.
+    /// Resolve the provider headers, add the `anthropic-beta` header and
+    /// return the list that goes on the wire. The header joins, in the AI
+    /// SDK's insertion order and without duplicates: `betas`, the
+    /// lower-cased values of the provider then the per-call `anthropic-beta`
+    /// headers (case-insensitive name), and `option_betas`
+    /// (`providerOptions.anthropic.anthropicBeta`).
     ///
     /// # Errors
     ///
@@ -225,7 +230,8 @@ impl AnthropicModelConfig {
     pub(crate) async fn request_headers(
         &self,
         call_headers: Option<&HashMap<String, String>>,
-        betas: &BTreeSet<String>,
+        betas: &IndexSet<String>,
+        option_betas: &[String],
     ) -> Result<Vec<(String, String)>, AiMuxError> {
         let provider = self.headers.resolve().await?;
         let call: HeaderMapOpt = call_headers
@@ -249,6 +255,7 @@ impl AnthropicModelConfig {
                 }
             }
         }
+        merged_betas.extend(option_betas.iter().cloned());
         let mut beta_layer = HeaderMapOpt::new();
         if !merged_betas.is_empty() {
             beta_layer.insert(
