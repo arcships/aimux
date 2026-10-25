@@ -265,14 +265,17 @@ pub struct StreamErrorData {
     pub error_type: Option<String>,
     pub message: String,
     /// A status the frame itself carries (upstream's error-chunk schema,
-    /// @ai-sdk/anthropic 4.0.71 src/anthropic-api.ts:1450-1459).
-    #[serde(default, rename = "statusCode")]
+    /// @ai-sdk/anthropic 4.0.71 src/anthropic-api.ts:1450-1459). Present as
+    /// `null`, it is `Some(Value::Null)`: the schema keeps the key.
+    #[serde(default, rename = "statusCode", deserialize_with = "present")]
     pub status_code: Option<Value>,
-    /// A retry flag the frame itself carries (same schema).
-    #[serde(default, rename = "isRetryable")]
-    pub is_retryable: Option<bool>,
+    /// A retry flag the frame itself carries (same schema): `Some(None)` for
+    /// an explicit `null`, `None` when absent.
+    #[serde(default, rename = "isRetryable", deserialize_with = "present")]
+    pub is_retryable: Option<Option<bool>>,
     /// A code the frame itself carries, a string or a number (same schema).
-    #[serde(default)]
+    /// Present as `null`, it is `Some(Value::Null)`.
+    #[serde(default, deserialize_with = "present")]
     pub code: Option<Value>,
     /// The frame's own `data`, kept apart from an absent one: present, even
     /// as `null`, it is the error's data (same schema).
@@ -282,8 +285,10 @@ pub struct StreamErrorData {
 
 /// `Some` for a present field, `null` included; with `#[serde(default)]` an
 /// absent field stays `None`.
-fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
-    Value::deserialize(deserializer).map(Some)
+fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]

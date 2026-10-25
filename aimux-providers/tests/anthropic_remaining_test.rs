@@ -1159,3 +1159,44 @@ async fn first_chunk_stream_error_body_is_the_error_data() {
         );
     }
 }
+
+/// The AI SDK's error-chunk schema keeps `code`, `statusCode` and
+/// `isRetryable` present as `null` (`nullish()`, anthropic-api.ts:1450-1459),
+/// so the error data it throws with keeps them; a `null` status or retry flag
+/// still falls back to the type's (anthropic-language-model.ts:75-93).
+#[tokio::test]
+async fn first_chunk_stream_error_keeps_explicit_null_fields() {
+    let cases = [
+        (
+            json!({ "type": "overloaded_error", "message": "Overloaded", "code": null, "statusCode": null, "isRetryable": null }),
+            r#"{"type":"overloaded_error","message":"Overloaded","code":null,"statusCode":null,"isRetryable":null}"#,
+            529,
+            true,
+        ),
+        (
+            json!({ "type": "unknown_error", "message": "boom", "isRetryable": null }),
+            r#"{"type":"unknown_error","message":"boom","isRetryable":null}"#,
+            500,
+            false,
+        ),
+    ];
+    for (error, body, status, retryable) in cases {
+        let fetch = MockFetch::new(vec![sse_response(&[
+            json!({ "type": "error", "error": error }),
+        ])]);
+        let Err(AiMuxError::ApiCall(details)) = make_model_with_config(settings(&fetch))
+            .do_stream(&default_options(test_prompt()))
+            .await
+        else {
+            panic!("expected an API call error");
+        };
+        assert_eq!(
+            (
+                details.response_body.as_deref(),
+                details.status_code,
+                details.is_retryable
+            ),
+            (Some(body), Some(status), retryable)
+        );
+    }
+}

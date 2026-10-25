@@ -67,7 +67,7 @@ pub(crate) fn anthropic_stream_error(
         .and_then(Value::as_u64)
         .and_then(|status| u16::try_from(status).ok())
         .or(inferred_status);
-    let is_retryable = error.is_retryable.or(inferred_retryable);
+    let is_retryable = error.is_retryable.flatten().or(inferred_retryable);
     let parsed = parsed_stream_error(error);
     let data = stream_error_data(error);
     let mut result = aimux_provider_utils::stream_error_api_call(
@@ -89,7 +89,8 @@ pub(crate) fn anthropic_stream_error(
 }
 
 /// The error as the chunk schema parses it (anthropic-api.ts:1450-1459):
-/// its known fields only.
+/// its known fields only. A field present as `null` stays, as zod's
+/// `nullish()` keeps it and `JSON.stringify` writes it.
 fn parsed_stream_error(error: &StreamErrorData) -> Value {
     let mut parsed = serde_json::Map::new();
     if let Some(error_type) = &error.error_type {
@@ -99,7 +100,7 @@ fn parsed_stream_error(error: &StreamErrorData) -> Value {
     for (key, value) in [
         ("code", error.code.clone()),
         ("statusCode", error.status_code.clone()),
-        ("isRetryable", error.is_retryable.map(Value::Bool)),
+        ("isRetryable", error.is_retryable.map(|flag| json!(flag))),
     ] {
         if let Some(value) = value {
             parsed.insert(key.into(), value);
