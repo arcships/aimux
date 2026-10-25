@@ -496,10 +496,13 @@ impl AzureOpenAIProvider {
     /// `"azure.image"`.
     #[must_use]
     pub fn image(&self, deployment: &str) -> OpenAIImageModel {
+        // Deployment names do not identify the model family
+        // (`azure-openai-provider.ts:372-376`).
         OpenAIImageModel::from_config(
             deployment.to_string(),
             self.model_config("azure.image", deployment),
         )
+        .with_unknown_input_capabilities()
     }
 
     /// A transcription model; `provider()` is `"azure.transcription"`.
