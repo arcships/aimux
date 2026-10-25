@@ -1,0 +1,15 @@
+[
+  {
+    "content": [
+      {
+        "text": "Hello",
+        "type": "text"
+      },
+      {
+        "image_url": "data:image/png;base64,AAECAw==",
+        "type": "image_url"
+      }
+    ],
+    "role": "user"
+  }
+]
