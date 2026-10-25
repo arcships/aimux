@@ -866,6 +866,32 @@ async fn should_return_warnings_for_unsupported_settings_in_edit_mode() {
     }
 }
 
+/// File and mask support follow the model id like the AI SDK
+/// (`image/openai-image-model.ts:61-92`): known editing models `true`,
+/// `dall-e-3` `false`, anything else unknown.
+#[test]
+fn image_input_capabilities_follow_the_model_id() {
+    use aimux_core::image_model::ImageModel;
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some("https://example.test/v1".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    for (model_id, expected) in [
+        ("dall-e-2", Some(true)),
+        ("gpt-image-1", Some(true)),
+        ("gpt-image-2.5-sunburst-2026-09-08", Some(true)),
+        ("chatgpt-image-latest", Some(true)),
+        ("dall-e-3", Some(false)),
+        ("gpt-image-custom", None),
+    ] {
+        let model = provider.image(model_id);
+        assert_eq!(model.supports_file_inputs(), expected, "{model_id}");
+        assert_eq!(model.supports_mask_inputs(), expected, "{model_id}");
+    }
+}
+
 /// TS: "should return usage information for edited images"
 #[tokio::test]
 async fn should_return_usage_information_for_edited_images() {
