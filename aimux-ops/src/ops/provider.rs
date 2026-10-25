@@ -675,7 +675,7 @@ fn custom(ctx: Ctx, _entry: Target, params: Value) -> CallFuture {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
 
     use futures::future::BoxFuture;
 
@@ -694,11 +694,7 @@ mod tests {
     }
 
     fn ctx(owner: Owner) -> Ctx {
-        Ctx {
-            owner,
-            abort: None,
-            now: SystemTime::now,
-        }
+        Ctx { owner, abort: None }
     }
 
     async fn call(
@@ -707,12 +703,7 @@ mod tests {
         op: &str,
         params: Value,
     ) -> Result<Value, OpsError> {
-        crate::dispatch::call(ctx(owner), handle, op, params)
-            .await
-            .map_err(|error| match error {
-                OpsError::Projected(error) => error.source,
-                error => error,
-            })
+        crate::dispatch::call(ctx(owner), handle, op, params).await
     }
 
     fn id(value: &Value) -> HandleId {
@@ -1064,7 +1055,7 @@ mod tests {
         .await
         .unwrap();
         assert!(matches!(
-            result.as_ref().map_err(OpsError::unprojected),
+            result.as_ref(),
             Err(OpsError::AiMux(AiMuxError::Aborted(_)))
         ));
     }

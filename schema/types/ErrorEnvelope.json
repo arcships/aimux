@@ -15,11 +15,6 @@
     },
     "message": {
       "type": "string"
-    },
-    "retryAfterMs": {
-      "format": "uint64",
-      "minimum": 0,
-      "type": "integer"
     }
   },
   "required": [

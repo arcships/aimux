@@ -171,7 +171,6 @@ class AbiContractTest {
         AimuxException api = (AimuxException) error;
         assertThat(api.isRetryable()).isTrue();
         assertThat(api.getStatusCode()).isEqualTo(429);
-        assertThat(api.getRetryAfterMs()).isEqualTo(0L);
         assertThat(api.getError().path("responseHeaders").path("x-request-id").asText()).isEqualTo("r1");
         assertThatThrownBy(() -> aimux.call("test.binding", "{}"))
             .isInstanceOf(BindingException.InvalidHandle.class);
@@ -199,10 +198,6 @@ class AbiContractTest {
         assertVariants("protocol", 300, "InvalidOp", "InvalidParams", "UnsupportedOpsVersion",
             "ConcurrentConsumer", "InvalidState", "ResourceLimit", "HandleExhausted");
         assertVariants("recording", 100, "Init", "OpenFile", "Spawn", "WriterGone", "FlushTimeout", "Write");
-        NativeException absent = envelope("aimux", 11, "AI_APICallError");
-        assertThat(absent.getRetryAfterMs()).isNull();
-        assertThatThrownBy(() -> AimuxResult.decode(AimuxResult.parse("{\"kind\":\"aimux\",\"code\":11,\"message\":\"x\","
-            + "\"retryAfterMs\":18446744073709551615,\"error\":{\"name\":\"AI_APICallError\"}}"))).isInstanceOf(IllegalStateException.class);
     }
 
     private static NativeException envelope(String kind, int code, String name) {
