@@ -226,8 +226,8 @@ async fn uses_flat_schema_with_internal_option_codes() {
     let Some(ResponseFormat::Json { name, .. }) = &call.response_format else {
         panic!("expected json");
     };
-    // decision-language-model.ts:158
-    assert_eq!(name.as_deref(), Some("decision"));
+    // @ai-sdk/openai@4.0.83 src/openai-evaluation.test.ts:77
+    assert_eq!(name.as_deref(), Some("evaluation"));
     let schema = schema(call);
     assert_eq!(schema["type"], "object");
     assert_eq!(
