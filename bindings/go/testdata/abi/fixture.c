@@ -33,7 +33,7 @@ static char *owned(const char *text) {
 static aimux_error_t *failure(int32_t code, const char *kind, const char *name) {
     aimux_error_t *e = malloc(sizeof(*e));
     char buf[1024];
-    snprintf(buf, sizeof(buf), "{\"kind\":\"%s\",\"code\":%d,\"message\":\"fixture error\",\"error\":{\"name\":\"%s\",\"isRetryable\":true,\"data\":null,\"nested\":{\"kept\":7}},\"retryAfterMs\":0,\"future\":true}", kind, code, name);
+    snprintf(buf, sizeof(buf), "{\"kind\":\"%s\",\"code\":%d,\"message\":\"fixture error\",\"error\":{\"name\":\"%s\",\"isRetryable\":true,\"data\":null,\"nested\":{\"kept\":7}},\"future\":true}", kind, code, name);
     e->code = code;
     e->json = strdup(buf);
     ++errors;
