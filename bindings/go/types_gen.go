@@ -3253,11 +3253,10 @@ const (
 // Keep the payload open so newer error variants, provider data, and explicit
 // JSON nulls survive decoding and re-encoding by an older adapter.
 type ErrorEnvelope struct {
-	Code         int32           `json:"code"`
-	Error        json.RawMessage `json:"error"`
-	Kind         ErrorDomain     `json:"kind"`
-	Message      string          `json:"message"`
-	RetryAfterMs *uint64         `json:"retryAfterMs,omitzero"`
+	Code    int32           `json:"code"`
+	Error   json.RawMessage `json:"error"`
+	Kind    ErrorDomain     `json:"kind"`
+	Message string          `json:"message"`
 }
 
 type Fallback string

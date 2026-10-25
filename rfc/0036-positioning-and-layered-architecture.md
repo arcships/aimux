@@ -262,7 +262,7 @@ proxy = **别人的协议外观**(OpenAI Chat、Responses / Open Responses、Ant
 | 0.7 S3 bloat/features | 待实现；RFC-0043 §§4.4、6 | 默认构建基线 | 大小来源审计；可选 slim 不缩默认 API；全量与 slim 均受测 |
 | 0.7 L2 数据模型调研 | 目标替代；RFC-0042 §§3–8 | #200 V4 决定 | 完成 V4 覆盖/损失/上游变化证据；不另做选型 RFC |
 | 0.8 C1 dispatch/生成 ABI（替代九导出硬指标） | 待实现；RFC-0039 §§2–4 | 规范与全闭包 | 一份 dispatch，provider/registry/model 有类型句柄与生成 ABI；导出数量不作验收；旧符号仅按切换门删除 |
-| 0.8 C3 error JSON | 待实现；RFC-0039 §6；#95 | 统一错误序列化 | Retry variant 与派生 retry_after_ms、不明错误/诊断脱敏测试 |
+| 0.8 C3 error JSON | 待实现；RFC-0039 §6；#95 | 统一错误序列化 | Retry variant、不明错误/诊断脱敏测试 |
 | 0.8 D1 Kotlin | 待实现；RFC-0039 §9.4 | Java artifact | 保留语言级 sealed 异常/Flow；无重复 JNA；依赖图/取消受测 |
 | 0.8 D2 Go | 待实现；RFC-0039 §9.2 | dispatch/生成类型 | cgo 资源/回调生命周期/错误/流合同一致 |
 | 0.8 D3 Java | 待实现；RFC-0039 §9.3 | dispatch/生成类型 | JNA/资源释放、异常与非空输入语义明确 |
