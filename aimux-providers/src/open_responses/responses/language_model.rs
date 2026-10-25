@@ -76,6 +76,28 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                 ..ApiCallError::new(message, url, request_body_values)
             })));
         }
+        // A response without `output` is an APICallError with status 500
+        // (open-responses-language-model.ts:428-441). It is built here so it
+        // carries the HTTP layer's sanitized URL and request values.
+        if output.value.get("output").is_none_or(Value::is_null) {
+            let detail = output
+                .value
+                .get("incomplete_details")
+                .and_then(|d| d.get("reason"))
+                .and_then(Value::as_str)
+                .or_else(|| output.value.get("status").and_then(Value::as_str));
+            let message = match detail {
+                Some(d) => format!("Responses API returned no output ({d})"),
+                None => "Responses API returned no output".to_string(),
+            };
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(500),
+                response_body: Some(output.value.to_string()),
+                response_headers: Some(output.response_headers.clone()),
+                is_retryable: false,
+                ..ApiCallError::new(message, url, request_body_values)
+            })));
+        }
         Ok(output)
     })
 }
@@ -114,9 +136,8 @@ impl LanguageModel for OpenResponsesModel {
             build_request_body(&self.model_id, options, &self.provider_options_name);
         let body = exchange.transform_body(body);
 
-        let url = exchange.url("/responses");
         let resp = aimux_provider_utils::post_json_to_api(
-            exchange.request(url.clone(), options),
+            exchange.request(exchange.url("/responses"), options),
             body.clone(),
             open_responses_successful_response_handler(),
             open_responses_failed_response_handler(),
@@ -127,26 +148,8 @@ impl LanguageModel for OpenResponsesModel {
 
         let raw: Value = resp.value;
 
-        // Check for null/missing output.
+        // The response handler has already failed a missing `output`.
         let output = raw.get("output");
-        if output.map(serde_json::Value::is_null).unwrap_or(true) {
-            let detail = raw
-                .get("incomplete_details")
-                .and_then(|d| d.get("reason"))
-                .and_then(|r| r.as_str())
-                .or_else(|| raw.get("status").and_then(|s| s.as_str()));
-            let message = match detail {
-                Some(d) => format!("Responses API returned no output ({d})"),
-                None => "Responses API returned no output".to_string(),
-            };
-            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(500),
-                response_body: Some(raw.to_string()),
-                response_headers: Some(response_headers),
-                is_retryable: false,
-                ..ApiCallError::new(message, url, body)
-            })));
-        }
 
         // Build content array from output items.
         let mut content = Vec::new();

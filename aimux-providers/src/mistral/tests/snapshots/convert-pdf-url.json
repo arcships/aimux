@@ -1,0 +1,15 @@
+[
+  {
+    "content": [
+      {
+        "text": "Please analyze this document",
+        "type": "text"
+      },
+      {
+        "document_url": "https://example.com/document.pdf",
+        "type": "document_url"
+      }
+    ],
+    "role": "user"
+  }
+]
