@@ -12,7 +12,6 @@ include!(concat!(env!("OUT_DIR"), "/contract.rs"));
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
-use std::time::SystemTime;
 
 use aimux_core::AbortSignal;
 use aimux_ops::dispatch::{self, Ctx};
@@ -39,7 +38,6 @@ fn context(owner: Owner, abort: AbortSignal) -> Ctx {
     Ctx {
         owner,
         abort: Some(abort),
-        now: SystemTime::now,
     }
 }
 

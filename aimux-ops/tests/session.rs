@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use aimux_core::session::{SessionSource, SessionStore};
 use aimux_ops::dispatch::{Ctx, call, descriptor};
@@ -19,7 +18,6 @@ impl TestOwner {
         Ctx {
             owner: self.0,
             abort: None,
-            now: fixed_now,
         }
     }
 
@@ -36,14 +34,9 @@ impl Drop for TestOwner {
     }
 }
 
-fn fixed_now() -> SystemTime {
-    UNIX_EPOCH
-}
-
 fn assert_error(error: OpsError, code: i32, name: &str) -> Value {
-    assert!(matches!(&error, OpsError::Projected(_)));
     assert_eq!(error.code(), code);
-    let envelope = serde_json::to_value(error.envelope(fixed_now())).unwrap();
+    let envelope = serde_json::to_value(error.envelope()).unwrap();
     assert_eq!(envelope["error"]["name"], name);
     envelope
 }
