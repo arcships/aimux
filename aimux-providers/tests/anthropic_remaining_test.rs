@@ -691,6 +691,56 @@ fn mcp_tool_result_round_trip_warns_like_upstream() {
     );
 }
 
+/// An MCP tool named like a provider tool (`web_search` here) gets no
+/// unsupported-result warning: upstream's MCP branch has no `break` and falls
+/// into `if (providerToolName === 'web_search')`, which breaks before the
+/// warning (convert-to-anthropic-prompt.ts:1026-1046, 1284-1336, 1435-1438).
+/// Upstream also pushes a `web_search_tool_result` there; only the
+/// `mcp_tool_result` and the missing warning are checked here.
+#[test]
+fn mcp_tool_named_like_a_provider_tool_does_not_warn() {
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "assistant",
+        "content": [
+            {
+                "type": "tool-call",
+                "toolCallId": "mcptoolu_2",
+                "toolName": "web_search",
+                "input": {},
+                "providerExecuted": true,
+                "providerOptions": { "anthropic": { "type": "mcp-tool-use", "serverName": "search" } },
+            },
+            {
+                "type": "tool-result",
+                "toolCallId": "mcptoolu_2",
+                "toolName": "web_search",
+                "output": { "type": "json", "value": [{
+                    "url": "https://example.com", "title": "Example", "pageAge": null,
+                    "encryptedContent": "abc", "type": "web_search_result",
+                }] },
+            },
+        ],
+    }]))
+    .unwrap();
+    let result = aimux_providers::anthropic::convert::convert_prompt_to_anthropic_full_fallible(
+        &prompt, false,
+    )
+    .unwrap();
+    assert_eq!(
+        result.messages[0]["content"][1],
+        json!({
+            "type": "mcp_tool_result",
+            "tool_use_id": "mcptoolu_2",
+            "is_error": false,
+            "content": [{
+                "url": "https://example.com", "title": "Example", "pageAge": null,
+                "encryptedContent": "abc", "type": "web_search_result",
+            }],
+        })
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+}
+
 /// Upstream surfaces a response `fallback` block as an `anthropic.fallback` custom part and sends it back as a `fallback` block between reasoning blocks.
 #[tokio::test]
 async fn fallback_block_round_trips_as_custom_part() {
