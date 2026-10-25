@@ -1247,6 +1247,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Groq's `usage.raw` keeps a `null` usage field as `null`, as `@ai-sdk/groq`
+  4.0.52 does (`convertGroqUsage` returns the parsed object); it used to drop
+  the field. Applies to generate and stream.
 - Amazon Bedrock with no `fetch` setting uses the process default transport
   current at each request, as its settings document and the AI SDK does with
   `globalThis.fetch`, instead of the one current when the provider was
