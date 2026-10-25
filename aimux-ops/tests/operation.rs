@@ -248,7 +248,6 @@ async fn next(operation: &Operation) -> Result<PollResult, OpsError> {
     tokio::time::timeout(WAIT, operation.next(None))
         .await
         .expect("next hung")
-        .map_err(source_error)
 }
 
 fn assert_part(result: Result<PollResult, OpsError>, text: &str) {
@@ -519,7 +518,7 @@ async fn cancelling_a_pending_next_releases_the_reader() {
     assert!(poll!(reader.as_mut()).is_pending());
     operation.cancel();
     assert!(matches!(
-        reader.await.map_err(source_error),
+        reader.await,
         Err(OpsError::AiMux(AiMuxError::Aborted(_)))
     ));
     assert!(matches!(next(&operation).await, Ok(PollResult::Ended)));
@@ -791,23 +790,8 @@ async fn cleanup_is_capped_at_five_seconds_and_failure_is_recorded() {
     );
 }
 
-// Terminal envelopes are cached; these tests inspect the original cause.
-fn source_error(error: OpsError) -> OpsError {
-    match error {
-        OpsError::Projected(error) => source_error(error.source),
-        error => error,
-    }
-}
-
 fn dispatch_context(owner: aimux_ops::Owner) -> aimux_ops::Ctx {
-    aimux_ops::Ctx {
-        owner,
-        abort: None,
-        now: fixed_clock,
-    }
-}
-fn fixed_clock() -> std::time::SystemTime {
-    std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    aimux_ops::Ctx { owner, abort: None }
 }
 
 #[tokio::test]
@@ -971,7 +955,7 @@ async fn binary_admission_checks_limits_and_owner_teardown_signals_retained_oper
 }
 
 #[tokio::test]
-async fn terminal_status_and_native_error_reuse_one_date_projection() {
+async fn terminal_status_and_native_error_share_one_envelope() {
     use aimux_ops::dispatch;
     use aimux_ops::{Entry, HandleRegistry, Owner};
     let mut api = aimux_core::error::ApiCallError::new(
@@ -986,10 +970,9 @@ async fn terminal_status_and_native_error_reuse_one_date_projection() {
     let model = MockModel::new(Mode::Events(Mutex::new(vec![Err(AiMuxError::ApiCall(
         Box::new(api),
     ))])));
-    let operation =
-        Operation::start_with_clock(model, OperationOptions::default(), None, fixed_clock)
-            .await
-            .unwrap();
+    let operation = Operation::start(model, OperationOptions::default(), None)
+        .await
+        .unwrap();
     let owner = Owner::new_node().unwrap();
     let op = HandleRegistry::global()
         .insert(owner, Entry::Operation(operation.clone()))
@@ -998,10 +981,10 @@ async fn terminal_status_and_native_error_reuse_one_date_projection() {
         .await
         .unwrap_err();
     let saved = operation.status().terminal.unwrap().error.unwrap();
-    assert_eq!(saved.retry_after_ms, Some(2_000));
+    assert_eq!(error.envelope(), saved);
     assert_eq!(
-        error.envelope(fixed_clock() + Duration::from_secs(60)),
-        saved
+        saved.error["responseHeaders"]["Retry-After"],
+        "Tue, 14 Nov 2023 22:13:22 GMT"
     );
     assert!(matches!(
         dispatch::operation_next(&dispatch_context(owner), op, WAIT)
