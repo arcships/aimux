@@ -7,7 +7,7 @@
 //! - Groq and DeepSeek write `JSON.stringify(input)` (`@ai-sdk/groq@4.0.52`
 //!   `src/convert-to-groq-chat-messages.ts:105`; `@ai-sdk/deepseek@3.0.56`
 //!   `src/chat/convert-to-deepseek-chat-messages.ts:336`; aimux
-//!   `groq/convert_to_chat_messages.rs:88`, `deepseek/chat/convert_to_chat_messages.rs:285`).
+//!   `groq/convert.rs:88`, `deepseek/chat/convert_to_chat_messages.rs:285`).
 //! - Anthropic wraps it as `{ rawInvalidInput: input }`
 //!   (`@ai-sdk/anthropic@4.0.71` `src/convert-to-anthropic-prompt.ts:1668-1673`,
 //!   used at `:1013`; aimux `anthropic/convert.rs:821-828`).
