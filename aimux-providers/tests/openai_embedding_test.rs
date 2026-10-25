@@ -248,6 +248,36 @@ async fn should_pass_model_and_values() {
     assert!(body.get("user").is_none());
 }
 
+/// `providerOptions.openai.dimensions` is sent as the number it was given, so
+/// an integer stays an integer, as the AI SDK passes it through
+/// (`embedding/openai-embedding-model.ts:94`).
+#[tokio::test]
+async fn should_pass_integer_dimensions_as_an_integer() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/embeddings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(embedding_response_body()))
+        .mount(&server)
+        .await;
+
+    let provider = create_openai(OpenAIProviderSettings {
+        api_key: Some("test-api-key".into()),
+        base_url: Some(server.uri()),
+        ..Default::default()
+    })
+    .unwrap();
+    let model = provider.embedding_model("text-embedding-3-large").unwrap();
+    let mut options = default_options(test_values());
+    options.provider_options = Some(
+        aimux_core::shared::provider_namespace("openai", json!({ "dimensions": 64 })).unwrap(),
+    );
+    model.do_embed(&options).await.expect("should succeed");
+
+    let requests = server.received_requests().await.expect("requests recorded");
+    let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["dimensions"], json!(64));
+}
+
 /// TS: "should pass headers" — verifies that Authorization, OpenAI-Organization,
 /// OpenAI-Project, config-level headers, and request-level headers are all sent.
 #[tokio::test]
