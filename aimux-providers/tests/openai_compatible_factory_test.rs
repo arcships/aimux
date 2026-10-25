@@ -562,6 +562,7 @@ async fn chat_basic() {
     replay_groq_chat("chat-basic").await;
 }
 
+/// partial: `should include provider-specific options`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_provider_options_namespace() {
     // `groq.foo` passes through at the top level; `openaiCompatible.user` is a
@@ -584,6 +585,8 @@ async fn unknown_fields_of_the_generic_namespace_are_not_forwarded() {
     );
 }
 
+/// partial: `should pass headers`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
+/// partial: `should create provider with correct configuration`; full port in src/openai_compatible/tests/provider.rs.
 #[tokio::test]
 async fn chat_query_params_and_headers() {
     let fixture = Fixture::load("chat-query-params-and-headers");
@@ -620,6 +623,7 @@ async fn chat_query_params_and_headers() {
     );
 }
 
+/// partial: `should create headers without authorization when no apiKey provided`; full port in src/openai_compatible/tests/provider.rs.
 #[tokio::test]
 async fn chat_without_an_api_key_sends_no_authorization() {
     let fixture = Fixture::load("chat-no-api-key");
@@ -744,6 +748,9 @@ async fn chat_stream_basic() {
     );
 }
 
+/// partial: `should extract embedding`; full port in src/openai_compatible/tests/embedding/embedding_model.rs.
+/// partial: `should extract usage`; full port in src/openai_compatible/tests/embedding/embedding_model.rs.
+/// partial: `should pass the model and the values`; full port in src/openai_compatible/tests/embedding/embedding_model.rs.
 #[tokio::test]
 async fn embedding_basic() {
     let fixture = Fixture::load("embedding-basic");
