@@ -2884,6 +2884,44 @@ async fn missing_output_is_an_api_call_error() {
     );
 }
 
+/// The missing output error is built from the HTTP layer's sanitized request
+/// values, so an inline image's base64 is not copied into the error.
+#[tokio::test]
+async fn missing_output_error_does_not_carry_inline_image_data() {
+    let server = MockServer::start().await;
+    mock_json(&server, json!({ "id": "resp_1", "status": "incomplete" })).await;
+    let image = "A".repeat(8192);
+    let prompt: LanguageModelPrompt = serde_json::from_value(json!([{
+        "role": "user",
+        "content": [
+            { "type": "file", "mediaType": "image/png", "data": { "type": "data", "data": image } }
+        ]
+    }]))
+    .unwrap();
+    let result = make_model(&server, "m")
+        .do_generate(&default_options(prompt))
+        .await;
+    let Err(aimux_core::error::AiMuxError::ApiCall(api_error)) = result else {
+        panic!("expected an API call error, got {result:?}");
+    };
+    assert_eq!(
+        api_error.message,
+        "Responses API returned no output (incomplete)"
+    );
+    let values = api_error.request_body_values.to_string();
+    assert!(
+        !values.contains(&image),
+        "the inline image reached the error"
+    );
+    assert_eq!(
+        api_error.request_body_values["input"][0]["content"][0]["image_url"],
+        json!(format!(
+            "[STRING {} bytes]",
+            "data:image/png;base64,".len() + image.len()
+        ))
+    );
+}
+
 /// Two SSE chunks: a text delta and the completion.
 fn raw_chunk_events() -> [&'static str; 3] {
     [
