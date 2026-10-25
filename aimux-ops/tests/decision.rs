@@ -6,7 +6,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
-    time::{Duration, SystemTime},
 };
 
 use aimux_core::{
@@ -149,15 +148,8 @@ impl Drop for Fixture {
         HandleRegistry::global().release_owner(self.owner);
     }
 }
-fn now() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_000)
-}
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now,
-    }
+    Ctx { owner, abort: None }
 }
 fn options() -> Value {
     json!({"state":{"文本":"原始状态 🦀"},"questions":{
@@ -168,7 +160,7 @@ fn options() -> Value {
       "providerOptions":{"test-decision":{"arbitrary":{"nested":[1,null,true]}}}})
 }
 fn envelope(error: &OpsError) -> Value {
-    serde_json::to_value(error.envelope(now())).unwrap()
+    serde_json::to_value(error.envelope()).unwrap()
 }
 
 #[tokio::test]
@@ -316,7 +308,7 @@ async fn business_validation_and_unsupported_types_match_core_before_model() {
 }
 
 #[tokio::test]
-async fn invalid_model_answers_keep_core_error_and_cached_projection() {
+async fn invalid_model_answers_keep_core_error() {
     let fixture = Fixture::new(Reply::Invalid);
     let expected = decide(
         fixture.model.as_ref(),
@@ -328,13 +320,8 @@ async fn invalid_model_answers_keep_core_error_and_cached_projection() {
         .call("decision.decide", json!({"options":options()}))
         .await
         .unwrap_err();
-    assert!(matches!(error, OpsError::Projected(_)));
     assert_eq!(envelope(&error), envelope(&OpsError::from(expected)));
     assert_eq!(error.code(), 3);
-    assert_eq!(
-        serde_json::to_value(error.envelope(SystemTime::UNIX_EPOCH)).unwrap(),
-        envelope(&error)
-    );
 }
 
 #[tokio::test]
@@ -345,10 +332,9 @@ async fn retry_and_provider_errors_remain_owned_by_core() {
         .await
         .unwrap_err();
     assert_eq!(error.code(), 11);
-    assert_eq!(envelope(&error)["retryAfterMs"], 5_000);
     assert_eq!(
-        serde_json::to_value(error.envelope(SystemTime::UNIX_EPOCH)).unwrap(),
-        envelope(&error)
+        envelope(&error)["error"]["responseHeaders"]["retry-after"],
+        "Thu, 01 Jan 1970 00:16:45 GMT"
     );
     assert_eq!(fixture.model.calls.load(Ordering::SeqCst), 1);
     let fixture = Fixture::new(Reply::Retry);
