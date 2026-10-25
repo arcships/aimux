@@ -233,10 +233,46 @@ mod stream {
         AudioChunk, TranscriptionRequest, TranscriptionStreamOptions, TranscriptionStreamPart,
         TranscriptionStreamResult,
     };
-    use aimux_provider_utils::ws::{WebSocketRequest, WsMessage, ws_connect};
+    use aimux_provider_utils::ws::{WebSocketRequest, WsConnection, WsMessage, ws_connect};
     use futures::StreamExt;
 
     use super::*;
+
+    /// The open socket. Dropping it before [`Socket::close`] sends the close
+    /// frame on the runtime, as upstream's `cancel` closes the connection.
+    struct Socket(Option<WsConnection>);
+
+    impl Socket {
+        async fn close(&mut self) {
+            if let Some(mut ws) = self.0.take() {
+                ws.close().await;
+            }
+        }
+    }
+
+    impl std::ops::Deref for Socket {
+        type Target = WsConnection;
+
+        fn deref(&self) -> &WsConnection {
+            self.0.as_ref().expect("the socket is open until closed")
+        }
+    }
+
+    impl std::ops::DerefMut for Socket {
+        fn deref_mut(&mut self) -> &mut WsConnection {
+            self.0.as_mut().expect("the socket is open until closed")
+        }
+    }
+
+    impl Drop for Socket {
+        fn drop(&mut self) {
+            if let (Some(mut ws), Ok(runtime)) =
+                (self.0.take(), tokio::runtime::Handle::try_current())
+            {
+                runtime.spawn(async move { ws.close().await });
+            }
+        }
+    }
 
     fn append<T: url::form_urlencoded::Target>(
         query: &mut url::form_urlencoded::Serializer<'_, T>,
@@ -342,13 +378,18 @@ mod stream {
             &xai,
         )?;
         let ws_url = url.to_string();
-        let mut ws = ws_connect(&WebSocketRequest::for_transcription(
+        // Upstream opens the socket while it builds the stream and reports a
+        // connect failure on the stream, not from doStream.
+        let connected = ws_connect(&WebSocketRequest::for_transcription(
             ws_url.clone(),
             exchange.headers(),
             &options,
             model.web_socket.clone(),
         ))
-        .await?;
+        .await
+        // The guard is built here, outside the stream body, so a stream
+        // dropped before its first poll still closes the socket.
+        .map(|ws| Socket(Some(ws)));
 
         let expected_done = if xai.multichannel == Some(true) {
             xai.channels.unwrap_or(1) as usize
@@ -360,6 +401,13 @@ mod stream {
         let mut audio = options.audio;
 
         let stream = async_stream::stream! {
+            let mut ws = match connected {
+                Ok(ws) => ws,
+                Err(e) => {
+                    yield Err(e);
+                    return;
+                }
+            };
             let mut created = false;
             let mut audio_done = false;
             let mut done_texts: BTreeMap<u32, String> = BTreeMap::new();
