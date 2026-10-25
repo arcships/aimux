@@ -1165,6 +1165,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- The ops error envelope is `{kind, code, message, error}`: the derived
+  `retryAfterMs` is removed, together with the clock and cached projection
+  behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
+  `aimux_ops::retry_hint`). It replaced 0.5's `aimux_error_retry_ms`, Node
+  `retryMs` and Python `retry_ms`. Read the delay from `error.responseHeaders`
+  (`retry-after-ms`, `retry-after`), as with the AI SDK; core still reads those
+  headers itself when it retries and when a provider poll waits (#334).
+  Python's generated models now fold an explicit `null` on an optional field
+  to an omitted key, as Rust and the other codecs do; only JSON values and
+  presence fields keep it. The language guides under `docs/api/` still
+  describe the 0.5 API and say so at the top (#277).
+
 ### Added
 
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
@@ -1214,6 +1226,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
   string such as `"prompt_tokens": "100"` as 0. Applies to generate and
   stream.
+- A streamed SSE event that is not JSON yields `JsonParse` reading
+  `JSON parsing failed: Text: <event data>.\nError message: <parser message>`,
+  the AI SDK's `JSONParseError` message, as `@ai-sdk/openai-compatible`
+  3.0.62 and the other AI SDK providers do; it carried only the parser
+  message. This covers every stream read through
+  `create_event_source_response_handler`.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not
@@ -1236,6 +1254,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"candidates": null` as no candidates, stream function-call arguments
   sent as `partialArgs`, and leave an empty `thoughtSignature` out of server
   tool metadata.
+- Vertex image models `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`
+  and `gemini-3.1-flash-image-preview` report `supports_file_inputs: true`
+  and `supports_mask_inputs: false` (also in the ops capabilities), as
+  `@ai-sdk/google-vertex` 5.0.100 does; other ids stay unknown. Both were
+  unknown for every id.
+- Gemini Live transcription (Google and Vertex) closed by the server before
+  the input audio ended fails with `InvalidResponseData` reading
+  `… Live transcription WebSocket closed unexpectedly before finishing (code
+  1011, reason: internal error).`, as `@ai-sdk/google` 4.0.87 and
+  `@ai-sdk/google-vertex` 5.0.100 do; it used to pass on the socket's
+  `websocket closed by peer (…)` API call error.
 - Open Responses and the Codex subscription stream honor
   `include_raw_chunks`: each SSE chunk is sent as `StreamPart::Raw` before
   the parts made from it, as the AI SDK's Open Responses model and aimux's
