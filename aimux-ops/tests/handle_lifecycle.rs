@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use aimux_core::custom_provider::{CustomProviderOptions, custom_provider};
 use aimux_core::error::AiMuxError;
@@ -137,7 +137,7 @@ fn invalid_handle(
         _ => panic!("expected InvalidHandle"),
     }
     assert_eq!(error.code(), 203);
-    serde_json::to_value(error.envelope(SystemTime::UNIX_EPOCH)).unwrap()
+    serde_json::to_value(error.envelope()).unwrap()
 }
 
 async fn assert_working(model: Arc<dyn LanguageModel>) {
@@ -349,7 +349,6 @@ fn dispatch_releases_registry_lock_before_calling_model_code() {
                     Ctx {
                         owner: OWNER,
                         abort: None,
-                        now: SystemTime::now,
                     },
                     id,
                     "model.info",

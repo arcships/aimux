@@ -1375,6 +1375,50 @@ async fn stream_message_checksum_mismatch_error() {
     );
 }
 
+/// A frame whose prelude checksum does not match fails the stream with
+/// `@smithy/eventstream-codec`'s `splitMessage` text, checked before the
+/// message checksum (amazon-bedrock-event-stream-decoder.ts:42 decodes each
+/// frame with the codec).
+#[tokio::test]
+async fn stream_prelude_checksum_mismatch_error() {
+    let mut body_bytes = aimux_providers::bedrock::event_stream::encode_message(
+        "event",
+        "contentBlockDelta",
+        r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+    );
+    let computed = u32::from_be_bytes(body_bytes[8..12].try_into().unwrap());
+    body_bytes[8..12].copy_from_slice(&(computed ^ 0xff).to_be_bytes());
+    let server = MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![(
+            "content-type".into(),
+            "application/vnd.amazon.eventstream".into(),
+        )],
+        body: body_bytes,
+    }]);
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let items: Vec<_> = result.stream.collect().await;
+    let error = items
+        .iter()
+        .find_map(|item| item.as_ref().err())
+        .expect("the stream fails");
+    assert!(
+        matches!(
+            error,
+            aimux_core::AiMuxError::InvalidResponseData { message, .. }
+                if *message == format!(
+                    "The prelude checksum specified in the message ({}) does not match the calculated CRC32 checksum ({computed})",
+                    computed ^ 0xff
+                )
+        ),
+        "{error:?}"
+    );
+}
+
 /// TS: "should throw for file parts with provider references" and "should
 /// throw UnsupportedFunctionalityError for URL data (File URL)" — the
 /// functionality names of convert-to-amazon-bedrock-chat-messages.ts:238-290
@@ -1509,5 +1553,125 @@ async fn provider_default_transport_is_looked_up_per_request() {
     assert_eq!(
         served.await.unwrap(),
         "POST http://example.com/model/anthropic.claude-3-5-sonnet-20240620-v1%3A0/converse HTTP/1.1"
+    );
+}
+
+/// The per-request default transport also reaches the embedding, image and
+/// reranking models: upstream builds every Bedrock model on the same
+/// `fetch ?? globalThis.fetch` wrapper (amazon-bedrock-sigv4-fetch.ts:38,
+/// :129), and amazon-bedrock-provider.ts:207-215 hands that one
+/// `fetchFunction` to every model (:334, :359, :367, :380). Each request
+/// must go through the proxy set after the provider was created.
+#[serial]
+#[tokio::test]
+async fn non_chat_models_look_up_the_default_transport_per_request() {
+    use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+    use aimux_core::image_model::{ImageCallOptions, ImageModel};
+    use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
+    use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            set_default_transport(ReqwestFetch::default());
+        }
+    }
+    let proxy = |port: u16| ProxyConfig {
+        http_url: Some(format!("http://127.0.0.1:{port}")),
+        ..ProxyConfig::default()
+    };
+
+    let _restore = Restore;
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        closed.local_addr().unwrap().port(),
+    )));
+    drop(closed);
+    let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some("http://example.com".into()),
+        api_key: Some(Resolvable::Value("test-token".into())),
+        region: Some("us-west-2".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    let embedding = provider.embedding("amazon.titan-embed-text-v2:0");
+    let image = provider.image("amazon.nova-canvas-v1:0");
+    let reranking = provider.reranking("cohere.rerank-v3-5:0");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        listener.local_addr().unwrap().port(),
+    )));
+    let served = tokio::spawn(async move {
+        let mut request_lines = Vec::new();
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut data = Vec::new();
+            let mut chunk = [0u8; 4096];
+            let head_end = loop {
+                if let Some(at) = data.windows(4).position(|window| window == b"\r\n\r\n") {
+                    break at + 4;
+                }
+                let n = stream.read(&mut chunk).await.unwrap();
+                data.extend_from_slice(&chunk[..n]);
+            };
+            let head = String::from_utf8_lossy(&data[..head_end]).to_string();
+            let length = head
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap_or(0);
+            while data.len() < head_end + length {
+                let n = stream.read(&mut chunk).await.unwrap();
+                data.extend_from_slice(&chunk[..n]);
+            }
+            let request_line = head.lines().next().unwrap().to_string();
+            let body = if request_line.contains("/rerank") {
+                json!({"results": [{"index": 0, "relevanceScore": 0.5}]})
+            } else if request_line.contains("nova-canvas") {
+                json!({"images": ["base64-image"]})
+            } else {
+                json!({"embedding": [0.1, 0.2], "inputTextTokenCount": 2})
+            }
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request_lines.push(request_line);
+        }
+        request_lines
+    });
+
+    embedding
+        .do_embed(&EmbeddingCallOptions::new("sunny day"))
+        .await
+        .expect("the embedding request goes through the current default transport");
+    image
+        .do_generate(&ImageCallOptions::new("a sea otter"))
+        .await
+        .expect("the image request goes through the current default transport");
+    reranking
+        .do_rerank(&RerankingCallOptions::new(
+            "rainy day",
+            RerankingDocuments::Text {
+                values: vec!["sunny day".into()],
+            },
+        ))
+        .await
+        .expect("the reranking request goes through the current default transport");
+    assert_eq!(
+        served.await.unwrap(),
+        vec![
+            "POST http://example.com/model/amazon.titan-embed-text-v2%3A0/invoke HTTP/1.1",
+            "POST http://example.com/model/amazon.nova-canvas-v1%3A0/invoke HTTP/1.1",
+            "POST http://example.com/rerank HTTP/1.1",
+        ]
     );
 }

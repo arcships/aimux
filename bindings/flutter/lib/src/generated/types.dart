@@ -4729,13 +4729,11 @@ final class ErrorEnvelope {
   final Object? error;
   final ErrorDomain kind;
   final String message;
-  final int? retryAfterMs;
   const ErrorEnvelope({
     required this.code,
     required this.error,
     required this.kind,
     required this.message,
-    this.retryAfterMs,
   });
   factory ErrorEnvelope.fromJson(Map<String, dynamic> json) {
     return ErrorEnvelope(
@@ -4743,7 +4741,6 @@ final class ErrorEnvelope {
       error: json['error'],
       kind: ErrorDomain.fromJson(json['kind']),
       message: json['message'] as String,
-      retryAfterMs: json['retryAfterMs'] as int?,
     );
   }
 
@@ -4752,7 +4749,6 @@ final class ErrorEnvelope {
         'error': error,
         'kind': kind.toJson(),
         'message': message,
-        if (retryAfterMs != null) 'retryAfterMs': retryAfterMs,
       };
 }
 

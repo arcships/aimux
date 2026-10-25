@@ -1,6 +1,5 @@
 //! Exercise the real misc registrations, owner resolution and projected errors.
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use aimux_core::provider::Provider;
 use aimux_ops::dispatch::{self, Ctx};
@@ -8,11 +7,7 @@ use aimux_ops::handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 use serde_json::{Value, json};
 
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 
 fn result() -> Value {
@@ -98,8 +93,8 @@ async fn catalogue_secondary_abort_hides_foreign_owners_and_supports_cancellatio
     .unwrap_err();
     assert_eq!(foreign_error.code(), 203);
     assert_eq!(
-        serde_json::to_value(foreign_error.envelope(SystemTime::UNIX_EPOCH)).unwrap(),
-        serde_json::to_value(unknown_error.envelope(SystemTime::UNIX_EPOCH)).unwrap()
+        serde_json::to_value(foreign_error.envelope()).unwrap(),
+        serde_json::to_value(unknown_error.envelope()).unwrap()
     );
     let cancelled = dispatch::call(ctx(owner), HandleId(0), "catalogue.fetch", params)
         .await
@@ -127,7 +122,7 @@ async fn catalogue_secondary_abort_hides_foreign_owners_and_supports_cancellatio
 }
 
 #[tokio::test]
-async fn invalid_auth_request_is_projected_once_without_token_values() {
+async fn invalid_auth_request_error_has_no_token_values() {
     let owner = Owner::new_node().unwrap();
     let error = dispatch::call(
         ctx(owner),
@@ -140,13 +135,8 @@ async fn invalid_auth_request_is_projected_once_without_token_values() {
     .await
     .unwrap_err();
     assert_eq!(error.code(), 301);
-    let first = error.envelope(SystemTime::UNIX_EPOCH);
-    let second = error.envelope(SystemTime::now());
-    assert_eq!(
-        serde_json::to_value(&first).unwrap(),
-        serde_json::to_value(second).unwrap()
-    );
-    assert!(!serde_json::to_string(&first).unwrap().contains("secret"));
+    let envelope = error.envelope();
+    assert!(!serde_json::to_string(&envelope).unwrap().contains("secret"));
 }
 
 #[test]
