@@ -75,7 +75,7 @@ aimux_error_t *aimux_call(uint64_t handle, const char *op, const char *params,
         while (abort < 4096 && !atomic_load(&signals[abort])) pause_millis(1);
         *out = owned("null");
     } else if (!strcmp(op, "test.fail")) {
-        return failure(11, "{\"kind\":\"aimux\",\"code\":11,\"message\":\"busy\",\"error\":{\"name\":\"AI_APICallError\",\"isRetryable\":true,\"statusCode\":429,\"responseHeaders\":{\"x-request-id\":\"r1\"}},\"retryAfterMs\":0}");
+        return failure(11, "{\"kind\":\"aimux\",\"code\":11,\"message\":\"busy\",\"error\":{\"name\":\"AI_APICallError\",\"isRetryable\":true,\"statusCode\":429,\"responseHeaders\":{\"x-request-id\":\"r1\"}}}");
     } else if (!strcmp(op, "test.binding")) {
         return failure(203, "{\"kind\":\"binding\",\"code\":203,\"message\":\"wrong handle\",\"error\":{\"name\":\"InvalidHandle\",\"expected\":[\"Language\"],\"actual\":\"Image\"}}");
     } else if (!strcmp(op, "test.protocol")) {

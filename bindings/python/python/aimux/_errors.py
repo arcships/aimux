@@ -1,6 +1,7 @@
 """Construct Python exceptions from the canonical ops error envelope.
 
-Headers and retry policy are projected by Rust, never recalculated here.
+The envelope is projected by Rust and carries no retry delay; read
+`response_headers`.
 """
 import re
 
@@ -121,7 +122,6 @@ def from_envelope(envelope):
     error.envelope = envelope
     error.kind = view.kind
     error.code = view.code
-    error.retry_after_ms = view.retry_after_ms
     return error
 
 
