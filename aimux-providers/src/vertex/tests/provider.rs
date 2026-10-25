@@ -798,6 +798,7 @@ fn partner_settings(
     }
 }
 
+/// partial: `should create a provider with correct base URL for regional location`, `should default to global location when not specified`, `should default Llama 4 max tokens without overriding explicit or other model settings`, `should generate auth token and add to request headers`; full ports in src/vertex/tests/maas/maas_provider.rs and src/vertex/tests/maas/maas_provider_node.rs.
 /// Upstream: @ai-sdk/google-vertex 5.0.100 src/maas/google-vertex-maas-provider.ts:79-130
 /// (the project/location URL, `global` by default, the `vertex.maas` name,
 /// the llama-4 `max_tokens` default at :14-25) and
@@ -839,6 +840,7 @@ async fn maas_sub_provider_builds_on_openai_compatible() {
     assert_eq!(seen[1].json_body()["max_tokens"], 100);
 }
 
+/// partial: `should create a provider with correct base URL for regional location`, `should strip reasoning_effort from request bodies`, `should count Grok reasoning tokens separately from completion tokens`, `should support HTTP image URLs`, `should throw NoSuchModelError for embedding and image models`; full ports in src/vertex/tests/xai/xai_provider.rs.
 /// Upstream: @ai-sdk/google-vertex 5.0.100 src/xai/google-vertex-xai-provider.ts:
 /// the global host whatever the location (:159-164), the `googleVertex.xai`
 /// name with usage in streams and structured outputs (:172-184), no
@@ -912,6 +914,7 @@ async fn partner_sub_providers_require_a_project() {
     assert!(fetch.seen().is_empty());
 }
 
+/// partial: `should merge custom headers with auth header`, `should preserve headers from init parameter`; full ports in src/vertex/tests/maas/maas_provider_node.rs (the first also in src/vertex/tests/xai/xai_provider_node.rs).
 /// Upstream: @ai-sdk/google-vertex 5.0.100 maas/google-vertex-maas-provider-node.ts:34-58
 /// and xai/google-vertex-xai-provider-node.ts:33-55 hand no headers to
 /// `createOpenAICompatible`; their fetch spreads the provider headers, then
