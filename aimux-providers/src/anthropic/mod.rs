@@ -385,7 +385,7 @@ pub(crate) async fn list_models_once(
     }
 
     let headers = config
-        .request_headers(None, &std::collections::BTreeSet::new())
+        .request_headers(None, &indexmap::IndexSet::new(), &[])
         .await?;
     let resp = aimux_provider_utils::get_from_api(
         config.with_transport(aimux_provider_utils::HttpRequest {
