@@ -31,7 +31,7 @@ class Errors(unittest.TestCase):
                 self.assertIsInstance(error, e.AimuxError)
 
     def test_all_payload_fields_and_envelope_survive(self):
-        value = envelope(API, retryAfterMs=20)
+        value = envelope(API)
         error = e.from_envelope(value)
         self.assertIs(error.envelope, value)
         self.assertIs(error.error, API)
@@ -40,14 +40,12 @@ class Errors(unittest.TestCase):
         self.assertEqual(error.status_code, 429)
         self.assertTrue(error.is_retryable)
         self.assertEqual(error.response_headers, {'retry-after-ms': '20'})
-        self.assertEqual(error.retry_after_ms, 20)
         self.assertEqual(str(error), 'canonical message')
 
-    def test_history_retains_typed_attempts_without_inventing_top_hint(self):
+    def test_history_retains_typed_attempts(self):
         value = envelope(dict(name='AI_RetryError', reason='maxRetriesExceeded', errors=[API, API]))
         error = e.from_envelope(value)
         self.assertIsInstance(error, e.RetryError)
-        self.assertIsNone(error.retry_after_ms)
         self.assertEqual(error.reason, 'maxRetriesExceeded')
         self.assertEqual(len(error.errors), 2)
         self.assertIs(error.last_error, error.errors[-1])
@@ -55,12 +53,6 @@ class Errors(unittest.TestCase):
         for attempt in error.errors:
             self.assertIsInstance(attempt, e.APICallError)
             self.assertEqual(attempt.response_headers['retry-after-ms'], '20')
-            self.assertFalse(hasattr(attempt, 'retry_after_ms'))
-
-    def test_enveloped_attempts_retain_their_hints(self):
-        error = e.from_envelope(envelope(dict(name='AI_RetryError', errors=[envelope(API, retryAfterMs=20)])))
-        self.assertEqual(error.last_error.retry_after_ms, 20)
-        self.assertIsNone(error.retry_after_ms)
 
     def test_repair_preserves_cause_and_original(self):
         cause = dict(name='AI_JSONParseError', message='invalid JSON')

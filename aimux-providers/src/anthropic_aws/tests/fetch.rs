@@ -1027,3 +1027,38 @@ mod create_api_key_fetch_function {
         );
     }
 }
+
+// ── Tests without an upstream case ──────────────────────────────────────────
+
+/// `list_models` with SigV4 auth: the model-list `GET` goes through the same
+/// signing transport as the model calls (docs/aisdk-architecture-alignment.md
+/// §9.1), with no API key.
+#[tokio::test]
+async fn list_models_with_sigv4_auth_sends_a_signed_get() {
+    let mock = MockFetch::new(vec![Canned::json(&json!({
+        "data": [{ "id": "claude-sonnet-4-5", "display_name": "Claude Sonnet 4.5" }]
+    }))]);
+    let provider = anthropic_aws_provider(
+        AnthropicAwsAuth::SigV4(Resolvable::Value(credentials(Some("test-session-token")))),
+        None,
+        Some(mock.transport()),
+        BASE_URL,
+    );
+
+    let models = provider.list_models().await.expect("models are listed");
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].id, "claude-sonnet-4-5");
+    assert_eq!(models[0].owned_by.as_deref(), Some("Claude Sonnet 4.5"));
+
+    let seen = mock.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "GET");
+    assert_eq!(seen[0].url, format!("{BASE_URL}/models"));
+    assert_signed(&seen[0], "test-access-key");
+    assert_eq!(
+        seen[0].headers["x-amz-security-token"],
+        "test-session-token"
+    );
+    assert!(!seen[0].headers.contains_key("x-api-key"));
+    assert_user_agent_part(&seen[0].headers);
+}
