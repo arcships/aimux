@@ -499,6 +499,194 @@ status = "mapped"
 
 [vertex.files.tests]
 
+[openai_compatible]
+package = "@ai-sdk/openai-compatible"
+# chat/openai-compatible-chat-content-array.test.ts has no source file of its own name;
+# every case in it is ported, so it needs no exclusions.
+
+[[openai_compatible.files]]
+upstream = "src/chat/convert-openai-compatible-chat-usage.ts"
+rust = "openai_compatible/chat.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/convert-to-openai-compatible-chat-messages.ts"
+rust = "openai_compatible/convert.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/get-response-metadata.ts"
+rust = "openai_compatible/chat.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/map-openai-compatible-finish-reason.ts"
+rust = "openai_compatible/convert.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/openai-compatible-api-types.ts"
+rust = "openai_compatible/types.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/openai-compatible-chat-language-model-options.ts"
+rust = "openai_compatible/config.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/openai-compatible-chat-language-model.ts"
+rust = "openai_compatible/chat.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/openai-compatible-metadata-extractor.ts"
+rust = "openai_compatible/config.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/chat/openai-compatible-prepare-tools.ts"
+rust = "openai_compatible/convert.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/completion/convert-openai-compatible-completion-usage.ts"
+rust = "openai_compatible/completion.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/completion/convert-to-openai-compatible-completion-prompt.ts"
+rust = "openai_compatible/completion.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/completion/get-response-metadata.ts"
+rust = "openai_compatible/completion.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/completion/map-openai-compatible-finish-reason.ts"
+rust = "openai_compatible/convert.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/completion/openai-compatible-completion-language-model-options.ts"
+rust = "openai_compatible/completion.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/completion/openai-compatible-completion-language-model.ts"
+rust = "openai_compatible/completion.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/embedding/openai-compatible-embedding-model-options.ts"
+rust = "openai_compatible/embedding.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/embedding/openai-compatible-embedding-model.ts"
+rust = "openai_compatible/embedding.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/image/openai-compatible-image-model-options.ts"
+rust = "openai_compatible/image.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/image/openai-compatible-image-model.ts"
+rust = "openai_compatible/image.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/image/openai-compatible-image-settings.ts"
+rust = "openai_compatible/image.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/index.ts"
+rust = "openai_compatible/mod.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/internal/index.ts"
+rust = "openai_compatible/mod.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/openai-compatible-error.ts"
+rust = "openai_compatible/config.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/openai-compatible-provider.ts"
+rust = "openai_compatible/mod.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+ts-only = [
+  { case = "OpenAICompatibleProvider › supportsStructuredOutputs setting › should pass supportsStructuredOutputs to .chatModel() and .languageModel() only", reason = "checks the settings handed to the mocked model constructors; aimux's completion, embedding and image models share the provider's chat settings and never read supportsStructuredOutputs, so nothing observable differs" },
+  { case = "OpenAICompatibleProvider › supportsMultiPartToolContent setting › should pass supportsMultiPartToolContent to chat models only", reason = "checks the settings handed to the mocked model constructors; aimux's completion, embedding and image models share the provider's chat settings and never read supportsMultiPartToolContent, so nothing observable differs" },
+]
+
+[[openai_compatible.files]]
+upstream = "src/utils/to-camel-case.ts"
+rust = "openai_compatible/convert.rs"
+status = "mapped"
+
+[openai_compatible.files.tests]
+
+[[openai_compatible.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+
 [groq]
 package = "@ai-sdk/groq"
 
