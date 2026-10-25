@@ -65,11 +65,43 @@ fn get_max_images_per_call(model_id: &str) -> u32 {
 pub struct OpenAIImageModel {
     model_id: String,
     config: OpenAIModelConfig,
+    /// Whether file/mask support is inferred from the model id; Azure
+    /// deployment names say nothing about the model family.
+    infer_input_capabilities: bool,
 }
 
 impl OpenAIImageModel {
     pub(crate) fn from_config(model_id: String, config: OpenAIModelConfig) -> Self {
-        Self { model_id, config }
+        Self {
+            model_id,
+            config,
+            infer_input_capabilities: true,
+        }
+    }
+
+    /// Report file and mask support as unknown whatever the model id
+    /// (`imageInputCapabilities` with `undefined` values).
+    pub(crate) fn with_unknown_input_capabilities(mut self) -> Self {
+        self.infer_input_capabilities = false;
+        self
+    }
+}
+
+/// File-input support by model id (`image/openai-image-model.ts:61-84`).
+fn supports_file_inputs(model_id: &str) -> Option<bool> {
+    match model_id {
+        "dall-e-2"
+        | "gpt-image-1"
+        | "gpt-image-1-mini"
+        | "gpt-image-1.5"
+        | "gpt-image-2"
+        | "gpt-image-2.5-flare"
+        | "gpt-image-2.5-flare-2026-09-08"
+        | "gpt-image-2.5-sunburst"
+        | "gpt-image-2.5-sunburst-2026-09-08"
+        | "chatgpt-image-latest" => Some(true),
+        "dall-e-3" => Some(false),
+        _ => None,
     }
 }
 
@@ -85,6 +117,19 @@ impl ImageModel for OpenAIImageModel {
 
     fn max_images_per_call(&self) -> Option<u32> {
         Some(get_max_images_per_call(&self.model_id))
+    }
+
+    fn supports_file_inputs(&self) -> Option<bool> {
+        if self.infer_input_capabilities {
+            supports_file_inputs(&self.model_id)
+        } else {
+            None
+        }
+    }
+
+    /// Same as file inputs (`image/openai-image-model.ts:86-92`).
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        self.supports_file_inputs()
     }
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {

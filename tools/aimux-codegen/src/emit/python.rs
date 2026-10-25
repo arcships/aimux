@@ -324,7 +324,7 @@ fn class(
     }
     let omit_null: Vec<_> = fields
         .iter()
-        .filter(|field| !field.required && !field.ty.accepts_null())
+        .filter(|field| !field.required && !field.ty.keeps_null())
         .map(|field| quote(&ident(&field.json_name)))
         .collect();
     if !omit_null.is_empty() {
