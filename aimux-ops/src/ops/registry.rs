@@ -612,11 +612,7 @@ mod tests {
     }
 
     fn ctx(owner: Owner) -> Ctx {
-        Ctx {
-            owner,
-            abort: None,
-            now: std::time::SystemTime::now,
-        }
+        Ctx { owner, abort: None }
     }
 
     fn fixture(owner: Owner) -> (HandleId, Entry) {

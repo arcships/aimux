@@ -366,7 +366,7 @@ fn handles_cover_u64_strings_and_reject_precision_loss_and_overflow() {
 fn frame_and_error_envelope_use_contract_discriminators() {
     let outputs = artifacts();
     let frames = validator(&outputs, "stream-frame");
-    let error = json!({"kind": "aimux", "code": 1, "message": "failure", "error": {"name": "AI_APICallError", "isRetryable": true}, "retryAfterMs": 0});
+    let error = json!({"kind": "aimux", "code": 1, "message": "failure", "error": {"name": "AI_APICallError", "isRetryable": true}});
     assert!(
         frames.is_valid(&json!({"type": "end", "seq": "2", "outcome": "error", "error": error}))
     );
@@ -382,7 +382,7 @@ fn frame_and_error_envelope_use_contract_discriminators() {
     wrong["retryable"] = json!(true);
     assert!(!errors.is_valid(&wrong));
     wrong = error.clone();
-    wrong["retryAfterMs"] = Value::Null;
+    wrong["extra"] = json!(0);
     assert!(!errors.is_valid(&wrong));
 }
 

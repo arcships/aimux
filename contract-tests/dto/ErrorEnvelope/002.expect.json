@@ -1,8 +1,0 @@
-{
-  "kind": "aimux",
-  "code": 11,
-  "message": "x",
-  "error": {
-    "name": "AI_APICallError"
-  }
-}
