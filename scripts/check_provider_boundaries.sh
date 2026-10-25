@@ -158,13 +158,13 @@ violation 'groq / deepseek literal in the shared OpenAI or compatible package' "
 # vendor's endpoint, base URL, headers or usage accounting is its own data
 # behind a trait or hook of the shared layer. Their code (doc links aside)
 # names only the shared layers (including `stream`), the preset registry and
-# `runtime_decision`.
+# `runtime_decision`; the in-crate tests also name `test_support`.
 rule4c_hits="$(
     grep -rnE 'crate::[a-z_]+' aimux-providers/src/shared \
         aimux-providers/src/openai_compatible --include='*.rs' |
         awk '{ code = $0; sub(/^[^:]*:[0-9]+:/, "", code) }
              code ~ /^[[:space:]]*\/\// { next }
-             { gsub(/crate::(shared|stream|openai|openai_compatible|preset|runtime_decision)([^a-z_]|$)/, "", code) }
+             { gsub(/crate::(shared|stream|openai|openai_compatible|preset|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
              code ~ /crate::[a-z_]/' || true
 )"
 violation 'shared or openai_compatible names a vendor package (implement its trait in the vendor module)' "$rule4c_hits"

@@ -1,0 +1,104 @@
+{
+  "content": [
+    {
+      "text": "Grok",
+      "type": "text"
+    },
+    {
+      "text": "First, the user said: \"Say a single word.\" That's straightforward. They want me to respond with just one word.\n\nAs Grok, I'm supposed to be helpful, truthful, and maximally truthful, but in this case, it's a simple request. I don't need to overcomplicate it.\n\nMy response should be exactly one word, as per their instruction. If I say more than one word, I'm not following the request accurately.\n\nWhat word should I choose? The user didn't specify which word, so I have some freedom. I could pick a random word, or something relevant to the context.\n\nTo make it engaging and true to my identity, I could choose a word that reflects my personality. For example, something fun, helpful, or related to AI.\n\nPossible options:\n- \"Hello\" – Simple greeting.\n- \"Grok\" – My name, which is relevant.\n- \"Word\" – Echoing the request.\n- \"Yes\" – But that might not make sense alone.\n- Something random like \"Apple\" or \"Mountain\".\n\nSince I'm Grok, built by xAI, I should stay true to that. Maybe \"xAI\" or \"Truth\" to emphasize my truthful nature.\n\nThe simplest and most direct response is just to say any single word. To be maximally helpful, I should ensure it's appropriate.\n\nThe user might be testing me or playing a game, so I should respond in kind.\n\nFinally, decide on a word: Let's go with \"Grok\" – it's unique to me and reinforces my identity.\n\nSo, my response will be: Grok",
+      "type": "reasoning"
+    }
+  ],
+  "finishReason": {
+    "raw": "stop",
+    "unified": "stop"
+  },
+  "providerMetadata": {
+    "test-provider": {
+      "acceptedPredictionTokens": 0,
+      "rejectedPredictionTokens": 0
+    }
+  },
+  "request": {
+    "body": "{\"model\":\"grok-3\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}"
+  },
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": "Grok",
+            "reasoning_content": "First, the user said: \"Say a single word.\" That's straightforward. They want me to respond with just one word.\n\nAs Grok, I'm supposed to be helpful, truthful, and maximally truthful, but in this case, it's a simple request. I don't need to overcomplicate it.\n\nMy response should be exactly one word, as per their instruction. If I say more than one word, I'm not following the request accurately.\n\nWhat word should I choose? The user didn't specify which word, so I have some freedom. I could pick a random word, or something relevant to the context.\n\nTo make it engaging and true to my identity, I could choose a word that reflects my personality. For example, something fun, helpful, or related to AI.\n\nPossible options:\n- \"Hello\" – Simple greeting.\n- \"Grok\" – My name, which is relevant.\n- \"Word\" – Echoing the request.\n- \"Yes\" – But that might not make sense alone.\n- Something random like \"Apple\" or \"Mountain\".\n\nSince I'm Grok, built by xAI, I should stay true to that. Maybe \"xAI\" or \"Truth\" to emphasize my truthful nature.\n\nThe simplest and most direct response is just to say any single word. To be maximally helpful, I should ensure it's appropriate.\n\nThe user might be testing me or playing a game, so I should respond in kind.\n\nFinally, decide on a word: Let's go with \"Grok\" – it's unique to me and reinforces my identity.\n\nSo, my response will be: Grok",
+            "refusal": null,
+            "role": "assistant"
+          }
+        }
+      ],
+      "created": 1770772090,
+      "id": "edea4703-19aa-6d74-fedb-dc1c213543e0",
+      "model": "grok-3-mini",
+      "object": "chat.completion",
+      "system_fingerprint": "fp_2a885414fb",
+      "usage": {
+        "completion_tokens": 2,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 320,
+          "rejected_prediction_tokens": 0
+        },
+        "cost_in_usd_ticks": 1641500,
+        "num_sources_used": 0,
+        "prompt_tokens": 12,
+        "prompt_tokens_details": {
+          "audio_tokens": 0,
+          "cached_tokens": 2,
+          "image_tokens": 0,
+          "text_tokens": 12
+        },
+        "total_tokens": 334
+      }
+    },
+    "headers": {
+      "content-length": "2053",
+      "content-type": "application/json"
+    },
+    "id": "edea4703-19aa-6d74-fedb-dc1c213543e0",
+    "modelId": "grok-3-mini",
+    "timestamp": "2026-02-11T01:08:10.000Z"
+  },
+  "usage": {
+    "inputTokens": {
+      "cacheRead": 2,
+      "noCache": 10,
+      "total": 12
+    },
+    "outputTokens": {
+      "reasoning": 320,
+      "text": 0,
+      "total": 2
+    },
+    "raw": {
+      "completion_tokens": 2,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 320,
+        "rejected_prediction_tokens": 0
+      },
+      "cost_in_usd_ticks": 1641500,
+      "num_sources_used": 0,
+      "prompt_tokens": 12,
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 2,
+        "image_tokens": 0,
+        "text_tokens": 12
+      },
+      "total_tokens": 334
+    }
+  },
+  "warnings": []
+}
