@@ -100,7 +100,7 @@ pub(crate) fn provider_tool_content(
         "local_shell_call" => vec![call(
             call_id,
             name("local_shell"),
-            json!({"action": part["action"]}).to_string(),
+            json!({"action": local_shell_action(&part["action"])}).to_string(),
             None,
             None,
             metadata(),
@@ -129,7 +129,8 @@ pub(crate) fn provider_tool_content(
         "apply_patch_call" => vec![call(
             call_id,
             name("apply_patch"),
-            json!({"callId": part["call_id"], "operation": part["operation"]}).to_string(),
+            json!({"callId": part["call_id"], "operation": apply_patch_operation(&part["operation"])})
+                .to_string(),
             None,
             None,
             metadata(),
@@ -272,6 +273,82 @@ pub(crate) fn web_search_output(action: &Value) -> Value {
     }
 }
 
+/// A local shell action with its fields in the AI SDK's order: the schema's
+/// (`type`, `command`, `timeout_ms`, `user`, `working_directory`, `env`) for a
+/// generated call, and the same order under the camel-case names the stream
+/// writes (`timeoutMs`, `workingDirectory`).
+fn local_shell_action(action: &Value) -> Value {
+    let Some(object) = action.as_object() else {
+        return action.clone();
+    };
+    let mut output = serde_json::Map::new();
+    for field in [
+        "type",
+        "command",
+        "timeout_ms",
+        "timeoutMs",
+        "user",
+        "working_directory",
+        "workingDirectory",
+        "env",
+    ] {
+        if let Some(value) = object.get(field) {
+            output.insert(field.to_owned(), value.clone());
+        }
+    }
+    Value::Object(output)
+}
+
+/// An apply patch operation with the fields of its type in the order of the
+/// AI SDK's schema (`type`, `path`, then `diff`), as zod's parse leaves it.
+pub(crate) fn apply_patch_operation(operation: &Value) -> Value {
+    let fields: &[&str] = match operation["type"].as_str() {
+        Some("create_file" | "update_file") => &["path", "diff"],
+        Some("delete_file") => &["path"],
+        _ => return operation.clone(),
+    };
+    let mut output = json!({"type": operation["type"]});
+    for field in fields {
+        if let Some(value) = operation.get(*field) {
+            output[*field] = value.clone();
+        }
+    }
+    output
+}
+
+/// Keeps the fields each computer action type has, renaming the scroll
+/// offsets and leaving out a null `keys`, as the AI SDK's `mapComputerAction`.
+fn computer_action(action: &Value) -> Value {
+    let fields: &[(&str, &str)] = match action["type"].as_str() {
+        Some("click") => &[
+            ("button", "button"),
+            ("x", "x"),
+            ("y", "y"),
+            ("keys", "keys"),
+        ],
+        Some("double_click" | "move") => &[("x", "x"), ("y", "y"), ("keys", "keys")],
+        Some("drag") => &[("path", "path"), ("keys", "keys")],
+        Some("keypress") => &[("keys", "keys")],
+        Some("scroll") => &[
+            ("x", "x"),
+            ("y", "y"),
+            ("scroll_x", "scrollX"),
+            ("scroll_y", "scrollY"),
+            ("keys", "keys"),
+        ],
+        Some("type") => &[("text", "text")],
+        Some("screenshot" | "wait") => &[],
+        _ => return action.clone(),
+    };
+    let mut output = json!({"type": action["type"]});
+    for (from, to) in fields {
+        if let Some(value) = action.get(*from).filter(|value| !value.is_null()) {
+            output[*to] = value.clone();
+        }
+    }
+    output
+}
+
 fn computer_input(part: &Value) -> Value {
     let actions = part["actions"].as_array().cloned().unwrap_or_else(|| {
         part.get("action")
@@ -280,21 +357,7 @@ fn computer_input(part: &Value) -> Value {
             .into_iter()
             .collect()
     });
-    let actions: Vec<_> = actions
-        .into_iter()
-        .map(|mut action| {
-            if action["type"] == "scroll"
-                && let Some(object) = action.as_object_mut()
-            {
-                for (from, to) in [("scroll_x", "scrollX"), ("scroll_y", "scrollY")] {
-                    if let Some(value) = object.remove(from) {
-                        object.insert(to.to_string(), value);
-                    }
-                }
-            }
-            action
-        })
-        .collect();
+    let actions: Vec<_> = actions.iter().map(computer_action).collect();
     let checks: Vec<_> = part["pending_safety_checks"]
         .as_array()
         .map(|checks| {
