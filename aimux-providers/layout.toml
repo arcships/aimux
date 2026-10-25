@@ -66,7 +66,7 @@ ts-only = [
 
 [[bedrock.files]]
 upstream = "src/amazon-bedrock-error.ts"
-rust = "bedrock/model.rs"
+rust = "bedrock/mod.rs"
 status = "mapped"
 
 [bedrock.files.tests]
