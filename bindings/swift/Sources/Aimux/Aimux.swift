@@ -8,7 +8,6 @@ public struct AimuxError: Error, Codable, Equatable, Sendable, LocalizedError {
     public var code: Int32 { envelope.code }
     public var message: String { envelope.message }
     public var error: JSONValue { envelope.error }
-    public var retryAfterMs: UInt64? { envelope.retryAfterMs }
     public var errorDescription: String? { message }
     /// The payload's cause: a nested AI SDK error (with `name`) or an
     /// underlying OS, TLS or parser error as `{message, cause?}`. A retry
