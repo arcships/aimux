@@ -1,0 +1,189 @@
+//! The wiremock harness of the older `@ai-sdk/groq` chat ports: every test
+//! builds the model through the Groq package (`create_groq(..).chat(model)`)
+//! against a loopback `MockServer`.
+//!
+//! A `partial:` marker names an upstream case the test covers only in part,
+//! with the file that has the full port or the reason it cannot match.
+
+pub(super) use aimux_core::tool::RawToolCall;
+pub(super) use futures::StreamExt;
+pub(super) use serde_json::{Value, json};
+pub(super) use wiremock::matchers::{method, path};
+pub(super) use wiremock::{Mock, MockServer, ResponseTemplate};
+
+pub(super) use serial_test::serial;
+
+pub(super) use aimux_core::AiMuxError;
+pub(super) use aimux_core::language_model::LanguageModel;
+pub(super) use aimux_core::language_model_message::{
+    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, ToolCallPart,
+    ToolPart, ToolResultOutput, ToolResultPart,
+};
+pub(super) use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
+pub(super) use aimux_core::provider::Provider;
+pub(super) use aimux_core::result::{GenerateContent, ReasoningOutput};
+pub(super) use aimux_core::stream_part::StreamPart;
+pub(super) use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
+
+pub(super) use crate::groq::{GroqChatLanguageModel, GroqProviderSettings, create_groq, groq};
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+/// The TS `TEST_PROMPT`: a single user text message "Hello".
+pub(super) fn test_prompt() -> LanguageModelPrompt {
+    vec![LanguageModelMessage::user_text("Hello")]
+}
+
+/// `CallOptions` with only `prompt` set.
+pub(super) fn default_options(prompt: LanguageModelPrompt) -> CallOptions {
+    CallOptions::new(prompt)
+}
+
+/// A Groq chat model pointed at the mock server.
+pub(super) fn model_at(server: &MockServer, model_id: &str) -> GroqChatLanguageModel {
+    create_groq(GroqProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some("test-api-key".to_string()),
+        ..Default::default()
+    })
+    .expect("groq provider should build")
+    .chat(model_id)
+}
+
+pub(super) fn browser_search_model_ids() -> Vec<&'static str> {
+    include_str!("../browser_search_models.rs")
+        .split('"')
+        .filter(|value| value.starts_with("openai/"))
+        .collect()
+}
+
+/// Build the default test model pointed at the mock server.
+pub(super) fn make_provider(server: &MockServer) -> GroqChatLanguageModel {
+    model_at(server, "gemma2-9b-it")
+}
+
+/// A standard non-streaming chat-completion JSON body returning "Hello, World!".
+pub(super) fn text_completion_body() -> Value {
+    json!({
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 1711115037,
+        "model": "gemma2-9b-it",
+        "choices": [{
+            "index": 0,
+            "message": { "role": "assistant", "content": "Hello, World!" },
+            "finish_reason": "stop"
+        }],
+        "usage": { "prompt_tokens": 4, "total_tokens": 34, "completion_tokens": 30 }
+    })
+}
+
+/// `__fixtures__/groq-text.json`, as upstream reads it.
+pub(super) fn groq_text_body() -> Value {
+    serde_json::from_str(include_str!("fixtures/groq-text.json")).expect("fixture is JSON")
+}
+
+/// `__fixtures__/groq-reasoning.json`, as upstream reads it.
+pub(super) fn groq_reasoning_body() -> Value {
+    serde_json::from_str(include_str!("fixtures/groq-reasoning.json")).expect("fixture is JSON")
+}
+
+/// `__fixtures__/groq-tool-call.json`, as upstream reads it.
+pub(super) fn groq_tool_call_body() -> Value {
+    serde_json::from_str(include_str!("fixtures/groq-tool-call.json")).expect("fixture is JSON")
+}
+
+/// Build a single SSE `data: <json>\n\n` event string.
+pub(super) fn sse_event(json_str: &str) -> String {
+    format!("data: {json_str}\n\n")
+}
+
+/// Concatenate SSE events and append the `[DONE]` sentinel.
+pub(super) fn sse_body(events: &[&str]) -> String {
+    let mut body = String::new();
+    for event in events {
+        body.push_str(event);
+    }
+    body.push_str("data: [DONE]\n\n");
+    body
+}
+
+/// Collect every `StreamPart` from a `StreamResult` into a `Vec`.
+pub(super) async fn collect_stream(result: aimux_core::result::StreamResult) -> Vec<StreamPart> {
+    let mut parts = Vec::new();
+    let mut stream = result.stream;
+    while let Some(part) = stream.next().await {
+        match part {
+            Ok(p) => parts.push(p),
+            Err(_) => break,
+        }
+    }
+    parts
+}
+
+/// Mount a JSON mock response on the server.
+pub(super) async fn mock_json(server: &MockServer, body: Value) {
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(server)
+        .await;
+}
+
+/// Mount an SSE mock response on the server.
+pub(super) async fn mock_sse(server: &MockServer, body: String) {
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(body),
+        )
+        .mount(server)
+        .await;
+}
+
+/// Get the first received request body as JSON.
+pub(super) async fn first_request_body(server: &MockServer) -> Value {
+    let requests = server
+        .received_requests()
+        .await
+        .expect("no requests received");
+    let body: Value = serde_json::from_slice(&requests[0].body).expect("invalid JSON body");
+    body
+}
+
+pub(super) async fn failed_call(status: u16, body: Value) -> aimux_core::error::ApiCallError {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(status).set_body_json(body))
+        .mount(&server)
+        .await;
+    match make_provider(&server)
+        .do_generate(&default_options(test_prompt()))
+        .await
+    {
+        Err(aimux_core::AiMuxError::ApiCall(error)) => *error,
+        other => panic!("expected an API call error, got {other:?}"),
+    }
+}
+
+pub(super) fn groq_at(server: &MockServer) -> crate::groq::GroqProvider {
+    create_groq(GroqProviderSettings {
+        base_url: Some(server.uri()),
+        api_key: Some("test-api-key".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+}
+
+pub(super) fn options_with(provider_options: Value) -> CallOptions {
+    let mut options = default_options(test_prompt());
+    options.provider_options = Some(serde_json::from_value(provider_options).unwrap());
+    options
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// convert-to-groq-chat-messages.test.ts
+// ════════════════════════════════════════════════════════════════════════════
