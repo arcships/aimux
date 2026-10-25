@@ -640,11 +640,7 @@ fn is_strict_schema_compatible(schema: &Value) -> bool {
     true
 }
 
-fn validate_media_type(
-    media_type: &str,
-    is_url: bool,
-    url: Option<&str>,
-) -> Result<(), aimux_core::AiMuxError> {
+fn validate_media_type(media_type: &str) -> Result<(), aimux_core::AiMuxError> {
     let supported = match media_type.split('/').next() {
         Some("image") => matches!(
             media_type,
@@ -674,15 +670,13 @@ fn validate_media_type(
             "{kind} mime type: {media_type}"
         )));
     }
-    if is_url
-        && (!url.is_some_and(|u| u.starts_with("s3:"))
-            || !(media_type.starts_with("image/") || media_type.starts_with("video/")))
-    {
-        return Err(aimux_core::AiMuxError::UnsupportedFunctionality(format!(
-            "file media type or data: {media_type}"
-        )));
-    }
     Ok(())
+}
+
+/// Whether a media type is an image or a video, the only kinds Bedrock takes
+/// from an S3 location.
+fn is_image_or_video(media_type: &str) -> bool {
+    media_type.starts_with("image/") || media_type.starts_with("video/")
 }
 
 /// Reject prompts the Converse API cannot express.
@@ -799,9 +793,20 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
     }
     match &file.data {
         FileData::Reference { .. } => Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-            "File reference data".into(),
+            "file parts with provider references".into(),
         )),
-        FileData::Url { url, .. } => validate_media_type(&file.media_type, true, Some(url)),
+        FileData::Url { url, .. } => {
+            let unsupported =
+                || aimux_core::AiMuxError::UnsupportedFunctionality("File URL data".into());
+            if !url.starts_with("s3:") {
+                return Err(unsupported());
+            }
+            let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
+            if !is_image_or_video(&media_type) {
+                return Err(unsupported());
+            }
+            validate_media_type(&media_type)
+        }
         FileData::Text { .. } => {
             let media_type = if is_full_media_type(&file.media_type) {
                 &file.media_type
@@ -813,11 +818,11 @@ fn validate_file(file: &FilePart) -> Result<(), aimux_core::AiMuxError> {
                     "file media type or data: {media_type}"
                 )));
             }
-            validate_media_type(media_type, false, None)
+            validate_media_type(media_type)
         }
         FileData::Data { .. } => {
             let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
-            validate_media_type(&media_type, false, None)
+            validate_media_type(&media_type)
         }
     }
 }
@@ -828,17 +833,27 @@ fn validate_tool_result(result: &ToolResultOutput) -> Result<(), aimux_core::AiM
             match part {
                 ToolResultContent::Text(_) => {}
                 ToolResultContent::File(file) => {
-                    let (is_url, url) = match &file.data {
-                        FileData::Data { .. } => (false, None),
-                        FileData::Url { url, .. } => (true, Some(url.as_str())),
-                        _ => {
-                            return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
-                                "tool result file data".into(),
-                            ));
-                        }
+                    let kind = match &file.data {
+                        FileData::Data { .. } => "data",
+                        FileData::Url { .. } => "url",
+                        FileData::Reference { .. } => "reference",
+                        FileData::Text { .. } => "text",
                     };
+                    let unsupported = || {
+                        aimux_core::AiMuxError::UnsupportedFunctionality(format!(
+                            "tool result file data of type \"{kind}\""
+                        ))
+                    };
+                    let is_s3_url =
+                        matches!(&file.data, FileData::Url { url, .. } if url.starts_with("s3:"));
+                    if kind != "data" && !is_s3_url {
+                        return Err(unsupported());
+                    }
                     let media_type = aimux_provider_utils::resolve_full_media_type(file)?;
-                    validate_media_type(&media_type, is_url, url)?;
+                    if is_s3_url && !is_image_or_video(&media_type) {
+                        return Err(unsupported());
+                    }
+                    validate_media_type(&media_type)?;
                 }
                 ToolResultContent::Custom { .. } => {
                     return Err(aimux_core::AiMuxError::UnsupportedFunctionality(
@@ -1110,16 +1125,32 @@ pub fn build_request_body_checked(
     if let Some(max) = call.max_output_tokens {
         inference.insert("maxTokens".into(), json!(max));
     }
-    if let Some(temp) = call.temperature {
-        if rejects_sampling || thinking || (openai && !oss) {
-            let details = if rejects_sampling {
-                format!("temperature is not supported by {model_id} and will be ignored")
-            } else if thinking {
-                "temperature is not supported when thinking is enabled".into()
+    let (mut temperature, mut top_p, mut top_k) = (call.temperature, call.top_p, call.top_k);
+    if rejects_sampling {
+        // amazon-bedrock-chat-language-model.ts:204-230: temperature, topK, topP.
+        for (feature, given) in [
+            ("temperature", temperature.take().is_some()),
+            ("topK", top_k.take().is_some()),
+            ("topP", top_p.take().is_some()),
+        ] {
+            if given {
+                warn(
+                    feature,
+                    Some(&format!(
+                        "{feature} is not supported by {model_id} and will be ignored"
+                    )),
+                );
+            }
+        }
+    }
+    if let Some(temp) = temperature {
+        if thinking || (openai && !oss) {
+            let details = if thinking {
+                "temperature is not supported when thinking is enabled"
             } else {
-                "temperature is not supported by this OpenAI model on the Converse API".into()
+                "temperature is not supported by this OpenAI model on the Converse API"
             };
-            warn("temperature", Some(&details));
+            warn("temperature", Some(details));
         } else {
             let temp = if !openai || oss {
                 if temp > 1.0 {
@@ -1147,28 +1178,24 @@ pub fn build_request_body_checked(
             inference.insert("temperature".into(), json!(temp));
         }
     }
-    if let Some(p) = call.top_p {
-        if rejects_sampling || thinking || (openai && !oss) {
-            let details = if rejects_sampling {
-                format!("topP is not supported by {model_id} and will be ignored")
-            } else if thinking {
-                "topP is not supported when thinking is enabled".into()
+    if let Some(p) = top_p {
+        if thinking || (openai && !oss) {
+            let details = if thinking {
+                "topP is not supported when thinking is enabled"
             } else {
-                "topP is not supported by this OpenAI model on the Converse API".into()
+                "topP is not supported by this OpenAI model on the Converse API"
             };
-            warn("topP", Some(&details));
+            warn("topP", Some(details));
         } else {
             inference.insert("topP".into(), json!(p));
         }
     }
-    if let Some(k) = call.top_k {
-        if rejects_sampling || thinking {
-            let details = if rejects_sampling {
-                format!("topK is not supported by {model_id} and will be ignored")
-            } else {
-                "topK is not supported when thinking is enabled".into()
-            };
-            warn("topK", Some(&details));
+    if let Some(k) = top_k {
+        if thinking {
+            warn(
+                "topK",
+                Some("topK is not supported when thinking is enabled"),
+            );
         } else {
             inference.insert("topK".into(), json!(k));
         }
@@ -1276,9 +1303,9 @@ pub fn build_request_body_checked(
         {
             warn(
                 "maxOutputTokens",
-                Some(
-                    "maxOutputTokens is not supported when high reasoning is enabled and will be ignored",
-                ),
+                Some(&format!(
+                    "maxOutputTokens is not supported by {model_id} when high reasoning is enabled and will be ignored"
+                )),
             );
         }
     }
@@ -1683,9 +1710,11 @@ pub fn convert_usage(usage: Option<&BedrockUsage>) -> aimux_core::types::Usage {
             ..Default::default()
         },
         // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: serde_json::to_value(usage)
-            .ok()
-            .and_then(|value| value.as_object().cloned()),
+        raw: usage.raw.clone().or_else(|| {
+            serde_json::to_value(usage)
+                .ok()
+                .and_then(|value| value.as_object().cloned())
+        }),
     }
 }
 
