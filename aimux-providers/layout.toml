@@ -2,6 +2,136 @@
 # One table per vendor with an upstream package; versions come from
 # fixtures/aisdk/VERSIONS.json. `rust` paths are relative to src/.
 
+[mistral]
+package = "@ai-sdk/mistral"
+
+[[mistral.files]]
+upstream = "src/convert-mistral-usage.ts"
+rust = "mistral/model.rs"
+status = "mapped"
+
+[mistral.files.tests]
+ts-only = [
+  { case = "convertMistralUsage › should return undefined values when usage is null", reason = "convert_usage takes a non-null usage; a missing usage is an Option at the call site, and a stream without usage ends with Usage::default()" },
+]
+
+[[mistral.files]]
+upstream = "src/convert-to-mistral-chat-messages.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/get-response-metadata.ts"
+rust = "mistral/model.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/index.ts"
+rust = "mistral/mod.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/map-mistral-finish-reason.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-chat-language-model-options.ts"
+rust = "mistral/options.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-chat-language-model.ts"
+rust = "mistral/model.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-chat-prompt.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-embedding-model-options.ts"
+rust = "mistral/embedding.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-embedding-model.ts"
+rust = "mistral/embedding.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-error.ts"
+rust = "mistral/mod.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-prepare-tools.ts"
+rust = "mistral/convert.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-provider.ts"
+rust = "mistral/mod.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-speech-model-options.ts"
+rust = "mistral/options.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-speech-model.ts"
+rust = "mistral/speech.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-transcription-model-options.ts"
+rust = "mistral/options.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/mistral-transcription-model.ts"
+rust = "mistral/transcription.rs"
+status = "mapped"
+
+[mistral.files.tests]
+
+[[mistral.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
 [vertex]
 package = "@ai-sdk/google-vertex"
 # One aimux entry point: the edge entries (edge/, */edge/) and the *-node entries map to

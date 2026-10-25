@@ -1,0 +1,92 @@
+{
+  "content": [
+    {
+      "text": "The user is asking for 2+2. This is basic arithmetic. 2+2=4.",
+      "type": "reasoning"
+    },
+    {
+      "text": "2 + 2 = 4",
+      "type": "text"
+    }
+  ],
+  "finishReason": {
+    "raw": "stop",
+    "unified": "stop"
+  },
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Hello",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "mistral-small-latest"
+    }
+  },
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "message": {
+            "content": [
+              {
+                "thinking": [
+                  {
+                    "text": "The user is asking for 2+2. This is basic arithmetic. 2+2=4.",
+                    "type": "text"
+                  }
+                ],
+                "type": "thinking"
+              },
+              {
+                "text": "2 + 2 = 4",
+                "type": "text"
+              }
+            ],
+            "role": "assistant"
+          }
+        }
+      ],
+      "created": 1769088912,
+      "id": "a4e29c5b82f94d67b23e108a7c9df6e1",
+      "model": "magistral-medium-2507",
+      "object": "chat.completion",
+      "usage": {
+        "completion_tokens": 46,
+        "prompt_tokens": 10,
+        "total_tokens": 56
+      }
+    },
+    "headers": {
+      "content-length": "435",
+      "content-type": "application/json"
+    },
+    "id": "a4e29c5b82f94d67b23e108a7c9df6e1",
+    "modelId": "magistral-medium-2507",
+    "timestamp": "2026-01-22T13:35:12.000Z"
+  },
+  "usage": {
+    "inputTokens": {
+      "noCache": 10,
+      "total": 10
+    },
+    "outputTokens": {
+      "text": 46,
+      "total": 46
+    },
+    "raw": {
+      "completion_tokens": 46,
+      "prompt_tokens": 10,
+      "total_tokens": 56
+    }
+  },
+  "warnings": []
+}
