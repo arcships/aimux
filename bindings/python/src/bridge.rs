@@ -1,7 +1,7 @@
 //! Bounded, cancellation-aware bridge. Worker tasks never acquire the GIL.
 use std::future::Future;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, mpsc};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use aimux_core::AbortSignal;
 use aimux_ops::envelope::{ErrorEnvelope, OpsError, ProtocolError};
@@ -34,7 +34,7 @@ fn aborted() -> OpsError {
 }
 
 fn project(error: OpsError) -> ErrorEnvelope {
-    error.envelope(SystemTime::now())
+    error.envelope()
 }
 
 #[derive(Default)]

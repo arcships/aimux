@@ -109,14 +109,15 @@ mod user_messages {
         model.do_generate(&default_options(prompt)).await.unwrap();
 
         let body = first_request_body(&server).await;
-        let msg = &body["messages"][0];
-        assert_eq!(msg["role"], "user");
-        assert_eq!(msg["content"][0]["type"], "text");
-        assert_eq!(msg["content"][0]["text"], "Hello");
-        assert_eq!(msg["content"][1]["type"], "image_url");
         assert_eq!(
-            msg["content"][1]["image_url"]["url"],
-            "data:image/png;base64,AAECAw=="
+            body["messages"],
+            json!([{
+                "content": [
+                    { "text": "Hello", "type": "text" },
+                    { "image_url": { "url": "data:image/png;base64,AAECAw==" }, "type": "image_url" }
+                ],
+                "role": "user"
+            }])
         );
     }
 
@@ -134,8 +135,10 @@ mod user_messages {
             .unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["messages"][0]["role"], "user");
-        assert_eq!(body["messages"][0]["content"], "Hello");
+        assert_eq!(
+            body["messages"],
+            json!([{ "content": "Hello", "role": "user" }])
+        );
     }
 }
 
@@ -266,23 +269,21 @@ mod tool_calls {
         model.do_generate(&default_options(prompt)).await.unwrap();
 
         let body = first_request_body(&server).await;
-        // Assistant message
-        assert_eq!(body["messages"][0]["role"], "assistant");
-        assert_eq!(body["messages"][0]["content"], "");
-        assert_eq!(body["messages"][0]["tool_calls"][0]["id"], "quux");
-        assert_eq!(body["messages"][0]["tool_calls"][0]["type"], "function");
         assert_eq!(
-            body["messages"][0]["tool_calls"][0]["function"]["name"],
-            "thwomp"
+            body["messages"],
+            json!([
+                {
+                    "content": "",
+                    "role": "assistant",
+                    "tool_calls": [{
+                        "function": { "arguments": r#"{"foo":"bar123"}"#, "name": "thwomp" },
+                        "id": "quux",
+                        "type": "function"
+                    }]
+                },
+                { "content": r#"{"oof":"321rab"}"#, "role": "tool", "tool_call_id": "quux" }
+            ])
         );
-        assert_eq!(
-            body["messages"][0]["tool_calls"][0]["function"]["arguments"],
-            r#"{"foo":"bar123"}"#
-        );
-        // Tool message
-        assert_eq!(body["messages"][1]["role"], "tool");
-        assert_eq!(body["messages"][1]["tool_call_id"], "quux");
-        assert_eq!(body["messages"][1]["content"], r#"{"oof":"321rab"}"#);
     }
 
     /// upstream: @ai-sdk/groq src/convert-to-groq-chat-messages.test.ts › tool calls › should send reasoning if present
@@ -312,14 +313,19 @@ mod tool_calls {
         model.do_generate(&default_options(prompt)).await.unwrap();
 
         let body = first_request_body(&server).await;
-        let msg = &body["messages"][0];
-        assert_eq!(msg["role"], "assistant");
-        assert_eq!(msg["content"], "");
         assert_eq!(
-            msg["reasoning"],
-            "I think the tool will return the correct value."
+            body["messages"],
+            json!([{
+                "content": "",
+                "reasoning": "I think the tool will return the correct value.",
+                "role": "assistant",
+                "tool_calls": [{
+                    "function": { "arguments": r#"{"foo":"bar123"}"#, "name": "thwomp" },
+                    "id": "quux",
+                    "type": "function"
+                }]
+            }])
         );
-        assert_eq!(msg["tool_calls"][0]["function"]["name"], "thwomp");
     }
 
     /// upstream: @ai-sdk/groq src/convert-to-groq-chat-messages.test.ts › tool calls › should not include reasoning field when no reasoning content is present
@@ -340,14 +346,14 @@ mod tool_calls {
         model.do_generate(&default_options(prompt)).await.unwrap();
 
         let body = first_request_body(&server).await;
-        let msg = &body["messages"][0];
-        assert_eq!(msg["role"], "assistant");
-        assert_eq!(msg["content"], "Hello, how can I help you?");
-        assert!(msg.get("reasoning").is_none() || msg["reasoning"].is_null());
+        assert_eq!(
+            body["messages"],
+            json!([{ "content": "Hello, how can I help you?", "role": "assistant" }])
+        );
     }
 
     /// Groq does not support provider file references.
-    /// upstream: @ai-sdk/groq src/convert-to-groq-chat-messages.test.ts › tool calls › should throw for file parts with provider references
+    /// partial: `should throw for file parts with provider references`; upstream checks the message `'file parts with provider references' functionality not supported`, and aimux's `UnsupportedFunctionality` carries only the functionality name (the message field is tracked in #275).
     #[tokio::test]
     async fn file_reference_unsupported() {
         let server = MockServer::start().await;

@@ -12,7 +12,6 @@ sealed class AimuxException protected constructor(val javaError: NativeException
     val code get() = javaError.code
     val kind get() = javaError.kind
     val errorName get() = javaError.errorName
-    val retryAfterMs get() = javaError.retryAfterMs
     val error get() = javaError.error
     val envelope get() = javaError.envelope
 

@@ -11,7 +11,6 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
-use std::time::{Duration, SystemTime};
 
 const fn descriptor(
     name: &'static str,
@@ -38,19 +37,12 @@ const fn descriptor(
         source_symbols: &[],
     }
 }
-fn now() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
-}
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now,
-    }
+    Ctx { owner, abort: None }
 }
 fn unknown(error: &OpsError) {
     assert!(matches!(
-        error.unprojected(),
+        &error,
         OpsError::Binding(BindingError::InvalidHandle { actual: None, .. })
     ));
 }
@@ -86,9 +78,8 @@ async fn global_target_and_mode_preflight_are_explicit_and_projected() {
         .call(ctx(owner), id, GLOBAL.name, json!({}))
         .await
         .unwrap_err();
-    assert!(matches!(&error, OpsError::Projected(_)));
     assert!(matches!(
-        error.unprojected(),
+        &error,
         OpsError::Binding(BindingError::InvalidHandle {
             actual: Some(HandleKind::Abort),
             ..
@@ -155,7 +146,7 @@ async fn secondary_handles_use_the_same_owner_resolver_before_handler_entry() {
         .await
         .unwrap_err();
     unknown(&foreign_error);
-    assert_eq!(foreign_error.envelope(now()), unknown_error.envelope(now()));
+    assert_eq!(foreign_error.envelope(), unknown_error.envelope());
     assert_eq!(SECONDARY_CALLS.load(Ordering::SeqCst), 0);
     assert!(
         dispatcher
@@ -182,7 +173,7 @@ fn api_failure(_: Ctx, _: Target, _: Value) -> CallFuture {
     })
 }
 #[tokio::test]
-async fn the_dispatch_projection_keeps_the_original_clock_and_cause() {
+async fn the_dispatch_projection_keeps_the_cause_and_response_headers() {
     static FAIL: OpDescriptor = descriptor("test.failure", OpMode::Call, &[]);
     let registry = HandleRegistry::default();
     let registrations = [(&FAIL, Handler::Call(api_failure))];
@@ -191,21 +182,10 @@ async fn the_dispatch_projection_keeps_the_original_clock_and_cause() {
         .call(ctx(Owner::CProcess), HandleId(0), FAIL.name, json!({}))
         .await
         .unwrap_err();
-    assert!(matches!(
-        error.unprojected(),
-        OpsError::AiMux(AiMuxError::ApiCall(_))
-    ));
-    assert_eq!(error.envelope(now()).retry_after_ms, Some(2000));
+    assert!(matches!(&error, OpsError::AiMux(AiMuxError::ApiCall(_))));
     assert_eq!(
-        error.envelope(now() + Duration::from_secs(100)),
-        error.envelope(now())
-    );
-    assert_eq!(
-        error
-            .project(now() + Duration::from_secs(100))
-            .envelope(now())
-            .retry_after_ms,
-        Some(2000)
+        error.envelope().error["responseHeaders"]["Retry-After"],
+        "Tue, 14 Nov 2023 22:13:22 GMT"
     );
 }
 

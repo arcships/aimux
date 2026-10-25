@@ -143,7 +143,18 @@ mod prepare_tools {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["tools"][0]["function"]["strict"], true);
+            assert_eq!(
+                body["tools"],
+                json!([{
+                    "type": "function",
+                    "function": {
+                        "name": "testFunction",
+                        "description": "A test function",
+                        "parameters": { "type": "object", "properties": {} },
+                        "strict": true
+                    }
+                }])
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › strict mode for function tools › should pass through strict mode when strict is false
@@ -169,7 +180,18 @@ mod prepare_tools {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["tools"][0]["function"]["strict"], false);
+            assert_eq!(
+                body["tools"],
+                json!([{
+                    "type": "function",
+                    "function": {
+                        "name": "testFunction",
+                        "description": "A test function",
+                        "parameters": { "type": "object", "properties": {} },
+                        "strict": false
+                    }
+                }])
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › strict mode for function tools › should not include strict when strict is undefined
@@ -190,7 +212,17 @@ mod prepare_tools {
             model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert!(body["tools"][0]["function"].get("strict").is_none());
+            assert_eq!(
+                body["tools"],
+                json!([{
+                    "type": "function",
+                    "function": {
+                        "name": "testFunction",
+                        "description": "A test function",
+                        "parameters": { "type": "object", "properties": {} }
+                    }
+                }])
+            );
         }
     }
 
@@ -234,10 +266,11 @@ mod prepare_tools {
                 tools: Some(vec![tool]),
                 ..default_options(test_prompt())
             };
-            model.do_generate(&options).await.unwrap();
+            let result = model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["tools"][0]["type"], "browser_search");
+            assert_eq!(body["tools"], json!([{ "type": "browser_search" }]));
+            assert!(result.warnings.is_empty());
         }
 
         /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › browser search tool › should warn when browser search is used with unsupported model
@@ -260,15 +293,16 @@ mod prepare_tools {
             };
             let result = model.do_generate(&options).await.unwrap();
 
-            assert!(result.warnings.iter().any(|w| match w {
-                aimux_core::types::Warning::Unsupported {
-                    feature, details, ..
-                } => {
-                    feature.contains("groq.browser_search")
-                        && details.as_ref().is_some_and(|d| d.contains("gemma2-9b-it"))
-                }
-                _ => false,
-            }));
+            let body = first_request_body(&server).await;
+            assert!(body.get("tools").is_none_or(|tools| *tools == json!([])));
+            assert_eq!(
+                serde_json::to_value(&result.warnings).unwrap(),
+                json!([{
+                    "details": "Browser search is only supported on the following models: openai/gpt-oss-20b, openai/gpt-oss-120b. Current model: gemma2-9b-it",
+                    "feature": "provider-defined tool groq.browser_search",
+                    "type": "unsupported"
+                }])
+            );
         }
 
         /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › browser search tool › should handle mixed tools with model validation
@@ -292,19 +326,31 @@ mod prepare_tools {
                 tools: Some(vec![Tool::from(func_tool), browser_tool]),
                 ..default_options(test_prompt())
             };
-            model.do_generate(&options).await.unwrap();
+            let result = model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["tools"][0]["type"], "function");
-            assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
-            assert_eq!(body["tools"][1]["type"], "browser_search");
+            assert_eq!(
+                body["tools"],
+                json!([
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "test-tool",
+                            "description": "A test tool",
+                            "parameters": { "type": "object", "properties": {} }
+                        }
+                    },
+                    { "type": "browser_search" }
+                ])
+            );
+            assert!(result.warnings.is_empty());
         }
 
         /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › browser search tool › should validate all browser search supported models
         #[tokio::test]
         async fn browser_search_all_supported_models() {
             let model_ids = browser_search_model_ids();
-            assert_eq!(model_ids.len(), 2);
+            assert_eq!(model_ids, ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]);
             for model_id in model_ids {
                 let server = MockServer::start().await;
                 mock_json(&server, text_completion_body()).await;
@@ -321,10 +367,11 @@ mod prepare_tools {
                     tools: Some(vec![tool]),
                     ..default_options(test_prompt())
                 };
-                model.do_generate(&options).await.unwrap();
+                let result = model.do_generate(&options).await.unwrap();
 
                 let body = first_request_body(&server).await;
-                assert_eq!(body["tools"][0]["type"], "browser_search");
+                assert_eq!(body["tools"], json!([{ "type": "browser_search" }]));
+                assert!(result.warnings.is_empty());
             }
         }
     }
@@ -349,16 +396,22 @@ mod prepare_tools {
             tools: Some(vec![Tool::from(tool)]),
             ..default_options(test_prompt())
         };
-        model.do_generate(&options).await.unwrap();
+        let result = model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["tools"][0]["type"], "function");
-        assert_eq!(body["tools"][0]["function"]["name"], "testFunction");
         assert_eq!(
-            body["tools"][0]["function"]["description"],
-            "A test function"
+            body["tools"],
+            json!([{
+                "type": "function",
+                "function": {
+                    "name": "testFunction",
+                    "description": "A test function",
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            }])
         );
-        assert_eq!(body["tools"][0]["function"]["parameters"]["type"], "object");
+        assert!(body.get("tool_choice").is_none());
+        assert!(result.warnings.is_empty());
     }
 
     /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › should add warnings for unsupported provider-defined tools
@@ -381,13 +434,17 @@ mod prepare_tools {
         };
         let result = model.do_generate(&options).await.unwrap();
 
-        // The unsupported tool should produce a warning.
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => {
-                feature.contains("some.unsupported_tool")
-            }
-            _ => false,
-        }));
+        let body = first_request_body(&server).await;
+        // Upstream's prepared `tools: []`: no tool reaches the request.
+        assert!(body.get("tools").is_none_or(|tools| *tools == json!([])));
+        assert!(body.get("tool_choice").is_none());
+        assert_eq!(
+            serde_json::to_value(&result.warnings).unwrap(),
+            json!([{
+                "feature": "provider-defined tool some.unsupported_tool",
+                "type": "unsupported"
+            }])
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-prepare-tools.test.ts › prepareTools › should handle tool choice "auto"
@@ -470,7 +527,9 @@ mod prepare_tools {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["tool_choice"]["type"], "function");
-        assert_eq!(body["tool_choice"]["function"]["name"], "testFunction");
+        assert_eq!(
+            body["tool_choice"],
+            json!({ "type": "function", "function": { "name": "testFunction" } })
+        );
     }
 }

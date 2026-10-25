@@ -24,7 +24,4 @@ public abstract class NativeException extends RuntimeException {
     public final String getErrorName() { return envelope.getError().path("name").asText(); }
     public final JsonNode getError() { return envelope.getError(); }
     public final JsonNode getEnvelope() { return DtoJson.MAPPER.valueToTree(envelope); }
-    public final Long getRetryAfterMs() {
-        return envelope.getRetryAfterMs();
-    }
 }

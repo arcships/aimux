@@ -1,6 +1,9 @@
 //! The wiremock harness of the older `@ai-sdk/groq` chat ports: every test
 //! builds the model through the Groq package (`create_groq(..).chat(model)`)
 //! against a loopback `MockServer`.
+//!
+//! A `partial:` marker names an upstream case the test covers only in part,
+//! with the file that has the full port or the reason it cannot match.
 
 pub(super) use aimux_core::tool::RawToolCall;
 pub(super) use futures::StreamExt;
@@ -75,81 +78,19 @@ pub(super) fn text_completion_body() -> Value {
     })
 }
 
-/// The groq-text fixture (inline).
+/// `__fixtures__/groq-text.json`, as upstream reads it.
 pub(super) fn groq_text_body() -> Value {
-    json!({
-        "id": "chatcmpl-09d64d2a-ed1c-4473-829f-78db43f45d13",
-        "object": "chat.completion",
-        "created": 1770770798,
-        "model": "llama-3.3-70b-versatile",
-        "choices": [{
-            "index": 0,
-            "message": { "role": "assistant", "content": "Luminaria holiday response text." },
-            "logprobs": null,
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": 45,
-            "completion_tokens": 607,
-            "total_tokens": 652
-        }
-    })
+    serde_json::from_str(include_str!("fixtures/groq-text.json")).expect("fixture is JSON")
 }
 
-/// The groq-reasoning fixture (inline).
+/// `__fixtures__/groq-reasoning.json`, as upstream reads it.
 pub(super) fn groq_reasoning_body() -> Value {
-    json!({
-        "id": "chatcmpl-73cf8a54-d54e-400c-88b8-603d1a346d96",
-        "object": "chat.completion",
-        "created": 1770770833,
-        "model": "qwen/qwen3-32b",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": "The word \"strawberry\" contains 3 R's.",
-                "reasoning": "Okay, so the user is asking how many times the letter r appears in the word strawberry."
-            },
-            "logprobs": null,
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": 17,
-            "completion_tokens": 649,
-            "total_tokens": 666,
-            "completion_tokens_details": {
-                "reasoning_tokens": 570
-            }
-        }
-    })
+    serde_json::from_str(include_str!("fixtures/groq-reasoning.json")).expect("fixture is JSON")
 }
 
-/// The groq-tool-call fixture (inline).
+/// `__fixtures__/groq-tool-call.json`, as upstream reads it.
 pub(super) fn groq_tool_call_body() -> Value {
-    json!({
-        "id": "chatcmpl-1fd017fc-60b8-44eb-a736-375b8e1bc3e7",
-        "object": "chat.completion",
-        "created": 1770770815,
-        "model": "llama-3.3-70b-versatile",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "tool_calls": [{
-                    "id": "ax9fskhev",
-                    "type": "function",
-                    "function": { "name": "weather", "arguments": "{}" }
-                }]
-            },
-            "logprobs": null,
-            "finish_reason": "tool_calls"
-        }],
-        "usage": {
-            "prompt_tokens": 218,
-            "completion_tokens": 15,
-            "total_tokens": 233
-        }
-    })
+    serde_json::from_str(include_str!("fixtures/groq-tool-call.json")).expect("fixture is JSON")
 }
 
 /// Build a single SSE `data: <json>\n\n` event string.

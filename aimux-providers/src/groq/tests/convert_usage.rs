@@ -175,10 +175,14 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(20));
-        assert_eq!(result.usage.input_tokens.no_cache, Some(20));
-        assert_eq!(result.usage.output_tokens.total, Some(10));
-        assert_eq!(result.usage.output_tokens.text, Some(10));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 10, "text": 10 },
+                "raw": { "prompt_tokens": 20, "completion_tokens": 10 }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should extract reasoning tokens from completion_tokens_details
@@ -213,10 +217,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(79));
-        assert_eq!(result.usage.output_tokens.total, Some(40));
-        assert_eq!(result.usage.output_tokens.reasoning, Some(21));
-        assert_eq!(result.usage.output_tokens.text, Some(19)); // 40 - 21
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 79, "noCache": 79 },
+                "outputTokens": { "total": 40, "text": 19, "reasoning": 21 },
+                "raw": {
+                    "prompt_tokens": 79,
+                    "completion_tokens": 40,
+                    "completion_tokens_details": { "reasoning_tokens": 21 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle zero reasoning tokens
@@ -251,8 +263,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.output_tokens.reasoning, Some(0));
-        assert_eq!(result.usage.output_tokens.text, Some(10));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 10, "text": 10, "reasoning": 0 },
+                "raw": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 10,
+                    "completion_tokens_details": { "reasoning_tokens": 0 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle all tokens being reasoning tokens
@@ -287,9 +309,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.output_tokens.total, Some(50));
-        assert_eq!(result.usage.output_tokens.text, Some(0)); // 50 - 50
-        assert_eq!(result.usage.output_tokens.reasoning, Some(50));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 50, "text": 0, "reasoning": 50 },
+                "raw": {
+                    "prompt_tokens": 20,
+                    "completion_tokens": 50,
+                    "completion_tokens_details": { "reasoning_tokens": 50 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should map cached_tokens to cacheRead and subtract from noCache
@@ -324,9 +355,18 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(4641));
-        assert_eq!(result.usage.input_tokens.no_cache, Some(33)); // 4641 - 4608
-        assert_eq!(result.usage.input_tokens.cache_read, Some(4608));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 4641, "noCache": 33, "cacheRead": 4608 },
+                "outputTokens": { "total": 1817, "text": 1817 },
+                "raw": {
+                    "prompt_tokens": 4641,
+                    "completion_tokens": 1817,
+                    "prompt_tokens_details": { "cached_tokens": 4608 }
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should treat zero cached_tokens as a cache miss (cacheRead 0)
@@ -361,8 +401,10 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.cache_read, Some(0));
-        assert_eq!(result.usage.input_tokens.no_cache, Some(20));
+        assert_eq!(
+            serde_json::to_value(&result.usage.input_tokens).unwrap(),
+            json!({ "total": 20, "noCache": 20, "cacheRead": 0 })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/convert-groq-usage.test.ts › convertGroqUsage › should handle missing prompt_tokens and completion_tokens
@@ -393,7 +435,13 @@ mod convert_groq_usage {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(0));
-        assert_eq!(result.usage.output_tokens.total, Some(0));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 0, "noCache": 0 },
+                "outputTokens": { "total": 0, "text": 0 },
+                "raw": {}
+            })
+        );
     }
 }

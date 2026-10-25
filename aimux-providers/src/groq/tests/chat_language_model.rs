@@ -1,9 +1,10 @@
 //! Ports of `src/groq-chat-language-model.test.ts` from `@ai-sdk/groq@4.0.52`.
 //!
-//! Two harnesses share the file: the response-metadata, header,
-//! structured-output, tool-call and reasoning cases use the [`MockFetch`]
-//! transport; the older ones (formerly `tests/groq_test.rs`) a wiremock
-//! `MockServer` from [`super::support`].
+//! Two harnesses share the file: the snapshot, response-metadata, header,
+//! structured-output, tool-call, reasoning and raw-chunk cases use the
+//! [`MockFetch`] transport; the older ones (formerly `tests/groq_test.rs`) a
+//! wiremock `MockServer` from [`super::support`]. Some older cases are partial
+//! versions of cases ported in full here, and are marked `partial:`.
 //!
 //! Harness differences from the TypeScript (expectations are unchanged):
 //! - `toMatchSnapshot` values are the `.snap` entries in `snapshots/`, with
@@ -25,7 +26,8 @@
 //!   provider is needed.
 //! - `request.body` is a JSON string upstream; here it is the body value, and
 //!   its compact text keeps the key order the request was built in
-//!   (`preserve_order`).
+//!   (`preserve_order`). The snapshot files hold that string parsed.
+//! - Dates printed bare in snapshots are their `toISOString()` strings.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -47,10 +49,18 @@ use super::support::*;
 const MODEL: &str = "gemma2-9b-it";
 const CHAT_COMPLETIONS_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const TEXT_FIXTURE: &str = include_str!("fixtures/groq-text.json");
+const TOOL_CALL_FIXTURE: &str = include_str!("fixtures/groq-tool-call.json");
+const REASONING_FIXTURE: &str = include_str!("fixtures/groq-reasoning.json");
 const TEXT_CHUNKS: &str = include_str!("fixtures/groq-text.chunks.txt");
 const TOOL_CALL_CHUNKS: &str = include_str!("fixtures/groq-tool-call.chunks.txt");
 const REASONING_CHUNKS: &str = include_str!("fixtures/groq-reasoning.chunks.txt");
+/// The last chunk of the tool-call streaming tests: finish reason and `x_groq` usage.
+const X_GROQ_TOOL_CALLS_FINISH: &str = r#"{"id":"chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798","object":"chat.completion.chunk","created":1729171479,"model":"gemma2-9b-it","system_fingerprint":"fp_10c08bf97d","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}],"x_groq":{"id":"req_01jadadp0femyae9kav1gpkhe8","usage":{"queue_time":0.061348671,"prompt_tokens":18,"prompt_time":0.000211569,"completion_tokens":439,"completion_time":0.798181818,"total_tokens":457,"total_time":0.798393387}}}"#;
 
+const SNAPSHOT_DO_GENERATE_TEXT: &str = include_str!("snapshots/do_generate_text.json");
+const SNAPSHOT_DO_GENERATE_TOOL_CALL: &str = include_str!("snapshots/do_generate_tool_call.json");
+const SNAPSHOT_DO_GENERATE_REASONING: &str = include_str!("snapshots/do_generate_reasoning.json");
+const SNAPSHOT_DO_STREAM_TEXT: &str = include_str!("snapshots/do_stream_text.json");
 const SNAPSHOT_DO_STREAM_TOOL_CALL: &str = include_str!("snapshots/do_stream_tool_call.json");
 const SNAPSHOT_DO_STREAM_REASONING: &str = include_str!("snapshots/do_stream_reasoning.json");
 
@@ -222,6 +232,20 @@ fn request_headers() -> HashMap<String, String> {
         "Custom-Request-Header".to_string(),
         "request-header-value".to_string(),
     )])
+}
+
+/// The `test-tool` function tool of the tool-call streaming tests.
+fn test_tool() -> Tool {
+    Tool::Function(FunctionTool::new("test-tool", value_schema()))
+}
+
+/// The usage of the `x_groq` chunk in the tool-call streaming tests.
+fn x_groq_tool_call_usage() -> Value {
+    json!({
+        "inputTokens": {"noCache": 18, "total": 18},
+        "outputTokens": {"text": 439, "total": 439},
+        "raw": {"completion_tokens": 439, "prompt_tokens": 18, "total_tokens": 457}
+    })
 }
 
 /// All parts of a stream, each serialized as the AI SDK writes it.
@@ -480,6 +504,17 @@ mod do_generate {
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › text › should extract text content
         #[tokio::test]
+        async fn should_extract_text_content() {
+            let fetch = json_fetch(&json_value(TEXT_FIXTURE));
+            let result = model(&fetch).do_generate(&options()).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_TEXT)
+            );
+        }
+
+        /// partial: `should extract text content`; full port in src/groq/tests/chat_language_model.rs.
+        #[tokio::test]
         async fn extracts_text_content() {
             let server = MockServer::start().await;
             mock_json(&server, groq_text_body()).await;
@@ -513,9 +548,13 @@ mod do_generate {
                 .unwrap();
 
             let body = first_request_body(&server).await;
-            assert_eq!(body["model"], "gemma2-9b-it");
-            assert_eq!(body["messages"][0]["role"], "user");
-            assert_eq!(body["messages"][0]["content"], "Hello");
+            assert_eq!(
+                body,
+                json!({
+                    "messages": [{ "content": "Hello", "role": "user" }],
+                    "model": "gemma2-9b-it"
+                })
+            );
         }
     }
 
@@ -523,6 +562,17 @@ mod do_generate {
         use super::*;
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › tool call › should extract tool call content
+        #[tokio::test]
+        async fn should_extract_tool_call_content() {
+            let fetch = json_fetch(&json_value(TOOL_CALL_FIXTURE));
+            let result = model(&fetch).do_generate(&options()).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_TOOL_CALL)
+            );
+        }
+
+        /// partial: `should extract tool call content`; full port in src/groq/tests/chat_language_model.rs.
         #[tokio::test]
         async fn extracts_tool_call() {
             let server = MockServer::start().await;
@@ -554,6 +604,17 @@ mod do_generate {
         use super::*;
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › reasoning › should extract reasoning content
+        #[tokio::test]
+        async fn should_extract_reasoning_content() {
+            let fetch = json_fetch(&json_value(REASONING_FIXTURE));
+            let result = model(&fetch).do_generate(&options()).await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_REASONING)
+            );
+        }
+
+        /// partial: `should extract reasoning content`; full port in src/groq/tests/chat_language_model.rs.
         #[tokio::test]
         async fn extracts_reasoning() {
             let server = MockServer::start().await;
@@ -682,7 +743,7 @@ mod do_generate {
             let server = MockServer::start().await;
             mock_json(&server, groq_text_body()).await;
 
-            let model = make_provider(&server);
+            let model = model_at(&server, "openai/gpt-oss-120b");
 
             let provider_opts =
                 provider_namespace("groq", json!({"reasoningEffort": "high"})).unwrap();
@@ -691,10 +752,11 @@ mod do_generate {
                 provider_options: Some(provider_opts),
                 ..default_options(test_prompt())
             };
-            model.do_generate(&options).await.unwrap();
+            let result = model.do_generate(&options).await.unwrap();
 
             let body = first_request_body(&server).await;
             assert_eq!(body["reasoning_effort"], "high");
+            assert!(result.warnings.is_empty());
         }
     }
 
@@ -711,8 +773,14 @@ mod do_generate {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(45));
-        assert_eq!(result.usage.output_tokens.total, Some(607));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 45, "noCache": 45 },
+                "outputTokens": { "total": 607, "text": 607 },
+                "raw": { "completion_tokens": 607, "prompt_tokens": 45, "total_tokens": 652 }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should support partial usage
@@ -743,8 +811,14 @@ mod do_generate {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(20));
-        assert_eq!(result.usage.output_tokens.total, Some(0));
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 20 },
+                "outputTokens": { "total": 0, "text": 0 },
+                "raw": { "prompt_tokens": 20, "total_tokens": 20 }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should extract cached input tokens
@@ -780,9 +854,19 @@ mod do_generate {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(20));
-        assert_eq!(result.usage.input_tokens.cache_read, Some(15));
-        assert_eq!(result.usage.input_tokens.no_cache, Some(5)); // 20 - 15
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 20, "noCache": 5, "cacheRead": 15 },
+                "outputTokens": { "total": 5, "text": 5 },
+                "raw": {
+                    "completion_tokens": 5,
+                    "prompt_tokens": 20,
+                    "prompt_tokens_details": { "cached_tokens": 15 },
+                    "total_tokens": 25
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should extract reasoning tokens from completion_tokens_details
@@ -798,10 +882,19 @@ mod do_generate {
             .await
             .unwrap();
 
-        assert_eq!(result.usage.input_tokens.total, Some(17));
-        assert_eq!(result.usage.output_tokens.total, Some(649));
-        assert_eq!(result.usage.output_tokens.reasoning, Some(570));
-        assert_eq!(result.usage.output_tokens.text, Some(79)); // 649 - 570
+        assert_eq!(
+            serde_json::to_value(&result.usage).unwrap(),
+            json!({
+                "inputTokens": { "total": 17, "noCache": 17 },
+                "outputTokens": { "total": 649, "text": 79, "reasoning": 570 },
+                "raw": {
+                    "completion_tokens": 649,
+                    "completion_tokens_details": { "reasoning_tokens": 570 },
+                    "prompt_tokens": 17,
+                    "total_tokens": 666
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should support unknown finish reason
@@ -860,9 +953,16 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["reasoning_format"], "hidden");
-        assert_eq!(body["user"], "test-user-id");
-        assert_eq!(body["parallel_tool_calls"], false);
+        assert_eq!(
+            body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "parallel_tool_calls": false,
+                "reasoning_format": "hidden",
+                "user": "test-user-id"
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass serviceTier provider option
@@ -881,7 +981,14 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "flex");
+        assert_eq!(
+            body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "service_tier": "flex"
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass performance serviceTier provider option
@@ -901,7 +1008,14 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["service_tier"], "performance");
+        assert_eq!(
+            body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "service_tier": "performance"
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass tools and toolChoice
@@ -932,9 +1046,27 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["tool_choice"]["type"], "function");
-        assert_eq!(body["tool_choice"]["function"]["name"], "test-tool");
-        assert_eq!(body["tools"][0]["function"]["name"], "test-tool");
+        assert_eq!(
+            body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "tool_choice": { "function": { "name": "test-tool" }, "type": "function" },
+                "tools": [{
+                    "function": {
+                        "name": "test-tool",
+                        "parameters": {
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "additionalProperties": false,
+                            "properties": { "value": { "type": "string" } },
+                            "required": ["value"],
+                            "type": "object"
+                        }
+                    },
+                    "type": "function"
+                }]
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass response format information as json_schema when structuredOutputs enabled by default
@@ -962,9 +1094,28 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["type"], "json_schema");
-        assert_eq!(body["response_format"]["json_schema"]["name"], "test-name");
-        assert_eq!(body["response_format"]["json_schema"]["strict"], true);
+        assert_eq!(
+            body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "response_format": {
+                    "json_schema": {
+                        "description": "test description",
+                        "name": "test-name",
+                        "schema": {
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "additionalProperties": false,
+                            "properties": { "value": { "type": "string" } },
+                            "required": ["value"],
+                            "type": "object"
+                        },
+                        "strict": true
+                    },
+                    "type": "json_schema"
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should pass response format information as json_object when structuredOutputs explicitly disabled
@@ -985,6 +1136,7 @@ mod do_generate {
                     "properties": { "value": { "type": "string" } },
                     "required": ["value"],
                     "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
                 })),
                 name: Some("test-name".to_string()),
                 description: Some("test description".to_string()),
@@ -994,13 +1146,22 @@ mod do_generate {
         let result = model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["type"], "json_object");
-
-        // Should have a warning about structuredOutputs
-        assert!(result.warnings.iter().any(|w| match w {
-            aimux_core::types::Warning::Unsupported { feature, .. } => feature == "responseFormat",
-            _ => false,
-        }));
+        assert_eq!(
+            body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "response_format": { "type": "json_object" }
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(&result.warnings).unwrap(),
+            json!([{
+                "details": "JSON response format schema is only supported with structuredOutputs",
+                "feature": "responseFormat",
+                "type": "unsupported"
+            }])
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should send strict: false when strictJsonSchema is explicitly disabled
@@ -1020,6 +1181,7 @@ mod do_generate {
                     "properties": { "value": { "type": "string" } },
                     "required": ["value"],
                     "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
                 })),
                 name: Some("test-name".to_string()),
                 description: Some("test description".to_string()),
@@ -1029,7 +1191,28 @@ mod do_generate {
         model.do_generate(&options).await.unwrap();
 
         let body = first_request_body(&server).await;
-        assert_eq!(body["response_format"]["json_schema"]["strict"], false);
+        assert_eq!(
+            body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "response_format": {
+                    "json_schema": {
+                        "description": "test description",
+                        "name": "test-name",
+                        "schema": {
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "additionalProperties": false,
+                            "properties": { "value": { "type": "string" } },
+                            "required": ["value"],
+                            "type": "object"
+                        },
+                        "strict": false
+                    },
+                    "type": "json_schema"
+                }
+            })
+        );
     }
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doGenerate › should send request body
@@ -1114,22 +1297,18 @@ mod do_stream {
                     .await
                     .unwrap();
                 let parts = collect_stream(result).await;
-                let reasoning: Vec<String> = parts
+                let reasoning: Vec<Value> = parts
                     .iter()
-                    .filter_map(|p| match p {
-                        StreamPart::ReasoningStart { id, .. } => Some(format!("start {id}")),
-                        StreamPart::ReasoningDelta { id, delta, .. } => Some(format!("delta {id} {delta}")),
-                        StreamPart::ReasoningEnd { id, .. } => Some(format!("end {id}")),
-                        _ => None,
-                    })
+                    .map(|part| serde_json::to_value(part).unwrap())
+                    .filter(|part| part["type"].as_str().is_some_and(|kind| kind.starts_with("reasoning-")))
                     .collect();
                 assert_eq!(
                     reasoning,
                     [
-                        "start reasoning-0",
-                        "delta reasoning-0 Think ",
-                        "delta reasoning-0 more...",
-                        "end reasoning-0"
+                        json!({ "type": "reasoning-start", "id": "reasoning-0" }),
+                        json!({ "type": "reasoning-delta", "id": "reasoning-0", "delta": "Think " }),
+                        json!({ "type": "reasoning-delta", "id": "reasoning-0", "delta": "more..." }),
+                        json!({ "type": "reasoning-end", "id": "reasoning-0" }),
                     ]
                 );
             }
@@ -1220,6 +1399,116 @@ mod do_stream {
         );
     }
 
+    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call deltas when tool call arguments are passed in the first chunk
+    #[tokio::test]
+    async fn should_stream_tool_call_deltas_when_tool_call_arguments_are_passed_in_the_first_chunk()
+    {
+        let deltas = [
+            "{\\\"",
+            "va",
+            "lue",
+            "\\\":\\\"",
+            "Spark",
+            "le",
+            " Day",
+            "\\\"}",
+        ];
+        let mut payloads: Vec<String> = deltas
+            .iter()
+            .enumerate()
+            .map(|(index, delta)| {
+                let delta = if index == 0 {
+                    format!(
+                        r#"{{"role":"assistant","content":null,"tool_calls":[{{"index":0,"id":"call_O17Uplv4lJvD6DVdIvFFeRMw","type":"function","function":{{"name":"test-tool","arguments":"{delta}"}}}}]}}"#
+                    )
+                } else {
+                    format!(r#"{{"tool_calls":[{{"index":0,"function":{{"arguments":"{delta}"}}}}]}}"#)
+                };
+                format!(
+                    r#"{{"id":"chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798","object":"chat.completion.chunk","created":1711357598,"model":"gemma2-9b-it","system_fingerprint":"fp_3bc1b5746c","choices":[{{"index":0,"delta":{delta},"finish_reason":null}}]}}"#
+                )
+            })
+            .collect();
+        payloads.push(X_GROQ_TOOL_CALLS_FINISH.to_string());
+        let payloads: Vec<&str> = payloads.iter().map(String::as_str).collect();
+        let fetch = MockFetch::new(vec![sse_response(&payloads, &[])]);
+        let mut opts = options();
+        opts.tools = Some(vec![test_tool()]);
+        let result = model(&fetch).do_stream(&opts).await.unwrap();
+
+        let id = "call_O17Uplv4lJvD6DVdIvFFeRMw";
+        let mut expected = vec![
+            json!({"type": "stream-start", "warnings": []}),
+            json!({
+                "id": "chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798",
+                "modelId": "gemma2-9b-it",
+                "timestamp": "2024-03-25T09:06:38.000Z",
+                "type": "response-metadata"
+            }),
+            json!({"id": id, "toolName": "test-tool", "type": "tool-input-start"}),
+        ];
+        for delta in ["{\"", "va", "lue", "\":\"", "Spark", "le", " Day", "\"}"] {
+            expected.push(json!({"delta": delta, "id": id, "type": "tool-input-delta"}));
+        }
+        expected.extend([
+            json!({"id": id, "type": "tool-input-end"}),
+            json!({
+                "input": "{\"value\":\"Sparkle Day\"}",
+                "toolCallId": id,
+                "toolName": "test-tool",
+                "type": "tool-call"
+            }),
+            json!({
+                "finishReason": {"raw": "tool_calls", "unified": "tool-calls"},
+                "type": "finish",
+                "usage": x_groq_tool_call_usage()
+            }),
+        ]);
+        assert_eq!(stream_parts(result).await, expected);
+    }
+
+    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call that is sent in one chunk
+    #[tokio::test]
+    async fn should_stream_tool_call_that_is_sent_in_one_chunk() {
+        let fetch = MockFetch::new(vec![sse_response(
+            &[
+                r#"{"id":"chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798","object":"chat.completion.chunk","created":1711357598,"model":"gemma2-9b-it","system_fingerprint":"fp_3bc1b5746c","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_O17Uplv4lJvD6DVdIvFFeRMw","type":"function","function":{"name":"test-tool","arguments":"{\"value\":\"Sparkle Day\"}"}}]},"finish_reason":null}]}"#,
+                X_GROQ_TOOL_CALLS_FINISH,
+            ],
+            &[],
+        )]);
+        let mut opts = options();
+        opts.tools = Some(vec![test_tool()]);
+        let result = model(&fetch).do_stream(&opts).await.unwrap();
+        let id = "call_O17Uplv4lJvD6DVdIvFFeRMw";
+        assert_eq!(
+            Value::Array(stream_parts(result).await),
+            json!([
+                {"type": "stream-start", "warnings": []},
+                {
+                    "id": "chatcmpl-e7f8e220-656c-4455-a132-dacfc1370798",
+                    "modelId": "gemma2-9b-it",
+                    "timestamp": "2024-03-25T09:06:38.000Z",
+                    "type": "response-metadata"
+                },
+                {"id": id, "toolName": "test-tool", "type": "tool-input-start"},
+                {"delta": "{\"value\":\"Sparkle Day\"}", "id": id, "type": "tool-input-delta"},
+                {"id": id, "type": "tool-input-end"},
+                {
+                    "input": "{\"value\":\"Sparkle Day\"}",
+                    "toolCallId": id,
+                    "toolName": "test-tool",
+                    "type": "tool-call"
+                },
+                {
+                    "finishReason": {"raw": "tool_calls", "unified": "tool-calls"},
+                    "type": "finish",
+                    "usage": x_groq_tool_call_usage()
+                }
+            ])
+        );
+    }
+
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should expose the raw response headers
     #[tokio::test]
     async fn should_expose_the_raw_response_headers() {
@@ -1273,6 +1562,17 @@ mod do_stream {
         use super::*;
 
         /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › text › should stream text
+        #[tokio::test]
+        async fn should_stream_text() {
+            let fetch = chunks_fetch(TEXT_CHUNKS, &[]);
+            let result = model(&fetch).do_stream(&options()).await.unwrap();
+            assert_eq!(
+                Value::Array(stream_parts(result).await),
+                json_value(SNAPSHOT_DO_STREAM_TEXT)
+            );
+        }
+
+        /// partial: `should stream text`; full port in src/groq/tests/chat_language_model.rs.
         #[tokio::test]
         async fn streams_text() {
             let server = MockServer::start().await;
@@ -1339,13 +1639,17 @@ mod do_stream {
             .unwrap();
 
         let req_body = first_request_body(&server).await;
-        assert_eq!(req_body["model"], "gemma2-9b-it");
-        assert_eq!(req_body["stream"], true);
-        // Groq should NOT send stream_options
-        assert!(req_body.get("stream_options").is_none());
+        assert_eq!(
+            req_body,
+            json!({
+                "messages": [{ "content": "Hello", "role": "user" }],
+                "model": "gemma2-9b-it",
+                "stream": true
+            })
+        );
     }
 
-    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call deltas when tool call arguments are passed in the first chunk
+    /// partial: `should stream tool call deltas when tool call arguments are passed in the first chunk`; full port in src/groq/tests/chat_language_model.rs.
     #[tokio::test]
     async fn streams_tool_call_deltas() {
         let server = MockServer::start().await;
@@ -1406,7 +1710,7 @@ mod do_stream {
         assert_eq!(finish.unwrap().unified, FinishReasonUnified::ToolCalls);
     }
 
-    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should handle error stream parts
+    /// partial: `should handle error stream parts`; upstream snapshots the JavaScript `APICallError` object, and aimux's error has its own serialized shape, so the test checks its message, status and retryability.
     #[tokio::test]
     async fn handles_error_stream() {
         let server = MockServer::start().await;
@@ -1451,7 +1755,7 @@ mod do_stream {
         }
     }
 
-    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should stream tool call that is sent in one chunk
+    /// partial: `should stream tool call that is sent in one chunk`; full port in src/groq/tests/chat_language_model.rs.
     #[tokio::test]
     async fn streams_tool_call_one_chunk() {
         let server = MockServer::start().await;
@@ -1488,7 +1792,7 @@ mod do_stream {
         );
     }
 
-    /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream › should handle unparsable stream parts
+    /// partial: `should handle unparsable stream parts`; upstream snapshots the JavaScript `JSONParseError` and its `SyntaxError` text, which aimux's parse error does not reproduce, so the test checks the part types and the finish part.
     #[tokio::test]
     async fn unparsable_chunk_is_an_error_part_and_finish_reason_error() {
         let server = MockServer::start().await;
@@ -1499,29 +1803,31 @@ mod do_stream {
         .await;
         let model = make_provider(&server);
 
-        let options = CallOptions {
-            include_raw_chunks: Some(true),
-            ..default_options(test_prompt())
-        };
-        let result = model.do_stream(&options).await.unwrap();
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
         let parts = collect_stream(result).await;
 
-        assert!(matches!(parts[0], StreamPart::StreamStart { .. }));
-        assert!(matches!(&parts[1], StreamPart::Raw { raw_value } if raw_value.is_null()));
-        assert!(matches!(parts[2], StreamPart::Error { .. }), "{parts:?}");
-        match &parts[3] {
+        assert_eq!(parts.len(), 3, "{parts:?}");
+        assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
+        assert!(matches!(parts[1], StreamPart::Error { .. }), "{parts:?}");
+        match &parts[2] {
             StreamPart::Finish {
                 finish_reason,
                 usage,
-                ..
+                provider_metadata,
             } => {
                 assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
                 assert_eq!(finish_reason.raw, None);
-                assert_eq!(usage.input_tokens.total, None);
+                assert_eq!(
+                    serde_json::to_value(usage).unwrap(),
+                    serde_json::to_value(aimux_core::types::Usage::default()).unwrap()
+                );
+                assert!(provider_metadata.is_none());
             }
             other => panic!("expected Finish, got {other:?}"),
         }
-        assert_eq!(parts.len(), 4);
     }
 }
 
@@ -1529,6 +1835,80 @@ mod do_stream_with_raw_chunks {
     use super::*;
 
     /// upstream: @ai-sdk/groq src/groq-chat-language-model.test.ts › doStream with raw chunks › should stream raw chunks when includeRawChunks is true
+    #[tokio::test]
+    async fn should_stream_raw_chunks_when_include_raw_chunks_is_true() {
+        let fetch = MockFetch::new(vec![sse_response(
+            &[
+                r#"{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#,
+                r#"{"id":"chatcmpl-456","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}"#,
+                r#"{"id":"chatcmpl-789","object":"chat.completion.chunk","created":1234567890,"model":"gemma2-9b-it","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"x_groq":{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}}"#,
+            ],
+            &[],
+        )]);
+        let mut opts = options();
+        opts.include_raw_chunks = Some(true);
+        let result = model(&fetch).do_stream(&opts).await.unwrap();
+        assert_eq!(
+            Value::Array(stream_parts(result).await),
+            json!([
+                {"type": "stream-start", "warnings": []},
+                {
+                    "rawValue": {
+                        "choices": [{"delta": {"content": "Hello"}, "finish_reason": null, "index": 0}],
+                        "created": 1234567890,
+                        "id": "chatcmpl-123",
+                        "model": "gemma2-9b-it",
+                        "object": "chat.completion.chunk"
+                    },
+                    "type": "raw"
+                },
+                {
+                    "id": "chatcmpl-123",
+                    "modelId": "gemma2-9b-it",
+                    "timestamp": "2009-02-13T23:31:30.000Z",
+                    "type": "response-metadata"
+                },
+                {"id": "txt-0", "type": "text-start"},
+                {"delta": "Hello", "id": "txt-0", "type": "text-delta"},
+                {
+                    "rawValue": {
+                        "choices": [{"delta": {"content": " world"}, "finish_reason": null, "index": 0}],
+                        "created": 1234567890,
+                        "id": "chatcmpl-456",
+                        "model": "gemma2-9b-it",
+                        "object": "chat.completion.chunk"
+                    },
+                    "type": "raw"
+                },
+                {"delta": " world", "id": "txt-0", "type": "text-delta"},
+                {
+                    "rawValue": {
+                        "choices": [{"delta": {}, "finish_reason": "stop", "index": 0}],
+                        "created": 1234567890,
+                        "id": "chatcmpl-789",
+                        "model": "gemma2-9b-it",
+                        "object": "chat.completion.chunk",
+                        "x_groq": {
+                            "usage": {"completion_tokens": 5, "prompt_tokens": 10, "total_tokens": 15}
+                        }
+                    },
+                    "type": "raw"
+                },
+                {"id": "txt-0", "type": "text-end"},
+                {
+                    "finishReason": {"raw": "stop", "unified": "stop"},
+                    "type": "finish",
+                    "usage": {
+                        "inputTokens": {"noCache": 10, "total": 10},
+                        "outputTokens": {"text": 5, "total": 5},
+                        "raw": {"completion_tokens": 5, "prompt_tokens": 10, "total_tokens": 15}
+                    }
+                }
+            ])
+        );
+    }
+
+    /// partial: `should stream raw chunks when includeRawChunks is true`; full port in src/groq/tests/chat_language_model.rs.
     #[tokio::test]
     async fn streams_raw_chunks() {
         let server = MockServer::start().await;

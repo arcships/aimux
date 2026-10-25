@@ -1231,6 +1231,151 @@ mod tests {
         assert_eq!(hint_from("retry-after", "1.5"), Some(1_500));
     }
 
+    fn parse(headers: &[(&str, &str)], now: SystemTime) -> Option<u64> {
+        let headers = headers
+            .iter()
+            .map(|(name, value)| ((*name).into(), (*value).into()))
+            .collect();
+        retry_after_ms_from_headers(&headers, now)
+    }
+
+    #[test]
+    fn retry_after_ms_golden_vectors() {
+        // Wed, 21 Oct 2015 07:28:00 GMT
+        let now = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_445_412_480);
+        for (value, expected) in [
+            ("250", Some(250)),
+            ("250.999", Some(250)),
+            ("0.999", Some(0)),
+            ("-0", Some(0)),
+            (" 250.5 ", Some(250)),
+            ("1e3", Some(1_000)),
+            ("-1", None),
+            ("-0.1", None),
+            ("1e308", None),
+            ("18446744073709551615", None),
+            // The largest f64 below 2^64 is valid; the endpoint itself is not.
+            ("18446744073709549568", Some(18_446_744_073_709_549_568)),
+            ("", None),
+            ("12ms", None),
+        ] {
+            assert_eq!(
+                parse(&[("retry-after-ms", value)], now),
+                expected,
+                "retry-after-ms: {value:?}"
+            );
+        }
+        for (value, expected) in [
+            ("1.5", Some(1_500)),
+            ("1.2349", Some(1_234)),
+            ("0.0009", Some(0)),
+            ("-0.0001", None),
+            ("18446744073709552", None),
+            ("1.5 seconds", None),
+        ] {
+            assert_eq!(
+                parse(&[("retry-after", value)], now),
+                expected,
+                "retry-after: {value:?}"
+            );
+        }
+        // A numeric millisecond header wins even when it is unusable; only an
+        // absent or malformed one falls back to `retry-after`.
+        for (ms, seconds, expected) in [
+            ("250", "10", Some(250)),
+            ("-1", "10", None),
+            ("NaN", "1.5", None),
+            ("invalid", "1.5", Some(1_500)),
+            ("", "1.5", Some(1_500)),
+            ("invalid", "Wed, 21 Oct 2015 07:28:02 GMT", Some(2_000)),
+        ] {
+            assert_eq!(
+                parse(&[("retry-after-ms", ms), ("retry-after", seconds)], now),
+                expected,
+                "retry-after-ms: {ms:?}, retry-after: {seconds:?}"
+            );
+        }
+        for (date, clock, expected) in [
+            ("Wed, 21 Oct 2015 07:28:02 GMT", now, Some(2_000)),
+            (
+                "Wed, 21 Oct 2015 07:28:02 GMT",
+                now + std::time::Duration::from_micros(1_234_567),
+                Some(765),
+            ),
+            ("Wed, 21 Oct 2015 07:28:00 GMT", now, Some(0)),
+            ("Wed, 21 Oct 2015 07:27:59 GMT", now, None),
+            (
+                "Wed, 21 Oct 2015 07:28:00 GMT",
+                now + std::time::Duration::from_nanos(1),
+                None,
+            ),
+            ("not a date", now, None),
+        ] {
+            assert_eq!(
+                parse(&[("retry-after", date)], clock),
+                expected,
+                "retry-after: {date:?}, clock: {clock:?}"
+            );
+        }
+        assert_eq!(parse(&[], now), None);
+        assert_eq!(parse(&[("other", "5")], now), None);
+        assert_eq!(parse(&[("ReTrY-AfTeR-Ms", "250")], now), Some(250));
+        assert_eq!(
+            parse(&[("RETRY-AFTER-MS", "250"), ("Retry-After", "10")], now),
+            Some(250)
+        );
+    }
+
+    /// The signed return type rejects what `i64` cannot hold, and only a direct
+    /// API call has a hint of its own: an aggregate does not inherit its attempts'.
+    #[test]
+    fn hint_is_checked_and_belongs_to_the_api_call() {
+        assert_eq!(hint_from("retry-after-ms", "9223372036854775808"), None);
+        assert_eq!(hint_from("retry-after-ms", "-0.1"), None);
+        let attempt = AiMuxError::ApiCall(Box::new(ApiCallError {
+            response_headers: Some(HashMap::from([("retry-after-ms".into(), "250".into())])),
+            ..api_error("rate limited")
+        }));
+        let aggregate = AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![attempt.clone()],
+        });
+        assert_eq!(attempt.retry_after_hint(), Some(250));
+        assert_eq!(aggregate.retry_after_hint(), None);
+        assert_eq!(AiMuxError::Timeout("spent".into()).retry_after_hint(), None);
+    }
+
+    /// A retry inside a retry has no hint at either level, and the attempt
+    /// keeps its own: its headers survive nesting and serialization unchanged.
+    #[test]
+    fn nested_retry_keeps_the_attempt_hint() {
+        let attempt = AiMuxError::ApiCall(Box::new(ApiCallError {
+            response_headers: Some(HashMap::from([("retry-after-ms".into(), "250".into())])),
+            ..api_error("rate limited")
+        }));
+        let inner = AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::MaxRetriesExceeded,
+            errors: vec![attempt],
+        });
+        let outer = AiMuxError::Retry(RetryError {
+            reason: RetryErrorReason::ErrorNotRetryable,
+            errors: vec![inner],
+        });
+        let decoded: AiMuxError =
+            serde_json::from_value(serde_json::to_value(&outer).unwrap()).unwrap();
+        for error in [&outer, &decoded] {
+            let AiMuxError::Retry(outer) = error else {
+                panic!("outer retry: {error:?}");
+            };
+            let AiMuxError::Retry(inner) = outer.last_error() else {
+                panic!("inner retry: {:?}", outer.last_error());
+            };
+            assert_eq!(error.retry_after_hint(), None);
+            assert_eq!(outer.last_error().retry_after_hint(), None);
+            assert_eq!(inner.last_error().retry_after_hint(), Some(250));
+        }
+    }
+
     /// A 429 is retryable and carries its hint wherever it lives — the
     /// classification is the `status_code` field, not a variant.
     #[test]
