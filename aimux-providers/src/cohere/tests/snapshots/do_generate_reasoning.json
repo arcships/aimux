@@ -1,0 +1,87 @@
+{
+  "content": [
+    {
+      "text": "Okay, so I need to figure out what 2 + 2 is. Let me start by recalling what addition means.",
+      "type": "reasoning"
+    },
+    {
+      "text": "2 + 2 = 4",
+      "type": "text"
+    }
+  ],
+  "finishReason": {
+    "raw": "COMPLETE",
+    "unified": "stop"
+  },
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": "you are a friendly bot!",
+          "role": "system"
+        },
+        {
+          "content": "Hello",
+          "role": "user"
+        }
+      ],
+      "model": "command-r-plus"
+    }
+  },
+  "response": {
+    "body": {
+      "finish_reason": "COMPLETE",
+      "id": "53bcb235-5179-4a91-a578-cb372b5430bc",
+      "message": {
+        "content": [
+          {
+            "thinking": "Okay, so I need to figure out what 2 + 2 is. Let me start by recalling what addition means.",
+            "type": "thinking"
+          },
+          {
+            "text": "2 + 2 = 4",
+            "type": "text"
+          }
+        ],
+        "role": "assistant"
+      },
+      "usage": {
+        "billed_units": {
+          "input_tokens": 8,
+          "output_tokens": 578
+        },
+        "cached_tokens": 1344,
+        "tokens": {
+          "input_tokens": 1394,
+          "output_tokens": 582
+        }
+      }
+    },
+    "headers": {
+      "content-length": "411",
+      "content-type": "application/json"
+    }
+  },
+  "usage": {
+    "inputTokens": {
+      "noCache": 1394,
+      "total": 1394
+    },
+    "outputTokens": {
+      "text": 582,
+      "total": 582
+    },
+    "raw": {
+      "billed_units": {
+        "input_tokens": 8,
+        "output_tokens": 578
+      },
+      "cached_tokens": 1344,
+      "tokens": {
+        "input_tokens": 1394,
+        "output_tokens": 582
+      }
+    }
+  },
+  "warnings": []
+}
