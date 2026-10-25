@@ -6,7 +6,7 @@
 //! via [`prepare_tools_with_provider`].
 //!
 
-use std::collections::BTreeSet;
+use indexmap::IndexSet;
 
 use aimux_core::AiMuxError;
 use aimux_core::tool::FunctionTool;
@@ -28,7 +28,7 @@ pub struct PreparedTools {
     /// Warnings emitted while preparing tools.
     pub tool_warnings: Vec<Warning>,
     /// Beta headers required by the prepared tools.
-    pub betas: BTreeSet<String>,
+    pub betas: IndexSet<String>,
 }
 
 const BETA_STRUCTURED_OUTPUTS: &str = "structured-outputs-2025-11-13";
@@ -165,7 +165,7 @@ pub(crate) fn prepare_tools_with_validator(
     let non_empty = tools.filter(|&t| !t.is_empty());
 
     let mut tool_warnings: Vec<Warning> = Vec::new();
-    let mut betas: BTreeSet<String> = BTreeSet::new();
+    let mut betas: IndexSet<String> = IndexSet::new();
 
     let tools_opt = match non_empty {
         None => None,
@@ -281,7 +281,7 @@ fn prepare_function_tool(
     supports_strict_tools: bool,
     default_eager_input_streaming: bool,
     options_name: &str,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
     tool_warnings: &mut Vec<Warning>,
 ) -> Value {
     let tool_options = anthropic_options_in(tool.provider_options.as_ref(), options_name);
@@ -351,7 +351,7 @@ fn prepare_function_tool(
 pub(crate) fn prepare_provider_tool(
     id: &str,
     args: &Map<String, Value>,
-    betas: &mut BTreeSet<String>,
+    betas: &mut IndexSet<String>,
 ) -> Option<Value> {
     let mut def = match id {
         "anthropic.computer_20241022" => {
