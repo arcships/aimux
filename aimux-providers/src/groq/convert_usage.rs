@@ -2,7 +2,7 @@
 
 use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 
-use super::types::GroqUsage;
+use super::api_types::GroqUsage;
 
 /// Convert Groq usage to the core `Usage`. A missing object is the null usage
 /// (every count unknown).
@@ -41,8 +41,6 @@ pub(crate) fn convert_groq_usage(usage: Option<&GroqUsage>) -> Usage {
             text: Some(text_tokens),
             reasoning: reasoning_tokens,
         },
-        raw: serde_json::to_value(usage)
-            .ok()
-            .and_then(|value| value.as_object().cloned()),
+        raw: Some(usage.raw.clone()),
     }
 }
