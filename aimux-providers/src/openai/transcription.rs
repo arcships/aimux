@@ -115,6 +115,32 @@ struct OpenAITranscriptionOptions {
     temperature: Option<f64>,
     /// The timestamp granularities to populate (`word` / `segment`).
     timestamp_granularities: Option<Vec<String>>,
+    /// `json`, `verbose_json` or `diarized_json`.
+    response_format: Option<String>,
+    /// `chunking_strategy` as sent: `auto` or a server-VAD object as JSON.
+    chunking_strategy: Option<String>,
+}
+
+/// `chunkingStrategy`: `"auto"`, or `{ type, threshold?, prefixPaddingMs?,
+/// silenceDurationMs? }` sent as snake_case JSON
+/// (`transcription/openai-transcription-model.ts:241-259`).
+fn chunking_strategy(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    let object = value.as_object()?;
+    let mut wire = serde_json::Map::new();
+    wire.insert("type".into(), object.get("type")?.clone());
+    for (key, wire_key) in [
+        ("threshold", "threshold"),
+        ("prefixPaddingMs", "prefix_padding_ms"),
+        ("silenceDurationMs", "silence_duration_ms"),
+    ] {
+        if let Some(value) = object.get(key).filter(|value| !value.is_null()) {
+            wire.insert(wire_key.into(), value.clone());
+        }
+    }
+    Some(Value::Object(wire).to_string())
 }
 
 /// Parse provider options from the shared options map.
@@ -155,6 +181,10 @@ fn parse_openai_options(
                     .collect(),
             );
         }
+        if let Some(format) = openai.get("responseFormat").and_then(|v| v.as_str()) {
+            opts.response_format = Some(format.to_string());
+        }
+        opts.chunking_strategy = openai.get("chunkingStrategy").and_then(chunking_strategy);
     }
     opts
 }
@@ -175,6 +205,9 @@ struct OpenAISegment {
     text: String,
     start: f64,
     end: f64,
+    /// Set on `diarized_json` segments (`transcript.text.segment`).
+    #[serde(default)]
+    speaker: Option<String>,
 }
 
 /// The OpenAI transcription API response body.
@@ -292,14 +325,21 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             .as_ref()
             .is_some_and(|options| options.contains_key("openai"));
 
+        let is_diarization_model = self.model_id == "gpt-4o-transcribe-diarize";
         // Upstream only selects a non-default format when its options exist.
         if self.model_id != "whisper-1" && has_openai_options {
-            let response_format = if is_gpt4o_transcribe_model {
+            let response_format = if let Some(format) = &openai_options.response_format {
+                format.as_str()
+            } else if is_diarization_model {
+                "diarized_json"
+            } else if is_gpt4o_transcribe_model {
                 "json"
             } else {
                 "verbose_json"
             };
             form.text("response_format", response_format)?;
+        } else if !has_openai_options && is_diarization_model {
+            form.text("response_format", "diarized_json")?;
         }
 
         if let Some(ref include) = openai_options.include {
@@ -330,6 +370,13 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         if has_openai_options && openai_options.temperature.is_none() {
             form.text("temperature", "0")?;
         }
+        let chunking_strategy = openai_options
+            .chunking_strategy
+            .as_deref()
+            .or(is_diarization_model.then_some("auto"));
+        if let Some(chunking_strategy) = chunking_strategy {
+            form.text("chunking_strategy", chunking_strategy)?;
+        }
 
         let (body_bytes, content_type) = form.finish();
 
@@ -358,6 +405,31 @@ impl TranscriptionModel for OpenAITranscriptionModel {
             .as_deref()
             .and_then(language_name_to_code)
             .map(std::string::ToString::to_string);
+
+        // Diarized segments keep their speaker in `providerMetadata.openai.segments`
+        // (`transcription/openai-transcription-model.ts:315-353`).
+        let diarized_segments: Vec<Value> = parsed
+            .segments
+            .iter()
+            .flatten()
+            .filter_map(|segment| {
+                let speaker = segment.speaker.as_ref()?;
+                Some(serde_json::json!({
+                    "text": segment.text,
+                    "startSecond": segment.start,
+                    "endSecond": segment.end,
+                    "speaker": speaker,
+                }))
+            })
+            .collect();
+        let provider_metadata = if diarized_segments.is_empty() {
+            None
+        } else {
+            Some(aimux_core::shared::provider_namespace(
+                "openai",
+                serde_json::json!({ "segments": diarized_segments }),
+            )?)
+        };
 
         // Segments: prefer `segments`, fall back to `words`.
         let segments: Vec<TranscriptionSegment> = if let Some(segs) = parsed.segments {
@@ -396,7 +468,7 @@ impl TranscriptionModel for OpenAITranscriptionModel {
                 headers: Some(response_headers),
                 body: Some(raw_body),
             },
-            provider_metadata: None,
+            provider_metadata,
         })
     }
 
@@ -412,6 +484,38 @@ impl TranscriptionModel for OpenAITranscriptionModel {
         >,
     > {
         Some(Box::pin(self.stream_transcription(options)))
+    }
+}
+
+/// The bearer token rides the `openai-insecure-api-key.<token>` subprotocol
+/// next to `realtime`, and the `authorization` header is dropped: OpenAI
+/// rejects handshakes that send both auth channels. Without a bearer
+/// `authorization` only `realtime` is offered and the headers are kept
+/// (`getOpenAIRealtimeConnection`,
+/// `transcription/openai-transcription-model.ts:620-652`).
+#[cfg(feature = "realtime")]
+fn realtime_connection(headers: Vec<(String, String)>) -> (Vec<String>, Vec<(String, String)>) {
+    let token = headers
+        .iter()
+        .rfind(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .and_then(|(_, value)| {
+            // The HTTP auth scheme is case-insensitive.
+            let (scheme, token) = value.split_once(char::is_whitespace)?;
+            let token = token.trim_start();
+            (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then(|| token.to_string())
+        });
+    match token {
+        None => (vec!["realtime".to_string()], headers),
+        Some(token) => (
+            vec![
+                "realtime".to_string(),
+                format!("openai-insecure-api-key.{token}"),
+            ],
+            headers
+                .into_iter()
+                .filter(|(name, _)| !name.eq_ignore_ascii_case("authorization"))
+                .collect(),
+        ),
     }
 }
 
@@ -440,6 +544,27 @@ impl OpenAITranscriptionModel {
         }
 
         let openai_options = parse_openai_options(options.provider_options.as_ref());
+
+        // Options of the REST endpoint only, read from the raw options
+        // (`transcription/openai-transcription-model.ts:395-410`).
+        let raw_openai = options
+            .provider_options
+            .as_ref()
+            .and_then(|options| options.get("openai"));
+        let warnings: Vec<Warning> = ["include", "prompt", "temperature", "timestampGranularities"]
+            .into_iter()
+            .filter(|option| {
+                raw_openai
+                    .and_then(|openai| openai.get(*option))
+                    .is_some_and(|value| !value.is_null())
+            })
+            .map(|option| Warning::Unsupported {
+                feature: format!("providerOptions.openai.{option}"),
+                details: Some(format!(
+                    "OpenAI streaming transcription does not support {option}."
+                )),
+            })
+            .collect();
 
         // wss URL from the REST base URL (https→wss / http→ws), matching the
         // AI SDK's toWebSocketUrl.
@@ -472,8 +597,25 @@ impl OpenAITranscriptionModel {
             session_update["session"]["audio"]["input"]["transcription"]["language"] =
                 serde_json::json!(lang);
         }
-        if let Some(include) = &openai_options.include {
-            session_update["session"]["include"] = serde_json::json!(include);
+        // `providerOptions.openai.streaming` (`buildOpenAIRealtimeTranscriptionSession`,
+        // `transcription/openai-transcription-model.ts:580-617`); the REST
+        // `include` does not apply to the realtime session.
+        let streaming = options
+            .provider_options
+            .as_ref()
+            .and_then(|options| options.get("openai"))
+            .and_then(|openai| openai.get("streaming"));
+        if let Some(delay) = streaming
+            .and_then(|streaming| streaming.get("delay"))
+            .filter(|delay| !delay.is_null())
+        {
+            session_update["session"]["audio"]["input"]["transcription"]["delay"] = delay.clone();
+        }
+        if let Some(include) = streaming
+            .and_then(|streaming| streaming.get("include"))
+            .filter(|include| !include.is_null())
+        {
+            session_update["session"]["include"] = include.clone();
         }
 
         let mut header_list = self
@@ -489,10 +631,11 @@ impl OpenAITranscriptionModel {
         // Spawn the connect before entering the stream so connection errors
         // surface from do_stream's Result (clear contract: connect failure =
         // Err, not an in-stream error part).
+        let (subprotocols, headers) = realtime_connection(std::mem::take(&mut header_list));
         let req = WebSocketRequest {
             url: ws_url.clone(),
-            headers: std::mem::take(&mut header_list),
-            subprotocols: Vec::new(),
+            headers,
+            subprotocols,
             abort_signal: abort.clone(),
             timeout: options.timeout,
             connector: self.web_socket.clone(),
@@ -516,7 +659,7 @@ impl OpenAITranscriptionModel {
         let error_request = session_update.clone();
 
         let stream = async_stream::stream! {
-            yield Ok(TranscriptionStreamPart::StreamStart { warnings: vec![] });
+            yield Ok(TranscriptionStreamPart::StreamStart { warnings });
 
             loop {
                 // Audio arm disabled once exhausted (select! precondition).

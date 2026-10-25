@@ -917,3 +917,22 @@ fn _assert_provider_is_shareable() {
     fn shareable<T: Send + Sync + 'static>() {}
     shareable::<OpenAIProvider>();
 }
+
+/// An empty or blank `base_url` fails the factory with the AI SDK's message
+/// (`validateBaseURL` via `src/openai-provider.ts:207-215`).
+#[test]
+fn an_empty_base_url_fails_with_the_sdk_message() {
+    for base_url in ["", "   "] {
+        let error = create_openai(OpenAIProviderSettings {
+            api_key: Some("test-api-key".into()),
+            base_url: Some(base_url.into()),
+            ..Default::default()
+        })
+        .err()
+        .expect("an empty base URL is rejected");
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument { message, .. } if message == "baseURL must be a non-empty string."),
+            "{base_url:?}: {error:?}"
+        );
+    }
+}
