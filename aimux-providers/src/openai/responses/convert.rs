@@ -257,7 +257,14 @@ fn convert_responses_input_with_conversation(
                                 continue;
                             }
                             let kind = provider_tool_kind(tools, tool_name);
-                            if provider_executed == &Some(true) {
+                            // Hosted tool search and program calls are replayed
+                            // in full without response storage.
+                            if provider_executed == &Some(true)
+                                && !matches!(
+                                    kind,
+                                    Some("tool_search" | "programmatic_tool_calling")
+                                )
+                            {
                                 if store && let Some(id) = &id {
                                     input.push(json!({"type":"item_reference", "id":id}));
                                 }
@@ -309,17 +316,7 @@ fn convert_responses_input_with_conversation(
                             if let Some(value) = openai_sub_option(ns, provider_options, "async") {
                                 item["async"] = value;
                             }
-                            if let Some(caller) = openai_sub_option(ns, provider_options, "caller")
-                            {
-                                let mut caller = map_tool_fields(
-                                    &caller,
-                                    &[("type", "type"), ("callerId", "caller_id")],
-                                );
-                                if caller["type"] != "program"
-                                    && let Some(object) = caller.as_object_mut()
-                                {
-                                    object.remove("caller_id");
-                                }
+                            if let Some(caller) = tool_caller(ns, provider_options) {
                                 item["caller"] = caller;
                             }
                             input.push(item);
@@ -518,11 +515,15 @@ fn convert_responses_input_with_conversation(
                     {
                         content_value = json!([{"type":"input_text", "text":content_value, "prompt_cache_breakpoint":breakpoint}]);
                     }
-                    input.push(json!({
+                    let mut item = json!({
                         "type": if custom { "custom_tool_call_output" } else { "function_call_output" },
                         "call_id": tool_call_id,
                         "output": content_value,
-                    }));
+                    });
+                    if !custom && let Some(caller) = tool_caller(ns, provider_options) {
+                        item["caller"] = caller;
+                    }
+                    input.push(item);
                 }
             }
         }
@@ -547,6 +548,21 @@ fn convert_responses_input_with_conversation(
     }
 
     Ok(ResponsesInputResult { input, warnings })
+}
+
+/// The `caller` provider option of a tool call or result, on the wire.
+fn tool_caller(
+    ns: ResponsesNamespace,
+    provider_options: &Option<SharedProviderOptions>,
+) -> Option<Value> {
+    let caller = openai_sub_option(ns, provider_options, "caller")?;
+    let mut caller = map_tool_fields(&caller, &[("type", "type"), ("callerId", "caller_id")]);
+    if caller["type"] != "program"
+        && let Some(object) = caller.as_object_mut()
+    {
+        object.remove("caller_id");
+    }
+    Some(caller)
 }
 
 fn provider_tool_kind<'a>(tools: Option<&'a [Tool]>, name: &str) -> Option<&'a str> {
@@ -746,12 +762,9 @@ fn convert_user_part(
                 )
             }
             FileData::Reference { reference } => {
-                let file_id = reference.get(ns.write_key()).ok_or_else(|| {
-                    AiMuxError::invalid_argument(format!(
-                        "No file reference for {}",
-                        ns.write_key()
-                    ))
-                })?;
+                let file_id =
+                    crate::openai::convert::resolve_provider_reference(reference, ns.write_key())
+                        .map_err(AiMuxError::invalid_argument)?;
                 let mut part = json!({ "type": if file.media_type.split('/').next() == Some("image") { "input_image" } else { "input_file" }, "file_id": file_id });
                 if part["type"] == "input_image"
                     && let Some(detail) =
@@ -1034,7 +1047,7 @@ fn prepare_responses_tools_for(
                         {
                             if group["description"] != description {
                                 return Err(AiMuxError::UnsupportedFunctionality(format!(
-                                    "conflicting descriptions for OpenAI tool namespace {name}"
+                                    "conflicting descriptions for OpenAI tool namespace \"{name}\""
                                 )));
                             }
                             if let Some(items) = group["tools"].as_array_mut() {
@@ -1113,8 +1126,8 @@ fn resolve_async_tool_option(
             object.remove("async");
         }
         warnings.push(Warning::Unsupported {
-            feature: format!("async tool calling for {name}"),
-            details: Some("Async tool calling is not supported by this model.".into()),
+            feature: format!("async tool calling for \"{name}\""),
+            details: Some("Async tool calling is only supported by GPT-6 and later models.".into()),
         });
     }
 }
@@ -1140,6 +1153,7 @@ fn prepare_allowed_tools(
         .transpose()?
         .unwrap_or("auto");
     let mut entries = Vec::new();
+    let mut dropped = Vec::new();
     for name in names {
         let name = name.as_str().ok_or_else(invalid)?;
         let direct = tools.iter().find(|tool| match tool {
@@ -1149,7 +1163,7 @@ fn prepare_allowed_tools(
         let aliases: Vec<_> = tools.iter().filter(|tool| matches!(tool, Tool::Provider(tool) if tool.id.as_str().strip_prefix("openai.") == Some(name) && tool.name != name)).collect();
         let tool = if let Some(tool) = direct {
             if !aliases.is_empty() {
-                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("this name is both a tool name and the provider tool name of another tool in this request; the tool with this name is allowed".into()) });
             }
             Some(tool)
         } else {
@@ -1159,7 +1173,8 @@ fn prepare_allowed_tools(
                     _ => false,
                 })
             {
-                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("several tools share this provider tool name; use the tool name from this request".into()) });
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("several tools in this request share this provider tool name; use the tool name from the tools for this request instead".into()) });
+                dropped.push(name);
                 continue;
             }
             aliases.first().copied()
@@ -1170,10 +1185,23 @@ fn prepare_allowed_tools(
                     .provider_options
                     .as_ref()
                     .and_then(|options| options.get("openai"));
-                if opts.is_some_and(|opts| {
-                    opts.contains_key("namespace") || opts.get("deferLoading") == Some(&json!(true))
-                }) {
-                    warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("namespace and deferred tools are not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                let reason = if opts.is_some_and(|opts| opts.contains_key("namespace")) {
+                    Some(
+                        "tools inside an OpenAI tool namespace are not visible to tool_choice.allowed_tools",
+                    )
+                } else if opts.is_some_and(|opts| opts.get("deferLoading") == Some(&json!(true))) {
+                    Some("deferred tools are not visible to tool_choice.allowed_tools")
+                } else {
+                    None
+                };
+                if let Some(reason) = reason {
+                    warnings.push(Warning::Unsupported {
+                        feature: format!("allowedTools entry \"{name}\""),
+                        details: Some(format!(
+                            "{reason}; the tool is removed from the allowed tools"
+                        )),
+                    });
+                    dropped.push(name);
                     continue;
                 }
                 json!({"type":"function", "name":tool.name})
@@ -1187,7 +1215,8 @@ fn prepare_allowed_tools(
                     Some("custom") => json!({"type":"custom", "name":tool.name}),
                     Some("mcp") => json!({"type":"mcp", "server_label":value["server_label"]}),
                     Some("tool_search") => {
-                        warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("tool_search is not visible to tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                        warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("OpenAI does not support tool_search tools in tool_choice.allowed_tools; the tool is removed from the allowed tools".into()) });
+                        dropped.push(name);
                         continue;
                     }
                     Some(kind) => json!({"type":kind}),
@@ -1195,16 +1224,17 @@ fn prepare_allowed_tools(
                 }
             }
             None => {
-                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry {name}"), details:Some("the tool is not part of the tools for this request and is sent as a function tool".into()) });
+                warnings.push(Warning::Unsupported { feature:format!("allowedTools entry \"{name}\""), details:Some("the tool is not part of the tools for this request and is sent as a function tool".into()) });
                 json!({"type":"function", "name":name})
             }
         };
         entries.push(entry);
     }
     if entries.is_empty() {
-        return Err(AiMuxError::UnsupportedFunctionality(
-            "allowedTools with only tools that cannot be allow-listed".into(),
-        ));
+        return Err(AiMuxError::UnsupportedFunctionality(format!(
+            "allowedTools with only tools that cannot be allow-listed ({})",
+            dropped.join(", ")
+        )));
     }
     Ok(json!({"type":"allowed_tools", "mode":mode, "tools":entries}))
 }
@@ -1431,7 +1461,8 @@ fn map_shell_environment(environment: &Value) -> Result<Value, AiMuxError> {
         if let Some(skills) = environment.get("skills").and_then(Value::as_array) {
             value["skills"] = Value::Array(skills.iter().map(|skill| {
                 if skill["type"] == "skillReference" {
-                    let id = skill.get("providerReference").and_then(|reference| reference.get("openai")).and_then(Value::as_str).ok_or_else(|| AiMuxError::invalid_argument("No skill reference for openai"))?;
+                    let reference = skill.get("providerReference").and_then(Value::as_object).map(|reference| reference.iter().filter_map(|(provider, id)| Some((provider.clone(), id.as_str()?.to_owned()))).collect()).unwrap_or_default();
+                    let id = crate::openai::convert::resolve_provider_reference(&reference, "openai").map_err(AiMuxError::invalid_argument)?;
                     Ok(json!({"type":"skill_reference", "skill_id":id, "version":skill.get("version").cloned().unwrap_or_else(|| json!("latest"))}))
                 } else {
                     let mut value = map_tool_fields(skill, &[("name", "name"), ("description", "description")]);
@@ -1955,15 +1986,15 @@ pub fn build_responses_request_body_for(
             || openai_option(ns, provider_opts, "truncation") == Some(json!("auto"))
         {
             Some("reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation".to_string())
-        } else if caps
-            .supported_reasoning_efforts
-            .is_some_and(|values| !values.contains(&effort.as_str()))
-        {
-            Some(format!(
-                "{model_id} does not support reasoning effort {effort}"
-            ))
         } else {
-            None
+            caps.supported_reasoning_efforts
+                .filter(|values| !values.contains(&effort.as_str()))
+                .map(|values| {
+                    format!(
+                        "{model_id} only supports the following reasoning efforts: {}",
+                        values.join(", ")
+                    )
+                })
         };
         if let Some(details) = reason {
             warnings.push(Warning::Unsupported {
