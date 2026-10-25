@@ -36,6 +36,7 @@ fn options(prompt: &str) -> ImageCallOptions {
     ImageCallOptions::new(prompt.to_string())
 }
 
+/// partial: `should use the language model endpoint and extract generated images`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn imagen_should_extract_generated_images() {
     let server = MockServer::start().await;
@@ -53,6 +54,7 @@ async fn imagen_should_extract_generated_images() {
     }
 }
 
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn imagen_should_send_aspect_ratio() {
     let server = MockServer::start().await;
@@ -75,6 +77,7 @@ async fn imagen_should_send_aspect_ratio() {
     );
 }
 
+/// partial: `should return a warning for the unsupported size option`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn imagen_should_warn_for_size() {
     let server = MockServer::start().await;
@@ -92,6 +95,7 @@ async fn imagen_should_warn_for_size() {
     assert!(result.warnings.iter().any(|w| w.feature() == "size"));
 }
 
+/// partial: `should include input images for editing`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn imagen_should_support_editing() {
     let server = MockServer::start().await;
@@ -117,6 +121,7 @@ async fn imagen_should_support_editing() {
     );
 }
 
+/// partial: `should use the language model endpoint and extract generated images`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_extract_image() {
     let server = MockServer::start().await;
@@ -136,6 +141,7 @@ async fn gemini_should_extract_image() {
     }
 }
 
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_send_response_modalities() {
     let server = MockServer::start().await;
@@ -157,6 +163,7 @@ async fn gemini_should_send_response_modalities() {
     );
 }
 
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_pass_aspect_ratio() {
     let server = MockServer::start().await;
@@ -179,6 +186,7 @@ async fn gemini_should_pass_aspect_ratio() {
     );
 }
 
+/// partial: `should reject unsupported URL editing input and masks`; full port in src/vertex/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_throw_for_mask() {
     let server = MockServer::start().await;
@@ -203,5 +211,26 @@ impl WarningFeature for aimux_core::types::Warning {
             aimux_core::types::Warning::Unsupported { feature, .. } => feature,
             _ => "",
         }
+    }
+}
+
+/// partial: `advertises file=$supportsFileInputs and mask=$supportsMaskInputs for $modelId`; full port in src/vertex/tests/image_model.rs.
+#[test]
+fn gemini_image_models_advertise_file_inputs_and_no_masks() {
+    let provider = create_google_vertex(VertexProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
+    for (model_id, file_inputs, mask_inputs) in [
+        ("gemini-2.5-flash-image", Some(true), Some(false)),
+        ("gemini-3-pro-image-preview", Some(true), Some(false)),
+        ("gemini-3.1-flash-image-preview", Some(true), Some(false)),
+        ("gemini-2.5-pro", None, None),
+        ("gemini-custom", None, None),
+    ] {
+        let model = provider.image_model(model_id).unwrap();
+        assert_eq!(model.supports_file_inputs(), file_inputs, "{model_id}");
+        assert_eq!(model.supports_mask_inputs(), mask_inputs, "{model_id}");
     }
 }

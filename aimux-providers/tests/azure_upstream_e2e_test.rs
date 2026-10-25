@@ -255,6 +255,17 @@ async fn embedding_generate() {
     assert_eq!(result.usage.unwrap().tokens, 8);
 }
 
+/// partial: `should send the correct request body` (file and mask support
+/// stay unknown for deployments, `azure-openai-provider.ts:372-376`); full
+/// port in src/azure/tests/openai_provider.rs.
+#[test]
+fn image_input_capabilities_are_unknown_for_deployments() {
+    let fetch = MockFetch::new(vec![]);
+    let model = provider(&fetch).image("dall-e-2");
+    assert_eq!(model.supports_file_inputs(), None);
+    assert_eq!(model.supports_mask_inputs(), None);
+}
+
 /// partial: `should send the correct request body`,
 /// `should extract the generated images`; full port in
 /// src/azure/tests/openai_provider.rs.

@@ -60,8 +60,9 @@ copy/decode failures are latched once, signal abort, and are reported after nati
 return. No callback exception crosses the C boundary.
 
 `OpsException` preserves the complete error envelope, including unknown payload
-names/fields and optional `retryAfterMs`. AI SDK payloads keep their `name`, flat
-fields and `isRetryable`; the binding does not invent HTTP status or retry policy.
+names/fields. AI SDK payloads keep their `name`, flat fields, `isRetryable` and
+`responseHeaders`; read `retry-after` there, as with the AI SDK. The binding does
+not invent HTTP status or retry policy.
 `cause` is the payload's cause: a nested AI SDK error, or an OS, TLS or parser
 error as `{message, cause?}`. A retry error's cause is its last attempt.
 `TranscriptionOperation` wraps the new push/next primitives and typed

@@ -2,7 +2,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use aimux_core::error::ApiCallError;
 use aimux_core::search_model::{SearchCallOptions, SearchModel, SearchResult};
@@ -68,10 +68,6 @@ impl SearchModel for Search {
     }
 }
 
-fn now() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
-}
-
 struct Fixture {
     owner: Owner,
     foreign: Owner,
@@ -103,7 +99,6 @@ impl Fixture {
         Ctx {
             owner: self.owner,
             abort: None,
-            now,
         }
     }
 
@@ -251,10 +246,10 @@ async fn primary_and_secondary_foreign_handles_match_unknown_and_never_call_prov
             .await
             .unwrap_err();
         assert!(matches!(
-            error.unprojected(),
+            &error,
             OpsError::Binding(BindingError::InvalidHandle { actual: None, .. })
         ));
-        errors.push(error.envelope(now()));
+        errors.push(error.envelope());
     }
     assert_eq!(errors[0], errors[1]);
     let wrong_kind = f
@@ -262,7 +257,7 @@ async fn primary_and_secondary_foreign_handles_match_unknown_and_never_call_prov
         .await
         .unwrap_err();
     assert!(matches!(
-        wrong_kind.unprojected(),
+        &wrong_kind,
         OpsError::Binding(BindingError::InvalidHandle {
             actual: Some(HandleKind::Search),
             ..
@@ -300,7 +295,7 @@ async fn primary_and_secondary_foreign_handles_match_unknown_and_never_call_prov
     )
     .await
     .unwrap_err();
-    assert_eq!(foreign.envelope(now()), unknown.envelope(now()));
+    assert_eq!(foreign.envelope(), unknown.envelope());
     assert!(f.model.calls.lock().unwrap().is_empty());
     assert!(!signal.is_aborted());
 }
@@ -339,23 +334,21 @@ async fn owned_abort_cancels_before_and_during_provider_call() {
 }
 
 #[tokio::test]
-async fn provider_failure_keeps_payload_and_one_retry_hint_projection() {
+async fn provider_failure_keeps_payload_and_response_headers() {
     let f = Fixture::new(Behavior::ApiError);
     let error = f
         .call(json!({"query":"q", "maxRetries":0}))
         .await
         .unwrap_err();
-    assert!(matches!(error, OpsError::Projected(_)));
-    assert!(matches!(
-        error.unprojected(),
-        OpsError::AiMux(AiMuxError::ApiCall(_))
-    ));
-    let envelope = error.envelope(now());
+    assert!(matches!(&error, OpsError::AiMux(AiMuxError::ApiCall(_))));
+    let envelope = error.envelope();
     assert_eq!(envelope.code, 11);
     assert_eq!(envelope.error["name"], "AI_APICallError");
     assert_eq!(envelope.error["statusCode"], 429);
     assert_eq!(envelope.error["isRetryable"], true);
-    assert_eq!(envelope.retry_after_ms, Some(5000));
-    assert_eq!(error.envelope(now() + Duration::from_secs(60)), envelope);
+    assert_eq!(
+        envelope.error["responseHeaders"]["retry-after"],
+        "Tue, 14 Nov 2023 22:13:25 GMT"
+    );
     assert_eq!(f.model.calls.lock().unwrap().len(), 1);
 }
