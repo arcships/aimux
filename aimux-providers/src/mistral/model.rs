@@ -61,7 +61,7 @@ impl MistralModel {
 /// - `input.noCache = prompt_tokens - cache_read_tokens`
 /// - `input.cacheRead = cache_read_tokens` (or undefined when 0)
 /// - `output.total = completion_tokens`
-fn convert_usage(usage: &UsageResponse) -> Usage {
+pub(super) fn convert_usage(usage: &UsageResponse) -> Usage {
     let raw = usage.raw.clone();
     let usage = &usage.fields;
     let prompt_tokens = usage.prompt_tokens;

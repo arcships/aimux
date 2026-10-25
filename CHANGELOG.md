@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `FileSearchArgs::max_num_results` (OpenAI and Azure file search tool) is an
+  `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` goes out
+  as `5`, as the AI SDK sends it, not `5.0`. Code that set it from an `f64`
+  passes an integer now.
+
 - Errors keep their cause, as the AI SDK's `cause`. `ApiCallError` has
   `cause` (`.caused_by(..)`): the transport error with its whole source chain
   down to the OS error, the body parse error, or the error a response handler
@@ -1249,6 +1254,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3.0.62 and the other AI SDK providers do; it carried only the parser
   message. This covers every stream read through
   `create_event_source_response_handler`.
+- An OpenAI (and Azure) Responses stream that sends an `error` frame (or a
+  `response.failed` with an error) after `response.created` or
+  `response.in_progress` but before any output rejects `do_stream` with an
+  `ApiCall` error, as the AI SDK's `throwIfOpenAIStreamErrorBeforeOutput`
+  does; aimux checked only the first event and otherwise returned a stream
+  whose first content was an error part. After `response.in_progress` the
+  check waits at most 50 ms per event, so a healthy stream is not held back.
+- An OpenAI (and Azure) Responses stream chunk without a string `type`, or a
+  modeled event missing an envelope field its AI SDK schema requires (the
+  `output_index` of item and tool-input events, an item event's `item`,
+  `item_id`, the delta, a `response` object), yields a `TypeValidation`
+  error part and finishes the stream with `error`, as the AI SDK does;
+  aimux processed such chunks with defaults or skipped them.
+- A Chat Completions chunk on an OpenAI (and Azure) Responses stream yields
+  an `ApiCall` error part that names the mix-up (use `openai.chat(...)` or
+  `@ai-sdk/openai-compatible`) and finishes the stream with `error`, as the
+  AI SDK does; aimux ignored the chunk and finished with `other`.
+- OpenAI (and Azure) Responses streams correlate reasoning summary events
+  and the reasoning item's end by `output_index`, as the AI SDK does, so a
+  provider that rotates item ids mid-stream (GitHub Copilot) keeps one
+  reasoning part instead of starting deltas under new ids and never ending
+  the first.
+- An OpenAI (and Azure) Responses reasoning summary part that ends before
+  its reasoning item (when the next part starts, or on
+  `reasoning_summary_part.done` with `store`) carries only `itemId` in its
+  provider metadata, as the AI SDK's does; aimux also sent
+  `reasoningEncryptedContent`, which belongs on the ends sent with the item.
+- The `tool-input-end` of a streamed OpenAI (and Azure) Responses function
+  call with a `namespace` carries `providerMetadata.<key>.namespace`, as the
+  AI SDK's does; aimux only put it on the tool call.
+- OpenAI (and Azure) Responses logprobs in provider metadata keep only
+  `token`, `logprob` and `top_logprobs` (each with `token` and `logprob`),
+  as the AI SDK's schema parses them, in generated and streamed results;
+  aimux passed `bytes` through.
+- An OpenAI (and Azure) Responses generate call whose message holds a part
+  other than `output_text` (a `refusal`) fails with an `ApiCall` error
+  ("Invalid JSON response"), as the AI SDK's response schema rejects it;
+  aimux skipped the part and returned an empty result, so the evaluation
+  model reported a refusal as invalid decision JSON.
+- OpenAI (and Azure) Responses local shell tool inputs list the action's
+  fields in the AI SDK's order (`type`, `command`, timeout, `user`, working
+  directory, `env`), in generated and streamed calls; aimux kept the wire
+  order and moved the renamed stream fields to the end.
+- OpenAI (and Azure) Responses apply patch tool inputs list the operation's
+  fields as `type`, `path`, `diff`, the AI SDK's schema order, in generated
+  and streamed calls; aimux kept the wire order.
+- OpenAI (and Azure) Responses text annotations in provider metadata keep
+  only the fields the AI SDK's schema has for their type, so a
+  `container_file_citation` no longer carries an extra `index`.
+- OpenAI (and Azure) Responses map only the AI SDK's twelve provider tools
+  (`providerToolNames`) back to the caller's tool names; aimux mapped every
+  `openai.*` tool, so a `computer_call` without a `call_id` came back under
+  the name of a declared `openai.computer_use` tool instead of
+  `computer_use`.
+- OpenAI (and Azure) Responses computer tool calls build each action from
+  the fields its type has and leave out a null `keys`, as the AI SDK's
+  `mapComputerAction` does; aimux passed the wire action through, so
+  `"keys":null` and unknown fields reached the tool input.
+- OpenAI (and Azure) Responses reasoning deltas carry the reasoning item's
+  id as `providerMetadata.<key>.itemId`, as the AI SDK's do and as aimux's
+  reasoning start and end parts already did.
+
+- An OpenAI (and Azure) Responses stream that never sees
+  `response.created` finishes with `responseId: null` in its provider
+  metadata, as the AI SDK does, instead of an empty string.
+- OpenAI Responses now sends a tool result's `caller` provider option on its
+  `function_call_output` (`{"type": "program", "caller_id": …}`), like the AI
+  SDK.
+- OpenAI Responses now replays a provider-executed tool search or program call
+  in full (`tool_search_call`, `program`) when responses are not stored
+  (`store: false`), instead of dropping it, like the AI SDK.
+- OpenAI Responses now warns about a request-level `reasoningEffortUpdate` the
+  model does not support with "<model> only supports the following reasoning
+  efforts: …", like the AI SDK.
+- OpenAI Responses now rejects a file or shell skill reference without an
+  `openai` entry with "No provider reference found for provider 'openai'.
+  Available providers: …", like the AI SDK's `NoSuchProviderReferenceError`.
+- OpenAI Responses now quotes the namespace name when tools give one namespace
+  two descriptions (`conflicting descriptions for OpenAI tool namespace
+  "crm"`), like the AI SDK.
+- OpenAI Responses now lists the dropped entries when no `allowedTools` entry
+  can be allow-listed ("allowedTools with only tools that cannot be
+  allow-listed (a, b)"), like the AI SDK.
+- OpenAI Responses `allowedTools` warnings now quote the entry
+  (`allowedTools entry "name"`) and give separate reasons for a namespaced
+  tool, a deferred tool, a tool_search tool and a provider tool name several
+  tools share, like the AI SDK.
+- OpenAI Responses now warns about `async: true` on a model without async tool
+  calling with the quoted tool name and "Async tool calling is only supported
+  by GPT-6 and later models.", like the AI SDK.
+- OpenAI realtime transcription's `stream-start` warns about each REST-only
+  provider option that is set (`include`, `prompt`, `temperature`,
+  `timestampGranularities`), like the AI SDK; they were ignored silently.
+- OpenAI realtime transcription configures the session from
+  `providerOptions.openai.streaming` (`delay` and `include`) like the AI
+  SDK; it put the REST `include` option into the session instead.
+- OpenAI realtime transcription authenticates through the WebSocket
+  subprotocols like the AI SDK: it offers `realtime` and
+  `openai-insecure-api-key.<key>` (the bearer token of the last
+  `authorization` header, scheme case-insensitive) and leaves the
+  `authorization` header out, keeping every other header; with no bearer
+  header it offers `realtime` alone. It sent the key as an `Authorization`
+  header and offered no subprotocol.
+- OpenAI transcription returns diarized segments with their speaker in
+  `providerMetadata.openai.segments` (`text`, `startSecond`, `endSecond`,
+  `speaker`), like the AI SDK; the speaker was dropped.
+- OpenAI transcription takes `providerOptions.openai.responseFormat` and
+  `chunkingStrategy` (`"auto"` or a server-VAD object, sent as snake_case
+  JSON), and `gpt-4o-transcribe-diarize` defaults to `diarized_json` with
+  `auto` chunking, like the AI SDK (both options were ignored).
+- An empty or blank base URL is rejected with the AI SDK's message,
+  "baseURL must be a non-empty string." (`validate_base_url`; it said
+  "base URL cannot be empty", and a blank value was reported as an
+  unparsable URL).
+- OpenAI structured-output and tool schemas: a singleton
+  `allOf: [{ "$ref": ... }]` (how Zod 4 writes a recursive reference)
+  becomes a direct `$ref`, and at the schema root is expanded from its local
+  definition, like the AI SDK; OpenAI rejects `allOf`.
+- OpenAI image models report file and mask input support by model id like
+  the AI SDK: the editing models (`dall-e-2`, the `gpt-image` and
+  `chatgpt-image-latest` ids it lists) `Some(true)`, `dall-e-3`
+  `Some(false)`, other ids and every Azure deployment unknown (all were
+  unknown).
+- Evaluation models built on structured language-model output (OpenAI
+  `evaluation`, Anthropic and Google evaluation models) name their JSON
+  response format `evaluation`, as the AI SDK does; it was `decision`.
+- OpenAI embeddings send `providerOptions.openai.dimensions` as the number
+  given, so `64` goes out as `64` like the AI SDK (it was sent as `64.0`).
+- OpenAI chat: the warning for a dropped `promptCacheRetention` uses the AI
+  SDK's wording for the models it names.
 - The model catalogue keys specs by the names `create_provider` accepts.
   anya2a provider ids map through an explicit table of the same vendor's
   providers, checked by hand (13 old aliases named providers that do not

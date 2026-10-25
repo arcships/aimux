@@ -164,6 +164,27 @@ pub(crate) fn build_responses_generate_result_with_tools(
         match part.get("type").and_then(|v| v.as_str()) {
             Some("message") => {
                 if let Some(content_parts) = part.get("content").and_then(|v| v.as_array()) {
+                    // The AI SDK's response schema lets a message hold only
+                    // `output_text` parts; any other part (a `refusal`) fails
+                    // its parse, which rejects the response as invalid JSON.
+                    if let Some(other) = content_parts
+                        .iter()
+                        .find(|cp| cp.get("type").and_then(Value::as_str) != Some("output_text"))
+                    {
+                        return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                            status_code: Some(200),
+                            response_body: Some(raw_body.to_string()),
+                            response_headers: Some(response_headers.clone()),
+                            ..ApiCallError::new(
+                                format!(
+                                    "Invalid JSON response: message content part of type {} is not output_text",
+                                    other.get("type").unwrap_or(&Value::Null)
+                                ),
+                                request_url,
+                                aimux_provider_utils::redact_error_context(body.clone()),
+                            )
+                        })));
+                    }
                     for cp in content_parts {
                         if cp.get("type").and_then(|v| v.as_str()) == Some("output_text") {
                             let text = cp
@@ -177,7 +198,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                                 .is_some_and(|n| n > 0)
                                 && let Some(value) = cp.get("logprobs")
                             {
-                                logprobs.push(value.clone());
+                                logprobs.push(logprobs_fields(value));
                             }
                             {
                                 content.push(GenerateContent::Text {
@@ -406,6 +427,231 @@ fn reasoning_stream_metadata(
     provider_namespace(provider_key, inner).expect("provider metadata must be an object")
 }
 
+/// The error for a Chat Completions chunk on a Responses stream
+/// (`createOpenAIResponsesChatCompletionsMismatchError`).
+const CHAT_COMPLETIONS_MISMATCH: &str = concat!(
+    "Received a Chat Completions stream while using the OpenAI Responses API. ",
+    "The default OpenAI provider model uses the Responses API. If your custom baseURL targets a Chat Completions-compatible endpoint, use openai.chat('model-id') or createOpenAI(...).chat('model-id') instead. ",
+    "You can also use @ai-sdk/openai-compatible for OpenAI-compatible providers.",
+);
+
+/// A Chat Completions chunk: a `choices` array and no string `type`
+/// (`isOpenAIChatCompletionChunk`).
+fn is_chat_completion_chunk(chunk: &Value) -> bool {
+    chunk.get("choices").is_some_and(Value::is_array)
+        && !chunk.get("type").is_some_and(Value::is_string)
+}
+
+/// Chunk types the AI SDK's chunk schema models
+/// (`openaiResponsesModeledChunkTypes`); any other type is an unknown chunk.
+const MODELED_CHUNK_TYPES: &[&str] = &[
+    "error",
+    "response.apply_patch_call_operation_diff.delta",
+    "response.apply_patch_call_operation_diff.done",
+    "response.code_interpreter_call_code.delta",
+    "response.code_interpreter_call_code.done",
+    "response.completed",
+    "response.created",
+    "response.custom_tool_call_input.delta",
+    "response.failed",
+    "response.function_call_arguments.delta",
+    "response.function_call_arguments.done",
+    "response.image_generation_call.partial_image",
+    "response.in_progress",
+    "response.incomplete",
+    "response.output_item.added",
+    "response.output_item.done",
+    "response.output_text.annotation.added",
+    "response.output_text.delta",
+    "response.reasoning_summary_part.added",
+    "response.reasoning_summary_part.done",
+    "response.reasoning_summary_text.delta",
+];
+
+/// How long to keep looking for an error frame once `response.in_progress`
+/// shows the request was accepted (`acceptedGraceMs`).
+const ACCEPTED_GRACE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Reads the stream until its first output event, as the AI SDK's
+/// `throwIfOpenAIStreamErrorBeforeOutput` does: an `error` frame, or a
+/// `response.failed` with an error, before any output fails the call with
+/// an `ApiCall` error instead of becoming an error part. After
+/// `response.in_progress` each further read waits at most
+/// [`ACCEPTED_GRACE`], so a healthy stream is handed over without waiting
+/// for the first token. Returns the events read so far, to be replayed.
+pub(crate) async fn read_until_output<S>(
+    sse_stream: &mut S,
+    request_url: &str,
+    request_body: &Value,
+    response_headers: &HashMap<String, String>,
+) -> Result<Vec<Result<Value, AiMuxError>>, AiMuxError>
+where
+    S: Stream<Item = Result<Value, AiMuxError>> + Unpin,
+{
+    let mut events = Vec::new();
+    let mut accepted = false;
+    loop {
+        let next = if accepted {
+            match tokio::time::timeout(ACCEPTED_GRACE, sse_stream.next()).await {
+                Ok(next) => next,
+                Err(_) => return Ok(events),
+            }
+        } else {
+            sse_stream.next().await
+        };
+        let event = match next {
+            None => return Ok(events),
+            Some(Err(error @ AiMuxError::ApiCall(_))) => return Err(error),
+            Some(Err(error)) => {
+                events.push(Err(error));
+                return Ok(events);
+            }
+            Some(Ok(event)) => event,
+        };
+        if is_chat_completion_chunk(&event) || chunk_schema_error(&event).is_some() {
+            events.push(Ok(event));
+            return Ok(events);
+        }
+        let kind = event["type"].as_str().unwrap_or_default();
+        if kind == "error" || (kind == "response.failed" && !event["response"]["error"].is_null()) {
+            return Err(super::super::openai_stream_error(
+                &event,
+                request_url,
+                request_body.clone(),
+                response_headers.clone(),
+            ));
+        }
+        let unknown_item = matches!(
+            kind,
+            "response.output_item.added" | "response.output_item.done"
+        ) && !MODELED_OUTPUT_ITEM_TYPES
+            .contains(&event["item"]["type"].as_str().unwrap_or_default());
+        let output = MODELED_CHUNK_TYPES.contains(&kind)
+            && !unknown_item
+            && !matches!(
+                kind,
+                "response.created" | "response.in_progress" | "response.failed"
+            );
+        accepted |= kind == "response.in_progress";
+        events.push(Ok(event));
+        if output {
+            return Ok(events);
+        }
+    }
+}
+
+/// Output item types the AI SDK's chunk schema models
+/// (`openaiResponsesModeledOutputItemTypes`); an item event for another type
+/// is an unknown chunk and is skipped.
+const MODELED_OUTPUT_ITEM_TYPES: &[&str] = &[
+    "apply_patch_call",
+    "code_interpreter_call",
+    "compaction",
+    "computer_call",
+    "custom_tool_call",
+    "file_search_call",
+    "function_call",
+    "image_generation_call",
+    "local_shell_call",
+    "mcp_approval_request",
+    "mcp_call",
+    "mcp_list_tools",
+    "message",
+    "program",
+    "program_output",
+    "reasoning",
+    "shell_call",
+    "shell_call_output",
+    "tool_search_call",
+    "tool_search_output",
+    "web_search_call",
+];
+
+/// Why a chunk fails the AI SDK's Responses chunk schema
+/// (`openaiResponsesChunkSchema`): a chunk without a string `type`, or a
+/// modeled event without the envelope fields its schema requires (the
+/// `output_index`, `item_id`, `item`, delta or `response` of the event).
+fn chunk_schema_error(chunk: &Value) -> Option<String> {
+    let Some(kind) = chunk.get("type").and_then(Value::as_str) else {
+        return Some("expected a string `type`".to_owned());
+    };
+    let (strings, numbers): (&[&str], &[&str]) = match kind {
+        "response.output_item.added" | "response.output_item.done" => {
+            let Some(item_type) = chunk
+                .get("item")
+                .and_then(Value::as_object)
+                .and_then(|item| item.get("type"))
+                .and_then(Value::as_str)
+            else {
+                return Some("expected an `item` object with a string `type`".to_owned());
+            };
+            if !MODELED_OUTPUT_ITEM_TYPES.contains(&item_type) {
+                return None;
+            }
+            (&[], &["output_index"])
+        }
+        "response.output_text.delta" => (&["item_id", "delta"], &[]),
+        "response.function_call_arguments.delta"
+        | "response.custom_tool_call_input.delta"
+        | "response.code_interpreter_call_code.delta"
+        | "response.apply_patch_call_operation_diff.delta" => {
+            (&["item_id", "delta"], &["output_index"])
+        }
+        "response.function_call_arguments.done" => (&["item_id", "arguments"], &["output_index"]),
+        "response.code_interpreter_call_code.done" => (&["item_id", "code"], &["output_index"]),
+        "response.apply_patch_call_operation_diff.done" => {
+            (&["item_id", "diff"], &["output_index"])
+        }
+        "response.image_generation_call.partial_image" => {
+            (&["item_id", "partial_image_b64"], &["output_index"])
+        }
+        "response.reasoning_summary_part.added" | "response.reasoning_summary_part.done" => {
+            (&["item_id"], &["summary_index"])
+        }
+        "response.reasoning_summary_text.delta" => (&["item_id", "delta"], &["summary_index"]),
+        "response.created"
+        | "response.in_progress"
+        | "response.completed"
+        | "response.incomplete"
+        | "response.failed" => {
+            if !chunk.get("response").is_some_and(Value::is_object) {
+                return Some("expected a `response` object".to_owned());
+            }
+            (&[], &[])
+        }
+        _ => (&[], &[]),
+    };
+    if let Some(field) = strings
+        .iter()
+        .find(|field| !chunk.get(**field).is_some_and(Value::is_string))
+    {
+        return Some(format!("expected a string `{field}`"));
+    }
+    numbers
+        .iter()
+        .find(|field| !chunk.get(**field).is_some_and(Value::is_number))
+        .map(|field| format!("expected a number `{field}`"))
+}
+
+/// The item id an event refers to: the id the output item at the event's
+/// `output_index` started with, since OpenAI-compatible providers can rotate
+/// item ids between events (`resolveOutputItemId`), else the event's own.
+fn resolve_output_item_id(event: &Value, output_ids: &HashMap<usize, String>) -> String {
+    event
+        .get("output_index")
+        .and_then(Value::as_u64)
+        .and_then(|index| output_ids.get(&(index as usize)))
+        .cloned()
+        .unwrap_or_else(|| event["item_id"].as_str().unwrap_or_default().to_owned())
+}
+
+/// The metadata of a reasoning summary part that ends before its item does:
+/// only the item id, without the encrypted content the item's end carries.
+fn reasoning_item_metadata(provider_key: &str, item_id: &str) -> ProviderMetadata {
+    provider_namespace(provider_key, json!({ "itemId": item_id }))
+        .expect("provider metadata must be an object")
+}
+
 fn tool_metadata(item: &Value) -> Value {
     let mut metadata = json!({ "itemId": item.get("id").cloned().unwrap_or(Value::Null) });
     for key in ["async", "namespace"] {
@@ -429,9 +675,56 @@ fn text_metadata(item: &Value, annotations: Option<&Vec<Value>>) -> Value {
         metadata["phase"] = phase.clone();
     }
     if let Some(annotations) = annotations.filter(|v| !v.is_empty()) {
-        metadata["annotations"] = json!(annotations);
+        metadata["annotations"] = annotations.iter().map(annotation_fields).collect();
     }
     metadata
+}
+
+/// Logprobs as the AI SDK's schema parses them: each token keeps `token`,
+/// `logprob` and `top_logprobs` (each with `token` and `logprob`), so fields
+/// such as `bytes` are dropped.
+fn logprobs_fields(logprobs: &Value) -> Value {
+    let Some(entries) = logprobs.as_array() else {
+        return logprobs.clone();
+    };
+    let token = |entry: &Value| json!({"token": entry["token"], "logprob": entry["logprob"]});
+    entries
+        .iter()
+        .map(|entry| {
+            let mut output = token(entry);
+            output["top_logprobs"] = entry["top_logprobs"]
+                .as_array()
+                .map(|top| top.iter().map(token).collect())
+                .unwrap_or_else(|| entry["top_logprobs"].clone());
+            output
+        })
+        .collect()
+}
+
+/// The fields the AI SDK's annotation schema keeps for each annotation type
+/// (`openaiResponsesResponseSchema` and the `annotation.added` chunk schema);
+/// any other field is dropped.
+fn annotation_fields(annotation: &Value) -> Value {
+    let fields: &[&str] = match annotation["type"].as_str() {
+        Some("url_citation") => &["start_index", "end_index", "url", "title"],
+        Some("file_citation") => &["file_id", "filename", "index"],
+        Some("container_file_citation") => &[
+            "container_id",
+            "file_id",
+            "filename",
+            "start_index",
+            "end_index",
+        ],
+        Some("file_path") => &["file_id", "index"],
+        _ => return annotation.clone(),
+    };
+    let mut output = json!({"type": annotation["type"]});
+    for field in fields {
+        if let Some(value) = annotation.get(*field) {
+            output[*field] = value.clone();
+        }
+    }
+    output
 }
 
 fn annotation_source(annotation: &Value, provider_key: &str) -> Result<Source, AiMuxError> {
@@ -727,6 +1020,36 @@ impl Transformer for OpenAIResponsesStream {
                         raw_value: parsed.clone(),
                     });
                 }
+                if is_chat_completion_chunk(&parsed) {
+                    *stream_errored = true;
+                    *final_finish_reason = Some(FINISH_ERROR);
+                    controller.enqueue(StreamPart::Error {
+                        error: aimux_provider_utils::stream_error_api_call(
+                            CHAT_COMPLETIONS_MISMATCH,
+                            None,
+                            None,
+                            &parsed,
+                            url.clone(),
+                            request_body.clone(),
+                            response_headers.clone(),
+                        ),
+                    });
+                    return;
+                }
+                if let Some(detail) = chunk_schema_error(&parsed) {
+                    *stream_errored = true;
+                    *final_finish_reason = Some(FINISH_ERROR);
+                    controller.enqueue(StreamPart::Error {
+                        error: AiMuxError::TypeValidation {
+                            message: format!(
+                                "Type validation failed: Value: {parsed}.\nError message: {detail}"
+                            ),
+                            value: Box::new(parsed),
+                            cause: None,
+                        },
+                    });
+                    return;
+                }
                 let etype = parsed
                     .get("type")
                     .and_then(|v| v.as_str())
@@ -844,6 +1167,7 @@ impl Transformer for OpenAIResponsesStream {
                                         &id,
                                         encrypted.as_deref(),
                                     );
+                                    output_ids.insert(output_index, id.clone());
                                     active_reasoning.insert(
                                         id.clone(),
                                         ReasoningState {
@@ -959,7 +1283,7 @@ impl Transformer for OpenAIResponsesStream {
                             .is_some_and(|n| n > 0)
                             && let Some(value) = parsed.get("logprobs")
                         {
-                            logprobs.push(value.clone());
+                            logprobs.push(logprobs_fields(value));
                         }
                         let mut id = parsed
                             .get("item_id")
@@ -998,11 +1322,7 @@ impl Transformer for OpenAIResponsesStream {
 
                     // ── reasoning_summary_part.added ──────────────────────────
                     "response.reasoning_summary_part.added" => {
-                        let item_id = parsed
-                            .get("item_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
                         let summary_index = parsed
                             .get("summary_index")
                             .and_then(serde_json::Value::as_u64)
@@ -1027,7 +1347,10 @@ impl Transformer for OpenAIResponsesStream {
                                 state.summary_parts.insert(idx, SummaryStatus::Concluded);
                                 controller.enqueue(StreamPart::ReasoningEnd {
                                     id: format!("{item_id}:{idx}"),
-                                    provider_metadata: Some(meta.clone()),
+                                    provider_metadata: Some(reasoning_item_metadata(
+                                        provider_key,
+                                        &item_id,
+                                    )),
                                 });
                             }
                             state
@@ -1042,11 +1365,7 @@ impl Transformer for OpenAIResponsesStream {
 
                     // ── reasoning_summary_text.delta → ReasoningDelta ─────────
                     "response.reasoning_summary_text.delta" => {
-                        let item_id = parsed
-                            .get("item_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
                         let summary_index = parsed
                             .get("summary_index")
                             .and_then(serde_json::Value::as_u64)
@@ -1056,16 +1375,19 @@ impl Transformer for OpenAIResponsesStream {
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();
-                        controller.reasoning_delta(format!("{item_id}:{summary_index}"), delta);
+                        controller.enqueue(StreamPart::ReasoningDelta {
+                            id: format!("{item_id}:{summary_index}"),
+                            delta,
+                            provider_metadata: Some(
+                                provider_namespace(provider_key, json!({ "itemId": item_id }))
+                                    .expect("provider metadata must be an object"),
+                            ),
+                        });
                     }
 
                     // ── reasoning_summary_part.done ───────────────────────────
                     "response.reasoning_summary_part.done" => {
-                        let item_id = parsed
-                            .get("item_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
+                        let item_id = resolve_output_item_id(&parsed, output_ids);
                         let summary_index = parsed
                             .get("summary_index")
                             .and_then(serde_json::Value::as_u64)
@@ -1077,10 +1399,9 @@ impl Transformer for OpenAIResponsesStream {
                                     .insert(summary_index, SummaryStatus::Concluded);
                                 controller.enqueue(StreamPart::ReasoningEnd {
                                     id: format!("{item_id}:{summary_index}"),
-                                    provider_metadata: Some(reasoning_stream_metadata(
+                                    provider_metadata: Some(reasoning_item_metadata(
                                         provider_key,
                                         &item_id,
-                                        state.encrypted_content.as_deref(),
                                     )),
                                 });
                             } else {
@@ -1147,7 +1468,19 @@ impl Transformer for OpenAIResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("{}")
                                         .to_string();
-                                    controller.tool_input_end(call_id.clone());
+                                    controller.enqueue(StreamPart::ToolInputEnd {
+                                        id: call_id.clone(),
+                                        provider_metadata: item
+                                            .get("namespace")
+                                            .filter(|namespace| !namespace.is_null())
+                                            .map(|namespace| {
+                                                provider_namespace(
+                                                    provider_key,
+                                                    json!({ "namespace": namespace }),
+                                                )
+                                                .expect("provider metadata must be an object")
+                                            }),
+                                    });
                                     let input = arguments;
                                     controller.enqueue(StreamPart::ToolCall(RawToolCall {
                                         tool_call_id: call_id,
@@ -1193,11 +1526,13 @@ impl Transformer for OpenAIResponsesStream {
                                     }));
                                 }
                                 "reasoning" => {
-                                    let id = item
-                                        .get("id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
+                                    let id =
+                                        output_ids.remove(&output_index).unwrap_or_else(|| {
+                                            item.get("id")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("")
+                                                .to_string()
+                                        });
                                     if let Some(state) = active_reasoning.get_mut(&id) {
                                         state.encrypted_content = item
                                             .get("encrypted_content")
@@ -1514,7 +1849,7 @@ impl Transformer for OpenAIResponsesStream {
         // responseId, serviceTier?, reasoningContext? } }. Mirrors the TS
         // flush() providerMetadata, which carries `service_tier` and
         // `reasoning.context` from the terminal response object.
-        let mut pm = json!({ "responseId": self.response_id.unwrap_or_default() });
+        let mut pm = json!({ "responseId": self.response_id });
         if let Some(st) = self.final_service_tier {
             pm["serviceTier"] = json!(st);
         }
@@ -1628,7 +1963,7 @@ fn provider_tool_start(item: &Value, names: &HashMap<String, String>) -> Vec<Str
             provider_metadata: None,
         }),
         "apply_patch_call" => {
-            let operation = &item["operation"];
+            let operation = &super::provider_events::apply_patch_operation(&item["operation"]);
             if operation["type"] == "delete_file" {
                 parts.push(StreamPart::ToolInputDelta {
                     id: id.clone(),

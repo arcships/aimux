@@ -1,6 +1,6 @@
 //! Realtime transcription streaming tests (RFC-0028 Phase 1).
 //!
-//! Each test spins up a local WebSocket server (tokio-tungstenite `accept_async`),
+//! Each test spins up a local WebSocket server (tokio-tungstenite `accept_hdr_async`),
 //! plays the OpenAI realtime endpoint's role (consume `session.update` /
 //! `input_audio_buffer.append` / `commit`, emit `transcription.delta` /
 //! `completed` events), and asserts on the `TranscriptionStreamPart` sequence
@@ -44,7 +44,7 @@ impl RealtimeServer {
         tokio::spawn(async move {
             // Accept a single connection (tests make one).
             let (stream, _) = listener.accept().await.unwrap();
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let mut ws = accept_realtime(stream).await;
             serve(&mut ws).await;
         });
         Self { port }
@@ -137,6 +137,37 @@ async fn serve(ws: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream
         }
         other => panic!("expected close frame, got {other:?}"),
     }
+}
+
+/// Accept the handshake the way the OpenAI realtime endpoint does: the client
+/// offers `realtime` plus `openai-insecure-api-key.<key>` and sends no
+/// Authorization header (`transcription/openai-transcription-model.ts:620-652`);
+/// the server selects `realtime`.
+async fn accept_realtime(
+    stream: tokio::net::TcpStream,
+) -> tokio_tungstenite::WebSocketStream<tokio::net::TcpStream> {
+    use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+    #[allow(clippy::result_large_err)]
+    let handshake = |request: &Request, mut response: Response| {
+        let offered = request
+            .headers()
+            .get("sec-websocket-protocol")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        assert!(
+            offered.starts_with("realtime, openai-insecure-api-key."),
+            "{offered}"
+        );
+        assert!(request.headers().get("authorization").is_none());
+        response
+            .headers_mut()
+            .insert("sec-websocket-protocol", "realtime".parse().unwrap());
+        Ok(response)
+    };
+    tokio_tungstenite::accept_hdr_async(stream, handshake)
+        .await
+        .unwrap()
 }
 
 /// `create_openai` pointed at `base_url` with `api_key`.
@@ -288,7 +319,7 @@ async fn stream_audio_chunks_are_base64() {
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let mut ws = accept_realtime(stream).await;
         // session.update
         let _ = ws.next().await;
         // first append — verify base64 of [1,2,3]
@@ -345,7 +376,7 @@ async fn stream_abort_mid_session() {
 
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let mut ws = accept_realtime(stream).await;
         let _ = ws.next().await; // session.update
         // Hold the connection open (drain client messages without acting) so
         // the abort — not a server-side disconnect — is what ends the session.
@@ -522,7 +553,7 @@ async fn stream_first_chunk_timeout_fires() {
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let mut ws = accept_realtime(stream).await;
         // Read session.update, then send NOTHING but KEEP the socket alive
         // (drain client appends) well past the client's 500ms first-chunk
         // deadline — the timeout must fire before any disconnect could.
@@ -576,7 +607,7 @@ async fn stream_server_error_event_propagates() {
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let mut ws = accept_realtime(stream).await;
         let _ = ws.next().await; // session.update
         ws.send(Message::Text(
             r#"{"type":"error","error":{"message":"insufficient quota for realtime transcription","type":"insufficient_quota"}}"#
@@ -630,7 +661,7 @@ async fn stream_peer_close_before_completion() {
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let mut ws = accept_realtime(stream).await;
         let _ = ws.next().await; // session.update
         // Server-initiated abnormal close: code 1011 + a human reason.
         let frame = WsCloseFrame {
@@ -679,7 +710,7 @@ async fn stream_chunk_idle_timeout_fires() {
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let mut ws = accept_realtime(stream).await;
         let _ = ws.next().await; // session.update
         // One event so the stream is established and alive…
         ws.send(Message::Text(r#"{"type":"session.created"}"#.to_string()))
@@ -743,7 +774,7 @@ async fn stream_total_timeout_fires() {
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
-        let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        let mut ws = accept_realtime(stream).await;
         let _ = ws.next().await; // session.update
         // Keep the stream visibly alive: a delta every 100ms for 2s — well
         // inside the 300ms chunk window, well past the 700ms total deadline.

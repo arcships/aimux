@@ -411,7 +411,8 @@ fn factory_is_explicit_and_preserves_the_provider_boundary() {
 }
 
 /// `@ai-sdk/openai@4.0.83 src/openai-provider.ts:355-358`: the evaluation
-/// model decides through the Responses model as `"{name}.evaluation"`.
+/// model decides through the Responses model as `"{name}.evaluation"`, with
+/// the structured output named `evaluation` (`src/openai-evaluation.test.ts:77`).
 #[tokio::test]
 #[serial]
 async fn evaluation_model_decides_through_the_responses_api() {
@@ -459,7 +460,7 @@ async fn evaluation_model_decides_through_the_responses_api() {
     let body: Value = server.received_requests().await.unwrap()[0]
         .body_json()
         .unwrap();
-    assert_eq!(body["text"]["format"]["name"], "decision");
+    assert_eq!(body["text"]["format"]["name"], "evaluation");
 }
 
 struct StopRecording;
