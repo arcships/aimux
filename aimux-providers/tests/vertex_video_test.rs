@@ -68,6 +68,7 @@ async fn mock_predict_and_poll(server: &MockServer, result: &Value) {
         .await;
 }
 
+/// partial: `should return completed with GCS URI video`; full port in src/vertex/tests/video_model.rs.
 #[tokio::test]
 async fn should_generate_video() {
     let server = MockServer::start().await;
