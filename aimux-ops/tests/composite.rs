@@ -82,11 +82,7 @@ fn child(owner: Owner) -> (String, Arc<AtomicUsize>) {
 }
 
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now: std::time::SystemTime::now,
-    }
+    Ctx { owner, abort: None }
 }
 
 async fn construct(owner: Owner, name: &str, params: Value) -> Result<Value, OpsError> {
@@ -338,23 +334,16 @@ async fn every_secondary_slot_hides_foreign_handles_and_rejects_wrong_kinds() {
         let unknown_error = construct(owner, name, params(Value::String(u64::MAX.to_string())))
             .await
             .unwrap_err();
-        assert!(matches!(foreign_error, OpsError::Projected(_)));
-        let envelope = foreign_error.envelope(std::time::UNIX_EPOCH);
+        let envelope = foreign_error.envelope();
         assert_eq!(envelope.code, 203);
         assert_eq!(envelope.error["actual"], Value::Null);
-        assert_eq!(envelope, unknown_error.envelope(std::time::UNIX_EPOCH));
-        assert_eq!(
-            envelope,
-            foreign_error.envelope(std::time::SystemTime::now())
-        );
+        assert_eq!(envelope, unknown_error.envelope());
+        assert_eq!(envelope, foreign_error.envelope());
         let error = construct(owner, name, params(Value::String(wrong.0.to_string())))
             .await
             .unwrap_err();
         assert_eq!(error.code(), 203);
-        assert_eq!(
-            error.envelope(std::time::UNIX_EPOCH).error["actual"],
-            "Abort"
-        );
+        assert_eq!(error.envelope().error["actual"], "Abort");
         for malformed in [
             serde_json::json!(1),
             Value::Null,
@@ -366,7 +355,6 @@ async fn every_secondary_slot_hides_foreign_handles_and_rejects_wrong_kinds() {
         ] {
             let error = construct(owner, name, params(malformed)).await.unwrap_err();
             assert_eq!(error.code(), 301, "{error:?}");
-            assert!(matches!(error, OpsError::Projected(_)));
         }
     }
     assert_eq!(calls.load(Ordering::SeqCst), 0);

@@ -11,7 +11,6 @@ final class OpsException implements Exception {
   int get code => envelope.code;
   String get message => envelope.message;
   Object? get error => envelope.error;
-  int? get retryAfterMs => envelope.retryAfterMs;
   Map<String, dynamic> toJson() => envelope.toJson();
 
   /// The payload's cause: a nested AI SDK error (with `name`) or an

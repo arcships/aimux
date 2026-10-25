@@ -501,4 +501,48 @@ mod bedrock_remaining {
             "{error:?}"
         );
     }
+
+    /// A frame whose prelude checksum does not match fails the stream with
+    /// `@smithy/eventstream-codec`'s `splitMessage` text, checked before the
+    /// message checksum (amazon-bedrock-event-stream-decoder.ts:42 decodes each
+    /// frame with the codec).
+    #[tokio::test]
+    async fn stream_prelude_checksum_mismatch_error() {
+        let mut body_bytes = crate::bedrock::event_stream_decoder::encode_message(
+            "event",
+            "contentBlockDelta",
+            r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+        );
+        let computed = u32::from_be_bytes(body_bytes[8..12].try_into().unwrap());
+        body_bytes[8..12].copy_from_slice(&(computed ^ 0xff).to_be_bytes());
+        let server = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![(
+                "content-type".into(),
+                "application/vnd.amazon.eventstream".into(),
+            )],
+            body: body_bytes,
+        }]);
+        let model = make_model(&server);
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let items: Vec<_> = result.stream.collect().await;
+        let error = items
+            .iter()
+            .find_map(|item| item.as_ref().err())
+            .expect("the stream fails");
+        assert!(
+            matches!(
+                error,
+                aimux_core::AiMuxError::InvalidResponseData { message, .. }
+                    if *message == format!(
+                        "The prelude checksum specified in the message ({}) does not match the calculated CRC32 checksum ({computed})",
+                        computed ^ 0xff
+                    )
+            ),
+            "{error:?}"
+        );
+    }
 }
