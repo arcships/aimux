@@ -1,0 +1,92 @@
+{
+  "content": [
+    {
+      "input": "{}",
+      "toolCallId": "ax9fskhev",
+      "toolName": "weather",
+      "type": "tool-call"
+    }
+  ],
+  "finishReason": {
+    "raw": "tool_calls",
+    "unified": "tool-calls"
+  },
+  "request": {
+    "body": {
+      "model": "gemma2-9b-it",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello"
+        }
+      ]
+    }
+  },
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "logprobs": null,
+          "message": {
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{}",
+                  "name": "weather"
+                },
+                "id": "ax9fskhev",
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1770770815,
+      "id": "chatcmpl-1fd017fc-60b8-44eb-a736-375b8e1bc3e7",
+      "model": "llama-3.3-70b-versatile",
+      "object": "chat.completion",
+      "service_tier": "on_demand",
+      "system_fingerprint": "fp_f8b414701e",
+      "usage": {
+        "completion_time": 0.044602289,
+        "completion_tokens": 15,
+        "prompt_time": 0.01182836,
+        "prompt_tokens": 218,
+        "queue_time": 0.179481775,
+        "total_time": 0.056430649,
+        "total_tokens": 233
+      },
+      "usage_breakdown": null,
+      "x_groq": {
+        "id": "req_01kh52madzem68scv0bcz3vm00",
+        "seed": 1790130236
+      }
+    },
+    "headers": {
+      "content-length": "666",
+      "content-type": "application/json"
+    },
+    "id": "chatcmpl-1fd017fc-60b8-44eb-a736-375b8e1bc3e7",
+    "modelId": "llama-3.3-70b-versatile",
+    "timestamp": "2026-02-11T00:46:55.000Z"
+  },
+  "usage": {
+    "inputTokens": {
+      "noCache": 218,
+      "total": 218
+    },
+    "outputTokens": {
+      "text": 15,
+      "total": 15
+    },
+    "raw": {
+      "completion_tokens": 15,
+      "prompt_tokens": 218,
+      "total_tokens": 233
+    }
+  },
+  "warnings": []
+}
