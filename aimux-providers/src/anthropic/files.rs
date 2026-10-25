@@ -97,9 +97,9 @@ impl Files for AnthropicFiles {
             None,
         );
 
-        let betas = std::collections::BTreeSet::from([FILES_BETA_HEADER.to_string()]);
+        let betas = indexmap::IndexSet::from([FILES_BETA_HEADER.to_string()]);
         let config = self.config.resolved().await?;
-        let mut header_list = config.request_headers(None, &betas).await?;
+        let mut header_list = config.request_headers(None, &betas, &[]).await?;
         // The Files endpoint replaces the provider beta header with its own.
         header_list.retain(|(name, _)| !name.eq_ignore_ascii_case("anthropic-beta"));
         header_list.push(("anthropic-beta".to_string(), FILES_BETA_HEADER.to_string()));

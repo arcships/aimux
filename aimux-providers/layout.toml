@@ -687,6 +687,132 @@ status = "mapped"
 upstream = "src/version.ts"
 status = "not-applicable"
 
+[groq]
+package = "@ai-sdk/groq"
+
+[[groq.files]]
+upstream = "src/convert-groq-usage.ts"
+rust = "groq/convert_usage.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/convert-to-groq-chat-messages.ts"
+rust = "groq/convert_to_chat_messages.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/get-response-metadata.ts"
+rust = "groq/chat_language_model.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-api-types.ts"
+rust = "groq/api_types.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-browser-search-models.ts"
+rust = "groq/browser_search_models.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-chat-language-model-options.ts"
+rust = "groq/chat_language_model_options.rs"
+status = "mapped"
+
+[groq.files.tests]
+ts-only = [
+  { case = "groqLanguageModelChatOptions › type inference › infers GroqLanguageModelChatOptions type correctly", reason = "checks only the inferred TypeScript type of the options object" },
+]
+
+[[groq.files]]
+upstream = "src/groq-chat-language-model.ts"
+rust = "groq/chat_language_model.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-config.ts"
+rust = "groq/provider.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-error.ts"
+rust = "groq/error.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-prepare-tools.ts"
+rust = "groq/prepare_tools.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-provider.ts"
+rust = "groq/provider.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-transcription-model-options.ts"
+rust = "groq/transcription_model_options.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-transcription-model.ts"
+rust = "groq/transcription_model.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/index.ts"
+rust = "groq/mod.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/map-groq-finish-reason.ts"
+rust = "groq/map_finish_reason.rs"
+status = "mapped"
+
+[groq.files.tests]
+
+[[groq.files]]
+upstream = "src/groq-tools.ts"
+status = "missing"
+issue = 275
+
+[[groq.files]]
+upstream = "src/tool/browser-search.ts"
+status = "missing"
+issue = 275
+
+[[groq.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
 [cohere]
 package = "@ai-sdk/cohere"
 
