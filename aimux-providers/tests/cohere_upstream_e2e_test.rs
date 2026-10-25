@@ -219,7 +219,7 @@ mod do_generate {
     mod text {
         use super::*;
 
-        /// upstream: @ai-sdk/cohere src/cohere-chat-language-model.test.ts › doGenerate › text › should extract text response
+        /// partial: `should extract text response`; full port in src/cohere/tests/chat_language_model.rs.
         #[tokio::test]
         async fn generate_text() {
             let fixture = cohere_text();
@@ -254,7 +254,7 @@ mod do_generate {
     mod tool_call {
         use super::*;
 
-        /// upstream: @ai-sdk/cohere src/cohere-chat-language-model.test.ts › doGenerate › tool call › should extract tool calls
+        /// partial: `should extract tool calls`; full port in src/cohere/tests/chat_language_model.rs.
         #[tokio::test]
         async fn generate_tool_calls() {
             let fixture = cohere_tool_call();

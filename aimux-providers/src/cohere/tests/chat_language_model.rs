@@ -11,10 +11,11 @@
 //! - The mock records `user-agent`, which the TypeScript `requestHeaders` do
 //!   not list; the header comparisons drop it.
 //!
-//! Cases that are not here (`should extract text response`,
-//! `should extract tool calls`, `should stream text deltas` and
+//! Cases that are not here (`should stream text deltas` and
 //! `should handle unparsable stream parts`) are ported in
-//! `tests/cohere_upstream_e2e_test.rs`.
+//! `tests/cohere_upstream_e2e_test.rs`. `should extract text response` and
+//! `should extract tool calls` compare the whole snapshot here; the older
+//! cases in that file check part of it.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -39,6 +40,7 @@ const MAX_TOKENS_FIXTURE: &str = include_str!("fixtures/cohere-max-tokens.json")
 const NULL_ARGS_FIXTURE: &str = include_str!("fixtures/cohere-null-args.json");
 const REASONING_FIXTURE: &str = include_str!("fixtures/cohere-reasoning.json");
 const CITATIONS_FIXTURE: &str = include_str!("fixtures/cohere-citations.json");
+const TOOL_CALL_FIXTURE: &str = include_str!("fixtures/cohere-tool-call.json");
 const TEXT_CHUNKS: &str = include_str!("fixtures/cohere-text.chunks.txt");
 const REASONING_CHUNKS: &str = include_str!("fixtures/cohere-reasoning.chunks.txt");
 const TOOL_CALL_CHUNKS: &str = include_str!("fixtures/cohere-tool-call.chunks.txt");
@@ -48,6 +50,8 @@ const SNAPSHOT_DO_GENERATE_CITATIONS: &str = include_str!("snapshots/do_generate
 const SNAPSHOT_DO_GENERATE_NULL_TOOL_CALL_ARGS: &str =
     include_str!("snapshots/do_generate_null_tool_call_args.json");
 const SNAPSHOT_DO_GENERATE_REASONING: &str = include_str!("snapshots/do_generate_reasoning.json");
+const SNAPSHOT_DO_GENERATE_TEXT: &str = include_str!("snapshots/do_generate_text.json");
+const SNAPSHOT_DO_GENERATE_TOOL_CALL: &str = include_str!("snapshots/do_generate_tool_call.json");
 const SNAPSHOT_DO_STREAM_EMPTY_TOOL_CALL: &str =
     include_str!("snapshots/do_stream_empty_tool_call.json");
 const SNAPSHOT_DO_STREAM_REASONING: &str = include_str!("snapshots/do_stream_reasoning.json");
@@ -266,6 +270,47 @@ fn assert_match_object(actual: &Value, expected: &Value) {
 // ── doGenerate ──────────────────────────────────────────────────────────────
 
 mod do_generate {
+    mod text {
+        use super::super::*;
+
+        /// upstream: @ai-sdk/cohere src/cohere-chat-language-model.test.ts › doGenerate › text › should extract text response
+        #[tokio::test]
+        async fn should_extract_text_response() {
+            let fetch = json_fetch(TEXT_FIXTURE, &[]);
+            let result = provider(&fetch)
+                .chat(MODEL)
+                .do_generate(&options())
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_TEXT)
+            );
+        }
+    }
+
+    mod tool_call {
+        use super::super::*;
+
+        /// upstream: @ai-sdk/cohere src/cohere-chat-language-model.test.ts › doGenerate › tool call › should extract tool calls
+        #[tokio::test]
+        async fn should_extract_tool_calls() {
+            let fetch = json_fetch(TOOL_CALL_FIXTURE, &[]);
+            let result = provider(&fetch)
+                .chat(MODEL)
+                .do_generate(&CallOptions {
+                    tools: Some(vec![test_tool()]),
+                    ..options()
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(&result).unwrap(),
+                json_value(SNAPSHOT_DO_GENERATE_TOOL_CALL)
+            );
+        }
+    }
+
     mod max_tokens {
         use super::super::*;
 

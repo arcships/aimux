@@ -91,7 +91,7 @@ mod do_embed {
         );
     }
 
-    /// upstream: @ai-sdk/cohere src/cohere-embedding-model.test.ts › doEmbed › should expose the raw response
+    /// partial: `should expose the raw response`; full port in src/cohere/tests/embedding_model.rs.
     #[tokio::test]
     async fn should_expose_raw_response() {
         let server = MockServer::start().await;
