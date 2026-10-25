@@ -28,6 +28,14 @@
 
 ## Language Guides
 
+> **Legacy (0.5 API).** The language guides below still describe the 0.5
+> binding API, which V4 removed; each binding's `README.md` under
+> [bindings/](../bindings/) describes the current API. V4 errors are the shared
+> `ErrorEnvelope` `{kind, code, message, error}` with no retry hint: read a
+> retry delay from `error.responseHeaders` (`retry-after-ms`, then
+> `retry-after`), as with the AI SDK. The rewrite is tracked in
+> [#277](https://github.com/arcships/aimux/issues/277).
+
 Each language has its own guide with that language's examples:
 
 | Language | Guide | Coverage |
