@@ -25,7 +25,7 @@ use super::convert::{parse_finish_reason, to_camel_case};
 use crate::openai::config::OpenAIModelConfig;
 
 #[derive(Clone)]
-enum CompletionConfig {
+pub(super) enum CompletionConfig {
     Compatible(CompatModelConfig),
     Native(OpenAIModelConfig),
 }
@@ -34,7 +34,7 @@ enum CompletionConfig {
 #[derive(Clone)]
 pub struct OpenAICompatibleCompletionModel {
     model_id: String,
-    config: CompletionConfig,
+    pub(super) config: CompletionConfig,
 }
 
 impl OpenAICompatibleCompletionModel {
