@@ -71,8 +71,8 @@ fn stream_request() -> Value {
     json!({"model":"test-model","messages":[{"role":"user","content":"Hello"}],"stream":true})
 }
 
-/// TS: "should use camelCase metadata key when camelCase provider options are used" (openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts)
-/// TS: "should extract detailed token usage when available" (openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts)
+/// partial: `should use camelCase metadata key when camelCase provider options are used`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
+/// partial: `should extract detailed token usage when available`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_generate_metadata_and_usage() {
     let usage = json!({"prompt_tokens":20,"completion_tokens":30,"total_tokens":50,
@@ -127,7 +127,7 @@ async fn chat_generate_metadata_and_usage() {
     assert!(result.warnings.is_empty());
 }
 
-/// TS: "should stream reasoning content before text deltas" (openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts)
+/// partial: `should stream reasoning content before text deltas`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_stream_reasoning_before_text() {
     let delta = |value: Value| {
@@ -200,7 +200,7 @@ async fn chat_stream_reasoning_before_text() {
     );
 }
 
-/// TS: "should parse thought signature from extra_content and include in providerMetadata" (openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts)
+/// partial: `should parse thought signature from extra_content and include in providerMetadata`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_tool_call_preserves_arguments_and_signature() {
     let fetch = MockFetch::new(vec![Canned::json(&chat_response(
@@ -244,7 +244,7 @@ async fn chat_tool_call_preserves_arguments_and_signature() {
     );
 }
 
-/// TS: "should preserve structured error stream parts" (openai-compatible/src/chat/openai-compatible-chat-language-model.test.ts)
+/// partial: `should preserve structured error stream parts`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_stream_preserves_structured_error() {
     let fetch = MockFetch::new(vec![stream_response(&[json!({"error":{
@@ -364,8 +364,8 @@ async fn completion_stream_error_infers_no_status() {
     assert!(!error.is_retryable);
 }
 
-/// TS: "should extract embedding" (openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts)
-/// TS: "should pass the model and the values" (openai-compatible/src/embedding/openai-compatible-embedding-model.test.ts)
+/// partial: `should extract embedding`; full port in src/openai_compatible/tests/embedding/embedding_model.rs.
+/// partial: `should pass the model and the values`; full port in src/openai_compatible/tests/embedding/embedding_model.rs.
 #[tokio::test]
 async fn embedding_request_and_result() {
     let body = json!({"object":"list","data":[
@@ -406,8 +406,8 @@ fn image_options() -> ImageCallOptions {
     opts
 }
 
-/// TS: "should return the raw b64_json content" (openai-compatible/src/image/openai-compatible-image-model.test.ts)
-/// TS: "should map the usage object reported by the provider" (openai-compatible/src/image/openai-compatible-image-model.test.ts)
+/// partial: `should return the raw b64_json content`; full port in src/openai_compatible/tests/image/image_model.rs.
+/// partial: `should map the usage object reported by the provider`; full port in src/openai_compatible/tests/image/image_model.rs.
 #[tokio::test]
 async fn image_generate_raw_content_and_usage() {
     let fetch = MockFetch::new(vec![Canned::json(&json!({"data":[
@@ -442,7 +442,7 @@ async fn image_generate_raw_content_and_usage() {
     assert!(result.warnings.is_empty());
 }
 
-/// TS: "should handle API errors with default error structure" (openai-compatible/src/image/openai-compatible-image-model.test.ts)
+/// partial: `should handle API errors with default error structure`; full port in src/openai_compatible/tests/image/image_model.rs.
 #[tokio::test]
 async fn image_generate_api_error() {
     let mut canned = Canned::json(&json!({"error":{"message":"Invalid prompt content",
@@ -520,6 +520,9 @@ fn multi_part_provider(
     .unwrap()
 }
 
+/// partial: `should pass multi-part tool content when supported`; full port in src/openai_compatible/tests/chat/chat_language_model.rs.
+/// partial: `should convert multi-part tool content when supported`; full port in src/openai_compatible/tests/chat/convert_to_chat_messages.rs.
+/// partial: `should stringify multi-part tool content by default`; full port in src/openai_compatible/tests/chat/convert_to_chat_messages.rs.
 /// Upstream: @ai-sdk/openai-compatible 3.0.62
 /// src/chat/convert-to-openai-compatible-chat-messages.ts:303-306 sends a
 /// `content` tool output as an array of content parts
