@@ -1,0 +1,79 @@
+{
+  "content": [
+    {
+      "text": "The capital of France is Paris.",
+      "type": "text"
+    }
+  ],
+  "finishReason": {
+    "raw": "COMPLETE",
+    "unified": "stop"
+  },
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": "you are a friendly bot!",
+          "role": "system"
+        },
+        {
+          "content": "Hello",
+          "role": "user"
+        }
+      ],
+      "model": "command-r-plus"
+    }
+  },
+  "response": {
+    "body": {
+      "finish_reason": "COMPLETE",
+      "id": "e7592632-1e3d-424f-b129-bd5f9f980f7b",
+      "message": {
+        "content": [
+          {
+            "text": "The capital of France is Paris.",
+            "type": "text"
+          }
+        ],
+        "role": "assistant"
+      },
+      "usage": {
+        "billed_units": {
+          "input_tokens": 12,
+          "output_tokens": 7
+        },
+        "cached_tokens": 448,
+        "tokens": {
+          "input_tokens": 507,
+          "output_tokens": 10
+        }
+      }
+    },
+    "headers": {
+      "content-length": "304",
+      "content-type": "application/json"
+    }
+  },
+  "usage": {
+    "inputTokens": {
+      "noCache": 507,
+      "total": 507
+    },
+    "outputTokens": {
+      "text": 10,
+      "total": 10
+    },
+    "raw": {
+      "billed_units": {
+        "input_tokens": 12,
+        "output_tokens": 7
+      },
+      "cached_tokens": 448,
+      "tokens": {
+        "input_tokens": 507,
+        "output_tokens": 10
+      }
+    }
+  },
+  "warnings": []
+}
