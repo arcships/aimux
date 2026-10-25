@@ -205,3 +205,23 @@ impl WarningFeature for aimux_core::types::Warning {
         }
     }
 }
+
+#[test]
+fn gemini_image_models_advertise_file_inputs_and_no_masks() {
+    let provider = create_google_vertex(VertexProviderSettings {
+        api_key: Some(Resolvable::Value("test-api-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
+    for (model_id, file_inputs, mask_inputs) in [
+        ("gemini-2.5-flash-image", Some(true), Some(false)),
+        ("gemini-3-pro-image-preview", Some(true), Some(false)),
+        ("gemini-3.1-flash-image-preview", Some(true), Some(false)),
+        ("gemini-2.5-pro", None, None),
+        ("gemini-custom", None, None),
+    ] {
+        let model = provider.image_model(model_id).unwrap();
+        assert_eq!(model.supports_file_inputs(), file_inputs, "{model_id}");
+        assert_eq!(model.supports_mask_inputs(), mask_inputs, "{model_id}");
+    }
+}

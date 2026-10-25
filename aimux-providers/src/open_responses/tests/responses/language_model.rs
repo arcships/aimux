@@ -3180,6 +3180,27 @@ async fn missing_output_is_an_api_call_error() {
     );
     assert_eq!(api_error.status_code, Some(500));
     assert!(!api_error.is_retryable);
+    // Upstream passes `url`, `requestBodyValues: body`, the raw response as
+    // `responseBody` and the response headers.
+    assert_eq!(api_error.url, format!("{}/responses", server.uri()));
+    let requests = server.received_requests().await.unwrap();
+    let sent: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(api_error.request_body_values, sent);
+    let response_body: Value =
+        serde_json::from_str(api_error.response_body.as_deref().expect("response body")).unwrap();
+    assert_eq!(
+        response_body,
+        json!({ "id": "resp_1", "status": "incomplete",
+                "incomplete_details": { "reason": "content_filter" } })
+    );
+    let headers = api_error
+        .response_headers
+        .as_ref()
+        .expect("response headers");
+    assert_eq!(
+        headers.get("content-type").map(String::as_str),
+        Some("application/json")
+    );
 }
 
 /// Two SSE chunks: a text delta and the completion.

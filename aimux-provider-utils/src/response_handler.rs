@@ -354,6 +354,20 @@ pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {
     })
 }
 
+/// One SSE `data:` field, as the AI SDK's `parseJsonEventStream` reads it
+/// (`safeParseJSON`): text that is not JSON is a JSON parse error naming the
+/// text, in the AI SDK's `JSONParseError` message
+/// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`).
+fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
+    serde_json::from_str(data).map_err(|error| match AiMuxError::from(error) {
+        AiMuxError::JsonParse { message, cause } => AiMuxError::JsonParse {
+            message: format!("JSON parsing failed: Text: {data}.\nError message: {message}"),
+            cause,
+        },
+        other => other,
+    })
+}
+
 /// Parse an SSE response and deserialize each `data:` field as `T`.
 ///
 /// Invalid JSON in a complete event remains a recoverable frame error. SSE
@@ -410,7 +424,7 @@ where
                 };
                 match item {
                     Ok(event) if event.data == "[DONE]" => continue,
-                    Ok(event) => yield serde_json::from_str::<T>(&event.data).map_err(AiMuxError::from),
+                    Ok(event) => yield parse_event::<T>(&event.data),
                     Err(aimux_stream::SseError::Stream(error)) => {
                         // Preserve response transport failures as ApiCallError
                         // items, eligible for retry before output is emitted.
