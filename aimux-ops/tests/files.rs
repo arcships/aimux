@@ -3,7 +3,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 use aimux_core::provider::Provider;
@@ -125,22 +125,14 @@ impl Drop for Resources {
     }
 }
 
-fn now() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
-}
 fn ctx(owner: Owner) -> Ctx {
-    Ctx {
-        owner,
-        abort: None,
-        now,
-    }
+    Ctx { owner, abort: None }
 }
 fn text_params() -> Value {
     json!({"data":{"type":"text","text":"hello 中文😀"},"mediaType":"text/plain"})
 }
 fn assert_invalid_handle(error: &OpsError, expected: HandleKind, actual: Option<HandleKind>) {
-    assert!(matches!(error, OpsError::Projected(_)));
-    match error.unprojected() {
+    match error {
         OpsError::Binding(BindingError::InvalidHandle {
             expected: found,
             actual: kind,
@@ -208,7 +200,7 @@ async fn provider_files_validates_controls_and_reports_missing_capability() {
         .unwrap_err();
     assert_eq!(error.code(), 8);
     assert!(matches!(
-        error.unprojected(),
+        &error,
         OpsError::AiMux(AiMuxError::UnsupportedFunctionality(_))
     ));
     assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
@@ -245,7 +237,7 @@ async fn uploads_canonical_base64_and_preserves_options_and_context_abort() {
 }
 
 #[tokio::test]
-async fn retryable_upload_error_is_projected_once_without_retry() {
+async fn retryable_upload_error_is_not_retried() {
     let resources = Resources::new();
     let model = Arc::new(MockFiles {
         reply: Reply::RetryableError,
@@ -255,17 +247,16 @@ async fn retryable_upload_error_is_projected_once_without_retry() {
     let error = dispatch::call(ctx(resources.0), id, "files.upload", text_params())
         .await
         .unwrap_err();
-    assert!(matches!(error, OpsError::Projected(_)));
-    assert!(
-        matches!(error.unprojected(), OpsError::AiMux(AiMuxError::ApiCall(api))
-        if api.is_retryable && api.status_code == Some(503))
-    );
-    let envelope = error.envelope(now());
+    assert!(matches!(&error, OpsError::AiMux(AiMuxError::ApiCall(api))
+        if api.is_retryable && api.status_code == Some(503)));
+    let envelope = error.envelope();
     assert_eq!(envelope.code, 11);
     assert_eq!(envelope.error["name"], "AI_APICallError");
     assert_eq!(envelope.error["isRetryable"], true);
-    assert_eq!(envelope.retry_after_ms, Some(10_000));
-    assert_eq!(envelope, error.envelope(now() + Duration::from_secs(3600)));
+    assert_eq!(
+        envelope.error["responseHeaders"]["retry-after"],
+        "Tue, 14 Nov 2023 22:13:30 GMT"
+    );
     assert_eq!(model.calls.lock().unwrap().len(), 1);
 }
 
@@ -314,7 +305,7 @@ async fn secondary_abort_is_owner_checked_and_typed_before_upload() {
             .await
             .unwrap_err();
         assert_invalid_handle(&error, HandleKind::Abort, actual);
-        envelopes.push(error.envelope(now()));
+        envelopes.push(error.envelope());
     }
     assert_eq!(envelopes[0], envelopes[1]);
     for abort in [
@@ -411,7 +402,7 @@ async fn primary_handles_reject_global_unknown_dropped_foreign_and_wrong_kind() 
                 .await
                 .unwrap_err();
             assert_invalid_handle(&error, expected, None);
-            envelopes.push(error.envelope(now()));
+            envelopes.push(error.envelope());
         }
         assert!(envelopes.windows(2).all(|pair| pair[0] == pair[1]));
         let error = dispatch::call(ctx(resources.0), wrong_kind, name, params)
