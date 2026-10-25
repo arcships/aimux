@@ -380,8 +380,8 @@ fn convert_prompt_with_validator(
             } => {
                 for (idx, part) in content.iter().enumerate() {
                     let is_last = idx + 1 == content.len();
-                    let block = if let AssistantPart::ToolResult(part) = part {
-                        convert_assistant_tool_result(
+                    if let AssistantPart::ToolResult(part) = part {
+                        acc.extend(convert_assistant_tool_result(
                             part,
                             tool_names,
                             &mcp_tool_use_ids,
@@ -390,21 +390,18 @@ fn convert_prompt_with_validator(
                             is_last,
                             provider_options.as_ref(),
                             options_name,
-                        )
-                    } else {
-                        convert_assistant_part(
-                            part,
-                            send_reasoning,
-                            tool_names,
-                            &mut betas,
-                            &mut warnings,
-                            validator,
-                            is_last,
-                            provider_options.as_ref(),
-                            options_name,
-                        )?
-                    };
-                    if let Some(block) = block {
+                        ));
+                    } else if let Some(block) = convert_assistant_part(
+                        part,
+                        send_reasoning,
+                        tool_names,
+                        &mut betas,
+                        &mut warnings,
+                        validator,
+                        is_last,
+                        provider_options.as_ref(),
+                        options_name,
+                    )? {
                         acc.push(block);
                     }
                 }
@@ -1093,7 +1090,8 @@ fn result_error_code(value: &Value, fallback: &str) -> String {
 /// typed result block, and anything unrecognised is dropped with a warning
 /// rather than sent as a bare `tool_result`.
 ///
-/// Returns `None` when the part is skipped.
+/// Returns no block when the part is skipped, and two for an MCP result under
+/// a provider tool name.
 #[allow(clippy::too_many_arguments)]
 fn convert_assistant_tool_result(
     part: &ToolResultPart,
@@ -1104,7 +1102,7 @@ fn convert_assistant_tool_result(
     is_last_part: bool,
     message_provider_options: Option<&SharedProviderOptions>,
     options_name: &str,
-) -> Option<Value> {
+) -> Vec<Value> {
     let ToolResultPart {
         tool_call_id,
         tool_name,
@@ -1177,7 +1175,7 @@ fn convert_assistant_tool_result(
             format!("provider executed tool result for tool {tool_name} is not supported")
         };
         warnings.push(Warning::Other { message });
-        return None;
+        return Vec::new();
     }
     let value = &raw_value;
     let is_error = matches!(
@@ -1189,105 +1187,143 @@ fn convert_assistant_tool_result(
     let tool_name = tool_name.as_str();
     let payload_type = value.get("type").and_then(|t| t.as_str());
 
-    let mut block = if mcp_tool_use_ids.contains(tool_call_id.as_str()) {
-        // Upstream's MCP branch does not `break`, so it falls through to the
-        // per-tool checks and ends at the unsupported-result warning
-        // (convert-to-anthropic-prompt.ts:1025-1046, 1435-1438).
-        if !matches!(
+    let typed = |warnings: &mut Vec<Warning>| -> Option<Value> {
+        let mut block = typed_provider_tool_result(
             provider_tool_name,
+            tool_name,
+            tool_call_id,
+            value,
+            is_error,
+            payload_type,
+            warnings,
+        )?;
+        if matches!(provider_tool_name, "web_fetch" | "web_search")
+            && let Some(caller) = tool_caller(provider_options.as_ref(), options_name)
+        {
+            block["caller"] = caller;
+        }
+        Some(block)
+    };
+
+    let mut blocks = Vec::new();
+    if mcp_tool_use_ids.contains(tool_call_id.as_str()) {
+        blocks.push(json!({
+            "type": "mcp_tool_result",
+            "tool_use_id": tool_call_id,
+            "is_error": is_error,
+            "content": value,
+        }));
+        // Upstream's MCP branch does not `break`, so the result also goes
+        // through the per-tool checks (convert-to-anthropic-prompt.ts:1219-1440):
+        // a provider tool name adds its typed block too, tool search takes only
+        // `json`, and any other name ends at the unsupported-result warning.
+        match provider_tool_name {
+            "tool_search_tool_regex" | "tool_search_tool_bm25"
+                if matches!(output, ToolResultOutput::ErrorJson { .. }) =>
+            {
+                warnings.push(Warning::Other {
+                    message: format!(
+                        "provider executed tool result output type error-json for tool {tool_name} is not supported"
+                    ),
+                });
+            }
             "web_fetch"
-                | "web_search"
-                | "tool_search_tool_regex"
-                | "tool_search_tool_bm25"
-                | "advisor"
-        ) {
+            | "web_search"
+            | "tool_search_tool_regex"
+            | "tool_search_tool_bm25"
+            | "advisor" => blocks.extend(typed(warnings)),
+            _ => warnings.push(Warning::Other {
+                message: format!(
+                    "provider executed tool result for tool {tool_name} is not supported"
+                ),
+            }),
+        }
+    } else {
+        blocks.extend(typed(warnings));
+    }
+
+    if let Some(cc) = cache_control {
+        for block in &mut blocks {
+            block["cache_control"] = cc.clone();
+        }
+    }
+    blocks
+}
+
+/// The typed result block for a provider tool, or `None` (with a warning)
+/// when the result cannot be sent.
+fn typed_provider_tool_result(
+    provider_tool_name: &str,
+    tool_name: &str,
+    tool_call_id: &str,
+    value: &Value,
+    is_error: bool,
+    payload_type: Option<&str>,
+    warnings: &mut Vec<Warning>,
+) -> Option<Value> {
+    let (block_type, content) = match provider_tool_name {
+        "code_execution" if is_error => {
+            let error = if let Value::String(raw) = value {
+                serde_json::from_str(raw).unwrap_or(json!({}))
+            } else {
+                value.clone()
+            };
+            let code_error = error.get("type").and_then(Value::as_str)
+                == Some("code_execution_tool_result_error");
+            (
+                if code_error {
+                    "code_execution_tool_result"
+                } else {
+                    "bash_code_execution_tool_result"
+                },
+                json!({ "type": if code_error { "code_execution_tool_result_error" } else { "bash_code_execution_tool_result_error" }, "error_code": error.get("errorCode").and_then(Value::as_str).unwrap_or("unknown") }),
+            )
+        }
+        "code_execution" => match assistant_code_execution_content(value, payload_type) {
+            Some(v) => v,
+            None => {
+                warnings.push(Warning::Other {
+                    message: format!(
+                        "provider executed tool result output value is not a valid code execution result for tool {tool_name}"
+                    ),
+                });
+                return None;
+            }
+        },
+        "web_fetch" => (
+            "web_fetch_tool_result",
+            assistant_web_fetch_content(value, is_error),
+        ),
+        "web_search" => (
+            "web_search_tool_result",
+            if is_error {
+                json!({ "type": "web_search_tool_result_error", "error_code": result_error_code(value, "unavailable") })
+            } else {
+                assistant_web_search_content(value)
+            },
+        ),
+        "tool_search_tool_regex" | "tool_search_tool_bm25" => (
+            "tool_search_tool_result",
+            assistant_tool_search_content(value),
+        ),
+        "advisor" => (
+            "advisor_tool_result",
+            assistant_advisor_content(value, payload_type),
+        ),
+        _ => {
             warnings.push(Warning::Other {
                 message: format!(
                     "provider executed tool result for tool {tool_name} is not supported"
                 ),
             });
+            return None;
         }
-        json!({
-            "type": "mcp_tool_result",
-            "tool_use_id": tool_call_id,
-            "is_error": is_error,
-            "content": value,
-        })
-    } else {
-        let (block_type, content) = match tool_names.to_provider_tool_name(tool_name) {
-            "code_execution" if is_error => {
-                let error = if let Value::String(raw) = value {
-                    serde_json::from_str(raw).unwrap_or(json!({}))
-                } else {
-                    value.clone()
-                };
-                let code_error = error.get("type").and_then(Value::as_str)
-                    == Some("code_execution_tool_result_error");
-                (
-                    if code_error {
-                        "code_execution_tool_result"
-                    } else {
-                        "bash_code_execution_tool_result"
-                    },
-                    json!({ "type": if code_error { "code_execution_tool_result_error" } else { "bash_code_execution_tool_result_error" }, "error_code": error.get("errorCode").and_then(Value::as_str).unwrap_or("unknown") }),
-                )
-            }
-            "code_execution" => match assistant_code_execution_content(value, payload_type) {
-                Some(v) => v,
-                None => {
-                    warnings.push(Warning::Other {
-                        message: format!(
-                            "provider executed tool result output value is not a valid code execution result for tool {tool_name}"
-                        ),
-                    });
-                    return None;
-                }
-            },
-            "web_fetch" => (
-                "web_fetch_tool_result",
-                assistant_web_fetch_content(value, is_error),
-            ),
-            "web_search" => (
-                "web_search_tool_result",
-                if is_error {
-                    json!({ "type": "web_search_tool_result_error", "error_code": result_error_code(value, "unavailable") })
-                } else {
-                    assistant_web_search_content(value)
-                },
-            ),
-            "tool_search_tool_regex" | "tool_search_tool_bm25" => (
-                "tool_search_tool_result",
-                assistant_tool_search_content(value),
-            ),
-            "advisor" => (
-                "advisor_tool_result",
-                assistant_advisor_content(value, payload_type),
-            ),
-            _ => {
-                warnings.push(Warning::Other {
-                    message: format!(
-                        "provider executed tool result for tool {tool_name} is not supported"
-                    ),
-                });
-                return None;
-            }
-        };
-        json!({
-            "type": block_type,
-            "tool_use_id": tool_call_id,
-            "content": content,
-        })
     };
-
-    if matches!(provider_tool_name, "web_fetch" | "web_search")
-        && let Some(caller) = tool_caller(provider_options.as_ref(), options_name)
-    {
-        block["caller"] = caller;
-    }
-    if let Some(cc) = cache_control {
-        block["cache_control"] = cc;
-    }
-    Some(block)
+    Some(json!({
+        "type": block_type,
+        "tool_use_id": tool_call_id,
+        "content": content,
+    }))
 }
 
 /// `code_execution` result payload → `(block type, wire content)`.
