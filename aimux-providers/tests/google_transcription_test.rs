@@ -529,7 +529,12 @@ async fn errors_when_the_socket_closes_before_the_audio_ended() {
     )
     .await;
     let error = parts.last().unwrap().as_ref().unwrap_err();
-    assert!(error.to_string().contains("1011"), "{error}");
+    assert!(
+        error
+            .to_string()
+            .contains("closed unexpectedly before finishing (code 1011, reason: internal error)"),
+        "{error}"
+    );
 }
 
 /// TS: surfaces server error messages
