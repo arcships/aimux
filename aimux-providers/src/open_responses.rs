@@ -23,11 +23,13 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
+use aimux_core::shared::provider_namespace;
 use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Usage, Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ReasoningEffort, ResponseMetadata, Usage,
+    Warning,
 };
 
 use aimux_core::embedding_model::EmbeddingModel;
@@ -62,7 +64,6 @@ fn open_responses_failed_response_handler() -> aimux_provider_utils::ResponseHan
 
 fn open_responses_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
     aimux_provider_utils::ResponseHandler::new(|input| async move {
-        let status = input.response.status().as_u16();
         let url = input.url.clone();
         let request_body_values = input.request_body_values.clone();
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
@@ -78,8 +79,10 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                 .get("message")
                 .and_then(Value::as_str)
                 .unwrap_or("Open Responses request failed");
+            // `errorMetadata?.statusCode ?? 400`: the HTTP status is a 200.
             return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                status_code: Some(status),
+                status_code: Some(400),
+                data: Some(Value::Object(error.clone())),
                 provider_code: error
                     .get("code")
                     .or_else(|| error.get("type"))
@@ -87,6 +90,28 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                     .map(str::to_string),
                 response_body: Some(output.value.to_string()),
                 response_headers: Some(output.response_headers.clone()),
+                ..ApiCallError::new(message, url, request_body_values)
+            })));
+        }
+        // A response without `output` is an APICallError with status 500
+        // (open-responses-language-model.ts:428-441). It is built here so it
+        // carries the HTTP layer's sanitized URL and request values.
+        if output.value.get("output").is_none_or(Value::is_null) {
+            let detail = output
+                .value
+                .get("incomplete_details")
+                .and_then(|d| d.get("reason"))
+                .and_then(Value::as_str)
+                .or_else(|| output.value.get("status").and_then(Value::as_str));
+            let message = match detail {
+                Some(d) => format!("Responses API returned no output ({d})"),
+                None => "Responses API returned no output".to_string(),
+            };
+            return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                status_code: Some(500),
+                response_body: Some(output.value.to_string()),
+                response_headers: Some(output.response_headers.clone()),
+                is_retryable: false,
                 ..ApiCallError::new(message, url, request_body_values)
             })));
         }
@@ -293,7 +318,7 @@ impl LanguageModel for OpenResponsesModel {
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        validate_tool_output_media(&options.prompt)?;
+        validate_file_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
         let body = exchange.transform_body(body);
@@ -310,20 +335,8 @@ impl LanguageModel for OpenResponsesModel {
 
         let raw: Value = resp.value;
 
-        // Check for null/missing output.
+        // The response handler has already failed a missing `output`.
         let output = raw.get("output");
-        if output.map(serde_json::Value::is_null).unwrap_or(true) {
-            let detail = raw
-                .get("incomplete_details")
-                .and_then(|d| d.get("reason"))
-                .and_then(|r| r.as_str())
-                .or_else(|| raw.get("status").and_then(|s| s.as_str()));
-            let message = match detail {
-                Some(d) => format!("Responses API returned no output ({d})"),
-                None => "Responses API returned no output".to_string(),
-            };
-            return Err(AiMuxError::invalid_response_data(message));
-        }
 
         // Build content array from output items.
         let mut content = Vec::new();
@@ -333,19 +346,44 @@ impl LanguageModel for OpenResponsesModel {
             for part in output_arr {
                 let part_type = part.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 match part_type {
-                    "reasoning" => {
-                        if let Some(content_parts) = part.get("content").and_then(|c| c.as_array())
-                        {
+                    "reasoning" => match part
+                        .get("content")
+                        .and_then(Value::as_array)
+                        .filter(|parts| !parts.is_empty())
+                    {
+                        Some(content_parts) => {
                             for cp in content_parts {
                                 if let Some(text) = cp.get("text").and_then(|t| t.as_str()) {
                                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                                         text: text.to_string(),
-                                        provider_metadata: None,
+                                        provider_metadata: reasoning_metadata(
+                                            &self.provider_options_name,
+                                            part,
+                                            &json!([cp]),
+                                        ),
                                     }));
                                 }
                             }
                         }
-                    }
+                        // No reasoning content (a summary or encrypted-only
+                        // item): one part with the joined summary text.
+                        None => {
+                            let text = part["summary"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|summary| summary["text"].as_str())
+                                .collect::<String>();
+                            content.push(GenerateContent::Reasoning(ReasoningOutput {
+                                text,
+                                provider_metadata: reasoning_metadata(
+                                    &self.provider_options_name,
+                                    part,
+                                    &part["content"],
+                                ),
+                            }));
+                        }
+                    },
                     "message" => {
                         if let Some(content_parts) = part.get("content").and_then(|c| c.as_array())
                         {
@@ -353,7 +391,11 @@ impl LanguageModel for OpenResponsesModel {
                                 if let Some(text) = cp.get("text").and_then(|t| t.as_str()) {
                                     content.push(GenerateContent::Text {
                                         text: text.to_string(),
-                                        provider_metadata: None,
+                                        provider_metadata: message_metadata(
+                                            &self.provider_options_name,
+                                            part,
+                                            output_text_annotations(std::slice::from_ref(cp)),
+                                        ),
                                     });
                                 }
                             }
@@ -382,7 +424,7 @@ impl LanguageModel for OpenResponsesModel {
                             input,
                             provider_executed: None,
                             dynamic: None,
-                            provider_metadata: None,
+                            provider_metadata: item_id_metadata(&self.provider_options_name, part),
                         }));
                     }
                     _ => {}
@@ -433,7 +475,7 @@ impl LanguageModel for OpenResponsesModel {
 
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
-        validate_tool_output_media(&options.prompt)?;
+        validate_file_media(&options.prompt)?;
         let (body, warnings) =
             build_request_body(&self.model_id, options, &self.provider_options_name);
 
@@ -495,11 +537,15 @@ impl LanguageModel for OpenResponsesModel {
         let stream = pipe_through(
             futures::stream::iter(first_event).chain(sse_stream),
             OpenResponsesStream {
+                provider_options_name: self.provider_options_name.clone(),
+                url: endpoint,
+                request_body: stream_body,
+                response_headers: response_headers.clone(),
                 warnings,
                 final_usage: Usage::default(),
                 has_tool_calls: false,
                 finish_reason: FINISH_OTHER,
-                is_active_reasoning: false,
+                active_reasoning_id: None,
                 tool_calls: HashMap::new(),
                 include_raw_chunks: options.include_raw_chunks == Some(true),
             },
@@ -517,11 +563,17 @@ impl LanguageModel for OpenResponsesModel {
 
 /// The `TransformStream` of `OpenResponsesLanguageModel.doStream`.
 struct OpenResponsesStream {
+    provider_options_name: String,
+    /// The request, for the errors of in-stream error events.
+    url: String,
+    request_body: Value,
+    response_headers: HashMap<String, String>,
     warnings: Vec<Warning>,
     final_usage: Usage,
     has_tool_calls: bool,
     finish_reason: FinishReason,
-    is_active_reasoning: bool,
+    /// The reasoning item started and not yet done.
+    active_reasoning_id: Option<String>,
     /// Tool-call accumulators keyed by item_id.
     tool_calls: HashMap<String, ToolCallAccum>,
     include_raw_chunks: bool,
@@ -555,10 +607,14 @@ impl Transformer for OpenResponsesStream {
             }
         }
         let Self {
+            ref provider_options_name,
+            ref url,
+            ref request_body,
+            ref response_headers,
             ref mut final_usage,
             ref mut has_tool_calls,
             ref mut finish_reason,
-            ref mut is_active_reasoning,
+            ref mut active_reasoning_id,
             ref mut tool_calls,
             ..
         } = *self;
@@ -602,8 +658,8 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.reasoning_start(id);
-                                    *is_active_reasoning = true;
+                                    controller.reasoning_start(id.clone());
+                                    *active_reasoning_id = Some(id);
                                 }
                                 "message" => {
                                     let id = item
@@ -691,13 +747,14 @@ impl Transformer for OpenResponsesStream {
                                                 .map(std::string::ToString::to_string)
                                         })
                                         .unwrap_or_default();
-                                    let arguments = accum
-                                        .as_ref()
-                                        .and_then(|a| a.arguments.clone())
+                                    // The completed item's arguments win unless empty.
+                                    let arguments = item
+                                        .get("arguments")
+                                        .and_then(Value::as_str)
+                                        .filter(|arguments| !arguments.is_empty())
+                                        .map(str::to_string)
                                         .or_else(|| {
-                                            item.get("arguments")
-                                                .and_then(|v| v.as_str())
-                                                .map(std::string::ToString::to_string)
+                                            accum.as_ref().and_then(|a| a.arguments.clone())
                                         })
                                         .unwrap_or_default();
                                     let input = arguments;
@@ -707,7 +764,10 @@ impl Transformer for OpenResponsesStream {
                                         input,
                                         provider_executed: None,
                                         dynamic: None,
-                                        provider_metadata: None,
+                                        provider_metadata: item_id_metadata(
+                                            provider_options_name,
+                                            item,
+                                        ),
                                     }));
                                     *has_tool_calls = true;
                                 }
@@ -717,8 +777,17 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.reasoning_end(id);
-                                    *is_active_reasoning = false;
+                                    if active_reasoning_id.as_ref() == Some(&id) {
+                                        *active_reasoning_id = None;
+                                    }
+                                    controller.enqueue(StreamPart::ReasoningEnd {
+                                        id,
+                                        provider_metadata: reasoning_metadata(
+                                            provider_options_name,
+                                            item,
+                                            &item["content"],
+                                        ),
+                                    });
                                 }
                                 "message" => {
                                     let id = item
@@ -726,15 +795,26 @@ impl Transformer for OpenResponsesStream {
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    controller.text_end(id);
+                                    let annotations = item["content"]
+                                        .as_array()
+                                        .map(|parts| output_text_annotations(parts))
+                                        .unwrap_or_default();
+                                    controller.enqueue(StreamPart::TextEnd {
+                                        id,
+                                        provider_metadata: message_metadata(
+                                            provider_options_name,
+                                            item,
+                                            annotations,
+                                        ),
+                                    });
                                 }
                                 _ => {}
                             }
                         }
                     }
 
-                    // -- Reasoning text delta (LM Studio extension) --
-                    "response.reasoning_text.delta" => {
+                    // -- Reasoning summary text delta, and reasoning text delta (LM Studio extension) --
+                    "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
                         let id = chunk
                             .get("item_id")
                             .and_then(|v| v.as_str())
@@ -793,7 +873,27 @@ impl Transformer for OpenResponsesStream {
                             if let Some(usage_val) = response.get("usage") {
                                 *final_usage = extract_usage_from_value(usage_val);
                             }
+                            if let Some(error) = response.get("error").filter(|e| !e.is_null()) {
+                                let error = stream_error(
+                                    error,
+                                    &chunk,
+                                    url,
+                                    request_body,
+                                    response_headers,
+                                );
+                                controller.enqueue(StreamPart::Error { error });
+                            }
                         }
+                    }
+                    "error" => {
+                        let error = chunk.get("error").unwrap_or(&Value::Null);
+                        *finish_reason = FinishReason {
+                            unified: FinishReasonUnified::Error,
+                            raw: error_code(error),
+                        };
+                        let error =
+                            stream_error(error, &chunk, url, request_body, response_headers);
+                        controller.enqueue(StreamPart::Error { error });
                     }
                     _ => {
                         // Ignore unrecognised event types.
@@ -812,8 +912,8 @@ impl Transformer for OpenResponsesStream {
 
     fn flush(self, controller: &mut Controller) {
         // Close any dangling reasoning segment.
-        if self.is_active_reasoning {
-            controller.reasoning_end("reasoning-0");
+        if let Some(id) = self.active_reasoning_id {
+            controller.reasoning_end(id);
         }
 
         controller.enqueue(StreamPart::Finish {
@@ -822,6 +922,110 @@ impl Transformer for OpenResponsesStream {
             provider_metadata: None,
         });
     }
+}
+
+// == Stream errors ==
+
+/// createOpenResponsesStreamError: the error of a `response.failed` or
+/// `error` event, with the event as `data` and no status code.
+fn stream_error(
+    error: &Value,
+    event: &Value,
+    url: &str,
+    request_body: &Value,
+    response_headers: &HashMap<String, String>,
+) -> AiMuxError {
+    aimux_provider_utils::stream_error_api_call(
+        error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        error_code(error),
+        None,
+        event,
+        url,
+        request_body.clone(),
+        response_headers.clone(),
+    )
+}
+
+/// An error's `code`, a string or a number.
+fn error_code(error: &Value) -> Option<String> {
+    match error.get("code")? {
+        Value::String(code) => Some(code.clone()),
+        Value::Number(code) => Some(code.to_string()),
+        _ => None,
+    }
+}
+
+// == Output provider metadata ==
+
+/// `{ <name>: { itemId } }` of a tool call item.
+fn item_id_metadata(provider_options_name: &str, item: &Value) -> Option<ProviderMetadata> {
+    provider_namespace(provider_options_name, json!({ "itemId": item["id"] })).ok()
+}
+
+/// `{ <name>: { itemId, annotations? } }` of a message's text, with the
+/// annotations only when there are any.
+fn message_metadata(
+    provider_options_name: &str,
+    item: &Value,
+    annotations: Vec<Value>,
+) -> Option<ProviderMetadata> {
+    let mut metadata = json!({ "itemId": item["id"] });
+    if !annotations.is_empty() {
+        metadata["annotations"] = json!(annotations);
+    }
+    provider_namespace(provider_options_name, metadata).ok()
+}
+
+/// The `url_citation` annotations of output text parts, flattened
+/// (getOutputTextAnnotations): a part whose annotations are not all valid
+/// citations contributes none.
+fn output_text_annotations(parts: &[Value]) -> Vec<Value> {
+    parts
+        .iter()
+        .filter_map(|part| part.get("annotations").and_then(url_citations))
+        .flat_map(|annotations| match annotations {
+            Value::Array(annotations) => annotations,
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+/// createReasoningProviderMetadata: the item id, its summary, the given
+/// reasoning content (`null` when absent) and the encrypted content.
+fn reasoning_metadata(
+    provider_options_name: &str,
+    item: &Value,
+    reasoning_content: &Value,
+) -> Option<ProviderMetadata> {
+    let texts = |parts: &Value, kind: &str| {
+        json!(
+            parts
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|part| json!({ "type": kind, "text": part["text"] }))
+                .collect::<Vec<_>>()
+        )
+    };
+    let mut metadata = json!({
+        "itemId": item["id"],
+        "reasoningSummary": texts(&item["summary"], "summary_text"),
+        "reasoningContent": if reasoning_content.is_array() {
+            texts(reasoning_content, "reasoning_text")
+        } else {
+            Value::Null
+        },
+    });
+    if let Some(encrypted) = item
+        .get("encrypted_content")
+        .filter(|value| !value.is_null())
+    {
+        metadata["reasoningEncryptedContent"] = encrypted.clone();
+    }
+    provider_namespace(provider_options_name, metadata).ok()
 }
 
 // == Tool call accumulator ==
@@ -921,7 +1125,15 @@ fn build_request_body(
                         }
                         Some(t)
                     }
-                    _ => None,
+                    // No extension encodes provider tools here (getArgs
+                    // warns when none does).
+                    Tool::Provider(tool) => {
+                        warnings.push(Warning::Unsupported {
+                            feature: format!("provider-defined tool {}", tool.id),
+                            details: None,
+                        });
+                        None
+                    }
                 })
                 .collect()
         })
@@ -932,10 +1144,15 @@ fn build_request_body(
         Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
         Some(LanguageModelV4ToolChoice::None) => Some(json!("none")),
         Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
-        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
-            "type": "function",
-            "name": tool_name,
-        })),
+        // A provider tool's choice is omitted, as it has no encoding.
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+            let provider_tool = options
+                .tools
+                .iter()
+                .flatten()
+                .any(|tool| matches!(tool, Tool::Provider(tool) if &tool.name == tool_name));
+            (!provider_tool).then(|| json!({ "type": "function", "name": tool_name }))
+        }
     };
 
     // Convert response format (text format).
@@ -963,33 +1180,40 @@ fn build_request_body(
                 }
                 Some(format)
             } else {
-                Some(json!({ "type": "json_schema" }))
+                Some(json!({ "type": "json_object" }))
             }
         }
         _ => None,
     };
 
-    // Resolve reasoning effort from top-level reasoning option.
-    let resolved_reasoning_effort: Option<String> =
-        if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
-            match options.reasoning.unwrap() {
-                ReasoningEffort::None => Some("none".to_string()),
-                ReasoningEffort::Minimal => Some("low".to_string()),
-                ReasoningEffort::Low => Some("low".to_string()),
-                ReasoningEffort::Medium => Some("medium".to_string()),
-                ReasoningEffort::High => Some("high".to_string()),
-                ReasoningEffort::Xhigh => Some("xhigh".to_string()),
-                ReasoningEffort::ProviderDefault => None,
-            }
-        } else {
-            None
-        };
-
-    // Resolve reasoning summary from provider options.
-    let reasoning_summary: Option<String> = options
+    let open_responses_options = options
         .provider_options
         .as_ref()
-        .and_then(|m| m.get(provider_options_name))
+        .and_then(|m| m.get(provider_options_name));
+
+    // `providerOptions.<name>.reasoningEffort`, else the top-level reasoning.
+    let provider_reasoning_effort = open_responses_options
+        .and_then(|o| o.get("reasoningEffort"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let resolved_reasoning_effort: Option<String> = if provider_reasoning_effort.is_some() {
+        provider_reasoning_effort
+    } else if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
+        match options.reasoning.unwrap() {
+            ReasoningEffort::None => Some("none".to_string()),
+            ReasoningEffort::Minimal => Some("low".to_string()),
+            ReasoningEffort::Low => Some("low".to_string()),
+            ReasoningEffort::Medium => Some("medium".to_string()),
+            ReasoningEffort::High => Some("high".to_string()),
+            ReasoningEffort::Xhigh => Some("xhigh".to_string()),
+            ReasoningEffort::ProviderDefault => None,
+        }
+    } else {
+        None
+    };
+
+    // Resolve reasoning summary from provider options.
+    let reasoning_summary: Option<String> = open_responses_options
         .and_then(|o| o.get("reasoningSummary"))
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string);
@@ -1074,7 +1298,8 @@ fn convert_to_open_responses_input_with_namespace(
                 system_messages.push(content.clone());
             }
             LanguageModelMessage::User { content, .. } => {
-                let user_content = convert_user_content(content, &mut warnings);
+                let user_content =
+                    convert_user_content(content, provider_options_name, &mut warnings);
                 input.push(json!({
                     "type": "message",
                     "role": "user",
@@ -1083,35 +1308,76 @@ fn convert_to_open_responses_input_with_namespace(
             }
             LanguageModelMessage::Assistant { content, .. } => {
                 let mut assistant_content: Vec<Value> = Vec::new();
+                let mut assistant_message_id: Option<String> = None;
 
                 for part in content {
                     match part {
-                        AssistantPart::Text(TextPart { text, .. }) => {
-                            assistant_content.push(json!({
-                                "type": "output_text",
-                                "text": text,
-                            }));
+                        AssistantPart::Text(TextPart {
+                            text,
+                            provider_options,
+                        }) => {
+                            let data = provider_options
+                                .as_ref()
+                                .and_then(|options| options.get(provider_options_name));
+                            let item_id = data
+                                .and_then(|data| data.get("itemId"))
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                            if !assistant_content.is_empty() && assistant_message_id != item_id {
+                                flush_assistant_content(
+                                    &mut assistant_content,
+                                    assistant_message_id.take(),
+                                    &mut input,
+                                );
+                            }
+                            assistant_message_id = item_id;
+                            let mut output_text = json!({ "type": "output_text", "text": text });
+                            if let Some(annotations) = data
+                                .and_then(|data| data.get("annotations"))
+                                .and_then(url_citations)
+                            {
+                                output_text["annotations"] = annotations;
+                            }
+                            assistant_content.push(output_text);
                         }
                         AssistantPart::ToolCall(ToolCallPart {
                             tool_call_id,
                             tool_name,
                             input: tool_input,
+                            provider_options,
                             ..
                         }) => {
                             let arguments = match tool_input {
                                 Value::String(s) => s.clone(),
                                 other => other.to_string(),
                             };
-                            flush_assistant_content(&mut assistant_content, &mut input);
-                            input.push(json!({
+                            flush_assistant_content(
+                                &mut assistant_content,
+                                assistant_message_id.take(),
+                                &mut input,
+                            );
+                            let mut function_call = json!({
                                 "type": "function_call",
                                 "call_id": tool_call_id,
                                 "name": tool_name,
                                 "arguments": arguments,
-                            }));
+                            });
+                            if let Some(item_id) = provider_options
+                                .as_ref()
+                                .and_then(|options| options.get(provider_options_name))
+                                .and_then(|data| data.get("itemId"))
+                                .and_then(Value::as_str)
+                            {
+                                function_call["id"] = json!(item_id);
+                            }
+                            input.push(function_call);
                         }
                         AssistantPart::Reasoning(part) => {
-                            flush_assistant_content(&mut assistant_content, &mut input);
+                            flush_assistant_content(
+                                &mut assistant_content,
+                                assistant_message_id.take(),
+                                &mut input,
+                            );
                             let metadata = part
                                 .provider_options
                                 .as_ref()
@@ -1183,7 +1449,11 @@ fn convert_to_open_responses_input_with_namespace(
                         _ => {}
                     }
                 }
-                flush_assistant_content(&mut assistant_content, &mut input);
+                flush_assistant_content(
+                    &mut assistant_content,
+                    assistant_message_id.take(),
+                    &mut input,
+                );
             }
             LanguageModelMessage::Tool { content, .. } => {
                 for part in content {
@@ -1216,15 +1486,52 @@ fn convert_to_open_responses_input_with_namespace(
     (json!(input), instructions, warnings)
 }
 
-fn flush_assistant_content(content: &mut Vec<Value>, input: &mut Vec<Value>) {
-    if !content.is_empty() {
-        input
-            .push(json!({"type":"message", "role":"assistant", "content":std::mem::take(content)}));
+/// Push the pending assistant text as one message, with the item id the text
+/// parts replayed (`providerOptions.<name>.itemId`) when they had one.
+fn flush_assistant_content(content: &mut Vec<Value>, id: Option<String>, input: &mut Vec<Value>) {
+    if content.is_empty() {
+        return;
     }
+    let mut message =
+        json!({"type":"message", "role":"assistant", "content":std::mem::take(content)});
+    if let Some(id) = id {
+        message["id"] = json!(id);
+    }
+    input.push(message);
+}
+
+/// The `url_citation` annotations of a replayed output text, or `None` when
+/// the value is not a list of them (parseOutputTextAnnotations).
+fn url_citations(value: &Value) -> Option<Value> {
+    let annotations = value.as_array()?;
+    annotations
+        .iter()
+        .map(|annotation| {
+            (annotation["type"] == "url_citation"
+                && annotation["start_index"].is_number()
+                && annotation["end_index"].is_number()
+                && annotation["url"].is_string()
+                && annotation["title"].is_string())
+            .then(|| {
+                json!({
+                    "type": "url_citation",
+                    "start_index": annotation["start_index"],
+                    "end_index": annotation["end_index"],
+                    "url": annotation["url"],
+                    "title": annotation["title"],
+                })
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(Value::Array)
 }
 
 /// Convert user message content parts to the Open Responses format.
-fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Value {
+fn convert_user_content(
+    content: &[UserPart],
+    provider_options_name: &str,
+    warnings: &mut Vec<Warning>,
+) -> Value {
     use base64::Engine;
 
     let mut parts: Vec<Value> = Vec::new();
@@ -1233,15 +1540,26 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
             UserPart::Text(TextPart { text, .. }) => {
                 parts.push(json!({ "type": "input_text", "text": text }));
             }
-            UserPart::File(FilePart {
-                data,
-                media_type,
-                filename,
-                ..
-            }) => {
+            UserPart::File(
+                part @ FilePart {
+                    data,
+                    media_type,
+                    filename,
+                    ..
+                },
+            ) => {
                 let image = top_level_media_type(media_type) == "image";
                 match data {
                     FileData::Data { data } => {
+                        let media_type = match aimux_provider_utils::resolve_full_media_type(part) {
+                            Ok(media_type) => media_type,
+                            Err(error) => {
+                                warnings.push(Warning::Other {
+                                    message: error.to_string(),
+                                });
+                                continue;
+                            }
+                        };
                         let b64 = match data {
                             FileBytes::Binary(bytes) => {
                                 base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -1250,7 +1568,11 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
                         };
                         let data_url = format!("data:{media_type};base64,{b64}");
                         parts.push(if image {
-                            json!({ "type": "input_image", "image_url": data_url })
+                            json!({
+                                "type": "input_image",
+                                "image_url": data_url,
+                                "detail": image_detail(part, provider_options_name),
+                            })
                         } else {
                             json!({
                                 "type": "input_file",
@@ -1261,7 +1583,11 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
                     }
                     FileData::Url { url, .. } => {
                         parts.push(if image {
-                            json!({ "type": "input_image", "image_url": url })
+                            json!({
+                                "type": "input_image",
+                                "image_url": url,
+                                "detail": image_detail(part, provider_options_name),
+                            })
                         } else {
                             json!({ "type": "input_file", "file_url": url })
                         });
@@ -1283,26 +1609,54 @@ fn convert_user_content(content: &[UserPart], warnings: &mut Vec<Warning>) -> Va
     json!(parts)
 }
 
-fn validate_tool_output_media(prompt: &LanguageModelPrompt) -> Result<(), AiMuxError> {
+/// Fail before sending where `convertToOpenResponsesInput` throws: a user
+/// file given as a provider reference or as text, and an inline user or
+/// tool-result file whose media type cannot be resolved.
+fn validate_file_media(prompt: &LanguageModelPrompt) -> Result<(), AiMuxError> {
     for message in prompt {
-        let LanguageModelMessage::Tool { content, .. } = message else {
-            continue;
-        };
-        for part in content {
-            let ToolPart::ToolResult(ToolResultPart {
-                output: ToolResultOutput::Content { value },
-                ..
-            }) = part
-            else {
-                continue;
-            };
-            for item in value {
-                if let ToolResultContent::File(part) = item
-                    && matches!(part.data, FileData::Data { .. })
-                {
-                    aimux_provider_utils::resolve_full_media_type(part)?;
+        match message {
+            LanguageModelMessage::User { content, .. } => {
+                for part in content {
+                    let UserPart::File(part) = part else {
+                        continue;
+                    };
+                    match part.data {
+                        FileData::Data { .. } => {
+                            aimux_provider_utils::resolve_full_media_type(part)?;
+                        }
+                        FileData::Reference { .. } => {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "file parts with provider references".into(),
+                            ));
+                        }
+                        FileData::Text { .. } => {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "text file parts".into(),
+                            ));
+                        }
+                        FileData::Url { .. } => {}
+                    }
                 }
             }
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    let ToolPart::ToolResult(ToolResultPart {
+                        output: ToolResultOutput::Content { value },
+                        ..
+                    }) = part
+                    else {
+                        continue;
+                    };
+                    for item in value {
+                        if let ToolResultContent::File(part) = item
+                            && matches!(part.data, FileData::Data { .. })
+                        {
+                            aimux_provider_utils::resolve_full_media_type(part)?;
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -1373,15 +1727,7 @@ fn resolve_tool_result_output(
                     }
                 };
                 if image {
-                    let detail = part
-                        .provider_options
-                        .as_ref()
-                        .and_then(|options| options.get(provider_options_name))
-                        .and_then(|options| options.get("imageDetail"))
-                        .and_then(Value::as_str)
-                        .filter(|detail| matches!(*detail, "low" | "high" | "auto"))
-                        .unwrap_or("auto");
-                    converted["detail"] = json!(detail);
+                    converted["detail"] = json!(image_detail(part, provider_options_name));
                 }
                 parts.push(converted);
             }
@@ -1391,6 +1737,18 @@ fn resolve_tool_result_output(
         }
     }
     json!(parts)
+}
+
+/// The `detail` of an input image: `providerOptions.<name>.imageDetail` when
+/// it is `low`, `high` or `auto`, else `auto` (getImageDetail).
+fn image_detail<'a>(part: &'a FilePart, provider_options_name: &str) -> &'a str {
+    part.provider_options
+        .as_ref()
+        .and_then(|options| options.get(provider_options_name))
+        .and_then(|options| options.get("imageDetail"))
+        .and_then(Value::as_str)
+        .filter(|detail| matches!(*detail, "low" | "high" | "auto"))
+        .unwrap_or("auto")
 }
 
 /// Extract the top-level media type (e.g. "image" from "image/png").
