@@ -197,10 +197,18 @@ jobs:
           example=$(legs <<'EOF'
           [
             {"platform": "ios", "host": "macos-latest", "targets": "aarch64-apple-ios aarch64-apple-ios-sim"},
-            {"platform": "android", "host": "ubuntu-latest", "targets": "aarch64-linux-android armv7-linux-androideabi x86_64-linux-android"}
+            {"platform": "android", "host": "ubuntu-latest", "targets": "aarch64-linux-android armv7-linux-androideabi x86_64-linux-android", "abis": "arm64-v8a armeabi-v7a x86_64"}
           ]
           EOF
           )
+          # The Android ABIs build the same Rust code for different target
+          # triples, so a pull request that does not touch what differs per
+          # platform builds arm64 only; master and platform changes build all
+          # three.
+          if [ "$PLATFORMS" != true ]; then
+            example=$(jq -c 'map(if .platform == "android"
+              then .targets = "aarch64-linux-android" | .abis = "arm64-v8a" else . end)' <<< "$example")
+          fi
           printf 'node=%s\nffi=%s\nexample=%s\n' "$node" "$ffi" "$example" \
             | tee -a "$GITHUB_OUTPUT"
 
@@ -689,10 +697,17 @@ jobs:
           bash scripts/build-ios-xcframework.sh bindings/flutter/ios/aimux_ffi.xcframework
       - name: Build Android .so per ABI
         if: matrix.platform == 'android'
+        env:
+          ABIS: ${{ matrix.abis }}
         run: |
-          cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
+          read -ra abis <<< "$ABIS"
+          targets=()
+          for abi in "${abis[@]}"; do
+            targets+=(-t "$abi")
+          done
+          cargo ndk "${targets[@]}" \
             -o bindings/flutter/android/src/main/jniLibs build -p aimux-ffi --release
-          for abi in arm64-v8a armeabi-v7a x86_64; do
+          for abi in "${abis[@]}"; do
             test -f bindings/flutter/android/src/main/jniLibs/$abi/libaimux_ffi.so \
               || { echo "Missing $abi" >&2; exit 1; }
           done
@@ -706,11 +721,18 @@ jobs:
       - name: Build example (Android)
         if: matrix.platform == 'android'
         working-directory: bindings/flutter/example
+        env:
+          ABIS: ${{ matrix.abis }}
         run: |
           flutter build apk --debug
-          unzip -l build/app/outputs/flutter-apk/app-debug.apk | \
-            grep -E 'lib/(arm64-v8a|armeabi-v7a|x86_64)/libaimux_ffi\.so' || \
-            { echo '--- APK lib contents ---'; unzip -l build/app/outputs/flutter-apk/app-debug.apk | grep 'lib/'; exit 1; }
+          contents=$(unzip -l build/app/outputs/flutter-apk/app-debug.apk)
+          for abi in $ABIS; do
+            grep -q "lib/$abi/libaimux_ffi\.so" <<< "$contents" || {
+              echo "Missing lib/$abi/libaimux_ffi.so in the APK" >&2
+              grep 'lib/' <<< "$contents"
+              exit 1
+            }
+          done
       - name: Example tests
         working-directory: bindings/flutter/example
         run: flutter test
