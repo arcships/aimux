@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `anthropic::types::StreamErrorData::is_retryable` is an
+  `Option<Option<bool>>`: `Some(None)` is an `isRetryable` sent as `null`,
+  `None` an absent one. `code` and `status_code` keep their types and are
+  `Some(Value::Null)` for a `null`. Code that read the flag adds a
+  `.flatten()`.
 - Errors keep their cause, as the AI SDK's `cause`. `ApiCallError` has
   `cause` (`.caused_by(..)`): the transport error with its whole source chain
   down to the OS error, the body parse error, or the error a response handler
@@ -1231,6 +1236,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Anthropic throws a first-chunk stream error with the error's data as the
   `ApiCallError` response body and a 500 status when its type maps to none,
   as the AI SDK does; it used the whole SSE frame as the body and no status.
+  `code`, `statusCode` and `isRetryable` sent as `null` stay in that data, as
+  the AI SDK's error schema keeps them; they were dropped.
 - Anthropic streams the `tool_use` blocks a `message_start` already carries
   (deferred programmatic tool calls) as tool input and tool-call parts with
   their caller, as the AI SDK does; it dropped them.
