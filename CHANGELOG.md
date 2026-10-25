@@ -1243,6 +1243,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hugging Face MCP calls (`mcp_call`, `mcp_list_tools`) and their results are
+  no longer marked `dynamic`, as in `@ai-sdk/huggingface` 2.0.62. Without a
+  local tool of that name, `generate_text` now returns the call marked invalid
+  (`NoSuchTool`), as the AI SDK's `parseToolCall` does.
+- A Hugging Face `function_call` or `mcp_call` output item with a non-empty
+  `output` string now also yields a tool-result holding that string, as
+  `@ai-sdk/huggingface` 2.0.62 does (`if (part.output)`). `function_call`
+  outputs were dropped in `do_generate`, and an empty `output` gave an MCP
+  tool-result.
+- Hugging Face streams read in-stream errors as `@ai-sdk/huggingface` 2.0.62
+  does: an `error` event (message on the event or under `error`) or a
+  `response.failed` event (`response.error`) with a string message is an
+  error part, and the finish reason becomes `error` with the code, else the
+  event type, as `raw`. A malformed chunk also makes the finish reason
+  `error`. Before, only a top-level `error` field was read, so `error` events
+  carrying the message on the event and `response.failed` events passed
+  unnoticed, and the finish reason stayed `other`.
 - Groq's `usage.raw` keeps a `null` usage field as `null`, as `@ai-sdk/groq`
   4.0.52 does (`convertGroqUsage` returns the parsed object); it used to drop
   the field. Applies to generate and stream.
