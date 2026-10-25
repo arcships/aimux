@@ -1,0 +1,158 @@
+[
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "citations": [],
+          "content": [],
+          "role": "assistant",
+          "tool_calls": [],
+          "tool_plan": ""
+        }
+      },
+      "id": "321d178c-2c12-44d3-ae42-2f5510f6b1cc",
+      "type": "message-start"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": "",
+            "type": "text"
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-start"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": "The"
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-delta"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": " capital"
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-delta"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": " of"
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-delta"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": " France"
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-delta"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": " is"
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-delta"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": " Paris"
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-delta"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "message": {
+          "content": {
+            "text": "."
+          }
+        }
+      },
+      "index": 0,
+      "type": "content-delta"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "index": 0,
+      "type": "content-end"
+    },
+    "type": "raw"
+  },
+  {
+    "rawValue": {
+      "delta": {
+        "finish_reason": "COMPLETE",
+        "usage": {
+          "billed_units": {
+            "input_tokens": 12,
+            "output_tokens": 7
+          },
+          "cached_tokens": 448,
+          "tokens": {
+            "input_tokens": 507,
+            "output_tokens": 10
+          }
+        }
+      },
+      "type": "message-end"
+    },
+    "type": "raw"
+  }
+]

@@ -213,173 +213,201 @@ fn reranking_fixture() -> Value {
     .unwrap()
 }
 
-/// TS: "should extract text response" (cohere/src/cohere-chat-language-model.test.ts)
-#[tokio::test]
-async fn generate_text() {
-    let fixture = cohere_text();
-    let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
-    let result = provider(&fetch)
-        .chat("command-r-plus")
-        .do_generate(&options())
-        .await
-        .unwrap();
-    assert_request(&fetch, "chat", &request(false));
-    assert_eq!(result.request.unwrap().body, Some(request(false)));
-    assert_eq!(
-        result.content,
-        vec![GenerateContent::Text {
-            text: "The capital of France is Paris.".into(),
-            provider_metadata: None,
-        }]
-    );
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
-    assert_eq!(result.finish_reason.raw.as_deref(), Some("COMPLETE"));
-    assert_usage(&result.usage, fixture["usage"].clone());
-    assert!(result.warnings.is_empty());
-    assert!(result.provider_metadata.is_none());
-    let response = result.response.unwrap();
-    assert_eq!(response.body, Some(fixture));
-    assert_eq!(response.id, None);
-    assert_eq!(response.timestamp, None);
-    assert_eq!(response.model_id, None);
-}
+mod do_generate {
+    use super::*;
 
-/// TS: "should stream text deltas" (cohere/src/cohere-chat-language-model.test.ts)
-#[tokio::test]
-async fn stream_text() {
-    let chunks = cohere_text_chunks();
-    let body = chunks
-        .iter()
-        .map(|chunk| {
-            format!(
-                "event: {}\ndata: {chunk}\n\n",
-                chunk["type"].as_str().unwrap()
-            )
-        })
-        .collect();
-    let fetch = MockFetch::new(vec![sse(body)]);
-    let result = provider(&fetch)
-        .chat("command-r-plus")
-        .do_stream(&options())
-        .await
-        .unwrap();
-    assert_request(&fetch, "chat", &request(true));
-    assert_eq!(result.request.unwrap().body, Some(request(true)));
-    let parts: Vec<_> = result.stream.map(|part| part.unwrap()).collect().await;
-    assert_eq!(parts.len(), 12);
-    assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
-    assert!(
-        matches!(&parts[1], StreamPart::ResponseMetadata(meta) if meta.id.as_deref() == Some("321d178c-2c12-44d3-ae42-2f5510f6b1cc"))
-    );
-    assert!(matches!(&parts[2], StreamPart::TextStart { id, .. } if id == "0"));
-    let deltas: Vec<_> = parts
-        .iter()
-        .filter_map(|part| match part {
-            StreamPart::TextDelta { id, delta, .. } => {
-                assert_eq!(id, "0");
-                Some(delta.as_str())
-            }
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        deltas,
-        vec!["The", " capital", " of", " France", " is", " Paris", "."]
-    );
-    assert!(matches!(&parts[10], StreamPart::TextEnd { id, .. } if id == "0"));
-    match &parts[11] {
-        StreamPart::Finish {
-            finish_reason,
-            usage,
-            provider_metadata,
-        } => {
-            assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
-            assert_eq!(finish_reason.raw.as_deref(), Some("COMPLETE"));
-            assert_usage(usage, chunks.last().unwrap()["delta"]["usage"].clone());
-            assert!(provider_metadata.is_none());
-        }
-        part => panic!("expected finish, got {part:?}"),
-    }
-}
+    mod text {
+        use super::*;
 
-/// TS: "should extract tool calls" (cohere/src/cohere-chat-language-model.test.ts)
-#[tokio::test]
-async fn generate_tool_calls() {
-    let fixture = cohere_tool_call();
-    let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
-    let schema = json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false,"$schema":"http://json-schema.org/draft-07/schema#"});
-    let mut opts = options();
-    opts.tools = Some(vec![Tool::Function(FunctionTool::new(
-        "test-tool",
-        schema.clone(),
-    ))]);
-    let result = provider(&fetch)
-        .chat("command-r-plus")
-        .do_generate(&opts)
-        .await
-        .unwrap();
-    let mut expected = request(false);
-    expected["tools"] =
-        json!([{"type":"function","function":{"name":"test-tool","parameters":schema}}]);
-    assert_request(&fetch, "chat", &expected);
-    assert_eq!(result.content.len(), 2);
-    for (content, wire) in result
-        .content
-        .iter()
-        .zip(fixture["message"]["tool_calls"].as_array().unwrap())
-    {
-        match content {
-            GenerateContent::ToolCall(call) => {
-                assert_eq!(call.tool_call_id, wire["id"]);
-                assert_eq!(call.tool_name, wire["function"]["name"]);
-                assert_eq!(call.input, wire["function"]["arguments"]);
-                assert!(call.provider_metadata.is_none());
-            }
-            other => panic!("expected tool call, got {other:?}"),
-        }
-    }
-    assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
-    assert_eq!(result.finish_reason.raw.as_deref(), Some("TOOL_CALL"));
-    assert_eq!(result.usage.input_tokens.total, Some(1549));
-    assert_eq!(result.usage.output_tokens.total, Some(103));
-    assert_eq!(result.usage.raw, fixture["usage"].as_object().cloned());
-}
-
-/// TS: "should handle unparsable stream parts" (cohere/src/cohere-chat-language-model.test.ts)
-#[tokio::test]
-async fn malformed_stream_response() {
-    let fetch = MockFetch::new(vec![sse(
-        "event: foo-message\ndata: {unparsable}\n\n".into()
-    )]);
-    let result = provider(&fetch)
-        .chat("command-r-plus")
-        .do_stream(&options())
-        .await
-        .unwrap();
-    assert_request(&fetch, "chat", &request(true));
-    let parts: Vec<_> = result.stream.map(|part| part.unwrap()).collect().await;
-    assert_eq!(parts.len(), 3);
-    assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
-    assert!(matches!(&parts[1], StreamPart::Error { .. }));
-    match &parts[2] {
-        StreamPart::Finish {
-            finish_reason,
-            usage,
-            provider_metadata,
-        } => {
-            assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
-            assert_eq!(finish_reason.raw, None);
+        /// partial: `should extract text response`; full port in src/cohere/tests/chat_language_model.rs.
+        #[tokio::test]
+        async fn generate_text() {
+            let fixture = cohere_text();
+            let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
+            let result = provider(&fetch)
+                .chat("command-r-plus")
+                .do_generate(&options())
+                .await
+                .unwrap();
+            assert_request(&fetch, "chat", &request(false));
+            assert_eq!(result.request.unwrap().body, Some(request(false)));
             assert_eq!(
-                serde_json::to_value(usage).unwrap(),
-                serde_json::to_value(Usage::default()).unwrap()
+                result.content,
+                vec![GenerateContent::Text {
+                    text: "The capital of France is Paris.".into(),
+                    provider_metadata: None,
+                }]
             );
-            assert!(provider_metadata.is_none());
+            assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+            assert_eq!(result.finish_reason.raw.as_deref(), Some("COMPLETE"));
+            assert_usage(&result.usage, fixture["usage"].clone());
+            assert!(result.warnings.is_empty());
+            assert!(result.provider_metadata.is_none());
+            let response = result.response.unwrap();
+            assert_eq!(response.body, Some(fixture));
+            assert_eq!(response.id, None);
+            assert_eq!(response.timestamp, None);
+            assert_eq!(response.model_id, None);
         }
-        part => panic!("expected finish, got {part:?}"),
+    }
+
+    mod tool_call {
+        use super::*;
+
+        /// partial: `should extract tool calls`; full port in src/cohere/tests/chat_language_model.rs.
+        #[tokio::test]
+        async fn generate_tool_calls() {
+            let fixture = cohere_tool_call();
+            let fetch = MockFetch::new(vec![Canned::json(&fixture)]);
+            let schema = json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"],"additionalProperties":false,"$schema":"http://json-schema.org/draft-07/schema#"});
+            let mut opts = options();
+            opts.tools = Some(vec![Tool::Function(FunctionTool::new(
+                "test-tool",
+                schema.clone(),
+            ))]);
+            let result = provider(&fetch)
+                .chat("command-r-plus")
+                .do_generate(&opts)
+                .await
+                .unwrap();
+            let mut expected = request(false);
+            expected["tools"] =
+                json!([{"type":"function","function":{"name":"test-tool","parameters":schema}}]);
+            assert_request(&fetch, "chat", &expected);
+            assert_eq!(result.content.len(), 2);
+            for (content, wire) in result
+                .content
+                .iter()
+                .zip(fixture["message"]["tool_calls"].as_array().unwrap())
+            {
+                match content {
+                    GenerateContent::ToolCall(call) => {
+                        assert_eq!(call.tool_call_id, wire["id"]);
+                        assert_eq!(call.tool_name, wire["function"]["name"]);
+                        assert_eq!(call.input, wire["function"]["arguments"]);
+                        assert!(call.provider_metadata.is_none());
+                    }
+                    other => panic!("expected tool call, got {other:?}"),
+                }
+            }
+            assert_eq!(result.finish_reason.unified, FinishReasonUnified::ToolCalls);
+            assert_eq!(result.finish_reason.raw.as_deref(), Some("TOOL_CALL"));
+            assert_eq!(result.usage.input_tokens.total, Some(1549));
+            assert_eq!(result.usage.output_tokens.total, Some(103));
+            assert_eq!(result.usage.raw, fixture["usage"].as_object().cloned());
+        }
     }
 }
 
-/// TS: "should extract embedding" (cohere/src/cohere-embedding-model.test.ts)
+mod do_stream {
+    use super::*;
+
+    mod text {
+        use super::*;
+
+        /// upstream: @ai-sdk/cohere src/cohere-chat-language-model.test.ts › doStream › text › should stream text deltas
+        #[tokio::test]
+        async fn stream_text() {
+            let chunks = cohere_text_chunks();
+            let body = chunks
+                .iter()
+                .map(|chunk| {
+                    format!(
+                        "event: {}\ndata: {chunk}\n\n",
+                        chunk["type"].as_str().unwrap()
+                    )
+                })
+                .collect();
+            let fetch = MockFetch::new(vec![sse(body)]);
+            let result = provider(&fetch)
+                .chat("command-r-plus")
+                .do_stream(&options())
+                .await
+                .unwrap();
+            assert_request(&fetch, "chat", &request(true));
+            assert_eq!(result.request.unwrap().body, Some(request(true)));
+            let parts: Vec<_> = result.stream.map(|part| part.unwrap()).collect().await;
+            assert_eq!(parts.len(), 12);
+            assert!(
+                matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty())
+            );
+            assert!(
+                matches!(&parts[1], StreamPart::ResponseMetadata(meta) if meta.id.as_deref() == Some("321d178c-2c12-44d3-ae42-2f5510f6b1cc"))
+            );
+            assert!(matches!(&parts[2], StreamPart::TextStart { id, .. } if id == "0"));
+            let deltas: Vec<_> = parts
+                .iter()
+                .filter_map(|part| match part {
+                    StreamPart::TextDelta { id, delta, .. } => {
+                        assert_eq!(id, "0");
+                        Some(delta.as_str())
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                deltas,
+                vec!["The", " capital", " of", " France", " is", " Paris", "."]
+            );
+            assert!(matches!(&parts[10], StreamPart::TextEnd { id, .. } if id == "0"));
+            match &parts[11] {
+                StreamPart::Finish {
+                    finish_reason,
+                    usage,
+                    provider_metadata,
+                } => {
+                    assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
+                    assert_eq!(finish_reason.raw.as_deref(), Some("COMPLETE"));
+                    assert_usage(usage, chunks.last().unwrap()["delta"]["usage"].clone());
+                    assert!(provider_metadata.is_none());
+                }
+                part => panic!("expected finish, got {part:?}"),
+            }
+        }
+    }
+
+    mod error_handling {
+        use super::*;
+
+        /// upstream: @ai-sdk/cohere src/cohere-chat-language-model.test.ts › doStream › error handling › should handle unparsable stream parts
+        #[tokio::test]
+        async fn malformed_stream_response() {
+            let fetch = MockFetch::new(vec![sse(
+                "event: foo-message\ndata: {unparsable}\n\n".into()
+            )]);
+            let result = provider(&fetch)
+                .chat("command-r-plus")
+                .do_stream(&options())
+                .await
+                .unwrap();
+            assert_request(&fetch, "chat", &request(true));
+            let parts: Vec<_> = result.stream.map(|part| part.unwrap()).collect().await;
+            assert_eq!(parts.len(), 3);
+            assert!(
+                matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty())
+            );
+            assert!(matches!(&parts[1], StreamPart::Error { .. }));
+            match &parts[2] {
+                StreamPart::Finish {
+                    finish_reason,
+                    usage,
+                    provider_metadata,
+                } => {
+                    assert_eq!(finish_reason.unified, FinishReasonUnified::Error);
+                    assert_eq!(finish_reason.raw, None);
+                    assert_eq!(
+                        serde_json::to_value(usage).unwrap(),
+                        serde_json::to_value(Usage::default()).unwrap()
+                    );
+                    assert!(provider_metadata.is_none());
+                }
+                part => panic!("expected finish, got {part:?}"),
+            }
+        }
+    }
+}
+
+/// Embed request body, float vectors, usage and raw response of one call; the upstream case itself is in cohere_embedding_test.rs.
 #[tokio::test]
 async fn embed_values() {
     let fixture = embedding_fixture();
@@ -467,19 +495,31 @@ async fn rerank(object_documents: bool) {
     assert_eq!(response.body, Some(fixture));
 }
 
-/// TS: "should send request with stringified json documents" (cohere/src/reranking/cohere-reranking-model.test.ts)
-#[tokio::test]
-async fn rerank_object_documents() {
-    rerank(true).await;
+mod do_rerank {
+    use super::*;
+
+    mod json_documents {
+        use super::*;
+
+        /// upstream: @ai-sdk/cohere src/reranking/cohere-reranking-model.test.ts › doRerank › json documents › should send request with stringified json documents
+        #[tokio::test]
+        async fn rerank_object_documents() {
+            rerank(true).await;
+        }
+    }
+
+    mod text_documents {
+        use super::*;
+
+        /// upstream: @ai-sdk/cohere src/reranking/cohere-reranking-model.test.ts › doRerank › text documents › should send request with text documents
+        #[tokio::test]
+        async fn rerank_text_documents() {
+            rerank(false).await;
+        }
+    }
 }
 
-/// TS: "should send request with text documents" (cohere/src/reranking/cohere-reranking-model.test.ts)
-#[tokio::test]
-async fn rerank_text_documents() {
-    rerank(false).await;
-}
-
-/// TS: `supportedUrls` (cohere-chat-language-model.ts:51-53): image URLs go
+/// aimux test of `supportedUrls` (@ai-sdk/cohere@4.0.52 src/cohere-chat-language-model.ts:51-53): image URLs go
 /// to the API as they are; other URLs are downloaded by the operation.
 #[tokio::test]
 async fn chat_supports_http_image_urls() {
