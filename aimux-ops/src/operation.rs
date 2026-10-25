@@ -5,7 +5,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{Context, Poll};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use aimux_core::AbortSignal;
 use aimux_core::error::AiMuxError;
@@ -179,7 +179,6 @@ struct State {
 struct Shared {
     state: Mutex<State>,
     limits: OperationLimits,
-    now: fn() -> SystemTime,
     changed: Notify,
     input_waker: AtomicWaker,
     abort: AbortSignal,
@@ -199,7 +198,6 @@ impl Shared {
     }
 
     fn finish(&self, outcome: OperationOutcome, error: Option<OpsError>) {
-        let error = error.map(|error| error.project_with_clock(self.now));
         {
             let mut state = self.lock();
             if state.terminal.is_some() {
@@ -207,9 +205,7 @@ impl Shared {
             }
             let summary = TerminalSummary {
                 outcome,
-                error: error
-                    .as_ref()
-                    .map(|error| error.envelope(SystemTime::UNIX_EPOCH)),
+                error: error.as_ref().map(OpsError::envelope),
             };
             state.terminal = Some(Terminal { summary, error });
             state.input_queue.clear();
@@ -219,8 +215,7 @@ impl Shared {
     }
 
     fn cancel(&self) -> CancelResult {
-        let error = OpsError::AiMux(AiMuxError::Aborted("operation cancelled".into()))
-            .project_with_clock(self.now);
+        let error = OpsError::AiMux(AiMuxError::Aborted("operation cancelled".into()));
         let result = {
             let mut state = self.lock();
             match &state.terminal {
@@ -232,7 +227,7 @@ impl Shared {
                     state.terminal = Some(Terminal {
                         summary: TerminalSummary {
                             outcome: OperationOutcome::Cancelled,
-                            error: Some(error.envelope(SystemTime::UNIX_EPOCH)),
+                            error: Some(error.envelope()),
                         },
                         error: Some(error),
                     });
@@ -271,18 +266,6 @@ impl Operation {
         options: OperationOptions,
         user_abort: Option<AbortSignal>,
     ) -> Result<Arc<Self>, OpsError> {
-        Self::start_with_clock(model, options, user_abort, SystemTime::now).await
-    }
-
-    /// Start using the clock captured from the dispatch context.
-    /// # Errors
-    /// Returns preflight errors before operation acceptance.
-    pub async fn start_with_clock(
-        model: Arc<dyn TranscriptionModel>,
-        options: OperationOptions,
-        user_abort: Option<AbortSignal>,
-        now: fn() -> SystemTime,
-    ) -> Result<Arc<Self>, OpsError> {
         let limits = options.limits.validate()?;
         let runtime = tokio::runtime::Handle::try_current()
             .map_err(|_| invalid_state("starting an operation requires a Tokio runtime"))?;
@@ -301,7 +284,6 @@ impl Operation {
                 cleanup_failure: None,
             }),
             limits,
-            now,
             changed: Notify::new(),
             input_waker: AtomicWaker::new(),
             abort: AbortSignal::new(),

@@ -1,6 +1,5 @@
 //! Replay through the real dispatcher, registry, manifest and core replay paths.
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use aimux_core::custom_provider::{CustomProviderOptions, custom_provider};
 use aimux_core::language_model::LanguageModel;
@@ -25,7 +24,6 @@ impl Harness {
         Ctx {
             owner: self.0,
             abort: None,
-            now: SystemTime::now,
         }
     }
     fn insert(&self, entry: Entry) -> HandleId {
@@ -215,9 +213,8 @@ async fn future_capabilities_return_projected_unsupported_even_with_complete_htt
             .await
             .unwrap_err();
         assert_eq!(error.code(), 8);
-        assert!(matches!(error, OpsError::Projected(_)));
         assert_eq!(
-            error.envelope(SystemTime::UNIX_EPOCH).error["name"],
+            error.envelope().error["name"],
             "AI_UnsupportedFunctionalityError"
         );
     }
@@ -429,8 +426,8 @@ async fn foreign_primary_and_secondary_handles_match_unknown_without_disclosure(
         let a = h.call(foreign_id, op, json!({})).await.unwrap_err();
         let b = h.call(unknown, op, json!({})).await.unwrap_err();
         assert_eq!(
-            serde_json::to_value(a.envelope(SystemTime::UNIX_EPOCH)).unwrap(),
-            serde_json::to_value(b.envelope(SystemTime::UNIX_EPOCH)).unwrap()
+            serde_json::to_value(a.envelope()).unwrap(),
+            serde_json::to_value(b.envelope()).unwrap()
         );
     }
     let model = foreign.insert(Entry::Language(Arc::new(MockReplayModel::new(
@@ -448,8 +445,8 @@ async fn foreign_primary_and_secondary_handles_match_unknown_without_disclosure(
         .unwrap_err();
     assert_eq!(a.code(), 203);
     assert_eq!(
-        serde_json::to_value(a.envelope(SystemTime::UNIX_EPOCH)).unwrap(),
-        serde_json::to_value(b.envelope(SystemTime::UNIX_EPOCH)).unwrap()
+        serde_json::to_value(a.envelope()).unwrap(),
+        serde_json::to_value(b.envelope()).unwrap()
     );
 }
 
@@ -527,7 +524,7 @@ async fn live_accepts_context_and_owner_checked_wire_abort_signals() {
     let unknown_error = h.call(id, "replay.live", params).await.unwrap_err();
     assert_eq!(foreign_error.code(), 203);
     assert_eq!(
-        serde_json::to_value(foreign_error.envelope(SystemTime::UNIX_EPOCH)).unwrap(),
-        serde_json::to_value(unknown_error.envelope(SystemTime::UNIX_EPOCH)).unwrap()
+        serde_json::to_value(foreign_error.envelope()).unwrap(),
+        serde_json::to_value(unknown_error.envelope()).unwrap()
     );
 }

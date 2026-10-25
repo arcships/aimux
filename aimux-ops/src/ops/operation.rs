@@ -196,7 +196,7 @@ fn start(ctx: Ctx, target: Target, params: Value) -> CallFuture {
             timeout: request.timeout,
             ..Default::default()
         };
-        let operation = Operation::start_with_clock(model, options, ctx.abort, ctx.now).await?;
+        let operation = Operation::start(model, options, ctx.abort).await?;
         let id = HandleRegistry::global().insert(ctx.owner, Entry::Operation(operation))?;
         serialize(id)
     })

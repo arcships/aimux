@@ -28,11 +28,11 @@ produce the same error as unknown IDs, without disclosing their kinds.
 are removed before cancellation and cleanup; cloned dependencies survive parent
 handle removal. Owner release removes all owned entries before disposal.
 
-Errors cross dispatch once, capturing one clock snapshot and a cached
-`ErrorEnvelope`. Adapters and operation status reuse that projection. Retry hints
-use `aimux_core::error::retry_after_ms_from_headers`; the ops re-export adds no
-parser or retry policy. Core owns generation retries, while uploads and provider
-control calls do not add retries.
+Errors project to an `ErrorEnvelope` that depends only on the error; adapters and
+operation status share that projection. The envelope carries no retry hint: read
+`error.responseHeaders`, as with the AI SDK. Core owns generation retries and the
+header parser (`aimux_core::error::retry_after_ms_from_headers`), while uploads
+and provider control calls do not add retries.
 
 ## Runtime configuration and tracing
 
