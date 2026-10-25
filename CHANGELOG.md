@@ -1255,6 +1255,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   current at each request, as its settings document and the AI SDK does with
   `globalThis.fetch`, instead of the one current when the provider was
   created; a later `set_default_transport` now reaches existing providers.
+- Open Responses fails a response without `output` as an API call error
+  with status 500, not retryable, as the AI SDK does. It was an
+  `InvalidResponseData` error.
+
+- Open Responses fails a successful response whose body carries an `error`
+  with status 400 and the error object as `data`, as the AI SDK does when
+  no `getResponseErrorMetadata` is configured. It reported the HTTP status
+  of the response, 200.
+
+- Open Responses reads `providerOptions.<name>.reasoningEffort`, as the AI
+  SDK does: the value is sent as `reasoning.effort` as given and wins over
+  the top-level `reasoning`. It was ignored.
+
+- Open Responses warns `unsupported` for each provider-defined tool and
+  omits a tool choice that names one, as the AI SDK does when no extension
+  encodes the tool. They were dropped silently, and the tool choice went
+  out as a function choice for a tool the request did not contain.
+
+- Open Responses sends a JSON response format without a schema as
+  `{ type: "json_object" }`, as the AI SDK does. It was sent as a
+  `json_schema` format with no schema.
+
+- Open Responses turns `response.failed` events that carry an error, and
+  `error` events after the first one, into error parts with the event as
+  `data`, and finishes with `error`, as the AI SDK does. Both used to end
+  the stream without an error part (an `error` event was ignored). An error
+  as the first event is still returned by `do_stream`.
+
+- Open Responses streamed tool calls take the completed item's arguments
+  unless they are empty, as the AI SDK does. An empty `arguments` from
+  `response.output_item.added` used to win, so a stream without argument
+  events produced a tool call with empty input.
+
+- Open Responses ends a reasoning item that never finished with its own
+  item id when the stream ends, as the AI SDK does, instead of
+  `reasoning-0`.
+
+- Open Responses streams `response.reasoning_summary_text.delta` events as
+  reasoning deltas, as the AI SDK does. Only LM Studio's
+  `response.reasoning_text.delta` was read, so reasoning summaries streamed
+  as an empty reasoning block.
+
+- Open Responses keeps reasoning items that have no reasoning content, as
+  the AI SDK does: a summary or encrypted-only item yields one reasoning part
+  with the joined summary text and the item's metadata. They were dropped.
+
+- Open Responses output carries the item metadata, as the AI SDK does: text
+  parts and `text-end` carry `{ <name>: { itemId, annotations? } }`, tool
+  calls `{ itemId }`, and reasoning parts and `reasoning-end` the item id,
+  summary, content and encrypted content, so the output can be replayed.
+
+- Open Responses replays an assistant tool call's item id, as the AI SDK
+  does: `providerOptions.<name>.itemId` becomes the `function_call` `id`.
+
+- Open Responses fails with `UnsupportedFunctionality` before sending when a
+  user file is a provider reference or inline text, as the AI SDK does. It
+  used to drop the part with a warning.
+
+- Open Responses resolves the full media type of inline user files, as the
+  AI SDK does: a partial type such as `image` is detected from the bytes,
+  and a call whose type cannot be resolved fails with
+  `UnsupportedFunctionality` before anything is sent.
+
+- Open Responses sends `detail` on user images, as the AI SDK does:
+  `providerOptions.<name>.imageDetail` when it is `low`, `high` or `auto`,
+  otherwise `auto`. Tool-result images already did.
+
+- Open Responses replays an assistant text part's item id and URL
+  citations, as the AI SDK does: `providerOptions.<name>.itemId` becomes the
+  message `id`, `url_citation` annotations go back on the `output_text`, and
+  text parts with different item ids are sent as separate messages.
 
 - Hugging Face MCP calls (`mcp_call`, `mcp_list_tools`) and their results are
   no longer marked `dynamic`, as in `@ai-sdk/huggingface` 2.0.62. Without a
