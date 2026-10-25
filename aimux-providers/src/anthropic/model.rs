@@ -118,7 +118,7 @@ impl AnthropicMessagesModel {
             build_request_body_for(&self.model_id, options, stream, &config.request_profile())?;
         let body = config.transform_body(built.body);
         let headers = config
-            .request_headers(options.headers.as_ref(), &built.betas)
+            .request_headers(options.headers.as_ref(), &built.betas, &built.option_betas)
             .await?;
         let http = config.http_request(
             config.messages_url(&self.model_id, stream),

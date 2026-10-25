@@ -256,7 +256,8 @@ async fn overloaded_error_response() {
 /// (`createAnthropicStreamError` / `getAnthropicStreamErrorMetadata`): an
 /// in-stream error's documented type maps to its status and retry flag, a
 /// status or retry flag in the frame itself wins, and an unknown type
-/// carries neither.
+/// carries neither; thrown as the first chunk it is a 500 that is not
+/// retried (:3150-3160).
 #[tokio::test]
 async fn stream_error_status_follows_the_upstream_type_map() {
     let cases = [
@@ -287,7 +288,7 @@ async fn stream_error_status_follows_the_upstream_type_map() {
         ),
         (
             json!({"type": "something_new", "message": "new"}),
-            None,
+            Some(500),
             false,
         ),
     ];
