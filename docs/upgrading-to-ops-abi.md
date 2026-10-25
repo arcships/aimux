@@ -295,10 +295,12 @@ limited to 1 MiB and returns ResourceLimit when input admission is full; JSON
 operation.push is InvalidOp. Poll part/ended/timeout are distinct and a poll
 timeout does not end the operation. Queues have independent terminal slots.
 
-Read `kind`, `code`, `message`, `error` and optional `retryAfterMs` from errors.
-Use `error.name` and `error.isRetryable` where defined; there is no top-level
-retryable or type. Preserve nested causes/history and unknown payloads. Missing
-retryAfterMs differs from zero. Bindings never add a retry loop. Cancellation
+Read `kind`, `code`, `message` and `error` from errors. Use `error.name` and
+`error.isRetryable` where defined; there is no top-level retryable or type. 0.5's
+`aimux_error_retry_ms` (Node `retryMs`, Python `retry_ms`) has no replacement
+field: read the delay from `error.responseHeaders` (`retry-after-ms`,
+`retry-after`), as with the AI SDK. Preserve nested causes/history and unknown
+payloads. Bindings never add a retry loop. Cancellation
 cannot revoke a completed billable submission; a disconnected request can have
 an unknown outcome, so do not automatically replay it. Callbacks must return in
 bounded time: Abort cannot interrupt a callback that never returns.

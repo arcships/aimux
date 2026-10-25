@@ -102,16 +102,16 @@ class ErrorsTest {
     }
 
     @Test
-    fun `open payload and native retry hint survive unchanged`() {
+    fun `open payload and response headers survive unchanged`() {
         val java = KotlinInteropFixtures.decode("""{
-            "kind":"aimux","code":11,"message":"limited","retryAfterMs":9223372036854775807,
+            "kind":"aimux","code":11,"message":"limited",
             "error":{"name":"AI_APICallError","statusCode":429,"isRetryable":true,
             "requestBodyValues":{"model":"模型"},"responseHeaders":{"retry-after":"10"},
             "data":{"unknown":17}}
         }""")
         val error = AimuxException.fromJava(java) as APICallError
         assertSame(java, error.details)
-        assertEquals(Long.MAX_VALUE, error.retryAfterMs)
+        assertEquals("10", error.error.path("responseHeaders").path("retry-after").asText())
         assertTrue(error.details.isRetryable)
         assertEquals(429, error.details.statusCode)
         assertEquals(java.error, error.error)
@@ -121,14 +121,13 @@ class ErrorsTest {
     @Test
     fun `future Java subtype retains its complete envelope`() {
         val java = KotlinInteropFixtures.unknown("""{
-            "kind":"aimux","code":399,"message":"future","retryAfterMs":25,
+            "kind":"aimux","code":399,"message":"future",
             "error":{"name":"FutureError","extra":{"nested":true}}
         }""")
         val error = AimuxException.fromJava(java)
         assertEquals("UnknownError", classify(error))
         assertSame(java, error.javaError)
         assertEquals(java.envelope, error.envelope)
-        assertEquals(25L, error.retryAfterMs)
     }
 
     @Test

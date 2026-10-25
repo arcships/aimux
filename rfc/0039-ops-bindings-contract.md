@@ -33,7 +33,7 @@
 | ROADMAP 0.6 `B1 + C2`、依赖图“C2 shim 是 B4/B5 前置” | superseded-pending-#200 | provider、FFI、绑定及工具在集成分支同批替换；原直连调用点仍须逐一消除，但不通过 shim 解锁 |
 | #166 C1“109 → 9 exports”、一份 `model(spec)`、旧导出共存 | amended / superseded-pending-#200 | 保留单一 dispatch 与穷举表；撤销固定九符号与 one-shot 模型工厂；采用 provider/registry 方法分辨和本 RFC ABI |
 | #166 C2“40 构造器符号不变并转发” | superseded-pending-#200 | 删除旧构造器；新的错误测试使用真实新入口，不能为了保留旧测试保留 NULL-key 构造器 |
-| #166 C3“字段 getter 缩减、派生 retry hint” | amended | 保留 code/message/json 三类只读错误入口及 free；其余 payload 通过规范信封；派生 retry hint 不丢失 |
+| #166 C3“字段 getter 缩减、派生 retry hint” | amended | 保留 code/message/json 三类只读错误入口及 free；其余 payload 通过规范信封；不再派生 retry hint，宿主读 `error.responseHeaders`（§6.2） |
 | #166 C4“八绑定迁完一个 minor 后删旧符号”及 ROADMAP 1.0 的延迟 C4 | superseded-pending-#200 | 八绑定与工具迁移、删除旧符号是同一次合并的必要条件；1.0 不再替先前版本补删 |
 | #166 D1、D2–D7 逐语言独立发布 | amended | 可以分工和内部评审，发布必须来自同一全绿集成 SHA |
 | #166 D5 先做旧头文件 ffigen 过渡版 | superseded-pending-#200 | 直接生成新头文件对应声明，不花一个发布周期维护旧 ABI 声明 |
@@ -286,7 +286,7 @@ C ABI 的同步 `aimux_operation_push` 使用非等待准入：队列满时在�
 
 Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现无损流；必须采用可 await 的有界 channel/自定义 AsyncSequence 或阻塞后台生产桥。Flutter 跨 isolate 通道必须有 credit/ack，不能把无界 SendPort 当背压。
 
-## 6. 错误信封与 retry hint
+## 6. 错误信封
 
 ### 6.1 规范结构
 
@@ -295,29 +295,23 @@ Swift AsyncThrowingStream 的 drop-oldest/drop-newest 策略不能用来实现�
   "kind": "aimux",
   "code": 11,
   "message": "API call error: HTTP 429: slow down",
-  "error": {"name": "AI_APICallError", "statusCode": 429, "message": "slow down", "isRetryable": true},
-  "retryAfterMs": 1500
+  "error": {"name": "AI_APICallError", "statusCode": 429, "message": "slow down", "isRetryable": true,
+            "responseHeaders": {"retry-after-ms": "1500"}}
 }
 ```
 
-示例仅展示投影字段（完整样本见 `contract-tests/ops/errors/aimux-api-call.json`）；`error` 以 `name` 区分变体，可否重试由 payload 自身的 `isRetryable` 表达，信封没有顶层 `retryable`。`error` 完整联合定义归 RFC-0042。JSON 字段采用 camelCase；旧讨论中的 `retry_after_ms` 表示派生概念，新 wire 只有 `retryAfterMs`，不同时提供 snake_case alias。
+示例仅展示投影字段（完整样本见 `contract-tests/ops/errors/aimux-api-call.json`）；`error` 以 `name` 区分变体，可否重试由 payload 自身的 `isRetryable` 表达，信封没有顶层 `retryable`。`error` 完整联合定义归 RFC-0042。JSON 字段采用 camelCase。
 
 - `kind=aimux|recording|binding|protocol`，每种都有 discriminator 明确的 payload。Node/Python 也用 binding 域表达参数/序列化错误，不伪装 provider API 失败。
 - 保留既有有意义的错误码区间与 golden 含义：AiMux 1–17、Recording 100–105、桥接 200–206。新增类型由 manifest 分配未占用值，禁止重用历史 code=4 等保留槽；ops 协议错误使用独立登记区间。
 - LoadApiKey/LoadSetting、NoSuchProvider/NoSuchModel、UnsupportedFunctionality、Retry history、ToolCallRepair 的 original/cause 链、RecordingWrite 与 FFI 参数错误均不得压成字符串 Other。
 - HTTP 状态只在实际观察到响应时提供；不能给缺 key/解析失败/认证未联网错误补一个 401/500。token-expired 保留自身语义。
-- absent 省略、JSON null 保留，具体 nullable 按 schema；缺少 hint 与 `0` 毫秒不同。未知错误 variant 保留原始对象和 code，返回 UnknownAimuxError；不要丢 provider data，也不要猜一个已知异常类。
-- 同一个 error 在 C、Node、Python、stdio 使用同一次规范投影。不得通过多次 getter 各自重新算 HTTP-date hint。
+- absent 省略、JSON null 保留，具体 nullable 按 schema。未知错误 variant 保留原始对象和 code，返回 UnknownAimuxError；不要丢 provider data，也不要猜一个已知异常类。
+- 同一个 error 在 C、Node、Python、stdio 使用同一份规范投影，它只由错误本身决定。
 
-### 6.2 派生 retryAfterMs
+### 6.2 信封没有派生 retry hint
 
-1. 在错误首次跨共享 dispatch 边界时记录一次可注入时钟 `now`；相同 error 的各 adapter 共用该投影。
-2. 仅对 ApiCall payload 使用其规范 response headers；先尝试 `retry-after-ms` 数值，再尝试 `retry-after` 秒值，再尝试 HTTP-date 减 now。
-3. 接受有限且非负的数值；毫秒向零截断，checked 范围；NaN、Infinity、超界、过去日期不产生 hint，不把无效值钳成一个巨大有效延迟。负 ms 优先项按上游语义判定无 hint，golden 固定规则，不由语言另定。
-4. Retry 聚合错误保留每次尝试的错误和 hint；外层 `AI_RetryError` 不带 `isRetryable`，信封也没有顶层 `retryAfterMs`，除非未来规范显式改变。不能偷偷从最后一次错误复制一个 hint，诱导宿主重试整个已经耗尽预算的操作。
-5. hint 是服务端建议，不构成自动重试授权；超时/Abort 不重试。操作层仍检查剩余预算、重试次数、是否已产生语义数据、是否可能重复提交收费任务。
-
-现实现有 `retry_after_hint()` 可作行为基线，但其浮点/溢出边界须在重构的统一 helper 内规范化；不得复制八个解析器。测试用固定时钟覆盖 ms、秒小数、HTTP-date、过去日期、大小写规范化、无 header、错误格式、零、极大值、Retry nesting。
+信封不携带派生的重试提示：`error.responseHeaders` 是唯一事实源，需要等待时间的宿主像 AI SDK 用户一样自行读取其中的 `retry-after-ms` / `retry-after`（上游 `APICallError` 也没有这样的字段，见 [#334](https://github.com/arcships/aimux/issues/334)）。信封因此只由错误本身决定，不读时钟。core 只在自己重试和 provider 轮询的那一刻，用同一个解析器 `aimux_core::error::retry_after_ms_from_headers` 现算延迟；hint 是服务端建议，不构成自动重试授权，绑定不添加重试循环。
 
 ### 6.3 边界与可观察交付
 
