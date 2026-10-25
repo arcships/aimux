@@ -3,34 +3,83 @@
 //! Mirrors the `groqChatResponseSchema` and `groqChatChunkSchema` of
 //! `groq-chat-language-model.ts`, limited to what the implementation needs.
 
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
+use serde_json::{Map, Value};
 
 // ── Usage ───────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+/// The `usage` object (groq@4.0.52 `groq-chat-language-model.ts:564-580`).
+/// `raw` is the object as zod parsed it, which `convertGroqUsage` returns as
+/// `usage.raw`: a `null` field stays `null` and unknown keys are dropped.
+#[derive(Debug, Default)]
 pub(crate) struct GroqUsage {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub total_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_tokens_details: Option<PromptTokensDetails>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_tokens_details: Option<CompletionTokensDetails>,
+    pub raw: Map<String, Value>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct PromptTokensDetails {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub cached_tokens: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct CompletionTokensDetails {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub reasoning_tokens: Option<u32>,
+}
+
+impl<'de> Deserialize<'de> for GroqUsage {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// The schema's keys, with the keys of the nested objects.
+        const KEYS: [(&str, &[&str]); 5] = [
+            ("prompt_tokens", &[]),
+            ("completion_tokens", &[]),
+            ("total_tokens", &[]),
+            ("prompt_tokens_details", &["cached_tokens"]),
+            ("completion_tokens_details", &["reasoning_tokens"]),
+        ];
+
+        #[derive(Deserialize)]
+        struct Counts {
+            #[serde(default)]
+            prompt_tokens: Option<u32>,
+            #[serde(default)]
+            completion_tokens: Option<u32>,
+            // Checked to be a number, not read.
+            #[serde(default)]
+            #[allow(dead_code)]
+            total_tokens: Option<u32>,
+            #[serde(default)]
+            prompt_tokens_details: Option<PromptTokensDetails>,
+            #[serde(default)]
+            completion_tokens_details: Option<CompletionTokensDetails>,
+        }
+
+        let mut object = Map::<String, Value>::deserialize(deserializer)?;
+        let mut raw = Map::new();
+        for (key, nested) in KEYS {
+            let Some(mut value) = object.remove(key) else {
+                continue;
+            };
+            if let Value::Object(fields) = &mut value {
+                fields.retain(|field, _| nested.contains(&field.as_str()));
+            }
+            raw.insert(key.to_string(), value);
+        }
+        let counts = Counts::deserialize(Value::Object(raw.clone())).map_err(D::Error::custom)?;
+        Ok(Self {
+            prompt_tokens: counts.prompt_tokens,
+            completion_tokens: counts.completion_tokens,
+            prompt_tokens_details: counts.prompt_tokens_details,
+            completion_tokens_details: counts.completion_tokens_details,
+            raw,
+        })
+    }
 }
 
 // ── Non-streaming response ──────────────────────────────────────────────────

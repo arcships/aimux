@@ -1,0 +1,54 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "chatcmpl-b610d559-f156-4aca-8827-24b4fe6af54f",
+    "modelId": "llama-3.3-70b-versatile",
+    "timestamp": "2026-02-11T00:47:23.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "tk85n1k4m",
+    "toolName": "weather",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{}",
+    "id": "tk85n1k4m",
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "tk85n1k4m",
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{}",
+    "toolCallId": "tk85n1k4m",
+    "toolName": "weather",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "raw": "tool_calls",
+      "unified": "tool-calls"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "noCache": 210,
+        "total": 210
+      },
+      "outputTokens": {
+        "text": 15,
+        "total": 15
+      },
+      "raw": {
+        "completion_tokens": 15,
+        "prompt_tokens": 210,
+        "total_tokens": 225
+      }
+    }
+  }
+]
