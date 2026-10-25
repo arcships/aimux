@@ -285,6 +285,23 @@ fn usage_raw_preserved() {
     assert_eq!(u.raw, Some(json!({"inputTokens":100,"outputTokens":50,"totalTokens":150,"cacheReadInputTokens":80,"cacheWriteInputTokens":60}).as_object().unwrap().clone()));
 }
 
+/// TS: "should handle null cache tokens" — `raw` is the usage object as
+/// sent, explicit `null`s and unknown keys included.
+#[test]
+fn usage_raw_keeps_null_and_unknown_keys() {
+    let sent = json!({
+        "inputTokens": 100,
+        "outputTokens": 50,
+        "cacheReadInputTokens": null,
+        "cacheWriteInputTokens": null,
+        "serverToolUsage": null
+    });
+    let usage: BedrockUsage = serde_json::from_value(sent.clone()).unwrap();
+    let u = convert_usage(Some(&usage));
+    assert_eq!(u.raw.map(Value::Object), Some(sent));
+    assert_eq!(u.input_tokens.cache_read, Some(0));
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // amazon-bedrock-provider.test.ts — provider configuration / auth
 // ════════════════════════════════════════════════════════════════════════════
@@ -760,6 +777,57 @@ async fn temperature_not_clamped_in_range() {
     assert!(result.warnings.is_empty(), "no warnings expected");
 }
 
+/// TS: "should omit unsupported sampling parameters for …" — a model that
+/// rejects sampling parameters warns temperature, topK, topP in that order
+/// (amazon-bedrock-chat-language-model.ts:204-230) and sends none of them.
+#[test]
+fn rejected_sampling_parameters_warn_in_upstream_order() {
+    let model_id = "global.anthropic.claude-opus-4-7";
+    let mut opts = default_options(test_prompt());
+    opts.temperature = Some(0.5);
+    opts.top_p = Some(0.7);
+    opts.top_k = Some(10.0);
+
+    let (body, warnings, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
+
+    assert_eq!(body["inferenceConfig"].get("temperature"), None);
+    assert_eq!(body["inferenceConfig"].get("topP"), None);
+    assert_eq!(body["inferenceConfig"].get("topK"), None);
+    let expected: Vec<_> = ["temperature", "topK", "topP"]
+        .into_iter()
+        .map(|feature| aimux_core::types::Warning::Unsupported {
+            feature: feature.into(),
+            details: Some(format!(
+                "{feature} is not supported by {model_id} and will be ignored"
+            )),
+        })
+        .collect();
+    assert_eq!(warnings, expected);
+}
+
+/// TS: "should omit maxOutputTokens for Nova 2 high reasoning" — the warning
+/// names the model (amazon-bedrock-chat-language-model.ts:511).
+#[test]
+fn nova_high_reasoning_max_output_tokens_warning_names_the_model() {
+    let model_id = "us.amazon.nova-2-lite-v1:0";
+    let mut opts = default_options(test_prompt());
+    opts.reasoning = Some(aimux_core::types::ReasoningEffort::High);
+    opts.max_output_tokens = Some(1024);
+
+    let (body, warnings, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
+
+    assert_eq!(body["inferenceConfig"].get("maxTokens"), None);
+    assert!(
+        warnings.contains(&aimux_core::types::Warning::Unsupported {
+            feature: "maxOutputTokens".into(),
+            details: Some(format!(
+                "maxOutputTokens is not supported by {model_id} when high reasoning is enabled and will be ignored"
+            )),
+        }),
+        "{warnings:?}"
+    );
+}
+
 // ── guardrails ───────────────────────────────────────────────────────────────
 
 /// TS: "should support guardrails" — `providerOptions.bedrock.guardrailConfig`
@@ -1060,6 +1128,38 @@ async fn generate_tool_call_empty_input() {
     assert_eq!(input, "{}");
 }
 
+/// TS: "should generate an id when toolUseId is empty" — an empty
+/// `toolUseId` is replaced by a generated id, as
+/// amazon-bedrock-chat-language-model.ts:796-797 does with `||`.
+#[tokio::test]
+async fn generate_tool_call_empty_tool_use_id() {
+    let server = mock_converse_json(
+        200,
+        json!({
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {"toolUse": {"toolUseId": "", "name": "test-tool", "input": {"value": "test"}}}
+                    ]
+                }
+            },
+            "stopReason": "tool_use",
+            "usage": { "inputTokens": 1, "outputTokens": 1 }
+        }),
+    );
+
+    let result = make_model(&server)
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("should succeed");
+
+    let (id, name, input) = as_tool_call(&result.content[0]);
+    assert!(!id.is_empty(), "expected a generated tool call id");
+    assert_eq!(name, "test-tool");
+    assert_eq!(input, r#"{"value":"test"}"#);
+}
+
 // ── doGenerate: basic text + finish reason (sanity, already covered but
 //    exercised here against the remaining-test helper set) ────────────────────
 
@@ -1212,4 +1312,349 @@ async fn stream_request_body_available() {
     let body = result.request.unwrap().body.expect("stream request body");
     assert_eq!(body["messages"][0]["role"], "user");
     assert_eq!(body["inferenceConfig"]["maxTokens"], 256);
+}
+
+/// TS: "surfaces event stream decoding failures" — a frame whose message
+/// checksum does not match fails the stream with `@smithy/eventstream-codec`'s
+/// message.
+#[tokio::test]
+async fn stream_message_checksum_mismatch_error() {
+    let mut body_bytes = aimux_providers::bedrock::event_stream::encode_message(
+        "event",
+        "contentBlockDelta",
+        r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+    );
+    let last = body_bytes.len() - 4;
+    let computed = u32::from_be_bytes(body_bytes[last..].try_into().unwrap());
+    body_bytes[last..].copy_from_slice(&(computed ^ 0xff).to_be_bytes());
+    let server = MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![(
+            "content-type".into(),
+            "application/vnd.amazon.eventstream".into(),
+        )],
+        body: body_bytes,
+    }]);
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let items: Vec<_> = result.stream.collect().await;
+    let error = items
+        .iter()
+        .find_map(|item| item.as_ref().err())
+        .expect("the stream fails");
+    assert!(
+        matches!(
+            error,
+            aimux_core::AiMuxError::InvalidResponseData { message, .. }
+                if *message == format!(
+                    "The message checksum ({computed}) did not match the expected value of {}",
+                    computed ^ 0xff
+                )
+        ),
+        "{error:?}"
+    );
+}
+
+/// A frame whose prelude checksum does not match fails the stream with
+/// `@smithy/eventstream-codec`'s `splitMessage` text, checked before the
+/// message checksum (amazon-bedrock-event-stream-decoder.ts:42 decodes each
+/// frame with the codec).
+#[tokio::test]
+async fn stream_prelude_checksum_mismatch_error() {
+    let mut body_bytes = aimux_providers::bedrock::event_stream::encode_message(
+        "event",
+        "contentBlockDelta",
+        r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+    );
+    let computed = u32::from_be_bytes(body_bytes[8..12].try_into().unwrap());
+    body_bytes[8..12].copy_from_slice(&(computed ^ 0xff).to_be_bytes());
+    let server = MockFetch::new(vec![Canned {
+        status: 200,
+        headers: vec![(
+            "content-type".into(),
+            "application/vnd.amazon.eventstream".into(),
+        )],
+        body: body_bytes,
+    }]);
+    let model = make_model(&server);
+    let result = model
+        .do_stream(&default_options(test_prompt()))
+        .await
+        .unwrap();
+    let items: Vec<_> = result.stream.collect().await;
+    let error = items
+        .iter()
+        .find_map(|item| item.as_ref().err())
+        .expect("the stream fails");
+    assert!(
+        matches!(
+            error,
+            aimux_core::AiMuxError::InvalidResponseData { message, .. }
+                if *message == format!(
+                    "The prelude checksum specified in the message ({}) does not match the calculated CRC32 checksum ({computed})",
+                    computed ^ 0xff
+                )
+        ),
+        "{error:?}"
+    );
+}
+
+/// TS: "should throw for file parts with provider references" and "should
+/// throw UnsupportedFunctionalityError for URL data (File URL)" — the
+/// functionality names of convert-to-amazon-bedrock-chat-messages.ts:238-290
+/// and :612-650. A URL is checked for `s3:` before its media type.
+#[test]
+fn convert_unsupported_file_functionality_names() {
+    let unsupported = |content: Value| {
+        let prompt: LanguageModelPrompt = serde_json::from_value(content).unwrap();
+        match aimux_providers::bedrock::convert::convert_prompt_to_bedrock(&prompt) {
+            Err(aimux_core::AiMuxError::UnsupportedFunctionality(functionality)) => functionality,
+            other => panic!("expected UnsupportedFunctionality, got {other:?}"),
+        }
+    };
+    let user_file = |data: Value, media_type: &str| json!([{"role": "user", "content": [{"type": "file", "data": data, "mediaType": media_type}]}]);
+    let tool_file = |data: Value, media_type: &str| {
+        json!([{"role": "tool", "content": [{
+            "type": "tool-result", "toolCallId": "call-1", "toolName": "t",
+            "output": {"type": "content", "value": [{"type": "file", "data": data, "mediaType": media_type}]}
+        }]}])
+    };
+
+    assert_eq!(
+        unsupported(user_file(
+            json!({"type": "reference", "reference": {"bedrock": "file-ref-123"}}),
+            "image/png"
+        )),
+        "file parts with provider references"
+    );
+    assert_eq!(
+        unsupported(user_file(
+            json!({"type": "url", "url": "https://example.com/image.png"}),
+            "image"
+        )),
+        "File URL data"
+    );
+    assert_eq!(
+        unsupported(user_file(
+            json!({"type": "url", "url": "s3://bucket/file.pdf"}),
+            "application/pdf"
+        )),
+        "File URL data"
+    );
+    assert_eq!(
+        unsupported(tool_file(
+            json!({"type": "url", "url": "https://example.com/image.png"}),
+            "image"
+        )),
+        "tool result file data of type \"url\""
+    );
+    assert_eq!(
+        unsupported(tool_file(
+            json!({"type": "url", "url": "s3://bucket/file.pdf"}),
+            "application/pdf"
+        )),
+        "tool result file data of type \"url\""
+    );
+    assert_eq!(
+        unsupported(tool_file(
+            json!({"type": "text", "text": "hi"}),
+            "text/plain"
+        )),
+        "tool result file data of type \"text\""
+    );
+}
+
+/// With no `fetch` setting each request uses the process default transport
+/// current when it is made, not the one at creation: upstream reads
+/// `globalThis.fetch` per call (amazon-bedrock-sigv4-fetch.ts:38, :129). The
+/// default is pointed at a closed port while the provider is created, then at
+/// a plain-HTTP proxy that answers the request.
+#[serial]
+#[tokio::test]
+async fn provider_default_transport_is_looked_up_per_request() {
+    use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            set_default_transport(ReqwestFetch::default());
+        }
+    }
+    let proxy = |port: u16| ProxyConfig {
+        http_url: Some(format!("http://127.0.0.1:{port}")),
+        ..ProxyConfig::default()
+    };
+
+    let _restore = Restore;
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        closed.local_addr().unwrap().port(),
+    )));
+    drop(closed);
+    let model = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some("http://example.com".into()),
+        api_key: Some(Resolvable::Value("test-token".into())),
+        ..Default::default()
+    })
+    .unwrap()
+    .chat("anthropic.claude-3-5-sonnet-20240620-v1:0");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        listener.local_addr().unwrap().port(),
+    )));
+    let served = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        let mut chunk = [0u8; 4096];
+        while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+            let n = stream.read(&mut chunk).await.unwrap();
+            head.extend_from_slice(&chunk[..n]);
+        }
+        let body = ok_converse_body().to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+             connection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+        String::from_utf8_lossy(&head)
+            .lines()
+            .next()
+            .unwrap()
+            .to_string()
+    });
+
+    model
+        .do_generate(&default_options(test_prompt()))
+        .await
+        .expect("the request goes through the current default transport");
+    assert_eq!(
+        served.await.unwrap(),
+        "POST http://example.com/model/anthropic.claude-3-5-sonnet-20240620-v1%3A0/converse HTTP/1.1"
+    );
+}
+
+/// The per-request default transport also reaches the embedding, image and
+/// reranking models: upstream builds every Bedrock model on the same
+/// `fetch ?? globalThis.fetch` wrapper (amazon-bedrock-sigv4-fetch.ts:38,
+/// :129), and amazon-bedrock-provider.ts:207-215 hands that one
+/// `fetchFunction` to every model (:334, :359, :367, :380). Each request
+/// must go through the proxy set after the provider was created.
+#[serial]
+#[tokio::test]
+async fn non_chat_models_look_up_the_default_transport_per_request() {
+    use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+    use aimux_core::image_model::{ImageCallOptions, ImageModel};
+    use aimux_core::reranking_model::{RerankingCallOptions, RerankingDocuments, RerankingModel};
+    use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            set_default_transport(ReqwestFetch::default());
+        }
+    }
+    let proxy = |port: u16| ProxyConfig {
+        http_url: Some(format!("http://127.0.0.1:{port}")),
+        ..ProxyConfig::default()
+    };
+
+    let _restore = Restore;
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        closed.local_addr().unwrap().port(),
+    )));
+    drop(closed);
+    let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+        base_url: Some("http://example.com".into()),
+        api_key: Some(Resolvable::Value("test-token".into())),
+        region: Some("us-west-2".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    let embedding = provider.embedding("amazon.titan-embed-text-v2:0");
+    let image = provider.image("amazon.nova-canvas-v1:0");
+    let reranking = provider.reranking("cohere.rerank-v3-5:0");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    set_default_transport(ReqwestFetch::new(proxy(
+        listener.local_addr().unwrap().port(),
+    )));
+    let served = tokio::spawn(async move {
+        let mut request_lines = Vec::new();
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut data = Vec::new();
+            let mut chunk = [0u8; 4096];
+            let head_end = loop {
+                if let Some(at) = data.windows(4).position(|window| window == b"\r\n\r\n") {
+                    break at + 4;
+                }
+                let n = stream.read(&mut chunk).await.unwrap();
+                data.extend_from_slice(&chunk[..n]);
+            };
+            let head = String::from_utf8_lossy(&data[..head_end]).to_string();
+            let length = head
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap_or(0);
+            while data.len() < head_end + length {
+                let n = stream.read(&mut chunk).await.unwrap();
+                data.extend_from_slice(&chunk[..n]);
+            }
+            let request_line = head.lines().next().unwrap().to_string();
+            let body = if request_line.contains("/rerank") {
+                json!({"results": [{"index": 0, "relevanceScore": 0.5}]})
+            } else if request_line.contains("nova-canvas") {
+                json!({"images": ["base64-image"]})
+            } else {
+                json!({"embedding": [0.1, 0.2], "inputTextTokenCount": 2})
+            }
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request_lines.push(request_line);
+        }
+        request_lines
+    });
+
+    embedding
+        .do_embed(&EmbeddingCallOptions::new("sunny day"))
+        .await
+        .expect("the embedding request goes through the current default transport");
+    image
+        .do_generate(&ImageCallOptions::new("a sea otter"))
+        .await
+        .expect("the image request goes through the current default transport");
+    reranking
+        .do_rerank(&RerankingCallOptions::new(
+            "rainy day",
+            RerankingDocuments::Text {
+                values: vec!["sunny day".into()],
+            },
+        ))
+        .await
+        .expect("the reranking request goes through the current default transport");
+    assert_eq!(
+        served.await.unwrap(),
+        vec![
+            "POST http://example.com/model/amazon.titan-embed-text-v2%3A0/invoke HTTP/1.1",
+            "POST http://example.com/model/amazon.nova-canvas-v1%3A0/invoke HTTP/1.1",
+            "POST http://example.com/rerank HTTP/1.1",
+        ]
+    );
 }

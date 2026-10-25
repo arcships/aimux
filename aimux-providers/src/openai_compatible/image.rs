@@ -25,7 +25,7 @@ use super::convert::to_camel_case;
 /// An OpenAI-compatible image generation / editing model.
 pub struct OpenAICompatibleImageModel {
     model_id: String,
-    config: CompatModelConfig,
+    pub(super) config: CompatModelConfig,
 }
 
 impl OpenAICompatibleImageModel {
