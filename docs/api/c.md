@@ -1,5 +1,15 @@
 # aimux · C ABI (C/C++)
 
+> **Legacy (0.5 API).** This guide still describes the 0.5 binding API,
+> which V4 removed: errors are now the shared `ErrorEnvelope`
+> `{kind, code, message, error}` and carry no retry hint (`retryMs` /
+> `retry_ms` / `aimux_error_retry_ms`); read a retry delay from
+> `error.responseHeaders` (`retry-after-ms`, then `retry-after`), as with the
+> AI SDK. The current API is in [bindings/c/README.md](../../bindings/c/README.md);
+> [aimux-ffi/ABI-MIGRATION.md](../../aimux-ffi/ABI-MIGRATION.md) maps each removed C export to
+> its replacement.
+> The rewrite is tracked in [#277](https://github.com/arcships/aimux/issues/277).
+
 > The `aimux-ffi` C ABI is shared by Swift / Kotlin / Flutter / Go / Java / C++.
 > **Results** are JSON strings written to a trailing out-parameter. **Errors**
 > are not JSON: every fallible function returns an opaque

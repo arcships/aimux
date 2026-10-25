@@ -372,7 +372,6 @@ mod tests {
         Ctx {
             owner: Owner::CProcess,
             abort: None,
-            now: std::time::SystemTime::now,
         }
     }
 

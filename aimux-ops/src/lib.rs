@@ -8,7 +8,6 @@ pub mod limits;
 pub mod manifest;
 pub mod op;
 pub mod operation;
-pub mod retry_hint;
 
 pub mod ops {
     pub mod composite;
@@ -29,7 +28,7 @@ pub mod ops {
 }
 
 pub use dispatch::{Ctx, Dispatcher, Handler, Target};
-pub use envelope::{BindingError, ErrorEnvelope, OpsError, ProjectedError, ProtocolError};
+pub use envelope::{BindingError, ErrorEnvelope, OpsError, ProtocolError};
 pub use frame::{FrameStream, Outcome, StreamFrame};
 pub use handle::{Entry, HandleId, HandleKind, HandleRegistry, Owner};
 pub use op::{ABI_VERSION, OPS_VERSION, OpDescriptor, OpMode};
