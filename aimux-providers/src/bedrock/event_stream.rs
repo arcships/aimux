@@ -259,6 +259,23 @@ pub fn decode_messages(data: &[u8]) -> Vec<EventStreamMessage> {
     messages
 }
 
+/// The checksum errors of `@smithy/eventstream-codec`'s `splitMessage`,
+/// verbatim, for a frame of at least 16 bytes.
+fn checksum_error(frame: &[u8]) -> Option<String> {
+    let stored = |at: usize| u32::from_be_bytes(frame[at..at + 4].try_into().expect("four bytes"));
+    let (expected, computed) = (stored(8), crc32(&frame[..8]));
+    if expected != computed {
+        return Some(format!(
+            "The prelude checksum specified in the message ({expected}) does not match the calculated CRC32 checksum ({computed})"
+        ));
+    }
+    let end = frame.len() - 4;
+    let (expected, computed) = (stored(end), crc32(&frame[..end]));
+    (expected != computed).then(|| {
+        format!("The message checksum ({computed}) did not match the expected value of {expected}")
+    })
+}
+
 /// Decode frames incrementally, surfacing transport, framing, and checksum errors.
 pub fn decode_stream(
     mut input: futures::stream::BoxStream<'static, Result<bytes::Bytes, aimux_core::AiMuxError>>,
@@ -278,6 +295,10 @@ pub fn decode_stream(
                     return;
                 }
                 if buffer.len() < length { break; }
+                if let Some(message) = checksum_error(&buffer[..length]) {
+                    yield Err(aimux_core::AiMuxError::invalid_response_data(message));
+                    return;
+                }
                 let decoded = decode_messages(&buffer[..length]);
                 let Some(message) = decoded.into_iter().next() else {
                     yield Err(aimux_core::AiMuxError::invalid_response_data("Invalid Amazon Bedrock event-stream frame"));
