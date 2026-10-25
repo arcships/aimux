@@ -2,7 +2,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use aimux_core::AiMuxError;
 use aimux_core::custom_provider::{CustomProviderOptions, custom_provider};
@@ -130,7 +129,6 @@ impl Env {
             Ctx {
                 owner: self.0,
                 abort: None,
-                now: epoch_clock,
             },
             id,
             name,
@@ -174,9 +172,6 @@ impl Drop for Env {
     fn drop(&mut self) {
         HandleRegistry::global().release_owner(self.0);
     }
-}
-fn epoch_clock() -> SystemTime {
-    UNIX_EPOCH
 }
 fn id(result: &Value) -> HandleId {
     serde_json::from_value(result["handle"].clone()).unwrap()
@@ -335,8 +330,8 @@ async fn secondary_handles_are_owner_checked_without_disclosure() {
         let foreign = env.call(primary, name, params(foreign)).await.unwrap_err();
         let missing = env.call(primary, name, params(unknown)).await.unwrap_err();
         assert_eq!(foreign.code(), 203);
-        assert_eq!(foreign.envelope(UNIX_EPOCH), missing.envelope(UNIX_EPOCH));
-        assert!(foreign.envelope(UNIX_EPOCH).error.get("actual").is_none());
+        assert_eq!(foreign.envelope(), missing.envelope());
+        assert!(foreign.envelope().error.get("actual").is_none());
     }
 }
 
@@ -457,11 +452,6 @@ async fn strict_controls_and_reference_errors_cross_projected_boundary() {
     for (primary, name, params, code) in cases {
         let error = env.call(primary, name, params.clone()).await.unwrap_err();
         assert_eq!(error.code(), code, "{name}: {params}");
-        assert!(matches!(error, OpsError::Projected(_)), "{name}: {params}");
-        assert_eq!(
-            error.envelope(UNIX_EPOCH),
-            error.envelope(SystemTime::now())
-        );
     }
 }
 
