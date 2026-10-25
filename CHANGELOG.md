@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `anthropic::types::StreamErrorData::is_retryable` is an
+  `Option<Option<bool>>`: `Some(None)` is an `isRetryable` sent as `null`,
+  `None` an absent one. `code` and `status_code` keep their types and are
+  `Some(Value::Null)` for a `null`. Code that read the flag adds a
+  `.flatten()`.
 - `FileSearchArgs::max_num_results` (OpenAI and Azure file search tool) is an
   `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` goes out
   as `5`, as the AI SDK sends it, not `5.0`. Code that set it from an `f64`
@@ -1247,6 +1252,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `supports_mask_inputs: false` (also in the ops capabilities), as
   `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
   every id.
+- Groq's `usage.raw` keeps a `null` usage field as `null`, as `@ai-sdk/groq`
+  4.0.52 does (`convertGroqUsage` returns the parsed object); it used to drop
+  the field. Applies to generate and stream.
 - Amazon Bedrock with no `fetch` setting uses the process default transport
   current at each request, as its settings document and the AI SDK does with
   `globalThis.fetch`, instead of the one current when the provider was
@@ -1294,6 +1302,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3.0.62 and the other AI SDK providers do; it carried only the parser
   message. This covers every stream read through
   `create_event_source_response_handler`.
+- Anthropic throws a first-chunk stream error with the error's data as the
+  `ApiCallError` response body and a 500 status when its type maps to none,
+  as the AI SDK does; it used the whole SSE frame as the body and no status.
+  `code`, `statusCode` and `isRetryable` sent as `null` stay in that data, as
+  the AI SDK's error schema keeps them; they were dropped.
+- Anthropic streams the `tool_use` blocks a `message_start` already carries
+  (deferred programmatic tool calls) as tool input and tool-call parts with
+  their caller, as the AI SDK does; it dropped them.
+- Anthropic streams keep reading after `message_stop`: each later
+  `message_start` … `message_stop` round in the response streams its
+  response metadata, parts and own finish, with the output usage carried
+  over until a `message_delta` reports it, as the AI SDK does; it ended the
+  stream at the first `message_stop`.
+- Anthropic streamed code-execution tool calls keep their input as the
+  streamed text, with the `type` injected into the first delta, as the AI SDK
+  does; it re-serialized that input as compact JSON.
+- Anthropic joins the `anthropic-beta` header in insertion order (the
+  prompt's betas, the provider options', the tools', the provider and call
+  headers', then `anthropicBeta`), as the AI SDK does; it sorted the list.
+  `AnthropicPromptConversion::betas`, `PreparedTools::betas` and
+  `RequestBodyResult::betas` are `IndexSet`s, and `anthropicBeta` moves to
+  `RequestBodyResult::option_betas`.
+- Anthropic knows the Vertex ids `claude-sonnet-4@…` and `claude-opus-4@…`
+  (64000 and 32000 max output tokens), as the AI SDK does; it took them for
+  unknown models, sending 128000 `max_tokens` with an unknown-model warning.
+- Anthropic sends `providerOptions.anthropic.safeguards` as `safeguards`
+  (`classifierContext` as `classifier_context`) with the
+  `dangerous-tool-use-2026-09-03` beta, as the AI SDK does; it validated the
+  option and then left it out of the request.
+- Anthropic leaves `citations` out of a web_fetch tool result whose document
+  has none, as the AI SDK does; it emitted `"citations": null` there and sent
+  it back in the next request.
+- Anthropic surfaces a server-side `fallback` content block as an
+  `anthropic.fallback` custom part (generate and stream) and sends such an
+  assistant part back as a `fallback` block, a boundary that keeps reasoning
+  blocks apart, warning when its `from.model` / `to.model` are missing, as the
+  AI SDK does; it dropped the block both ways.
+- Anthropic sends an MCP tool result back as `mcp_tool_result` and then
+  handles it as the AI SDK does under the tool's name: a provider tool name
+  (`web_fetch`, `web_search`, tool search, `advisor`) also adds that tool's
+  result block, tool search warns about an `error-json` result, and any other
+  name warns `provider executed tool result for tool <name> is not
+  supported`; it sent only the `mcp_tool_result`, without the warning.
+- Anthropic names the output type when it drops a provider-executed tool
+  result it cannot send back (`provider executed tool result output type text
+  for tool advisor is not supported`), and reports a result of an unknown
+  tool as unsupported whatever its output, as the AI SDK does; it left the
+  type out.
+- Anthropic omits the `caller` of a historical tool call or result whose
+  source code execution call is missing from the history (before the last
+  user message), with a warning, as the AI SDK does; it sent the orphaned
+  caller, which Anthropic rejects.
 - An OpenAI (and Azure) Responses stream that sends an `error` frame (or a
   `response.failed` with an error) after `response.created` or
   `response.in_progress` but before any output rejects `do_stream` with an
