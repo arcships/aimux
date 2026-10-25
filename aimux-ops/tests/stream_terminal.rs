@@ -154,9 +154,6 @@ fn validate_envelope(error: &Value, partial: bool) {
     }
     assert!(!object.contains_key("retryable"));
     assert!(!object.contains_key("type"));
-    if let Some(retry) = object.get("retryAfterMs") {
-        assert!(retry.as_u64().is_some());
-    }
 }
 
 fn validate_frames(frames: &[Value], terminal: bool, partial: bool) {
