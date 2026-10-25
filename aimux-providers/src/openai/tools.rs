@@ -197,7 +197,7 @@ pub struct FileSearchArgs {
     pub vector_store_ids: Vec<String>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_num_results: Option<f64>,
+    pub max_num_results: Option<u32>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ranking: Option<FileSearchRanking>,
