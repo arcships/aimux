@@ -1,0 +1,214 @@
+{
+  "content": [
+    {
+      "text": "The key benefits mentioned in this document are:\n1. Automation of tasks\n2. Better decision-making\n3. Cost reduction",
+      "type": "text"
+    },
+    {
+      "id": "test-citation-id",
+      "mediaType": "text/plain",
+      "providerMetadata": {
+        "cohere": {
+          "citationType": "TEXT_CONTENT",
+          "end": 71,
+          "sources": [
+            {
+              "document": {
+                "id": "doc:0",
+                "text": "AI provides: 1. Automation of tasks 2. Better decision-making 3. Cost reduction",
+                "title": "benefits.txt"
+              },
+              "id": "doc:0",
+              "type": "document"
+            }
+          ],
+          "start": 52,
+          "text": "Automation of tasks"
+        }
+      },
+      "sourceType": "document",
+      "title": "benefits.txt",
+      "type": "source"
+    },
+    {
+      "id": "test-citation-id",
+      "mediaType": "text/plain",
+      "providerMetadata": {
+        "cohere": {
+          "citationType": "TEXT_CONTENT",
+          "end": 97,
+          "sources": [
+            {
+              "document": {
+                "id": "doc:0",
+                "text": "AI provides: 1. Automation of tasks 2. Better decision-making 3. Cost reduction",
+                "title": "benefits.txt"
+              },
+              "id": "doc:0",
+              "type": "document"
+            }
+          ],
+          "start": 75,
+          "text": "Better decision-making"
+        }
+      },
+      "sourceType": "document",
+      "title": "benefits.txt",
+      "type": "source"
+    },
+    {
+      "id": "test-citation-id",
+      "mediaType": "text/plain",
+      "providerMetadata": {
+        "cohere": {
+          "citationType": "TEXT_CONTENT",
+          "end": 115,
+          "sources": [
+            {
+              "document": {
+                "id": "doc:0",
+                "text": "AI provides: 1. Automation of tasks 2. Better decision-making 3. Cost reduction",
+                "title": "benefits.txt"
+              },
+              "id": "doc:0",
+              "type": "document"
+            }
+          ],
+          "start": 101,
+          "text": "Cost reduction"
+        }
+      },
+      "sourceType": "document",
+      "title": "benefits.txt",
+      "type": "source"
+    }
+  ],
+  "finishReason": {
+    "raw": "COMPLETE",
+    "unified": "stop"
+  },
+  "request": {
+    "body": {
+      "documents": [
+        {
+          "data": {
+            "text": "AI provides automation and efficiency.",
+            "title": "ai-benefits.txt"
+          }
+        }
+      ],
+      "messages": [
+        {
+          "content": "What are AI benefits?",
+          "role": "user"
+        }
+      ],
+      "model": "command-r-plus"
+    }
+  },
+  "response": {
+    "body": {
+      "finish_reason": "COMPLETE",
+      "id": "68475c80-574b-4c65-98a4-e81cebab5dce",
+      "message": {
+        "citations": [
+          {
+            "end": 71,
+            "sources": [
+              {
+                "document": {
+                  "id": "doc:0",
+                  "text": "AI provides: 1. Automation of tasks 2. Better decision-making 3. Cost reduction",
+                  "title": "benefits.txt"
+                },
+                "id": "doc:0",
+                "type": "document"
+              }
+            ],
+            "start": 52,
+            "text": "Automation of tasks",
+            "type": "TEXT_CONTENT"
+          },
+          {
+            "end": 97,
+            "sources": [
+              {
+                "document": {
+                  "id": "doc:0",
+                  "text": "AI provides: 1. Automation of tasks 2. Better decision-making 3. Cost reduction",
+                  "title": "benefits.txt"
+                },
+                "id": "doc:0",
+                "type": "document"
+              }
+            ],
+            "start": 75,
+            "text": "Better decision-making",
+            "type": "TEXT_CONTENT"
+          },
+          {
+            "end": 115,
+            "sources": [
+              {
+                "document": {
+                  "id": "doc:0",
+                  "text": "AI provides: 1. Automation of tasks 2. Better decision-making 3. Cost reduction",
+                  "title": "benefits.txt"
+                },
+                "id": "doc:0",
+                "type": "document"
+              }
+            ],
+            "start": 101,
+            "text": "Cost reduction",
+            "type": "TEXT_CONTENT"
+          }
+        ],
+        "content": [
+          {
+            "text": "The key benefits mentioned in this document are:\n1. Automation of tasks\n2. Better decision-making\n3. Cost reduction",
+            "type": "text"
+          }
+        ],
+        "role": "assistant"
+      },
+      "usage": {
+        "billed_units": {
+          "input_tokens": 39,
+          "output_tokens": 27
+        },
+        "cached_tokens": 992,
+        "tokens": {
+          "input_tokens": 1683,
+          "output_tokens": 62
+        }
+      }
+    },
+    "headers": {
+      "content-length": "1175",
+      "content-type": "application/json"
+    }
+  },
+  "usage": {
+    "inputTokens": {
+      "noCache": 1683,
+      "total": 1683
+    },
+    "outputTokens": {
+      "text": 62,
+      "total": 62
+    },
+    "raw": {
+      "billed_units": {
+        "input_tokens": 39,
+        "output_tokens": 27
+      },
+      "cached_tokens": 992,
+      "tokens": {
+        "input_tokens": 1683,
+        "output_tokens": 62
+      }
+    }
+  },
+  "warnings": []
+}
