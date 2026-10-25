@@ -159,249 +159,262 @@ async fn run(options: TranscriptionCallOptions) -> (Seen, Vec<Part>) {
     (seen[0].clone(), parts)
 }
 
-/// TS: "should expose correct provider and model information"
-#[test]
-fn should_expose_correct_provider_and_model_information() {
-    let fetch = MockFetch::new(vec![]);
-    let model = provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-    assert_eq!(model.provider(), "mistral.transcription");
-    assert_eq!(model.model_id(), MODEL_ID);
+mod mistral_transcription_model {
+    use super::*;
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › MistralTranscriptionModel › should expose correct provider and model information
+    #[test]
+    fn should_expose_correct_provider_and_model_information() {
+        let fetch = MockFetch::new(vec![]);
+        let model =
+            provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
+        assert_eq!(model.provider(), "mistral.transcription");
+        assert_eq!(model.model_id(), MODEL_ID);
+    }
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › MistralTranscriptionModel › should create transcription models through both provider factories
+    #[test]
+    fn should_create_transcription_models_through_both_provider_factories() {
+        let fetch = MockFetch::new(vec![]);
+        let provider = provider_with(&fetch, MistralProviderSettings::default());
+        assert_eq!(
+            provider.transcription(MODEL_ID).provider(),
+            "mistral.transcription"
+        );
+        let model = provider.transcription_model(MODEL_ID).unwrap().unwrap();
+        assert_eq!(model.provider(), "mistral.transcription");
+    }
 }
 
-/// TS: "should create transcription models through both provider factories"
-#[test]
-fn should_create_transcription_models_through_both_provider_factories() {
-    let fetch = MockFetch::new(vec![]);
-    let provider = provider_with(&fetch, MistralProviderSettings::default());
-    assert_eq!(
-        provider.transcription(MODEL_ID).provider(),
-        "mistral.transcription"
-    );
-    let model = provider.transcription_model(MODEL_ID).unwrap().unwrap();
-    assert_eq!(model.provider(), "mistral.transcription");
-}
+mod do_generate {
+    use super::*;
 
-/// TS: "should send Uint8Array audio as a multipart file"
-#[tokio::test]
-async fn should_send_uint8array_audio_as_a_multipart_file() {
-    let (seen, parts) = run(wav(None)).await;
-    assert_eq!(seen.method, "POST");
-    assert_eq!(seen.url, URL);
-    assert_eq!(values(&parts, "model"), [MODEL_ID]);
-    let file = parts.iter().find(|part| part.name == "file").unwrap();
-    assert_eq!(file.content_type.as_deref(), Some("audio/wav"));
-    assert_eq!(file.filename.as_deref(), Some("audio.wav"));
-    assert_eq!(file.body.len(), 5);
-}
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should send Uint8Array audio as a multipart file
+    #[tokio::test]
+    async fn should_send_uint8array_audio_as_a_multipart_file() {
+        let (seen, parts) = run(wav(None)).await;
+        assert_eq!(seen.method, "POST");
+        assert_eq!(seen.url, URL);
+        assert_eq!(values(&parts, "model"), [MODEL_ID]);
+        let file = parts.iter().find(|part| part.name == "file").unwrap();
+        assert_eq!(file.content_type.as_deref(), Some("audio/wav"));
+        assert_eq!(file.filename.as_deref(), Some("audio.wav"));
+        assert_eq!(file.body.len(), 5);
+    }
 
-/// TS: "should send base64 audio with a media-type-derived filename"
-#[tokio::test]
-async fn should_send_base64_audio_with_a_media_type_derived_filename() {
-    let (_, parts) = run(options(AudioInput::Base64("aGVsbG8=".into()), "audio/mp4")).await;
-    let file = parts.iter().find(|part| part.name == "file").unwrap();
-    assert_eq!(file.content_type.as_deref(), Some("audio/mp4"));
-    assert_eq!(file.filename.as_deref(), Some("audio.m4a"));
-    assert_eq!(file.body.len(), 5);
-}
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should send base64 audio with a media-type-derived filename
+    #[tokio::test]
+    async fn should_send_base64_audio_with_a_media_type_derived_filename() {
+        let (_, parts) = run(options(AudioInput::Base64("aGVsbG8=".into()), "audio/mp4")).await;
+        let file = parts.iter().find(|part| part.name == "file").unwrap();
+        assert_eq!(file.content_type.as_deref(), Some("audio/mp4"));
+        assert_eq!(file.filename.as_deref(), Some("audio.m4a"));
+        assert_eq!(file.body.len(), 5);
+    }
 
-/// TS: "should pass provider options as Mistral multipart fields"
-#[tokio::test]
-async fn should_pass_provider_options_as_mistral_multipart_fields() {
-    let (_, parts) = run(wav(Some(json!({
-        "temperature": 0.2,
-        "timestampGranularities": ["segment", "word"],
-        "diarize": true,
-        "contextBias": ["Vercel", "AI_SDK"],
-    }))))
-    .await;
-    assert_eq!(values(&parts, "temperature"), ["0.2"]);
-    assert_eq!(
-        values(&parts, "timestamp_granularities"),
-        ["segment", "word"]
-    );
-    assert_eq!(values(&parts, "diarize"), ["true"]);
-    assert_eq!(values(&parts, "context_bias"), ["Vercel", "AI_SDK"]);
-}
-
-/// TS: "should reject context bias items with commas or whitespace"
-#[tokio::test]
-async fn should_reject_context_bias_items_with_commas_or_whitespace() {
-    let fetch = MockFetch::new(vec![]);
-    let model = provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-    let Err(AiMuxError::InvalidArgument { message, .. }) = model
-        .do_generate(&wav(Some(json!({ "contextBias": ["AI SDK"] }))))
-        .await
-    else {
-        panic!("expected an invalid argument error");
-    };
-    assert!(message.contains("invalid mistral provider options"));
-    assert!(fetch.seen().is_empty());
-}
-
-/// TS: "should pass language when timestamp granularities are not set"
-#[tokio::test]
-async fn should_pass_language_when_timestamp_granularities_are_not_set() {
-    let (_, parts) = run(wav(Some(json!({ "language": "en" })))).await;
-    assert_eq!(values(&parts, "language"), ["en"]);
-}
-
-/// TS: "should reject language combined with timestamp granularities"
-#[tokio::test]
-async fn should_reject_language_combined_with_timestamp_granularities() {
-    let fetch = MockFetch::new(vec![]);
-    let model = provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-    let result = model
-        .do_generate(&wav(Some(json!({
-            "language": "en",
-            "timestampGranularities": ["segment"],
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should pass provider options as Mistral multipart fields
+    #[tokio::test]
+    async fn should_pass_provider_options_as_mistral_multipart_fields() {
+        let (_, parts) = run(wav(Some(json!({
+            "temperature": 0.2,
+            "timestampGranularities": ["segment", "word"],
+            "diarize": true,
+            "contextBias": ["Vercel", "AI_SDK"],
         }))))
         .await;
-    assert!(matches!(result, Err(AiMuxError::InvalidArgument { .. })));
-    assert!(fetch.seen().is_empty());
-}
-
-/// TS: "should pass headers, abort signal, and the Mistral user agent"
-#[tokio::test]
-async fn should_pass_headers_abort_signal_and_the_mistral_user_agent() {
-    let fetch = MockFetch::new(vec![Canned::json(&transcription_response())]);
-    let provider = provider_with(
-        &fetch,
-        MistralProviderSettings {
-            headers: Some(HashMap::from([(
-                "Custom-Provider-Header".to_string(),
-                Some("provider-header-value".to_string()),
-            )])),
-            ..Default::default()
-        },
-    );
-    let mut call = wav(None);
-    call.abort_signal = Some(aimux_core::AbortSignal::new());
-    call.headers = Some(HashMap::from([(
-        "Custom-Request-Header".to_string(),
-        "request-header-value".to_string(),
-    )]));
-    provider
-        .transcription(MODEL_ID)
-        .do_generate(&call)
-        .await
-        .unwrap();
-
-    let headers = &fetch.seen()[0].headers;
-    assert_eq!(headers["authorization"], "Bearer test-api-key");
-    assert!(headers["content-type"].starts_with("multipart/form-data; boundary=----formdata-"));
-    assert_eq!(headers["custom-provider-header"], "provider-header-value");
-    assert_eq!(headers["custom-request-header"], "request-header-value");
-    assert!(headers["user-agent"].contains("ai-sdk-mistral/"));
-}
-
-/// TS: "should use a custom base URL and fetch implementation"
-#[tokio::test]
-async fn should_use_a_custom_base_url_and_fetch_implementation() {
-    let fetch = MockFetch::new(vec![Canned::json(&transcription_response())]);
-    let provider = provider_with(
-        &fetch,
-        MistralProviderSettings {
-            base_url: Some("https://custom.mistral.example/v2/".into()),
-            ..Default::default()
-        },
-    );
-    provider
-        .transcription(MODEL_ID)
-        .do_generate(&wav(None))
-        .await
-        .unwrap();
-    let seen = fetch.seen();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(
-        seen[0].url,
-        "https://custom.mistral.example/v2/audio/transcriptions"
-    );
-}
-
-/// TS: "should map transcript fields, usage, diarization, and response metadata"
-#[tokio::test]
-async fn should_map_transcript_fields_usage_diarization_and_response_metadata() {
-    let mut canned = Canned::json(&transcription_response());
-    canned
-        .headers
-        .push(("x-request-id".into(), "test-request-id".into()));
-    let fetch = MockFetch::new(vec![canned]);
-    let model = provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-    let result = model.do_generate(&wav(None)).await.unwrap();
-
-    let fixture = transcription_response();
-    let fixture_segments = fixture["segments"].as_array().unwrap();
-    assert_eq!(result.text, fixture["text"].as_str().unwrap());
-    assert_eq!(result.language, None);
-    assert_eq!(result.segments.len(), fixture_segments.len());
-    for (segment, expected) in result.segments.iter().zip(fixture_segments) {
-        assert_eq!(segment.text, expected["text"].as_str().unwrap());
-        assert_eq!(segment.start_second, expected["start"].as_f64().unwrap());
-        assert_eq!(segment.end_second, expected["end"].as_f64().unwrap());
+        assert_eq!(values(&parts, "temperature"), ["0.2"]);
+        assert_eq!(
+            values(&parts, "timestamp_granularities"),
+            ["segment", "word"]
+        );
+        assert_eq!(values(&parts, "diarize"), ["true"]);
+        assert_eq!(values(&parts, "context_bias"), ["Vercel", "AI_SDK"]);
     }
-    assert_eq!(result.duration_in_seconds, Some(36.0));
-    assert!(result.warnings.is_empty());
-    assert!(result.response.timestamp.is_some());
-    assert_eq!(
-        result.response.model_id.as_deref(),
-        Some("voxtral-mini-latest")
-    );
-    let headers = result.response.headers.unwrap();
-    assert_eq!(headers["content-type"], "application/json");
-    assert_eq!(headers["x-request-id"], "test-request-id");
-    assert_eq!(result.response.body, Some(fixture.clone()));
 
-    let expected_segments: Vec<Value> = fixture_segments
-        .iter()
-        .map(|segment| {
-            json!({
-                "type": segment["type"],
-                "text": segment["text"],
-                "startSecond": segment["start"],
-                "endSecond": segment["end"],
-                "speakerId": segment["speaker_id"],
-            })
-        })
-        .collect();
-    let metadata = result.provider_metadata.unwrap();
-    assert_eq!(metadata.len(), 1);
-    assert_eq!(
-        Value::Object(metadata["mistral"].clone()),
-        json!({
-            "usage": {
-                "promptTokens": 13,
-                "completionTokens": 151,
-                "totalTokens": 164,
-                "promptAudioSeconds": 36,
-                "requestCount": 1,
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should reject context bias items with commas or whitespace
+    #[tokio::test]
+    async fn should_reject_context_bias_items_with_commas_or_whitespace() {
+        let fetch = MockFetch::new(vec![]);
+        let model =
+            provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
+        let Err(AiMuxError::InvalidArgument { message, .. }) = model
+            .do_generate(&wav(Some(json!({ "contextBias": ["AI SDK"] }))))
+            .await
+        else {
+            panic!("expected an invalid argument error");
+        };
+        assert!(message.contains("invalid mistral provider options"));
+        assert!(fetch.seen().is_empty());
+    }
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should pass language when timestamp granularities are not set
+    #[tokio::test]
+    async fn should_pass_language_when_timestamp_granularities_are_not_set() {
+        let (_, parts) = run(wav(Some(json!({ "language": "en" })))).await;
+        assert_eq!(values(&parts, "language"), ["en"]);
+    }
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should reject language combined with timestamp granularities
+    #[tokio::test]
+    async fn should_reject_language_combined_with_timestamp_granularities() {
+        let fetch = MockFetch::new(vec![]);
+        let model =
+            provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
+        let result = model
+            .do_generate(&wav(Some(json!({
+                "language": "en",
+                "timestampGranularities": ["segment"],
+            }))))
+            .await;
+        assert!(matches!(result, Err(AiMuxError::InvalidArgument { .. })));
+        assert!(fetch.seen().is_empty());
+    }
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should pass headers, abort signal, and the Mistral user agent
+    #[tokio::test]
+    async fn should_pass_headers_abort_signal_and_the_mistral_user_agent() {
+        let fetch = MockFetch::new(vec![Canned::json(&transcription_response())]);
+        let provider = provider_with(
+            &fetch,
+            MistralProviderSettings {
+                headers: Some(HashMap::from([(
+                    "Custom-Provider-Header".to_string(),
+                    Some("provider-header-value".to_string()),
+                )])),
+                ..Default::default()
             },
-            "segments": expected_segments,
-        })
-    );
-}
+        );
+        let mut call = wav(None);
+        call.abort_signal = Some(aimux_core::AbortSignal::new());
+        call.headers = Some(HashMap::from([(
+            "Custom-Request-Header".to_string(),
+            "request-header-value".to_string(),
+        )]));
+        provider
+            .transcription(MODEL_ID)
+            .do_generate(&call)
+            .await
+            .unwrap();
 
-/// TS: "should handle nullable response fields and use the last segment for duration"
-#[tokio::test]
-async fn should_handle_nullable_response_fields_and_use_the_last_segment_for_duration() {
-    let fetch = MockFetch::new(vec![Canned::json(&json!({
-        "model": "voxtral-mini-transcribe-2602",
-        "text": "Hello.",
-        "language": null,
-        "segments": [{
+        let headers = &fetch.seen()[0].headers;
+        assert_eq!(headers["authorization"], "Bearer test-api-key");
+        assert!(headers["content-type"].starts_with("multipart/form-data; boundary=----formdata-"));
+        assert_eq!(headers["custom-provider-header"], "provider-header-value");
+        assert_eq!(headers["custom-request-header"], "request-header-value");
+        assert!(headers["user-agent"].contains("ai-sdk-mistral/"));
+    }
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should use a custom base URL and fetch implementation
+    #[tokio::test]
+    async fn should_use_a_custom_base_url_and_fetch_implementation() {
+        let fetch = MockFetch::new(vec![Canned::json(&transcription_response())]);
+        let provider = provider_with(
+            &fetch,
+            MistralProviderSettings {
+                base_url: Some("https://custom.mistral.example/v2/".into()),
+                ..Default::default()
+            },
+        );
+        provider
+            .transcription(MODEL_ID)
+            .do_generate(&wav(None))
+            .await
+            .unwrap();
+        let seen = fetch.seen();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(
+            seen[0].url,
+            "https://custom.mistral.example/v2/audio/transcriptions"
+        );
+    }
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should map transcript fields, usage, diarization, and response metadata
+    #[tokio::test]
+    async fn should_map_transcript_fields_usage_diarization_and_response_metadata() {
+        let mut canned = Canned::json(&transcription_response());
+        canned
+            .headers
+            .push(("x-request-id".into(), "test-request-id".into()));
+        let fetch = MockFetch::new(vec![canned]);
+        let model =
+            provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
+        let result = model.do_generate(&wav(None)).await.unwrap();
+
+        let fixture = transcription_response();
+        let fixture_segments = fixture["segments"].as_array().unwrap();
+        assert_eq!(result.text, fixture["text"].as_str().unwrap());
+        assert_eq!(result.language, None);
+        assert_eq!(result.segments.len(), fixture_segments.len());
+        for (segment, expected) in result.segments.iter().zip(fixture_segments) {
+            assert_eq!(segment.text, expected["text"].as_str().unwrap());
+            assert_eq!(segment.start_second, expected["start"].as_f64().unwrap());
+            assert_eq!(segment.end_second, expected["end"].as_f64().unwrap());
+        }
+        assert_eq!(result.duration_in_seconds, Some(36.0));
+        assert!(result.warnings.is_empty());
+        assert!(result.response.timestamp.is_some());
+        assert_eq!(
+            result.response.model_id.as_deref(),
+            Some("voxtral-mini-latest")
+        );
+        let headers = result.response.headers.unwrap();
+        assert_eq!(headers["content-type"], "application/json");
+        assert_eq!(headers["x-request-id"], "test-request-id");
+        assert_eq!(result.response.body, Some(fixture.clone()));
+
+        let expected_segments: Vec<Value> = fixture_segments
+            .iter()
+            .map(|segment| {
+                json!({
+                    "type": segment["type"],
+                    "text": segment["text"],
+                    "startSecond": segment["start"],
+                    "endSecond": segment["end"],
+                    "speakerId": segment["speaker_id"],
+                })
+            })
+            .collect();
+        let metadata = result.provider_metadata.unwrap();
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(
+            Value::Object(metadata["mistral"].clone()),
+            json!({
+                "usage": {
+                    "promptTokens": 13,
+                    "completionTokens": 151,
+                    "totalTokens": 164,
+                    "promptAudioSeconds": 36,
+                    "requestCount": 1,
+                },
+                "segments": expected_segments,
+            })
+        );
+    }
+
+    /// upstream: @ai-sdk/mistral src/mistral-transcription-model.test.ts › doGenerate › should handle nullable response fields and use the last segment for duration
+    #[tokio::test]
+    async fn should_handle_nullable_response_fields_and_use_the_last_segment_for_duration() {
+        let fetch = MockFetch::new(vec![Canned::json(&json!({
+            "model": "voxtral-mini-transcribe-2602",
             "text": "Hello.",
-            "start": 0,
-            "end": 2.5,
-            "score": null,
-            "speaker_id": null,
-        }],
-        "usage": null,
-    }))]);
-    let model = provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-    let result = model.do_generate(&wav(None)).await.unwrap();
+            "language": null,
+            "segments": [{
+                "text": "Hello.",
+                "start": 0,
+                "end": 2.5,
+                "score": null,
+                "speaker_id": null,
+            }],
+            "usage": null,
+        }))]);
+        let model =
+            provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
+        let result = model.do_generate(&wav(None)).await.unwrap();
 
-    assert_eq!(result.language, None);
-    assert_eq!(result.duration_in_seconds, Some(2.5));
-    assert!(result.provider_metadata.is_none());
+        assert_eq!(result.language, None);
+        assert_eq!(result.duration_in_seconds, Some(2.5));
+        assert!(result.provider_metadata.is_none());
+    }
 }
 
 /// Only `transcribe` downloads an audio URL (layer 5's `AudioInput::Url`);

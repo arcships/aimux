@@ -207,6 +207,48 @@ async fn event_source_handler_deserializes_each_data_event() {
     );
 }
 
+/// An event that is not JSON yields the AI SDK's `JSONParseError` message
+/// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`), and the
+/// stream goes on with the next event.
+#[tokio::test]
+async fn event_source_handler_reports_unparsable_events_like_the_ai_sdk() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(
+                "data: {unparsable}\n\ndata: {\"value\":\"two\"}\n\ndata: [DONE]\n\n",
+            ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let output = post_json_to_api(
+        request(server.uri()),
+        json!({}),
+        create_event_source_response_handler::<Reply>(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap();
+    let items = output.value.collect::<Vec<_>>().await;
+
+    assert_eq!(items.len(), 2);
+    match &items[0] {
+        Err(AiMuxError::JsonParse { message, .. }) => assert_eq!(
+            message,
+            "JSON parsing failed: Text: {unparsable}.\nError message: key must be a string at line 1 column 2"
+        ),
+        other => panic!("expected a JSON parse error, got {other:?}"),
+    }
+    assert_eq!(
+        items[1].as_ref().unwrap(),
+        &Reply {
+            value: "two".into()
+        }
+    );
+}
+
 #[tokio::test]
 async fn raw_post_and_get_share_the_same_dispatch_contract() {
     let server = MockServer::start().await;

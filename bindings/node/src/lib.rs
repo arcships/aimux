@@ -10,7 +10,6 @@ mod native_scenarios;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::SystemTime;
 
 use aimux_core::AbortSignal;
 use aimux_ops::dispatch::{self, Ctx};
@@ -48,7 +47,6 @@ impl Realm {
         Ctx {
             owner: self.owner,
             abort: Some(signal.clone()),
-            now: SystemTime::now,
         }
     }
 
