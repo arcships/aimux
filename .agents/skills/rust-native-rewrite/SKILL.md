@@ -116,3 +116,15 @@ rg -n 'use crate::(vertex|bedrock|google|anthropic|openai|aws_polly)' aimux-prov
 ```
 
 rig（`0xPlaygrounds/rig`）里可对照的：按角色的消息 enum（`completion/message.rs`）、请求 `new` + setter + `#[non_exhaustive]`（`completion/request.rs`）、纯数据 provider 配置和 `Secret`（`providers/openai/wire.rs`）、流的 `finish(self)`（`streaming/mod.rs`）、钩子 trait（`agent/hook.rs`）。
+
+## 评测
+
+`evals/` 里每个用例有提示、期望结果和逐条打分标准（`graders/`），格式是 `claude plugin eval` 读的那种。改了本文件就跑一遍，带技能和不带技能各一组：
+
+```sh
+cd .agents/skills/rust-native-rewrite
+claude plugin eval . --allow-tools Write Edit Bash --scaffold
+```
+
+这是真实的模型运行，会计费；`--runs 1` 只跑一轮。用例的脚手架会把配置复制进临时目录，评测的是配置加本文件。
+
