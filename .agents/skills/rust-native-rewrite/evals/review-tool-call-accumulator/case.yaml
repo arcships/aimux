@@ -1,9 +1,0 @@
-schema_version: "1.1"
-name: review-tool-call-accumulator
-context:
-  scaffold_script: place-files.sh
-expected_outcome: |
-  REVIEW.md 按技能的审查报告格式写（必须改、应该改、可以考虑、已经做得好的），不改代码。
-  找出锁 poison 的 unwrap、kind 字符串、-1 哨兵、bool 参数、&Option 和 &Vec 参数、String 错误、
-  不带 reason 的 #[allow]，每条写位置、规则出处和改法代码；
-  不建议和配置项目决定冲突的做法（默认加 #[non_exhaustive]、&mut self 的 setter、改 JSON 输出）。
