@@ -48,7 +48,7 @@ description: Port a TypeScript module to Rust, fix one place where a Rust port d
 
 ## 评测
 
-`evals/` 里的用例给一份锁定版本的上游文件、一个带一处不一致的 Rust 移植和逐条打分标准（`graders/`），格式是 `claude plugin eval` 读的那种。改了本文件就跑一遍：
+`evals/` 里的用例给一份锁定版本的上游文件、一个有两处不一致的 Rust 移植（顶层媒体类型要修，键没转小写只记录不修）和逐条打分标准（`graders/`），格式是 `claude plugin eval` 读的那种。改了本文件就跑一遍：
 
 ```sh
 cd .agents/skills/ts-rust-port

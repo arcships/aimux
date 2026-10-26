@@ -12,6 +12,13 @@ set -eu
 files="$1"
 profile_dir="$(cd "$(dirname "$0")" && pwd)"
 
+# The scaffold commits whatever is in the workspace as the baseline, so it
+# must start in the empty directory the eval run created.
+if [ -n "$(ls -A .)" ]; then
+  echo "eval-scaffold.sh: $(pwd) is not empty; run it only from a case's place-files.sh" >&2
+  exit 1
+fi
+
 cp -R "$files/." .
 mkdir -p .agents/native-rust
 cp "$profile_dir/PROFILE.md" .agents/native-rust/PROFILE.md

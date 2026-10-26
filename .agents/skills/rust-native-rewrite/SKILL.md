@@ -112,10 +112,10 @@ rg -n 'Option<(Vec|HashMap)<|(type|kind|role)\w*: (String|&str)|== "\w+"' "$P"
 rg -n 'pub \w+: (serde_json::)?Value|as_object\(\)|\.get\("|#\[serde\(untagged\)\]|Other\(String\)' "$P"
 rg -n '(Box|Arc)<dyn Fn|pub fn create_\w+\(|pub stream:|AbortSignal|: Option<f64>' "$P"
 rg -n '&(Option|Vec|String|Box)<?|#\[allow\(|use [\w:]+::\*;|\.lock\(\)\.(unwrap|expect)|into_inner\)|unsafe \{' "$P"
-rg -n 'use crate::(vertex|bedrock|google|anthropic|openai|aws_polly)' aimux-providers/src/shared   # 反向依赖
+rg -n 'crate::(vertex|bedrock|google|anthropic|aws_polly)\b' aimux-providers/src/shared aimux-providers/src/openai_compatible   # 反向依赖；完整规则见 check_provider_boundaries.sh（openai 算共享协议层）
 ```
 
-rig（`0xPlaygrounds/rig`）里可对照的：按角色的消息 enum（`completion/message.rs`）、请求 `new` + setter + `#[non_exhaustive]`（`completion/request.rs`）、纯数据 provider 配置和 `Secret`（`providers/openai/wire.rs`）、流的 `finish(self)`（`streaming/mod.rs`）、钩子 trait（`agent/hook.rs`）。
+rig（`0xPlaygrounds/rig`）里可对照的：按角色的消息 enum（`completion/message.rs`）、请求 `new` + setter（`completion/request.rs`；它默认加 `#[non_exhaustive]`，我们不默认加，见 PROFILE）、纯数据 provider 配置和 `Secret`（`providers/openai/wire.rs`）、流的 `finish(self)`（`streaming/mod.rs`）、钩子 trait（`agent/hook.rs`）。
 
 ## 评测
 

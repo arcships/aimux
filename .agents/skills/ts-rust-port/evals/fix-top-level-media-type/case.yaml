@@ -3,8 +3,8 @@ name: fix-top-level-media-type
 context:
   scaffold_script: place-files.sh
 expected_outcome: |
-  修好顶层媒体类型（如 image）匹配 image/* 键的不一致：先写一个在原代码上失败的测试
-  （从上游 is-url-supported.test.ts 的 top-level-only 用例逐个搬），再只改这一处让它通过。
+  修好顶层媒体类型（如 image）匹配 image/* 键的不一致：先从上游 is-url-supported.test.ts 的 top-level-only 一组
+  搬四个用例，其中至少一个（image 匹配 image/* 键）在原代码上失败，再只改这一处让它们通过。
   引用上游锁定版本的文件和行号；结构仍跟上游函数一一对应，没有顺手原生化。
   顺带发现的键没有转小写的差异记在报告里，没有修。提交信息是
   fix(<crate>): <行为> matches @ai-sdk/provider-utils@5.0.55，body 写上游出处、改前改后、新测试名。

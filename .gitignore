@@ -56,3 +56,6 @@ quirks-corpus/
 
 # AI SDK protocol fixture recorder (scripts/aisdk-fixtures) — npm install output
 scripts/aisdk-fixtures/node_modules/
+
+# claude plugin eval output for the skill evals
+.agents/skills/*/evals/results/

@@ -80,7 +80,7 @@ lint 统一写在根 `Cargo.toml` 的 `[workspace.lints]`，成员 crate 用 `[l
 - headers：settings → 单次调用 → 鉴权，后层覆盖；`None` 删除；名字小写。
 - JS promise 创建就跑，Rust future 不 poll 不跑；不 await 的 promise 移植时改成 spawn 或删掉。
 - UTF-16：JS 的长度和下标按码元；截断、长度校验用 emoji 和中文对一次上游。
-- panic 策略：`release`、`ios-release` profile 是 `panic = "abort"`，这两种产物里 `catch_unwind` 拦不住 panic；dev、test 能拦住不代表发布产物能（发布产物改 unwind 并在 FFI 边界 `catch_unwind`，在 #365 第六节待评估）。
+- panic 策略：`release`、`ios-release` profile 是 `panic = "abort"`，这两种产物里 `catch_unwind` 拦不住 panic；dev、test 能拦住不代表发布产物能（发布产物改 unwind 并在 FFI 边界 `catch_unwind`，在 #372 讨论）。
 
 ## 工作约束
 

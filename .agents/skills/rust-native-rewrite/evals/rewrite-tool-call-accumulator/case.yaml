@@ -4,7 +4,7 @@ context:
   scaffold_script: place-files.sh
 expected_outcome: |
   src/lib.rs 被改成原生 Rust，测试场景和期望 JSON 不变且全部通过，clippy 无警告。
-  kind 字符串变成 enum，-1 哨兵和 i64 下标变成 Option 和 usize，bool 参数变成 enum 或两个方法，
+  kind 字符串变成 enum，内部 find_call 的 -1 哨兵和 by_index 的 i64 下标变成 Option 和 usize（输入 Delta.index 上的 -1 约定可以保留），bool 参数变成 enum 或两个方法，
   &Option 和 &Vec 参数收紧，String 错误变成 thiserror 错误且消息不变，
   #[allow] 去掉或改成带 reason 的 #[expect]，锁 poison 按配置转成错误返回。
   改动带新旧差分（写明分母和差异数）和变异检查，REPORT.md 写契约和 Verification 表，
