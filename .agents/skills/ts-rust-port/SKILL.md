@@ -38,10 +38,22 @@ description: Port a TypeScript module to Rust, fix one place where a Rust port d
 1. 用配置的映射把目标解析成“Rust 文件 + 上游文件 + 版本”；查清碰到哪些“不能动的面”和“项目决定”。
 2. 契约：上游文件和版本、不能变的、允许的差异、怎么测、是否 breaking。只有要 breaking 或违背配置时先等用户回复。
 3. 实现（子 agent）：按上游结构写，只在所有权模型要求时偏离；上游测试逐个搬；循环到 0 失败；再做一次对比上游。常见失败：缺 match 分支、迭代顺序、null 和缺失混同、数字类型、UTF-16 下标、JSON 键顺序、错误文本。
-4. 审查（子 agent，循环）：对每个改动的文件读完对应的上游文件，查 FIDELITY（数据流、边界、错误分类和上游一致）、WIRE、DECISION、ORACLE（用例搬全、引用带版本行号）、ERROR（错误名和消息保留，不新增 panic）、SCOPE。
+4. 审查（子 agent，循环）：对每个改动的文件读完对应的上游文件，查 FIDELITY（数据流、边界、错误分类和上游一致）、WIRE、DECISION、ORACLE（用例搬全、引用带版本行号）、ERROR（错误名和消息保留，不新增 panic）、SCOPE。报告按 `rust-native-rewrite` 的审查报告格式写，规则出处写上游文件和行号。
 5. 提交 `feat(<crate>): port <upstream file>`，body 写搬了多少用例、对比上游的 N/M。
 
 ## 对比上游
 
 按能用的顺序：上游录制的 fixture 回放；node 跑锁定版本上游、读同一份 JSONL 语料逐条比；搬来的上游测试（最弱）。
 语料覆盖空输入、截断、乱序、重复、深嵌套、错误路径、非 ASCII 和辅助平面字符，以及配置“陷阱”里的每一项。每类差异给一个最小复现，标明是已知的还是新发现的。runner 不入库，commit body 写位置和命令。
+
+## 评测
+
+`evals/` 里的用例给一份锁定版本的上游文件、一个带一处不一致的 Rust 移植和逐条打分标准（`graders/`），格式是 `claude plugin eval` 读的那种。改了本文件就跑一遍：
+
+```sh
+cd .agents/skills/ts-rust-port
+claude plugin eval . --allow-tools Write Edit Bash --scaffold
+```
+
+这是真实的模型运行，会计费；`--runs 1` 只跑一轮。
+
