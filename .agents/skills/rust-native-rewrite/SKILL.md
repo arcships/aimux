@@ -77,7 +77,8 @@ description: Rewrite TS-shaped Rust into native Rust within one repo, keeping be
 | 参数 `&String`、`&Vec<T>`、`&Box<T>`、`&Option<T>` | `&str`、`&[T]`、`&T`、`Option<&T>`；小的 `Copy` 值直接传值；要改写调用方状态的 `&mut Option<T>` 不算；改公开签名时 PR 写明源码兼容影响 |
 | 一组开关作位置参数一起传（上游多半是对象参数） | 照上游对象参数做具名参数 struct；能力类开关并进已有的能力 struct |
 | 同一个派生事实（`is_reasoning_model` 之类）沿转换调用链逐个函数往下传 | 转换开始时建一个上下文 struct（或转换器 struct 持有这些字段），函数取 `&Ctx` |
-| 调用处单个 `true`/`false` 字面量；同类型的三元组返回值 | 两值 enum、两个方法，或私有具名 struct；调用点几行内可见的私有函数、`with_xxx(bool)` 这类 setter、语义明确的局部 tuple 不改 |
+| 调用处单个 `true`/`false` 字面量；同类型的三元组返回值 | 两值 enum、两个方法，或私有具名 struct；公开签名一律不用 `bool` 参数，setter 也一样（1.0 前允许 breaking，同一 PR 改完调用方和绑定）；只有调用点几行内可见的私有函数、语义明确的局部 tuple 不改 |
+| `getXxx()` 式的 getter | 去掉 `get_`，`fn len(&self)`；上游叫 `getXxx` 也去掉 |
 | `#[allow(lint)]` | `#[expect(lint, reason = "...")]`，放在最小的项上；生成代码和宏输出可以用 `allow` |
 | `extra: Value`、`.get("x")` | 有类型字段；开放部分用 `#[serde(flatten)]` |
 | `Option<Vec<_>>`，缺失和空无区别 | `Vec` + `Default` |
@@ -115,15 +116,3 @@ rg -n 'use crate::(vertex|bedrock|google|anthropic|openai|aws_polly)' aimux-prov
 ```
 
 rig（`0xPlaygrounds/rig`）里可对照的：按角色的消息 enum（`completion/message.rs`）、请求 `new` + setter + `#[non_exhaustive]`（`completion/request.rs`）、纯数据 provider 配置和 `Secret`（`providers/openai/wire.rs`）、流的 `finish(self)`（`streaming/mod.rs`）、钩子 trait（`agent/hook.rs`）。
-
-## 评测
-
-`evals/` 里每个用例有提示、期望结果和逐条打分标准（`graders/`），格式是 `claude plugin eval` 读的那种。改了本文件就跑一遍，带技能和不带技能各一组：
-
-```sh
-cd .agents/skills/rust-native-rewrite
-claude plugin eval . --allow-tools Write Edit Bash --scaffold
-```
-
-这是真实的模型运行，会计费；`--runs 1` 只跑一轮。用例的脚手架会把配置复制进临时目录，评测的是配置加本文件。
-

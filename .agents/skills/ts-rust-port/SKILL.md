@@ -45,15 +45,3 @@ description: Port a TypeScript module to Rust, fix one place where a Rust port d
 
 按能用的顺序：上游录制的 fixture 回放；node 跑锁定版本上游、读同一份 JSONL 语料逐条比；搬来的上游测试（最弱）。
 语料覆盖空输入、截断、乱序、重复、深嵌套、错误路径、非 ASCII 和辅助平面字符，以及配置“陷阱”里的每一项。每类差异给一个最小复现，标明是已知的还是新发现的。runner 不入库，commit body 写位置和命令。
-
-## 评测
-
-`evals/` 里的用例给一份锁定版本的上游文件、一个带一处不一致的 Rust 移植和逐条打分标准（`graders/`），格式是 `claude plugin eval` 读的那种。改了本文件就跑一遍：
-
-```sh
-cd .agents/skills/ts-rust-port
-claude plugin eval . --allow-tools Write Edit Bash --scaffold
-```
-
-这是真实的模型运行，会计费；`--runs 1` 只跑一轮。
-
