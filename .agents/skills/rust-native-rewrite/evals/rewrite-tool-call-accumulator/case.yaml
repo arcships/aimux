@@ -7,5 +7,5 @@ expected_outcome: |
   kind 字符串变成 enum，-1 哨兵和 i64 下标变成 Option 和 usize，bool 参数变成 enum 或两个方法，
   &Option 和 &Vec 参数收紧，String 错误变成 thiserror 错误且消息不变，
   #[allow] 去掉或改成带 reason 的 #[expect]，锁 poison 按配置转成错误返回。
-  改动带新旧差分（写明分母和差异数）和变异检查，提交信息或 REPORT.md 写契约和 Verification 表，
+  改动带新旧差分（写明分母和差异数）和变异检查，REPORT.md 写契约和 Verification 表，
   没有顺手改行为，没有新增生产代码的 unwrap/expect。

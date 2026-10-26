@@ -1,6 +1,6 @@
 ---
 name: rust-native-rewrite
-description: Rewrite TS-shaped Rust into native Rust within one repo, keeping behaviour and wire format, proven by an old-vs-new differential (in-process for one module, cross-build for a cross-cutting refactor).
+description: Rewrite TS-shaped Rust into native Rust within one repo, keeping behaviour and wire format, proven by an old-vs-new differential (in-process for one module, cross-build for a cross-cutting refactor); also review such code or a rewrite diff and write a graded report.
 ---
 
 # 把 TS 味的 Rust 改成原生 Rust
