@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Build
 
+- The static archives (`libaimux_ffi.a` for Go and the iOS xcframework
+  slices) are built with the `staticlib-release` profile, the `release`
+  profile without LTO. One command replaces the two old ones:
+
+  ```sh
+  cargo build -p aimux-ffi --profile staticlib-release
+  # was: cargo build -p aimux-ffi --release          (Go archive)
+  # was: cargo build -p aimux-ffi --profile ios-release   (iOS slices; the profile is gone)
+  ```
+
+  The archive lands in `target/<triple>/staticlib-release/` instead of
+  `release/` or `ios-release/`; the Go binding's cgo flags look there first,
+  and `go generate` downloads the release archive there. A static archive is
+  linked by the consumer's toolchain, so fat LTO only embedded every crate's
+  LLVM bitcode into it: the Linux Go archive as shipped goes from 194.2 MB
+  to 95.0 MB with the same linked code (RFC-0043 §5.1, §15.1). The shared
+  libraries (`.so`, `.dylib`, `.dll`) and the Node and Python extensions are
+  not changed by this PR.
+  Release and CI builds check the archive's workspace objects for bitcode
+  and print every artifact's byte size (`scripts/check_native_artifact.py`).
 - The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
   a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. The
   shipped Linux x86_64 libraries go from 39.9 MB / 38.7 MB to 17.4 MB /

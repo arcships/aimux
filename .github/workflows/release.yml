@@ -295,20 +295,34 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
+      # staticlib-release: the release profile without LTO. The consumer's
+      # cgo link step does the dead-code elimination, so fat LTO only embeds
+      # bitcode into the archive and doubles it (RFC-0043 §5.1, §15.1).
       - name: Build static archive
-        run: cargo build -p aimux-ffi --release --target ${{ matrix.settings.target }}
+        run: cargo build -p aimux-ffi --profile staticlib-release --target ${{ matrix.settings.target }}
+      # The Windows runner's bash may know only `python`. cargo emits the
+      # cdylib next to the archive and ld64 would link the .dylib instead of
+      # the .a, so the shared libraries go before the Go tests link.
+      - name: Check archive (no workspace bitcode), keep only the archive
+        shell: bash
+        run: |
+          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py \
+            target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.a
+          rm -f target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.so \
+                target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.dylib \
+                target/${{ matrix.settings.target }}/staticlib-release/aimux_ffi.dll
       - name: Test Go binding
         working-directory: bindings/go
         shell: bash
         run: |
-          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.settings.target }}/release"
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.settings.target }}/staticlib-release"
           go vet ./...
           go test ./...
       - name: Stage archive with platform name
         shell: bash
         run: |
           mkdir -p staging
-          cp target/${{ matrix.settings.target }}/release/libaimux_ffi.a staging/libaimux_ffi-${{ matrix.settings.target }}.a
+          cp target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.a staging/libaimux_ffi-${{ matrix.settings.target }}.a
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -351,6 +365,9 @@ jobs:
             *darwin*) cp target/${{ matrix.target }}/release/libaimux_ffi.dylib staging/${{ matrix.artifact }} ;;
             *windows*) cp target/${{ matrix.target }}/release/aimux_ffi.dll staging/${{ matrix.artifact }} ;;
           esac
+          # RFC-0043 §3.1 raw_bytes of the shipped shared library (the
+          # Windows runner's bash may know only `python`).
+          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py staging/${{ matrix.artifact }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -462,6 +479,8 @@ jobs:
           for abi in arm64-v8a armeabi-v7a x86_64; do
             test -f "staging/android/$abi/libaimux_ffi.so" || { echo "Missing $abi" >&2; exit 1; }
           done
+          # RFC-0043 §3.1 raw_bytes per ABI.
+          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py staging/android/*/libaimux_ffi.so
       - name: Build iOS xcframework
         if: matrix.platform == 'ios'
         run: |
