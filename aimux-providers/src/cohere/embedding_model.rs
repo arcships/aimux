@@ -13,9 +13,10 @@ use aimux_core::embedding_model::{
     EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
 };
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::SharedProviderOptions;
 
 use crate::shared::EndpointConfig;
+
+use super::embedding_model_options::parse_cohere_provider_options;
 
 /// A Cohere embedding model (e.g. `"embed-english-v3.0"`).
 pub struct CohereEmbeddingModel {
@@ -86,7 +87,7 @@ impl EmbeddingModel for CohereEmbeddingModel {
             exchange.request(exchange.url("/embed"), options),
             exchange.transform_body(Value::Object(body)),
             aimux_provider_utils::create_json_response_handler::<CohereEmbeddingResponse>(),
-            super::cohere_failed_response_handler(),
+            super::error::cohere_failed_response_handler(),
         )
         .await?;
 
@@ -110,55 +111,6 @@ impl EmbeddingModel for CohereEmbeddingModel {
             warnings: Vec::new(),
         })
     }
-}
-
-// ── Provider options parsing ─────────────────────────────────────────────────
-
-struct CohereEmbeddingProviderOptions {
-    input_type: Option<String>,
-    truncate: Option<String>,
-    output_dimension: Option<u32>,
-}
-
-fn parse_cohere_provider_options(
-    options: Option<&SharedProviderOptions>,
-) -> Result<CohereEmbeddingProviderOptions, AiMuxError> {
-    let provider_opts = super::options::cohere_options(options);
-    let string_option = |key: &str, allowed: &[&str]| -> Result<Option<String>, AiMuxError> {
-        provider_opts
-            .and_then(|o| o.get(key))
-            .map(|value| {
-                value
-                    .as_str()
-                    .filter(|value| allowed.contains(value))
-                    .map(str::to_owned)
-                    .ok_or_else(|| AiMuxError::invalid_argument(format!("Invalid cohere.{key}")))
-            })
-            .transpose()
-    };
-    let output_dimension = provider_opts
-        .and_then(|o| o.get("outputDimension"))
-        .map(|value| {
-            value
-                .as_f64()
-                .filter(|value| [256.0, 512.0, 1024.0, 1536.0].contains(value))
-                .map(|value| value as u32)
-                .ok_or_else(|| AiMuxError::invalid_argument("Invalid cohere.outputDimension"))
-        })
-        .transpose()?;
-    Ok(CohereEmbeddingProviderOptions {
-        input_type: string_option(
-            "inputType",
-            &[
-                "search_document",
-                "search_query",
-                "classification",
-                "clustering",
-            ],
-        )?,
-        truncate: string_option("truncate", &["NONE", "START", "END"])?,
-        output_dimension,
-    })
 }
 
 #[derive(Deserialize)]
