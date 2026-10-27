@@ -6,7 +6,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::shared::{FileBytes, FileData, SharedProviderReference};
+use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::types::Warning;
 use aimux_provider_utils::{
     MediaTypeData, detect_media_type, get_top_level_media_type, is_full_media_type,
@@ -68,11 +68,10 @@ pub fn convert_to_xai_responses_input(
                                     json!({ "type": "input_file", "file_url": url })
                                 }
                                 FileData::Reference { reference } => {
-                                    let file_id = resolve_provider_reference(
+                                    let file_id = aimux_provider_utils::resolve_provider_reference(
                                         reference,
                                         crate::xai::options::NAMESPACE,
-                                    )
-                                    .map_err(AiMuxError::invalid_argument)?;
+                                    )?;
                                     json!({ "type": "input_file", "file_id": file_id })
                                 }
                                 FileData::Text { .. } => {
@@ -290,29 +289,6 @@ fn convert_image_part(
     }
 
     Ok(part)
-}
-
-/// Resolve the provider-specific reference string from a file part's
-/// `provider` map.
-///
-/// # Errors
-///
-/// Returns a `String` listing the available providers when the requested key
-/// is absent.
-pub fn resolve_provider_reference(
-    reference: &SharedProviderReference,
-    provider: &str,
-) -> Result<String, String> {
-    if let Some(value) = reference.get(provider) {
-        return Ok(value.clone());
-    }
-    let mut available: Vec<&str> = reference.keys().map(String::as_str).collect();
-    available.sort_unstable();
-    Err(format!(
-        "No provider reference found for provider '{}'. Available providers: {}",
-        provider,
-        available.join(", ")
-    ))
 }
 
 fn resolve_full_media_type(part: &FilePart) -> Result<String, AiMuxError> {

@@ -13,6 +13,7 @@ mod aisdk_pins;
 pub mod api_key;
 pub mod convert_image_model_file_to_data_uri;
 pub mod convert_inline_file_data_to_uint8_array;
+pub mod create_language_model_response_metadata;
 pub mod decision_language_model;
 pub mod download_blob;
 pub mod extract_response_headers;
@@ -29,6 +30,7 @@ pub mod multipart;
 pub mod post_to_api;
 pub mod read_response_with_size_limit;
 pub mod resolvable;
+pub mod resolve_provider_reference;
 pub mod response_handler;
 pub mod sigv4_fetch;
 #[cfg(test)]
@@ -45,6 +47,7 @@ pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
 pub use convert_image_model_file_to_data_uri::convert_image_model_file_to_data_uri;
 pub use convert_inline_file_data_to_uint8_array::convert_inline_file_data_to_uint8_array;
+pub use create_language_model_response_metadata::create_language_model_response_metadata;
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
@@ -66,6 +69,7 @@ pub use media_type::{
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use resolvable::Resolvable;
+pub use resolve_provider_reference::resolve_provider_reference;
 pub use response_handler::{
     ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
     create_binary_response_handler, create_event_source_response_handler,
@@ -78,4 +82,4 @@ pub use uint8_utils::{
     Base64OrBytes, InvalidBase64Error, convert_base64_to_uint8_array, convert_to_base64,
     convert_uint8_array_to_base64,
 };
-pub use url::{validate_base_url, without_trailing_slash, without_trailing_slash_opt};
+pub use url::{validate_base_url, without_trailing_slash};

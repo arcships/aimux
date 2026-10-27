@@ -33,28 +33,6 @@ pub(crate) fn user_agent_value(current: &str, suffix: &str) -> String {
         .join(" ")
 }
 
-/// Resolve provider headers and append the pinned package's suffix per request.
-#[must_use]
-pub fn with_user_agent_suffix_fn(
-    headers: HeadersFn,
-    package: &'static str,
-    version: &'static str,
-) -> HeadersFn {
-    Resolvable::from_async_fn(move || {
-        let headers = headers.clone();
-        async move {
-            let mut headers = normalize_headers(headers.resolve().await?)
-                .into_iter()
-                .collect();
-            with_user_agent_suffix(&mut headers, &format!("ai-sdk-{package}/{version}"));
-            Ok(headers
-                .into_iter()
-                .map(|(name, value)| (name, Some(value)))
-                .collect())
-        }
-    })
-}
-
 /// Merge header layers, earliest first. Names are lowercased; a later layer
 /// overrides an earlier one (never appends), including with `None`, which
 /// removes the header. Entries of one layer whose names differ only by case

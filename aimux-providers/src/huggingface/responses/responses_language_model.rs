@@ -15,7 +15,7 @@ use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Warning};
+use aimux_core::types::{FinishReason, FinishReasonUnified, Warning};
 
 use aimux_provider_utils::{Transformer, pipe_through};
 
@@ -207,11 +207,14 @@ impl LanguageModel for HuggingFaceResponsesModel {
                 json!({ "responseId": response_id }),
             )),
             response: Some(aimux_core::shared::ResponseInfo {
-                id: response_id,
-                timestamp: format_timestamp(created_at),
-                model_id: model,
                 headers: Some(response_headers),
                 body: Some(response),
+                ..aimux_provider_utils::create_language_model_response_metadata(
+                    response_id,
+                    model,
+                    Some(created_at as f64),
+                )
+                .into()
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
@@ -347,11 +350,13 @@ impl HuggingFaceResponsesStream {
                                 .get("model")
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
-                            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                                id: response_id.clone(),
-                                timestamp: format_timestamp(created_at),
-                                model_id: model,
-                            }));
+                            controller.enqueue(StreamPart::ResponseMetadata(
+                                aimux_provider_utils::create_language_model_response_metadata(
+                                    response_id.clone(),
+                                    model,
+                                    Some(created_at as f64),
+                                ),
+                            ));
                         }
                     }
 
@@ -899,8 +904,3 @@ fn parse_finish_reason(response: &Value) -> FinishReason {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// `new Date(secs * 1000)` for a Unix timestamp in seconds.
-fn format_timestamp(secs: u64) -> Option<aimux_core::Timestamp> {
-    aimux_core::Timestamp::from_unix_seconds(secs as f64)
-}

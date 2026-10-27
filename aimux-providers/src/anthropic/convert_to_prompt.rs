@@ -583,7 +583,7 @@ fn convert_file_part(
         }
         FileData::Url { url, .. } => route_file_url(media_type, url, betas)?,
         FileData::Reference { reference } => {
-            let file_id = resolve_anthropic_reference(reference)?;
+            let file_id = aimux_provider_utils::resolve_provider_reference(reference, CANONICAL)?;
             betas.insert(BETA_FILES_API.to_string());
             let container_upload = anthropic_options(provider_options.as_ref(), options_name)
                 .as_ref()
@@ -1689,23 +1689,6 @@ fn convert_reasoning_part(
         });
         None
     }
-}
-
-/// Resolve the Anthropic file id from a provider-reference object, mirroring the
-/// TS `resolveProviderReference`: the reference is always keyed by the
-/// canonical name, whatever the provider is called. Errors when that key is
-/// absent, matching the TS `UnsupportedFunctionalityError`.
-fn resolve_anthropic_reference(
-    reference: &aimux_core::shared::SharedProviderReference,
-) -> Result<String, AiMuxError> {
-    if let Some(id) = reference.get(CANONICAL) {
-        return Ok(id.to_string());
-    }
-    let providers: Vec<&str> = reference.keys().map(String::as_str).collect();
-    Err(AiMuxError::invalid_argument(format!(
-        "No provider reference found for provider '{CANONICAL}'. Available providers: {}",
-        providers.join(", ")
-    )))
 }
 
 /// Serialize a unified tool-result payload into the Anthropic content string.

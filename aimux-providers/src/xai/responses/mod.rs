@@ -9,7 +9,7 @@ mod responses_language_model_options;
 mod responses_prepare_tools;
 
 pub use convert_responses_usage::convert_xai_responses_usage;
-pub use convert_to_responses_input::{convert_to_xai_responses_input, resolve_provider_reference};
+pub use convert_to_responses_input::convert_to_xai_responses_input;
 pub use map_responses_finish_reason::map_xai_responses_finish_reason;
 pub use responses_api::{
     XaiResponsesInputTokensDetails, XaiResponsesOutputTokensDetails, XaiResponsesResponse,

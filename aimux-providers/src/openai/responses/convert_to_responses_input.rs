@@ -666,11 +666,7 @@ fn convert_user_part(
             }
             FileData::Reference { reference } => {
                 let file_id =
-                    crate::openai::chat::convert_to_chat_messages::resolve_provider_reference(
-                        reference,
-                        ns.write_key(),
-                    )
-                    .map_err(AiMuxError::invalid_argument)?;
+                    aimux_provider_utils::resolve_provider_reference(reference, ns.write_key())?;
                 let mut part = json!({ "type": if file.media_type.split('/').next() == Some("image") { "input_image" } else { "input_file" }, "file_id": file_id });
                 if part["type"] == "input_image"
                     && let Some(detail) =
