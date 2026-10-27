@@ -34,7 +34,7 @@ func main() {
 	if !ok {
 		fmt.Fprintf(os.Stderr, "ffidownload: no prebuilt libaimux_ffi.a for %s\n", key)
 		fmt.Fprintf(os.Stderr, "  supported: linux/amd64, darwin/amd64, darwin/arm64, windows/amd64\n")
-		fmt.Fprintf(os.Stderr, "  for other platforms, clone the aimux repo and run `cargo build -p aimux-ffi --release`.\n")
+		fmt.Fprintf(os.Stderr, "  for other platforms, clone the aimux repo and run `cargo build -p aimux-ffi --profile staticlib-release`.\n")
 		os.Exit(1)
 	}
 
@@ -48,14 +48,16 @@ func main() {
 		releaseURL = "https://github.com/arcships/aimux/releases/download/" + version + "/"
 	}
 
-	// go generate runs with cwd = the package directory; the cgo LDFLAGS use
-	// ${SRCDIR}/../../target/release, so write exactly there (works both in
-	// the Go module cache and in a source checkout).
+	// go generate runs with cwd = the package directory; the cgo LDFLAGS
+	// search ${SRCDIR}/../../target/staticlib-release first (the profile the
+	// release archives are built with) and target/release second, so the
+	// download goes to the first one and wins over a local cargo build in a
+	// source checkout (works in the Go module cache too).
 	cwd, err := os.Getwd()
 	if err != nil {
 		fatal(err)
 	}
-	destDir := filepath.Join(cwd, "..", "..", "target", "release")
+	destDir := filepath.Join(cwd, "..", "..", "target", "staticlib-release")
 	dest := filepath.Join(destDir, "libaimux_ffi.a")
 
 	fmt.Printf("ffidownload: downloading %s (%s)\n", asset, version)
