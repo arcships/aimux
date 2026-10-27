@@ -333,10 +333,9 @@ fn resolve_proxy(
         None
     } else {
         let credentials = format!("{}:{}", proxy.username(), proxy.password().unwrap_or(""));
-        use base64::Engine as _;
         Some(format!(
             "Basic {}",
-            base64::engine::general_purpose::STANDARD.encode(credentials)
+            crate::convert_uint8_array_to_base64(credentials.as_bytes())
         ))
     };
     let target_host = target.host_str().unwrap_or_default();

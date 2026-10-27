@@ -79,44 +79,10 @@ fn decode_prefix(data: MediaTypeData<'_>, max_bytes: usize) -> Result<Cow<'_, [u
         }
         MediaTypeData::Base64(data) => data,
     };
-    // Match atob: URL alphabet, ASCII whitespace, optional padding, and
-    // noncanonical trailing bits are accepted; malformed input is an error.
-    let invalid = || AiMuxError::invalid_argument("invalid base64 data");
-    let mut chars = data
-        .encode_utf16()
-        .take(max_bytes.div_ceil(3) * 4)
-        .filter(|&c| !matches!(c, 0x09 | 0x0a | 0x0c | 0x0d | 0x20))
-        .collect::<Vec<_>>();
-    if chars.len().is_multiple_of(4) {
-        for _ in 0..2 {
-            if chars.last() == Some(&0x3d) {
-                chars.pop();
-            }
-        }
-    }
-    if chars.len() % 4 == 1 {
-        return Err(invalid());
-    }
-    let mut bytes = Vec::with_capacity(chars.len() * 3 / 4);
-    let mut value = 0u32;
-    let mut bits = 0;
-    for c in chars {
-        let digit = match c {
-            0x41..=0x5a => c - 0x41,
-            0x61..=0x7a => c - 0x61 + 26,
-            0x30..=0x39 => c - 0x30 + 52,
-            0x2b | 0x2d => 62,
-            0x2f | 0x5f => 63,
-            _ => return Err(invalid()),
-        };
-        value = (value << 6) | u32::from(digit);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            bytes.push((value >> bits) as u8);
-            value &= (1 << bits) - 1;
-        }
-    }
+    // Only the first base64 quanta that cover `max_bytes` are decoded.
+    let mut bytes =
+        crate::uint8_utils::forgiving_decode(data.encode_utf16().take(max_bytes.div_ceil(3) * 4))
+            .map_err(|_| AiMuxError::invalid_argument("invalid base64 data"))?;
     bytes.truncate(max_bytes);
     Ok(Cow::Owned(bytes))
 }
