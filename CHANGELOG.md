@@ -1398,6 +1398,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in provider reads its key from when `create_provider` gets none, and
   `provider_default_base_url(name)`, the endpoint it calls when given no base
   URL (`None` when that is built from settings).
+- `aimux_provider_utils::parse_provider_options`, as `@ai-sdk/provider-utils`
+  5.0.55 `parseProviderOptions` (RFC-0046 R1): one provider's
+  `providerOptions` namespace deserialized into its options type, `None`
+  when absent. Azure transcription, DeepSeek chat, Google files, speech and
+  transcription, Vertex Gemini transcription, Groq chat and transcription and
+  OpenAI embeddings parse their options with it.
 
 ### Fixed
 
@@ -1931,6 +1937,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differences from upstream.
 
 ### Changed
+
+- A provider option of the wrong type for Azure transcription, DeepSeek chat,
+  Google files, speech and transcription, Vertex Gemini transcription, Groq
+  chat and transcription or OpenAI embeddings fails with `Invalid argument for
+  parameter providerOptions: invalid <provider> provider options` and the
+  deserialization error as its cause, the message `parseProviderOptions`
+  gives. Each used its own wording with the error
+  inlined. Checks beyond the types (ranges, patterns) keep their messages.
 
 - Tool-call repair is a trait. New `RepairToolCall`
   (`aimux_core::parse_tool_call`, also in the prelude) with one async method,
