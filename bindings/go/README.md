@@ -71,9 +71,18 @@ normal cleanup; the fallback finalizer only enqueues native cleanup.
 
 ## Build and test
 
-Build `aimux-ffi` with the matching source and header. By default cgo searches
-`target/release` for `libaimux_ffi`; a shared library can also be selected with
-`CGO_LDFLAGS` and the platform loader's library path. `go generate ./...`
+Build `aimux-ffi` with the matching source and header:
+
+```sh
+cargo build -p aimux-ffi --profile staticlib-release
+```
+
+`staticlib-release` is the release profile without LTO, the profile the
+released archives are built with (a fat-LTO archive is twice the size for the
+same linked code, see RFC-0043). By default cgo searches
+`target/staticlib-release`, then `target/release`, for `libaimux_ffi`; a shared
+library can also be selected with `CGO_LDFLAGS` and the platform loader's
+library path. `go generate ./...`
 downloads the platform archive and header from one release; pin it with
 `AIMUX_FFI_VERSION`.
 

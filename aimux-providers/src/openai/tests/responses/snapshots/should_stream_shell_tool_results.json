@@ -1,0 +1,892 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "resp_0434d6d64b12b08900692f639c40408195a50fd07b77ce08a7",
+    "modelId": "gpt-5.1-2025-11-13",
+    "timestamp": "2025-12-02T22:09:32.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "input": "{\"action\":{\"commands\":[\"ls -a ~/Desktop\"]}}",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "sh_0434d6d64b12b08900692f639c9f0481959c30e03ca0bb2ef8"
+      }
+    },
+    "toolCallId": "call_pbxjNs1tMJUahLZKAS9qLtvw",
+    "toolName": "shell",
+    "type": "tool-call"
+  },
+  {
+    "id": "resp_0434d6d64b12b08900692f639d784481959af65f985b9c13e2",
+    "modelId": "gpt-5.1-2025-11-13",
+    "timestamp": "2025-12-02T22:09:33.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b"
+      }
+    },
+    "type": "text-start"
+  },
+  {
+    "delta": "Here",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " are",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " files",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " and",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " folders",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " in",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " your",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " `",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "~/",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Desktop",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "`",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " directory",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ":\n\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " .\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ..\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " .",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "DS",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "_",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Store",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " .",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "localized",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ai",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ai",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-dev",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "ny",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "c",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-app",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ai",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-dev",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "ny",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "c",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-st",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "arter",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ai",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-sdk",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-open",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "router",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-provider",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " chat",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-sdk",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-m",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "cp",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " dec",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "1",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".txt",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " oll",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "ama",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-ai",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-provider",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " port",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "key",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-ver",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "cel",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-provider",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Screenshot",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "202",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "5",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "11",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "26",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " at",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "11",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "58",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "16",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "AM",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".png",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Screenshot",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "202",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "5",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "11",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "26",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " at",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "12",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "21",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "45",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "PM",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".png",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Screenshot",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "202",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "5",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "11",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "26",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " at",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "12",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "27",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "48",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "PM",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".png",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Screenshot",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "202",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "5",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "11",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "28",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " at",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "1",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "17",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "53",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "PM",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".png",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": " test",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-server",
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "type": "text-delta"
+  },
+  {
+    "id": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b"
+      }
+    },
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "openai": {
+        "responseId": "resp_0434d6d64b12b08900692f639d784481959af65f985b9c13e2",
+        "serviceTier": "default"
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "noCache": 331,
+        "total": 331
+      },
+      "outputTokens": {
+        "reasoning": 0,
+        "text": 166,
+        "total": 166
+      },
+      "raw": {
+        "input_tokens": 331,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 166,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 497
+      }
+    }
+  }
+]
