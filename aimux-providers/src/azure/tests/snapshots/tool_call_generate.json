@@ -1,0 +1,222 @@
+{
+  "content": [
+    {
+      "input": "{\"location\":\"San Francisco\"}",
+      "providerMetadata": {
+        "azure": {
+          "itemId": "fc_0a2fa1b539ba14ba00698c519ebab0819494302fc0b5c31440"
+        }
+      },
+      "toolCallId": "call_YunNGbIwdVJ2i0y0Mybva4Pw",
+      "toolName": "weather",
+      "type": "tool-call"
+    }
+  ],
+  "finishReason": {
+    "unified": "tool-calls"
+  },
+  "providerMetadata": {
+    "azure": {
+      "responseId": "resp_0a2fa1b539ba14ba00698c519df7a88194874af28c8bfccb12",
+      "serviceTier": "default"
+    }
+  },
+  "request": {
+    "body": {
+      "input": [
+        {
+          "content": [
+            {
+              "text": "Hello",
+              "type": "input_text"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "model": "test-deployment"
+    }
+  },
+  "response": {
+    "body": {
+      "background": false,
+      "completed_at": 1770803615,
+      "content_filters": [
+        {
+          "blocked": false,
+          "content_filter_offsets": {
+            "check_offset": 0,
+            "end_offset": 1554,
+            "start_offset": 1517
+          },
+          "content_filter_raw": null,
+          "content_filter_results": {
+            "hate": {
+              "filtered": false,
+              "severity": "safe"
+            },
+            "jailbreak": {
+              "detected": false,
+              "filtered": false
+            },
+            "self_harm": {
+              "filtered": false,
+              "severity": "safe"
+            },
+            "sexual": {
+              "filtered": false,
+              "severity": "safe"
+            },
+            "violence": {
+              "filtered": false,
+              "severity": "safe"
+            }
+          },
+          "source_type": "prompt"
+        },
+        {
+          "blocked": false,
+          "content_filter_offsets": {
+            "check_offset": 0,
+            "end_offset": 1090,
+            "start_offset": 0
+          },
+          "content_filter_raw": null,
+          "content_filter_results": {
+            "hate": {
+              "filtered": false,
+              "severity": "safe"
+            },
+            "protected_material_code": {
+              "detected": false,
+              "filtered": false
+            },
+            "protected_material_text": {
+              "detected": false,
+              "filtered": false
+            },
+            "self_harm": {
+              "filtered": false,
+              "severity": "safe"
+            },
+            "sexual": {
+              "filtered": false,
+              "severity": "safe"
+            },
+            "violence": {
+              "filtered": false,
+              "severity": "safe"
+            }
+          },
+          "source_type": "completion"
+        }
+      ],
+      "created_at": 1770803613,
+      "error": null,
+      "id": "resp_0a2fa1b539ba14ba00698c519df7a88194874af28c8bfccb12",
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "max_tool_calls": null,
+      "metadata": {},
+      "model": "gpt-5.1",
+      "object": "response",
+      "output": [
+        {
+          "arguments": "{\"location\":\"San Francisco\"}",
+          "call_id": "call_YunNGbIwdVJ2i0y0Mybva4Pw",
+          "id": "fc_0a2fa1b539ba14ba00698c519ebab0819494302fc0b5c31440",
+          "name": "weather",
+          "status": "completed",
+          "type": "function_call"
+        }
+      ],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "prompt_cache_key": null,
+      "prompt_cache_retention": null,
+      "reasoning": {
+        "effort": "none",
+        "summary": null
+      },
+      "safety_identifier": null,
+      "service_tier": "default",
+      "status": "completed",
+      "store": true,
+      "temperature": 1,
+      "text": {
+        "format": {
+          "type": "text"
+        },
+        "verbosity": "medium"
+      },
+      "tool_choice": "auto",
+      "tools": [
+        {
+          "description": null,
+          "name": "weather",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "location": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "location"
+            ],
+            "type": "object"
+          },
+          "strict": true,
+          "type": "function"
+        }
+      ],
+      "top_logprobs": 0,
+      "top_p": 1,
+      "truncation": "disabled",
+      "usage": {
+        "input_tokens": 45,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 24,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 69
+      },
+      "user": null
+    },
+    "headers": {
+      "content-length": "2190",
+      "content-type": "application/json"
+    },
+    "id": "resp_0a2fa1b539ba14ba00698c519df7a88194874af28c8bfccb12",
+    "modelId": "gpt-5.1",
+    "timestamp": "2026-02-11T09:53:33.000Z"
+  },
+  "usage": {
+    "inputTokens": {
+      "cacheRead": 0,
+      "noCache": 45,
+      "total": 45
+    },
+    "outputTokens": {
+      "reasoning": 0,
+      "text": 24,
+      "total": 24
+    },
+    "raw": {
+      "input_tokens": 45,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 24,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 69
+    }
+  },
+  "warnings": []
+}

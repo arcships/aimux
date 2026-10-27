@@ -1,0 +1,70 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "resp_02ce8deeb6197db200698c5196e9588197a572bbea62d38cd1",
+    "modelId": "gpt-5.1",
+    "timestamp": "2026-02-11T09:53:26.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "msg_02ce8deeb6197db200698c5198ca0c81979bedbe6c98a8ab93",
+    "providerMetadata": {
+      "azure": {
+        "itemId": "msg_02ce8deeb6197db200698c5198ca0c81979bedbe6c98a8ab93"
+      }
+    },
+    "type": "text-start"
+  },
+  {
+    "delta": "Hello",
+    "id": "msg_02ce8deeb6197db200698c5198ca0c81979bedbe6c98a8ab93",
+    "type": "text-delta"
+  },
+  {
+    "id": "msg_02ce8deeb6197db200698c5198ca0c81979bedbe6c98a8ab93",
+    "providerMetadata": {
+      "azure": {
+        "itemId": "msg_02ce8deeb6197db200698c5198ca0c81979bedbe6c98a8ab93"
+      }
+    },
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "azure": {
+        "responseId": "resp_02ce8deeb6197db200698c5196e9588197a572bbea62d38cd1",
+        "serviceTier": "default"
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "noCache": 11,
+        "total": 11
+      },
+      "outputTokens": {
+        "reasoning": 0,
+        "text": 11,
+        "total": 11
+      },
+      "raw": {
+        "input_tokens": 11,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 11,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 22
+      }
+    }
+  }
+]
