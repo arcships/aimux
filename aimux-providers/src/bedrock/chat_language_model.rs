@@ -571,18 +571,21 @@ impl Transformer for AmazonBedrockChatStream {
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("Amazon Bedrock stream failed with {}", msg.event_type));
+            let data = json!({ msg.event_type.clone(): payload });
             controller.enqueue(StreamPart::Error {
-                error: AiMuxError::ApiCall(Box::new(aimux_core::ApiCallError {
-                    status_code,
-                    is_retryable,
-                    provider_code: Some(msg.event_type.clone()),
-                    data: Some(json!({msg.event_type.clone(): payload.clone()})),
-                    ..aimux_core::ApiCallError::new(
+                error: aimux_provider_utils::create_provider_stream_error(
+                    aimux_provider_utils::ProviderStreamError {
                         message,
-                        self.ctx.url.clone(),
-                        self.ctx.request_body.clone(),
-                    )
-                })),
+                        provider_code: Some(msg.event_type),
+                        status_code,
+                        is_retryable: Some(is_retryable),
+                        data: data.clone(),
+                    },
+                    &data,
+                    self.ctx.url.clone(),
+                    self.ctx.request_body.clone(),
+                    self.ctx.response_headers.clone(),
+                ),
             });
             return;
         }
