@@ -49,22 +49,6 @@ fn get_image_detail(provider_options: &Option<SharedProviderOptions>) -> Option<
         .cloned()
 }
 
-/// Resolve a provider reference, throwing if the provider is not found.
-pub(crate) fn resolve_provider_reference(
-    reference: &aimux_core::shared::SharedProviderReference,
-    provider: &str,
-) -> Result<String, String> {
-    reference.get(provider).cloned().ok_or_else(|| {
-        let mut available: Vec<&str> = reference.keys().map(String::as_str).collect();
-        available.sort_unstable();
-        format!(
-            "No provider reference found for provider '{}'. Available providers: {}",
-            provider,
-            available.join(", ")
-        )
-    })
-}
-
 /// Convert a file part to the OpenAI format, handling images, audio, and PDF.
 fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Value, AiMuxError> {
     use base64::Engine;
@@ -77,8 +61,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
     let prompt_cache_breakpoint = get_prompt_cache_breakpoint(provider_options);
     let (data_b64, url) = match data {
         FileData::Reference { reference } => {
-            let file_id = resolve_provider_reference(reference, "openai")
-                .map_err(AiMuxError::invalid_argument)?;
+            let file_id = aimux_provider_utils::resolve_provider_reference(reference, "openai")?;
             let mut part = json!({ "type": "file", "file": { "file_id": file_id } });
             if let Some(bpt) = prompt_cache_breakpoint {
                 part["prompt_cache_breakpoint"] = bpt;

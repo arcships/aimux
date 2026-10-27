@@ -1333,6 +1333,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `speech::google_speech_input` become crate-internal, with no public
   replacement. `google::files` and `google::transcription` keep their paths.
 
+- `aimux_providers::xai::responses::resolve_provider_reference` is removed;
+  use `aimux_provider_utils::resolve_provider_reference`, the AI SDK's
+  `resolveProviderReference`, which takes the reference and the provider
+  name the same way (RFC-0046 R1).
+
 - `aimux_provider_utils::stream_error_api_call` is replaced by
   `create_provider_stream_error` (RFC-0046 R1). Pass the message, provider
   code, status, retryability and raw data as a `ProviderStreamError`, then
@@ -1350,6 +1355,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PreparedTools`) are not reachable from outside the crate any more and have
   no replacement. Exports at the crate root and the `mistral` module root are
   unchanged.
+
+- Two `aimux-provider-utils` helpers that nothing called are removed
+  (RFC-0046 §3.2): `headers::with_user_agent_suffix_fn` and
+  `without_trailing_slash_opt`. Append the suffix to resolved headers with
+  `with_user_agent_suffix`, and map an optional URL with
+  `url.map(without_trailing_slash)`.
 
 - The ops error envelope is `{kind, code, message, error}`: the derived
   `retryAfterMs` is removed, together with the clock and cached projection
@@ -1405,6 +1416,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in provider reads its key from when `create_provider` gets none, and
   `provider_default_base_url(name)`, the endpoint it calls when given no base
   URL (`None` when that is built from settings).
+- `aimux_provider_utils::create_language_model_response_metadata` and
+  `aimux_provider_utils::resolve_provider_reference`, as
+  `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1). The OpenAI chat and
+  responses, OpenAI-compatible, Groq, Mistral, DeepSeek, Hugging Face, xAI and
+  Open Responses models build response metadata with the first; the OpenAI,
+  xAI, Anthropic, Google and DeepSeek converters resolve file references with
+  the second. A missing DeepSeek reference now names the providers the
+  reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
 - `aimux_provider_utils::create_provider_stream_error` and
   `ProviderStreamError`, as `@ai-sdk/provider-utils` 5.0.55
   `createProviderStreamError` (RFC-0046 R1). Every in-stream error event

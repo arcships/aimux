@@ -2,3 +2,4 @@
 //! `.test.ts` (RFC-0044 L6).
 
 mod create_provider_stream_error;
+mod resolve_provider_reference;

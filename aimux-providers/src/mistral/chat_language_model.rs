@@ -20,7 +20,7 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{FinishReason, ReasoningEffort, Usage, Warning};
 
 use aimux_provider_utils::{Transformer, inject_json_instruction_into_messages, pipe_through};
 
@@ -209,13 +209,14 @@ impl LanguageModel for MistralModel {
             warnings: request_warnings(options, &self.model_id),
             provider_metadata: None,
             response: Some(aimux_core::shared::ResponseInfo {
-                id: data.id,
-                timestamp: data
-                    .created
-                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-                model_id: data.model,
                 headers: Some(response_headers),
                 body: resp.raw_value,
+                ..aimux_provider_utils::create_language_model_response_metadata(
+                    data.id,
+                    data.model,
+                    data.created.map(|secs| secs as f64),
+                )
+                .into()
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
@@ -324,13 +325,13 @@ impl MistralChatStream {
         // Emit ResponseMetadata from the first valid chunk.
         if !self.response_metadata_emitted {
             self.response_metadata_emitted = true;
-            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                id: chunk.id.clone(),
-                timestamp: chunk
-                    .created
-                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-                model_id: chunk.model.clone(),
-            }));
+            controller.enqueue(StreamPart::ResponseMetadata(
+                aimux_provider_utils::create_language_model_response_metadata(
+                    chunk.id.clone(),
+                    chunk.model.clone(),
+                    chunk.created.map(|secs| secs as f64),
+                ),
+            ));
         }
 
         // Update usage.
