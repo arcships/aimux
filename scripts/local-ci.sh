@@ -137,10 +137,10 @@ fi
 
 # ── go ─────────────────────────────────────────────────────────────────────
 if want go; then
-  section "go: vet + test (CGO_LDFLAGS -> target/release)"
+  section "go: vet + test (CGO_LDFLAGS -> target/staticlib-release)"
   if need go "go" \
-     && cargo build -p aimux-ffi --release --quiet \
-     && (cd bindings/go && export CGO_LDFLAGS="-L$REPO/target/release" \
+     && cargo build -p aimux-ffi --profile staticlib-release --quiet \
+     && (cd bindings/go && export CGO_LDFLAGS="-L$REPO/target/staticlib-release" \
          && go vet ./... \
          && go test ./...); then
     pass "go"
