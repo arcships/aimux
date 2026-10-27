@@ -2805,10 +2805,10 @@ status = "mapped"
 
 # azure-openai-provider.test.ts tests this file. azure-transcription-model.test.ts
 # has no source file of its own name: it tests AzureTranscriptionModel, which is
-# defined here (aimux: azure/transcription.rs), so its exclusions are listed here too.
+# defined here (aimux: azure/openai_provider.rs), so its exclusions are listed here too.
 [[azure.files]]
 upstream = "src/azure-openai-provider.ts"
-rust = "azure/mod.rs"
+rust = "azure/openai_provider.rs"
 status = "mapped"
 
 [azure.files.tests]
@@ -2835,28 +2835,28 @@ status = "elsewhere"
 
 [[azure.files]]
 upstream = "src/azure-speech-transcription-model-options.ts"
-rust = "azure/transcription.rs"
+rust = "azure/speech_transcription_model_options.rs"
 status = "mapped"
 
 [azure.files.tests]
 
 [[azure.files]]
 upstream = "src/azure-speech-transcription-model.ts"
-rust = "azure/transcription.rs"
+rust = "azure/speech_transcription_model.rs"
 status = "mapped"
 
 [azure.files.tests]
 
 [[azure.files]]
 upstream = "src/azure-transcription-model-options.ts"
-rust = "azure/transcription.rs"
+rust = "azure/transcription_model_options.rs"
 status = "mapped"
 
 [azure.files.tests]
 
 [[azure.files]]
 upstream = "src/azure-transcription-provider-metadata.ts"
-rust = "azure/transcription.rs"
+rust = "azure/speech_transcription_model.rs"
 status = "mapped"
 
 [azure.files.tests]
