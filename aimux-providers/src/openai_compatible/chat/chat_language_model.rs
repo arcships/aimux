@@ -1,38 +1,154 @@
-//! The OpenAI-compatible chat language model (`{name}.chat`).
+//! The OpenAI-compatible chat language model (`{name}.chat`,
+//! `openai-compatible-chat-language-model.ts`).
 //!
-//! The Rust form of `OpenAICompatibleChatLanguageModel`. Request construction
-//! lives in [`super::convert`]; vendor differences arrive through the
-//! [`ChatSettings`](super::config::ChatSettings) of the model's config.
+//! The Rust form of `OpenAICompatibleChatLanguageModel`, with its config
+//! ([`ChatSettings`]) and `getArgs` ([`build_request_body`]). Vendor differences
+//! arrive as [`ChatSettings`] data; the functions a caller or a vendor package
+//! passes (`supportedUrls`, `convertUsage`, `errorStructure`,
+//! `metadataExtractor`) are kept as given.
+//!
+//! The body is built in the AI SDK's order (model, `user`, sampling settings,
+//! `response_format`, `stop`, `seed`, the pass-through fields of the provider's
+//! own options namespace, then `reasoning_effort`, `verbosity`, `messages`,
+//! `tools`, `tool_choice`).
 
-use aimux_core::tool::RawToolCall;
 use std::collections::{HashMap, HashSet};
-
-use async_trait::async_trait;
-use serde_json::{Map, Value, json};
+use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::options::CallOptions;
+use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::shared::{
     RequestInfo, ResponseInfo, SharedProviderMetadata, StreamResponseInfo, provider_namespace,
 };
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, InputTokenUsage, OutputTokenUsage, ResponseMetadata, Usage};
+use aimux_core::tool::RawToolCall;
+use aimux_core::types::{FinishReason, ResponseMetadata, Usage, Warning};
 use aimux_provider_utils::{Transformer, generate_id, pipe_through};
+use async_trait::async_trait;
+use futures::future::BoxFuture;
+use serde_json::{Map, Value, json};
 
-use super::config::{ChatSettings, CompatModelConfig, StreamMetadataExtractor};
-use super::convert::{ChatBodySpec, RequestBodyResult, build_request_body, parse_finish_reason};
-use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
+use crate::openai_compatible::CompatModelConfig;
+use crate::openai_compatible::error::{ErrorStructure, default_error_structure};
+use crate::openai_compatible::utils::to_camel_case;
 use crate::stream::{
     ChatToolCalls, Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext, ToolCallDelta,
 };
+
+use super::api_types::{ChatCompletionResponse, StreamChunk, UsageResponse};
+use super::chat_language_model_options::{SCHEMA_KEYS, option_string, validate_options};
+use super::convert_chat_usage::usage_from_raw;
+use super::convert_to_chat_messages::{MessageSpec, convert_messages};
+use super::map_finish_reason::parse_finish_reason;
+use super::metadata_extractor::{MetadataExtractor, StreamMetadataExtractor};
+use super::prepare_tools::prepare_function_tools;
+
+/// Converts the raw optional token usage of a chat response.
+pub type ConvertUsage = Arc<dyn Fn(Option<&Value>) -> Usage + Send + Sync>;
+
+/// Returns the URLs supported by chat models, read each time a chat model's
+/// supported URLs are: `supportedUrls?: () => LanguageModelV4['supportedUrls']`
+/// (openai-compatible@3.0.62 `openai-compatible-chat-language-model.ts:84`,
+/// `:161-163`), whose value may be a `PromiseLike`.
+pub type SupportedUrlsFn = Arc<dyn Fn() -> BoxFuture<'static, SupportedUrls> + Send + Sync>;
+
+/// The chat settings of a compatible endpoint: the AI SDK's
+/// `includeUsage` / `supportsStructuredOutputs` /
+/// `supportsMultiPartToolContent` / `supportedUrls` / `convertUsage` /
+/// `metadataExtractor`, plus the preset capability data of RFC-0036 section
+/// 5.
+#[derive(Clone)]
+pub(crate) struct ChatSettings {
+    pub include_usage: bool,
+    pub supports_structured_outputs: bool,
+    /// When set, only these chat models take structured outputs, whatever
+    /// `supports_structured_outputs` says. Ids compare exactly; an entry
+    /// ending in `*` matches every id with that prefix. A preset's
+    /// `profile.structured_output_models`, the vendor package's per-model
+    /// `supportsStructuredOutputs`.
+    pub structured_output_models: Option<&'static [String]>,
+    /// `supportsMultiPartToolContent`: a `content` tool output is sent as an
+    /// array of content parts instead of a JSON string.
+    pub supports_multi_part_tool_content: bool,
+    /// URL patterns supported by chat models, evaluated when requested.
+    /// `None`: none.
+    pub supported_urls: Option<SupportedUrlsFn>,
+    /// The vendor's or the caller's usage accounting. `None`: the generic
+    /// OpenAI-shaped usage (`convertOpenAICompatibleChatUsage`).
+    pub convert_usage: Option<ConvertUsage>,
+    pub metadata_extractor: Option<Arc<dyn MetadataExtractor>>,
+    /// Send `top_k`. The AI SDK baseline never does (it warns and drops it).
+    pub supports_top_k: bool,
+    /// Send `tools` / `tool_choice`.
+    pub supports_tools: bool,
+    /// Send `response_format`.
+    pub supports_response_format: bool,
+    /// The only `max-tokens` key the vendor accepts: `"max_tokens"` or
+    /// `"max_completion_tokens"`.
+    pub max_tokens_key: Option<&'static str>,
+    /// Streaming usage rides in `chunk[key].usage` instead of `chunk.usage`.
+    pub stream_usage_key: Option<String>,
+    pub error_structure: ErrorStructure,
+}
+
+impl Default for ChatSettings {
+    /// The AI SDK baseline.
+    fn default() -> Self {
+        Self {
+            include_usage: false,
+            supports_structured_outputs: false,
+            structured_output_models: None,
+            supports_multi_part_tool_content: false,
+            supported_urls: None,
+            convert_usage: None,
+            metadata_extractor: None,
+            supports_top_k: false,
+            supports_tools: true,
+            supports_response_format: true,
+            max_tokens_key: None,
+            stream_usage_key: None,
+            error_structure: Arc::new(default_error_structure),
+        }
+    }
+}
+
+impl ChatSettings {
+    /// These settings for the chat model `model_id`.
+    pub(crate) fn for_model(mut self, model_id: &str) -> Self {
+        if let Some(models) = self.structured_output_models {
+            self.supports_structured_outputs = models.iter().any(|model| {
+                model
+                    .strip_suffix('*')
+                    .map_or(model == model_id, |prefix| model_id.starts_with(prefix))
+            });
+        }
+        self
+    }
+
+    /// The URL patterns chat models fetch themselves.
+    pub(crate) async fn supported_urls(&self) -> SupportedUrls {
+        match &self.supported_urls {
+            Some(supported_urls) => supported_urls().await,
+            None => SupportedUrls::default(),
+        }
+    }
+
+    /// The core usage of a chat response's raw `usage` object.
+    pub(crate) fn convert_usage(&self, raw: Option<&Value>) -> Usage {
+        match &self.convert_usage {
+            Some(convert) => convert(raw),
+            None => usage_from_raw(raw),
+        }
+    }
+}
 
 /// An OpenAI-compatible chat model. Holds no HTTP client: the request helpers
 /// of `aimux-provider-utils` use the injected or process-default transport.
 pub struct OpenAICompatibleChatModel {
     model_id: String,
-    pub(super) config: CompatModelConfig,
+    pub(in crate::openai_compatible) config: CompatModelConfig,
 }
 
 impl OpenAICompatibleChatModel {
@@ -66,59 +182,240 @@ impl OpenAICompatibleChatModel {
     }
 }
 
-// ── Usage ────────────────────────────────────────────────────────────────────
+/// What the converter needs to know about the provider it builds for.
+pub(crate) struct ChatBodySpec<'a> {
+    /// First segment of the provider string: the providerOptions namespace.
+    pub provider_options_name: &'a str,
+    pub chat: &'a ChatSettings,
+}
 
-/// Core usage from a parsed OpenAI-shaped `usage` object.
-///
-/// `raw` is the provider's original object, kept verbatim in `Usage.raw`.
-/// Cache reads come from `prompt_tokens_details`, as in the upstream converter.
-pub(crate) fn convert_usage(usage: &UsageResponse, raw: Option<&Value>) -> Usage {
-    let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
-    let completion_tokens = usage.completion_tokens.unwrap_or(0);
+/// A request body and what building it produced.
+#[derive(Debug, Clone)]
+pub(crate) struct RequestBodyResult {
+    /// The JSON body, before the provider's `transform_request_body`.
+    pub body: Value,
+    /// Warnings raised while building it.
+    pub warnings: Vec<Warning>,
+    /// The key provider metadata is reported under.
+    pub metadata_key: String,
+}
 
-    let cached = usage
-        .prompt_tokens_details
+fn namespace<'a>(options: &'a CallOptions, key: &str) -> Option<&'a Map<String, Value>> {
+    options
+        .provider_options
         .as_ref()
-        .and_then(|d| d.cached_tokens)
-        .unwrap_or(0);
+        .and_then(|all| all.get(key))
+}
 
-    // Saturating: some servers report more cached or reasoning tokens than
-    // prompt or completion tokens.
-    let no_cache = prompt_tokens.saturating_sub(cached);
-    let reasoning_tokens = usage
-        .completion_tokens_details
-        .as_ref()
-        .and_then(|d| d.reasoning_tokens)
-        .unwrap_or(0);
-
-    Usage {
-        input_tokens: InputTokenUsage {
-            total: Some(prompt_tokens),
-            no_cache: Some(no_cache),
-            cache_read: Some(cached),
-            cache_write: None,
-        },
-        output_tokens: OutputTokenUsage {
-            total: Some(completion_tokens),
-            text: Some(completion_tokens.saturating_sub(reasoning_tokens)),
-            reasoning: Some(reasoning_tokens),
-        },
-        raw: raw.and_then(Value::as_object).cloned(),
+/// The key provider metadata is reported under (`resolveProviderOptionsKey`):
+/// the camelCase name when supplied, otherwise the raw provider name.
+fn resolve_metadata_key(name: &str, options: &CallOptions) -> String {
+    let camel = to_camel_case(name);
+    if camel != name && namespace(options, &camel).is_some() {
+        camel
+    } else {
+        name.to_string()
     }
 }
 
-/// Usage from a raw `usage` value.
-pub(crate) fn usage_from_raw(raw: Option<&Value>) -> Usage {
-    let Some(raw) = raw.filter(|value| !value.is_null()) else {
-        return Usage::default();
-    };
-    match serde_json::from_value::<UsageResponse>(raw.clone()) {
-        Ok(parsed) => convert_usage(&parsed, Some(raw)),
-        Err(_) => Usage {
-            raw: raw.as_object().cloned(),
-            ..Usage::default()
-        },
+/// Build the request body (`getArgs`).
+///
+/// # Errors
+///
+/// `InvalidArgument` for a malformed provider option or a prompt part that has
+/// no wire form.
+pub(crate) fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+    spec: &ChatBodySpec<'_>,
+) -> Result<RequestBodyResult, AiMuxError> {
+    let name = spec.provider_options_name;
+    let camel = to_camel_case(name);
+    let chat = spec.chat;
+    let mut warnings = Vec::new();
+
+    // Resolved provider options: the generic namespace, then the provider's
+    // own, then its camelCase form; later wins per key.
+    let mut merged = Map::new();
+    if let Some(deprecated) = namespace(options, "openai-compatible") {
+        validate_options(deprecated, "openai-compatible")?;
+        warnings.push(Warning::Deprecated {
+            setting: "providerOptions key 'openai-compatible'".to_string(),
+            message: "Use 'openaiCompatible' instead.".to_string(),
+        });
+        merged.extend(deprecated.iter().map(|(k, v)| (k.clone(), v.clone())));
     }
+    for key in ["openaiCompatible", name, camel.as_str()] {
+        if let Some(object) = namespace(options, key) {
+            validate_options(object, key)?;
+            merged.extend(object.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+    }
+    if camel != name && namespace(options, name).is_some() {
+        warnings.push(Warning::Deprecated {
+            setting: format!("providerOptions key '{name}'"),
+            message: format!("Use '{camel}' instead."),
+        });
+    }
+
+    let user = option_string(&merged, name, "user")?;
+    let reasoning_effort = option_string(&merged, name, "reasoningEffort")?.or_else(|| {
+        options
+            .reasoning
+            .filter(|effort| effort.is_custom())
+            .map(|effort| effort.to_string())
+    });
+    let verbosity = option_string(&merged, name, "textVerbosity")?;
+    let strict_json_schema = merged
+        .get("strictJsonSchema")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+
+    let metadata_key = resolve_metadata_key(name, options);
+    let mut body = Map::new();
+    body.insert("model".into(), json!(model_id));
+    if let Some(user) = user {
+        body.insert("user".into(), json!(user));
+    }
+    if let Some(max_tokens) = options.max_output_tokens {
+        body.insert(
+            chat.max_tokens_key.unwrap_or("max_tokens").into(),
+            json!(max_tokens),
+        );
+    }
+    for (key, value) in [
+        ("temperature", options.temperature),
+        ("top_p", options.top_p),
+        ("frequency_penalty", options.frequency_penalty),
+        ("presence_penalty", options.presence_penalty),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), json!(value));
+        }
+    }
+    if let Some(top_k) = options.top_k {
+        if chat.supports_top_k {
+            body.insert("top_k".into(), json!(top_k));
+        } else {
+            warnings.push(Warning::Unsupported {
+                feature: "topK".to_string(),
+                details: None,
+            });
+        }
+    }
+
+    match &options.response_format {
+        Some(ResponseFormat::Json {
+            schema,
+            name: format_name,
+            description,
+        }) if chat.supports_response_format => match schema {
+            Some(schema) if chat.supports_structured_outputs => {
+                let mut json_schema = Map::new();
+                json_schema.insert("schema".into(), schema.clone());
+                json_schema.insert("strict".into(), json!(strict_json_schema));
+                json_schema.insert(
+                    "name".into(),
+                    json!(format_name.clone().unwrap_or_else(|| "response".into())),
+                );
+                if let Some(description) = description {
+                    json_schema.insert("description".into(), json!(description));
+                }
+                body.insert(
+                    "response_format".into(),
+                    json!({ "type": "json_schema", "json_schema": json_schema }),
+                );
+            }
+            Some(_) => {
+                warnings.push(Warning::Unsupported {
+                    feature: "responseFormat".to_string(),
+                    details: Some(
+                        "JSON response format schema is only supported with structuredOutputs"
+                            .to_string(),
+                    ),
+                });
+                body.insert("response_format".into(), json!({ "type": "json_object" }));
+            }
+            None => {
+                body.insert("response_format".into(), json!({ "type": "json_object" }));
+            }
+        },
+        Some(ResponseFormat::Json { .. }) => warnings.push(Warning::Unsupported {
+            feature: "responseFormat".to_string(),
+            details: Some("response_format is not supported by this provider".to_string()),
+        }),
+        Some(ResponseFormat::Text) | None => {}
+    }
+
+    if let Some(stop) = &options.stop_sequences {
+        body.insert("stop".into(), json!(stop));
+    }
+    if let Some(seed) = options.seed {
+        body.insert("seed".into(), json!(seed));
+    }
+
+    // Fields of the provider's own namespace that the schema does not know go
+    // to the body as given (the generic `openaiCompatible` namespace is
+    // schema-only: unknown fields there are dropped).
+    for key in [name, camel.as_str()] {
+        if let Some(object) = namespace(options, key) {
+            for (field, value) in object {
+                if !SCHEMA_KEYS.contains(&field.as_str()) {
+                    body.insert(field.clone(), value.clone());
+                }
+            }
+        }
+    }
+
+    if let Some(effort) = reasoning_effort {
+        body.insert("reasoning_effort".into(), json!(effort));
+    }
+    if let Some(verbosity) = verbosity {
+        body.insert("verbosity".into(), json!(verbosity));
+    }
+
+    let messages = convert_messages(
+        &options.prompt,
+        &MessageSpec {
+            metadata_key: &metadata_key,
+            supports_multi_part_tool_content: chat.supports_multi_part_tool_content,
+        },
+    )?;
+    body.insert("messages".into(), Value::Array(messages));
+
+    if chat.supports_tools {
+        let prepared = prepare_function_tools(options);
+        warnings.extend(prepared.warnings);
+        if let Some(tools) = prepared.tools {
+            body.insert("tools".into(), Value::Array(tools));
+        }
+        if let Some(choice) = prepared.tool_choice {
+            body.insert("tool_choice".into(), choice);
+        }
+    } else if options
+        .tools
+        .as_ref()
+        .is_some_and(|tools| !tools.is_empty())
+    {
+        warnings.push(Warning::Unsupported {
+            feature: "tools".to_string(),
+            details: Some("tools are not supported by this provider".to_string()),
+        });
+    }
+
+    if stream {
+        body.insert("stream".into(), json!(true));
+        if chat.include_usage {
+            body.insert("stream_options".into(), json!({ "include_usage": true }));
+        }
+    }
+
+    Ok(RequestBodyResult {
+        body: Value::Object(body),
+        warnings,
+        metadata_key,
+    })
 }
 
 fn prediction_tokens(usage: Option<&UsageResponse>, metadata: &mut Map<String, Value>) {
@@ -145,7 +442,7 @@ fn thought_signature(extra_content: Option<&Value>) -> Option<String> {
 /// (openai-compatible-chat-language-model.ts:588-595,
 /// openai-compatible-completion-language-model.ts:320-325): no status is
 /// read from its `code`, numeric or not, so nothing makes it retryable.
-pub(super) fn stream_error(
+pub(in crate::openai_compatible) fn stream_error(
     name: &str,
     error: &Value,
     url: &str,
@@ -173,8 +470,6 @@ pub(super) fn stream_error(
         response_headers,
     )
 }
-
-// ── LanguageModel ────────────────────────────────────────────────────────────
 
 #[async_trait]
 impl LanguageModel for OpenAICompatibleChatModel {
@@ -362,6 +657,7 @@ impl LanguageModel for OpenAICompatibleChatModel {
 }
 
 const TEXT_ID: &str = "txt-0";
+
 const REASONING_ID: &str = "reasoning-0";
 
 /// The `TransformStream` of [`OpenAICompatibleChatModel::do_stream`]: turns
@@ -712,184 +1008,4 @@ fn content_parts(content: Option<&Value>) -> Vec<GenerateContent> {
             }
         })
         .collect()
-}
-
-/// One `GET {base_url}/models` exchange for discovery: no retry, no
-/// recording.
-pub(crate) async fn list_models_once(
-    config: &CompatModelConfig,
-) -> Result<Vec<aimux_core::model_catalogue::RuntimeModel>, AiMuxError> {
-    #[derive(serde::Deserialize)]
-    struct ModelsList {
-        #[serde(default)]
-        data: Vec<ModelEntry>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ModelEntry {
-        id: String,
-        #[serde(default)]
-        owned_by: Option<String>,
-        #[serde(default)]
-        created: Option<u64>,
-    }
-
-    let headers = config.request_headers(None).await?;
-    let (url, origin) = config.url("/models")?;
-    let resp = aimux_provider_utils::get_from_api(
-        config.with_transport(
-            aimux_provider_utils::HttpRequest {
-                url,
-                headers: headers.list,
-                ..Default::default()
-            },
-            origin,
-            headers.fetch_user_agent,
-        ),
-        aimux_provider_utils::create_json_response_handler::<ModelsList>(),
-        config.failed_response_handler(),
-    )
-    .await?;
-    Ok(resp
-        .value
-        .data
-        .into_iter()
-        .map(|m| aimux_core::model_catalogue::RuntimeModel {
-            id: m.id,
-            owned_by: m.owned_by,
-            created: m.created,
-        })
-        .collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use serde_json::{Value, json};
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    use aimux_core::error::AiMuxError;
-    use aimux_core::language_model::LanguageModel;
-    use aimux_core::language_model_message::LanguageModelMessage;
-    use aimux_core::options::CallOptions;
-    use aimux_provider_utils::ProviderErrorParts;
-
-    use crate::openai_compatible::config::{BaseUrl, ChatSettings};
-    use crate::openai_compatible::{Assembly, OpenAICompatibleProvider};
-    use crate::shared::Credential;
-
-    fn hello() -> CallOptions {
-        CallOptions::new(vec![LanguageModelMessage::user_text("hi")])
-    }
-
-    fn provider(base_url: BaseUrl, chat: ChatSettings) -> OpenAICompatibleProvider {
-        OpenAICompatibleProvider::assemble(Assembly {
-            name: "acme".to_string(),
-            base_url,
-            credential: Credential::None,
-            fixed_headers: Vec::new(),
-            headers: None,
-            query_params: None,
-            fetch: None,
-            transform_request_body: None,
-            chat,
-            package: crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
-        })
-        .unwrap()
-    }
-
-    async fn serve(server: &MockServer, response: ResponseTemplate) {
-        Mock::given(method("POST"))
-            .and(path("/chat/completions"))
-            .respond_with(response)
-            .mount(server)
-            .await;
-    }
-
-    #[tokio::test]
-    async fn an_error_structure_decides_the_message_and_code() {
-        let server = MockServer::start().await;
-        serve(
-            &server,
-            ResponseTemplate::new(400).set_body_json(json!({"detail": "bad prompt", "kind": 42})),
-        )
-        .await;
-        let chat = ChatSettings {
-            error_structure: Arc::new(|data: &Value| ProviderErrorParts {
-                message: data["detail"].as_str().unwrap_or_default().to_string(),
-                provider_code: data["kind"].as_u64().map(|k| k.to_string()),
-            }),
-            ..ChatSettings::default()
-        };
-        let error = provider(BaseUrl::Fixed(server.uri()), chat)
-            .chat("m")
-            .do_generate(&hello())
-            .await
-            .unwrap_err();
-        match error {
-            AiMuxError::ApiCall(detail) => {
-                assert_eq!(detail.message, "bad prompt");
-                assert_eq!(detail.provider_code.as_deref(), Some("42"));
-            }
-            other => panic!("expected ApiCall, got {other:?}"),
-        }
-    }
-
-    /// A preset base URL is data the request resolves: creating the provider
-    /// and the model reads nothing, a request that cannot resolve it fails,
-    /// and the next request resolves it again.
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn a_lazy_base_url_is_evaluated_per_request_and_its_error_fails_the_request() {
-        use crate::preset::{AuthMode, ParamSpec, PresetDescriptor};
-
-        const VAR: &str = "AIMUX_TEST_COMPAT_LAZY_BASE_URL";
-        let server = MockServer::start().await;
-        serve(
-            &server,
-            ResponseTemplate::new(200).set_body_json(json!({
-                "id": "c", "model": "m",
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}]
-            })),
-        )
-        .await;
-        // SAFETY: the test is `#[serial]` and no other test reads `VAR`.
-        unsafe { std::env::remove_var(VAR) };
-        let descriptor: &'static PresetDescriptor = Box::leak(Box::new(PresetDescriptor {
-            name: "acme".to_string(),
-            display: "Acme".to_string(),
-            base_url: "http://{host}/v1".to_string(),
-            env_var: String::new(),
-            auth: AuthMode::None,
-            base_url_env: Some(VAR.to_string()),
-            max_tokens_key: None,
-            convert_usage: None,
-            params: vec![ParamSpec {
-                name: "host".to_string(),
-                env: Vec::new(),
-                default: None,
-                derive: None,
-            }],
-            user_agent: ("openai-compatible", "3.0.62"),
-            structured_output_models: None,
-        }));
-        let lazy = BaseUrl::Preset {
-            descriptor,
-            params: Arc::new(std::collections::HashMap::new()),
-        };
-        let provider = provider(lazy, ChatSettings::default());
-        let model = provider.chat("m");
-        let error = model.do_generate(&hello()).await.unwrap_err();
-        assert!(
-            matches!(error, AiMuxError::InvalidArgument { .. }),
-            "{error:?}"
-        );
-        // SAFETY: as above.
-        unsafe { std::env::set_var(VAR, server.uri()) };
-        let result = model.do_generate(&hello()).await;
-        // SAFETY: as above.
-        unsafe { std::env::remove_var(VAR) };
-        result.expect("resolved on the next request");
-    }
 }

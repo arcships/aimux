@@ -506,140 +506,140 @@ package = "@ai-sdk/openai-compatible"
 
 [[openai_compatible.files]]
 upstream = "src/chat/convert-openai-compatible-chat-usage.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/convert_chat_usage.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/convert-to-openai-compatible-chat-messages.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/convert_to_chat_messages.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/get-response-metadata.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/map-openai-compatible-finish-reason.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/map_finish_reason.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-api-types.ts"
-rust = "openai_compatible/types.rs"
+rust = "openai_compatible/chat/api_types.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-chat-language-model-options.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/chat/chat_language_model_options.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-chat-language-model.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-metadata-extractor.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/chat/metadata_extractor.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-prepare-tools.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/prepare_tools.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/convert-openai-compatible-completion-usage.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/convert_completion_usage.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/convert-to-openai-compatible-completion-prompt.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/convert_to_completion_prompt.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/get-response-metadata.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/get_response_metadata.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/map-openai-compatible-finish-reason.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/map_finish_reason.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/openai-compatible-completion-language-model-options.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/openai-compatible-completion-language-model.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/embedding/openai-compatible-embedding-model-options.ts"
-rust = "openai_compatible/embedding.rs"
+rust = "openai_compatible/embedding/embedding_model_options.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/embedding/openai-compatible-embedding-model.ts"
-rust = "openai_compatible/embedding.rs"
+rust = "openai_compatible/embedding/embedding_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-model-options.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-model.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-settings.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -660,14 +660,14 @@ status = "mapped"
 
 [[openai_compatible.files]]
 upstream = "src/openai-compatible-error.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/error.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/openai-compatible-provider.ts"
-rust = "openai_compatible/mod.rs"
+rust = "openai_compatible/provider.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -678,7 +678,7 @@ ts-only = [
 
 [[openai_compatible.files]]
 upstream = "src/utils/to-camel-case.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/utils/to_camel_case.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
