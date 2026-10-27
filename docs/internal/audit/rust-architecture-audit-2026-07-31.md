@@ -242,7 +242,7 @@ TCP/HTTP chunk 边界与 UTF-8 字符边界无关。一个合法的中文、emoj
 - `vertex_anthropic_test`：1；
 - `xai_test`：1。
 
-主要回归集中在共享 HTTP 错误映射：403 被统一映射为 `Auth`，5xx 被映射为 `ApiCall`，而 provider 契约测试仍期待 `Provider`；Google file 的多步骤调用还丢失了“初始化失败/上传失败”的操作上下文，见 [`aimux-providers/tests/google_files_test.rs#L389-L465`](../aimux-providers/tests/google_files_test.rs#L389-L465)。
+主要回归集中在共享 HTTP 错误映射：403 被统一映射为 `Auth`，5xx 被映射为 `ApiCall`，而 provider 契约测试仍期待 `Provider`；Google file 的多步骤调用还丢失了“初始化失败/上传失败”的操作上下文，见 [`aimux-providers/src/google/tests/files.rs#L1061-L1149`](../aimux-providers/src/google/tests/files.rs#L1061-L1149)。
 
 **判断**
 
