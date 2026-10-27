@@ -30,7 +30,7 @@
 | 事实 | 证据及解释 |
 |---|---|
 | 根 release 使用 `lto=true`、`codegen-units=1`、`opt-level="z"`、`strip=true`、`panic="abort"` | [Cargo.toml](../Cargo.toml)；`aimux-ffi` 同时声明 `cdylib/staticlib/rlib` |
-| iOS 已单独关闭 LTO并保留全局符号 | [build-ios-xcframework.sh](../scripts/build-ios-xcframework.sh) 使用 `ios-release`、`strip -Sx`，两片均执行 `67108864` 字节硬上限 |
+| iOS 已单独关闭 LTO并保留全局符号 | [build-ios-xcframework.sh](../scripts/build-ios-xcframework.sh) 使用 `ios-release`（#375 起改名 `staticlib-release`）、`strip -Sx`，两片均执行 `67108864` 字节硬上限 |
 | staticlib 138.4 MB →66.5 MB 是历史 Linux 测量 | #196 合入提交 `7ce40c7` 的记录；不是所有平台的当前值，不能当成每个平台精确基线 |
 | ROADMAP 的桌面 `.a ×5` 与工作流清单有差异 | [release.yml](../.github/workflows/release.yml) 的 `go-build` 实际发布 4 个 target：Linux x64、macOS x64/arm64、Windows GNU x64；没有已配置的第 5 个。S2 以实际清单登记，新增平台必须先扩清单与预算 |
 | Android 21 MB、Node/wheel 15–22 MB、pub 31.7 MB 是汇总或区间 | ROADMAP 没有逐文件字节、哈希、工具链或测量阶段；只能作为制定初始上限的证据，不能冒充 exact baseline |
@@ -86,8 +86,8 @@
 
 | ID / 实际 target | 最终 raw C（bytes） | 依据、后续目标 |
 |---|---:|---|
-| staticlib / `x86_64-unknown-linux-gnu` | 70,000,000 | ROADMAP ≤70 MB；#196 历史 Linux 66.5 MB；S1 后重测 |
-| staticlib / `x86_64-apple-darwin` | 70,000,000 | ROADMAP 产品目标，平台基线待测 |
+| staticlib / `x86_64-unknown-linux-gnu` | 70,000,000 | ROADMAP ≤70 MB；#196 历史 Linux 66.5 MB；S1a 实测 shipped 95,003,454（c35acb2），去 bitcode 后 84,942,462，只有 S1c 的合并加 strip 到 58,742,392 才进 C（§5.3、§15.7）；在此之前 §13 该项不勾 |
+| staticlib / `x86_64-apple-darwin` | 70,000,000 | ROADMAP 产品目标，平台基线由 release.yml 首次运行打印（#375） |
 | staticlib / `aarch64-apple-darwin` | 70,000,000 | 同上 |
 | staticlib / `x86_64-pc-windows-gnu` | 70,000,000 | 同上；仍使用 cgo 可链接 GNU archive |
 | cdylib / `x86_64-unknown-linux-gnu` / `.so` | 24,200,000 | 拟议全量库上限，参照绑定 15–22 MB 区间的上沿 +10%；本平台待测 |
@@ -98,7 +98,7 @@
 | iOS xcframework / 全目录 | 136,314,880 | 两个 64 MiB slice 加 2 MiB 头文件/元数据预算；还受 pub 解包总量约束 |
 | Android / `aarch64-linux-android` / arm64-v8a | 9,000,000 | 拟议单 ABI 上限；21 MB 总量不能推出单 ABI 实测 |
 | Android / `armv7-linux-androideabi` / armeabi-v7a | 9,000,000 | 同上 |
-| Android / `x86_64-linux-android` / x86_64 | 9,000,000 | 同上 |
+| Android / `x86_64-linux-android` / x86_64 | 9,000,000 | 同上；**待讨论**：0.5.0 已发布的 x86_64 片 9.1 MB（§15.5）已超此值，S2 登记时要么模拟器 ABI 单列（拟 10,000,000），要么按实测 +10% 重设 |
 | Android / 三 ABI raw 总量 | 23,100,000 | ROADMAP 历史 21 MB +10%；单片通过不豁免合计 |
 | `aimux-cli-linux-x64`、`aimux-cli-macos-arm64`、`aimux-cli-windows-x64.exe` | **每个** 32,000,000 | 拟议单二进制产品预算，0.6 登记现有 CLI，0.8 stdio 仍在同一 C 内 |
 | `aimux-replay-linux-x64`、`aimux-replay-macos-arm64`、`aimux-replay-windows-x64.exe` | **每个** 32,000,000 | 现有发布工具，不能遗漏；功能合并后有显式退役记录 |
@@ -173,9 +173,18 @@ lto = false
 
 ### 5.2 防止“瘦了但不能用”
 
-构建后对 archive 成员检查 LLVM bitcode section（ELF `.llvmbc/.llvmcmd`、Mach-O `__LLVM`）；不得仅看 `.a` 总大小推断已关 LTO。静态库保留链接所需全局符号；不要在 archive 上使用可能破坏符号索引的激进 strip。保存 exported-symbol allowlist 与基线差异，工具平台化实现而非假设 GNU `nm` 遍地可用。
+构建后对 archive 成员检查 LLVM bitcode section（ELF `.llvmbc/.llvmcmd`、Mach-O `__LLVM`）；判据是**工作区 crate 的成员**带 bitcode 即 fat LTO，因为 rustup 发布的 sysroot 对象自带 bitcode（§15.6），由 §5.3 去掉；不得仅看 `.a` 总大小推断已关 LTO。静态库保留链接所需全局符号；不要在 archive 上使用可能破坏符号索引的激进 strip。保存 exported-symbol allowlist 与基线差异，工具平台化实现而非假设 GNU `nm` 遍地可用。
 
 用正式 archive 执行 C 链接/调用 smoke、Go vet/test（含 macOS）、iOS CocoaPods/SwiftPM 支持路径的链接验证；用正式动态库执行既有各语言 contract tests。对 roots 的 `release` 检查有效编译命令包含 fat-LTO，确认发布文件的 profile 来源，不能只检查 Cargo.toml 文本。测试允许发现原本的平台问题，不能靠删除符号或跳过平台让 S1 通过。
+
+### 5.3 S1b / S1c：档案后处理（2026-10-27 补）
+
+S1a（profile 切换，#375）之后 Linux `.a` 是 95,003,454 B，仍高于 §4.1 的 70,000,000。进 C 要靠对发布档案的后处理，分两步，每步都以「链接 smoke 通过、14 个导出符号齐全、链接后代码字节不变」为验收，数据见 §15.7：
+
+- **S1b，去 sysroot bitcode。** `llvm-objcopy --remove-section=.llvmbc --remove-section=.llvmcmd`（Mach-O 为 `__LLVM,__bitcode` 与 `__LLVM,__cmdline`）。Linux 实测 95.0 → 84.9 MB，GNU ld 链接正常。安全，放进 S1，随 #375 之后的一个小 PR。
+- **S1c，合并目标文件再去局部符号。** 以 14 个导出函数为根 `ld -r --gc-sections -u <符号>…` 把全部成员合并成一个目标文件，再 `strip --strip-unneeded`。Linux 实测 84.9 → 71.1 → 58.7 MB，链接后可执行文件与原档案相同。这一步每个平台的工具不同（GNU binutils、Apple `ld -r` 与 `strip -x`、mingw），必须逐平台做链接 smoke，且检查器要能读扩展段编号的 ELF（#375 已加）。放进 S1，但在 S1b 之后单独 PR，哪个平台没过就哪个平台不上。
+
+不采用：`llvm-objcopy --strip-debug` / `--strip-unneeded` 直接作用于档案（GNU ld 报 file format not recognized，正是 §5.2 说的破坏符号索引）；`ld.lld -r` 的输出 GNU binutils 不认。若 S1c 到 0.6 冻结仍未全平台通过，§4.1 的 70 MB 不改，§13 对应项保持未勾（§4.4 的规则）。
 
 ## 6. S3：可解释的体积审计与可选 slim
 
@@ -417,7 +426,9 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | 步骤 | 版本 / 依赖 | 可独立交付的变更 | 完成证据 |
 |---|---|---|---|
 | Q0 | 0.6，无 B/C/D 依赖 | 产物 inventory、schema、计量器、比对器及负例测试 | 全清单映射实际 workflow；暂无测量项仍标未注册 |
-| S1 | 0.6，Q0 | staticlib profile 改名、4 桌面 target +2 iOS target、消费路径和符号/链接测试 | before/after bytes、无 bitcode、cdylib 仍 fat-LTO、测试全绿 |
+| S1a | 0.6，Q0 | staticlib profile 改名、4 桌面 target +2 iOS target、消费路径和符号/链接测试（#375） | before/after bytes、工作区 crate 无 bitcode、cdylib 仍 fat-LTO、测试全绿 |
+| S1b | 0.6，S1a | 发布档案去 sysroot bitcode（§5.3） | 每平台 bytes、链接 smoke、导出符号齐全 |
+| S1c | 0.6，S1b | 合并目标文件加 strip，各桌面 `.a` 进 70 MB（§5.3） | 同上；未全平台通过则 §13 对应项不勾 |
 | S2 | 0.6，Q0/S1 可同 PR | 每项 B/H 注册，build/publish 分离，汇总 required check | 完整 release dry-run 对全部实际文件守门 |
 | P0 | 0.6，固定 runner | 修现有 bench、synthetic fixtures、成对运行、raw/typed 路径 | 校准与误差实验、故意 10% 退化被阻塞 |
 | P1 | 0.6，P0 | 请求/吞吐/RSS 正式 hard gate 与固定 anchor | 全后端注册及连续绿开始 |
@@ -440,7 +451,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 - [ ] 每个实际文件的 raw/packed/unpacked 适用指标都有整数 B/H/C、hash、recipe 和环境证据；无“稍后补”即可通过的路径
 - [ ] H-1/H/H+1 边界测试；MB/MiB 换算；缺失/重复/未登记/损坏包/路径穿越/跨 profile 文件均稳定失败
 - [ ] 恢复 staticlib fat-LTO 的负例触发 bitcode/profile/size 至少一项失败；误取 LTO-off cdylib 必然失败
-- [ ] 四桌面 `.a` 各 ≤70 MB，iOS 当前 64 MiB 守门有效；32 MB 目标未达成时不标完成
+- [ ] 四桌面 `.a` 各 ≤70 MB（S1c 之后；S1a/S1b 的 95.0 / 84.9 MB 不达标，此项不勾），iOS 当前 64 MiB 守门有效；32 MB 目标未达成时不标完成
 - [ ] 正式交付库通过对应 C/Go/iOS 链接、各语言 contract、移动 example 测试，导出符号/默认能力不缺失
 - [ ] publish 消费已校验 bytes，模拟某 registry 失败不会重建已发布产物或发布未过 gate 的剩余文件
 
@@ -479,22 +490,23 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | 体积优化伤害语义或安全 | 保留字节级 cassette、错误/取消/限额测试；任何 correctness failure 不可性能豁免 |
 | CI 耗时增加 | artifact 缓存 keyed by SHA/lock/recipe/profile/target；PR 用依赖闭包，nightly/tag 全量。缓存命中仍需校验 bytes，不能缓存“通过”状态跨 SHA |
 | 没有完整逐平台历史测量 | 不虚构当前值；把当前上限与待注册状态分开，0.6 发布以真实登记为阻塞条件 |
-| `panic = "abort"` 换 `unwind`（#372） | 每个原生库约 +23%（§15.2）；换不换由 #372 决定，本 RFC 只登记两种策略各自的基线，不替它决定 |
+| `panic = "abort"` 换 `unwind`（#372） | `.so` +23%，`.a` +15.5%（§15.2）；换不换由 #372 决定，本 RFC 只登记两种策略各自的基线，不替它决定 |
 | 为了体积改变校验、manifest 或 TLS 行为 | 这些是行为变化，不在 S1/S2/B-profile 内；各自单独提案（§15.3 待讨论项），通过后再作为 S3 的优化项计量 |
 
 **决定结果**：本 RFC 将“体积与性能是第一基准线”变为有产物身份、有测量契约、有可重现统计、有失败原因、有发布前置条件的工程约束。缺少证据与发生回归同样不能视为完成；优化收益必须来自可验证的构建与运行改进。
 
 ## 15. 2026-10-26 实测与修订
 
-基线 `master@4ae85b40409e55c54264f091e0d36f12349703fc`，rustc 1.99.1（CI 当前版本），Linux x86_64。每个配置用独立 target 目录全新构建；MB 为 1,000,000 字节。iOS、Android 与 macOS 的数字由 S1 的 PR 在 CI 里打印后补入本节；本节的 Linux 数据不代表那些平台。原始数据与过程记录在项目文件 `aimux/size-reduction/measurements-1026.md`。
+本节的数字来自三个来源，每个数字都标明来源：§15.1 到 §15.3 的 Linux x86_64 数字在 `master@4ae85b40409e55c54264f091e0d36f12349703fc`，rustc 1.99.1（CI 当前版本），每个配置用独立 target 目录全新构建；§15.5 的发布包数字是 pub.dev 上 v0.5.0 的实际文件；标 c35acb2 的数字来自 #375 在该 master 上的本地构建与 CI。§2 到 §14 的「现行」仍指 72a37b5。S2 登记基线时在一个 commit 上全部重测，本节不替代登记。MB 为 1,000,000 字节；「shipped」是 release.yml 直接拷贝上传的文件，「measured」是为分析另外处理过的文件，不发布。iOS 两片的数字已由 #375 的 CI 打印（§15.1）；Android、macOS、Windows 的由 release.yml 首次运行补入。
 
 ### 15.1 现状
 
 | 产物 | 配置 | raw | gzip -9 |
 |---|---|---:|---:|
 | `libaimux_ffi.so` | 根 `release`（fat LTO、opt z、strip、abort） | 15,170,720 | 5,335,367 |
-| `libaimux_ffi.a` | 同上，`strip -S -x` 后 | 191,125,954 | — |
-| `libaimux_ffi.a` | `lto = false`（即 §5.1 的 staticlib-release） | 91,856,882 | — |
+| `libaimux_ffi.a` | 同上，shipped（release.yml 直接拷贝） | 194,207,810 | — |
+| `libaimux_ffi.a` | 同上，measured：`strip -S -x` 后，不发布 | 191,125,954 | — |
+| `libaimux_ffi.a` | `lto = false`（即 §5.1 的 staticlib-release），shipped；c35acb2 上为 95,003,454 | 91,856,882 | — |
 | 链接进一个调用全部 14 个导出函数的 C 程序后 | 两种 `.a` | 15,136,768 / 15,132,672 | — |
 | Node `.node`（linux-x64-gnu） | Cargo 默认 release（opt 3、无 LTO、不 strip、unwind） | 39,449,048 | 12,526,469 |
 | Node `.node` | 根 `release` 同样的 profile，`unwind` | 15,524,256 | 6,584,671 |
@@ -569,11 +581,11 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 
 ### 15.4 方案顺序
 
-前三步只改 profile、构建脚本和 CI，不碰 crate 代码，与 RFC-0044 / RFC-0046 的 crate 拆分不冲突。
+S1 与 B-profile 只改 profile、构建脚本和 CI，不碰 crate 代码；panic 一步会改 aimux-ffi 的入口（统一接 panic 的宏与专用错误码）。三者与 RFC-0044 / RFC-0046 的 C 系列没有文件重叠。
 
-1. **S1**（§5）：`ios-release` 改名 `staticlib-release`，Go 与桌面 `.a` 改用它；CI 对每个产物打印字节数，补齐 iOS、Android、macOS 的 abort/unwind 与 outliner 数据。
+1. **S1a**（§5.1，#375）：`ios-release` 改名 `staticlib-release`，Go 与桌面 `.a` 改用它；CI 对每个产物打印字节数，补齐 iOS、Android、macOS 的 abort/unwind 与 outliner 数据。**S1b、S1c**（§5.3）：发布档案去 sysroot bitcode，再合并目标文件加 strip，各桌面 `.a` 进 70 MB。
 2. **B-profile**：Node、Python 绑定加 size profile，`unwind` 不变，热点 crate 按包保留 `opt-level = 3`；maturin 压缩级别 9；PR 附绑定 bench 对比。
-3. **panic**（#372）：按决议改 profile，aimux-ffi 入口统一接 panic；体积增量按 §15.2 登记。改到 aimux-ffi 的导出函数，排在 RFC-0044 的 C3（错误信封）之后。
+3. **panic**（#372）：按决议改 profile，aimux-ffi 入口统一接 panic；体积增量按 §15.2 登记。改到 aimux-ffi 的导出函数，只等 #372 的决议。
 4. **S2**（§3、§4、§9）：按前三步之后的实测登记 B/H。
 5. **S3**（§6）：§15.3 的待讨论项各自提案通过后逐项实施，等 crate 拆分合并后再动代码。
 
@@ -599,11 +611,28 @@ ROADMAP §6.1 的目标表在 S2 登记完成后按实测修订；在此之前�
 
 ### 15.6 S1 实现记录（2026-10-27，#375）
 
-S1 按 §5.1 实现：`[profile.staticlib-release]` 取代 `ios-release`，release.yml 的 go-build 与 iOS 脚本改用它并切换目录，ci.yml 的 profile 覆盖变量跟着改名，Go 的 cgo 搜索路径把 `target/staticlib-release` 放在 `target/release` 前面。每个产物的构建 job 用 `scripts/check_native_artifact.py` 打印 `size <path> <bytes> bytes`，这就是 §3.1 的 raw_bytes 来源；它直接读 ar、ELF、Mach-O、COFF 头，三种 runner 同一实现，不依赖 binutils。
+S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-release`，release.yml 的 go-build 与 iOS 脚本改用它并切换目录，ci.yml 的 profile 覆盖变量跟着改名，Go 的 cgo 搜索路径把 `target/staticlib-release` 放在 `target/release` 前面。每个产物的构建 job 用 `scripts/check_native_artifact.py` 打印 `size <path> <bytes> bytes`，这就是 §3.1 的 raw_bytes 来源；它直接读 ar、ELF、Mach-O、COFF 头，三种 runner 同一实现，不依赖 binutils。
 
-**实测修正 §5.2 的「无 bitcode」。** `lto = false` 只影响工作区 crate 的对象。rustup 发布的 sysroot（std、alloc、core、addr2line……）本身带 `-C embed-bitcode=yes` 编译的 `.llvmbc`，所以任何 `.a` 都有一层 bitcode：Linux x64 档案 95,003,454 B 里 10,017,424 B 在 292 个 sysroot 成员，iOS 片 65,127,144 B 里 9,664,823 B 在 247 个成员，工作区 crate 的 bitcode 都是 0。因此检查的判据是「工作区 crate 的成员带 bitcode 即 fat LTO」，而不是「档案无 bitcode」；fat-LTO 档案（194 MB，461 个成员带 bitcode，含全部 6 个 aimux_* 成员）被判失败，`lto = false` 档案通过。去掉 sysroot 这一层属于 §15.5 的后处理（`llvm-objcopy --remove-section`），或 `-Zbuild-std`（nightly），单独 PR。
+**实测修正 §5.2 的「无 bitcode」。** `lto = false` 只影响工作区 crate 的对象。rustup 发布的 sysroot（std、alloc、core、addr2line……）本身带 `-C embed-bitcode=yes` 编译的 `.llvmbc`，所以任何 `.a` 都有一层 bitcode：Linux x64 档案 95,003,454 B 里 10,017,424 B 在 292 个 sysroot 成员，iOS 片 65,127,144 B 里 9,664,823 B 在 247 个成员，工作区 crate 的 bitcode 都是 0。因此检查的判据是「工作区 crate 的成员带 bitcode 即 fat LTO」，而不是「档案无 bitcode」；fat-LTO 档案（194 MB，461 个成员带 bitcode，含全部 6 个 aimux_* 成员）被判失败，`lto = false` 档案通过。去掉 sysroot 这一层是 §5.3 的 S1b，实测见 §15.7。
 
-**iOS 片的构成（master c35acb2）。** `strip -Sx` 后 54.1 MB 里只有 8.1 MB 是 `__text`，9.7 MB 是 sysroot bitcode，其余约 36 MB 是符号表、字符串表、重定位和常量段。§15.5 的「去 bitcode 后每片约 33 MB」按 0.5.0 的 42.3 MB 估的；现在的数字是 54.1 − 9.7 ≈ 44 MB，离 64 MiB 的门禁只剩 10 MB 余量，所以后处理 PR 比预想的更急。合并目标文件、去局部符号之后仍是约 10 MB 的量级。
+**iOS 片的构成（master c35acb2）。** `strip -Sx` 后 54.1 MB 里只有 8.1 MB 是 `__text`，9.7 MB 是 sysroot bitcode，其余约 36 MB 是符号表、字符串表、重定位和常量段。§15.5 的「去 bitcode 后每片约 33 MB」按 0.5.0 的 42.3 MB 估的；现在的数字是 54.1 − 9.7 ≈ 44 MB；strip 后的 54,063,640 B 离 67,108,864 的门禁余 13,045,224 B（13.0 MB），所以后处理 PR 比预想的更急。合并目标文件、去局部符号之后仍是约 10 MB 的量级。
 
-**CI go-binding 未切。** ci.yml 的 `ffi-build` 腿仍用 fat-LTO 的 `--release` 档案跑 Go 测试：切换要在同一 job 多编一个 profile，时长约翻倍；正式档案的 Go vet/test 在 release.yml 的四台机器上跑。待讨论：是否值得加一条 Linux 腿。macOS、Windows 的 Go 档案和 Android 三 ABI 的字节数由 release.yml 首次运行打印后回填到 §15.1。
+**CI go-binding 已切（eric 评审后）。** ci.yml 的 `ffi-build` Linux、macOS 两腿多编一次 `staticlib-release`，删掉同目录的 cdylib 后只链 `.a` 跑 Go 测试；release.yml 的 go-build 同样只链 `.a`。macOS、Windows 的 Go 档案和 Android 三 ABI 的字节数由 release.yml 首次运行打印后回填到 §15.1。
+
+### 15.7 档案后处理实测（2026-10-27，master c35acb2，Linux x86_64）
+
+起点是 #375 的 shipped 档案 95,003,454 B。每一步都用一个调用 `aimux_manifest_json` 的 C 程序链接并运行，`nm` 核对 14 个 `aimux_*` 导出符号。
+
+| 步骤 | 工具 | 字节 | 链接 |
+|---|---|---:|---|
+| S1a shipped | — | 95,003,454 | 通过 |
+| 去 `.llvmbc` / `.llvmcmd` | `llvm-objcopy --remove-section` | 84,942,462 | 通过 |
+| 再 `--strip-debug` | GNU `strip` | 84,482,070 | 通过 |
+| 再 `--strip-unneeded` | GNU `strip` | 81,858,886 | 通过 |
+| 合并：以 14 个导出符号为根 | GNU `ld -r --gc-sections -u …` | 71,098,480 | 通过 |
+| 合并后 `--strip-unneeded` | GNU `strip` | **58,742,392** | 通过；最终 stripped 可执行文件 15,128,424 B，与原档案链接结果相同 |
+| （不采用）档案上直接 `llvm-objcopy --strip-debug` / `--strip-unneeded` | llvm-objcopy | 73,200,886 / 72,796,430 | **失败**：GNU ld「file format not recognized」 |
+| （不采用）`ld.lld -r` 合并 | lld | 94,364,264 | **失败**：GNU binutils 不认，`ar` 建不出索引；不带 `-u` 根时 `--gc-sections` 会删光 |
+
+档案成员的构成（4ae85b4 的 `lto = false` 档案，80.5 MB 成员字节）：`.shstrtab` 14.6 MB、`.strtab` 12.4 MB、ELF 头与段表 11.8 MB、`.text` 11.1 MB、`.rela` 10.5 MB、bitcode 10.0 MB、`.symtab` 4.2 MB、`.eh_frame` 3.0 MB、`.rodata` 2.1 MB。rustc 给每个函数一个段，段名表加段表就占三分之一，这解释了为什么合并目标文件比任何 strip 都有效。合并出的目标文件有六万多个段，走 ELF 扩展段编号，#375 的检查器已能读。
 
