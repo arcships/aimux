@@ -187,10 +187,12 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic_model.rs'
 rule6_hits="$(
     # shellcheck disable=SC2086
-    # The vendor tests are skipped: test names say `from_env`, and the older
-    # ports spell the key as upstream's fixtures do.
-    grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
-        $anthropic_family --include='*.rs' --exclude-dir=tests || true
+    { grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
+        $anthropic_family --include='*.rs' || true; } |
+        # The upstream workspace-id test value, data rather than a `from_env` call.
+        grep -v '^aimux-providers/src/anthropic_aws/tests/provider\.rs:.*"wrkspc_from_env"' |
+        # A test name, not a `from_env` call.
+        grep -v '^aimux-providers/src/anthropic/tests/provider\.rs:.*fn normalizes_bare_anthropic_url_from_env' || true
 )"
 violation 'Anthropic family reads builder-era AnthropicConfig state' "$rule6_hits"
 rule6b_hits="$(

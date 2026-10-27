@@ -34,7 +34,7 @@ pub use language_model::AnthropicMessagesModel;
 pub use provider::{AnthropicProvider, AnthropicProviderSettings, anthropic, create_anthropic};
 pub use skills::AnthropicSkills;
 
-pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL, list_models_once};
+pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL, list_models_once, supported_urls};
 
 /// The options module under the path Anthropic AWS and Anthropic on Vertex
 /// import it from.

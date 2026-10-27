@@ -46,7 +46,7 @@ fn normalize_base_url(url: &str) -> Result<String, AiMuxError> {
 }
 
 /// The URL patterns the API fetches itself (`supportedUrls` in `createAnthropic`).
-fn supported_urls() -> SupportedUrls {
+pub(crate) fn supported_urls() -> SupportedUrls {
     let https = regex::Regex::new(r"^https?://.*$").expect("static pattern");
     SupportedUrls(
         [
