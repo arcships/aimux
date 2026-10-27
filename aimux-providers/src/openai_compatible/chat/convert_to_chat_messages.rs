@@ -103,7 +103,7 @@ fn convert_message(
                                 .collect::<Result<_, _>>()?,
                         )
                     }
-                    output => crate::openai::convert::tool_result_to_content(output),
+                    output => aimux_provider_utils::tool_result_to_content(output),
                 };
                 Ok(with_metadata(
                     json!({
