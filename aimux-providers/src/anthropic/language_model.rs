@@ -2175,92 +2175,6 @@ struct ReasoningConfig {
     effort: Option<String>,
 }
 
-/// Map a reasoning level to a provider effort string, pushing a compatibility
-/// warning when the level maps to a different string. Mirrors the TS
-/// `mapReasoningToProviderEffort`.
-fn map_reasoning_to_effort(
-    reasoning: ReasoningEffort,
-    supports_xhigh: bool,
-    warnings: &mut Vec<Warning>,
-) -> Option<String> {
-    let level = reasoning.to_string();
-    let mapped = match reasoning {
-        ReasoningEffort::Minimal => Some("low"),
-        ReasoningEffort::Low => Some("low"),
-        ReasoningEffort::Medium => Some("medium"),
-        ReasoningEffort::High => Some("high"),
-        ReasoningEffort::Xhigh => {
-            if supports_xhigh {
-                Some("xhigh")
-            } else {
-                Some("max")
-            }
-        }
-        ReasoningEffort::ProviderDefault | ReasoningEffort::None => None,
-    };
-
-    let mapped = match mapped {
-        Some(m) => m,
-        None => {
-            warnings.push(Warning::Unsupported {
-                feature: "reasoning".to_string(),
-                details: Some(format!(
-                    "reasoning \"{level}\" is not supported by this model."
-                )),
-            });
-            return None;
-        }
-    };
-
-    if mapped != level {
-        warnings.push(Warning::Compatibility {
-            feature: "reasoning".to_string(),
-            details: Some(format!(
-                "reasoning \"{level}\" is not directly supported by this model. mapped to effort \"{mapped}\"."
-            )),
-        });
-    }
-
-    Some(mapped.to_string())
-}
-
-/// Default reasoning budget percentages (of max output tokens), mirroring the
-/// TS `DEFAULT_REASONING_BUDGET_PERCENTAGES`.
-fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
-    match reasoning {
-        ReasoningEffort::Minimal => Some(0.02),
-        ReasoningEffort::Low => Some(0.10),
-        ReasoningEffort::Medium => Some(0.30),
-        ReasoningEffort::High => Some(0.60),
-        ReasoningEffort::Xhigh => Some(0.90),
-        ReasoningEffort::ProviderDefault | ReasoningEffort::None => None,
-    }
-}
-
-/// Map a reasoning level to an absolute token budget, clamped to a minimum of
-/// 1024 and the model's max output tokens. Mirrors the TS
-/// `mapReasoningToProviderBudget`.
-fn map_reasoning_to_budget(
-    reasoning: ReasoningEffort,
-    max_output_tokens: u32,
-    warnings: &mut Vec<Warning>,
-) -> Option<u32> {
-    let pct = match reasoning_budget_percentage(reasoning) {
-        Some(p) => p,
-        None => {
-            warnings.push(Warning::Unsupported {
-                feature: "reasoning".to_string(),
-                details: Some(format!(
-                    "reasoning \"{reasoning}\" is not supported by this model."
-                )),
-            });
-            return None;
-        }
-    };
-    let raw = (max_output_tokens as f64 * pct).round() as u32;
-    Some(max_output_tokens.min(1024.max(raw)))
-}
-
 /// Resolve a top-level reasoning level into an Anthropic thinking config +
 /// optional effort, mirroring the TS `resolveAnthropicReasoningConfig`.
 ///
@@ -2286,14 +2200,38 @@ fn resolve_anthropic_reasoning_config(
     }
 
     if supports_adaptive_thinking {
-        let effort = map_reasoning_to_effort(reasoning, supports_xhigh_effort, warnings)?;
+        let effort = aimux_provider_utils::map_reasoning_to_provider_effort(
+            reasoning,
+            &[
+                (ReasoningEffort::Minimal, "low"),
+                (ReasoningEffort::Low, "low"),
+                (ReasoningEffort::Medium, "medium"),
+                (ReasoningEffort::High, "high"),
+                (
+                    ReasoningEffort::Xhigh,
+                    if supports_xhigh_effort {
+                        "xhigh"
+                    } else {
+                        "max"
+                    },
+                ),
+            ],
+            warnings,
+        );
         return Some(ReasoningConfig {
             thinking: json!({ "type": "adaptive", "display": "summarized" }),
-            effort: Some(effort),
+            effort: effort.map(str::to_owned),
         });
     }
 
-    let budget_tokens = map_reasoning_to_budget(reasoning, max_output_tokens_for_model, warnings)?;
+    let budget_tokens = aimux_provider_utils::map_reasoning_to_provider_budget(
+        reasoning,
+        max_output_tokens_for_model,
+        max_output_tokens_for_model,
+        aimux_provider_utils::DEFAULT_MIN_REASONING_BUDGET,
+        aimux_provider_utils::DEFAULT_REASONING_BUDGET_PERCENTAGES,
+        warnings,
+    )?;
     Some(ReasoningConfig {
         thinking: json!({ "type": "enabled", "budgetTokens": budget_tokens }),
         effort: None,

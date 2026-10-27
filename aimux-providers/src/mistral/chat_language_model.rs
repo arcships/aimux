@@ -557,19 +557,8 @@ pub fn build_request_body(
         }
     }
     if supports_reasoning_effort(model_id) {
-        let effort = provider_options
-            .and_then(|o| o.get("reasoningEffort"))
-            .cloned()
-            .or_else(|| {
-                options.reasoning.filter(|r| r.is_custom()).map(|r| {
-                    json!(if r == ReasoningEffort::None {
-                        "none"
-                    } else {
-                        "high"
-                    })
-                })
-            });
-        if let Some(effort) = effort {
+        // The warnings of this mapping are reported by `request_warnings`.
+        if let Some(effort) = resolve_reasoning_effort(options, provider_options, &mut Vec::new()) {
             body["reasoning_effort"] = effort;
         }
     }
@@ -607,6 +596,35 @@ pub fn build_request_body(
     Ok(body)
 }
 
+/// `resolvedReasoningEffort` of mistral-chat-language-model.ts for a model
+/// that supports reasoning effort: the `reasoningEffort` provider option, else
+/// the top-level reasoning level mapped to Mistral's efforts.
+fn resolve_reasoning_effort(
+    options: &CallOptions,
+    provider_options: Option<&aimux_core::shared::JsonObject>,
+    warnings: &mut Vec<Warning>,
+) -> Option<Value> {
+    if let Some(effort) = provider_options.and_then(|o| o.get("reasoningEffort")) {
+        return Some(effort.clone());
+    }
+    let reasoning = options.reasoning.filter(|r| r.is_custom())?;
+    if reasoning == ReasoningEffort::None {
+        return Some(json!("none"));
+    }
+    aimux_provider_utils::map_reasoning_to_provider_effort(
+        reasoning,
+        &[
+            (ReasoningEffort::Minimal, "high"),
+            (ReasoningEffort::Low, "high"),
+            (ReasoningEffort::Medium, "high"),
+            (ReasoningEffort::High, "high"),
+            (ReasoningEffort::Xhigh, "high"),
+        ],
+        warnings,
+    )
+    .map(|effort| json!(effort))
+}
+
 fn supports_reasoning_effort(model_id: &str) -> bool {
     matches!(
         model_id,
@@ -640,21 +658,17 @@ pub fn request_warnings(options: &CallOptions, model_id: &str) -> Vec<Warning> {
             details: None,
         });
     }
-    if let Some(reasoning) = options.reasoning.filter(|r| r.is_custom()) {
-        if !supports_reasoning_effort(model_id) {
-            warnings.push(Warning::Unsupported {
-                feature: "reasoning".into(),
-                details: Some("This model does not support reasoning configuration.".into()),
-            });
-        } else if !matches!(reasoning, ReasoningEffort::None | ReasoningEffort::High)
-            && super::chat_language_model_options::mistral_options(
-                options.provider_options.as_ref(),
-            )
-            .and_then(|o| o.get("reasoningEffort"))
-            .is_none()
-        {
-            warnings.push(Warning::Compatibility { feature:"reasoning".into(), details:Some(format!("reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"high\".")) });
-        }
+    if supports_reasoning_effort(model_id) {
+        resolve_reasoning_effort(
+            options,
+            super::chat_language_model_options::mistral_options(options.provider_options.as_ref()),
+            &mut warnings,
+        );
+    } else if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
+        warnings.push(Warning::Unsupported {
+            feature: "reasoning".into(),
+            details: Some("This model does not support reasoning configuration.".into()),
+        });
     }
     for tool in options.tools.iter().flatten() {
         if let Tool::Provider(tool) = tool {
