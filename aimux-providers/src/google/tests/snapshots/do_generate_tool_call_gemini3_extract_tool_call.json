@@ -1,0 +1,125 @@
+{
+  "content": [
+    {
+      "input": "{\"location\":\"San Francisco\"}",
+      "providerMetadata": {
+        "google": {
+          "thoughtSignature": "Eqo+Cqc+Ab4+9vtgONaaz6qwy6WXdp7gCd2w0X+Wz2gaBgY0Gv6A12JKo0y5vQwf9YQFyhMbKr1E9m17VT6HXd7jXzjaGYaE"
+        }
+      },
+      "toolCallId": "test-id",
+      "toolName": "weather",
+      "type": "tool-call"
+    }
+  ],
+  "finishReason": {
+    "raw": "STOP",
+    "unified": "tool-calls"
+  },
+  "providerMetadata": {
+    "google": {
+      "finishMessage": "Model generated function call(s).",
+      "groundingMetadata": null,
+      "promptFeedback": null,
+      "safetyRatings": null,
+      "serviceTier": null,
+      "urlContextMetadata": null,
+      "usageMetadata": {
+        "candidatesTokenCount": 15,
+        "promptTokenCount": 29,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 29
+          }
+        ],
+        "thoughtsTokenCount": 1801,
+        "totalTokenCount": 1845
+      }
+    }
+  },
+  "request": {
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {}
+    }
+  },
+  "response": {
+    "body": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "functionCall": {
+                  "args": {
+                    "location": "San Francisco"
+                  },
+                  "name": "weather"
+                },
+                "thoughtSignature": "Eqo+Cqc+Ab4+9vtgONaaz6qwy6WXdp7gCd2w0X+Wz2gaBgY0Gv6A12JKo0y5vQwf9YQFyhMbKr1E9m17VT6HXd7jXzjaGYaE"
+              }
+            ],
+            "role": "model"
+          },
+          "finishMessage": "Model generated function call(s).",
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "modelVersion": "gemini-3-pro-preview",
+      "responseId": "JniLacKqGqH0xs0P0O776As",
+      "usageMetadata": {
+        "candidatesTokenCount": 15,
+        "promptTokenCount": 29,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 29
+          }
+        ],
+        "thoughtsTokenCount": 1801,
+        "totalTokenCount": 1845
+      }
+    },
+    "headers": {
+      "content-length": "581",
+      "content-type": "application/json"
+    },
+    "id": "JniLacKqGqH0xs0P0O776As"
+  },
+  "usage": {
+    "inputTokens": {
+      "cacheRead": 0,
+      "noCache": 29,
+      "total": 29
+    },
+    "outputTokens": {
+      "reasoning": 1801,
+      "text": 15,
+      "total": 1816
+    },
+    "raw": {
+      "candidatesTokenCount": 15,
+      "promptTokenCount": 29,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 29
+        }
+      ],
+      "thoughtsTokenCount": 1801,
+      "totalTokenCount": 1845
+    }
+  },
+  "warnings": []
+}
