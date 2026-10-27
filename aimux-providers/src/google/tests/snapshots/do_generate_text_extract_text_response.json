@@ -1,0 +1,117 @@
+{
+  "content": [
+    {
+      "providerMetadata": {
+        "google": {
+          "thoughtSignature": "EtoFCtcFAb4+9vtfe4MXRxQjw48U1WKrR/7lYsgFkVi/bepqsSPjY0VU7HEzkeCBIfy1fu5t9aUZ4IZ65aWagqbBrV45fc97olcg"
+        }
+      },
+      "text": "There are **3** r's in strawberry.\n\nHere is the breakdown: st**r**awbe**rr**y.",
+      "type": "text"
+    }
+  ],
+  "finishReason": {
+    "raw": "STOP",
+    "unified": "stop"
+  },
+  "providerMetadata": {
+    "google": {
+      "finishMessage": null,
+      "groundingMetadata": null,
+      "promptFeedback": null,
+      "safetyRatings": null,
+      "serviceTier": null,
+      "urlContextMetadata": null,
+      "usageMetadata": {
+        "candidatesTokenCount": 28,
+        "promptTokenCount": 9,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 9
+          }
+        ],
+        "thoughtsTokenCount": 244,
+        "totalTokenCount": 281
+      }
+    }
+  },
+  "request": {
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {}
+    }
+  },
+  "response": {
+    "body": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "text": "There are **3** r's in strawberry.\n\nHere is the breakdown: st**r**awbe**rr**y.",
+                "thoughtSignature": "EtoFCtcFAb4+9vtfe4MXRxQjw48U1WKrR/7lYsgFkVi/bepqsSPjY0VU7HEzkeCBIfy1fu5t9aUZ4IZ65aWagqbBrV45fc97olcg"
+              }
+            ],
+            "role": "model"
+          },
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "modelVersion": "gemini-3-pro-preview",
+      "responseId": "Un6LacrVMcjUxs0PmJfWoQc",
+      "usageMetadata": {
+        "candidatesTokenCount": 28,
+        "promptTokenCount": 9,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 9
+          }
+        ],
+        "thoughtsTokenCount": 244,
+        "totalTokenCount": 281
+      }
+    },
+    "headers": {
+      "content-length": "549",
+      "content-type": "application/json"
+    },
+    "id": "Un6LacrVMcjUxs0PmJfWoQc"
+  },
+  "usage": {
+    "inputTokens": {
+      "cacheRead": 0,
+      "noCache": 9,
+      "total": 9
+    },
+    "outputTokens": {
+      "reasoning": 244,
+      "text": 28,
+      "total": 272
+    },
+    "raw": {
+      "candidatesTokenCount": 28,
+      "promptTokenCount": 9,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 9
+        }
+      ],
+      "thoughtsTokenCount": 244,
+      "totalTokenCount": 281
+    }
+  },
+  "warnings": []
+}

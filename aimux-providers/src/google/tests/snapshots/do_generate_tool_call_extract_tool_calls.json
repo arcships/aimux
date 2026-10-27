@@ -1,0 +1,148 @@
+{
+  "content": [
+    {
+      "input": "{\"location\":\"San Francisco\"}",
+      "providerMetadata": {
+        "google": {
+          "thoughtSignature": "EskgCsYgAb4+9vtF7/499YQS2bjZs3xcQI+iAl+ILn29nK1j0Kg6su7QsUUUk3nrAAfnS2w5WiVvlcCqu9fAebJ2cvfaEyBahEt5"
+        }
+      },
+      "toolCallId": "test-id",
+      "toolName": "weather",
+      "type": "tool-call"
+    }
+  ],
+  "finishReason": {
+    "raw": "STOP",
+    "unified": "tool-calls"
+  },
+  "providerMetadata": {
+    "google": {
+      "finishMessage": "Model generated function call(s).",
+      "groundingMetadata": null,
+      "promptFeedback": null,
+      "safetyRatings": null,
+      "serviceTier": null,
+      "urlContextMetadata": null,
+      "usageMetadata": {
+        "candidatesTokenCount": 15,
+        "promptTokenCount": 29,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 29
+          }
+        ],
+        "thoughtsTokenCount": 893,
+        "totalTokenCount": 937
+      }
+    }
+  },
+  "request": {
+    "body": {
+      "contents": [
+        {
+          "parts": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "generationConfig": {},
+      "tools": [
+        {
+          "functionDeclarations": [
+            {
+              "description": "",
+              "name": "weather",
+              "parametersJsonSchema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": false,
+                "properties": {
+                  "location": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "location"
+                ],
+                "type": "object"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "body": {
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "functionCall": {
+                  "args": {
+                    "location": "San Francisco"
+                  },
+                  "name": "weather"
+                },
+                "thoughtSignature": "EskgCsYgAb4+9vtF7/499YQS2bjZs3xcQI+iAl+ILn29nK1j0Kg6su7QsUUUk3nrAAfnS2w5WiVvlcCqu9fAebJ2cvfaEyBahEt5"
+              }
+            ],
+            "role": "model"
+          },
+          "finishMessage": "Model generated function call(s).",
+          "finishReason": "STOP",
+          "index": 0
+        }
+      ],
+      "modelVersion": "gemini-3-pro-preview",
+      "responseId": "m36LaZGyCLz1xs0PtNSB-QU",
+      "usageMetadata": {
+        "candidatesTokenCount": 15,
+        "promptTokenCount": 29,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 29
+          }
+        ],
+        "thoughtsTokenCount": 893,
+        "totalTokenCount": 937
+      }
+    },
+    "headers": {
+      "content-length": "583",
+      "content-type": "application/json"
+    },
+    "id": "m36LaZGyCLz1xs0PtNSB-QU"
+  },
+  "usage": {
+    "inputTokens": {
+      "cacheRead": 0,
+      "noCache": 29,
+      "total": 29
+    },
+    "outputTokens": {
+      "reasoning": 893,
+      "text": 15,
+      "total": 908
+    },
+    "raw": {
+      "candidatesTokenCount": 15,
+      "promptTokenCount": 29,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 29
+        }
+      ],
+      "thoughtsTokenCount": 893,
+      "totalTokenCount": 937
+    }
+  },
+  "warnings": []
+}
