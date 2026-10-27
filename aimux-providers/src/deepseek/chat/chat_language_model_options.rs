@@ -6,9 +6,8 @@
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::{JsonObject, SharedProviderOptions};
+use aimux_core::shared::SharedProviderOptions;
 
 /// `thinking` of the call options. `adaptive` is accepted for backwards
 /// compatibility and mapped to `enabled`.
@@ -87,23 +86,6 @@ where
     T::deserialize(deserializer).map(Some)
 }
 
-/// The options of `namespace` in a providerOptions value; no namespace is the
-/// defaults.
-pub(super) fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
-    namespace: Option<&JsonObject>,
-    name: &str,
-) -> Result<T, AiMuxError> {
-    match namespace {
-        None => Ok(T::default()),
-        Some(options) => serde_json::from_value(Value::Object(options.clone())).map_err(|error| {
-            AiMuxError::InvalidArgument {
-                message: format!("invalid provider options for \"{name}\": {error}"),
-                cause: Some(ErrorCause::source(&error)),
-            }
-        }),
-    }
-}
-
 pub(super) fn invalid(name: &str, message: &str) -> AiMuxError {
     AiMuxError::invalid_argument(format!(
         "invalid provider options for \"{name}\": {message}"
@@ -119,40 +101,42 @@ pub(crate) fn parse_chat_options(
     provider_options: Option<&SharedProviderOptions>,
     name: &str,
 ) -> Result<DeepSeekChatOptions, AiMuxError> {
-    crate::openai::convert::parse_chat_provider_options(provider_options, name, |namespace| {
-        if namespace
-            .get("thinking")
-            .is_some_and(|thinking| !thinking.is_object())
+    let Some(namespace) = provider_options.and_then(|options| options.get(name)) else {
+        return Ok(DeepSeekChatOptions::default());
+    };
+    if namespace
+        .get("thinking")
+        .is_some_and(|thinking| !thinking.is_object())
+    {
+        return Err(invalid(name, "thinking must be an object"));
+    }
+    let mut normalized = namespace.clone();
+    if let Some(value) = normalized.get_mut("topLogprobs")
+        && let Some(number) = value.as_f64()
+        && number.fract() == 0.0
+        && (0.0..=20.0).contains(&number)
+    {
+        *value = Value::from(number as u8);
+    }
+    let normalized = SharedProviderOptions::from([(name.to_owned(), normalized)]);
+    let options: DeepSeekChatOptions =
+        aimux_provider_utils::parse_provider_options(name, Some(&normalized))?.unwrap_or_default();
+    if options.top_logprobs.is_some_and(|n| n > 20) {
+        return Err(invalid(name, "topLogprobs must be at most 20"));
+    }
+    if let Some(user_id) = &options.user_id {
+        if user_id.is_empty()
+            || !user_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         {
-            return Err(invalid(name, "thinking must be an object"));
+            return Err(invalid(name, "userId must match /^[a-zA-Z0-9_-]+$/"));
         }
-        let mut normalized = namespace.clone();
-        if let Some(value) = normalized.get_mut("topLogprobs")
-            && let Some(number) = value.as_f64()
-            && number.fract() == 0.0
-            && (0.0..=20.0).contains(&number)
-        {
-            *value = Value::from(number as u8);
+        if user_id.len() > 512 {
+            return Err(invalid(name, "userId must be at most 512 characters long"));
         }
-        let options: DeepSeekChatOptions = parse_namespace(Some(&normalized), name)?;
-        if options.top_logprobs.is_some_and(|n| n > 20) {
-            return Err(invalid(name, "topLogprobs must be at most 20"));
-        }
-        if let Some(user_id) = &options.user_id {
-            if user_id.is_empty()
-                || !user_id
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-            {
-                return Err(invalid(name, "userId must match /^[a-zA-Z0-9_-]+$/"));
-            }
-            if user_id.len() > 512 {
-                return Err(invalid(name, "userId must be at most 512 characters long"));
-            }
-        }
-        Ok(options)
-    })
-    .map(Option::unwrap_or_default)
+    }
+    Ok(options)
 }
 
 /// The options of a message.
@@ -165,7 +149,7 @@ pub(crate) fn parse_message_options(
     name: &str,
 ) -> Result<DeepSeekMessageOptions, AiMuxError> {
     let options: DeepSeekMessageOptions =
-        parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
+        aimux_provider_utils::parse_provider_options(name, provider_options)?.unwrap_or_default();
     if options.prefix == Some(false) {
         return Err(invalid(name, "prefix must be true"));
     }

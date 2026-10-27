@@ -50,9 +50,7 @@ pub(crate) use stream_error::openai_stream_error;
 
 /// The chat helpers the other vendors' converters reuse.
 pub(crate) mod convert {
-    pub(crate) use super::chat::chat_language_model_options::{
-        parse_chat_provider_options, parse_option_fields,
-    };
+    pub(crate) use super::chat::chat_language_model_options::parse_option_fields;
     pub(crate) use super::chat::convert_to_chat_messages::{
         tool_result_content_value, tool_result_to_content,
     };

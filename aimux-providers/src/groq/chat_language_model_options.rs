@@ -5,9 +5,7 @@
 //! one place that spells the key.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::options::CallOptions;
 
@@ -86,17 +84,6 @@ where
 pub(crate) fn parse_groq_options(
     options: &CallOptions,
 ) -> Result<GroqLanguageModelChatOptions, AiMuxError> {
-    crate::openai::convert::parse_chat_provider_options(
-        options.provider_options.as_ref(),
-        NAMESPACE,
-        |groq| {
-            serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument {
-                    message: format!("invalid argument for parameter providerOptions: {error}"),
-                    cause: Some(ErrorCause::source(&error)),
-                }
-            })
-        },
-    )
-    .map(Option::unwrap_or_default)
+    aimux_provider_utils::parse_provider_options(NAMESPACE, options.provider_options.as_ref())
+        .map(Option::unwrap_or_default)
 }

@@ -2,9 +2,7 @@
 
 use serde::de::{Deserialize, Deserializer, Error as _};
 use serde::{Deserialize as DeriveDeserialize, Serialize};
-use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 
 use super::options::no_null;
@@ -92,23 +90,20 @@ pub(super) struct SpeechOptions {
 }
 
 pub(super) fn parse_options(
-    raw: Option<&aimux_core::shared::JsonObject>,
+    namespace: super::options::Namespace,
+    provider_options: Option<&aimux_core::shared::SharedProviderOptions>,
 ) -> Result<SpeechOptions, AiMuxError> {
-    let invalid = |error: String, cause: Option<ErrorCause>| AiMuxError::InvalidArgument {
-        message: format!("Invalid argument for parameter providerOptions: {error}"),
-        cause,
-    };
-    let Some(raw) = raw else {
+    let Some(options) = namespace.parse::<SpeechOptions>(provider_options)? else {
         return Ok(SpeechOptions {
             speech_metadata: None,
             turns: None,
             multi_speaker_voice_config: None,
         });
     };
-    let options: SpeechOptions = serde_json::from_value(Value::Object(raw.clone()))
-        .map_err(|e| invalid(e.to_string(), Some(ErrorCause::source(&e))))?;
     if options.turns.as_ref().is_some_and(Vec::is_empty) {
-        return Err(invalid("turns must contain at least one turn".into(), None));
+        return Err(AiMuxError::invalid_argument(
+            "Invalid argument for parameter providerOptions: turns must contain at least one turn",
+        ));
     }
     Ok(options)
 }

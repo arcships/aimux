@@ -103,7 +103,8 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         self.project_location.resolve().await?;
         let timestamp = aimux_core::Timestamp::now();
         let config = crate::google::transcription::TranscriptionOptions::parse(
-            Namespace::Vertex.read(options.provider_options.as_ref()),
+            Namespace::Vertex,
+            options.provider_options.as_ref(),
         )?
         .audio_transcription_config();
         let audio = match &options.audio {
@@ -228,7 +229,8 @@ impl VertexGeminiTranscriptionModel {
         crate::google::transcription::validate_live_input_audio_format(&options)?;
         let target = self.project_location.resolve().await?;
         let config = crate::google::transcription::TranscriptionOptions::parse(
-            Namespace::Vertex.read(options.provider_options.as_ref()),
+            Namespace::Vertex,
+            options.provider_options.as_ref(),
         )?
         .audio_transcription_config();
         let setup = json!({"setup": {
