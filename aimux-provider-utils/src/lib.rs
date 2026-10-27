@@ -24,6 +24,7 @@ pub mod inject_json_instruction;
 pub mod logging;
 pub mod media_type;
 pub mod multipart;
+pub mod parse_provider_options;
 pub mod post_to_api;
 pub mod read_response_with_size_limit;
 pub mod resolvable;
@@ -31,6 +32,10 @@ pub mod response_handler;
 pub mod sigv4_fetch;
 pub mod transform_stream;
 pub mod url;
+
+#[cfg(test)]
+mod tests;
+
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
 /// `ws` feature is enabled.
 #[cfg(feature = "ws")]
@@ -57,6 +62,7 @@ pub use media_type::{
     is_full_media_type, resolve_full_media_type,
 };
 pub use multipart::{MultipartForm, media_type_to_extension};
+pub use parse_provider_options::parse_provider_options;
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use resolvable::Resolvable;
 pub use response_handler::{
