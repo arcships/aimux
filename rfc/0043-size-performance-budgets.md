@@ -516,7 +516,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | 同一片，`strip -Sx` 后（xcframework 里的二进制） | 585 个成员，`__text` 8,066,824，sysroot bitcode 9,664,823 | 54,063,640 | — |
 | iOS `aarch64-apple-ios-sim` | 同上 | 65,073,904 → 54,024,416 | — |
 | `libaimux_ffi.a` macOS `aarch64-apple-darwin`（#375 的 CI ffi-build，c35acb2） | `staticlib-release`，shipped；585 个成员，`__text` 8,053,392，sysroot bitcode 9,809,927 | 65,448,272 | — |
-| `libaimux_ffi.a` Linux `x86_64-unknown-linux-gnu`（同一 CI 运行） | `staticlib-release`，**shipped**（release.yml 上传的就是这个文件）；同一 commit 的本地构建为 95,003,454，差 74,046 B 来自 runner 与本地的 rustc 构建环境，§4.1、§5.3、§15.7 以本地数字为起点做后处理实验，S2 登记以 CI 数字为准 | 95,078,500 | — |
+| `libaimux_ffi.a` Linux `x86_64-unknown-linux-gnu`（同一 CI 运行） | `staticlib-release`，**shipped**（release.yml 上传的就是这个文件）；同一 commit 的本地构建为 95,003,454，差 75,046 B 来自 runner 与本地的 rustc 构建环境，§4.1、§5.3、§15.7 以本地数字为起点做后处理实验，S2 登记以 CI 数字为准 | 95,078,500 | — |
 | `libaimux_ffi.a` Linux（#377 的 CI ffi-build，0e60808，S1b） | `staticlib-release`，`--strip-bitcode` 前 → 后（**shipped**）；527 个成员，`.text` 11,124,495 不变；Go `vet`、`test`、`test -race` 链 strip 过的档案通过 | 95,116,788 → **85,057,316** | — |
 | `libaimux_ffi.a` macOS `aarch64-apple-darwin`（同一 CI 运行） | 同上；585 个成员，`__text` 8,053,276；ld64 链接 `rust-objcopy` 改写后的 Mach-O 档案，Go 测试通过 | 65,487,760 → **55,605,768** | — |
 | iOS `aarch64-apple-ios` 的 `.a`（同一 CI 运行，flutter-example-build） | `--strip-bitcode` 前 → 后，再 `strip -Sx` 后的切片；585 个成员，`__text` 8,066,484 | 65,184,440 → 55,447,576 → **44,396,752** | — |
@@ -590,7 +590,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 
 ### 15.4 方案顺序
 
-S1 与 B-profile 只改 profile、构建脚本和 CI，不碰 crate 代码；panic 一步会改 aimux-ffi 的入口（统一接 panic 的宏与专用错误码）。与 RFC-0044 C 系列（C0–C7）和 RFC-0046 R 系列（R1–R7）的文件重叠：C0 和 S1 都改 release.yml（S1 的改动已随 #375 于 2026-10-27 合入 master，C0 的分支合并 master 即可）；C7 把 `aimux-core` 改名 `aimux`，除 aimux-ffi 外也要改 `bindings/node/Cargo.toml:15` 和 `bindings/python/Cargo.toml:16` 的 `aimux-core = { path = "../../aimux-core" }` 依赖行，而 B-profile（#376）在同两个文件里加 `[profile.release]`，所以 B-profile 与 C7 重叠在这两个 Cargo.toml：不同段落，git 能自动合并，后合入的一方合并 master 后要重新构建并核对 §15.8 的字节数；panic 一步与 C7 都改 aimux-ffi 和它的 Cargo.toml，所以 panic 一步排在 C7 之后，或在 C7 的分支上做。RFC-0046 的 R1–R7 改的是 aimux-providers、aimux-provider-utils 的代码与测试目录，S1、B-profile、panic 一步都不碰这些目录；本 RFC 会碰 providers 的只有 §15.3 的代码层候选（两家 vendor 去重），那些按 S3 单独提案，并排在 R6（模态与搜索厂商去重）之后。
+S1 与 B-profile 只改 profile、构建脚本和 CI，不碰 crate 代码；panic 一步会改 aimux-ffi 的入口（统一接 panic 的宏与专用错误码）。与 RFC-0044 C 系列（C0–C7）和 RFC-0046 R 系列（R1–R7）的文件重叠：C0 和 S1 都改 release.yml（S1a 已随 #375 于 2026-10-27 合入 master；S1b #377、S1c #378 也改 release.yml 的 go-build，评审中未合入，C0 的分支合并 master 时带上已合入的，后合入的一方再合并 master）；C7 把 `aimux-core` 改名 `aimux`，除 aimux-ffi 外也要改 `bindings/node/Cargo.toml:15` 和 `bindings/python/Cargo.toml:16` 的 `aimux-core = { path = "../../aimux-core" }` 依赖行，而 B-profile（#376）在同两个文件里加 `[profile.release]`，所以 B-profile 与 C7 重叠在这两个 Cargo.toml：不同段落，git 能自动合并，后合入的一方合并 master 后要重新构建并核对 §15.8 的字节数；panic 一步与 C7 都改 aimux-ffi 和它的 Cargo.toml，所以 panic 一步排在 C7 之后，或在 C7 的分支上做。RFC-0046 的 R1–R6 改的是 aimux-providers、aimux-provider-utils 的代码与测试目录；R7 搬文件时还要在同一个 PR 里改 ops、FFI、工具、两个绑定里用到旧路径的 `use` 行（RFC-0046 §4.5 第 2 条），与 panic 一步、B-profile 可能碰到同一个 crate，但 R7 只改 import 行，不改 profile 和入口，git 能自动合并；S1、B-profile、panic 一步都不碰 providers 的两个目录；本 RFC 会碰 providers 的只有 §15.3 的代码层候选（两家 vendor 去重），那些按 S3 单独提案，并排在 R6（模态与搜索厂商去重）之后。
 
 1. **S1a**（§5.1，#375）：`ios-release` 改名 `staticlib-release`，Go 与桌面 `.a` 改用它；CI 对每个产物打印字节数，补齐 iOS、Android、macOS 的 abort/unwind 与 outliner 数据。**S1b、S1c**（§5.3）：发布档案去 sysroot bitcode，再合并目标文件加 strip，各桌面 `.a` 进 70 MB。
 2. **B-profile**：Node、Python 绑定加 size profile，`unwind` 不变，热点 crate 按包保留 `opt-level = 3`；maturin 压缩级别 9；PR 附绑定 bench 对比。
@@ -681,7 +681,7 @@ S1a 在 #375 实现（2026-10-27 合入 master，merge commit 866801a）：`[pro
 
 ### 15.9 爬山实验：编译与链接层面的下限（2026-10-27，Linux x86_64，本地构建）
 
-来源：FFI `.so`、三个 CLI、静态档案 `.a` 在 master a23a636 的工作树上构建；Python 扩展在 #376 分支 1105b03 上构建，它的树是 a23a636 加 §15.8 的 `[profile.release]`，没有别的改动。全部用 `cargo build --release --target x86_64-unknown-linux-gnu`（显式 target），每个构建独立 target 目录；本节的数字只在本节内部比较，与 §15.7、§15.8 的 c35acb2 数字和 host 构建不混用。
+来源：FFI `.so`、三个 CLI、静态档案 `.a` 在 master a23a636 的工作树上构建；Python 扩展在 #376 分支 1105b03 上构建，它的树相对 a23a636 多 6 个文件 217 行：两个绑定 Cargo.toml 的 `[profile.release]`（§15.8）、CHANGELOG、Node 与 Python 的 bench 脚本和 bench README，没有 crate 代码改动。`.so`、CLI、Python 扩展用 `cargo build --release --target x86_64-unknown-linux-gnu`（显式 target）；`.a` 用 `cargo build --profile ios-release --target x86_64-unknown-linux-gnu`（a23a636 的 `release` 是 `lto = true`，静态档案会带工作区 bitcode，`ios-release` 就是 `release` + `lto = false`，即 #375 的 `staticlib-release`），nightly 行同样 `--profile ios-release`。每个构建独立 target 目录；本节的数字只在本节内部比较，与 §15.7、§15.8 的 c35acb2 数字和 host 构建不混用。
 
 li 要求对全部产物做爬山（hill climb）：在现状上逐个加手段量体积，保留有效的叠起来再量，直到没有收益，同时用 §15.8 的六场景 bench 剔除伤性能的手段。每个构建独立 target 目录，rustc 1.99.1（稳定）或 nightly（标明）。只改编译/链接选项，不改代码；代码层面的候选见 §15.3（两家 vendor −18%、去 jsonschema −8%、去运行时 schema −7%，合计 −33%），那是 S3 的事。
 
