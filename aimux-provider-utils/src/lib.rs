@@ -22,6 +22,7 @@ pub mod headers;
 pub mod http;
 pub mod inject_json_instruction;
 pub mod logging;
+pub mod map_reasoning_to_provider;
 pub mod media_type;
 pub mod multipart;
 pub mod post_to_api;
@@ -29,6 +30,8 @@ pub mod read_response_with_size_limit;
 pub mod resolvable;
 pub mod response_handler;
 pub mod sigv4_fetch;
+#[cfg(test)]
+mod tests;
 pub mod transform_stream;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
@@ -52,6 +55,10 @@ pub use headers::{
 pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
 pub use inject_json_instruction::{inject_json_instruction, inject_json_instruction_into_messages};
 pub use logging::{init_logging, redact_error_context};
+pub use map_reasoning_to_provider::{
+    DEFAULT_MIN_REASONING_BUDGET, DEFAULT_REASONING_BUDGET_PERCENTAGES,
+    map_reasoning_to_provider_budget, map_reasoning_to_provider_effort,
+};
 pub use media_type::{
     MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,
     is_full_media_type, resolve_full_media_type,
