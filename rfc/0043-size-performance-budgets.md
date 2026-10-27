@@ -667,3 +667,36 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 可比项目（2026-10-27 查各仓库 `Cargo.toml`）：pydantic-core `lto = "fat"`、`codegen-units = 1`、`strip = true`，opt-level 默认 3；orjson `lto = "fat"`、`codegen-units = 1`、`opt-level = 3`、`panic = "abort"`；tokenizers 的 Python 绑定没有 profile。都没选 `"s"`；aimux 选 `"s"` 的依据是上面的 bench：热路径是 I/O 和 JSON，不是数值计算，`3` 比 `"s"` 大 6.5 MB 而没有可测收益。
 
 待讨论：§15.4 步骤 2 写的「maturin 压缩级别 9」没有进 B-profile PR；wheel 是 zip，压缩级别只影响下载体积不影响安装后的 `.so`，是否值得单独一条由 eric 决定。macOS / Windows / aarch64 的字节数等下个 release 跑完回填。
+
+### 15.9 爬山实验：编译与链接层面的下限（2026-10-27，master a23a636，Linux x86_64）
+
+li 要求对全部产物做爬山（hill climb）：在现状上逐个加手段量体积，保留有效的叠起来再量，直到没有收益，同时用 §15.8 的六场景 bench 剔除伤性能的手段。每个构建独立 target 目录，rustc 1.99.1（稳定）或 nightly（标明）。只改编译/链接选项，不改代码；代码层面的候选见 §15.3（两家 vendor −18%、去 jsonschema −8%、去运行时 schema −7%，合计 −33%），那是 S3 的事。
+
+| 手段 | 工具链 | FFI `.so`（abort） | Python 扩展（unwind） | 性能（六场景 bench） |
+|---|---|---:|---:|---|
+| 现状（根 `release` / #376 的 `"s"` profile） | 稳定 | 15,344,528 | 16,883,384 | 基线 |
+| `-fuse-ld=lld -Wl,--icf=all`（合并相同函数） | 稳定 | −13%（与下一行合测） | −0.4% | 噪声内 |
+| `-C force-unwind-tables=no`（去 `.eh_frame`） | 稳定 | 13,361,080（与上行合计 −12.9%） | 不适用（unwind 必须有表） | — |
+| `-Zlocation-detail=none -Zfmt-debug=shallow`（去 panic 位置、浅 Debug） | nightly | 12,466,136（累计 −18.8%） | 16,100,504（−4.6%） | 噪声内 |
+| `-Zbuild-std` + `optimize_for_size`（重编标准库，顺带不带 bitcode） | nightly | 11,410,184（累计 −25.6%） | 15,767,784（−6.6%；unwind 需 `-Zbuild-std-features=optimize_for_size,panic-unwind`，否则 E0152） | 噪声内 |
+| 去 `backtrace` feature（随 build-std） | nightly | 含在上行 | 另测：保留 backtrace 多 158,632 B | — |
+| `-C llvm-args=-enable-machine-outliner=always` | 稳定 | 10,863,296（累计 −29.2%） | 16,641,528（−1.4%） | **慢 13–18%，不采用** |
+| `opt-level = "z"`（绑定；FFI 已是 z） | 稳定 | — | 15,410,456（−8.7%） | **大响应慢 28–55%，不采用**（§15.8） |
+| 去 realtime（`aimux-providers` 无 `ws`） | 稳定 | — | 16,746,480（−0.8%） | 不值得做成 feature 开关 |
+| **可采用的叠加：ICF + 去 unwind 表（FFI）+ 位置信息 + 重编 std** | nightly | **11,410,184（−25.6%）** | **15,210,424（−9.9%）** | 噪声内 |
+| 可采用的叠加，只用稳定工具链 | 稳定 | 13,361,080（−12.9%） | 16,816,824（−0.4%） | 噪声内 |
+| 全部手段含 outliner 与 z（只作下限参考） | nightly | 10,863,296（−29.2%） | 14,126,896（−16.3%；再去 realtime 14,008,760） | 不可用 |
+
+CLI 可执行文件同一套手段：`aimux` 9,825,416 → 7,690,368（可采用的 nightly 叠加，−21.7%）→ 7,338,944（含 outliner）；`aimux-web` 10,938,072 → 8,611,208 → 8,219,720；`aimux-replay` 10,264,080 → 8,071,184 → 7,696,464。
+
+静态档案 `libaimux_ffi.a`（`lto = false`）用去 unwind 表 + 位置信息 + 重编 std：66,972,772 B（现状 95,003,454；重编的 std 不带 bitcode，所以 §5.3 的 S1b 去 bitcode 一步对它为 0），再做 §15.7 的合并加 strip 到 **50,125,326 B**（现状链到 58,742,392）。
+
+压缩后（传输体积，`gzip -9` / `xz -9`）：FFI `.so` 现状 5,388,941 / 3,885,992，稳定叠加 4,799,701 / 3,532,780，nightly 叠加 4,203,847 / 3,107,396；`aimux` 现状 4,206,286 / 3,182,696，nightly 叠加 3,452,378 / 2,643,528。
+
+结论与待 eric 决定的事项：
+
+1. 稳定工具链下还能拿的只有 lld ICF 和（abort 产物的）去 unwind 表：FFI `.so`、`.a`、CLI −13%，绑定几乎为 0。去 unwind 表意味着 abort 产物在 panic 时没有 backtrace，profiler 也看不到 Rust 帧；是否接受，**待讨论**。
+2. 再往下（FFI −26%、绑定 −10%、CLI −22%）要 nightly 工具链发版（`-Zbuild-std`、`-Zlocation-detail`）。发布用 nightly 是工具链策略，**待讨论**；若接受，建议 pin 到一个 nightly 日期并在 CI 跑同一套测试。
+3. outliner 与 `"z"`（绑定）被 bench 否决，不再考虑。
+4. 不改代码的下限约为：FFI `.so` 11.4 MB、绑定 15.2 MB、`.a` 50.1 MB、CLI 7.7 MB；叠加 §15.3 的代码层候选（−33%）后的理论下限约 FFI 7.6 MB、绑定 10 MB，但那些候选各自改行为，按 §15.3 单独提案。
+5. iOS、Android、macOS、Windows 没有本地测；同一套 RUSTFLAGS 在 release.yml 里打印字节数即可得到对应数字。
