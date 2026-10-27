@@ -459,6 +459,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+          # rust-objcopy strips the sysroot bitcode out of the archive below.
+          components: llvm-tools
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
@@ -479,18 +481,19 @@ jobs:
             target/${{ matrix.target }}/release/${{ matrix.artifact }}
             aimux-ffi/include/aimux.h
       # The Go binding links the archive the release ships: the
-      # staticlib-release build (release.yml go-build does the same). cargo
+      # staticlib-release build with the sysroot bitcode stripped out
+      # (release.yml go-build does the same; RFC-0043 §5.3 S1b). cargo
       # emits the cdylib next to the archive and ld64 would pick the .dylib,
       # so the shared libraries are removed from that directory first; what
-      # the Go tests then link is the .a and nothing else.
+      # the Go tests then link is the stripped .a and nothing else.
       - name: Build static archive (staticlib-release)
         if: runner.os != 'Windows'
         run: cargo build -p aimux-ffi --profile staticlib-release --target ${{ matrix.target }}
-      - name: Check archive (no workspace bitcode), keep only the archive
+      - name: Strip sysroot bitcode, check the archive, keep only the archive
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          python3 scripts/check_native_artifact.py target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
+          python3 scripts/check_native_artifact.py --strip-bitcode target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
           rm -f target/${{ matrix.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.target }}/staticlib-release/libaimux_ffi.dylib
       - uses: actions/setup-go@v5
