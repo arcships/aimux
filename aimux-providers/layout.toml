@@ -2166,6 +2166,281 @@ rust = "openai/responses/tool_args.rs"
 status = "aimux"
 reason = "the provider tool argument schemas of tool/*.ts, validated in one place"
 
+[bedrock]
+package = "@ai-sdk/amazon-bedrock"
+# amazon-bedrock-chat-language-model-event-stream.test.ts and amazon-bedrock-usage-raw.test.ts
+# have no source file of their own name; every case in them is ported, so they need no
+# exclusions.
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-anthropic-model-support.ts"
+rust = "bedrock/anthropic_model_support.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-api-types.ts"
+rust = "bedrock/api_types.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+sub-feature = [
+  { case = "createAmazonBedrockCachePoint › should return default cache point when no TTL is provided", issue = 275, reason = "no createAmazonBedrockCachePoint builder; a cache point is passed verbatim through providerOptions.amazonBedrock.cachePoint" },
+  { case = "createAmazonBedrockCachePoint › should create cache point with 5m TTL", issue = 275, reason = "no createAmazonBedrockCachePoint builder; a cache point is passed verbatim through providerOptions.amazonBedrock.cachePoint" },
+  { case = "createAmazonBedrockCachePoint › should create cache point with 1h TTL", issue = 275, reason = "no createAmazonBedrockCachePoint builder; a cache point is passed verbatim through providerOptions.amazonBedrock.cachePoint" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-chat-language-model-options.ts"
+rust = "bedrock/chat_language_model_options.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "amazonBedrockLanguageModelChatOptions › type inference › infers AmazonBedrockLanguageModelChatOptions type correctly", reason = "checks a TypeScript type annotation; the Rust options are untyped JSON validated when the request is built" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-chat-language-model.ts"
+rust = "bedrock/chat_language_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "doGenerate › should handle unsupported response format types", reason = "passes responseFormat { type: 'xml' } through a TypeScript `as any`; ResponseFormat is a closed Rust enum (Text, Json)" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-embedding-model-options.ts"
+rust = "bedrock/embedding_model_options.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-embedding-model.ts"
+rust = "bedrock/embedding_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "doEmbed › should return NaN usage for Cohere models when the token count header is absent", reason = "NaN is a JS number; EmbeddingUsage.tokens is a u32" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-error.ts"
+rust = "bedrock/error.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-event-stream-decoder.ts"
+rust = "bedrock/event_stream_decoder.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "createAmazonBedrockEventStreamDecoder › surfaces processEvent errors", reason = "the TS decoder takes a processEvent callback that can throw; decode_stream yields messages and has no callback" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-event-stream-response-handler.ts"
+rust = "bedrock/event_stream_response_handler.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "createEventSourceResponseHandler › throws EmptyResponseBodyError when response body is null", reason = "a FetchResponse always has a body stream; there is no null body" },
+  { case = "createEventSourceResponseHandler › handles schema validation failures", reason = "mocks EventStreamCodec and passes a zod chunk schema to the handler; the Rust handler takes no schema" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-image-model-options.ts"
+rust = "bedrock/image_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-image-model.ts"
+rust = "bedrock/image_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-image-settings.ts"
+rust = "bedrock/image_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-prepare-tools.ts"
+rust = "bedrock/prepare_tools.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "prepareTools › tool choice › models that reject forced tool use › should pass the forced-tool capability to Anthropic provider tool preparation", reason = "asserts the arguments of a vi.mock spy on the Anthropic prepareTools; there is no seam to observe in Rust" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-provider.ts"
+rust = "bedrock/provider.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+sub-feature = [
+  { case = "AmazonBedrockProvider › provider methods › should expose anthropicTools", issue = 275, reason = "AmazonBedrockProvider has no tools member (#275 厂商内置工具工厂)" },
+]
+ts-only = [
+  { case = "AmazonBedrockProvider › createAmazonBedrock › should throw error when called with new keyword", reason = "Rust has no `new` on a callable; the provider is a struct" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-reasoning-metadata.ts"
+rust = "bedrock/chat_language_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-sigv4-fetch.ts"
+rust = "bedrock/sigv4_fetch.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+registered = [
+  { case = "createSigV4FetchFunction › should bypass signing for non-POST requests", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no API key, GET included, so that list_models is accepted" },
+  { case = "createSigV4FetchFunction › should bypass signing if POST request has no body", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no API key, a bodyless POST included" },
+  { case = "createSigV4FetchFunction › should call original fetch if init is undefined", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "a request with no init is a GET, which upstream forwards unsigned; aimux signs it" },
+]
+ts-only = [
+  { case = "createSigV4FetchFunction › should handle non-string body by stringifying it", reason = "FetchRequest.body is bytes; there is no JS object body for JSON.stringify to coerce" },
+  { case = "createApiKeyFetchFunction › should handle empty string API key", reason = "createApiKeyFetchFunction is a TS module export; the Rust provider sends a non-blank key as a header and has no fetch factory to hand an empty key" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-stream-error.ts"
+rust = "bedrock/chat_language_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/anthropic/amazon-bedrock-anthropic-fetch.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/anthropic/amazon-bedrock-anthropic-options.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/anthropic/amazon-bedrock-anthropic-provider.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/anthropic/index.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/convert-amazon-bedrock-usage.ts"
+rust = "bedrock/convert_usage.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/convert-to-amazon-bedrock-chat-messages.ts"
+rust = "bedrock/convert_to_chat_messages.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/index.ts"
+rust = "bedrock/mod.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/inject-fetch-headers.ts"
+status = "not-applicable"
+reason = "a test helper of the package (not exported); the ported tests keep a Rust copy in bedrock/tests/support.rs"
+
+[[bedrock.files]]
+upstream = "src/mantle/bedrock-mantle-options.ts"
+status = "missing"
+issue = 275
+reason = "Bedrock Mantle is a registry preset (OpenAI-compatible chat), not the full createBedrockMantle provider; #275 \"Bedrock Mantle 改为完整 provider\""
+
+[[bedrock.files]]
+upstream = "src/mantle/bedrock-mantle-provider.ts"
+status = "missing"
+issue = 275
+reason = "Bedrock Mantle is a registry preset (OpenAI-compatible chat), not the full createBedrockMantle provider; #275 \"Bedrock Mantle 改为完整 provider\""
+
+[[bedrock.files]]
+upstream = "src/mantle/index.ts"
+status = "missing"
+issue = 275
+reason = "Bedrock Mantle is a registry preset (OpenAI-compatible chat), not the full createBedrockMantle provider; #275 \"Bedrock Mantle 改为完整 provider\""
+
+[[bedrock.files]]
+upstream = "src/map-amazon-bedrock-finish-reason.ts"
+rust = "bedrock/map_finish_reason.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/normalize-tool-call-id.ts"
+rust = "bedrock/normalize_tool_call_id.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/reranking/amazon-bedrock-reranking-api.ts"
+rust = "bedrock/reranking/reranking_api.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/reranking/amazon-bedrock-reranking-model-options.ts"
+rust = "bedrock/reranking/reranking_model_options.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/reranking/amazon-bedrock-reranking-model.ts"
+rust = "bedrock/reranking/reranking_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/resolve-amazon-bedrock-base-url.ts"
+rust = "bedrock/sigv4_fetch.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
 [open_responses]
 package = "@ai-sdk/open-responses"
 
