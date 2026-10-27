@@ -12,7 +12,7 @@ use crate::decision_support::{
     self as support, DecisionConfig, DecisionImage, DecisionProbabilitySource, candidate_count,
     invalid, provider_metadata, response_info,
 };
-use crate::openai_compatible::config::CompatModelConfig;
+use crate::openai_compatible::CompatModelConfig;
 
 pub(crate) fn supported(provider: &str) -> bool {
     matches!(
