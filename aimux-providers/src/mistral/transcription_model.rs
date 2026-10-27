@@ -91,7 +91,9 @@ impl TranscriptionModel for MistralTranscriptionModel {
         &self,
         options: &TranscriptionCallOptions,
     ) -> Result<TranscriptionResult, AiMuxError> {
-        let mistral = super::options::transcription_options(options.provider_options.as_ref())?;
+        let mistral = super::transcription_model_options::transcription_options(
+            options.provider_options.as_ref(),
+        )?;
 
         // Mistral documents these options as mutually incompatible. Rejecting
         // the combination locally provides a stable SDK error instead of an
@@ -146,7 +148,7 @@ impl TranscriptionModel for MistralTranscriptionModel {
             exchange.request(exchange.url("/audio/transcriptions"), options),
             form,
             aimux_provider_utils::create_json_response_handler::<ResponseBody>(),
-            super::mistral_failed_response_handler(),
+            super::error::mistral_failed_response_handler(),
         )
         .await?;
         let response = resp.value;
@@ -213,7 +215,10 @@ impl TranscriptionModel for MistralTranscriptionModel {
             .and_then(|usage| usage.prompt_audio_seconds.as_ref()?.as_f64())
             .or_else(|| segments.last().map(|segment| segment.end_second));
         let provider_metadata = (!metadata.is_empty()).then(|| {
-            SharedProviderMetadata::from([(super::options::NAMESPACE.to_string(), metadata)])
+            SharedProviderMetadata::from([(
+                super::chat_language_model_options::NAMESPACE.to_string(),
+                metadata,
+            )])
         });
 
         Ok(TranscriptionResult {

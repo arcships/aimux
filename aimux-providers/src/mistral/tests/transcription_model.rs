@@ -2,7 +2,7 @@
 //!
 //! Source: `reference/aisdk-pinned/mistral/src/mistral-transcription-model.test.ts`
 //!
-//! The requests go through a scripted transport (`common/mock_fetch.rs`); the
+//! The requests go through a scripted transport (`tests/common/mock_fetch.rs`); the
 //! TS `createTestServer` has no counterpart here, and the multipart body is
 //! read back from the bytes the transport saw. Differences from the TS run:
 //! the multipart boundary prefix is `----formdata-aimux-` (not `undici`), the
@@ -11,19 +11,16 @@
 //! `_internal.currentDate`), so it is only checked to be present. The fixture
 //! `__fixtures__/mistral-transcription.json` is inlined.
 
-#[path = "common/mock_fetch.rs"]
-mod mock_fetch;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
+use crate::{MistralProviderSettings, create_mistral};
 use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
-use aimux_providers::{MistralProviderSettings, create_mistral};
-use mock_fetch::{Canned, MockFetch, Seen};
 
 const MODEL_ID: &str = "voxtral-mini-latest";
 const URL: &str = "https://api.mistral.ai/v1/audio/transcriptions";
@@ -77,7 +74,7 @@ fn transcription_response() -> Value {
 fn provider_with(
     fetch: &Arc<MockFetch>,
     settings: MistralProviderSettings,
-) -> aimux_providers::MistralProvider {
+) -> crate::MistralProvider {
     create_mistral(MistralProviderSettings {
         api_key: Some("test-api-key".into()),
         fetch: Some(fetch.transport()),
