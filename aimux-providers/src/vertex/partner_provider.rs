@@ -26,9 +26,9 @@ use aimux_provider_utils::{
     load_setting, validate_base_url,
 };
 
-use crate::openai_compatible::config::{BaseUrl, ResolveBaseUrl, ResolveFetchHeaders};
 use crate::openai_compatible::{
-    OpenAICompatibleChatModel, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
+    BaseUrl, OpenAICompatibleChatModel, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
+    ResolveBaseUrl, ResolveFetchHeaders,
 };
 
 use super::auth::{GoogleAuth, GoogleAuthOptions};
