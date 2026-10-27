@@ -181,7 +181,7 @@ lto = false
 
 S1a（profile 切换，#375）之后 Linux `.a` 是 95,078,500 B（CI shipped；本地 95,003,454），仍高于 §4.1 的 70,000,000。进 C 要靠对发布档案的后处理，分两步，每步都以「链接 smoke 通过、14 个导出符号齐全、链接后代码字节不变」为验收，数据见 §15.7：
 
-- **S1b，去 sysroot bitcode。** `llvm-objcopy --remove-section=.llvmbc --remove-section=.llvmcmd`（Mach-O 为 `__LLVM,__bitcode` 与 `__LLVM,__cmdline`）。Linux 实测 95.0 → 84.9 MB，GNU ld 链接正常。安全，放进 S1，随 #375 之后的一个小 PR。
+- **S1b，去 sysroot bitcode。** `llvm-objcopy --remove-section=.llvmbc --remove-section=.llvmcmd`（Mach-O 为 `__LLVM,__bitcode` 与 `__LLVM,__cmdline`）。Linux 实测 95.0 → 84.9 MB，GNU ld 链接正常。安全，放进 S1。实现在 #377（§15.6）：`scripts/check_native_artifact.py --strip-bitcode` 用 rustup `llvm-tools` 组件的 `rust-objcopy` 就地改写档案，再要求总 bitcode 为 0；release.yml go-build、ci.yml ffi-build、iOS 脚本在构建后立刻调用，Go 测试与暂存用的都是 strip 过的档案。
 - **S1c，合并目标文件再去局部符号。** 以 14 个导出函数为根 `ld -r --gc-sections -u <符号>…` 把全部成员合并成一个目标文件，再 `strip --strip-unneeded`。Linux 实测 84.9 → 71.1 → 58.7 MB，链接后可执行文件与原档案相同。这一步每个平台的工具不同（GNU binutils、Apple `ld -r` 与 `strip -x`、mingw），必须逐平台做链接 smoke，且检查器要能读扩展段编号的 ELF（#375 已加）。放进 S1，但在 S1b 之后单独 PR，哪个平台没过就哪个平台不上。
 
 不采用：`llvm-objcopy --strip-debug` / `--strip-unneeded` 直接作用于档案（GNU ld 报 file format not recognized，正是 §5.2 说的破坏符号索引）；`ld.lld -r` 的输出 GNU binutils 不认。若 S1c 到 0.6 冻结仍未全平台通过，§4.1 的 70 MB 不改，§13 对应项保持未勾（§4.4 的规则）。
@@ -611,9 +611,11 @@ ROADMAP §6.1 的目标表在 S2 登记完成后按实测修订；在此之前�
 
 同类参考：rig-core、genai、llm 等 Rust LLM SDK 没有公开体积数据；上游 AI SDK 每个 provider 包压缩前约 120 到 140 KB JS，aimux 每厂商约 38 KB 机器码。
 
-### 15.6 S1 实现记录（2026-10-27，#375）
+### 15.6 S1 实现记录（2026-10-27，#375、#377）
 
 S1a 在 #375 实现（2026-10-27 合入 master，merge commit 866801a）：`[profile.staticlib-release]` 取代 `ios-release`，release.yml 的 go-build 与 iOS 脚本改用它并切换目录，ci.yml 的 profile 覆盖变量跟着改名，Go 的 cgo 搜索路径把 `target/staticlib-release` 放在 `target/release` 前面。每个产物的构建 job 用 `scripts/check_native_artifact.py` 打印 `size <path> <bytes> bytes`，这就是 §3.1 的 raw_bytes 来源；它直接读 ar、ELF、Mach-O、COFF 头，三种 runner 同一实现，不依赖 binutils。
+
+**S1b 在 #377 实现（2026-10-27 开出，评审中）。** `check_native_artifact.py` 加 `--strip-bitcode`：按第一个成员的格式选段名（ELF/COFF `.llvmbc` `.llvmcmd`，Mach-O `__LLVM,__bitcode` `__LLVM,__cmdline`），用 `rustc --print sysroot` 下 `llvm-tools` 组件的 `rust-objcopy`（`AIMUX_OBJCOPY` 可指定，PATH 上的 `llvm-objcopy` 兜底）`--remove-section` 就地改写，重读后 `size` 行是 strip 过的档案，并新增规则「strip 后总 bitcode 必须为 0」；原规则（工作区成员带 bitcode 即 fat LTO）不变。release.yml go-build 与 ci.yml ffi-build 的 toolchain 步骤加 `components: llvm-tools`，构建后一步改为 strip + 检查 + 删 cdylib，之后的 Go 测试链的就是 strip 过的档案，暂存的也是它；`build-ios-xcframework.sh` 加 `rustup component add llvm-tools`，两片在 `cp` 和 `strip -Sx` 之前先 strip bitcode；`local-ci.sh` 镜像。本地 Linux（master 866801a）：95,082,756 → 85,021,764 B（−10,060,992，bitcode 10,017,424 B / 292 成员 → 0），`.text` 11,124,463 B / 527 成员不变，幂等，符号索引保留；用 14 个导出符号链接的 C 程序 strip 后 19,095,024 B，与原档案链出的在 `--build-id=none` 下逐字节相同；Go `vet` + `test` 通过。macOS、iOS、Windows 字节数由 #377 的 CI 和首次 release run 打印后补到 §15.1。70 MB 的 C 仍未进（85.0 MB），§13 该项继续不勾，等 S1c。
 
 **实测修正 §5.2 的「无 bitcode」。** `lto = false` 只影响工作区 crate 的对象。rustup 发布的 sysroot（std、alloc、core、addr2line……）本身带 `-C embed-bitcode=yes` 编译的 `.llvmbc`，所以任何 `.a` 都有一层 bitcode：Linux x64 档案 95,003,454 B 里 10,017,424 B 在 292 个 sysroot 成员，iOS 片 65,127,144 B 里 9,664,823 B 在 247 个成员，工作区 crate 的 bitcode 都是 0。因此检查的判据是「工作区 crate 的成员带 bitcode 即 fat LTO」，而不是「档案无 bitcode」；fat-LTO 档案（194 MB，461 个成员带 bitcode，含全部 6 个 aimux_* 成员）被判失败，`lto = false` 档案通过。去掉 sysroot 这一层是 §5.3 的 S1b，实测见 §15.7。
 
