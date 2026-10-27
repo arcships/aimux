@@ -62,7 +62,7 @@ rule1_hits="$(
     { grep -rnE "$rule1_pattern" aimux-providers/src --include='*.rs' || true; } |
         grep -v 'HttpRequest::new(' |
         grep -v '^aimux-providers/src/replay\.rs:' |
-        grep -vE '^aimux-providers/src/(elevenlabs\.rs|openai/transcription\.rs):[0-9]+: *timeout: options\.timeout,$' ||
+        grep -vE '^aimux-providers/src/(elevenlabs\.rs|openai/transcription/transcription_model\.rs):[0-9]+: *timeout: options\.timeout,$' ||
         true
 )"
 violation 'aimux-providers/src reads options.max_retries / timeout / session_id / call_id' "$rule1_hits"

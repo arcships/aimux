@@ -88,8 +88,9 @@ g++ -std=c++17 -o example_cpp bindings/c/example.cpp \
 
 ### Go
 ```bash
-# First build aimux-ffi (requires the libaimux_ffi.a optimized with the release profile)
-cargo build -p aimux-ffi --release
+# First build the static archive with the profile the releases use
+# (release without LTO; a fat-LTO archive is twice the size, RFC-0043 §5.1)
+cargo build -p aimux-ffi --profile staticlib-release
 
 cd bindings/go
 go test ./...

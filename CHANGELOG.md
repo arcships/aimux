@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Build
+
+- The static archives (`libaimux_ffi.a` for Go and the iOS xcframework
+  slices) are built with the `staticlib-release` profile, the `release`
+  profile without LTO. One command replaces the two old ones:
+
+  ```sh
+  cargo build -p aimux-ffi --profile staticlib-release
+  # was: cargo build -p aimux-ffi --release          (Go archive)
+  # was: cargo build -p aimux-ffi --profile ios-release   (iOS slices; the profile is gone)
+  ```
+
+  The archive lands in `target/<triple>/staticlib-release/` instead of
+  `release/` or `ios-release/`; the Go binding's cgo flags look there first,
+  and `go generate` downloads the release archive there. A static archive is
+  linked by the consumer's toolchain, so fat LTO only embedded every crate's
+  LLVM bitcode into it: the Linux Go archive as shipped goes from 194.2 MB
+  to 95.0 MB with the same linked code (RFC-0043 §5.1, §15.1). The shared
+  libraries (`.so`, `.dylib`, `.dll`) and the Node and Python extensions are
+  not changed by this PR.
+  Release and CI builds check the archive's workspace objects for bitcode
+  and print every artifact's byte size (`scripts/check_native_artifact.py`).
+- The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
+  a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. On
+  Linux x86_64 the published `aimux.node` goes from 39.9 MB (unstripped) to
+  17.4 MB (−57%) and the wheel's `aimux.abi3.so` from 30.6 MB (`maturin
+  publish` already stripped it) to 17.3 MB (−43%); the six paired benchmark
+  scenarios in
+  `bindings/node/bench/bench_profile.cjs` and
+  `bindings/python/bench/bench_profile.py` stay within noise of the old
+  build. `panic` stays `unwind`, so a panic still surfaces as a JS exception
+  or a Python `PanicException`. `npx napi build --release` and
+  `maturin build --release` pick the profile up; no command changes.
+
 ### Breaking
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
@@ -1189,6 +1223,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `anthropic::files`, `prepare_tools`, `sanitize_json_schema`, `skills` and
   `tool_name_mapping` stay public. Exports at the crate root and the
   `anthropic` module root are unchanged.
+
+- OpenAI's sub-modules follow the `@ai-sdk/openai` files (RFC-0046 §4.2):
+  `openai::convert`, `openai::model`, `openai::responses::convert`,
+  `openai::responses::responses_convert` and `openai::responses::types` are no
+  longer public. `openai::model::OpenAIModel` is `openai::OpenAIModel`, as the
+  crate root already exports it. The Responses types of `responses::convert`
+  and `responses::types` are at `openai::responses`:
+  `openai::responses::{PreparedResponsesTools, parse_usage, ResponsesUsage,
+  ResponsesInputTokensDetails, ResponsesOutputTokensDetails}`, next to the
+  functions it already exported. The Chat Completions helpers of `convert`
+  (`SystemMessageMode`, `ToolWarning`, `PreparedTools`, `prepare_tools`,
+  `convert_prompt_to_openai_messages_with_mode_fallible`, `RequestBodyResult`,
+  `build_request_body_with_warnings`, `parse_finish_reason`) and the shared
+  Responses parser of `responses_convert` (`ResponsesEventStream`,
+  `build_responses_generate_result`, `build_responses_event_stream`) become
+  crate-internal, with no public replacement; `build_request_body` and
+  `build_header_list`, which nothing in the workspace called, are removed.
+  `openai::completion`, `openai::decision`, `openai::embedding`,
+  `openai::files`, `openai::image`, `openai::responses`, `openai::speech`,
+  `openai::tools` and `openai::transcription` keep their paths.
 
 - `aimux_providers::cohere` follows the upstream `@ai-sdk/cohere` file layout
   (RFC-0046). The sub-modules `cohere::convert`, `cohere::embedding` and
