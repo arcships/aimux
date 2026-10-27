@@ -2,7 +2,7 @@
 //! `src/amazon-bedrock-sigv4-fetch.test.ts`.
 //!
 //! aimux has no `createSigV4FetchFunction` / `createApiKeyFetchFunction`. The
-//! provider's transport is `BedrockAuthFetch` (`bedrock/mod.rs`): it adds the
+//! provider's transport is `BedrockAuthFetch` (`bedrock/sigv4_fetch.rs`): it adds the
 //! `ai-sdk-amazon-bedrock/<v>` user-agent part, then signs with
 //! `aimux_provider_utils::SigV4Fetch` (service `bedrock`, aws4fetch's header
 //! rule) unless the request already carries `Authorization`. The API key is
@@ -46,10 +46,9 @@ use aimux_provider_utils::{
     set_default_transport,
 };
 
-use crate::bedrock::{
-    AmazonBedrockProvider, AmazonBedrockProviderSettings, BedrockAuthFetch, SIGV4_SERVICE,
-    create_amazon_bedrock,
-};
+use crate::bedrock::provider::SIGV4_SERVICE;
+use crate::bedrock::sigv4_fetch::BedrockAuthFetch;
+use crate::bedrock::{AmazonBedrockProvider, AmazonBedrockProviderSettings, create_amazon_bedrock};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 
 /// The user-agent the transport sends: the pinned package part.
@@ -1051,6 +1050,229 @@ mod create_api_key_fetch_function {
                 "authorization": "Bearer test-api-key-preserve",
                 "user-agent": USER_AGENT,
             })
+        );
+    }
+}
+
+// ── Older ports (previously `tests/bedrock_remaining_test.rs`) ──
+//
+// Remaining Amazon Bedrock upstream tests, restored from the tool-types branch.
+//
+// Pinned translation sources (`amazon-bedrock/src/`):
+// - `normalize-tool-call-id.test.ts`
+// - `convert-amazon-bedrock-usage.test.ts` (raw echo)
+// - `amazon-bedrock-provider.test.ts` (factory/auth variants)
+// - `convert-to-amazon-bedrock-chat-messages.test.ts` (Mistral IDs)
+// - `amazon-bedrock-chat-language-model.test.ts` (request/response cases)
+
+mod bedrock_remaining {
+    use crate::bedrock::tests::remaining_support::*;
+
+    use serial_test::serial;
+
+    use aimux_core::language_model::LanguageModel;
+    use aimux_provider_utils::Resolvable;
+
+    use crate::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
+
+    /// With no `fetch` setting each request uses the process default transport
+    /// current when it is made, not the one at creation: upstream reads
+    /// `globalThis.fetch` per call (amazon-bedrock-sigv4-fetch.ts:38, :129). The
+    /// default is pointed at a closed port while the provider is created, then at
+    /// a plain-HTTP proxy that answers the request.
+    #[serial]
+    #[tokio::test]
+    async fn provider_default_transport_is_looked_up_per_request() {
+        use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                set_default_transport(ReqwestFetch::default());
+            }
+        }
+        // Loopback bypasses the proxy so the wiremock tests running beside this
+        // one in the lib test binary keep reaching their servers.
+        let proxy = |port: u16| ProxyConfig {
+            http_url: Some(format!("http://127.0.0.1:{port}")),
+            no_proxy: Some("localhost,127.0.0.1".to_string()),
+            ..ProxyConfig::default()
+        };
+
+        let _restore = Restore;
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        set_default_transport(ReqwestFetch::new(proxy(
+            closed.local_addr().unwrap().port(),
+        )));
+        drop(closed);
+        let model = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            base_url: Some("http://example.com".into()),
+            api_key: Some(Resolvable::Value("test-token".into())),
+            ..Default::default()
+        })
+        .unwrap()
+        .chat("anthropic.claude-3-5-sonnet-20240620-v1:0");
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        set_default_transport(ReqwestFetch::new(proxy(
+            listener.local_addr().unwrap().port(),
+        )));
+        let served = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut chunk = [0u8; 4096];
+            while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+                let n = stream.read(&mut chunk).await.unwrap();
+                head.extend_from_slice(&chunk[..n]);
+            }
+            let body = ok_converse_body().to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            String::from_utf8_lossy(&head)
+                .lines()
+                .next()
+                .unwrap()
+                .to_string()
+        });
+
+        model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("the request goes through the current default transport");
+        assert_eq!(
+            served.await.unwrap(),
+            "POST http://example.com/model/anthropic.claude-3-5-sonnet-20240620-v1%3A0/converse HTTP/1.1"
+        );
+    }
+
+    /// The per-request default transport also reaches the embedding, image and
+    /// reranking models: upstream builds every Bedrock model on the same
+    /// `fetch ?? globalThis.fetch` wrapper (amazon-bedrock-sigv4-fetch.ts:38,
+    /// :129), and amazon-bedrock-provider.ts:207-215 hands that one
+    /// `fetchFunction` to every model (:334, :359, :367, :380). Each request
+    /// must go through the proxy set after the provider was created.
+    #[serial]
+    #[tokio::test]
+    async fn non_chat_models_look_up_the_default_transport_per_request() {
+        use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+        use aimux_core::image_model::{ImageCallOptions, ImageModel};
+        use aimux_core::reranking_model::{
+            RerankingCallOptions, RerankingDocuments, RerankingModel,
+        };
+        use aimux_provider_utils::{ProxyConfig, ReqwestFetch, set_default_transport};
+        use serde_json::json;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                set_default_transport(ReqwestFetch::default());
+            }
+        }
+        // Loopback bypasses the proxy so the wiremock tests running beside this
+        // one in the lib test binary keep reaching their servers.
+        let proxy = |port: u16| ProxyConfig {
+            http_url: Some(format!("http://127.0.0.1:{port}")),
+            no_proxy: Some("localhost,127.0.0.1".to_string()),
+            ..ProxyConfig::default()
+        };
+
+        let _restore = Restore;
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        set_default_transport(ReqwestFetch::new(proxy(
+            closed.local_addr().unwrap().port(),
+        )));
+        drop(closed);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            base_url: Some("http://example.com".into()),
+            api_key: Some(Resolvable::Value("test-token".into())),
+            region: Some("us-west-2".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        let embedding = provider.embedding("amazon.titan-embed-text-v2:0");
+        let image = provider.image("amazon.nova-canvas-v1:0");
+        let reranking = provider.reranking("cohere.rerank-v3-5:0");
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        set_default_transport(ReqwestFetch::new(proxy(
+            listener.local_addr().unwrap().port(),
+        )));
+        let served = tokio::spawn(async move {
+            let mut request_lines = Vec::new();
+            for _ in 0..3 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut data = Vec::new();
+                let mut chunk = [0u8; 4096];
+                let head_end = loop {
+                    if let Some(at) = data.windows(4).position(|window| window == b"\r\n\r\n") {
+                        break at + 4;
+                    }
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    data.extend_from_slice(&chunk[..n]);
+                };
+                let head = String::from_utf8_lossy(&data[..head_end]).to_string();
+                let length = head
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                while data.len() < head_end + length {
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    data.extend_from_slice(&chunk[..n]);
+                }
+                let request_line = head.lines().next().unwrap().to_string();
+                let body = if request_line.contains("/rerank") {
+                    json!({"results": [{"index": 0, "relevanceScore": 0.5}]})
+                } else if request_line.contains("nova-canvas") {
+                    json!({"images": ["base64-image"]})
+                } else {
+                    json!({"embedding": [0.1, 0.2], "inputTextTokenCount": 2})
+                }
+                .to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
+                     connection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+                request_lines.push(request_line);
+            }
+            request_lines
+        });
+
+        embedding
+            .do_embed(&EmbeddingCallOptions::new("sunny day"))
+            .await
+            .expect("the embedding request goes through the current default transport");
+        image
+            .do_generate(&ImageCallOptions::new("a sea otter"))
+            .await
+            .expect("the image request goes through the current default transport");
+        reranking
+            .do_rerank(&RerankingCallOptions::new(
+                "rainy day",
+                RerankingDocuments::Text {
+                    values: vec!["sunny day".into()],
+                },
+            ))
+            .await
+            .expect("the reranking request goes through the current default transport");
+        assert_eq!(
+            served.await.unwrap(),
+            vec![
+                "POST http://example.com/model/amazon.titan-embed-text-v2%3A0/invoke HTTP/1.1",
+                "POST http://example.com/model/amazon.nova-canvas-v1%3A0/invoke HTTP/1.1",
+                "POST http://example.com/rerank HTTP/1.1",
+            ]
         );
     }
 }

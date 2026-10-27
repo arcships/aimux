@@ -890,3 +890,259 @@ mod amazon_bedrock_provider {
         // member.
     }
 }
+
+// ── Older ports (previously `tests/bedrock_remaining_test.rs`) ──
+//
+// Remaining Amazon Bedrock upstream tests, restored from the tool-types branch.
+//
+// Pinned translation sources (`amazon-bedrock/src/`):
+// - `normalize-tool-call-id.test.ts`
+// - `convert-amazon-bedrock-usage.test.ts` (raw echo)
+// - `amazon-bedrock-provider.test.ts` (factory/auth variants)
+// - `convert-to-amazon-bedrock-chat-messages.test.ts` (Mistral IDs)
+// - `amazon-bedrock-chat-language-model.test.ts` (request/response cases)
+
+mod bedrock_remaining {
+    use crate::bedrock::tests::remaining_support::*;
+
+    use serial_test::serial;
+
+    use aimux_core::language_model::LanguageModel;
+    use aimux_provider_utils::Resolvable;
+
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+    use crate::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // amazon-bedrock-provider.test.ts — provider configuration / auth
+    // ════════════════════════════════════════════════════════════════════════════
+
+    /// partial: `should create a provider instance with default options`; full port in src/bedrock/tests/provider.rs.
+    /// The mocked upstream region loader returns `us-east-1`; pass it explicitly here.
+    #[tokio::test]
+    #[serial]
+    async fn provider_default_region_and_base_url() {
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            api_key: Some(Resolvable::Value(String::new())),
+            region: Some("us-east-1".into()),
+            access_key_id: Some("ak".into()),
+            secret_access_key: Some("sk".into()),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert_eq!(
+            seen.url,
+            "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.nova-pro-v1%3A0/converse"
+        );
+        assert!(seen.headers["authorization"].starts_with("AWS4-HMAC-SHA256"));
+    }
+
+    /// partial: `should create a provider instance with custom options`; full port in src/bedrock/tests/provider.rs.
+    /// Custom region flows into the base URL.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn provider_custom_region_base_url() {
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            api_key: Some(Resolvable::Value(String::new())),
+            region: Some("eu-west-1".into()),
+            access_key_id: Some("ak".into()),
+            secret_access_key: Some("sk".into()),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert!(
+            seen.url
+                .starts_with("https://bedrock-runtime.eu-west-1.amazonaws.com/")
+        );
+    }
+
+    /// partial: `should create a provider instance with custom options`; full port in src/bedrock/tests/provider.rs.
+    /// baseURL override.
+    #[tokio::test]
+    async fn provider_with_base_url_override() {
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            region: Some("us-east-1".into()),
+            api_key: Some(Resolvable::Value("tok".into())),
+            base_url: Some("https://custom.url/".into()),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert!(seen.url.starts_with("https://custom.url/model/"));
+    }
+
+    /// partial: `should use API key when provided in options`; full port in src/bedrock/tests/provider.rs.
+    /// Bearer-token auth path.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn provider_bearer_token_auth() {
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            region: Some("us-east-1".into()),
+            api_key: Some(Resolvable::Value("test-api-key".into())),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert_eq!(seen.headers["authorization"], "Bearer test-api-key");
+    }
+
+    /// partial: `should use API key from environment variable`; full port in src/bedrock/tests/provider.rs.
+    /// `AWS_BEARER_TOKEN_BEDROCK` takes precedence over SigV4 environment credentials.
+    #[tokio::test]
+    #[serial]
+    async fn provider_from_env_bearer_token_precedence() {
+        clear_bedrock_env();
+        unsafe {
+            std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "env-bearer");
+            std::env::set_var("AWS_ACCESS_KEY_ID", "should-not-be-used");
+            std::env::set_var("AWS_SECRET_ACCESS_KEY", "should-not-be-used");
+            std::env::set_var("AWS_REGION", "us-west-2");
+        }
+
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert_eq!(seen.headers["authorization"], "Bearer env-bearer");
+        assert!(seen.url.contains("us-west-2"));
+        clear_bedrock_env();
+    }
+
+    /// partial: `should fall back to SigV4 when no API key provided`; full port in src/bedrock/tests/provider.rs.
+    /// The factory uses SigV4 when `AWS_BEARER_TOKEN_BEDROCK` is absent.
+    #[tokio::test]
+    #[serial]
+    async fn provider_from_env_sigv4_fallback() {
+        clear_bedrock_env();
+        unsafe {
+            std::env::set_var("AWS_ACCESS_KEY_ID", "test-ak");
+            std::env::set_var("AWS_SECRET_ACCESS_KEY", "test-sk");
+            std::env::set_var("AWS_REGION", "eu-west-1");
+        }
+
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert!(seen.headers["authorization"].starts_with("AWS4-HMAC-SHA256 Credential=test-ak/"));
+        assert!(seen.headers["authorization"].contains("/eu-west-1/bedrock/"));
+        assert!(!seen.headers.contains_key("x-amz-security-token"));
+        clear_bedrock_env();
+    }
+
+    /// partial: `should maintain backward compatibility with existing SigV4 authentication`; full port in src/bedrock/tests/provider.rs.
+    /// `AWS_SESSION_TOKEN` is loaded from the environment.
+    #[tokio::test]
+    #[serial]
+    async fn provider_from_env_session_token() {
+        clear_bedrock_env();
+        unsafe {
+            std::env::set_var("AWS_ACCESS_KEY_ID", "ak");
+            std::env::set_var("AWS_SECRET_ACCESS_KEY", "sk");
+            std::env::set_var("AWS_REGION", "us-east-1");
+            std::env::set_var("AWS_SESSION_TOKEN", "sts-token");
+        }
+
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert_eq!(seen.headers["x-amz-security-token"], "sts-token");
+        clear_bedrock_env();
+    }
+
+    /// The `BedrockProvider` exposes its name and can vend language models.
+    #[test]
+    fn provider_name_and_language_model() {
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings::default()).unwrap();
+        let model = provider.chat("anthropic.claude-3-5-sonnet-20240620-v1:0");
+        assert_eq!(
+            model.model_id(),
+            "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        );
+        assert_eq!(model.provider(), "amazon-bedrock");
+    }
+
+    /// partial: `should prioritize options.apiKey over environment variable`; full port in src/bedrock/tests/provider.rs.
+    /// Explicit bearer token construction does not consult env vars.
+    #[tokio::test]
+    #[serial]
+    async fn provider_explicit_bearer_over_env() {
+        clear_bedrock_env();
+        unsafe {
+            std::env::set_var("AWS_BEARER_TOKEN_BEDROCK", "env-bearer");
+        }
+        // Explicit construction with a different token should win over env.
+        let fetch = MockFetch::new(vec![Canned::json(&ok_converse_body())]);
+        let provider = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            region: Some("us-east-1".into()),
+            api_key: Some(Resolvable::Value("explicit-tok".into())),
+            fetch: Some(fetch.transport()),
+            ..Default::default()
+        })
+        .unwrap();
+        provider
+            .chat("amazon.nova-pro-v1:0")
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let seen = &fetch.seen()[0];
+        assert_eq!(seen.headers["authorization"], "Bearer explicit-tok");
+        clear_bedrock_env();
+    }
+}

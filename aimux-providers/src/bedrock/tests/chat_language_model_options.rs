@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use aimux_core::error::AiMuxError;
 use aimux_core::options::CallOptions;
 
-use crate::bedrock::convert::build_request_body_checked;
+use crate::bedrock::chat_language_model::build_request_body_checked;
 
 /// `amazonBedrockLanguageModelChatOptions.safeParse(options)`: the request
 /// body built with `options`, or the validation error.

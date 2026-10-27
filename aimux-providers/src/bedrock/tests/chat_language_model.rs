@@ -7710,3 +7710,1103 @@ mod do_generate {
         }
     }
 }
+
+// ── Older ports (previously `tests/bedrock_remaining_test.rs`) ──
+//
+// Remaining Amazon Bedrock upstream tests, restored from the tool-types branch.
+//
+// Pinned translation sources (`amazon-bedrock/src/`):
+// - `normalize-tool-call-id.test.ts`
+// - `convert-amazon-bedrock-usage.test.ts` (raw echo)
+// - `amazon-bedrock-provider.test.ts` (factory/auth variants)
+// - `convert-to-amazon-bedrock-chat-messages.test.ts` (Mistral IDs)
+// - `amazon-bedrock-chat-language-model.test.ts` (request/response cases)
+
+mod bedrock_remaining {
+    use crate::bedrock::tests::remaining_support::*;
+    use aimux_core::tool::RawToolCall;
+    use serde_json::json;
+
+    use aimux_core::language_model::LanguageModel;
+    use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt};
+    use aimux_core::options::CallOptions;
+    use aimux_core::shared::provider_namespace;
+    use aimux_provider_utils::Resolvable;
+
+    use crate::bedrock::chat_language_model::build_request_body_checked;
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use aimux_core::stream_part::StreamPart;
+    use aimux_core::types::FinishReasonUnified;
+
+    use crate::bedrock::{AmazonBedrockProviderSettings, create_amazon_bedrock};
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // amazon-bedrock-chat-language-model.test.ts — request URL / body / response
+    // ════════════════════════════════════════════════════════════════════════════
+
+    // ── supportedUrls ────────────────────────────────────────────────────────────
+
+    /// partial: `should support S3 URLs for image and video parts`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn model_supported_urls_s3() {
+        let model = create_amazon_bedrock(AmazonBedrockProviderSettings::default())
+            .unwrap()
+            .chat("amazon.nova-pro-v1:0");
+        let urls = model.supported_urls().await;
+        assert_eq!(urls.0.len(), 2);
+        for kind in ["image/*", "video/*"] {
+            assert_eq!(urls.0[kind].len(), 1);
+            assert_eq!(urls.0[kind][0].as_str(), "^s3://");
+        }
+    }
+
+    // ── ARN model IDs containing a slash ─────────────────────────────────────────
+
+    /// partial: `should generate text through the encoded Converse route`; full port in src/bedrock/tests/chat_language_model.rs.
+    ///
+    /// ARN inference-profile IDs contain a `/` which must be percent-encoded in the
+    /// URL path. The upstream uses `encodeURIComponent(modelId)`.
+    #[tokio::test]
+    async fn arn_model_id_encoded_generate_route() {
+        let arn =
+            "arn:aws:bedrock:eu-west-1:474668406012:inference-profile/eu.amazon.nova-lite-v1:0";
+        let encoded = "arn%3Aaws%3Abedrock%3Aeu-west-1%3A474668406012%3Ainference-profile%2Feu.amazon.nova-lite-v1%3A0";
+
+        let server = mock_converse_json(
+            200,
+            json!({
+                "output": { "message": { "role": "assistant", "content": [{ "text": "Hello!" }] } },
+                "stopReason": "end_turn",
+                "usage": { "inputTokens": 1, "outputTokens": 1 }
+            }),
+        );
+
+        let model = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            fetch: Some(server.transport()),
+            base_url: Some("https://bedrock.test".into()),
+            api_key: Some(Resolvable::Value("tok".into())),
+            ..Default::default()
+        })
+        .unwrap()
+        .chat(arn);
+
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("should succeed via the encoded route");
+        assert_eq!(as_text(&result.content[0]), "Hello!");
+        assert_eq!(
+            server.seen()[0].url,
+            format!("https://bedrock.test/model/{encoded}/converse")
+        );
+    }
+
+    /// partial: `should stream text through the encoded Converse route`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn arn_model_id_encoded_stream_route() {
+        let arn =
+            "arn:aws:bedrock:eu-west-1:474668406012:inference-profile/eu.amazon.nova-lite-v1:0";
+        let encoded = "arn%3Aaws%3Abedrock%3Aeu-west-1%3A474668406012%3Ainference-profile%2Feu.amazon.nova-lite-v1%3A0";
+
+        let events: Vec<(&str, &str, &str)> = vec![
+            ("event", "messageStart", r#"{"role":"assistant"}"#),
+            (
+                "event",
+                "contentBlockDelta",
+                r#"{"contentBlockIndex":0,"delta":{"text":"Hello!"}}"#,
+            ),
+            ("event", "contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            ("event", "messageStop", r#"{"stopReason":"end_turn"}"#),
+            (
+                "event",
+                "metadata",
+                r#"{"usage":{"inputTokens":1,"outputTokens":1}}"#,
+            ),
+        ];
+        let body_bytes = crate::bedrock::event_stream_decoder::encode_messages(&events);
+
+        let server = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![(
+                "content-type".into(),
+                "application/vnd.amazon.eventstream".into(),
+            )],
+            body: body_bytes,
+        }]);
+
+        let model = create_amazon_bedrock(AmazonBedrockProviderSettings {
+            fetch: Some(server.transport()),
+            base_url: Some("https://bedrock.test".into()),
+            api_key: Some(Resolvable::Value("tok".into())),
+            ..Default::default()
+        })
+        .unwrap()
+        .chat(arn);
+
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("should succeed via the encoded stream route");
+        let parts = collect_stream(result).await;
+
+        let text: String = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::TextDelta { delta, .. } => Some(delta.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "Hello!");
+        assert_eq!(
+            server.seen()[0].url,
+            format!("https://bedrock.test/model/{encoded}/converse-stream")
+        );
+    }
+
+    // ── temperature clamping ─────────────────────────────────────────────────────
+
+    /// partial: `should clamp temperature above 1 to 1 and add warning`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn temperature_clamped_above_1() {
+        let server = mock_converse_json(200, ok_converse_body());
+
+        let model = make_model(&server);
+        let mut opts = default_options(test_prompt());
+        opts.temperature = Some(1.5);
+
+        let result = model.do_generate(&opts).await.expect("should succeed");
+
+        let body = result.request.unwrap().body.expect("request body");
+        assert_eq!(
+            body["inferenceConfig"]["temperature"].as_f64().unwrap(),
+            1.0
+        );
+        assert!(
+            result.warnings.iter().any(
+                |w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. }
+                    if feature == "temperature")
+            ),
+            "expected an unsupported-temperature warning, got {:?}",
+            result.warnings
+        );
+    }
+
+    /// partial: `should clamp temperature below 0 to 0 and add warning`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn temperature_clamped_below_0() {
+        let server = mock_converse_json(200, ok_converse_body());
+
+        let model = make_model(&server);
+        let mut opts = default_options(test_prompt());
+        opts.temperature = Some(-0.5);
+
+        let result = model.do_generate(&opts).await.expect("should succeed");
+
+        let body = result.request.unwrap().body.expect("request body");
+        assert_eq!(
+            body["inferenceConfig"]["temperature"].as_f64().unwrap(),
+            0.0
+        );
+        assert!(
+            result.warnings.iter().any(
+                |w| matches!(w, aimux_core::types::Warning::Unsupported { feature, .. }
+                    if feature == "temperature")
+            ),
+            "expected an unsupported-temperature warning"
+        );
+    }
+
+    /// partial: `should not clamp valid temperature between 0 and 1`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn temperature_not_clamped_in_range() {
+        let server = mock_converse_json(200, ok_converse_body());
+
+        let model = make_model(&server);
+        let mut opts = default_options(test_prompt());
+        opts.temperature = Some(0.7);
+
+        let result = model.do_generate(&opts).await.expect("should succeed");
+
+        let body = result.request.unwrap().body.expect("request body");
+        let temp = body["inferenceConfig"]["temperature"].as_f64().unwrap();
+        assert!(
+            (temp - 0.7).abs() < 1e-6,
+            "temperature should be 0.7, got {temp}"
+        );
+        assert!(result.warnings.is_empty(), "no warnings expected");
+    }
+
+    /// TS: "should omit unsupported sampling parameters for …" — a model that
+    /// rejects sampling parameters warns temperature, topK, topP in that order
+    /// (amazon-bedrock-chat-language-model.ts:204-230) and sends none of them.
+    #[test]
+    fn rejected_sampling_parameters_warn_in_upstream_order() {
+        let model_id = "global.anthropic.claude-opus-4-7";
+        let mut opts = default_options(test_prompt());
+        opts.temperature = Some(0.5);
+        opts.top_p = Some(0.7);
+        opts.top_k = Some(10.0);
+
+        let (body, warnings, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
+
+        assert_eq!(body["inferenceConfig"].get("temperature"), None);
+        assert_eq!(body["inferenceConfig"].get("topP"), None);
+        assert_eq!(body["inferenceConfig"].get("topK"), None);
+        let expected: Vec<_> = ["temperature", "topK", "topP"]
+            .into_iter()
+            .map(|feature| aimux_core::types::Warning::Unsupported {
+                feature: feature.into(),
+                details: Some(format!(
+                    "{feature} is not supported by {model_id} and will be ignored"
+                )),
+            })
+            .collect();
+        assert_eq!(warnings, expected);
+    }
+
+    /// TS: "should omit maxOutputTokens for Nova 2 high reasoning" — the warning
+    /// names the model (amazon-bedrock-chat-language-model.ts:511).
+    #[test]
+    fn nova_high_reasoning_max_output_tokens_warning_names_the_model() {
+        let model_id = "us.amazon.nova-2-lite-v1:0";
+        let mut opts = default_options(test_prompt());
+        opts.reasoning = Some(aimux_core::types::ReasoningEffort::High);
+        opts.max_output_tokens = Some(1024);
+
+        let (body, warnings, _, _) = build_request_body_checked(model_id, &opts, None).unwrap();
+
+        assert_eq!(body["inferenceConfig"].get("maxTokens"), None);
+        assert!(
+            warnings.contains(&aimux_core::types::Warning::Unsupported {
+                feature: "maxOutputTokens".into(),
+                details: Some(format!(
+                    "maxOutputTokens is not supported by {model_id} when high reasoning is enabled and will be ignored"
+                )),
+            }),
+            "{warnings:?}"
+        );
+    }
+
+    // ── guardrails ───────────────────────────────────────────────────────────────
+
+    /// partial: `should support guardrails`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// `providerOptions.bedrock.guardrailConfig` is forwarded as a top-level `guardrailConfig` in the request body.
+    #[tokio::test]
+    async fn guardrail_config_in_request_body() {
+        let server = mock_converse_json(200, ok_converse_body());
+
+        let model = make_model(&server);
+        let mut opts = default_options(test_prompt());
+        let po = provider_namespace(
+            "bedrock",
+            json!({
+                "guardrailConfig": {
+                    "guardrailIdentifier": "-1",
+                    "guardrailVersion": "1",
+                    "trace": "enabled"
+                }
+            }),
+        )
+        .unwrap();
+        opts.provider_options = Some(po);
+
+        let result = model.do_generate(&opts).await.expect("should succeed");
+        let body = result.request.unwrap().body.expect("request body");
+        assert_eq!(
+            body["guardrailConfig"],
+            json!({
+                "guardrailIdentifier": "-1",
+                "guardrailVersion": "1",
+                "trace": "enabled"
+            })
+        );
+    }
+
+    // ── trace in providerMetadata ────────────────────────────────────────────────
+
+    /// partial: `should include trace information in providerMetadata`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// The response `trace` field is surfaced as `providerMetadata.bedrock.trace`.
+    #[tokio::test]
+    async fn trace_in_provider_metadata() {
+        let trace = json!({
+            "guardrail": {
+                "inputAssessment": {
+                    "1abcd2ef34gh": {
+                        "contentPolicy": {
+                            "filters": [{
+                                "action": "BLOCKED",
+                                "confidence": "LOW",
+                                "type": "INSULTS"
+                            }]
+                        }
+                    }
+                }
+            }
+        });
+        let server = mock_converse_json(
+            200,
+            json!({
+                "output": { "message": { "role": "assistant", "content": [{ "text": "Hello, World!" }] } },
+                "usage": { "inputTokens": 4, "outputTokens": 34, "totalTokens": 38 },
+                "stopReason": "stop_sequence",
+                "trace": trace
+            }),
+        );
+
+        let model = make_model(&server);
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("should succeed");
+
+        let pm = result
+            .provider_metadata
+            .as_ref()
+            .expect("provider_metadata should be Some");
+        assert_eq!(pm["bedrock"]["trace"], trace);
+    }
+
+    // ── stop_sequence in providerMetadata ────────────────────────────────────────
+
+    /// partial: `should include stop_sequence in provider metadata`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// When the response carries `additionalModelResponseFields.delta.stop_sequence`, it is surfaced as `providerMetadata.bedrock.stopSequence` (and `amazonBedrock.stopSequence`).
+    #[tokio::test]
+    async fn stop_sequence_in_provider_metadata() {
+        let server = mock_converse_json(
+            200,
+            json!({
+                "output": { "message": { "role": "assistant", "content": [{ "text": "Hello, World!" }] } },
+                "stopReason": "stop_sequence",
+                "additionalModelResponseFields": { "delta": { "stop_sequence": "STOP" } },
+                "usage": { "inputTokens": 4, "outputTokens": 30, "totalTokens": 34 }
+            }),
+        );
+
+        let model = make_model(&server);
+        let mut opts = default_options(test_prompt());
+        opts.stop_sequences = Some(vec!["STOP".to_string()]);
+
+        let result = model.do_generate(&opts).await.expect("should succeed");
+
+        let pm = result
+            .provider_metadata
+            .as_ref()
+            .expect("provider_metadata should be Some");
+        assert_eq!(pm["bedrock"]["stopSequence"], json!("STOP"));
+        assert_eq!(pm["amazonBedrock"]["stopSequence"], json!("STOP"));
+    }
+
+    // ── tool calls with empty input ──────────────────────────────────────────────
+
+    /// partial: `should support tool calls with empty input (no arguments)`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// (stream).
+    ///
+    /// When a `toolUse` block carries no input deltas, the stream event loop
+    /// accumulates an empty string and yields `input: "{}"`.
+    #[tokio::test]
+    async fn stream_tool_call_empty_input() {
+        let events: Vec<(&str, &str, &str)> = vec![
+            ("event", "messageStart", r#"{"role":"assistant"}"#),
+            (
+                "event",
+                "contentBlockStart",
+                r#"{"contentBlockIndex":0,"start":{"toolUse":{"name":"updateIssueList","toolUseId":"tool_1"}}}"#,
+            ),
+            // No input deltas — the tool call has no arguments.
+            ("event", "contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            ("event", "messageStop", r#"{"stopReason":"tool_use"}"#),
+        ];
+        let body_bytes = crate::bedrock::event_stream_decoder::encode_messages(&events);
+
+        let server = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![(
+                "content-type".into(),
+                "application/vnd.amazon.eventstream".into(),
+            )],
+            body: body_bytes,
+        }]);
+
+        let model = make_model(&server);
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .expect("do_stream should succeed");
+        let parts = collect_stream(result).await;
+
+        let tool_calls: Vec<_> = parts
+            .iter()
+            .filter_map(|p| match p {
+                StreamPart::ToolCall(RawToolCall {
+                    tool_call_id,
+                    tool_name,
+                    input,
+                    ..
+                }) => Some((tool_call_id.clone(), tool_name.clone(), input.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].0, "tool_1");
+        assert_eq!(tool_calls[0].1, "updateIssueList");
+        assert_eq!(tool_calls[0].2, "{}");
+    }
+
+    // ── omit toolConfig ──────────────────────────────────────────────────────────
+
+    /// partial: `should omit toolConfig and filter tool content when conversation has tool calls but no active tools`; full port in src/bedrock/tests/chat_language_model.rs.
+    ///
+    #[tokio::test]
+    async fn omit_tool_config_when_no_active_tools() {
+        let server = mock_converse_json(200, ok_converse_body());
+
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelMessage::User {
+                content: vec![text("What is the weather in Toronto?")],
+                provider_options: None,
+            },
+            LanguageModelMessage::Assistant {
+                content: vec![tool_call(
+                    "tool-call-1".to_string(),
+                    "weather".to_string(),
+                    json!({ "city": "Toronto" }),
+                )],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![tool_result(
+                    "tool-call-1".to_string(),
+                    json!({ "type": "text", "value": "The weather in Toronto is 20°C." }),
+                )],
+                provider_options: None,
+            },
+            LanguageModelMessage::User {
+                content: vec![text("Now give me a summary.")],
+                provider_options: None,
+            },
+        ];
+
+        let model = make_model(&server);
+        let opts = CallOptions {
+            tools: Some(vec![]),
+            ..default_options(prompt)
+        };
+
+        let result = model.do_generate(&opts).await.expect("should succeed");
+        let body = result.request.unwrap().body.expect("request body");
+        assert!(
+            body.get("toolConfig").is_none(),
+            "toolConfig should be absent when tools list is empty"
+        );
+    }
+
+    /// partial: `should omit toolConfig and filter tool content when conversation has tool calls but no active tools`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// (same test) the assistant's `toolUse` block should be filtered out of the messages when no tools are active.
+    #[tokio::test]
+    async fn filter_tool_content_when_no_active_tools() {
+        let server = mock_converse_json(200, ok_converse_body());
+
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelMessage::User {
+                content: vec![text("What is the weather in Toronto?")],
+                provider_options: None,
+            },
+            LanguageModelMessage::Assistant {
+                content: vec![tool_call(
+                    "tool-call-1".to_string(),
+                    "weather".to_string(),
+                    json!({ "city": "Toronto" }),
+                )],
+                provider_options: None,
+            },
+            LanguageModelMessage::Tool {
+                content: vec![tool_result(
+                    "tool-call-1".to_string(),
+                    json!({ "type": "text", "value": "The weather in Toronto is 20°C." }),
+                )],
+                provider_options: None,
+            },
+            LanguageModelMessage::User {
+                content: vec![text("Now give me a summary.")],
+                provider_options: None,
+            },
+        ];
+
+        let model = make_model(&server);
+        let opts = CallOptions {
+            tools: Some(vec![]),
+            ..default_options(prompt)
+        };
+
+        let result = model.do_generate(&opts).await.expect("should succeed");
+        let body = result.request.unwrap().body.expect("request body");
+        assert_eq!(
+            body["messages"],
+            json!([{ "role": "user", "content": [{ "text": "What is the weather in Toronto?" }, { "text": "Now give me a summary." }] }])
+        );
+    }
+
+    // ── doGenerate: tool call with empty input (non-streaming) ───────────────────
+
+    /// partial: `should support tool calls with empty input (no arguments)`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// (generate).
+    #[tokio::test]
+    async fn generate_tool_call_empty_input() {
+        let server = mock_converse_json(
+            200,
+            json!({
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "toolUse": {
+                                    "toolUseId": "tool_1",
+                                    "name": "updateIssueList"
+                                    // no "input" field
+                                }
+                            }
+                        ]
+                    }
+                },
+                "stopReason": "tool_use",
+                "usage": { "inputTokens": 5, "outputTokens": 5 }
+            }),
+        );
+
+        let model = make_model(&server);
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("should succeed");
+
+        assert_eq!(result.content.len(), 1);
+        let (id, name, input) = as_tool_call(&result.content[0]);
+        assert_eq!(id, "tool_1");
+        assert_eq!(name, "updateIssueList");
+        assert_eq!(input, "{}");
+    }
+
+    /// TS: "should generate an id when toolUseId is empty" — an empty
+    /// `toolUseId` is replaced by a generated id, as
+    /// amazon-bedrock-chat-language-model.ts:796-797 does with `||`.
+    #[tokio::test]
+    async fn generate_tool_call_empty_tool_use_id() {
+        let server = mock_converse_json(
+            200,
+            json!({
+                "output": {
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"toolUse": {"toolUseId": "", "name": "test-tool", "input": {"value": "test"}}}
+                        ]
+                    }
+                },
+                "stopReason": "tool_use",
+                "usage": { "inputTokens": 1, "outputTokens": 1 }
+            }),
+        );
+
+        let result = make_model(&server)
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("should succeed");
+
+        let (id, name, input) = as_tool_call(&result.content[0]);
+        assert!(!id.is_empty(), "expected a generated tool call id");
+        assert_eq!(name, "test-tool");
+        assert_eq!(input, r#"{"value":"test"}"#);
+    }
+
+    // ── doGenerate: basic text + finish reason (sanity, already covered but
+    //    exercised here against the remaining-test helper set) ────────────────────
+
+    /// partial: `should pass the model and the messages`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// The request body carries the model id implicitly via the URL path and the messages array.
+    #[tokio::test]
+    async fn request_body_messages_shape() {
+        let server = mock_converse_json(200, ok_converse_body());
+
+        let prompt: LanguageModelPrompt = vec![
+            LanguageModelMessage::System {
+                content: "System Prompt".into(),
+                provider_options: None,
+            },
+            LanguageModelMessage::User {
+                content: vec![text("Hello")],
+                provider_options: None,
+            },
+        ];
+
+        let model = make_model(&server);
+        let result = model
+            .do_generate(&default_options(prompt))
+            .await
+            .expect("ok");
+        let body = result.request.unwrap().body.expect("request body");
+        assert_eq!(body["system"], json!([{ "text": "System Prompt" }]));
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(body["messages"][0]["content"][0]["text"], "Hello");
+    }
+
+    /// partial: `should extract finish reason`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// `guardrail_intervened` → ContentFilter.
+    #[tokio::test]
+    async fn finish_reason_guardrail_intervened() {
+        let server = mock_converse_json(
+            200,
+            json!({
+                "output": { "message": { "role": "assistant", "content": [{ "text": "" }] } },
+                "stopReason": "guardrail_intervened",
+                "usage": { "inputTokens": 4, "outputTokens": 1 }
+            }),
+        );
+
+        let model = make_model(&server);
+        let result = model
+            .do_generate(&default_options(test_prompt()))
+            .await
+            .expect("should succeed");
+
+        assert_eq!(
+            result.finish_reason.unified,
+            FinishReasonUnified::ContentFilter
+        );
+        assert_eq!(
+            result.finish_reason.raw.as_deref(),
+            Some("guardrail_intervened")
+        );
+    }
+
+    /// partial: `should handle throttlingException error`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// (stream).
+    #[tokio::test]
+    async fn stream_throttling_error() {
+        let body_bytes = crate::bedrock::event_stream_decoder::encode_messages(&[(
+            "exception",
+            "throttlingException",
+            r#"{"message":"Throttling Error"}"#,
+        )]);
+        let server = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![(
+                "content-type".into(),
+                "application/vnd.amazon.eventstream".into(),
+            )],
+            body: body_bytes,
+        }]);
+        let model = make_model(&server);
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+        assert!(parts.iter().any(
+            |part| matches!(part, StreamPart::Error { error } if error.status_code() == Some(429))
+        ));
+        assert!(parts.iter().any(|part| matches!(part, StreamPart::Finish { finish_reason, .. } if finish_reason.unified == FinishReasonUnified::Error)));
+    }
+
+    /// partial: `should handle validationException error`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// (stream).
+    #[tokio::test]
+    async fn stream_validation_error() {
+        let body_bytes = crate::bedrock::event_stream_decoder::encode_messages(&[(
+            "exception",
+            "validationException",
+            r#"{"message":"Validation Error"}"#,
+        )]);
+        let server = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![(
+                "content-type".into(),
+                "application/vnd.amazon.eventstream".into(),
+            )],
+            body: body_bytes,
+        }]);
+        let model = make_model(&server);
+        let result = model
+            .do_stream(&default_options(test_prompt()))
+            .await
+            .unwrap();
+        let parts = collect_stream(result).await;
+        assert!(parts.iter().any(
+            |part| matches!(part, StreamPart::Error { error } if error.status_code() == Some(400))
+        ));
+        assert!(parts.iter().any(|part| matches!(part, StreamPart::Finish { finish_reason, .. } if finish_reason.unified == FinishReasonUnified::Error)));
+    }
+
+    // ── doStream: error handling ─────────────────────────────────────────────────
+
+    // ── doStream: request body parity ────────────────────────────────────────────
+
+    /// partial: `should return the request body`; full port in src/bedrock/tests/chat_language_model.rs.
+    /// (stream) — the stream result carries the request body for debugging.
+    #[tokio::test]
+    async fn stream_request_body_available() {
+        let events: Vec<(&str, &str, &str)> = vec![
+            ("event", "messageStart", r#"{"role":"assistant"}"#),
+            (
+                "event",
+                "contentBlockDelta",
+                r#"{"contentBlockIndex":0,"delta":{"text":"hi"}}"#,
+            ),
+            ("event", "contentBlockStop", r#"{"contentBlockIndex":0}"#),
+            ("event", "messageStop", r#"{"stopReason":"end_turn"}"#),
+        ];
+        let body_bytes = crate::bedrock::event_stream_decoder::encode_messages(&events);
+
+        let server = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![(
+                "content-type".into(),
+                "application/vnd.amazon.eventstream".into(),
+            )],
+            body: body_bytes,
+        }]);
+
+        let model = make_model(&server);
+        let mut opts = default_options(test_prompt());
+        opts.max_output_tokens = Some(256);
+
+        let result = model.do_stream(&opts).await.expect("should succeed");
+        let body = result.request.unwrap().body.expect("stream request body");
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(body["inferenceConfig"]["maxTokens"], 256);
+    }
+}
+
+// ── Older ports (previously `tests/bedrock_upstream_e2e_test.rs`) ──
+
+mod bedrock_upstream_e2e {
+    use crate::bedrock::tests::upstream_e2e_support::*;
+
+    use aimux_core::language_model::LanguageModel;
+    use aimux_core::language_model_message::LanguageModelMessage;
+    use aimux_core::options::CallOptions;
+    use aimux_core::result::GenerateContent;
+
+    use aimux_core::stream_part::StreamPart;
+    use aimux_core::tool::FunctionTool;
+    use aimux_core::types::FinishReasonUnified;
+
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+    use futures::StreamExt;
+    use serde_json::json;
+
+    /// partial: `should extract reasoning text with signature`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn generate_reasoning_signature_and_usage() {
+        let response = json!({"output":{"message":{"role":"assistant","content":[
+            {"reasoningContent":{"reasoningText":{"text":"I need to think about this problem carefully...","signature":"abc123signature"}}},
+            {"text":"The answer is 42."}]}},"usage":{"inputTokens":4,"outputTokens":34,"totalTokens":38},"stopReason":"stop_sequence"});
+        let fetch = MockFetch::new(vec![Canned::json(&response)]);
+        let result = provider(&fetch)
+            .chat("anthropic.model")
+            .do_generate(&options())
+            .await
+            .unwrap();
+        let seen = fetch.seen();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].method, "POST");
+        assert_eq!(
+            seen[0].url,
+            "https://bedrock.test/model/anthropic.model/converse"
+        );
+        assert_eq!(seen[0].headers["authorization"], "Bearer test-token");
+        assert_eq!(seen[0].json_body(), chat_body());
+        assert_eq!(result.request.unwrap().body.unwrap(), chat_body());
+        assert_eq!(result.content.len(), 2);
+        let GenerateContent::Reasoning(reasoning) = &result.content[0] else {
+            panic!("expected reasoning")
+        };
+        assert_eq!(
+            reasoning.text,
+            "I need to think about this problem carefully..."
+        );
+        assert_eq!(
+            serde_json::to_value(&reasoning.provider_metadata).unwrap(),
+            json!({"amazonBedrock":{"signature":"abc123signature"},"bedrock":{"signature":"abc123signature"}})
+        );
+        assert!(
+            matches!(&result.content[1], GenerateContent::Text { text, .. } if text == "The answer is 42.")
+        );
+        assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+        assert_eq!(result.finish_reason.raw.as_deref(), Some("stop_sequence"));
+        assert_eq!(result.usage.input_tokens.total, Some(4));
+        assert_eq!(result.usage.input_tokens.no_cache, Some(4));
+        assert_eq!(result.usage.output_tokens.total, Some(34));
+        assert_eq!(result.usage.output_tokens.text, Some(34));
+        assert_eq!(result.usage.raw, response["usage"].as_object().cloned());
+    }
+
+    /// partial: `should stream text deltas with metadata and usage`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn stream_text_and_usage() {
+        let fetch = MockFetch::new(vec![stream_response(json!([
+            {"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"Hello"}}},
+            {"contentBlockDelta":{"contentBlockIndex":1,"delta":{"text":", "}}},
+            {"contentBlockDelta":{"contentBlockIndex":2,"delta":{"text":"World!"}}},
+            {"metadata":{"usage":{"inputTokens":4,"outputTokens":34,"totalTokens":38},"metrics":{"latencyMs":10}}},
+            {"messageStop":{"stopReason":"stop_sequence"}}
+        ]))]);
+        let result = provider(&fetch)
+            .chat("anthropic.model")
+            .do_stream(&options())
+            .await
+            .unwrap();
+        assert_eq!(
+            fetch.seen()[0].url,
+            "https://bedrock.test/model/anthropic.model/converse-stream"
+        );
+        assert_eq!(fetch.seen()[0].json_body(), chat_body());
+        assert_eq!(result.request.unwrap().body.unwrap(), chat_body());
+        let parts = result
+            .stream
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(parts.len(), 9);
+        assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
+        assert!(
+            matches!(&parts[1], StreamPart::ResponseMetadata(meta) if meta.model_id.as_deref() == Some("anthropic.model"))
+        );
+        for (offset, id, expected) in [(2, "0", "Hello"), (4, "1", ", "), (6, "2", "World!")] {
+            assert!(
+                matches!(&parts[offset], StreamPart::TextStart { id: actual, .. } if actual == id)
+            );
+            assert!(
+                matches!(&parts[offset + 1], StreamPart::TextDelta { id: actual, delta, .. } if actual == id && delta == expected)
+            );
+        }
+        let StreamPart::Finish {
+            finish_reason,
+            usage,
+            ..
+        } = &parts[8]
+        else {
+            panic!("expected finish")
+        };
+        assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
+        assert_eq!(finish_reason.raw.as_deref(), Some("stop_sequence"));
+        assert_eq!(usage.input_tokens.total, Some(4));
+        assert_eq!(usage.input_tokens.no_cache, Some(4));
+        assert_eq!(usage.input_tokens.cache_read, Some(0));
+        assert_eq!(usage.input_tokens.cache_write, Some(0));
+        assert_eq!(usage.output_tokens.total, Some(34));
+        assert_eq!(usage.output_tokens.text, Some(34));
+        assert_eq!(
+            usage.raw,
+            json!({"inputTokens":4,"outputTokens":34,"totalTokens":38})
+                .as_object()
+                .cloned()
+        );
+    }
+
+    /// partial: `should stream tool deltas`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn stream_partial_tool_arguments() {
+        let fetch = MockFetch::new(vec![stream_response(json!([
+            {"contentBlockStart":{"contentBlockIndex":0,"start":{"toolUse":{"toolUseId":"tool-use-id","name":"test-tool"}}}},
+            {"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"value\":"}}}},
+            {"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"\"Sparkle Day\"}"}}}},
+            {"contentBlockStop":{"contentBlockIndex":0}},
+            {"messageStop":{"stopReason":"tool_use"}}
+        ]))]);
+        let schema =
+            json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"]});
+        let mut opts = options();
+        opts.tools = Some(vec![FunctionTool::new("test-tool", schema.clone()).into()]);
+        let result = provider(&fetch)
+            .chat("anthropic.model")
+            .do_stream(&opts)
+            .await
+            .unwrap();
+        let mut expected = chat_body();
+        expected["toolConfig"] =
+            json!({"tools":[{"toolSpec":{"name":"test-tool","inputSchema":{"json":schema}}}]});
+        assert_eq!(fetch.seen()[0].json_body(), expected);
+        let parts = result
+            .stream
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(parts.len(), 8);
+        assert!(
+            matches!(&parts[2], StreamPart::ToolInputStart { id, tool_name, .. } if id == "tool-use-id" && tool_name == "test-tool")
+        );
+        assert!(
+            matches!(&parts[3], StreamPart::ToolInputDelta { id, delta, .. } if id == "tool-use-id" && delta == "{\"value\":")
+        );
+        assert!(
+            matches!(&parts[4], StreamPart::ToolInputDelta { id, delta, .. } if id == "tool-use-id" && delta == "\"Sparkle Day\"}")
+        );
+        assert!(matches!(&parts[5], StreamPart::ToolInputEnd { id, .. } if id == "tool-use-id"));
+        let StreamPart::ToolCall(call) = &parts[6] else {
+            panic!("expected tool call")
+        };
+        assert_eq!(call.tool_call_id, "tool-use-id");
+        assert_eq!(call.tool_name, "test-tool");
+        assert_eq!(call.input, "{\"value\":\"Sparkle Day\"}");
+        assert!(
+            matches!(&parts[7], StreamPart::Finish { finish_reason, .. } if finish_reason.unified == FinishReasonUnified::ToolCalls && finish_reason.raw.as_deref() == Some("tool_use"))
+        );
+    }
+
+    /// partial: `should handle JSON response format in streaming`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn stream_json_response_tool_as_text() {
+        let fetch = MockFetch::new(vec![stream_response(json!([
+            {"contentBlockStart":{"contentBlockIndex":0,"start":{"toolUse":{"toolUseId":"tool-use-id","name":"json"}}}},
+            {"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"value\":\"test\"}"}}}},
+            {"contentBlockStop":{"contentBlockIndex":0}},
+            {"messageStop":{"stopReason":"tool_use"}}
+        ]))]);
+        let mut call = CallOptions::new(vec![LanguageModelMessage::user_text("Generate JSON")]);
+        call.response_format = Some(aimux_core::options::ResponseFormat::Json {
+            schema: Some(
+                json!({"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}),
+            ),
+            name: None,
+            description: None,
+        });
+        let result = provider(&fetch)
+            .chat("anthropic.model")
+            .do_stream(&call)
+            .await
+            .unwrap();
+        let parts = result
+            .stream
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(matches!(&parts[0], StreamPart::StreamStart { warnings } if warnings.is_empty()));
+        assert!(
+            matches!(&parts[1], StreamPart::ResponseMetadata(meta) if meta.model_id.as_deref() == Some("anthropic.model"))
+        );
+        assert_eq!(parts.len(), 6);
+        assert!(matches!(&parts[2], StreamPart::TextStart { id, .. } if id == "0"));
+        assert!(
+            matches!(&parts[3], StreamPart::TextDelta { id, delta, .. } if id == "0" && delta == "{\"value\":\"test\"}")
+        );
+        assert!(matches!(&parts[4], StreamPart::TextEnd { id, .. } if id == "0"));
+        let StreamPart::Finish {
+            finish_reason,
+            provider_metadata,
+            ..
+        } = &parts[5]
+        else {
+            panic!("expected finish")
+        };
+        assert_eq!(finish_reason.unified, FinishReasonUnified::Stop);
+        assert_eq!(finish_reason.raw.as_deref(), Some("tool_use"));
+        assert_eq!(
+            serde_json::to_value(provider_metadata.as_ref().unwrap()).unwrap(),
+            json!({
+                "amazonBedrock":{"isJsonResponseFromTool":true,"stopSequence":null},
+                "bedrock":{"isJsonResponseFromTool":true,"stopSequence":null}
+            })
+        );
+        assert_eq!(
+            fetch.seen()[0].json_body(),
+            json!({
+                "messages":[{"role":"user","content":[{"text":"Generate JSON"}]}],
+                "additionalModelResponseFieldPaths":["/delta/stop_sequence"],
+                "toolConfig":{"tools":[{"toolSpec":{"name":"json","description":"Respond with a JSON object.",
+                    "inputSchema":{"json":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}}}}],"toolChoice":{"any":{}}}
+            })
+        );
+    }
+
+    /// partial: `should handle Anthropic provider-defined tools`; full port in src/bedrock/tests/chat_language_model.rs.
+    #[tokio::test]
+    async fn generate_provider_defined_tool_with_input_schema() {
+        let fetch = MockFetch::new(vec![Canned::json(&json!({
+            "output":{"message":{"role":"assistant","content":[{"toolUse":{"toolUseId":"tool-use-id","name":"bash","input":{"command":"ls -l"}}}]}},
+            "usage":{"inputTokens":10,"outputTokens":20,"totalTokens":30},"stopReason":"tool_use"
+        }))]);
+        let mut call = options();
+        call.tools = Some(vec![aimux_core::tool::Tool::Provider(
+            aimux_core::tool::ProviderTool {
+                id: "anthropic.bash_20241022".parse().unwrap(),
+                name: "bash".into(),
+                args: serde_json::Map::new(),
+                supports_deferred_results: None,
+            },
+        )]);
+        call.tool_choice = Some(aimux_core::options::LanguageModelV4ToolChoice::Auto);
+        let result = provider(&fetch)
+            .chat("anthropic.model")
+            .do_generate(&call)
+            .await
+            .unwrap();
+        let body = fetch.seen()[0].json_body();
+        assert_eq!(
+            body["additionalModelRequestFields"],
+            json!({"tool_choice":{"type":"auto"},"anthropic_beta":["computer-use-2024-10-22"]})
+        );
+        assert_eq!(
+            body["toolConfig"]["tools"],
+            json!([{"toolSpec":{"name":"bash","inputSchema":{"json":{
+                "$schema":"http://json-schema.org/draft-07/schema#","type":"object",
+                "properties":{"command":{"type":"string"},"restart":{"type":"boolean"}},
+                "required":["command"],"additionalProperties":false
+            }}}}])
+        );
+        assert!(body["toolConfig"].get("toolChoice").is_none());
+        assert_eq!(result.content.len(), 1);
+        assert!(result.warnings.is_empty());
+        assert!(
+            matches!(&result.content[0], GenerateContent::ToolCall(tool) if tool.tool_call_id == "tool-use-id" && tool.tool_name == "bash" && tool.input == "{\"command\":\"ls -l\"}")
+        );
+    }
+
+    /// The JSON instruction Bedrock adds for an Anthropic model that cannot take
+    /// a forced tool, appended to the system prompt
+    /// (`@ai-sdk/amazon-bedrock@5.0.100` src/amazon-bedrock-chat-language-model.ts:614-621,
+    /// with `injectJsonInstructionIntoMessages` from `@ai-sdk/provider-utils`).
+    #[tokio::test]
+    async fn json_instruction_text_for_a_model_without_forced_tools() {
+        let response = json!({"output":{"message":{"role":"assistant","content":[{"text":"{}"}]}},
+            "usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2},"stopReason":"end_turn"});
+        let fetch = MockFetch::new(vec![Canned::json(&response)]);
+        let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+        let mut call = CallOptions::new(vec![
+            LanguageModelMessage::System {
+                content: "Be brief.".into(),
+                provider_options: None,
+            },
+            LanguageModelMessage::user_text("Hello"),
+        ]);
+        call.response_format = Some(aimux_core::options::ResponseFormat::Json {
+            schema: Some(schema.clone()),
+            name: None,
+            description: None,
+        });
+        call.provider_options = Some(
+            aimux_core::shared::provider_namespace(
+                "bedrock",
+                json!({"structuredOutputMode": "jsonTool"}),
+            )
+            .unwrap(),
+        );
+        provider(&fetch)
+            .chat("us.anthropic.claude-sonnet-5-5-v1:0")
+            .do_generate(&call)
+            .await
+            .unwrap();
+        assert_eq!(
+            fetch.seen()[0].json_body()["system"],
+            json!([{"text": format!(
+                "Be brief.\n\nJSON schema:\n{schema}\nYou MUST answer with only a JSON object that matches the JSON schema above. Do not wrap it in markdown fences or include any other text."
+            )}])
+        );
+    }
+}
