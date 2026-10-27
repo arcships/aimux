@@ -4,16 +4,19 @@
 //! `parse_mistral_provider_options`, fed the same options under the `mistral`
 //! provider-options namespace.
 
-use crate::mistral::embedding::{MistralEmbeddingProviderOptions, parse_mistral_provider_options};
+use crate::mistral::embedding_model_options::{
+    MistralEmbeddingProviderOptions, parse_mistral_provider_options,
+};
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 use serde_json::{Value, json};
 
 /// Parse embedding options given as the upstream `mistral` options object.
 fn parse(options: Value) -> Result<MistralEmbeddingProviderOptions, AiMuxError> {
-    let provider_options: SharedProviderOptions =
-        serde_json::from_value(json!({ crate::mistral::options::NAMESPACE: options }))
-            .expect("namespace map");
+    let provider_options: SharedProviderOptions = serde_json::from_value(
+        json!({ crate::mistral::chat_language_model_options::NAMESPACE: options }),
+    )
+    .expect("namespace map");
     parse_mistral_provider_options(Some(&provider_options))
 }
 

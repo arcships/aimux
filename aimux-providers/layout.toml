@@ -7,7 +7,7 @@ package = "@ai-sdk/mistral"
 
 [[mistral.files]]
 upstream = "src/convert-mistral-usage.ts"
-rust = "mistral/model.rs"
+rust = "mistral/convert_usage.rs"
 status = "mapped"
 
 [mistral.files.tests]
@@ -17,14 +17,14 @@ ts-only = [
 
 [[mistral.files]]
 upstream = "src/convert-to-mistral-chat-messages.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/convert_to_chat_messages.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/get-response-metadata.ts"
-rust = "mistral/model.rs"
+rust = "mistral/chat_language_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
@@ -38,91 +38,91 @@ status = "mapped"
 
 [[mistral.files]]
 upstream = "src/map-mistral-finish-reason.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/map_finish_reason.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-chat-language-model-options.ts"
-rust = "mistral/options.rs"
+rust = "mistral/chat_language_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-chat-language-model.ts"
-rust = "mistral/model.rs"
+rust = "mistral/chat_language_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-chat-prompt.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/convert_to_chat_messages.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-embedding-model-options.ts"
-rust = "mistral/embedding.rs"
+rust = "mistral/embedding_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-embedding-model.ts"
-rust = "mistral/embedding.rs"
+rust = "mistral/embedding_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-error.ts"
-rust = "mistral/mod.rs"
+rust = "mistral/error.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-prepare-tools.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/prepare_tools.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-provider.ts"
-rust = "mistral/mod.rs"
+rust = "mistral/provider.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-speech-model-options.ts"
-rust = "mistral/options.rs"
+rust = "mistral/speech_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-speech-model.ts"
-rust = "mistral/speech.rs"
+rust = "mistral/speech_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-transcription-model-options.ts"
-rust = "mistral/options.rs"
+rust = "mistral/transcription_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-transcription-model.ts"
-rust = "mistral/transcription.rs"
+rust = "mistral/transcription_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
@@ -506,140 +506,140 @@ package = "@ai-sdk/openai-compatible"
 
 [[openai_compatible.files]]
 upstream = "src/chat/convert-openai-compatible-chat-usage.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/convert_chat_usage.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/convert-to-openai-compatible-chat-messages.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/convert_to_chat_messages.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/get-response-metadata.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/map-openai-compatible-finish-reason.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/map_finish_reason.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-api-types.ts"
-rust = "openai_compatible/types.rs"
+rust = "openai_compatible/chat/api_types.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-chat-language-model-options.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/chat/chat_language_model_options.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-chat-language-model.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-metadata-extractor.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/chat/metadata_extractor.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-prepare-tools.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/prepare_tools.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/convert-openai-compatible-completion-usage.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/convert_completion_usage.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/convert-to-openai-compatible-completion-prompt.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/convert_to_completion_prompt.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/get-response-metadata.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/get_response_metadata.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/map-openai-compatible-finish-reason.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/map_finish_reason.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/openai-compatible-completion-language-model-options.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/openai-compatible-completion-language-model.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/embedding/openai-compatible-embedding-model-options.ts"
-rust = "openai_compatible/embedding.rs"
+rust = "openai_compatible/embedding/embedding_model_options.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/embedding/openai-compatible-embedding-model.ts"
-rust = "openai_compatible/embedding.rs"
+rust = "openai_compatible/embedding/embedding_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-model-options.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-model.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-settings.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -660,14 +660,14 @@ status = "mapped"
 
 [[openai_compatible.files]]
 upstream = "src/openai-compatible-error.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/error.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/openai-compatible-provider.ts"
-rust = "openai_compatible/mod.rs"
+rust = "openai_compatible/provider.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -678,7 +678,7 @@ ts-only = [
 
 [[openai_compatible.files]]
 upstream = "src/utils/to-camel-case.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/utils/to_camel_case.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -922,6 +922,128 @@ status = "mapped"
 [cohere.files.tests]
 
 [[cohere.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[deepseek]
+package = "@ai-sdk/deepseek"
+
+[[deepseek.files]]
+upstream = "src/chat/convert-to-deepseek-chat-messages.ts"
+rust = "deepseek/chat/convert_to_chat_messages.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/convert-to-deepseek-usage.ts"
+rust = "deepseek/chat/convert_to_usage.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-api-types.ts"
+rust = "deepseek/chat/chat_api_types.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-language-model-options.ts"
+rust = "deepseek/chat/chat_language_model_options.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-language-model.ts"
+rust = "deepseek/chat/chat_language_model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+ts-only = [
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should send json_schema response format and skip schema injection", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should honor strictJsonSchema provider option", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should fall back to json_object without a schema", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-file-part-options.ts"
+rust = "deepseek/chat/file_part_options.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-prepare-tools.ts"
+rust = "deepseek/chat/prepare_tools.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+ts-only = [
+  { case = "prepareTools › should pass through strict mode for multiple tools with different strict settings", reason = "needs supportsStrictToolCalls undefined, which only a directly built model has; the provider always sets it from the base URL (deepseek-provider.ts:95), as aimux does" },
+]
+
+[[deepseek.files]]
+upstream = "src/chat/get-response-metadata.ts"
+rust = "deepseek/chat/chat_language_model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/is-deepseek-v4-model.ts"
+rust = "deepseek/chat/is_v4_model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/map-deepseek-finish-reason.ts"
+rust = "deepseek/chat/map_finish_reason.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/deepseek-provider.ts"
+rust = "deepseek/provider.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/index.ts"
+rust = "deepseek/mod.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/internal/index.ts"
+rust = "deepseek/mod.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files-api.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files-options.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
