@@ -62,7 +62,11 @@ MERGED_MEMBER = "aimux_ffi.merged.o"
 
 
 def header_exports(root):
+    """`aimux_*` functions declared in aimux.h, comments removed first so a
+    name mentioned in a `/* ... */` or `//` comment is not taken for one."""
     text = (root / "aimux-ffi" / "include" / "aimux.h").read_text(encoding="utf-8")
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", " ", text)
     return set(re.findall(r"(?<![\w(])(aimux_\w+)\s*\(", text))
 
 
@@ -167,6 +171,12 @@ def main(argv):
         print(f"  before merge: {len(data)} bytes; merged object {merged.stat().st_size} bytes ({' '.join([ld, '-r', *gc])})")
         subprocess.run([strip, "--strip-unneeded", str(merged)], check=True)
         print(f"  after strip --strip-unneeded: {merged.stat().st_size} bytes ({strip})")
+        kept = defined_exports(nm, [(merged, MERGED_MEMBER)])
+        if kept != declared:
+            sys.exit(
+                f"{path}: the merged object does not define the C API after the strip: "
+                f"missing {sorted(declared - kept)}, extra {sorted(kept - declared)}"
+            )
 
         merged_archive = tmp / "merged.a"
         archive_response = tmp / "archive.rsp"
