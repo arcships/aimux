@@ -4,7 +4,7 @@
 //! the expected values below leave such keys out. Snapshot files hold the same
 //! values as the upstream `.snap` file, minus those keys.
 
-use crate::mistral::convert::convert_prompt_to_mistral_messages;
+use crate::mistral::convert_to_chat_messages::convert_prompt_to_mistral_messages;
 use aimux_core::language_model_message::{
     FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, UserPart,
 };

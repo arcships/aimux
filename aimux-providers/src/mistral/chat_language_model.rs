@@ -9,26 +9,29 @@
 //! - Usage supports `num_cached_tokens` / `prompt_tokens_details.cached_tokens`.
 //! - Finish reasons include `model_length`.
 
-use aimux_core::tool::RawToolCall;
+use aimux_core::tool::{RawToolCall, Tool};
 
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::LanguageModel;
-use aimux_core::options::CallOptions;
+use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, ResponseMetadata, Usage};
+use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Usage, Warning};
 
-use aimux_provider_utils::{Transformer, pipe_through};
+use aimux_provider_utils::{Transformer, inject_json_instruction_into_messages, pipe_through};
 
 use crate::shared::EndpointConfig;
 use crate::stream::{ChatToolCalls, Controller, Emit, FINISH_OTHER, StreamContext, ToolCallDelta};
 
-use super::convert::{build_request_body, parse_finish_reason, request_warnings};
-use super::types::{ChatCompletionResponse, StreamChunk, UsageResponse};
+use super::api_types::{ChatCompletionResponse, StreamChunk};
+use super::convert_to_chat_messages::convert_prompt_to_mistral_messages;
+use super::convert_usage::convert_usage;
+use super::map_finish_reason::parse_finish_reason;
+use super::prepare_tools::prepare_tools;
 
 /// A Mistral language model.
 pub struct MistralModel {
@@ -49,60 +52,6 @@ impl MistralModel {
             generate_id: generate_id_fn
                 .unwrap_or_else(|| Arc::new(aimux_provider_utils::generate_id)),
         }
-    }
-}
-
-// ── Usage conversion ─────────────────────────────────────────────────────────
-
-/// Convert a Mistral `UsageResponse` into the core `Usage` type.
-///
-/// Mirrors the TS `convertMistralUsage`:
-/// - `input.total = prompt_tokens`
-/// - `input.noCache = prompt_tokens - cache_read_tokens`
-/// - `input.cacheRead = cache_read_tokens` (or undefined when 0)
-/// - `output.total = completion_tokens`
-pub(super) fn convert_usage(usage: &UsageResponse) -> Usage {
-    let raw = usage.raw.clone();
-    let usage = &usage.fields;
-    let prompt_tokens = usage.prompt_tokens;
-    let completion_tokens = usage.completion_tokens;
-
-    let cache_read = usage
-        .num_cached_tokens
-        .or_else(|| {
-            usage
-                .prompt_tokens_details
-                .as_ref()
-                .and_then(|d| d.cached_tokens)
-        })
-        .or_else(|| {
-            usage
-                .prompt_token_details
-                .as_ref()
-                .and_then(|d| d.cached_tokens)
-        })
-        .unwrap_or(0);
-
-    let no_cache = prompt_tokens - cache_read;
-
-    Usage {
-        input_tokens: aimux_core::types::InputTokenUsage {
-            total: Some(prompt_tokens),
-            no_cache: Some(no_cache),
-            cache_read: if cache_read > 0 {
-                Some(cache_read)
-            } else {
-                None
-            },
-            cache_write: None,
-        },
-        output_tokens: aimux_core::types::OutputTokenUsage {
-            total: Some(completion_tokens),
-            text: Some(completion_tokens),
-            ..Default::default()
-        },
-        // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: raw.as_object().cloned(),
     }
 }
 
@@ -181,7 +130,7 @@ impl LanguageModel for MistralModel {
             exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
-            super::mistral_failed_response_handler(),
+            super::error::mistral_failed_response_handler(),
         )
         .await?;
 
@@ -280,7 +229,7 @@ impl LanguageModel for MistralModel {
             exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            super::mistral_failed_response_handler(),
+            super::error::mistral_failed_response_handler(),
         )
         .await?;
 
@@ -354,7 +303,7 @@ impl MistralChatStream {
 
         if let Some(err_obj) = parsed.get("error") {
             controller.enqueue(StreamPart::Error {
-                error: super::mistral_stream_error(
+                error: super::error::mistral_stream_error(
                     err_obj,
                     &self.ctx.url,
                     self.ctx.request_body.clone(),
@@ -494,4 +443,226 @@ impl Transformer for MistralChatStream {
             provider_metadata: None,
         });
     }
+}
+
+// ── Request body ────────────────────────────────────────────────────────────
+
+/// Convert `CallOptions` to a Mistral request body.
+///
+/// # Errors
+/// Rejects invalid provider options and unsupported prompt parts.
+pub fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<Value, AiMuxError> {
+    let provider_options = super::chat_language_model_options::validated_mistral_options(
+        options.provider_options.as_ref(),
+    )?;
+    let structured_outputs = provider_options
+        .and_then(|o| o.get("structuredOutputs"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    // Mistral's JSON object mode needs the instruction in the prompt
+    // (@ai-sdk/mistral@4.0.55 mistral-chat-language-model.ts:171-181).
+    let messages = match &options.response_format {
+        Some(ResponseFormat::Json { schema, .. }) if !structured_outputs || schema.is_none() => {
+            convert_prompt_to_mistral_messages(&inject_json_instruction_into_messages(
+                &options.prompt,
+                schema.as_ref(),
+                None,
+                None,
+            ))?
+        }
+        _ => convert_prompt_to_mistral_messages(&options.prompt)?,
+    };
+
+    let mut body = json!({
+        "model": model_id,
+        "messages": messages,
+    });
+
+    if stream {
+        body["stream"] = json!(true);
+    }
+
+    if let Some(max_tokens) = options.max_output_tokens {
+        body["max_tokens"] = json!(max_tokens);
+    }
+    if let Some(temp) = options.temperature {
+        body["temperature"] = json!(temp);
+    }
+    if let Some(top_p) = options.top_p {
+        body["top_p"] = json!(top_p);
+    }
+    if let Some(ref stop) = options.stop_sequences {
+        body["stop"] = json!(stop);
+    }
+    if let Some(seed) = options.seed {
+        body["random_seed"] = json!(seed);
+    }
+    if let Some(fp) = options.frequency_penalty {
+        body["frequency_penalty"] = json!(fp);
+    }
+    if let Some(pp) = options.presence_penalty {
+        body["presence_penalty"] = json!(pp);
+    }
+
+    // Response format — Mistral uses json_schema / json_object.
+    if let Some(ref rf) = options.response_format {
+        match rf {
+            ResponseFormat::Text => {}
+            ResponseFormat::Json {
+                schema,
+                name,
+                description,
+            } => {
+                if schema.is_some() && structured_outputs {
+                    let mut schema_obj = json!({});
+                    if let Some(s) = schema {
+                        schema_obj["schema"] = s.clone();
+                    }
+                    schema_obj["name"] =
+                        json!(name.clone().unwrap_or_else(|| "response".to_string()));
+                    if let Some(d) = description {
+                        schema_obj["description"] = json!(d);
+                    }
+                    schema_obj["strict"] = json!(
+                        provider_options
+                            .and_then(|o| o.get("strictJsonSchema"))
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false)
+                    );
+                    body["response_format"] = json!({
+                        "type": "json_schema",
+                        "json_schema": schema_obj,
+                    });
+                } else {
+                    body["response_format"] = json!({ "type": "json_object" });
+                }
+            }
+        }
+    }
+
+    if let Some(provider_options) = provider_options {
+        for (key, wire_key) in [
+            ("safePrompt", "safe_prompt"),
+            ("documentImageLimit", "document_image_limit"),
+            ("documentPageLimit", "document_page_limit"),
+            ("promptCacheKey", "prompt_cache_key"),
+        ] {
+            if let Some(value) = provider_options.get(key) {
+                body[wire_key] = value.clone();
+            }
+        }
+    }
+    if supports_reasoning_effort(model_id) {
+        let effort = provider_options
+            .and_then(|o| o.get("reasoningEffort"))
+            .cloned()
+            .or_else(|| {
+                options.reasoning.filter(|r| r.is_custom()).map(|r| {
+                    json!(if r == ReasoningEffort::None {
+                        "none"
+                    } else {
+                        "high"
+                    })
+                })
+            });
+        if let Some(effort) = effort {
+            body["reasoning_effort"] = effort;
+        }
+    }
+
+    // Preserve the empty tools array when the supplied tools are all unsupported.
+    if let Some(tools) = options.tools.as_ref().filter(|tools| !tools.is_empty()) {
+        let function_tools = Some(
+            tools
+                .iter()
+                .filter_map(|t| match t {
+                    Tool::Function(ft) => Some(ft.clone()),
+                    Tool::Provider(_) => None,
+                })
+                .collect(),
+        );
+        let mut prepared = prepare_tools(&function_tools, options.tool_choice.as_ref());
+        if prepared.tools.is_none() {
+            prepared.tools = Some(Vec::new());
+            prepared.tool_choice = options.tool_choice.as_ref().map(|choice| {
+                json!(match choice {
+                    LanguageModelV4ToolChoice::Auto => "auto",
+                    LanguageModelV4ToolChoice::None => "none",
+                    _ => "any",
+                })
+            });
+        }
+        body["tools"] = json!(prepared.tools);
+        if let Some(choice) = prepared.tool_choice {
+            body["tool_choice"] = choice;
+        }
+        if let Some(value) = provider_options.and_then(|o| o.get("parallelToolCalls")) {
+            body["parallel_tool_calls"] = value.clone();
+        }
+    }
+    Ok(body)
+}
+
+fn supports_reasoning_effort(model_id: &str) -> bool {
+    matches!(
+        model_id,
+        "glm-5-2"
+            | "labs-leanstral-1-5"
+            | "labs-leanstral-1-5-1"
+            | "magistral-medium-latest"
+            | "magistral-small-latest"
+            | "mistral-medium"
+            | "mistral-medium-2604"
+            | "mistral-medium-3"
+            | "mistral-medium-3-5"
+            | "mistral-medium-3.5"
+            | "mistral-medium-latest"
+            | "mistral-small-2603"
+            | "mistral-small-latest"
+            | "mistral-vibe-cli-fast"
+            | "mistral-vibe-cli-latest"
+            | "mistral-vibe-cli-with-tools"
+            | "zai-glm-5-2"
+    )
+}
+
+/// The warnings emitted while preparing an upstream Mistral request.
+#[must_use]
+pub fn request_warnings(options: &CallOptions, model_id: &str) -> Vec<Warning> {
+    let mut warnings = Vec::new();
+    if options.top_k.is_some() {
+        warnings.push(Warning::Unsupported {
+            feature: "topK".into(),
+            details: None,
+        });
+    }
+    if let Some(reasoning) = options.reasoning.filter(|r| r.is_custom()) {
+        if !supports_reasoning_effort(model_id) {
+            warnings.push(Warning::Unsupported {
+                feature: "reasoning".into(),
+                details: Some("This model does not support reasoning configuration.".into()),
+            });
+        } else if !matches!(reasoning, ReasoningEffort::None | ReasoningEffort::High)
+            && super::chat_language_model_options::mistral_options(
+                options.provider_options.as_ref(),
+            )
+            .and_then(|o| o.get("reasoningEffort"))
+            .is_none()
+        {
+            warnings.push(Warning::Compatibility { feature:"reasoning".into(), details:Some(format!("reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"high\".")) });
+        }
+    }
+    for tool in options.tools.iter().flatten() {
+        if let Tool::Provider(tool) = tool {
+            warnings.push(Warning::Unsupported {
+                feature: format!("provider-defined tool {}", tool.id),
+                details: None,
+            });
+        }
+    }
+    warnings
 }

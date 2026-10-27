@@ -1,8 +1,7 @@
 //! Small end-to-end subset of the pinned Mistral upstream tests.
 
-#[path = "common/mock_fetch.rs"]
-mod mock_fetch;
-
+use crate::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
+use crate::test_support::mock_fetch::{Canned, MockFetch};
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::LanguageModelMessage;
@@ -10,9 +9,7 @@ use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::GenerateContent;
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::FinishReasonUnified;
-use aimux_providers::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
 use futures::StreamExt;
-use mock_fetch::{Canned, MockFetch};
 use serde_json::{Value, json};
 
 fn provider(fetch: &std::sync::Arc<MockFetch>) -> MistralProvider {
@@ -283,7 +280,7 @@ mod do_stream {
 mod do_embed {
     use super::*;
 
-    /// Request, vectors and usage in one call; the upstream case itself is in mistral_embedding_test.rs.
+    /// Request, vectors and usage in one call; the upstream case itself is in embedding_model.rs.
     #[tokio::test]
     async fn embed_request_vectors_and_usage() {
         let body = json!({
@@ -342,7 +339,8 @@ async fn error_is_an_error_finish() {
 /// length stop, in `doGenerate` and `doStream` alike (`@ai-sdk/mistral@4.0.55`
 /// `src/map-mistral-finish-reason.ts:9-11`, used at
 /// `src/mistral-chat-language-model.ts:319` and `:465`; aimux
-/// `mistral/convert.rs:447-458`, used at `mistral/model.rs:249` and `:446`).
+/// `mistral/map_finish_reason.rs:10-21`, used at
+/// `mistral/chat_language_model.rs:199` and `:405`).
 #[tokio::test]
 async fn model_length_is_a_length_finish() {
     let mut body = usage_details_response();

@@ -69,7 +69,8 @@ impl SpeechModel for MistralSpeechModel {
     }
 
     async fn do_generate(&self, options: &SpeechCallOptions) -> Result<SpeechResult, AiMuxError> {
-        let ref_audio = super::options::speech_ref_audio(options.provider_options.as_ref())?;
+        let ref_audio =
+            super::speech_model_options::speech_ref_audio(options.provider_options.as_ref())?;
         let mut warnings = Vec::new();
 
         let output_format = options.output_format.as_deref().unwrap_or("mp3");
@@ -128,7 +129,7 @@ impl SpeechModel for MistralSpeechModel {
             exchange.request(exchange.url("/audio/speech"), options),
             serde_json::to_value(&body)?,
             aimux_provider_utils::create_json_response_handler::<SpeechResponseBody>(),
-            super::mistral_failed_response_handler(),
+            super::error::mistral_failed_response_handler(),
         )
         .await
         .map_err(|error| match error {

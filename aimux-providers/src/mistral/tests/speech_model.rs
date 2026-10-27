@@ -2,27 +2,24 @@
 //!
 //! Source: `reference/aisdk-pinned/mistral/src/mistral-speech-model.test.ts`
 //!
-//! The requests go through a scripted transport (`common/mock_fetch.rs`); the
+//! The requests go through a scripted transport (`tests/common/mock_fetch.rs`); the
 //! TS `createTestServer` that intercepts `https://api.mistral.ai/v1/...` has no
 //! counterpart here. The pinned `VERSION` mock has none either: the
 //! user-agent check only looks at the package prefix. The response timestamp is
 //! taken from the clock (no `_internal.currentDate`), so it is only checked to
 //! be present.
 
-#[path = "common/mock_fetch.rs"]
-mod mock_fetch;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use crate::test_support::mock_fetch::{Canned, MockFetch};
+use crate::{MistralProviderSettings, create_mistral};
 use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
 use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel, SpeechResult};
-use aimux_providers::{MistralProviderSettings, create_mistral};
-use mock_fetch::{Canned, MockFetch};
 
 const MODEL_ID: &str = "voxtral-mini-tts-2603";
 const URL: &str = "https://api.mistral.ai/v1/audio/speech";
@@ -30,7 +27,7 @@ const URL: &str = "https://api.mistral.ai/v1/audio/speech";
 fn provider_with(
     fetch: &Arc<MockFetch>,
     settings: MistralProviderSettings,
-) -> aimux_providers::MistralProvider {
+) -> crate::MistralProvider {
     create_mistral(MistralProviderSettings {
         api_key: Some("test-api-key".into()),
         fetch: Some(fetch.transport()),

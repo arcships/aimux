@@ -9,9 +9,9 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use crate::{MistralProviderSettings, create_mistral};
 use aimux_core::embedding_model::EmbeddingCallOptions;
 use aimux_core::provider::Provider;
-use aimux_providers::{MistralProviderSettings, create_mistral};
 
 const TEST_VALUES: &[&str] = &["sunny day at the beach", "rainy day in the city"];
 
