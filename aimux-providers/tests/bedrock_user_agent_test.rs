@@ -333,7 +333,7 @@ async fn bedrock_chat_user_agent_matches_the_ai_sdk() {
 async fn bedrock_stream_user_agent_matches_the_ai_sdk() {
     use futures::StreamExt;
     let server = MockServer::start().await;
-    let body = aimux_providers::bedrock::event_stream::encode_messages(&[
+    let body = aimux_providers::bedrock::event_stream_decoder::encode_messages(&[
         ("event", "messageStart", r#"{"role":"assistant"}"#),
         ("event", "messageStop", r#"{"stopReason":"end_turn"}"#),
     ]);
