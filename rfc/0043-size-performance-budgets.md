@@ -583,7 +583,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 
 ### 15.4 方案顺序
 
-S1 与 B-profile 只改 profile、构建脚本和 CI，不碰 crate 代码；panic 一步会改 aimux-ffi 的入口（统一接 panic 的宏与专用错误码）。与 RFC-0044 / RFC-0046 C 系列的文件重叠：C0 和 S1 都改 release.yml（S1 的改动已在 #375，先合入的一方由另一方合并 master 解决）；C7 与 panic 一步都改 aimux-ffi 和它的 Cargo.toml，所以 panic 一步排在 C7 之后，或在 C7 的分支上做；B-profile 只碰两个绑定目录，无重叠。
+S1 与 B-profile 只改 profile、构建脚本和 CI，不碰 crate 代码；panic 一步会改 aimux-ffi 的入口（统一接 panic 的宏与专用错误码）。与 RFC-0044 C 系列（C0–C7）和 RFC-0046 R 系列（R1–R7）的文件重叠：C0 和 S1 都改 release.yml（S1 的改动已随 #375 于 2026-10-27 合入 master，C0 的分支合并 master 即可）；C7 把 `aimux-core` 改名 `aimux`，除 aimux-ffi 外也要改 `bindings/node/Cargo.toml:15` 和 `bindings/python/Cargo.toml:16` 的 `aimux-core = { path = "../../aimux-core" }` 依赖行，而 B-profile（#376）在同两个文件里加 `[profile.release]`，所以 B-profile 与 C7 重叠在这两个 Cargo.toml：不同段落，git 能自动合并，后合入的一方合并 master 后要重新构建并核对 §15.8 的字节数；panic 一步与 C7 都改 aimux-ffi 和它的 Cargo.toml，所以 panic 一步排在 C7 之后，或在 C7 的分支上做。RFC-0046 的 R1–R7 改的是 aimux-providers、aimux-provider-utils 的代码与测试目录，S1、B-profile、panic 一步都不碰这些目录；本 RFC 会碰 providers 的只有 §15.3 的代码层候选（两家 vendor 去重），那些按 S3 单独提案，并排在 R6（模态与搜索厂商去重）之后。
 
 1. **S1a**（§5.1，#375）：`ios-release` 改名 `staticlib-release`，Go 与桌面 `.a` 改用它；CI 对每个产物打印字节数，补齐 iOS、Android、macOS 的 abort/unwind 与 outliner 数据。**S1b、S1c**（§5.3）：发布档案去 sysroot bitcode，再合并目标文件加 strip，各桌面 `.a` 进 70 MB。
 2. **B-profile**：Node、Python 绑定加 size profile，`unwind` 不变，热点 crate 按包保留 `opt-level = 3`；maturin 压缩级别 9；PR 附绑定 bench 对比。
@@ -613,7 +613,7 @@ ROADMAP §6.1 的目标表在 S2 登记完成后按实测修订；在此之前�
 
 ### 15.6 S1 实现记录（2026-10-27，#375）
 
-S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-release`，release.yml 的 go-build 与 iOS 脚本改用它并切换目录，ci.yml 的 profile 覆盖变量跟着改名，Go 的 cgo 搜索路径把 `target/staticlib-release` 放在 `target/release` 前面。每个产物的构建 job 用 `scripts/check_native_artifact.py` 打印 `size <path> <bytes> bytes`，这就是 §3.1 的 raw_bytes 来源；它直接读 ar、ELF、Mach-O、COFF 头，三种 runner 同一实现，不依赖 binutils。
+S1a 在 #375 实现（2026-10-27 合入 master，merge commit 866801a）：`[profile.staticlib-release]` 取代 `ios-release`，release.yml 的 go-build 与 iOS 脚本改用它并切换目录，ci.yml 的 profile 覆盖变量跟着改名，Go 的 cgo 搜索路径把 `target/staticlib-release` 放在 `target/release` 前面。每个产物的构建 job 用 `scripts/check_native_artifact.py` 打印 `size <path> <bytes> bytes`，这就是 §3.1 的 raw_bytes 来源；它直接读 ar、ELF、Mach-O、COFF 头，三种 runner 同一实现，不依赖 binutils。
 
 **实测修正 §5.2 的「无 bitcode」。** `lto = false` 只影响工作区 crate 的对象。rustup 发布的 sysroot（std、alloc、core、addr2line……）本身带 `-C embed-bitcode=yes` 编译的 `.llvmbc`，所以任何 `.a` 都有一层 bitcode：Linux x64 档案 95,003,454 B 里 10,017,424 B 在 292 个 sysroot 成员，iOS 片 65,127,144 B 里 9,664,823 B 在 247 个成员，工作区 crate 的 bitcode 都是 0。因此检查的判据是「工作区 crate 的成员带 bitcode 即 fat LTO」，而不是「档案无 bitcode」；fat-LTO 档案（194 MB，461 个成员带 bitcode，含全部 6 个 aimux_* 成员）被判失败，`lto = false` 档案通过。去掉 sysroot 这一层是 §5.3 的 S1b，实测见 §15.7。
 
@@ -627,7 +627,7 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 
 | 步骤 | 工具 | 字节 | 链接 |
 |---|---|---:|---|
-| S1a shipped | — | 95,003,454 | 通过 |
+| S1a local（#375 分支的本地构建；同一 commit 的 CI shipped 档案是 95,078,500，§15.1） | — | 95,003,454 | 通过 |
 | 去 `.llvmbc` / `.llvmcmd` | `llvm-objcopy --remove-section` | 84,942,462 | 通过 |
 | 再 `--strip-debug` | GNU `strip` | 84,482,070 | 通过 |
 | 再 `--strip-unneeded` | GNU `strip` | 81,858,886 | 通过 |
@@ -638,7 +638,7 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 
 档案成员的构成（4ae85b4 的 `lto = false` 档案，80.5 MB 成员字节）：`.shstrtab` 14.6 MB、`.strtab` 12.4 MB、ELF 头与段表 11.8 MB、`.text` 11.1 MB、`.rela` 10.5 MB、bitcode 10.0 MB、`.symtab` 4.2 MB、`.eh_frame` 3.0 MB、`.rodata` 2.1 MB。rustc 给每个函数一个段，段名表加段表就占三分之一，这解释了为什么合并目标文件比任何 strip 都有效。合并出的目标文件有六万多个段，走 ELF 扩展段编号，#375 的检查器已能读。
 
-### 15.8 B-profile 实现记录（2026-10-27，master a23a636，Linux x86_64）
+### 15.8 B-profile 实现记录（2026-10-27，master a23a636，Linux x86_64；#376，2026-10-27 合入 master，merge commit e1f393f）
 
 两个绑定 workspace 加同一个 `[profile.release]`：`opt-level = "s"`、`lto = true`、`codegen-units = 1`、`strip = true`，`panic` 不写（保持 `unwind`）。构建命令不变（`napi build --release`、`maturin build/publish --release`）。raw 是文件字节数，gz9 是 `gzip -9` 后的字节数，近似 npm / wheel 的传输体积。
 
@@ -668,28 +668,39 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 
 待讨论：§15.4 步骤 2 写的「maturin 压缩级别 9」没有进 B-profile PR；wheel 是 zip，压缩级别只影响下载体积不影响安装后的 `.so`，是否值得单独一条由 eric 决定。macOS / Windows / aarch64 的字节数等下个 release 跑完回填。
 
-### 15.9 爬山实验：编译与链接层面的下限（2026-10-27，master a23a636，Linux x86_64）
+### 15.9 爬山实验：编译与链接层面的下限（2026-10-27，Linux x86_64，本地构建）
+
+来源：FFI `.so`、三个 CLI、静态档案 `.a` 在 master a23a636 的工作树上构建；Python 扩展在 #376 分支 1105b03 上构建，它的树是 a23a636 加 §15.8 的 `[profile.release]`，没有别的改动。全部用 `cargo build --release --target x86_64-unknown-linux-gnu`（显式 target），每个构建独立 target 目录；本节的数字只在本节内部比较，与 §15.7、§15.8 的 c35acb2 数字和 host 构建不混用。
 
 li 要求对全部产物做爬山（hill climb）：在现状上逐个加手段量体积，保留有效的叠起来再量，直到没有收益，同时用 §15.8 的六场景 bench 剔除伤性能的手段。每个构建独立 target 目录，rustc 1.99.1（稳定）或 nightly（标明）。只改编译/链接选项，不改代码；代码层面的候选见 §15.3（两家 vendor −18%、去 jsonschema −8%、去运行时 schema −7%，合计 −33%），那是 S3 的事。
 
 | 手段 | 工具链 | FFI `.so`（abort） | Python 扩展（unwind） | 性能（六场景 bench） |
 |---|---|---:|---:|---|
-| 现状（根 `release` / #376 的 `"s"` profile） | 稳定 | 15,344,528 | 16,883,384 | 基线 |
-| `-fuse-ld=lld -Wl,--icf=all`（合并相同函数） | 稳定 | −13%（与下一行合测） | −0.4% | 噪声内 |
+| 现状（根 `release` / #376 的 `"s"` profile） | 稳定 | 15,344,528 | 16,883,384（显式 target 的 cargo 构建；§15.8 的 16,775,472 是同一 profile 的 host 构建，差 107,912 B；17,314,784 是 maturin 的 wheel 成员，再多 539,312 B） | 基线 |
+| `-fuse-ld=lld -Wl,--icf=all`（合并相同函数） | 稳定 | −13%（与下一行合测） | 16,816,824（−66,560，−0.4%） | 噪声内 |
 | `-C force-unwind-tables=no`（去 `.eh_frame`） | 稳定 | 13,361,080（与上行合计 −12.9%） | 不适用（unwind 必须有表） | — |
-| `-Zlocation-detail=none -Zfmt-debug=shallow`（去 panic 位置、浅 Debug） | nightly | 12,466,136（累计 −18.8%） | 16,100,504（−4.6%） | 噪声内 |
-| `-Zbuild-std` + `optimize_for_size`（重编标准库，顺带不带 bitcode） | nightly | 11,410,184（累计 −25.6%） | 15,767,784（−6.6%；unwind 需 `-Zbuild-std-features=optimize_for_size,panic-unwind`，否则 E0152） | 噪声内 |
-| 去 `backtrace` feature（随 build-std） | nightly | 含在上行 | 另测：保留 backtrace 多 158,632 B | — |
+| `-Zlocation-detail=none -Zfmt-debug=shallow`（去 panic 位置、浅 Debug） | nightly | 12,466,136（累计 −18.8%） | 16,100,504（−782,880，−4.6%） | 噪声内 |
+| `-Zbuild-std` + `optimize_for_size`（重编标准库，顺带不带 bitcode） | nightly | 11,410,184（累计 −25.6%） | 15,767,784（−1,115,600，−6.6%；已不含 `backtrace` feature；unwind 需 `-Zbuild-std-features=optimize_for_size,panic-unwind`，否则 E0152） | 噪声内 |
+| 保留 `backtrace` feature（`-Zbuild-std-features=…,backtrace`） | nightly | 含在上行 | 15,926,416（比上行多 158,632 B；上行已是不带 backtrace 的数字，不再相减） | — |
 | `-C llvm-args=-enable-machine-outliner=always` | 稳定 | 10,863,296（累计 −29.2%） | 16,641,528（−1.4%） | **慢 13–18%，不采用** |
 | `opt-level = "z"`（绑定；FFI 已是 z） | 稳定 | — | 15,410,456（−8.7%） | **大响应慢 28–55%，不采用**（§15.8） |
 | 去 realtime（`aimux-providers` 无 `ws`） | 稳定 | — | 16,746,480（−0.8%） | 不值得做成 feature 开关 |
-| **可采用的叠加：ICF + 去 unwind 表（FFI）+ 位置信息 + 重编 std** | nightly | **11,410,184（−25.6%）** | **15,210,424（−9.9%）** | 噪声内 |
-| 可采用的叠加，只用稳定工具链 | 稳定 | 13,361,080（−12.9%） | 16,816,824（−0.4%） | 噪声内 |
+| **可采用的叠加：ICF + 去 unwind 表（FFI）+ 位置信息 + 重编 std** | nightly | **11,410,184（−25.6%）** | **15,210,424（−1,672,960，−9.9%）**；三项单测之和是 −1,965,040，叠加少 292,080，因为位置信息和重编 std 都在删 std 里的 panic 位置与格式化字符串，有重合 | 噪声内 |
+| 可采用的叠加，只用稳定工具链 | 稳定 | 13,361,080（−12.9%） | 16,816,824（−0.4%，即 ICF 一项） | 噪声内 |
 | 全部手段含 outliner 与 z（只作下限参考） | nightly | 10,863,296（−29.2%） | 14,126,896（−16.3%；再去 realtime 14,008,760） | 不可用 |
+
+FFI 列是逐行累计（每行在上一行之上再加一项）；Python 列除两行「叠加」外都是单项相对现状的数字。
 
 CLI 可执行文件同一套手段：`aimux` 9,825,416 → 7,690,368（可采用的 nightly 叠加，−21.7%）→ 7,338,944（含 outliner）；`aimux-web` 10,938,072 → 8,611,208 → 8,219,720；`aimux-replay` 10,264,080 → 8,071,184 → 7,696,464。
 
-静态档案 `libaimux_ffi.a`（`lto = false`）用去 unwind 表 + 位置信息 + 重编 std：66,972,772 B（现状 95,003,454；重编的 std 不带 bitcode，所以 §5.3 的 S1b 去 bitcode 一步对它为 0），再做 §15.7 的合并加 strip 到 **50,125,326 B**（现状链到 58,742,392）。
+静态档案 `libaimux_ffi.a`（a23a636 的 `ios-release`，定义与 #375 的 `staticlib-release` 相同：`release` + `lto = false`），同一 commit、同一条 §15.7 后处理链（去 bitcode → 以 14 个导出符号为根 `ld -r --gc-sections` → `strip --strip-unneeded`），每一步都链接并运行同一个 C 程序、`nm` 核对 14 个导出符号：
+
+| 档案（a23a636，本地） | 构建产物 | 去 bitcode | 合并 | 合并后 strip | 链接出的 stripped 可执行文件 |
+|---|---:|---:|---:|---:|---:|
+| 现状（稳定，无手段；527 个成员，292 个 sysroot 成员带 10,017,424 B bitcode） | 95,044,460 | 84,983,468 | 71,164,662 | **58,806,254** | 15,132,648 |
+| 去 unwind 表 + 位置信息 + 重编 std（nightly；213 个成员，重编的 std 不带 bitcode，所以 S1b 一步为 0） | 66,972,772 | 66,972,772 | 55,110,774 | **50,125,326** | 11,406,776 |
+
+两条链的最后一列与同手段的 FFI `.so`（15,344,528 / 11,410,184）相当，说明合并加 strip 没有丢代码。§15.7 的 95,003,454 → 58,742,392 是 c35acb2 的同一条链，与本表相差 41,006 / 63,862 B，来自两个 commit 之间的代码变化，不在本表比较。
 
 压缩后（传输体积，`gzip -9` / `xz -9`）：FFI `.so` 现状 5,388,941 / 3,885,992，稳定叠加 4,799,701 / 3,532,780，nightly 叠加 4,203,847 / 3,107,396；`aimux` 现状 4,206,286 / 3,182,696，nightly 叠加 3,452,378 / 2,643,528。
 
