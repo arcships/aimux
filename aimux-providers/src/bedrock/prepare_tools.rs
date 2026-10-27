@@ -1,6 +1,13 @@
-//! Provider-defined tool input schemas from the pinned upstream factories.
+//! Tool preparation for the Converse API (amazon-bedrock-prepare-tools.ts), with the
+//! provider-defined tool input schemas of the pinned upstream factories.
 
-use serde_json::Value;
+use super::anthropic_model_support::supports_strict_tools;
+use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_with_provider};
+use aimux_core::AiMuxError;
+use aimux_core::options::LanguageModelV4ToolChoice;
+use aimux_core::tool::{FunctionTool, Tool};
+use aimux_core::types::Warning;
+use serde_json::{Value, json};
 
 fn input_schema(id: &str) -> Option<Value> {
     let schema = match id {
@@ -57,14 +64,6 @@ fn input_schema(id: &str) -> Option<Value> {
     };
     Some(serde_json::from_str(schema).expect("upstream tool schema"))
 }
-
-use aimux_core::AiMuxError;
-
-use aimux_core::tool::{LanguageModelV4ToolChoice, Tool};
-use aimux_core::types::Warning;
-use serde_json::json;
-
-use crate::anthropic::prepare_tools::{AnthropicTool, prepare_tools_with_provider};
 
 pub(crate) struct PreparedProviderTools {
     pub tools: Vec<Value>,
@@ -184,4 +183,126 @@ pub(crate) fn prepare_provider_tools(
         }
     }
     Ok(result)
+}
+
+pub(super) fn is_strict_schema_compatible(schema: &Value) -> bool {
+    let Some(object) = schema.as_object() else {
+        return true;
+    };
+    let is_object = schema["type"] == "object"
+        || schema["type"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|v| v == "object"));
+    if is_object && schema["additionalProperties"] != false {
+        return false;
+    }
+    for key in [
+        "properties",
+        "patternProperties",
+        "definitions",
+        "$defs",
+        "dependencies",
+    ] {
+        if let Some(map) = object.get(key).and_then(Value::as_object)
+            && map.values().any(|v| !is_strict_schema_compatible(v))
+        {
+            return false;
+        }
+    }
+    for key in [
+        "propertyNames",
+        "contains",
+        "not",
+        "if",
+        "then",
+        "else",
+        "items",
+        "anyOf",
+        "allOf",
+        "oneOf",
+    ] {
+        if let Some(value) = object.get(key) {
+            if let Some(array) = value.as_array() {
+                if array.iter().any(|v| !is_strict_schema_compatible(v)) {
+                    return false;
+                }
+            } else if !is_strict_schema_compatible(value) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Prepare `FunctionTool`s into the Bedrock `toolConfig` JSON shape.
+///
+/// Mirrors the function-tool subset of the TS `prepareTools`:
+/// - no tools (or `toolChoice: none`) → empty `toolConfig` `{}`
+/// - `toolChoice: tool` filters tools to the named one
+/// - `toolChoice: auto/required/tool` → `{ auto: {} }` / `{ any: {} }` /
+///   `{ tool: { name } }`
+/// - `description` is omitted when empty/whitespace
+/// - `strict` is passed through only for models that `supports_strict_tools`
+///
+#[must_use]
+pub fn prepare_tools(
+    tools: &Option<Vec<FunctionTool>>,
+    tool_choice: Option<&LanguageModelV4ToolChoice>,
+    model_id: &str,
+) -> Value {
+    let non_empty = tools.as_ref().filter(|t| !t.is_empty());
+    let Some(tools) = non_empty else {
+        return json!({});
+    };
+
+    // `toolChoice: none` clears tools entirely (matches TS).
+    if matches!(tool_choice, Some(LanguageModelV4ToolChoice::None)) {
+        return json!({});
+    }
+
+    // `toolChoice: tool` filters function tools to the named one.
+    let filtered: Vec<&FunctionTool> = match tool_choice {
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+            tools.iter().filter(|t| &t.name == tool_name).collect()
+        }
+        _ => tools.iter().collect(),
+    };
+
+    let supports_strict = supports_strict_tools(model_id);
+    let tool_specs: Vec<Value> = filtered
+        .iter()
+        .map(|t| {
+            let mut spec = serde_json::Map::new();
+            spec.insert("name".to_string(), json!(t.name));
+            if let Some(ref desc) = t.description
+                && !desc.trim().is_empty()
+            {
+                spec.insert("description".to_string(), json!(desc));
+            }
+            if let Some(strict) = t.strict
+                && supports_strict
+                && (!strict || is_strict_schema_compatible(&t.input_schema))
+            {
+                spec.insert("strict".to_string(), json!(strict));
+            }
+            spec.insert("inputSchema".to_string(), json!({ "json": t.input_schema }));
+            json!({ "toolSpec": Value::Object(spec) })
+        })
+        .collect();
+
+    if tool_specs.is_empty() {
+        return json!({});
+    }
+
+    let tool_choice_val = match tool_choice {
+        Some(LanguageModelV4ToolChoice::Auto) => json!({ "auto": {} }),
+        Some(LanguageModelV4ToolChoice::Required) => json!({ "any": {} }),
+        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => {
+            json!({ "tool": { "name": tool_name } })
+        }
+        Some(LanguageModelV4ToolChoice::None) => unreachable!(),
+        None => return json!({ "tools": tool_specs }),
+    };
+
+    json!({ "tools": tool_specs, "toolChoice": tool_choice_val })
 }

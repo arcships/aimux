@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Build
+
+- The static archives (`libaimux_ffi.a` for Go and the iOS xcframework
+  slices) are built with the `staticlib-release` profile, the `release`
+  profile without LTO. One command replaces the two old ones:
+
+  ```sh
+  cargo build -p aimux-ffi --profile staticlib-release
+  # was: cargo build -p aimux-ffi --release          (Go archive)
+  # was: cargo build -p aimux-ffi --profile ios-release   (iOS slices; the profile is gone)
+  ```
+
+  The archive lands in `target/<triple>/staticlib-release/` instead of
+  `release/` or `ios-release/`; the Go binding's cgo flags look there first,
+  and `go generate` downloads the release archive there. A static archive is
+  linked by the consumer's toolchain, so fat LTO only embedded every crate's
+  LLVM bitcode into it: the Linux Go archive as shipped goes from 194.2 MB
+  to 95.0 MB with the same linked code (RFC-0043 §5.1, §15.1). The shared
+  libraries (`.so`, `.dylib`, `.dll`) and the Node and Python extensions are
+  not changed by this PR.
+  Release and CI builds check the archive's workspace objects for bitcode
+  and print every artifact's byte size (`scripts/check_native_artifact.py`).
+- The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
+  a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. On
+  Linux x86_64 the published `aimux.node` goes from 39.9 MB (unstripped) to
+  17.4 MB (−57%) and the wheel's `aimux.abi3.so` from 30.6 MB (`maturin
+  publish` already stripped it) to 17.3 MB (−43%); the six paired benchmark
+  scenarios in
+  `bindings/node/bench/bench_profile.cjs` and
+  `bindings/python/bench/bench_profile.py` stay within noise of the old
+  build. `panic` stays `unwind`, so a panic still surfaces as a JS exception
+  or a Python `PanicException`. `npx napi build --release` and
+  `maturin build --release` pick the profile up; no command changes.
+
 ### Breaking
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
@@ -1180,6 +1214,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `VertexImageModel`, re-exported at `aimux_providers::vertex`, instead of
   `vertex::image::VertexImageModel`. Exports at the crate root and the
   `vertex` module root are unchanged.
+
+- `aimux_providers::bedrock` follows the upstream `@ai-sdk/amazon-bedrock`
+  file layout (RFC-0046). The sub-modules `bedrock::convert`,
+  `bedrock::embedding` and `bedrock::image` are no longer public, and
+  `bedrock::event_stream` is renamed `bedrock::event_stream_decoder`; use
+  `BedrockEmbeddingModel` and `BedrockImageModel`, re-exported at
+  `aimux_providers::bedrock`, instead of the `embedding` and `image` paths.
+  The helpers `bedrock::convert` exposed (`convert_prompt_to_bedrock`,
+  `normalize_tool_call_id`, `validate_prompt`, `supports_strict_tools`,
+  `prepare_tools`, `build_request_body_checked`, `map_finish_reason`,
+  `convert_usage`, `BedrockUsage`) are not reachable from outside the crate
+  any more and have no replacement. Exports at the crate root and the
+  `bedrock` module root are unchanged; `bedrock::reranking` stays public.
 
 - OpenAI's sub-modules follow the `@ai-sdk/openai` files (RFC-0046 §4.2):
   `openai::convert`, `openai::model`, `openai::responses::convert`,

@@ -1,0 +1,90 @@
+{
+  "content": [
+    {
+      "providerMetadata": {
+        "amazonBedrock": {
+          "signature": "EvYBCkgICxABGAIqQA9E9VC377UnbjdfXCw4RwQaaIXsqocZKzI3WwWtXT/wBjzAkBOfIiVkP/mhvsPGb5oQW/2j+E1tZcNFoXIb26YSDBTSbDrbHwXJoAl3/hoMA/Qo4rIHvObP/yBrIjAT+l69mh9k7evFO+w+ransSD5YGq4hYrieOyJH3k/zHv8nBJwiz3Nlrb3jNFi2Ib0qXJH7BIK0hR85yYIoccReoJUpeLEMxeWbsO6f0EpOSMSi3YDLd1U9NAw7Itjeay1fEBPHwvawt2M4e/rn52SsuEz3p2DfOZm+N3bnL63rg0Cb9lFcp3k5kuU1h6hcGAE="
+        },
+        "bedrock": {
+          "signature": "EvYBCkgICxABGAIqQA9E9VC377UnbjdfXCw4RwQaaIXsqocZKzI3WwWtXT/wBjzAkBOfIiVkP/mhvsPGb5oQW/2j+E1tZcNFoXIb26YSDBTSbDrbHwXJoAl3/hoMA/Qo4rIHvObP/yBrIjAT+l69mh9k7evFO+w+ransSD5YGq4hYrieOyJH3k/zHv8nBJwiz3Nlrb3jNFi2Ib0qXJH7BIK0hR85yYIoccReoJUpeLEMxeWbsO6f0EpOSMSi3YDLd1U9NAw7Itjeay1fEBPHwvawt2M4e/rn52SsuEz3p2DfOZm+N3bnL63rg0Cb9lFcp3k5kuU1h6hcGAE="
+        }
+      },
+      "text": "Let me count the r's in \"strawberry\":\n\ns-t-r-a-w-b-e-r-r-y\n\nThere are 3 r's.",
+      "type": "reasoning"
+    },
+    {
+      "text": "There are **3** r's in \"strawberry\":\n\n1. st**r**awbe**r****r**y",
+      "type": "text"
+    }
+  ],
+  "finishReason": {
+    "raw": "end_turn",
+    "unified": "stop"
+  },
+  "providerMetadata": {
+    "amazonBedrock": {
+      "stopSequence": null,
+      "usage": {
+        "cacheWriteInputTokens": 0
+      }
+    },
+    "bedrock": {
+      "stopSequence": null,
+      "usage": {
+        "cacheWriteInputTokens": 0
+      }
+    }
+  },
+  "request": {
+    "body": {
+      "additionalModelResponseFieldPaths": [
+        "/delta/stop_sequence"
+      ],
+      "messages": [
+        {
+          "content": [
+            {
+              "text": "Hello"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "system": [
+        {
+          "text": "System Prompt"
+        }
+      ]
+    }
+  },
+  "response": {
+    "headers": {
+      "content-length": "865",
+      "content-type": "application/json"
+    },
+    "modelId": "anthropic.claude-3-haiku-20240307-v1:0"
+  },
+  "usage": {
+    "inputTokens": {
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "noCache": 51,
+      "total": 51
+    },
+    "outputTokens": {
+      "text": 78,
+      "total": 78
+    },
+    "raw": {
+      "cacheReadInputTokenCount": 0,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokenCount": 0,
+      "cacheWriteInputTokens": 0,
+      "inputTokens": 51,
+      "outputTokens": 78,
+      "serverToolUsage": {},
+      "totalTokens": 129
+    }
+  },
+  "warnings": []
+}
