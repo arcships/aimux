@@ -182,7 +182,7 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 # the providerOptions namespace goes through `options::anthropic_options` /
 # `CANONICAL`: a `"anthropic"` literal anywhere else would read or write a key
 # that ignores the provider's custom name.
-anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic_model.rs'
+anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic'
 rule6_hits="$(
     # shellcheck disable=SC2086
     { grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
@@ -249,7 +249,7 @@ violation 'providerOptions namespace key spelled outside google/options.rs or be
 # provider-name constants aside). Codex reads the OpenAI
 # Responses namespace through the shared model, and Open Responses derives its
 # key from the provider name, so neither spells a key.
-vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/huggingface.rs aimux-providers/src/codex.rs aimux-providers/src/open_responses.rs aimux-providers/src/elevenlabs aimux-providers/src/elevenlabs.rs'
+vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/codex.rs aimux-providers/src/open_responses.rs aimux-providers/src/elevenlabs aimux-providers/src/elevenlabs.rs'
 rule8_hits="$(
     # shellcheck disable=SC2086
     grep -rnE '\b(AzureConfig|AzureAuth|TokenProvider|XAIConfig|MistralConfig|CohereConfig|VoyageConfig|HuggingFaceConfig|CodexConfig|OpenResponsesConfig|ElevenLabsConfig|StaticBearerConfig)\b|body_overrides|api_key_source|from_env' \

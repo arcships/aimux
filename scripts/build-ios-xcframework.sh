@@ -22,8 +22,11 @@ cd "$ROOT"
 # its full LLVM bitcode (~80% of each slice, ~256MB uncompressed past
 # pub.dev's package limit since 0.5.0). The staticlib-release profile turns
 # LTO off for this build only; the bitcode check and the size gate below
-# fail loudly if that regresses.
+# fail loudly if that regresses. rustup's own sysroot objects still carry
+# their bitcode (~9.7 MB per slice, RFC-0043 §15.7); rust-objcopy from the
+# llvm-tools component strips those sections before the slice is packed.
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+rustup component add llvm-tools
 # One cargo invocation builds both slices in parallel (each crate is one
 # codegen unit, so two sequential builds leave most cores idle).
 cargo build -p aimux-ffi --profile staticlib-release \
@@ -38,7 +41,7 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
     aarch64-apple-ios-sim) slice=sim ;;
   esac
   mkdir -p "$TMP/$slice/aimux_ffi.framework"
-  python3 scripts/check_native_artifact.py "target/$triple/staticlib-release/libaimux_ffi.a"
+  python3 scripts/check_native_artifact.py --strip-bitcode "target/$triple/staticlib-release/libaimux_ffi.a"
   cp "target/$triple/staticlib-release/libaimux_ffi.a" "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
   # Strip debug + local symbols; global symbols stay (force_load in
   # aimux.podspec resolves against them).
