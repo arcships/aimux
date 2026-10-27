@@ -1804,3 +1804,6 @@ fn extract_usage_from_value(usage: &Value) -> Usage {
         raw: usage.as_object().cloned(),
     }
 }
+
+#[cfg(test)]
+mod tests;

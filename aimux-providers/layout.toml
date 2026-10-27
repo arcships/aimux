@@ -2872,3 +2872,104 @@ status = "mapped"
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[open_responses]
+package = "@ai-sdk/open-responses"
+
+[[open_responses.files]]
+upstream = "src/index.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+
+[[open_responses.files]]
+upstream = "src/open-responses-extension.ts"
+status = "missing"
+issue = 275
+
+[[open_responses.files]]
+upstream = "src/open-responses-provider.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+sub-feature = [
+  { case = "endpoint-specific response error metadata › maps generation failures without assuming a vendor status field", issue = 275, reason = "OpenResponsesProviderSettings has no getResponseErrorMetadata" },
+  { case = "endpoint-specific response error metadata › maps %s stream errors with the same callback", issue = 275, reason = "OpenResponsesProviderSettings has no getResponseErrorMetadata" },
+]
+
+[[open_responses.files]]
+upstream = "src/open-responses-tools.ts"
+status = "missing"
+issue = 275
+
+[[open_responses.files]]
+upstream = "src/responses/convert-to-open-responses-input.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+sub-feature = [
+  { case = "convertToOpenResponsesInput › assistant messages › should preserve a genuine item ID as a complete output message in strict mode", issue = 275, reason = "OpenResponsesProviderSettings has no strictResponseInput" },
+  { case = "convertToOpenResponsesInput › assistant messages › should use an easy input message without generating an ID in strict mode", issue = 275, reason = "OpenResponsesProviderSettings has no strictResponseInput" },
+  { case = "custom tool results › preserves text, images, and files in custom tool history", issue = 275, reason = "custom tools (customToolId, open-responses-tools.ts) are not ported" },
+  { case = "custom tool results › warns when a custom tool result contains unsupported provider file references", issue = 275, reason = "custom tools (customToolId, open-responses-tools.ts) are not ported" },
+]
+
+[[open_responses.files]]
+upstream = "src/responses/map-open-responses-finish-reason.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+
+[[open_responses.files]]
+upstream = "src/responses/open-responses-api.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+
+[[open_responses.files]]
+upstream = "src/responses/open-responses-config.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+
+[[open_responses.files]]
+upstream = "src/responses/open-responses-language-model-options.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+
+[[open_responses.files]]
+upstream = "src/responses/open-responses-language-model.ts"
+rust = "open_responses.rs"
+status = "mapped"
+
+[open_responses.files.tests]
+registered = [
+  { case = "OpenResponsesLanguageModel › doStream › preserves $expectedType stream errors", ref = "SSE 预读", reason = "an error as the first SSE event is returned by do_stream as Err, not as an error part of the stream (the response.failed row is covered by stream_errors_become_error_parts)" },
+]
+sub-feature = [
+  { case = "OpenResponsesLanguageModel › should reject workflow serialization when extension codecs are registered", issue = 275, reason = "no extension registry, and aimux models have no WORKFLOW_SERIALIZE" },
+  { case = "OpenResponsesLanguageModel › doGenerate › manual history replay › should decode and losslessly replay a registered hosted-tool receipt", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doGenerate › manual history replay › should decode and losslessly replay an explicitly registered bare item", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doGenerate › manual history replay › should replay a source-only extension item through response history", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doGenerate › manual history replay › should encode bare extension history when original wire metadata is unavailable", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doGenerate › manual history replay › should encode client-executed extension calls and results without original wire metadata", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doGenerate › tools › should encode registered provider tools and preserve warnings for unregistered tools", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doGenerate › tools › should encode explicitly registered bare provider tools and tool choices", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doGenerate › tools › should warn and omit a registered provider tool and its selected choice when it cannot be encoded", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doStream › should decode registered extension events and completed items", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doStream › should decode explicitly registered bare extension events and completed items", issue = 275, reason = "the extension registry (open-responses-extension.ts) is not ported" },
+  { case = "OpenResponsesLanguageModel › doStream › should use complete custom tool input from $source when deltas are omitted", issue = 275, reason = "custom tools (customToolId, open-responses-tools.ts) are not ported" },
+]
+
+[[open_responses.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
