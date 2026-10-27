@@ -1,5 +1,5 @@
 //! The providerOptions of the DeepSeek chat model
-//! (`deepseek-chat-language-model-options.ts`, `deepseek-file-part-options.ts`).
+//! (`deepseek-chat-language-model-options.ts`).
 //!
 //! They are read from the namespace named by the provider (`deepseek`).
 
@@ -78,17 +78,6 @@ pub(crate) struct DeepSeekMessageOptions {
     pub prefix: Option<bool>,
 }
 
-/// The `providerOptions` of a file part.
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct DeepSeekFilePartOptions {
-    /// How DeepSeek processes an image sent as an `image_url` part
-    /// (`low`, `high`, `original`, `auto`).
-    pub image_detail: Option<String>,
-    /// Send inline image data as a `file` part instead of an `image_url`.
-    pub file_data: Option<bool>,
-}
-
 // An optional schema field may be absent, but an explicit null is invalid.
 fn deserialize_optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
@@ -100,7 +89,7 @@ where
 
 /// The options of `namespace` in a providerOptions value; no namespace is the
 /// defaults.
-fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
+pub(super) fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
     namespace: Option<&JsonObject>,
     name: &str,
 ) -> Result<T, AiMuxError> {
@@ -115,7 +104,7 @@ fn parse_namespace<T: Default + for<'de> Deserialize<'de>>(
     }
 }
 
-fn invalid(name: &str, message: &str) -> AiMuxError {
+pub(super) fn invalid(name: &str, message: &str) -> AiMuxError {
     AiMuxError::invalid_argument(format!(
         "invalid provider options for \"{name}\": {message}"
     ))
@@ -179,34 +168,6 @@ pub(crate) fn parse_message_options(
         parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
     if options.prefix == Some(false) {
         return Err(invalid(name, "prefix must be true"));
-    }
-    Ok(options)
-}
-
-/// The options of a file part.
-///
-/// # Errors
-///
-/// `InvalidArgument` when `imageDetail` is not a known value or `fileData` is
-/// not `true`.
-pub(crate) fn parse_file_part_options(
-    provider_options: Option<&SharedProviderOptions>,
-    name: &str,
-) -> Result<DeepSeekFilePartOptions, AiMuxError> {
-    let options: DeepSeekFilePartOptions =
-        parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
-    if options.file_data == Some(false) {
-        return Err(invalid(name, "fileData must be true"));
-    }
-    if options
-        .image_detail
-        .as_deref()
-        .is_some_and(|detail| !["low", "high", "original", "auto"].contains(&detail))
-    {
-        return Err(invalid(
-            name,
-            "imageDetail must be low, high, original or auto",
-        ));
     }
     Ok(options)
 }
