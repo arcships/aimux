@@ -8,8 +8,7 @@
 //! The upstream `toEqual` ignores `undefined` properties, and `Usage`
 //! serializes its `None` fields as absent, so the usage is compared as JSON.
 
-use crate::mistral::model::convert_usage;
-use crate::mistral::types::UsageResponse;
+use crate::mistral::convert_usage::{UsageResponse, convert_usage};
 use serde_json::{Value, json};
 
 /// Parse a Mistral usage object, as the response body carries it.

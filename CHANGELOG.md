@@ -1175,6 +1175,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
+  layout (RFC-0046). The sub-modules `mistral::convert` and
+  `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
+  re-exported at `aimux_providers::mistral`, instead of
+  `mistral::embedding::MistralEmbeddingModel`. The helpers `mistral::convert`
+  exposed (`prepare_tools`, `convert_prompt_to_mistral_messages`,
+  `build_request_body`, `request_warnings`, `parse_finish_reason`,
+  `PreparedTools`) are not reachable from outside the crate any more and have
+  no replacement. Exports at the crate root and the `mistral` module root are
+  unchanged.
+
 - The ops error envelope is `{kind, code, message, error}`: the derived
   `retryAfterMs` is removed, together with the clock and cached projection
   behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
@@ -1237,6 +1248,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `supports_mask_inputs: false` (also in the ops capabilities), as
   `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
   every id.
+- DeepSeek rejects a response whose usage counts are not numbers, as
+  `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
+  string such as `"prompt_tokens": "100"` as 0. Applies to generate and
+  stream.
 - Open Responses fails a response without `output` as an API call error
   with status 500, not retryable, as the AI SDK does. It was an
   `InvalidResponseData` error.
