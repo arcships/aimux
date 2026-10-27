@@ -1273,6 +1273,30 @@ mod open_responses_language_model {
                 assert_eq!(body["reasoning"], json!({"effort": "low"}));
             }
 
+            // Not an upstream case: `mapReasoningToProviderEffort` warns when
+            // it maps `minimal` to `low`.
+            #[tokio::test]
+            async fn reasoning_minimal_coerced_to_low_warns() {
+                let server = MockServer::start().await;
+                mock_json(&server, lmstudio_basic_json()).await;
+
+                let model = make_model(&server, "gemma-7b-it");
+                let options = CallOptions {
+                    reasoning: Some(ReasoningEffort::Minimal),
+                    ..CallOptions::new(wiremock_test_prompt())
+                };
+                let result = model.do_generate(&options).await.unwrap();
+
+                assert_eq!(
+                    serde_json::to_value(&result.warnings).unwrap(),
+                    json!([{
+                        "type": "compatibility",
+                        "feature": "reasoning",
+                        "details": "reasoning \"minimal\" is not directly supported by this model. mapped to effort \"low\".",
+                    }])
+                );
+            }
+
             /// upstream: @ai-sdk/open-responses src/responses/open-responses-language-model.test.ts › OpenResponsesLanguageModel › doGenerate › top-level reasoning › should map top-level reasoning none to none
             #[tokio::test]
             async fn reasoning_none_maps_to_none() {
