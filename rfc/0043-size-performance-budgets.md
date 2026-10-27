@@ -88,7 +88,7 @@
 |---|---:|---|
 | staticlib / `x86_64-unknown-linux-gnu` | 70,000,000 | ROADMAP ≤70 MB；#196 历史 Linux 66.5 MB；S1a 实测 shipped 95,003,454（c35acb2），去 bitcode 后 84,942,462，只有 S1c 的合并加 strip 到 58,742,392 才进 C（§5.3、§15.7）；在此之前 §13 该项不勾 |
 | staticlib / `x86_64-apple-darwin` | 70,000,000 | ROADMAP 产品目标，平台基线由 release.yml 首次运行打印（#375） |
-| staticlib / `aarch64-apple-darwin` | 70,000,000 | 同上 |
+| staticlib / `aarch64-apple-darwin` | 70,000,000 | 同上；#375 的 CI 实测 65,448,272（c35acb2），已在 C 内；Mach-O 档案没有 ELF 每函数一段的段表开销，所以比 Linux 小 30 MB（§15.7） |
 | staticlib / `x86_64-pc-windows-gnu` | 70,000,000 | 同上；仍使用 cgo 可链接 GNU archive |
 | cdylib / `x86_64-unknown-linux-gnu` / `.so` | 24,200,000 | 拟议全量库上限，参照绑定 15–22 MB 区间的上沿 +10%；本平台待测 |
 | cdylib / `aarch64-apple-darwin` / `.dylib` | 24,200,000 | 同上，必须 fat-LTO |
@@ -515,6 +515,8 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | iOS `aarch64-apple-ios` 的 `.a`（CI macOS runner，master c35acb2，#375） | `staticlib-release`（opt z、cgu 1、无 LTO、abort），`strip -Sx` 前 | 65,127,144 | — |
 | 同一片，`strip -Sx` 后（xcframework 里的二进制） | 585 个成员，`__text` 8,066,824，sysroot bitcode 9,664,823 | 54,063,640 | — |
 | iOS `aarch64-apple-ios-sim` | 同上 | 65,073,904 → 54,024,416 | — |
+| `libaimux_ffi.a` macOS `aarch64-apple-darwin`（#375 的 CI ffi-build，c35acb2） | `staticlib-release`，shipped；585 个成员，`__text` 8,053,392，sysroot bitcode 9,809,927 | 65,448,272 | — |
+| `libaimux_ffi.a` Linux `x86_64-unknown-linux-gnu`（同一 CI 运行） | `staticlib-release`，shipped；本地同一 commit 为 95,003,454 | 95,078,500 | — |
 
 结论：
 
