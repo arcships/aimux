@@ -17,6 +17,13 @@ use aimux_core::types::NamespacedKind;
 use async_trait::async_trait;
 use serde_json::json;
 
+/// `googleImageModelsWithFileInputSupport` (google-image-model.ts:35).
+const MODELS_WITH_FILE_INPUTS: [&str; 3] = [
+    "gemini-2.5-flash-image",
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+];
+
 #[derive(Debug, Clone, Default)]
 pub struct GoogleImageSettings {
     pub max_images_per_call: Option<u32>,
@@ -52,6 +59,14 @@ impl ImageModel for GoogleImageModel {
     }
     fn max_images_per_call(&self) -> Option<u32> {
         Some(self.settings.max_images_per_call.unwrap_or(1))
+    }
+    fn supports_file_inputs(&self) -> Option<bool> {
+        MODELS_WITH_FILE_INPUTS
+            .contains(&self.model_id.as_str())
+            .then_some(true)
+    }
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        self.supports_file_inputs().map(|_| false)
     }
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {

@@ -1243,6 +1243,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Google image models `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`
+  and `gemini-3.1-flash-image-preview` report `supports_file_inputs: true`
+  and `supports_mask_inputs: false` (also in the ops capabilities), as
+  `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
+  every id.
 - DeepSeek rejects a response whose usage counts are not numbers, as
   `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
   string such as `"prompt_tokens": "100"` as 0. Applies to generate and
