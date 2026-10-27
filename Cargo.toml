@@ -37,8 +37,12 @@ opt-level = "z"
 # consumer's toolchain links them — so fat-LTO only embeds every crate's
 # LLVM bitcode into the archive (.llvmbc on ELF, __LLVM,__bitcode on
 # Mach-O): ~80% of each iOS xcframework slice, past pub.dev's 256MiB
-# package limit since 0.5.0. Used by scripts/build-ios-xcframework.sh.
-[profile.ios-release]
+# package limit since 0.5.0, and 191 MB instead of 92 MB for the Linux Go
+# archive (RFC-0043 §15.1). The code the consumer links is the same size
+# either way. Every shipped .a uses this profile: the iOS slices
+# (scripts/build-ios-xcframework.sh) and the Go archives (release.yml
+# go-build). Shared libraries keep the fat-LTO `release` profile.
+[profile.staticlib-release]
 inherits = "release"
 lto = false
 
