@@ -925,3 +925,125 @@ status = "mapped"
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[deepseek]
+package = "@ai-sdk/deepseek"
+
+[[deepseek.files]]
+upstream = "src/chat/convert-to-deepseek-chat-messages.ts"
+rust = "deepseek/convert.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/convert-to-deepseek-usage.ts"
+rust = "deepseek/usage.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-api-types.ts"
+rust = "deepseek/types.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-language-model-options.ts"
+rust = "deepseek/options.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-language-model.ts"
+rust = "deepseek/model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+ts-only = [
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should send json_schema response format and skip schema injection", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should honor strictJsonSchema provider option", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should fall back to json_object without a schema", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-file-part-options.ts"
+rust = "deepseek/options.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-prepare-tools.ts"
+rust = "deepseek/prepare_tools.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+ts-only = [
+  { case = "prepareTools › should pass through strict mode for multiple tools with different strict settings", reason = "needs supportsStrictToolCalls undefined, which only a directly built model has; the provider always sets it from the base URL (deepseek-provider.ts:95), as aimux does" },
+]
+
+[[deepseek.files]]
+upstream = "src/chat/get-response-metadata.ts"
+rust = "deepseek/model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/is-deepseek-v4-model.ts"
+rust = "deepseek/is_v4_model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/map-deepseek-finish-reason.ts"
+rust = "deepseek/finish_reason.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/deepseek-provider.ts"
+rust = "deepseek/mod.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/index.ts"
+rust = "deepseek/mod.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/internal/index.ts"
+rust = "deepseek/mod.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files-api.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files-options.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"

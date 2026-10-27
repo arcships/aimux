@@ -191,3 +191,6 @@ impl ProviderDiscovery for DeepSeekProvider {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
