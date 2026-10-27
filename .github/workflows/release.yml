@@ -331,6 +331,18 @@ jobs:
           rm -f target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.dylib \
                 target/${{ matrix.settings.target }}/staticlib-release/aimux_ffi.dll
+      # Merge the members into one object rooted at the 14 exported C
+      # functions and strip its local symbols (RFC-0043 §5.3 S1c): GNU ld
+      # `-r --gc-sections` keeps what a --gc-sections link of the archive
+      # would keep, so the Linux archive drops from 85 MB to 59 MB with the
+      # same linked code. ELF and COFF only; a Mach-O archive is left as it
+      # is (ld64 -r does not dead-strip, and those archives are inside the
+      # budget). The Go tests below link the merged archive.
+      - name: Merge the archive into one object, strip local symbols
+        shell: bash
+        run: |
+          "$(command -v python3 || command -v python)" scripts/merge_archive.py \
+            target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.a
       - name: Test Go binding
         working-directory: bindings/go
         shell: bash

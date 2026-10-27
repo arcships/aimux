@@ -9,8 +9,8 @@ measurement of RFC-0043 §3.1, so the CI log of each artifact job carries the
 number the RFC's tables are filled from.
 
 `--strip-bitcode` first removes the bitcode sections from every member of
-each archive, in place, with `rust-objcopy` (the `llvm-objcopy` of rustup's
-`llvm-tools` component; `AIMUX_OBJCOPY` names another binary). That is
+each archive, in place, with the `llvm-objcopy` of rustup's `llvm-tools`
+component (`AIMUX_OBJCOPY` names another binary). That is
 RFC-0043 §5.3 S1b: rustup's sysroot objects (std, alloc, core, ...) are
 compiled with `-C embed-bitcode=yes` and keep their LLVM IR even when the
 workspace builds with `lto = false`, about 10 MB of every archive that no
@@ -188,11 +188,12 @@ def crate_of(member_name):
     return re.split(r"[-.]", member_name, maxsplit=1)[0]
 
 
-def find_objcopy():
-    """The llvm-objcopy to strip sections with: `AIMUX_OBJCOPY`, else
-    rustup's `rust-objcopy` next to the active rustc (the `llvm-tools`
-    component), else an `llvm-objcopy` on PATH."""
-    named = os.environ.get("AIMUX_OBJCOPY")
+def find_llvm_tool(name):
+    """The LLVM tool `name` (objcopy, strip, ar, nm) to use: `AIMUX_<NAME>`
+    (for example `AIMUX_OBJCOPY`), else the `llvm-<name>` of rustup's
+    `llvm-tools` component next to the active rustc, else `llvm-<name>` on
+    PATH."""
+    named = os.environ.get(f"AIMUX_{name.upper()}")
     if named:
         return named
     try:
@@ -202,21 +203,28 @@ def find_objcopy():
         verbose = subprocess.run(["rustc", "-vV"], check=True, capture_output=True, text=True).stdout
         host = re.search(r"^host: (\S+)", verbose, re.M).group(1)
         exe = ".exe" if sys.platform == "win32" else ""
-        candidate = Path(sysroot) / "lib" / "rustlib" / host / "bin" / f"rust-objcopy{exe}"
-        if candidate.is_file():
-            # The stub in a toolchain without llvm-tools exists but cannot
-            # load libLLVM; a --version run tells the two apart.
-            if subprocess.run([str(candidate), "--version"], capture_output=True).returncode == 0:
+        bindir = Path(sysroot) / "lib" / "rustlib" / host / "bin"
+        for candidate in (bindir / f"llvm-{name}{exe}", bindir / f"rust-{name}{exe}"):
+            # The rust-objcopy stub of a toolchain without llvm-tools exists
+            # but cannot load libLLVM; a --version run tells the two apart.
+            if (
+                candidate.is_file()
+                and subprocess.run([str(candidate), "--version"], capture_output=True).returncode == 0
+            ):
                 return str(candidate)
     except (OSError, subprocess.CalledProcessError, AttributeError):
         pass
-    on_path = shutil.which("llvm-objcopy")
+    on_path = shutil.which(f"llvm-{name}")
     if on_path:
         return on_path
     sys.exit(
-        "no llvm-objcopy: install rustup's llvm-tools component "
-        "(`rustup component add llvm-tools`) or set AIMUX_OBJCOPY"
+        f"no llvm-{name}: install rustup's llvm-tools component "
+        f"(`rustup component add llvm-tools`) or set AIMUX_{name.upper()}"
     )
+
+
+def find_objcopy():
+    return find_llvm_tool("objcopy")
 
 
 def bitcode_section_names(data):

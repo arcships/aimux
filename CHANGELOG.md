@@ -38,6 +38,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bitcode is left. The Linux Go archive goes from 95.0 MB to 85.0 MB, the
   iOS slices lose ~9.7 MB each; the code the consumer links is unchanged
   (RFC-0043 §5.3 S1b, §15.7). CI's Go tests link the stripped archive.
+- The Go archives (`libaimux_ffi-<target>.a` for Linux and Windows) ship as
+  one merged object. rustc gives every function its own section, so the
+  527 members of the Linux archive spent a third of their bytes on section
+  tables and string tables; `scripts/merge_archive.py` links them once with
+  GNU ld `-r --gc-sections`, rooted at the 14 functions `aimux.h` declares
+  (the script checks that list against the symbols the archive defines),
+  strips the local symbols and writes the archive back with a single member.
+  The Linux archive goes from 85.0 MB to 58.8 MB; what the consumer links is
+  what a `--gc-sections` link of the old archive kept, and a consumer that
+  does not pass `--gc-sections` (Go's cgo link, for one) now gets that
+  smaller result too: the Go test binary drops from 39.1 MB to 27.6 MB. The
+  Windows gnu archive keeps its DLL import-library members as they are
+  (two import libraries for the same DLLs coexist in it, which `ld -r`
+  would reject) and is merged without `--gc-sections` (GNU ld's PE garbage
+  collection in a relocatable link leaves `.pdata`/`.xdata` of discarded
+  gcc-built functions dangling, and removed 77 KB); it goes from 57.1 MB to
+  48.1 MB, and a program linked against it grows by 160 KB (1%) because the
+  merged object carries every code member, not only the ones a link would
+  have pulled. The macOS archives and the iOS slices are unchanged (ld64's
+  `-r` does not dead-strip; they are inside the 70 MB and 64 MiB budgets
+  already). CI rehearses the Windows gnu archive on the Windows leg
+  (RFC-0043 §5.3 S1c).
 - The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
   a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. On
   Linux x86_64 the published `aimux.node` goes from 39.9 MB (unstripped) to
