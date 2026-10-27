@@ -15,7 +15,8 @@ use aimux_core::shared::{AspectRatio, Size};
 use aimux_provider_utils::{HeaderMapOpt, ProviderErrorParts};
 
 use crate::openai_compatible::OpenAICompatibleImageModel;
-use crate::openai_compatible::config::{BaseUrl, ChatSettings, CompatModelConfig, ErrorStructure};
+use crate::openai_compatible::error::ErrorStructure;
+use crate::openai_compatible::{BaseUrl, ChatSettings, CompatModelConfig};
 use crate::shared::{Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, RouteFetch, Seen};
 
@@ -841,5 +842,89 @@ mod open_ai_compatible_image_model {
 
             assert!(result.usage.is_none());
         }
+    }
+}
+
+// ── Older ports (previously `tests/openai_compatible_upstream_e2e_test.rs`) ──
+//
+// End-to-end subset of the pinned openai-compatible upstream tests.
+
+mod upstream_e2e {
+    use aimux_core::AiMuxError;
+    use aimux_core::image_model::{ImageCallOptions, ImageModel, ImageOutputs};
+    use aimux_core::shared::Size;
+    use serde_json::json;
+
+    use crate::openai_compatible::tests::support::*;
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+    const IMAGE_PROMPT: &str = "A photorealistic astronaut riding a horse";
+
+    fn image_options() -> ImageCallOptions {
+        let mut opts = ImageCallOptions::new(IMAGE_PROMPT);
+        opts.size = Some(Size::new(1024, 1024));
+        opts
+    }
+
+    /// partial: `should return the raw b64_json content`; full port in src/openai_compatible/tests/image/image_model.rs.
+    /// partial: `should map the usage object reported by the provider`; full port in src/openai_compatible/tests/image/image_model.rs.
+    #[tokio::test]
+    async fn image_generate_raw_content_and_usage() {
+        let fetch = MockFetch::new(vec![Canned::json(&json!({"data":[
+            {"b64_json":"test1234"},{"b64_json":"test5678"}],
+            "usage":{"input_tokens":12,"output_tokens":4,"total_tokens":16}}))]);
+        let mut opts = image_options();
+        opts.n = 2;
+        let result = provider(&fetch)
+            .image("test-image")
+            .do_generate(&opts)
+            .await
+            .unwrap();
+        assert_request(
+            &fetch,
+            "/images/generations",
+            json!({"model":"test-image",
+            "prompt":IMAGE_PROMPT,"n":2,"size":"1024x1024"}),
+        );
+        let ImageOutputs::Base64(images) = result.images else {
+            panic!("expected base64 images");
+        };
+        assert_eq!(images, vec!["test1234", "test5678"]);
+        let usage = result.usage.unwrap();
+        assert_eq!(usage.input_tokens, Some(12));
+        assert_eq!(usage.output_tokens, Some(4));
+        assert_eq!(usage.total_tokens, Some(16));
+        assert_eq!(result.response.model_id.as_deref(), Some("test-image"));
+        assert_eq!(
+            result.response.headers.unwrap()["content-type"],
+            "application/json"
+        );
+        assert!(result.warnings.is_empty());
+    }
+
+    /// partial: `should handle API errors with default error structure`; full port in src/openai_compatible/tests/image/image_model.rs.
+    #[tokio::test]
+    async fn image_generate_api_error() {
+        let mut canned = Canned::json(&json!({"error":{"message":"Invalid prompt content",
+            "type":"invalid_request_error","param":null,"code":null}}));
+        canned.status = 400;
+        let fetch = MockFetch::new(vec![canned]);
+        let error = provider(&fetch)
+            .image("test-image")
+            .do_generate(&image_options())
+            .await
+            .unwrap_err();
+        assert_request(
+            &fetch,
+            "/images/generations",
+            json!({"model":"test-image",
+            "prompt":IMAGE_PROMPT,"n":1,"size":"1024x1024"}),
+        );
+        let AiMuxError::ApiCall(error) = error else {
+            panic!("expected API error");
+        };
+        assert_eq!(error.message, "Invalid prompt content");
+        assert_eq!(error.status_code, Some(400));
+        assert_eq!(error.url, format!("{BASE_URL}/images/generations"));
     }
 }
