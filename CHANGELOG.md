@@ -1333,6 +1333,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `speech::google_speech_input` become crate-internal, with no public
   replacement. `google::files` and `google::transcription` keep their paths.
 
+- `aimux_providers::anthropic::tool_name_mapping` is removed. Its
+  `ToolNameMapping` is `aimux_provider_utils::ToolNameMapping`, built with
+  `aimux_provider_utils::create_tool_name_mapping(tools, provider_tool_names)`
+  and the provider tool id table, as the AI SDK's `createToolNameMapping`;
+  `to_provider_tool_name` and `to_custom_tool_name` are unchanged.
+  `mark_code_execution_dynamic` has no public replacement (RFC-0046 R1).
+
 - `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
   layout (RFC-0046). The sub-modules `mistral::convert` and
   `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
@@ -1398,9 +1405,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in provider reads its key from when `create_provider` gets none, and
   `provider_default_base_url(name)`, the endpoint it calls when given no base
   URL (`None` when that is built from settings).
+- `aimux_provider_utils::create_tool_name_mapping` with `ToolNameMapping`,
+  and `aimux_provider_utils::strip_file_extension`, as
+  `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1). The Anthropic, OpenAI
+  Responses and Google models map provider tool names with the first, as
+  their upstream models do.
 
 ### Fixed
 
+- Bedrock document names drop everything from the first dot of the filename,
+  as the AI SDK's `stripFileExtension` does: `report.v2.pdf` is sent as
+  `report`, not `report.v2`.
 - Anthropic AWS models are named `anthropic-aws.messages` by default, the
   provider name the AI SDK gives them, instead of `anthropic-aws`. A `name`
   setting still replaces it, and the providerOptions key stays `anthropic`.
