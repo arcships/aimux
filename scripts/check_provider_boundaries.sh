@@ -61,7 +61,7 @@ rule1_hits="$(
     { grep -rnE "$rule1_pattern" aimux-providers/src --include='*.rs' || true; } |
         grep -v 'HttpRequest::new(' |
         grep -v '^aimux-providers/src/replay\.rs:' |
-        grep -vE '^aimux-providers/src/(elevenlabs\.rs|openai/transcription\.rs):[0-9]+: *timeout: options\.timeout,$' ||
+        grep -vE '^aimux-providers/src/(elevenlabs\.rs|openai/transcription/transcription_model\.rs):[0-9]+: *timeout: options\.timeout,$' ||
         true
 )"
 violation 'aimux-providers/src reads options.max_retries / timeout / session_id / call_id' "$rule1_hits"
@@ -143,9 +143,14 @@ rule4_hits="$(
 violation 'provider-name comparison in a shared protocol package (aimux-providers/src/{openai,openai_compatible,anthropic,google,bedrock,cohere})' "$rule4_hits"
 
 # `"groq"` / `"deepseek"` literals belong to their own packages and the registry.
+# Two vendor test files may name them: the OpenAI evaluation test checks that
+# another preset has no decision model, and the openai-compatible fixtures were
+# recorded with a provider named `groq`.
 rule4b_hits="$(
-    grep -rnE '"(groq|deepseek)"' \
-        aimux-providers/src/openai aimux-providers/src/openai_compatible --include='*.rs' || true
+    { grep -rnE '"(groq|deepseek)"' \
+        aimux-providers/src/openai aimux-providers/src/openai_compatible --include='*.rs' || true; } |
+        grep -vE '^aimux-providers/src/(openai/tests/evaluation|openai_compatible/tests/provider)\.rs:' ||
+        true
 )"
 violation 'groq / deepseek literal in the shared OpenAI or compatible package' "$rule4b_hits"
 
@@ -180,8 +185,10 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic_model.rs'
 rule6_hits="$(
     # shellcheck disable=SC2086
-    grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
-        $anthropic_family --include='*.rs' || true
+    { grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
+        $anthropic_family --include='*.rs' || true; } |
+        # The upstream workspace-id test value, data rather than a `from_env` call.
+        grep -v '^aimux-providers/src/anthropic_aws/tests/provider\.rs:.*"wrkspc_from_env"' || true
 )"
 violation 'Anthropic family reads builder-era AnthropicConfig state' "$rule6_hits"
 rule6b_hits="$(

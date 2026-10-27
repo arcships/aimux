@@ -1,7 +1,7 @@
 //! Ports of `src/reranking/cohere-reranking-model.test.ts` from
 //! `@ai-sdk/cohere@4.0.52`.
 //!
-//! Only the cases that `tests/cohere_upstream_e2e_test.rs` does not already
+//! Only the cases that `upstream_e2e.rs` does not already
 //! cover are here: the first request case of each describe is ported there.
 //!
 //! Harness differences from the TypeScript (expectations are unchanged):

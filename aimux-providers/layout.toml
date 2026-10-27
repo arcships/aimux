@@ -7,7 +7,7 @@ package = "@ai-sdk/mistral"
 
 [[mistral.files]]
 upstream = "src/convert-mistral-usage.ts"
-rust = "mistral/model.rs"
+rust = "mistral/convert_usage.rs"
 status = "mapped"
 
 [mistral.files.tests]
@@ -17,14 +17,14 @@ ts-only = [
 
 [[mistral.files]]
 upstream = "src/convert-to-mistral-chat-messages.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/convert_to_chat_messages.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/get-response-metadata.ts"
-rust = "mistral/model.rs"
+rust = "mistral/chat_language_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
@@ -38,91 +38,91 @@ status = "mapped"
 
 [[mistral.files]]
 upstream = "src/map-mistral-finish-reason.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/map_finish_reason.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-chat-language-model-options.ts"
-rust = "mistral/options.rs"
+rust = "mistral/chat_language_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-chat-language-model.ts"
-rust = "mistral/model.rs"
+rust = "mistral/chat_language_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-chat-prompt.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/convert_to_chat_messages.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-embedding-model-options.ts"
-rust = "mistral/embedding.rs"
+rust = "mistral/embedding_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-embedding-model.ts"
-rust = "mistral/embedding.rs"
+rust = "mistral/embedding_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-error.ts"
-rust = "mistral/mod.rs"
+rust = "mistral/error.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-prepare-tools.ts"
-rust = "mistral/convert.rs"
+rust = "mistral/prepare_tools.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-provider.ts"
-rust = "mistral/mod.rs"
+rust = "mistral/provider.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-speech-model-options.ts"
-rust = "mistral/options.rs"
+rust = "mistral/speech_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-speech-model.ts"
-rust = "mistral/speech.rs"
+rust = "mistral/speech_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-transcription-model-options.ts"
-rust = "mistral/options.rs"
+rust = "mistral/transcription_model_options.rs"
 status = "mapped"
 
 [mistral.files.tests]
 
 [[mistral.files]]
 upstream = "src/mistral-transcription-model.ts"
-rust = "mistral/transcription.rs"
+rust = "mistral/transcription_model.rs"
 status = "mapped"
 
 [mistral.files.tests]
@@ -506,140 +506,140 @@ package = "@ai-sdk/openai-compatible"
 
 [[openai_compatible.files]]
 upstream = "src/chat/convert-openai-compatible-chat-usage.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/convert_chat_usage.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/convert-to-openai-compatible-chat-messages.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/convert_to_chat_messages.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/get-response-metadata.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/map-openai-compatible-finish-reason.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/map_finish_reason.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-api-types.ts"
-rust = "openai_compatible/types.rs"
+rust = "openai_compatible/chat/api_types.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-chat-language-model-options.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/chat/chat_language_model_options.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-chat-language-model.ts"
-rust = "openai_compatible/chat.rs"
+rust = "openai_compatible/chat/chat_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-metadata-extractor.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/chat/metadata_extractor.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/chat/openai-compatible-prepare-tools.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/prepare_tools.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/convert-openai-compatible-completion-usage.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/convert_completion_usage.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/convert-to-openai-compatible-completion-prompt.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/convert_to_completion_prompt.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/get-response-metadata.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/get_response_metadata.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/map-openai-compatible-finish-reason.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/chat/map_finish_reason.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/openai-compatible-completion-language-model-options.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/completion/openai-compatible-completion-language-model.ts"
-rust = "openai_compatible/completion.rs"
+rust = "openai_compatible/completion/completion_language_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/embedding/openai-compatible-embedding-model-options.ts"
-rust = "openai_compatible/embedding.rs"
+rust = "openai_compatible/embedding/embedding_model_options.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/embedding/openai-compatible-embedding-model.ts"
-rust = "openai_compatible/embedding.rs"
+rust = "openai_compatible/embedding/embedding_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-model-options.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-model.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/image/openai-compatible-image-settings.ts"
-rust = "openai_compatible/image.rs"
+rust = "openai_compatible/image/image_model.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -660,14 +660,14 @@ status = "mapped"
 
 [[openai_compatible.files]]
 upstream = "src/openai-compatible-error.ts"
-rust = "openai_compatible/config.rs"
+rust = "openai_compatible/error.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
 
 [[openai_compatible.files]]
 upstream = "src/openai-compatible-provider.ts"
-rust = "openai_compatible/mod.rs"
+rust = "openai_compatible/provider.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -678,7 +678,7 @@ ts-only = [
 
 [[openai_compatible.files]]
 upstream = "src/utils/to-camel-case.ts"
-rust = "openai_compatible/convert.rs"
+rust = "openai_compatible/utils/to_camel_case.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -818,70 +818,70 @@ package = "@ai-sdk/cohere"
 
 [[cohere.files]]
 upstream = "src/cohere-chat-language-model-options.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/chat_language_model_options.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-chat-language-model.ts"
-rust = "cohere/model.rs"
+rust = "cohere/chat_language_model.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-chat-prompt.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/convert_to_chat_prompt.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-embedding-model-options.ts"
-rust = "cohere/embedding.rs"
+rust = "cohere/embedding_model_options.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-embedding-model.ts"
-rust = "cohere/embedding.rs"
+rust = "cohere/embedding_model.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-error.ts"
-rust = "cohere/mod.rs"
+rust = "cohere/error.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-prepare-tools.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/prepare_tools.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/cohere-provider.ts"
-rust = "cohere/mod.rs"
+rust = "cohere/provider.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/convert-cohere-usage.ts"
-rust = "cohere/model.rs"
+rust = "cohere/convert_usage.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/convert-to-cohere-chat-prompt.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/convert_to_chat_prompt.rs"
 status = "mapped"
 
 [cohere.files.tests]
@@ -895,28 +895,28 @@ status = "mapped"
 
 [[cohere.files]]
 upstream = "src/map-cohere-finish-reason.ts"
-rust = "cohere/convert.rs"
+rust = "cohere/map_finish_reason.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/reranking/cohere-reranking-api.ts"
-rust = "cohere/reranking.rs"
+rust = "cohere/reranking/reranking_api.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/reranking/cohere-reranking-model-options.ts"
-rust = "cohere/reranking.rs"
+rust = "cohere/reranking/reranking_model_options.rs"
 status = "mapped"
 
 [cohere.files.tests]
 
 [[cohere.files]]
 upstream = "src/reranking/cohere-reranking-model.ts"
-rust = "cohere/reranking.rs"
+rust = "cohere/reranking/reranking_model.rs"
 status = "mapped"
 
 [cohere.files.tests]
@@ -925,3 +925,1243 @@ status = "mapped"
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[deepseek]
+package = "@ai-sdk/deepseek"
+
+[[deepseek.files]]
+upstream = "src/chat/convert-to-deepseek-chat-messages.ts"
+rust = "deepseek/chat/convert_to_chat_messages.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/convert-to-deepseek-usage.ts"
+rust = "deepseek/chat/convert_to_usage.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-api-types.ts"
+rust = "deepseek/chat/chat_api_types.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-language-model-options.ts"
+rust = "deepseek/chat/chat_language_model_options.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-chat-language-model.ts"
+rust = "deepseek/chat/chat_language_model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+ts-only = [
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should send json_schema response format and skip schema injection", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should honor strictJsonSchema provider option", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+  { case = "DeepSeekChatLanguageModel › doGenerate › tool call › json response format with structured outputs › should fall back to json_object without a schema", reason = "unreachable through the provider: because the provider never sets supportsStructuredOutputs (deepseek-provider.ts:88-97); the case needs a model built directly" },
+]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-file-part-options.ts"
+rust = "deepseek/chat/file_part_options.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/deepseek-prepare-tools.ts"
+rust = "deepseek/chat/prepare_tools.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+ts-only = [
+  { case = "prepareTools › should pass through strict mode for multiple tools with different strict settings", reason = "needs supportsStrictToolCalls undefined, which only a directly built model has; the provider always sets it from the base URL (deepseek-provider.ts:95), as aimux does" },
+]
+
+[[deepseek.files]]
+upstream = "src/chat/get-response-metadata.ts"
+rust = "deepseek/chat/chat_language_model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/is-deepseek-v4-model.ts"
+rust = "deepseek/chat/is_v4_model.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/chat/map-deepseek-finish-reason.ts"
+rust = "deepseek/chat/map_finish_reason.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/deepseek-provider.ts"
+rust = "deepseek/provider.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/index.ts"
+rust = "deepseek/mod.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/internal/index.ts"
+rust = "deepseek/mod.rs"
+status = "mapped"
+
+[deepseek.files.tests]
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files-api.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files-options.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/files/deepseek-files.ts"
+status = "missing"
+issue = 275
+
+[[deepseek.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[google]
+package = "@ai-sdk/google"
+# google-language-model.test.ts has two cases named `doGenerate › should pass tools and
+# toolChoice`; the second marker ends in `#2` (RFC-0045 §4).
+
+[[google.files]]
+upstream = "src/convert-google-usage.ts"
+rust = "google/convert_usage.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/convert-to-google-messages.ts"
+rust = "google/convert_to_messages.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "tool messages › should convert supported tool result URLs into functionResponse file data", issue = 275, reason = "convert_to_google_messages_for_namespace has no supportedFunctionResponseUrls allow-list; it keeps gs:// file data for the Vertex namespace only" },
+  { case = "tool messages › should preserve the original supported GCS tool result URL", issue = 275, reason = "convert_to_google_messages_for_namespace has no supportedFunctionResponseUrls allow-list; it keeps gs:// file data for the Vertex namespace only" },
+]
+
+[[google.files]]
+upstream = "src/download-tool-result-files.ts"
+status = "missing"
+issue = 275
+reason = "no tool result file download (#275 tool result file download, downloadToolResultFiles)"
+
+[[google.files]]
+upstream = "src/get-model-path.ts"
+rust = "google/get_model_path.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/get-realtime-base-url.ts"
+rust = "google/get_realtime_base_url.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-batch.ts"
+status = "missing"
+issue = 275
+reason = "no Batch API (#275 Google Batch API)"
+
+[[google.files]]
+upstream = "src/google-embedding-model-options.ts"
+rust = "google/embedding_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-embedding-model.ts"
+rust = "google/embedding_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "GoogleEmbeddingModel › should slice per-value multimodal content for automatic batches", issue = 275, reason = "EmbeddingModel has no per-batch provider-options transformer (EXPERIMENTAL_EMBEDDING_MODEL_PROVIDER_OPTIONS_TRANSFORMER)" },
+]
+
+[[google.files]]
+upstream = "src/google-error.ts"
+rust = "google/error.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-files.ts"
+rust = "google/files.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "GoogleFiles › uploadFile › should thread per-call headers and abortSignal through the upload", issue = 275, reason = "UploadFileCallOptions has no per-call headers or abort signal" },
+]
+ts-only = [
+  { case = "GoogleFiles › uploadFile › should preserve ArrayBuffer-backed upload data", reason = "asserts that the same Uint8Array view reaches fetch (object identity of a typed-array view); Rust upload data is an owned Vec<u8>" },
+  { case = "GoogleFiles › uploadFile › should reject stream data at runtime and cancel the stream", reason = "a ReadableStream passed where the type forbids it is a JS runtime check; UploadFileData has no stream variant, so Rust cannot express the input" },
+]
+
+[[google.files]]
+upstream = "src/google-image-model-options.ts"
+rust = "google/image_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-image-model.ts"
+rust = "google/image_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "GoogleImageModel › doGenerate › should preserve prompt feedback when a prompt block returns no candidates", issue = 275, reason = "aimux-core ImageResult has no isRetryable field" },
+]
+
+[[google.files]]
+upstream = "src/google-image-settings.ts"
+rust = "google/image_settings.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-json-accumulator.ts"
+rust = "google/json_accumulator.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-language-model-options.ts"
+rust = "google/language_model_options.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-language-model.ts"
+rust = "google/language_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "doGenerate › should not forward unsupported Vertex %s tool result URLs", issue = 275, reason = "the rejection comes from the tool result file download step (downloadToolResultFiles), which aimux does not have" },
+  { case = "groundingMetadataSchema › rejects invalid data types", issue = 275, reason = "aimux keeps candidates[].groundingMetadata as untyped JSON (types::Candidate::grounding_metadata) and validates no grounding metadata schema" },
+]
+ts-only = [
+  { case = "doGenerate › should preserve Vertex tool result URL handling across workflow serialization", reason = "WORKFLOW_SERIALIZE / WORKFLOW_DESERIALIZE are JS workflow-runtime hooks; it also needs downloadToolResultFiles, which aimux does not have" },
+]
+
+[[google.files]]
+upstream = "src/google-model-capabilities.ts"
+rust = "google/model_capabilities.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-prepare-tools.ts"
+rust = "google/prepare_tools.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-prompt.ts"
+rust = "google/prompt.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-provider.ts"
+rust = "google/provider.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "google-provider › should only advertise URL support shared by all batch models", issue = 275, reason = "no Batch API (experimental_batch)" },
+]
+ts-only = [
+  { case = "google provider - video › should pass custom generateId to video model", reason = "checks a mocked constructor argument; upstream GoogleVideoModel never calls generateId, so nothing observable follows from it" },
+]
+
+[[google.files]]
+upstream = "src/google-speech-api.ts"
+rust = "google/speech_api.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-speech-input.ts"
+rust = "google/speech_input.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-speech-model-options.ts"
+rust = "google/speech_model_options.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-speech-model.ts"
+rust = "google/speech_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-supported-file-url.ts"
+rust = "google/supported_file_url.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-tools.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/google-video-model-options.ts"
+rust = "google/video_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-video-model.ts"
+rust = "google/video_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-video-settings.ts"
+rust = "google/video_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/index.ts"
+rust = "google/mod.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/interactions/build-google-interactions-stream-transform.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/cancel-google-interaction.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/convert-google-interactions-usage.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/convert-to-google-interactions-input.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/extract-google-interactions-sources.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-agent.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-api.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-language-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-language-model.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-prompt.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-provider-metadata.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/map-google-interactions-finish-reason.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/parse-google-interactions-outputs.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/poll-google-interactions.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/prepare-google-interactions-tools.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/stream-google-interactions.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/synthesize-google-interactions-agent-stream.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/internal/index.ts"
+rust = "google/mod.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/map-google-finish-reason.ts"
+rust = "google/map_finish_reason.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/realtime/google-realtime-event-mapper.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/realtime/google-realtime-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/realtime/google-realtime-model.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/realtime/index.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/sanitize-response-json-schema.ts"
+rust = "google/sanitize_response_json_schema.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/speech-translation/google-speech-translation-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no speech translation model (#275 speech translation models)"
+
+[[google.files]]
+upstream = "src/speech-translation/google-speech-translation-model.ts"
+status = "missing"
+issue = 275
+reason = "no speech translation model (#275 speech translation models)"
+
+[[google.files]]
+upstream = "src/tool/code-execution.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/enterprise-web-search.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/file-search.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/google-maps.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/google-search.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/url-context.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/vertex-rag-store.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/transcription/google-transcription-model-options.ts"
+rust = "google/transcription/transcription_model_options.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/transcription/google-transcription-model.ts"
+rust = "google/transcription/transcription_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "doGenerate › transcribes audio via the Interactions API with transcription_config", issue = 275, reason = "aimux-core TranscriptionResult has no usage field" },
+  { case = "doStream › streams transcription over the Gemini Live API WebSocket", issue = 275, reason = "the aimux-core transcription stream Finish part has no usage field" },
+]
+
+[[google.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[anthropic_aws]
+package = "@ai-sdk/anthropic-aws"
+
+[[anthropic_aws.files]]
+upstream = "src/anthropic-aws-fetch.ts"
+rust = "anthropic_aws/fetch.rs"
+status = "mapped"
+
+[anthropic_aws.files.tests]
+registered = [
+  { case = "createSigV4FetchFunction › should bypass signing for non-POST requests", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no x-api-key, GET included, so that list_models is accepted" },
+  { case = "createSigV4FetchFunction › should bypass signing if POST request has no body", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no x-api-key, a bodyless POST included" },
+]
+ts-only = [
+  { case = "createSigV4FetchFunction › should handle non-string body by stringifying it", reason = "FetchRequest.body is bytes; there is no JS object body for JSON.stringify to coerce" },
+]
+
+[[anthropic_aws.files]]
+upstream = "src/anthropic-aws-provider.ts"
+rust = "anthropic_aws/provider.rs"
+status = "mapped"
+
+[anthropic_aws.files.tests]
+registered = [
+  { case = "anthropicAws provider - region › throws when region is not resolvable at model creation time", ref = "不可失败的默认 provider 访问", reason = "creating a model reads no setting; a missing region fails the first request with LoadSetting (§3.3 Anthropic-AWS row: aimux 统一推迟到请求阶段)" },
+]
+sub-feature = [
+  { case = "anthropicAws provider - model identity › exposes files() returning an AnthropicFiles instance", issue = 275, reason = "AnthropicAwsProvider has no files(); only the Anthropic provider has one" },
+  { case = "anthropicAws provider - model identity › exposes skills() returning an AnthropicSkills instance", issue = 275, reason = "AnthropicAwsProvider has no skills(); only the Anthropic provider has one" },
+]
+ts-only = [
+  { case = "anthropicAws provider - model identity › throws if the provider function is called with new", reason = "Rust has no `new` on a callable; the provider is called with call()" },
+]
+
+[[anthropic_aws.files]]
+upstream = "src/index.ts"
+rust = "anthropic_aws/mod.rs"
+status = "mapped"
+
+[anthropic_aws.files.tests]
+
+[[anthropic_aws.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[openai]
+package = "@ai-sdk/openai"
+# openai-evaluation, openai-forward-compatible-defaults, responses/openai-responses-computer,
+# responses/openai-responses-reasoning-effort-update and
+# responses/convert-to-openai-responses-input-tool-search have no source file of their own
+# name; their exclusions sit under the source file they test.
+
+[[openai.files]]
+upstream = "src/chat/convert-openai-chat-usage.ts"
+rust = "openai/chat/convert_chat_usage.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/convert-to-openai-chat-messages.ts"
+rust = "openai/chat/convert_to_chat_messages.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/get-response-metadata.ts"
+rust = "openai/chat/chat_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/map-openai-finish-reason.ts"
+rust = "openai/chat/map_finish_reason.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/openai-chat-api.ts"
+rust = "openai/chat/chat_api.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/openai-chat-language-model-options.ts"
+rust = "openai/chat/chat_language_model_options.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/openai-chat-language-model.ts"
+rust = "openai/chat/chat_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/openai-chat-prepare-tools.ts"
+rust = "openai/chat/chat_prepare_tools.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/chat/openai-chat-prompt.ts"
+rust = "openai/chat/convert_to_chat_messages.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/completion/convert-openai-completion-usage.ts"
+rust = "openai/completion/completion_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/completion/convert-to-openai-completion-prompt.ts"
+rust = "openai/completion/completion_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/completion/get-response-metadata.ts"
+rust = "openai/completion/completion_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/completion/map-openai-finish-reason.ts"
+rust = "openai/completion/completion_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/completion/openai-completion-api.ts"
+rust = "openai/completion/completion_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/completion/openai-completion-language-model-options.ts"
+rust = "openai/completion/completion_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/completion/openai-completion-language-model.ts"
+rust = "openai/completion/completion_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/embedding/openai-embedding-api.ts"
+rust = "openai/embedding/embedding_api.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/embedding/openai-embedding-model-options.ts"
+rust = "openai/embedding/embedding_model_options.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/embedding/openai-embedding-model.ts"
+rust = "openai/embedding/embedding_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+sub-feature = [
+  { case = "model limits › should expose the aggregate token limit", issue = 275, reason = "EmbeddingModel has no max-input-bytes-per-call limit" },
+]
+
+[[openai.files]]
+upstream = "src/files/openai-files-api.ts"
+rust = "openai/files/files_api.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/files/openai-files-options.ts"
+rust = "openai/files/files_options.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/files/openai-files.ts"
+rust = "openai/files/files.rs"
+status = "mapped"
+
+[openai.files.tests]
+sub-feature = [
+  { case = "OpenAI Files - deleteFile › should delete a file via DELETE", issue = 275, reason = "the Files trait has no delete_file" },
+  { case = "OpenAI Files - downloadFile › should download file content as a stream", issue = 275, reason = "the Files trait has no download_file" },
+  { case = "OpenAI Files - downloadFile › should expose the response content type as mediaType (parameters stripped)", issue = 275, reason = "the Files trait has no download_file" },
+  { case = "OpenAI Files - getFileMetadata › should omit expiresAt when the provider reports none", issue = 275, reason = "the Files trait has no get_file_metadata" },
+  { case = "OpenAI Files - getFileMetadata › should preserve dot-segment file id $fileId as a URL path segment", issue = 275, reason = "the Files trait has no get_file_metadata" },
+  { case = "OpenAI Files - getFileMetadata › should reject a blank openai file id (%j)", issue = 275, reason = "the Files trait has no get_file_metadata" },
+  { case = "OpenAI Files - getFileMetadata › should reject a reference without an openai file id", issue = 275, reason = "the Files trait has no get_file_metadata" },
+  { case = "OpenAI Files - getFileMetadata › should retrieve file metadata via GET", issue = 275, reason = "the Files trait has no get_file_metadata" },
+  { case = "OpenAI Files - uploadFile (pre-request rejection) › should cancel stream data when provider options are invalid", issue = 275, reason = "UploadFileData has no stream variant" },
+  { case = "OpenAI Files - uploadFile (result fields) › should expose byteSize/createdAt/expiresAt from the upload response", issue = 275, reason = "UploadFileResult has no byte_size, created_at or expires_at" },
+  { case = "OpenAI Files - uploadFile (stream data) › should default the filename to \"blob\" on filename-less stream uploads", issue = 275, reason = "UploadFileData has no stream variant" },
+  { case = "OpenAI Files - uploadFile (stream data) › should omit expiry fields on stream uploads without expiresAfter", issue = 275, reason = "UploadFileData has no stream variant" },
+  { case = "OpenAI Files - uploadFile (stream data) › should stream a multipart upload with fields preceding the file part", issue = 275, reason = "UploadFileData has no stream variant" },
+]
+
+[[openai.files]]
+upstream = "src/image/openai-image-api.ts"
+rust = "openai/image/image_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/image/openai-image-model-options.ts"
+rust = "openai/image/image_model_options.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/image/openai-image-model.ts"
+rust = "openai/image/image_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+ts-only = [
+  { case = "doGenerate - image editing › should forward the abort signal when downloading a URL %s", reason = "upstream stubs the global fetch that downloads use; aimux downloads image URLs through download_blob on the process transport, which a test cannot inject, and the SSRF guard rejects a local mock server" },
+]
+
+[[openai.files]]
+upstream = "src/index.ts"
+rust = "openai/mod.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/internal/index.ts"
+rust = "openai/mod.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/live/openai-live-event-mapper.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI live (realtime voice) model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/live/openai-live-session-config.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI live (realtime voice) model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/live/openai-realtime-model-live-options.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI live (realtime voice) model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/live/openai-realtime-model-live.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI live (realtime voice) model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/normalize-openai-json-schema.ts"
+rust = "openai/normalize_json_schema.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/openai-batch.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI Batch API (#275)"
+
+[[openai.files]]
+upstream = "src/openai-config.ts"
+rust = "openai/config.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/openai-error.ts"
+rust = "openai/error.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/openai-language-model-capabilities.ts"
+rust = "openai/language_model_capabilities.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/openai-provider.ts"
+rust = "openai/provider.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/openai-stream-error.ts"
+rust = "openai/stream_error.rs"
+status = "mapped"
+
+[openai.files.tests]
+sub-feature = [
+  { case = "throwIfOpenAIStreamErrorBeforeOutput › should keep blocking until output when no accepted-chunk detector is provided", issue = 275, reason = "no generic helper with getError / isOutputChunk / isAcceptedChunk callbacks; the Responses do_stream applies the same rule through the crate-private read_until_output, which the doStream cases cover" },
+  { case = "throwIfOpenAIStreamErrorBeforeOutput › should resolve on the first output chunk and replay all chunks to the consumer", issue = 275, reason = "no generic helper with getError / isOutputChunk / isAcceptedChunk callbacks; the Responses do_stream applies the same rule through the crate-private read_until_output, which the doStream cases cover" },
+  { case = "throwIfOpenAIStreamErrorBeforeOutput › should throw when an error frame arrives before output without cancelling the source", issue = 275, reason = "no generic helper with getError / isOutputChunk / isAcceptedChunk callbacks; the Responses do_stream applies the same rule through the crate-private read_until_output, which the doStream cases cover" },
+  { case = "throwIfOpenAIStreamErrorBeforeOutput › with an accepted-chunk detector › should resolve after the grace window when the stream stalls after acceptance", issue = 275, reason = "no generic helper with getError / isOutputChunk / isAcceptedChunk callbacks; the Responses do_stream applies the same rule through the crate-private read_until_output, which the doStream cases cover" },
+  { case = "throwIfOpenAIStreamErrorBeforeOutput › with an accepted-chunk detector › should resolve immediately on output without waiting for the grace window", issue = 275, reason = "no generic helper with getError / isOutputChunk / isAcceptedChunk callbacks; the Responses do_stream applies the same rule through the crate-private read_until_output, which the doStream cases cover" },
+  { case = "throwIfOpenAIStreamErrorBeforeOutput › with an accepted-chunk detector › should still throw when an error frame is flushed together with the accepted chunk", issue = 275, reason = "no generic helper with getError / isOutputChunk / isAcceptedChunk callbacks; the Responses do_stream applies the same rule through the crate-private read_until_output, which the doStream cases cover" },
+  { case = "throwIfOpenAIStreamErrorBeforeOutput › with an accepted-chunk detector › should surface a source error to the consumer after grace resolution without unhandled rejections", issue = 275, reason = "no generic helper with getError / isOutputChunk / isAcceptedChunk callbacks; the Responses do_stream applies the same rule through the crate-private read_until_output, which the doStream cases cover" },
+]
+
+[[openai.files]]
+upstream = "src/openai-tools.ts"
+rust = "openai/tools.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/realtime/index.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI realtime speech-to-speech model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/realtime/openai-realtime-event-mapper.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI realtime speech-to-speech model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/realtime/openai-realtime-factory.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI realtime speech-to-speech model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/realtime/openai-realtime-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI realtime speech-to-speech model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/realtime/openai-realtime-model.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI realtime speech-to-speech model; aimux has realtime transcription only (#275)"
+
+[[openai.files]]
+upstream = "src/responses/convert-openai-responses-usage.ts"
+rust = "openai/responses/convert_responses_usage.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/responses/convert-to-openai-responses-input.ts"
+rust = "openai/responses/convert_to_responses_input.rs"
+status = "mapped"
+
+[openai.files.tests]
+sub-feature = [
+  { case = "convertToOpenAIResponsesInput › assistant messages › should round-trip namespace on tool call parts dispatched by tool_search", issue = 275, reason = "ToolCallPart and ToolResultPart have no provider_metadata, so a prompt part cannot carry the item reference or namespace the AI SDK reads from it" },
+  { case = "convertToOpenAIResponsesInput › hasConversation › should preserve scalar prompt cache breakpoints on expanded parallel tool results", issue = 275, reason = "no expansion of the internal `parallel` function-call wrapper (expandParallelToolCall); aimux returns the wrapper as one `parallel` tool call" },
+  { case = "convertToOpenAIResponsesInput › hasConversation › should send expanded parallel tool results back to the stored wrapper call", issue = 275, reason = "no expansion of the internal `parallel` function-call wrapper (expandParallelToolCall); aimux returns the wrapper as one `parallel` tool call" },
+  { case = "convertToOpenAIResponsesInput › hasPreviousResponseId › should reconstruct expanded parallel tool calls with one wrapper output", issue = 275, reason = "no expansion of the internal `parallel` function-call wrapper (expandParallelToolCall); aimux returns the wrapper as one `parallel` tool call" },
+  { case = "convertToOpenAIResponsesInput › programmatic tool calling › should preserve the program output item reference from provider metadata", issue = 275, reason = "ToolCallPart and ToolResultPart have no provider_metadata, so a prompt part cannot carry the item reference or namespace the AI SDK reads from it" },
+  { case = "preserves distinct hosted tool search item references from provider metadata", issue = 275, reason = "ToolCallPart and ToolResultPart have no provider_metadata, so a prompt part cannot carry the item reference or namespace the AI SDK reads from it" },
+]
+ts-only = [
+  { case = "convertToOpenAIResponsesInput › assistant messages › should default missing tool call input to an empty object", reason = "an undefined tool call input has no Rust form: ToolCallPart.input is a required Value" },
+]
+
+[[openai.files]]
+upstream = "src/responses/expand-parallel-tool-call.ts"
+status = "missing"
+issue = 275
+reason = "no expansion of the internal `parallel` function-call wrapper (expandParallelToolCall); aimux returns the wrapper as one `parallel` tool call (#275)"
+
+[[openai.files]]
+upstream = "src/responses/map-openai-responses-finish-reason.ts"
+rust = "openai/responses/map_responses_finish_reason.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/responses/openai-responses-api.ts"
+rust = "openai/responses/responses_api.rs"
+status = "mapped"
+
+[openai.files.tests]
+ts-only = [
+  { case = "openaiResponses schema alignment › aligns async mode between function call schemas", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+  { case = "openaiResponses schema alignment › aligns code_interpreter outputs", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+  { case = "openaiResponses schema alignment › aligns file_search_call results", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+  { case = "openaiResponses schema alignment › aligns local_shell_call between added, done, and response schemas", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+  { case = "openaiResponses schema alignment › aligns message phase between added chunk, done chunk, and response schemas", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+  { case = "openaiResponses schema alignment › aligns output_text logprobs", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+  { case = "openaiResponses schema alignment › aligns web_search_call actions", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+  { case = "openaiResponses schema alignment › matches annotation shape between chunk and response schemas", reason = "expectTypeOf compares TypeScript types inferred from the zod chunk and response schemas; aimux reads Responses events as serde_json::Value, so there is no type to compare" },
+]
+
+[[openai.files]]
+upstream = "src/responses/openai-responses-language-model-options.ts"
+rust = "openai/responses/responses_language_model_options.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/responses/openai-responses-language-model.ts"
+rust = "openai/responses/responses_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+sub-feature = [
+  { case = "OpenAIResponsesLanguageModel › doGenerate › should not include unsupported web search sources", issue = 275, reason = "no supportsWebSearchSourcesInclude model setting; only the includeWebSearchSources provider option exists" },
+  { case = "OpenAIResponsesLanguageModel › doGenerate › tool calls › should expand an internal parallel tool call wrapper", issue = 275, reason = "no expansion of the internal `parallel` function-call wrapper (expandParallelToolCall); aimux returns the wrapper as one `parallel` tool call" },
+  { case = "OpenAIResponsesLanguageModel › doStream › should expand a streamed internal parallel tool call wrapper", issue = 275, reason = "no expansion of the internal `parallel` function-call wrapper (expandParallelToolCall); aimux returns the wrapper as one `parallel` tool call" },
+  { case = "positioned reasoning effort updates (%s) › rejects historical none updates for Astra before sending", issue = 275, reason = "UnsupportedFunctionality carries only the functionality name, not the AI SDK's separate message, so the rejection text cannot be compared; aimux does reject these before sending" },
+  { case = "positioned reasoning effort updates (%s) › rejects mixed text %j before sending", issue = 275, reason = "UnsupportedFunctionality carries only the functionality name, not the AI SDK's separate message, so the rejection text cannot be compared; aimux does reject these before sending" },
+]
+
+[[openai.files]]
+upstream = "src/responses/openai-responses-prepare-tools.ts"
+rust = "openai/responses/responses_prepare_tools.rs"
+status = "mapped"
+
+[openai.files.tests]
+sub-feature = [
+  { case = "prepareResponsesTools › allowedTools provider option › should apply the tool name mapping for a tool that is not part of the request", issue = 275, reason = "prepare_responses_tools_for takes no tool name mapping; names come only from provider tool ids" },
+]
+
+[[openai.files]]
+upstream = "src/responses/openai-responses-provider-metadata.ts"
+rust = "openai/responses/responses_language_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/skills/openai-skills-api.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI Skills API (create, list and delete skills); skill references in shell tools are sent as given (#275)"
+
+[[openai.files]]
+upstream = "src/skills/openai-skills.ts"
+status = "missing"
+issue = 275
+reason = "no OpenAI Skills API (create, list and delete skills); skill references in shell tools are sent as given (#275)"
+
+[[openai.files]]
+upstream = "src/speech-translation/openai-speech-translation-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no speech translation model (#275)"
+
+[[openai.files]]
+upstream = "src/speech-translation/openai-speech-translation-model.ts"
+status = "missing"
+issue = 275
+reason = "no speech translation model (#275)"
+
+[[openai.files]]
+upstream = "src/speech/openai-speech-api.ts"
+rust = "openai/speech/speech_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/speech/openai-speech-model-options.ts"
+rust = "openai/speech/speech_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/speech/openai-speech-model.ts"
+rust = "openai/speech/speech_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/apply-patch.ts"
+rust = "openai/tool/apply_patch.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/code-interpreter.ts"
+rust = "openai/tool/code_interpreter.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/computer.ts"
+rust = "openai/tool/computer.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/custom.ts"
+rust = "openai/tool/custom.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/file-search.ts"
+rust = "openai/tool/file_search.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/image-generation.ts"
+rust = "openai/tool/image_generation.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/local-shell.ts"
+rust = "openai/tool/local_shell.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/mcp.ts"
+rust = "openai/tool/mcp.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/programmatic-tool-calling.ts"
+rust = "openai/tool/programmatic_tool_calling.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/shell.ts"
+rust = "openai/tool/shell.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/tool-search.ts"
+rust = "openai/tool/tool_search.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/web-search-preview.ts"
+rust = "openai/tool/web_search_preview.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/tool/web-search.ts"
+rust = "openai/tool/web_search.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/transcription/openai-transcription-api.ts"
+rust = "openai/transcription/transcription_api.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/transcription/openai-transcription-model-options.ts"
+rust = "openai/transcription/transcription_model_options.rs"
+status = "mapped"
+
+[openai.files.tests]
+
+[[openai.files]]
+upstream = "src/transcription/openai-transcription-model.ts"
+rust = "openai/transcription/transcription_model.rs"
+status = "mapped"
+
+[openai.files.tests]
+sub-feature = [
+  { case = "doGenerate › should extract usage", issue = 275, reason = "TranscriptionResult has no usage" },
+]
+ts-only = [
+  { case = "doStream › should strip undefined header values before the WebSocket constructor", reason = "per-call headers are HashMap<String, String>, so an undefined header value cannot be expressed" },
+]
+
+[[openai.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[[openai.files]]
+rust = "openai/decision.rs"
+status = "aimux"
+reason = "the native Decisions API; upstream decides through the Responses model"
+
+[[openai.files]]
+rust = "openai/responses/tool_args.rs"
+status = "aimux"
+reason = "the provider tool argument schemas of tool/*.ts, validated in one place"

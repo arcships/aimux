@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Build
+
+- The static archives (`libaimux_ffi.a` for Go and the iOS xcframework
+  slices) are built with the `staticlib-release` profile, the `release`
+  profile without LTO. One command replaces the two old ones:
+
+  ```sh
+  cargo build -p aimux-ffi --profile staticlib-release
+  # was: cargo build -p aimux-ffi --release          (Go archive)
+  # was: cargo build -p aimux-ffi --profile ios-release   (iOS slices; the profile is gone)
+  ```
+
+  The archive lands in `target/<triple>/staticlib-release/` instead of
+  `release/` or `ios-release/`; the Go binding's cgo flags look there first,
+  and `go generate` downloads the release archive there. A static archive is
+  linked by the consumer's toolchain, so fat LTO only embedded every crate's
+  LLVM bitcode into it: the Linux Go archive as shipped goes from 194.2 MB
+  to 95.0 MB with the same linked code (RFC-0043 §5.1, §15.1). The shared
+  libraries (`.so`, `.dylib`, `.dll`) and the Node and Python extensions are
+  not changed by this PR.
+  Release and CI builds check the archive's workspace objects for bitcode
+  and print every artifact's byte size (`scripts/check_native_artifact.py`).
+- The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
+  a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. On
+  Linux x86_64 the published `aimux.node` goes from 39.9 MB (unstripped) to
+  17.4 MB (−57%) and the wheel's `aimux.abi3.so` from 30.6 MB (`maturin
+  publish` already stripped it) to 17.3 MB (−43%); the six paired benchmark
+  scenarios in
+  `bindings/node/bench/bench_profile.cjs` and
+  `bindings/python/bench/bench_profile.py` stay within noise of the old
+  build. `panic` stays `unwind`, so a panic still surfaces as a JS exception
+  or a Python `PanicException`. `npx napi build --release` and
+  `maturin build --release` pick the profile up; no command changes.
+
 ### Breaking
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
@@ -1175,6 +1209,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- OpenAI's sub-modules follow the `@ai-sdk/openai` files (RFC-0046 §4.2):
+  `openai::convert`, `openai::model`, `openai::responses::convert`,
+  `openai::responses::responses_convert` and `openai::responses::types` are no
+  longer public. `openai::model::OpenAIModel` is `openai::OpenAIModel`, as the
+  crate root already exports it. The Responses types of `responses::convert`
+  and `responses::types` are at `openai::responses`:
+  `openai::responses::{PreparedResponsesTools, parse_usage, ResponsesUsage,
+  ResponsesInputTokensDetails, ResponsesOutputTokensDetails}`, next to the
+  functions it already exported. The Chat Completions helpers of `convert`
+  (`SystemMessageMode`, `ToolWarning`, `PreparedTools`, `prepare_tools`,
+  `convert_prompt_to_openai_messages_with_mode_fallible`, `RequestBodyResult`,
+  `build_request_body_with_warnings`, `parse_finish_reason`) and the shared
+  Responses parser of `responses_convert` (`ResponsesEventStream`,
+  `build_responses_generate_result`, `build_responses_event_stream`) become
+  crate-internal, with no public replacement; `build_request_body` and
+  `build_header_list`, which nothing in the workspace called, are removed.
+  `openai::completion`, `openai::decision`, `openai::embedding`,
+  `openai::files`, `openai::image`, `openai::responses`, `openai::speech`,
+  `openai::tools` and `openai::transcription` keep their paths.
+
+- `aimux_providers::cohere` follows the upstream `@ai-sdk/cohere` file layout
+  (RFC-0046). The sub-modules `cohere::convert`, `cohere::embedding` and
+  `cohere::reranking` are no longer public; use `CohereEmbeddingModel` and
+  `CohereRerankingModel`, re-exported at `aimux_providers::cohere`, instead of
+  the `embedding` and `reranking` paths. The helpers `cohere::convert` exposed
+  (`prepare_tools`, `convert_prompt_to_cohere`, `build_request_body`,
+  `resolve_cohere_thinking`, `parse_finish_reason`, `PreparedTools`,
+  `ConvertedPrompt`, `RequestBodyResult`) are not reachable from outside the
+  crate any more and have no replacement. Exports at the crate root and the
+  `cohere` module root are unchanged.
+
+- Google's sub-modules follow the `@ai-sdk/google` files (RFC-0046 §4.2):
+  `google::embedding`, `google::image`, `google::speech`, `google::video`,
+  `google::convert`, `google::types` and `google::utils` are no longer public.
+  The models and settings stay at the `google` root and the crate root:
+  `google::{GoogleEmbeddingModel, GoogleImageModel, GoogleImageSettings,
+  GoogleSpeechModel, GoogleVideoModel}`. The request and response helpers of
+  `convert`, `types` and `utils` (`convert_to_google_messages`,
+  `build_request_body`, `build_request_body_with_warnings`, `prepare_tools`,
+  `prepare_all_tools`, `get_google_model_capabilities`,
+  `sanitize_response_json_schema`, `parse_finish_reason`, `convert_usage`,
+  `extract_sources`, the response types, `get_model_path`,
+  `is_supported_file_url`, `GoogleJsonAccumulator`) and
+  `speech::google_speech_input` become crate-internal, with no public
+  replacement. `google::files` and `google::transcription` keep their paths.
+
+- `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
+  layout (RFC-0046). The sub-modules `mistral::convert` and
+  `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
+  re-exported at `aimux_providers::mistral`, instead of
+  `mistral::embedding::MistralEmbeddingModel`. The helpers `mistral::convert`
+  exposed (`prepare_tools`, `convert_prompt_to_mistral_messages`,
+  `build_request_body`, `request_warnings`, `parse_finish_reason`,
+  `PreparedTools`) are not reachable from outside the crate any more and have
+  no replacement. Exports at the crate root and the `mistral` module root are
+  unchanged.
+
 - The ops error envelope is `{kind, code, message, error}`: the derived
   `retryAfterMs` is removed, together with the clock and cached projection
   behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
@@ -1232,6 +1323,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic AWS models are named `anthropic-aws.messages` by default, the
+  provider name the AI SDK gives them, instead of `anthropic-aws`. A `name`
+  setting still replaces it, and the providerOptions key stays `anthropic`.
+
+- Anthropic AWS models report `http(s)` image (`image/*`) and PDF
+  (`application/pdf`) URLs as supported, as the AI SDK does, so those URLs go
+  to the Messages API as they are instead of being downloaded first.
+
+- Anthropic AWS fails a SigV4 request whose `AWS_ACCESS_KEY_ID` or
+  `AWS_SECRET_ACCESS_KEY` is missing with the AI SDK's guidance on providing
+  credentials (an `AiMuxError::Other` that ends with the setting error as
+  `Original error:`), instead of the bare `LoadSetting` error. A missing
+  region is still `LoadSetting`.
+
+- Anthropic AWS reports a failing SigV4 credential producer as
+  `AWS credential provider failed: <error>. Please ensure your credential
+  provider returns valid AWS credentials …`, the AI SDK's message, instead of
+  the producer's error alone.
+
+- Anthropic AWS with no `fetch` setting uses the process default transport
+  current at each request, as its settings document and the AI SDK does with
+  `globalThis.fetch`, instead of the one current when the provider was
+  created; a later `set_default_transport` now reaches existing providers.
+- Google image models `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`
+  and `gemini-3.1-flash-image-preview` report `supports_file_inputs: true`
+  and `supports_mask_inputs: false` (also in the ops capabilities), as
+  `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
+  every id.
+- DeepSeek rejects a response whose usage counts are not numbers, as
+  `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
+  string such as `"prompt_tokens": "100"` as 0. Applies to generate and
+  stream.
 - Open Responses fails a response without `output` as an API call error
   with status 500, not retryable, as the AI SDK does. It was an
   `InvalidResponseData` error.

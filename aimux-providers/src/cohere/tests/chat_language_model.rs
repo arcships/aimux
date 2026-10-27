@@ -13,7 +13,7 @@
 //!
 //! Cases that are not here (`should stream text deltas` and
 //! `should handle unparsable stream parts`) are ported in
-//! `tests/cohere_upstream_e2e_test.rs`. `should extract text response` and
+//! `upstream_e2e.rs`. `should extract text response` and
 //! `should extract tool calls` compare the whole snapshot here; the older
 //! cases in that file check part of it.
 

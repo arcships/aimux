@@ -1,6 +1,6 @@
 //! Ports of the upstream `@ai-sdk/mistral` `mistral-prepare-tools.test.ts`.
 
-use crate::mistral::convert::{PreparedTools, prepare_tools};
+use crate::mistral::prepare_tools::{PreparedTools, prepare_tools};
 use aimux_core::tool::FunctionTool;
 use serde_json::{Value, json};
 
