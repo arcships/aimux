@@ -88,6 +88,7 @@ with tempfile.TemporaryDirectory(prefix='aimux-bench-') as folder:
     inner = INNER % {'tests': str(binding / 'tests'), 'count': count}
     run = subprocess.run([sys.executable, '-c', inner], env=env, capture_output=True, text=True, timeout=900)
     if run.returncode:
-        sys.exit(run.stderr[-4000:])
+        sys.stderr.write(run.stderr[-4000:])
+        sys.exit(run.returncode)
     result = json.loads(run.stdout.strip().splitlines()[-1])
     print(json.dumps({'library': so, 'bytes': os.path.getsize(so), **result}))

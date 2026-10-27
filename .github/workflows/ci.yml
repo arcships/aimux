@@ -349,6 +349,27 @@ jobs:
         if: matrix.settings.test && runner.os == 'Linux'
         working-directory: bindings/node
         run: git diff --exit-code -- index.js index.d.ts
+      # The shipped build: bindings/node/Cargo.toml's [profile.release]
+      # (opt-level "s", fat LTO, one codegen unit, strip; RFC-0043 B-profile).
+      # This workflow's env pins CARGO_PROFILE_RELEASE_* to the fast CI values
+      # above, so the step restores the manifest's values, builds exactly as
+      # release.yml does, loads the result and prints its size. The uploaded
+      # artifact is this build.
+      - name: Build with the shipped profile, load it, print its size
+        if: matrix.settings.test && runner.os == 'Linux'
+        working-directory: bindings/node
+        shell: bash
+        env:
+          TARGET_CC: clang
+          TARGET_CXX: clang++
+          CARGO_PROFILE_RELEASE_LTO: "true"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
+          CARGO_PROFILE_RELEASE_STRIP: "true"
+        run: |
+          npx napi build --platform --release --target ${{ matrix.settings.target }} --use-napi-cross
+          node -e "const m = require('./index.js'); const n = Object.keys(m).length; if (!n) throw new Error('the binding loaded with no exports'); console.log(n, 'exports')"
+          python3 ../../scripts/check_native_artifact.py '${{ matrix.settings.binary }}'
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -397,6 +418,25 @@ jobs:
           python -m pytest tests/ -v
       - name: DTO vector codecs
         run: python3 scripts/check_dto_vectors.py python
+      # The shipped build: bindings/python/Cargo.toml's [profile.release]
+      # (opt-level "s", fat LTO, one codegen unit, strip; RFC-0043 B-profile).
+      # This workflow's env pins CARGO_PROFILE_RELEASE_* to the fast CI values
+      # above, so the step restores the manifest's values, builds the wheel as
+      # release.yml's maturin publish does, imports it, prints the extension's
+      # size and runs the suite against it.
+      - name: Build the wheel with the shipped profile, import it, test it
+        working-directory: bindings/python
+        shell: bash
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "true"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: "s"
+          CARGO_PROFILE_RELEASE_STRIP: "true"
+        run: |
+          maturin build --release -o target/wheels-shipped
+          pip install --force-reinstall target/wheels-shipped/*.whl
+          python -c "import aimux, pathlib; so = next(pathlib.Path(aimux.__file__).parent.glob('*.so')); print('size', so, so.stat().st_size, 'bytes')"
+          python -m pytest tests/ -q
 
   # ── aimux-ffi: build C ABI library (desktop matrix — source for C/C++ artifacts), test Go on it ──
   ffi-build:

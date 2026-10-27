@@ -179,6 +179,18 @@ jobs:
         working-directory: bindings/node
         shell: bash
         run: test -f '${{ matrix.settings.binary }}'
+      # Load the built binding where the runner can run it (the two cross
+      # targets, aarch64 Linux and arm64 Windows, are only built here), and
+      # print every slice's size (RFC-0043 §3.1).
+      - name: Load the binding, print its size
+        working-directory: bindings/node
+        shell: bash
+        run: |
+          case '${{ matrix.settings.target }}' in
+            x86_64-unknown-linux-gnu|x86_64-apple-darwin|aarch64-apple-darwin|x86_64-pc-windows-msvc)
+              node -e "const m = require('./index.js'); const n = Object.keys(m).length; if (!n) throw new Error('the binding loaded with no exports'); console.log(n, 'exports')" ;;
+          esac
+          "$(command -v python3 || command -v python)" ../../scripts/check_native_artifact.py '${{ matrix.settings.binary }}'
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
