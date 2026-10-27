@@ -153,13 +153,13 @@ violation 'groq / deepseek literal in the shared OpenAI or compatible package' "
 # vendor's endpoint, base URL, headers or usage accounting is its own data
 # behind a trait or hook of the shared layer. Their code (doc links aside)
 # names only the shared layers (including `stream`), the preset registry and
-# `runtime_decision`.
+# `runtime_decision`; the in-crate tests also name `test_support`.
 rule4c_hits="$(
     grep -rnE 'crate::[a-z_]+' aimux-providers/src/shared \
         aimux-providers/src/openai_compatible --include='*.rs' |
         awk '{ code = $0; sub(/^[^:]*:[0-9]+:/, "", code) }
              code ~ /^[[:space:]]*\/\// { next }
-             { gsub(/crate::(shared|stream|openai|openai_compatible|preset|runtime_decision)([^a-z_]|$)/, "", code) }
+             { gsub(/crate::(shared|stream|openai|openai_compatible|preset|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
              code ~ /crate::[a-z_]/' || true
 )"
 violation 'shared or openai_compatible names a vendor package (implement its trait in the vendor module)' "$rule4c_hits"
@@ -232,8 +232,10 @@ violation 'providerOptions namespace key spelled outside google/options.rs or be
 # No `XxxConfig` / `AzureAuth` / `TokenProvider` / `StaticBearerConfig` /
 # `body_overrides` / `api_key_source` / `from_env`, and the namespace keys
 # (`azure`, `xai`, `mistral`, `cohere`, `huggingface`, `voyage`, `elevenlabs`)
-# are quoted only in the package's `options.rs` (comments, unit tests and the
-# `DEFAULT_NAME` provider-name constants aside). Codex reads the OpenAI
+# are quoted only in the package's `options.rs`, or its
+# `*_language_model_options.rs` once the package follows the upstream file
+# layout (RFC-0046 §4.2; comments, unit tests and the `DEFAULT_NAME`
+# provider-name constants aside). Codex reads the OpenAI
 # Responses namespace through the shared model, and Open Responses derives its
 # key from the provider name, so neither spells a key.
 vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/huggingface.rs aimux-providers/src/codex.rs aimux-providers/src/open_responses.rs aimux-providers/src/elevenlabs aimux-providers/src/elevenlabs.rs'
@@ -245,7 +247,7 @@ rule8_hits="$(
 violation 'Azure / xAI / Mistral / Cohere / Hugging Face / Codex / Open Responses / Voyage / ElevenLabs reads builder-era config state' "$rule8_hits"
 rule8b_hits="$(
     # Non-test, non-comment lines of every file but the options helpers.
-    find $vendor_family -name '*.rs' ! -name options.rs ! -path '*/tests/*' -print0 |
+    find $vendor_family -name '*.rs' ! -name options.rs ! -name '*_language_model_options.rs' ! -path '*/tests/*' -print0 |
         xargs -0 awk '
             FNR == 1 { in_tests = 0 }
             /^#\[cfg\(test\)\]/ { in_tests = 1 }
@@ -256,7 +258,7 @@ rule8b_hits="$(
             }
         ' || true
 )"
-violation 'vendor providerOptions namespace key spelled outside the package options.rs' "$rule8b_hits"
+violation 'vendor providerOptions namespace key spelled outside the package options.rs / *_language_model_options.rs' "$rule8b_hits"
 
 # ── Rule 9: no operation-level retry inside aimux-providers/src ──────────────
 #

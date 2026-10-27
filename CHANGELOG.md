@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `anthropic::types::StreamErrorData::is_retryable` is an
+  `Option<Option<bool>>`: `Some(None)` is an `isRetryable` sent as `null`,
+  `None` an absent one. `code` and `status_code` keep their types and are
+  `Some(Value::Null)` for a `null`. Code that read the flag adds a
+  `.flatten()`.
 - `FileSearchArgs::max_num_results` (OpenAI and Azure file search tool) is an
   `Option<u32>` instead of an `Option<f64>`, so `maxNumResults: 5` goes out
   as `5`, as the AI SDK sends it, not `5.0`. Code that set it from an `f64`
@@ -1176,6 +1181,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vertex::image::VertexImageModel`. Exports at the crate root and the
   `vertex` module root are unchanged.
 
+- `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
+  layout (RFC-0046). The sub-modules `mistral::convert` and
+  `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
+  re-exported at `aimux_providers::mistral`, instead of
+  `mistral::embedding::MistralEmbeddingModel`. The helpers `mistral::convert`
+  exposed (`prepare_tools`, `convert_prompt_to_mistral_messages`,
+  `build_request_body`, `request_warnings`, `parse_finish_reason`,
+  `PreparedTools`) are not reachable from outside the crate any more and have
+  no replacement. Exports at the crate root and the `mistral` module root are
+  unchanged.
+
 - The ops error envelope is `{kind, code, message, error}`: the derived
   `retryAfterMs` is removed, together with the clock and cached projection
   behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,
@@ -1233,6 +1249,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open Responses fails a response without `output` as an API call error
+  with status 500, not retryable, as the AI SDK does. It was an
+  `InvalidResponseData` error.
+
+- Open Responses fails a successful response whose body carries an `error`
+  with status 400 and the error object as `data`, as the AI SDK does when
+  no `getResponseErrorMetadata` is configured. It reported the HTTP status
+  of the response, 200.
+
+- Open Responses reads `providerOptions.<name>.reasoningEffort`, as the AI
+  SDK does: the value is sent as `reasoning.effort` as given and wins over
+  the top-level `reasoning`. It was ignored.
+
+- Open Responses warns `unsupported` for each provider-defined tool and
+  omits a tool choice that names one, as the AI SDK does when no extension
+  encodes the tool. They were dropped silently, and the tool choice went
+  out as a function choice for a tool the request did not contain.
+
+- Open Responses sends a JSON response format without a schema as
+  `{ type: "json_object" }`, as the AI SDK does. It was sent as a
+  `json_schema` format with no schema.
+
+- Open Responses turns `response.failed` events that carry an error, and
+  `error` events after the first one, into error parts with the event as
+  `data`, and finishes with `error`, as the AI SDK does. Both used to end
+  the stream without an error part (an `error` event was ignored). An error
+  as the first event is still returned by `do_stream`.
+
+- Open Responses streamed tool calls take the completed item's arguments
+  unless they are empty, as the AI SDK does. An empty `arguments` from
+  `response.output_item.added` used to win, so a stream without argument
+  events produced a tool call with empty input.
+
+- Open Responses ends a reasoning item that never finished with its own
+  item id when the stream ends, as the AI SDK does, instead of
+  `reasoning-0`.
+
+- Open Responses streams `response.reasoning_summary_text.delta` events as
+  reasoning deltas, as the AI SDK does. Only LM Studio's
+  `response.reasoning_text.delta` was read, so reasoning summaries streamed
+  as an empty reasoning block.
+
+- Open Responses keeps reasoning items that have no reasoning content, as
+  the AI SDK does: a summary or encrypted-only item yields one reasoning part
+  with the joined summary text and the item's metadata. They were dropped.
+
+- Open Responses output carries the item metadata, as the AI SDK does: text
+  parts and `text-end` carry `{ <name>: { itemId, annotations? } }`, tool
+  calls `{ itemId }`, and reasoning parts and `reasoning-end` the item id,
+  summary, content and encrypted content, so the output can be replayed.
+
+- Open Responses replays an assistant tool call's item id, as the AI SDK
+  does: `providerOptions.<name>.itemId` becomes the `function_call` `id`.
+
+- Open Responses fails with `UnsupportedFunctionality` before sending when a
+  user file is a provider reference or inline text, as the AI SDK does. It
+  used to drop the part with a warning.
+
+- Open Responses resolves the full media type of inline user files, as the
+  AI SDK does: a partial type such as `image` is detected from the bytes,
+  and a call whose type cannot be resolved fails with
+  `UnsupportedFunctionality` before anything is sent.
+
+- Open Responses sends `detail` on user images, as the AI SDK does:
+  `providerOptions.<name>.imageDetail` when it is `low`, `high` or `auto`,
+  otherwise `auto`. Tool-result images already did.
+
+- Open Responses replays an assistant text part's item id and URL
+  citations, as the AI SDK does: `providerOptions.<name>.itemId` becomes the
+  message `id`, `url_citation` annotations go back on the `output_text`, and
+  text parts with different item ids are sent as separate messages.
+
+- Hugging Face MCP calls (`mcp_call`, `mcp_list_tools`) and their results are
+  no longer marked `dynamic`, as in `@ai-sdk/huggingface` 2.0.62. Without a
+  local tool of that name, `generate_text` now returns the call marked invalid
+  (`NoSuchTool`), as the AI SDK's `parseToolCall` does.
+- A Hugging Face `function_call` or `mcp_call` output item with a non-empty
+  `output` string now also yields a tool-result holding that string, as
+  `@ai-sdk/huggingface` 2.0.62 does (`if (part.output)`). `function_call`
+  outputs were dropped in `do_generate`, and an empty `output` gave an MCP
+  tool-result.
+- Hugging Face streams read in-stream errors as `@ai-sdk/huggingface` 2.0.62
+  does: an `error` event (message on the event or under `error`) or a
+  `response.failed` event (`response.error`) with a string message is an
+  error part, and the finish reason becomes `error` with the code, else the
+  event type, as `raw`. A malformed chunk also makes the finish reason
+  `error`. Before, only a top-level `error` field was read, so `error` events
+  carrying the message on the event and `response.failed` events passed
+  unnoticed, and the finish reason stayed `other`.
+- Groq's `usage.raw` keeps a `null` usage field as `null`, as `@ai-sdk/groq`
+  4.0.52 does (`convertGroqUsage` returns the parsed object); it used to drop
+  the field. Applies to generate and stream.
+- Amazon Bedrock with no `fetch` setting uses the process default transport
+  current at each request, as its settings document and the AI SDK does with
+  `globalThis.fetch`, instead of the one current when the provider was
+  created; a later `set_default_transport` now reaches existing providers and
+  their chat, embedding, image and reranking models.
+- Amazon Bedrock's warning for `maxOutputTokens` dropped under Nova 2 high
+  reasoning names the model (`maxOutputTokens is not supported by <model>
+  when high reasoning is enabled and will be ignored`), as the AI SDK does;
+  it left the model out.
+- Amazon Bedrock models that reject sampling parameters warn about
+  `temperature`, `topK` and `topP` in that order, as the AI SDK does; aimux
+  warned `temperature`, `topP`, `topK`. The thinking and OpenAI warnings keep
+  their order.
+- Amazon Bedrock `do_generate` gives a tool call whose `toolUseId` is empty a
+  generated id, as the AI SDK does and as aimux's stream already did; it
+  kept the empty id.
+- Amazon Bedrock's `convert_usage` keeps `raw` as the usage object Bedrock
+  sent, explicit `null` keys included, as the AI SDK does; it rebuilt it from
+  the parsed fields and dropped them (doGenerate and doStream patched `raw`
+  back from the response JSON afterwards). A usage field of the wrong type is
+  now reported with its name (`totalTokens: invalid type: …`).
+- Amazon Bedrock names unsupported file parts as the AI SDK does: a provider
+  reference is `file parts with provider references`, a URL that is not
+  `s3:` or not an image or video is `File URL data` (checked for `s3:` before
+  its media type), and a tool-result file that is neither inline data nor an
+  `s3:` image or video is `tool result file data of type "<type>"`. They were
+  `File reference data`, `file media type or data: …` (after the media type
+  was checked) and `tool result file data`.
+- Amazon Bedrock streams that fail an event-stream checksum end with
+  `@smithy/eventstream-codec`'s message, as the AI SDK does: `The prelude
+  checksum specified in the message (…) does not match the calculated CRC32
+  checksum (…)` or `The message checksum (…) did not match the expected value
+  of …`. Both were reported as `Invalid Amazon Bedrock event-stream frame`.
 - A failed WebSocket connect in xAI streaming transcription arrives as the
   stream's error, as `@ai-sdk/xai` 5.0.12 reports it: `do_stream` still
   awaits the connect but no longer fails on it, and the caller's audio
@@ -1247,6 +1388,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3.0.62 and the other AI SDK providers do; it carried only the parser
   message. This covers every stream read through
   `create_event_source_response_handler`.
+- Anthropic throws a first-chunk stream error with the error's data as the
+  `ApiCallError` response body and a 500 status when its type maps to none,
+  as the AI SDK does; it used the whole SSE frame as the body and no status.
+  `code`, `statusCode` and `isRetryable` sent as `null` stay in that data, as
+  the AI SDK's error schema keeps them; they were dropped.
+- Anthropic streams the `tool_use` blocks a `message_start` already carries
+  (deferred programmatic tool calls) as tool input and tool-call parts with
+  their caller, as the AI SDK does; it dropped them.
+- Anthropic streams keep reading after `message_stop`: each later
+  `message_start` … `message_stop` round in the response streams its
+  response metadata, parts and own finish, with the output usage carried
+  over until a `message_delta` reports it, as the AI SDK does; it ended the
+  stream at the first `message_stop`.
+- Anthropic streamed code-execution tool calls keep their input as the
+  streamed text, with the `type` injected into the first delta, as the AI SDK
+  does; it re-serialized that input as compact JSON.
+- Anthropic joins the `anthropic-beta` header in insertion order (the
+  prompt's betas, the provider options', the tools', the provider and call
+  headers', then `anthropicBeta`), as the AI SDK does; it sorted the list.
+  `AnthropicPromptConversion::betas`, `PreparedTools::betas` and
+  `RequestBodyResult::betas` are `IndexSet`s, and `anthropicBeta` moves to
+  `RequestBodyResult::option_betas`.
+- Anthropic knows the Vertex ids `claude-sonnet-4@…` and `claude-opus-4@…`
+  (64000 and 32000 max output tokens), as the AI SDK does; it took them for
+  unknown models, sending 128000 `max_tokens` with an unknown-model warning.
+- Anthropic sends `providerOptions.anthropic.safeguards` as `safeguards`
+  (`classifierContext` as `classifier_context`) with the
+  `dangerous-tool-use-2026-09-03` beta, as the AI SDK does; it validated the
+  option and then left it out of the request.
+- Anthropic leaves `citations` out of a web_fetch tool result whose document
+  has none, as the AI SDK does; it emitted `"citations": null` there and sent
+  it back in the next request.
+- Anthropic surfaces a server-side `fallback` content block as an
+  `anthropic.fallback` custom part (generate and stream) and sends such an
+  assistant part back as a `fallback` block, a boundary that keeps reasoning
+  blocks apart, warning when its `from.model` / `to.model` are missing, as the
+  AI SDK does; it dropped the block both ways.
+- Anthropic sends an MCP tool result back as `mcp_tool_result` and then
+  handles it as the AI SDK does under the tool's name: a provider tool name
+  (`web_fetch`, `web_search`, tool search, `advisor`) also adds that tool's
+  result block, tool search warns about an `error-json` result, and any other
+  name warns `provider executed tool result for tool <name> is not
+  supported`; it sent only the `mcp_tool_result`, without the warning.
+- Anthropic names the output type when it drops a provider-executed tool
+  result it cannot send back (`provider executed tool result output type text
+  for tool advisor is not supported`), and reports a result of an unknown
+  tool as unsupported whatever its output, as the AI SDK does; it left the
+  type out.
+- Anthropic omits the `caller` of a historical tool call or result whose
+  source code execution call is missing from the history (before the last
+  user message), with a warning, as the AI SDK does; it sent the orphaned
+  caller, which Anthropic rejects.
 - An OpenAI (and Azure) Responses stream that sends an `error` frame (or a
   `response.failed` with an error) after `response.created` or
   `response.in_progress` but before any output rejects `do_stream` with an
