@@ -2973,3 +2973,310 @@ sub-feature = [
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[anthropic]
+package = "@ai-sdk/anthropic"
+# anthropic-message-lifecycle.test.ts and anthropic-unknown-model-max-output-tokens.test.ts
+# have no source file of their own name; every case in them is ported, so they need no
+# exclusions.
+
+[[anthropic.files]]
+upstream = "src/anthropic-api.ts"
+rust = "anthropic/types.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/anthropic-batch.ts"
+status = "missing"
+issue = 275
+reason = "no Message Batches API (#275 Anthropic Message Batches)"
+
+[[anthropic.files]]
+upstream = "src/anthropic-error.ts"
+rust = "anthropic/mod.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+ts-only = [
+  { case = "anthropicError › anthropicErrorDataSchema › should parse overloaded error", reason = "tests the exported zod schema; anthropic_failed_response_handler reads the error JSON without a schema (the overloaded error itself is covered by the doGenerate and doStream 529 cases)" },
+]
+
+[[anthropic.files]]
+upstream = "src/anthropic-files.ts"
+rust = "anthropic/files.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+sub-feature = [
+  { case = "AnthropicFiles › uploadFile › threads per-call headers and abortSignal", issue = 275, reason = "UploadFileCallOptions has no per-call headers or abort signal" },
+]
+ts-only = [
+  { case = "AnthropicFiles › uploadFile › rejects stream data at runtime and cancels the stream", reason = "a ReadableStream passed where the type forbids it is a JS runtime check; UploadFileData has no stream variant, so Rust cannot express the input" },
+]
+
+[[anthropic.files]]
+upstream = "src/anthropic-language-model-options.ts"
+rust = "anthropic/options.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/anthropic-language-model.ts"
+rust = "anthropic/model.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+sub-feature = [
+  { case = "AnthropicLanguageModel › doGenerate › agent skills › should throw when a custom skill provider reference does not include anthropic", issue = 275, reason = "aimux-core has no NoSuchProviderReference error kind; the missing skill reference is reported as UnsupportedFunctionality" },
+]
+
+[[anthropic.files]]
+upstream = "src/anthropic-message-metadata.ts"
+rust = "anthropic/types.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/anthropic-prepare-tools.ts"
+rust = "anthropic/prepare_tools.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+sub-feature = [
+  { case = "webFetch_20250910OutputSchema › should accept valid response with string title", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+  { case = "webFetch_20250910OutputSchema › should not fail validation when title is null", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+  { case = "webFetch_20260209OutputSchema › should not fail validation when title is null", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+  { case = "webFetch_20260318OutputSchema › should not fail validation when title is null", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+  { case = "webSearch_20250305OutputSchema › should accept valid response with string title", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+  { case = "webSearch_20250305OutputSchema › should not fail validation when title is null", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+  { case = "webSearch_20260209OutputSchema › should not fail validation when title is null", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+  { case = "webSearch_20260318OutputSchema › should not fail validation when title is null", issue = 275, reason = "no web_fetch / web_search tool factory (#275 厂商内置工具工厂), so there is no output schema to validate a provider-executed result against" },
+]
+
+[[anthropic.files]]
+upstream = "src/anthropic-provider.ts"
+rust = "anthropic/mod.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/anthropic-tools.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/convert-anthropic-usage.ts"
+rust = "anthropic/usage.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/convert-to-anthropic-prompt.ts"
+rust = "anthropic/convert.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/forward-anthropic-container-id-from-last-step.ts"
+status = "not-applicable"
+reason = "a prepareStep helper for multi-step calls; aimux core is single-step (alignment doc Q1)"
+
+[[anthropic.files]]
+upstream = "src/get-cache-control.ts"
+rust = "anthropic/cache_control.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/index.ts"
+rust = "anthropic/mod.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/internal/index.ts"
+rust = "anthropic/mod.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/map-anthropic-stop-reason.ts"
+rust = "anthropic/convert.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/sanitize-json-schema.ts"
+rust = "anthropic/sanitize_json_schema.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/skills/anthropic-skills-api.ts"
+rust = "anthropic/skills.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/skills/anthropic-skills.ts"
+rust = "anthropic/skills.rs"
+status = "mapped"
+
+[anthropic.files.tests]
+
+[[anthropic.files]]
+upstream = "src/tool/advisor_20260301.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/bash_20241022.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs; the factory's default sandbox execute (experimental_sandbox) is not there either"
+
+[[anthropic.files]]
+upstream = "src/tool/bash_20250124.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs; the factory's default sandbox execute (experimental_sandbox) is not there either"
+
+[[anthropic.files]]
+upstream = "src/tool/code-execution_20250522.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/code-execution_20250825.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/code-execution_20260120.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/computer-toolset_20260801.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/computer_20241022.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/computer_20250124.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/computer_20251124.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/memory_20250818.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/text-editor_20241022.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/text-editor_20250124.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/text-editor_20250429.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/text-editor_20250728.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/tool-search-bm25_20251119.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/tool-search-regex_20251119.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/web-fetch-20250910.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/web-fetch-20260209.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/web-fetch-20260318.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/web-search_20250305.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/web-search_20260209.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/tool/web-search_20260318.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工厂); the tool is sent by its provider tool id through prepare_tools.rs"
+
+[[anthropic.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"

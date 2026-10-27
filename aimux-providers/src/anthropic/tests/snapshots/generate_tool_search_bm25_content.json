@@ -1,0 +1,48 @@
+[
+  {
+    "text": "I'll search for a weather-related tool to help you get the current weather in San Francisco.",
+    "type": "text"
+  },
+  {
+    "input": "{\"query\":\"weather current conditions San Francisco\"}",
+    "providerExecuted": true,
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "type": "direct"
+        }
+      }
+    },
+    "toolCallId": "srvtoolu_011Jcb838xqvZyWwDt7bWqAz",
+    "toolName": "tool_search",
+    "type": "tool-call"
+  },
+  {
+    "result": [
+      {
+        "toolName": "get_weather",
+        "type": "tool_reference"
+      }
+    ],
+    "toolCallId": "srvtoolu_011Jcb838xqvZyWwDt7bWqAz",
+    "toolName": "tool_search",
+    "type": "tool-result"
+  },
+  {
+    "text": "Great! I found a weather tool. Let me get the current weather in San Francisco for you.",
+    "type": "text"
+  },
+  {
+    "input": "{\"location\":\"San Francisco, CA\"}",
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "type": "direct"
+        }
+      }
+    },
+    "toolCallId": "toolu_01PFQG18bVLaXcEaCxTZtX4G",
+    "toolName": "get_weather",
+    "type": "tool-call"
+  }
+]

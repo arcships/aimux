@@ -491,6 +491,7 @@ async fn messages_system_and_tools() {
     );
 }
 
+/// partial: `should accept providerOptions with custom provider name key`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn messages_custom_name_reads_both_namespaces_and_the_custom_one_wins() {
     let fixture = Fixture::load("messages-custom-name");
@@ -526,6 +527,7 @@ async fn messages_custom_name_reads_both_namespaces_and_the_custom_one_wins() {
 /// value), as anthropic@4.0.71 `anthropic-language-model.ts:1956-1963` does;
 /// that chunk is then reported as an error and the stream goes on. Without
 /// the option no `Raw` part is sent.
+/// partial: `should include raw chunks when includeRawChunks is enabled`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn messages_stream_emits_raw_chunks_when_asked() {
     let fixture = Fixture::load("messages-stream-basic");
@@ -621,6 +623,7 @@ async fn messages_stream_emits_raw_chunks_when_asked() {
     );
 }
 
+/// partial: `should stream text deltas`; full port in src/anthropic/tests/language_model.rs.
 #[tokio::test]
 async fn messages_stream_basic() {
     let fixture = Fixture::load("messages-stream-basic");

@@ -194,7 +194,9 @@ violation 'Anthropic family reads builder-era AnthropicConfig state' "$rule6_hit
 rule6b_hits="$(
     # shellcheck disable=SC2086
     { grep -rnE '"anthropic"' $anthropic_family --include='*.rs' || true; } |
-        grep -v '^aimux-providers/src/anthropic/options\.rs:' ||
+        grep -v '^aimux-providers/src/anthropic/options\.rs:' |
+        # Comments may quote it (upstream test names do).
+        grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' ||
         true
 )"
 violation '"anthropic" literal outside aimux-providers/src/anthropic/options.rs (use options::CANONICAL / anthropic_options)' "$rule6b_hits"

@@ -1814,24 +1814,24 @@ fn resolve_tool_result_output(
 /// Resolved capabilities for an Anthropic model id, mirroring the TS
 /// `getModelCapabilities`.
 #[derive(Debug, Clone, Copy)]
-struct ModelCapabilities {
-    max_output_tokens: u32,
-    supports_adaptive_thinking: bool,
-    rejects_sampling_parameters: bool,
-    supports_xhigh_effort: bool,
-    rejects_thinking_disabled_above_high_effort: bool,
-    rejects_thinking_disabled: bool,
-    rejects_forced_tool_use: bool,
-    supports_between_tools_thinking: bool,
+pub(super) struct ModelCapabilities {
+    pub(super) max_output_tokens: u32,
+    pub(super) supports_adaptive_thinking: bool,
+    pub(super) rejects_sampling_parameters: bool,
+    pub(super) supports_xhigh_effort: bool,
+    pub(super) rejects_thinking_disabled_above_high_effort: bool,
+    pub(super) rejects_thinking_disabled: bool,
+    pub(super) rejects_forced_tool_use: bool,
+    pub(super) supports_between_tools_thinking: bool,
     /// Whether the model supports native structured outputs (and therefore
     /// strict tool schemas). Mirrors the TS `supportsStructuredOutput` from
     /// `getModelCapabilities`; `supportsStrictTools` tracks it 1:1 because the
     /// config-level `supportsStrictTools` defaults to `true`.
-    supports_structured_output: bool,
+    pub(super) supports_structured_output: bool,
     /// Mirrors the TS `isKnownModel`. When `false` and the caller did not set
     /// `maxOutputTokens`, a compatibility warning is emitted noting the
     /// default token limit applied.
-    is_known_model: bool,
+    pub(super) is_known_model: bool,
 }
 
 /// Detect whether a model id refers to a legacy Claude model (claude-instant,
@@ -1861,7 +1861,7 @@ fn is_legacy_claude(model_id: &str) -> bool {
 
 /// Returns the capabilities for an Anthropic model id, mirroring the TS
 /// `getModelCapabilities`. The order of the `contains` checks matters.
-fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
+pub(super) fn get_model_capabilities(model_id: &str) -> ModelCapabilities {
     fn caps(
         max_output_tokens: u32,
         supports_adaptive_thinking: bool,

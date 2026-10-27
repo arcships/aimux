@@ -1,0 +1,74 @@
+[
+  {
+    "input": "{\"type\":\"programmatic-tool-call\",\"code\":\"\\nimport json\\nresult = await web_fetch({\\\"url\\\": \\\"https://example.com\\\"})\\nparsed = json.loads(result) if isinstance(result, str) else result\\nif isinstance(parsed, list):\\n    print(parsed[0][\\\"content\\\"][:500])\\nelse:\\n    print(parsed)\\n\"}",
+    "providerExecuted": true,
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "type": "direct"
+        }
+      }
+    },
+    "toolCallId": "srvtoolu_015CSHH7X69AhdK9gNzotEeh",
+    "toolName": "code_execution",
+    "type": "tool-call"
+  },
+  {
+    "input": "{\"url\":\"https://example.com\"}",
+    "providerExecuted": true,
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "toolId": "srvtoolu_015CSHH7X69AhdK9gNzotEeh",
+          "type": "code_execution_20260120"
+        }
+      }
+    },
+    "toolCallId": "srvtoolu_0152eMmZnBDZc4C2miykFWW5",
+    "toolName": "web_fetch",
+    "type": "tool-call"
+  },
+  {
+    "providerMetadata": {
+      "anthropic": {
+        "caller": {
+          "toolId": "srvtoolu_015CSHH7X69AhdK9gNzotEeh",
+          "type": "code_execution_20260120"
+        }
+      }
+    },
+    "result": {
+      "content": {
+        "source": {
+          "data": "Example Domain\n\n# Example Domain\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/example)",
+          "mediaType": "text/plain",
+          "type": "text"
+        },
+        "title": "Example Domain",
+        "type": "document"
+      },
+      "retrievedAt": "2026-03-03T15:05:04.091000+00:00",
+      "type": "web_fetch_result",
+      "url": "https://example.com"
+    },
+    "toolCallId": "srvtoolu_0152eMmZnBDZc4C2miykFWW5",
+    "toolName": "web_fetch",
+    "type": "tool-result"
+  },
+  {
+    "result": {
+      "content": [],
+      "return_code": 0,
+      "stderr": "",
+      "stdout": "{'type': 'web_fetch_result', 'url': 'https://example.com', 'retrieved_at': '2026-03-03T15:05:04.091000+00:00', 'content': {'type': 'document', 'source': {'type': 'text', 'media_type': 'text/plain', 'data': 'Example Domain\\n\\n# Example Domain\\n\\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\\n\\n[Learn more](https://iana.org/domains/example)'}, 'title': 'Example Domain'}}\n",
+      "type": "code_execution_result"
+    },
+    "toolCallId": "srvtoolu_015CSHH7X69AhdK9gNzotEeh",
+    "toolName": "code_execution",
+    "type": "tool-result"
+  },
+  {
+    "text": "The page at **example.com** is a simple placeholder page for the \"Example Domain,\" which is reserved for use in documentation and illustrative examples without requiring prior permission.",
+    "type": "text"
+  }
+]
