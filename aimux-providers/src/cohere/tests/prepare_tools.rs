@@ -3,7 +3,7 @@
 //! One nested module per `describe`, one `#[test]` per `it`. Each test carries
 //! its upstream chain in an `upstream:` marker line.
 
-use crate::cohere::convert::prepare_tools;
+use crate::cohere::prepare_tools::prepare_tools;
 use aimux_core::options::LanguageModelV4ToolChoice;
 use aimux_core::tool::Tool;
 use aimux_core::tool::{FunctionTool, ProviderTool};
