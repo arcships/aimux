@@ -86,7 +86,7 @@ pub(crate) struct OpenAIModelConfig {
     /// How the Responses API model reads and writes providerOptions and file
     /// ids for this host.
     pub(crate) responses: ResponsesProfile,
-    pub(crate) chat_options: super::options::ChatOptionsParser,
+    pub(crate) chat_options: crate::openai::chat::chat_language_model_options::ChatOptionsParser,
 }
 
 impl OpenAIModelConfig {
@@ -107,7 +107,7 @@ impl OpenAIModelConfig {
             supported_urls: SupportedUrls::default(),
             transform_request_body,
             responses: ResponsesProfile::default(),
-            chat_options: super::options::parse_chat_options,
+            chat_options: crate::openai::chat::chat_language_model_options::parse_chat_options,
         }
     }
 
