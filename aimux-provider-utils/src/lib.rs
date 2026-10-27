@@ -11,6 +11,7 @@
 
 mod aisdk_pins;
 pub mod api_key;
+pub mod create_tool_name_mapping;
 pub mod decision_language_model;
 pub mod download_blob;
 pub mod extract_response_headers;
@@ -29,6 +30,9 @@ pub mod read_response_with_size_limit;
 pub mod resolvable;
 pub mod response_handler;
 pub mod sigv4_fetch;
+pub mod strip_file_extension;
+#[cfg(test)]
+mod tests;
 pub mod transform_stream;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
@@ -38,6 +42,7 @@ pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use create_tool_name_mapping::{ToolNameMapping, create_tool_name_mapping};
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
@@ -66,5 +71,6 @@ pub use response_handler::{
     create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
+pub use strip_file_extension::strip_file_extension;
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
 pub use url::{validate_base_url, without_trailing_slash, without_trailing_slash_opt};
