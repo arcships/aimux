@@ -1627,13 +1627,8 @@ fn validate_file_part(
             "File data URLs in assistant messages are not supported".into(),
         ));
     }
-    if let FileData::Reference { reference } = &file.data
-        && !reference.contains_key(GOOGLE)
-    {
-        return Err(AiMuxError::invalid_argument(format!(
-            "No provider reference found for provider 'google'. Available providers: {}",
-            reference.keys().cloned().collect::<Vec<_>>().join(", ")
-        )));
+    if let FileData::Reference { reference } = &file.data {
+        aimux_provider_utils::resolve_provider_reference(reference, GOOGLE)?;
     }
     Ok(())
 }

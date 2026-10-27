@@ -44,8 +44,7 @@ use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{RawToolCall, Tool, ToolResult};
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, NamespacedKind, ProviderMetadata, ReasoningEffort,
-    ResponseMetadata, Warning,
+    FinishReason, FinishReasonUnified, NamespacedKind, ProviderMetadata, ReasoningEffort, Warning,
 };
 use aimux_provider_utils::{ToolNameMapping, Transformer, create_tool_name_mapping, pipe_through};
 use async_trait::async_trait;
@@ -215,11 +214,10 @@ impl OpenAIResponsesModel {
                         ));
                     }
                     FileData::Reference { reference } => {
-                        crate::openai::chat::convert_to_chat_messages::resolve_provider_reference(
+                        aimux_provider_utils::resolve_provider_reference(
                             reference,
                             profile.namespace.write_key(),
-                        )
-                        .map_err(AiMuxError::invalid_argument)?;
+                        )?;
                     }
                     FileData::Data { .. } if user => {
                         aimux_provider_utils::resolve_full_media_type(file)?;
@@ -1432,10 +1430,10 @@ pub(crate) fn build_responses_generate_result_with_tools(
         .get("model")
         .and_then(|v| v.as_str())
         .map(std::string::ToString::to_string);
-    let timestamp = data
+    let created_at = data
         .get("created_at")
         .and_then(serde_json::Value::as_u64)
-        .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64));
+        .map(|secs| secs as f64);
 
     Ok(GenerateResult {
         content,
@@ -1444,11 +1442,14 @@ pub(crate) fn build_responses_generate_result_with_tools(
         warnings: request_warnings,
         provider_metadata,
         response: Some(aimux_core::shared::ResponseInfo {
-            id: response_id,
-            timestamp,
-            model_id: model,
             headers: Some(response_headers),
             body: Some(data.clone()),
+            ..aimux_provider_utils::create_language_model_response_metadata(
+                response_id,
+                model,
+                created_at,
+            )
+            .into()
         }),
         request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
@@ -2131,17 +2132,17 @@ impl Transformer for OpenAIResponsesStream {
                                 .get("model")
                                 .and_then(|v| v.as_str())
                                 .map(std::string::ToString::to_string);
-                            let timestamp = resp_obj
+                            let created_at = resp_obj
                                 .get("created_at")
                                 .and_then(serde_json::Value::as_u64)
-                                .and_then(|secs| {
-                                    aimux_core::Timestamp::from_unix_seconds(secs as f64)
-                                });
-                            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                                id: response_id.clone(),
-                                timestamp,
-                                model_id,
-                            }));
+                                .map(|secs| secs as f64);
+                            controller.enqueue(StreamPart::ResponseMetadata(
+                                aimux_provider_utils::create_language_model_response_metadata(
+                                    response_id.clone(),
+                                    model_id,
+                                    created_at,
+                                ),
+                            ));
                         }
                     }
 

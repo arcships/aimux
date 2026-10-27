@@ -509,7 +509,7 @@ fn map_shell_environment(environment: &Value) -> Result<Value, AiMuxError> {
             value["skills"] = Value::Array(skills.iter().map(|skill| {
                 if skill["type"] == "skillReference" {
                     let reference = skill.get("providerReference").and_then(Value::as_object).map(|reference| reference.iter().filter_map(|(provider, id)| Some((provider.clone(), id.as_str()?.to_owned()))).collect()).unwrap_or_default();
-                    let id = crate::openai::chat::convert_to_chat_messages::resolve_provider_reference(&reference, "openai").map_err(AiMuxError::invalid_argument)?;
+                    let id = aimux_provider_utils::resolve_provider_reference(&reference, "openai")?;
                     Ok(json!({"type":"skill_reference", "skill_id":id, "version":skill.get("version").cloned().unwrap_or_else(|| json!("latest"))}))
                 } else {
                     let mut value = map_tool_fields(skill, &[("name", "name"), ("description", "description")]);

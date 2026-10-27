@@ -24,7 +24,7 @@ use aimux_core::shared::{
 };
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
-use aimux_core::types::{FinishReason, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{FinishReason, Usage, Warning};
 use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 use async_trait::async_trait;
 use futures::future::BoxFuture;
@@ -595,14 +595,18 @@ impl LanguageModel for OpenAICompatibleChatModel {
             warnings: built.warnings,
             provider_metadata: Some(metadata),
             response: Some(ResponseInfo {
-                id: data.id,
-                timestamp: data
-                    .created
-                    .filter(|created| *created != 0)
-                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-                model_id: data.model,
                 headers: Some(response_headers),
                 body: Some(raw),
+                // `created || undefined`: some providers use 0 as a
+                // placeholder (openai-compatible chat/get-response-metadata.ts).
+                ..aimux_provider_utils::create_language_model_response_metadata(
+                    data.id,
+                    data.model,
+                    data.created
+                        .filter(|created| *created != 0)
+                        .map(|secs| secs as f64),
+                )
+                .into()
             }),
             request: Some(RequestInfo { body: Some(body) }),
         })
@@ -764,14 +768,16 @@ impl Transformer for OpenAICompatibleChatStream {
                 || chunk.created.is_some_and(|created| created != 0))
         {
             self.response_metadata_emitted = true;
-            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                id: chunk.id.clone(),
-                timestamp: chunk
-                    .created
-                    .filter(|created| *created != 0)
-                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-                model_id: chunk.model.clone(),
-            }));
+            controller.enqueue(StreamPart::ResponseMetadata(
+                aimux_provider_utils::create_language_model_response_metadata(
+                    chunk.id.clone(),
+                    chunk.model.clone(),
+                    chunk
+                        .created
+                        .filter(|created| *created != 0)
+                        .map(|secs| secs as f64),
+                ),
+            ));
         }
 
         if let Some(raw_usage) = &chunk_usage_raw {
