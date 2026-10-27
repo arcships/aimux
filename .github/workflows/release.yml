@@ -300,12 +300,17 @@ jobs:
       # bitcode into the archive and doubles it (RFC-0043 §5.1, §15.1).
       - name: Build static archive
         run: cargo build -p aimux-ffi --profile staticlib-release --target ${{ matrix.settings.target }}
-      - name: Check archive (no bitcode) and record its size
+      # The Windows runner's bash may know only `python`. cargo emits the
+      # cdylib next to the archive and ld64 would link the .dylib instead of
+      # the .a, so the shared libraries go before the Go tests link.
+      - name: Check archive (no workspace bitcode), keep only the archive
         shell: bash
-        # The Windows runner's bash may know only `python`.
         run: |
           "$(command -v python3 || command -v python)" scripts/check_native_artifact.py \
             target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.a
+          rm -f target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.so \
+                target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.dylib \
+                target/${{ matrix.settings.target }}/staticlib-release/aimux_ffi.dll
       - name: Test Go binding
         working-directory: bindings/go
         shell: bash
@@ -360,8 +365,9 @@ jobs:
             *darwin*) cp target/${{ matrix.target }}/release/libaimux_ffi.dylib staging/${{ matrix.artifact }} ;;
             *windows*) cp target/${{ matrix.target }}/release/aimux_ffi.dll staging/${{ matrix.artifact }} ;;
           esac
-          # RFC-0043 §3.1 raw_bytes of the shipped shared library.
-          python3 scripts/check_native_artifact.py staging/${{ matrix.artifact }}
+          # RFC-0043 §3.1 raw_bytes of the shipped shared library (the
+          # Windows runner's bash may know only `python`).
+          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py staging/${{ matrix.artifact }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -474,7 +480,7 @@ jobs:
             test -f "staging/android/$abi/libaimux_ffi.so" || { echo "Missing $abi" >&2; exit 1; }
           done
           # RFC-0043 §3.1 raw_bytes per ABI.
-          python3 scripts/check_native_artifact.py staging/android/*/libaimux_ffi.so
+          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py staging/android/*/libaimux_ffi.so
       - name: Build iOS xcframework
         if: matrix.platform == 'ios'
         run: |

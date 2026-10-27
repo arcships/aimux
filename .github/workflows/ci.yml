@@ -438,10 +438,21 @@ jobs:
           path: |
             target/${{ matrix.target }}/release/${{ matrix.artifact }}
             aimux-ffi/include/aimux.h
-      # The Go binding links against the library this build produced. On
-      # Linux the cgo LDFLAGS force the static archive; on macOS ld64 picks
-      # the .dylib next to it (see bindings/go/aimux.go). macOS is covered
-      # because those LDFLAGS are platform-specific.
+      # The Go binding links the archive the release ships: the
+      # staticlib-release build (release.yml go-build does the same). cargo
+      # emits the cdylib next to the archive and ld64 would pick the .dylib,
+      # so the shared libraries are removed from that directory first; what
+      # the Go tests then link is the .a and nothing else.
+      - name: Build static archive (staticlib-release)
+        if: runner.os != 'Windows'
+        run: cargo build -p aimux-ffi --profile staticlib-release --target ${{ matrix.target }}
+      - name: Check archive (no workspace bitcode), keep only the archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          python3 scripts/check_native_artifact.py target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
+          rm -f target/${{ matrix.target }}/staticlib-release/libaimux_ffi.so \
+                target/${{ matrix.target }}/staticlib-release/libaimux_ffi.dylib
       - uses: actions/setup-go@v5
         if: runner.os != 'Windows'
         with:
@@ -451,7 +462,7 @@ jobs:
         working-directory: bindings/go
         shell: bash
         run: |
-          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/release"
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release"
           go vet ./...
           go test ./...
       - name: Race test Go binding
@@ -459,12 +470,12 @@ jobs:
         working-directory: bindings/go
         shell: bash
         run: |
-          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/release"
+          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release"
           go test -race ./...
       - name: DTO vector codecs
         if: runner.os == 'Linux'
         env:
-          CGO_LDFLAGS: -L${{ github.workspace }}/target/${{ matrix.target }}/release
+          CGO_LDFLAGS: -L${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release
         run: python3 scripts/check_dto_vectors.py go
 
   ffi-sanitizers:
