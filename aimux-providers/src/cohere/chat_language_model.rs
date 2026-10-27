@@ -6,23 +6,27 @@
 
 use aimux_core::tool::RawToolCall;
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::options::CallOptions;
+use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, ResponseMetadata, Usage};
+use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Usage, Warning};
 
 use aimux_provider_utils::{Transformer, pipe_through};
 
 use crate::shared::EndpointConfig;
 use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
-use super::convert::{build_request_body, parse_finish_reason};
-use super::types::{ChatResponse, StreamEvent, UsageResponse};
+use super::api_types::{ChatResponse, StreamEvent};
+use super::convert_to_chat_prompt::convert_prompt_to_cohere;
+use super::convert_usage::convert_usage;
+use super::map_finish_reason::parse_finish_reason;
+use super::prepare_tools::prepare_tools;
 use std::sync::Arc;
 
 /// A Cohere language model.
@@ -48,32 +52,6 @@ impl CohereModel {
             self.generate_id = generate_id;
         }
         self
-    }
-}
-
-// ── Usage conversion ─────────────────────────────────────────────────────────
-
-/// Convert Cohere `tokens` usage into the core `Usage` type.
-///
-/// Mirrors the TS `convertCohereUsage`:
-/// - `input.total = input_tokens`, `input.noCache = input_tokens`
-/// - `output.total = output_tokens`
-fn convert_usage(usage: &UsageResponse) -> Usage {
-    let tokens = &usage.tokens;
-    Usage {
-        input_tokens: aimux_core::types::InputTokenUsage {
-            total: Some(tokens.input_tokens),
-            no_cache: Some(tokens.input_tokens),
-            cache_read: None,
-            cache_write: None,
-        },
-        output_tokens: aimux_core::types::OutputTokenUsage {
-            total: Some(tokens.output_tokens),
-            text: Some(tokens.output_tokens),
-            ..Default::default()
-        },
-        // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: usage.raw.as_object().cloned(),
     }
 }
 
@@ -112,7 +90,7 @@ impl LanguageModel for CohereModel {
             exchange.request(exchange.url("/chat"), options),
             body.clone(),
             aimux_provider_utils::create_json_response_handler(),
-            super::cohere_failed_response_handler(),
+            super::error::cohere_failed_response_handler(),
         )
         .await?;
 
@@ -126,7 +104,7 @@ impl LanguageModel for CohereModel {
         if let Some(items) = &data.message.content {
             for item in items {
                 match item {
-                    super::types::ContentItem::Text { text } => {
+                    super::api_types::ContentItem::Text { text } => {
                         if !text.is_empty() {
                             content.push(GenerateContent::Text {
                                 text: text.clone(),
@@ -134,7 +112,7 @@ impl LanguageModel for CohereModel {
                             });
                         }
                     }
-                    super::types::ContentItem::Thinking { thinking } => {
+                    super::api_types::ContentItem::Thinking { thinking } => {
                         // Mirrors TS: a `thinking` content item becomes a
                         // `reasoning` content item. Empty thinking is dropped.
                         if !thinking.is_empty() {
@@ -191,9 +169,9 @@ impl LanguageModel for CohereModel {
                     media_type: "text/plain".to_string(),
                     title,
                     filename: None,
-                    provider_metadata: Some(super::options::cohere_metadata(Value::Object(
-                        cohere_meta,
-                    ))),
+                    provider_metadata: Some(super::chat_language_model_options::cohere_metadata(
+                        Value::Object(cohere_meta),
+                    )),
                 }));
             }
         }
@@ -249,7 +227,7 @@ impl LanguageModel for CohereModel {
             exchange.request(endpoint.clone(), options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            super::cohere_failed_response_handler(),
+            super::error::cohere_failed_response_handler(),
         )
         .await?;
 
@@ -463,4 +441,186 @@ fn contains_prototype_key(value: &Value) -> bool {
         Value::Array(values) => values.iter().any(contains_prototype_key),
         _ => false,
     }
+}
+
+// ── Request body ────────────────────────────────────────────────────────────
+
+/// Result of building a Cohere request body, including warnings collected from
+/// tool preparation (provider-defined tools are unsupported).
+#[derive(Debug, Clone)]
+pub struct RequestBodyResult {
+    pub body: Value,
+    pub warnings: Vec<Warning>,
+}
+
+/// Convert `CallOptions` to a Cohere request body.
+///
+/// Mirrors the TS `getArgs` in `cohere-chat-language-model.ts`: assembles the
+/// model id, messages, documents, sampling settings, response format, tools,
+/// and the `thinking` config resolved from `reasoning` / provider options.
+///
+/// # Errors
+/// Rejects unsupported prompt files and invalid provider options.
+pub fn build_request_body(
+    model_id: &str,
+    options: &CallOptions,
+    stream: bool,
+) -> Result<RequestBodyResult, AiMuxError> {
+    let converted = convert_prompt_to_cohere(&options.prompt)?;
+    let mut warnings: Vec<Warning> = Vec::new();
+
+    let mut body = json!({
+        "model": model_id,
+        "messages": converted.messages,
+    });
+
+    if stream {
+        body["stream"] = json!(true);
+    }
+
+    if !converted.documents.is_empty() {
+        body["documents"] = json!(converted.documents);
+    }
+
+    if let Some(max_tokens) = options.max_output_tokens {
+        body["max_tokens"] = json!(max_tokens);
+    }
+    if let Some(temp) = options.temperature {
+        body["temperature"] = json!(temp);
+    }
+    if let Some(top_p) = options.top_p {
+        body["p"] = json!(top_p);
+    }
+    if let Some(top_k) = options.top_k {
+        body["k"] = json!(top_k);
+    }
+    if let Some(seed) = options.seed {
+        body["seed"] = json!(seed);
+    }
+    if let Some(ref stop) = options.stop_sequences {
+        body["stop_sequences"] = json!(stop);
+    }
+    if let Some(fp) = options.frequency_penalty {
+        body["frequency_penalty"] = json!(fp);
+    }
+    if let Some(pp) = options.presence_penalty {
+        body["presence_penalty"] = json!(pp);
+    }
+
+    // Response format.
+    if let Some(ref rf) = options.response_format {
+        match rf {
+            ResponseFormat::Text => {}
+            ResponseFormat::Json { schema, .. } => {
+                let mut format = json!({ "type": "json_object" });
+                if let Some(schema) = schema {
+                    format["json_schema"] = schema.clone();
+                }
+                body["response_format"] = format;
+            }
+        }
+    }
+
+    // Tools.
+    let prepared = prepare_tools(&options.tools, options.tool_choice.as_ref());
+    warnings.extend(prepared.tool_warnings);
+    if let Some(tools) = prepared.tools {
+        body["tools"] = json!(tools);
+        if let Some(tc) = prepared.tool_choice {
+            body["tool_choice"] = tc;
+        }
+    }
+
+    // Reasoning / thinking.
+    if let Some(thinking) = resolve_cohere_thinking(options.reasoning, &options.provider_options)? {
+        body["thinking"] = thinking;
+    }
+
+    Ok(RequestBodyResult { body, warnings })
+}
+
+// ── Reasoning / thinking ────────────────────────────────────────────────────
+
+/// Default token budget used when reasoning is enabled without an explicit
+/// `max_output_tokens`. Mirrors the TS `maxOutputTokens: 32768`.
+const DEFAULT_REASONING_MAX_TOKENS: u32 = 32768;
+
+/// Default reasoning budget percentages (of the max output token budget),
+/// mirroring the TS `mapReasoningToProviderBudget`.
+fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
+    match reasoning {
+        ReasoningEffort::Minimal => Some(0.02),
+        ReasoningEffort::Low => Some(0.10),
+        ReasoningEffort::Medium => Some(0.30),
+        ReasoningEffort::High => Some(0.60),
+        ReasoningEffort::Xhigh => Some(0.90),
+        ReasoningEffort::ProviderDefault | ReasoningEffort::None => None,
+    }
+}
+
+/// Resolve the Cohere `thinking` config from the top-level `reasoning` option
+/// and `providerOptions.cohere.thinking`.
+///
+/// Mirrors the TS `resolveCohereThinking`:
+/// - `providerOptions.cohere.thinking` wins over top-level `reasoning`.
+/// - `reasoning: None` (not specified) → no `thinking` field.
+/// - `reasoning: "none"` → `{ type: "disabled" }`.
+/// - other reasoning levels → `{ type: "enabled", token_budget: <n> }`.
+///
+/// # Errors
+/// Rejects non-object thinking options, unknown types and nonnumeric budgets.
+pub fn resolve_cohere_thinking(
+    reasoning: Option<ReasoningEffort>,
+    provider_options: &Option<SharedProviderOptions>,
+) -> Result<Option<Value>, AiMuxError> {
+    // Provider options take precedence.
+    if let Some(cohere) =
+        super::chat_language_model_options::cohere_options(provider_options.as_ref())
+        && let Some(thinking) = cohere.get("thinking")
+    {
+        if !thinking.is_object() {
+            return Err(AiMuxError::invalid_argument(
+                "cohere.thinking must be an object",
+            ));
+        }
+        let t_type = match thinking.get("type") {
+            None => "enabled",
+            Some(value) => match value.as_str() {
+                Some(value @ ("enabled" | "disabled")) => value,
+                _ => {
+                    return Err(AiMuxError::invalid_argument(
+                        "cohere.thinking.type must be enabled or disabled",
+                    ));
+                }
+            },
+        };
+        let mut obj = json!({ "type": t_type });
+        if let Some(budget) = thinking.get("tokenBudget") {
+            if !budget.is_number() {
+                return Err(AiMuxError::invalid_argument(
+                    "cohere.thinking.tokenBudget must be a number",
+                ));
+            }
+            obj["token_budget"] = budget.clone();
+        }
+        return Ok(Some(obj));
+    }
+
+    let Some(reasoning) = reasoning else {
+        return Ok(None);
+    };
+    if reasoning == ReasoningEffort::ProviderDefault {
+        return Ok(None);
+    }
+    if reasoning == ReasoningEffort::None {
+        return Ok(Some(json!({ "type": "disabled" })));
+    }
+
+    let Some(pct) = reasoning_budget_percentage(reasoning) else {
+        return Ok(None);
+    };
+    let max_tokens = DEFAULT_REASONING_MAX_TOKENS;
+    let raw = (max_tokens as f64 * pct).round() as u32;
+    let budget = max_tokens.min(1024.max(raw));
+    Ok(Some(json!({ "type": "enabled", "token_budget": budget })))
 }
