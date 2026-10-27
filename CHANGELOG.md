@@ -1358,6 +1358,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `aimux_provider_utils` base64 and inline-file helpers, as
+  `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1): `convert_base64_to_uint8_array`,
+  `convert_uint8_array_to_base64` and `convert_to_base64` (`uint8-utils.ts`,
+  with `Base64OrBytes` for its `string | Uint8Array` argument and
+  `InvalidBase64Error`), `convert_image_model_file_to_data_uri` and
+  `convert_inline_file_data_to_uint8_array`. Every provider that encoded or
+  decoded base64, built an image data URL or read upload bytes by hand now
+  calls them.
 - Vertex AI MaaS and xAI sub-providers, as `@ai-sdk/google-vertex` 5.0.98's
   `/maas` and `/xai` paths: `create_google_vertex_maas` / `google_vertex_maas`
   (an OpenAI-compatible provider named `vertex.maas`) and
@@ -1932,6 +1940,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Base64 that providers decode (file parts, image edits, transcription audio,
+  Anthropic skill uploads, data URL media sniffing) is read as the AI SDK's
+  `atob` reads it: ASCII whitespace is skipped, padding is optional and the
+  URL-safe `-` and `_` are accepted, where some providers rejected input the
+  AI SDK sends on. Invalid input keeps the error kind each provider gave it;
+  the decode error in its message and cause is now the AI SDK's `The string
+  to be decoded is not correctly encoded.`
 - Tool-call repair is a trait. New `RepairToolCall`
   (`aimux_core::parse_tool_call`, also in the prelude) with one async method,
   `repair(&self, ToolCallRepairContext) -> Result<Option<RawToolCall>, AiMuxError>`;
