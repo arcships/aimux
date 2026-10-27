@@ -139,6 +139,7 @@ fi
 if want go; then
   section "go: vet + test (CGO_LDFLAGS -> target/staticlib-release)"
   if need go "go" \
+     && python3 scripts/tests/test_check_native_artifact.py \
      && cargo build -p aimux-ffi --profile staticlib-release --quiet \
      && python3 scripts/check_native_artifact.py --strip-bitcode "$REPO"/target/staticlib-release/libaimux_ffi.a \
      && python3 scripts/merge_archive.py "$REPO"/target/staticlib-release/libaimux_ffi.a \

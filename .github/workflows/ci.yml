@@ -464,6 +464,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Checker self-test (synthetic fat-LTO and clean archives)
+        run: python3 scripts/tests/test_check_native_artifact.py
       - name: Build cdylib
         run: cargo build -p aimux-ffi --release --target ${{ matrix.target }}
       - name: C11 and C++17 ABI contract tests
