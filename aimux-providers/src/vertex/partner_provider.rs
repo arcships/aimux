@@ -1,3 +1,6 @@
+//! aimux-only code shared by the `maas/` and `xai/` sub-providers (upstream
+//! repeats it in both providers).
+//!
 //! Partner and open models on Vertex AI through its OpenAI-compatible
 //! endpoint: the `maas` and `xai` sub-providers of `@ai-sdk/google-vertex`
 //! 5.0.100 (`src/maas/google-vertex-maas-provider.ts`,
@@ -10,31 +13,20 @@
 //! authenticated with a Google OAuth token like the Anthropic sub-provider.
 //! The base URL, the token and the headers are resolved per request.
 
-use std::sync::{Arc, OnceLock};
-
-use regex::Regex;
-use serde_json::Value;
-
-use aimux_core::embedding_model::EmbeddingModel;
+use crate::openai_compatible::{BaseUrl, ResolveBaseUrl, ResolveFetchHeaders};
+use crate::vertex::auth_google_auth_library::{GoogleAuth, GoogleAuthOptions};
+use crate::vertex::provider_base::{
+    LOCATION_ENV_VAR, PROJECT_ENV_VAR, check_location, location_host,
+};
 use aimux_core::error::AiMuxError;
-use aimux_core::image_model::ImageModel;
-use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::provider::Provider;
-use aimux_core::types::{InputTokenUsage, OutputTokenUsage, Usage};
 use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, HeadersFn, Resolvable, combine_headers, load_optional_setting,
     load_setting, validate_base_url,
 };
+use std::sync::Arc;
 
-use crate::openai_compatible::{
-    BaseUrl, OpenAICompatibleChatModel, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
-    ResolveBaseUrl, ResolveFetchHeaders,
-};
-
-use super::auth::{GoogleAuth, GoogleAuthOptions};
-use super::{LOCATION_ENV_VAR, PROJECT_ENV_VAR, check_location, location_host};
-
-/// Settings of [`create_google_vertex_maas`] and [`create_google_vertex_xai`]
+/// Settings of [`create_google_vertex_maas`](super::create_google_vertex_maas)
+/// and [`create_google_vertex_xai`](super::create_google_vertex_xai)
 /// (the AI SDK's `GoogleVertexMaasProviderSettings` and
 /// `GoogleVertexXaiProviderSettings`, Node variants).
 #[derive(Clone, Default)]
@@ -62,9 +54,9 @@ pub struct VertexPartnerProviderSettings {
     pub generate_auth_token: Option<Resolvable<Option<String>>>,
 }
 
-/// Settings of [`create_google_vertex_maas`].
+/// Settings of [`create_google_vertex_maas`](super::create_google_vertex_maas).
 pub type VertexMaasProviderSettings = VertexPartnerProviderSettings;
-/// Settings of [`create_google_vertex_xai`].
+/// Settings of [`create_google_vertex_xai`](super::create_google_vertex_xai).
 pub type VertexXaiProviderSettings = VertexPartnerProviderSettings;
 
 impl std::fmt::Debug for VertexPartnerProviderSettings {
@@ -151,7 +143,7 @@ impl ResolveFetchHeaders for PartnerHeaders {
 /// The parts every partner sub-provider shares: the base URL source and the
 /// headers the Node wrapper's fetch adds over the request's own (the
 /// provider headers, then `Authorization`).
-fn partner_parts(
+pub(super) fn partner_parts(
     settings: &VertexPartnerProviderSettings,
     regional_host: bool,
 ) -> Result<(BaseUrl, Arc<dyn ResolveFetchHeaders>), AiMuxError> {
@@ -181,189 +173,4 @@ fn partner_parts(
         user: settings.headers.clone(),
     });
     Ok((base_url, headers))
-}
-
-/// Upstream's `maxOutputTokensByModel` (google-vertex-maas-provider.ts:16-27):
-/// a default `max_tokens` for the models that need one.
-fn maas_request_body(mut body: Value) -> Value {
-    let default = match body.get("model").and_then(Value::as_str) {
-        Some(
-            "meta/llama-4-maverick-17b-128e-instruct-maas"
-            | "meta/llama-4-scout-17b-16e-instruct-maas",
-        ) => 8192,
-        _ => return body,
-    };
-    if let Some(object) = body.as_object_mut()
-        && !object.contains_key("max_tokens")
-    {
-        object.insert("max_tokens".into(), default.into());
-    }
-    body
-}
-
-/// Create a Vertex AI MaaS (Model as a Service) provider: partner and open
-/// models over the OpenAI-compatible Chat Completions API. Models report
-/// `vertex.maas.<method>`.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` for an explicit `base_url` that is
-/// not an `http(s)` URL with a host. The project, location and token are
-/// resolved when a request is made.
-pub fn create_google_vertex_maas(
-    settings: VertexMaasProviderSettings,
-) -> Result<OpenAICompatibleProvider, AiMuxError> {
-    let (base_url, fetch_headers) = partner_parts(&settings, true)?;
-    crate::openai_compatible::build(
-        OpenAICompatibleProviderSettings {
-            name: "vertex.maas".into(),
-            fetch: settings.fetch,
-            transform_request_body: Some(Arc::new(maas_request_body)),
-            ..Default::default()
-        },
-        base_url,
-        crate::shared::ProviderHeaders::new(
-            crate::shared::Credential::None,
-            crate::shared::AuthScheme::Bearer,
-            Vec::new(),
-            None,
-        ),
-        Some(fetch_headers),
-        crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
-    )
-}
-
-/// The default Vertex MaaS provider. Creating it reads nothing from the
-/// environment and cannot fail.
-pub fn google_vertex_maas() -> &'static OpenAICompatibleProvider {
-    static DEFAULT: OnceLock<OpenAICompatibleProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_google_vertex_maas(VertexMaasProviderSettings::default())
-            .expect("default Vertex MaaS settings are valid")
-    })
-}
-
-/// Upstream's `convertGoogleVertexXaiUsage` (google-vertex-xai-provider.ts:89-129):
-/// reasoning tokens are reported on top of `completion_tokens`.
-fn xai_usage(usage: Option<&Value>) -> Usage {
-    let Some(usage) = usage.filter(|usage| !usage.is_null()) else {
-        return Usage::default();
-    };
-    let count = |pointer: &str| {
-        usage
-            .pointer(pointer)
-            .and_then(Value::as_u64)
-            .map_or(0, |count| u32::try_from(count).unwrap_or(u32::MAX))
-    };
-    let prompt = count("/prompt_tokens");
-    let completion = count("/completion_tokens");
-    let cache_read = count("/prompt_tokens_details/cached_tokens");
-    let reasoning = count("/completion_tokens_details/reasoning_tokens");
-    Usage {
-        input_tokens: InputTokenUsage {
-            total: Some(prompt),
-            no_cache: Some(prompt.saturating_sub(cache_read)),
-            cache_read: Some(cache_read),
-            cache_write: None,
-        },
-        output_tokens: OutputTokenUsage {
-            total: Some(completion.saturating_add(reasoning)),
-            text: Some(completion),
-            reasoning: Some(reasoning),
-        },
-        raw: usage.as_object().cloned(),
-    }
-}
-
-/// Upstream's `transformGoogleVertexXaiRequestBody` (:131-134): Vertex's Grok
-/// endpoint takes no `reasoning_effort`.
-fn xai_request_body(mut body: Value) -> Value {
-    if let Some(object) = body.as_object_mut() {
-        object.remove("reasoning_effort");
-    }
-    body
-}
-
-/// Create a Vertex AI xAI provider: Grok partner models over the
-/// OpenAI-compatible Chat Completions API. Models report
-/// `googleVertex.xai.chat`.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::invalid_argument` for an explicit `base_url` that is
-/// not an `http(s)` URL with a host. The project, location and token are
-/// resolved when a request is made.
-pub fn create_google_vertex_xai(
-    settings: VertexXaiProviderSettings,
-) -> Result<VertexXaiProvider, AiMuxError> {
-    let (base_url, fetch_headers) = partner_parts(&settings, false)?;
-    let http = Regex::new(r"^https?://.*$").expect("valid URL pattern");
-    let provider = crate::openai_compatible::build(
-        OpenAICompatibleProviderSettings {
-            name: "googleVertex.xai".into(),
-            fetch: settings.fetch,
-            include_usage: Some(true),
-            supports_structured_outputs: Some(true),
-            supported_urls: Some(Arc::new(move || {
-                Box::pin(std::future::ready(SupportedUrls(
-                    std::iter::once(("image/*".to_string(), vec![http.clone()])).collect(),
-                )))
-            })),
-            transform_request_body: Some(Arc::new(xai_request_body)),
-            convert_usage: Some(Arc::new(xai_usage)),
-            ..Default::default()
-        },
-        base_url,
-        crate::shared::ProviderHeaders::new(
-            crate::shared::Credential::None,
-            crate::shared::AuthScheme::Bearer,
-            Vec::new(),
-            None,
-        ),
-        Some(fetch_headers),
-        crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
-    )?;
-    Ok(VertexXaiProvider(provider))
-}
-
-/// The default Vertex xAI provider. Creating it reads nothing from the
-/// environment and cannot fail.
-pub fn google_vertex_xai() -> &'static VertexXaiProvider {
-    static DEFAULT: OnceLock<VertexXaiProvider> = OnceLock::new();
-    DEFAULT.get_or_init(|| {
-        create_google_vertex_xai(VertexXaiProviderSettings::default())
-            .expect("default Vertex xAI settings are valid")
-    })
-}
-
-/// The Vertex xAI model factory (the AI SDK's `GoogleVertexXaiProvider`):
-/// chat models only.
-pub struct VertexXaiProvider(OpenAICompatibleProvider);
-
-impl VertexXaiProvider {
-    /// A Grok chat model; `provider()` is `"googleVertex.xai.chat"`.
-    #[must_use]
-    pub fn chat(&self, model_id: &str) -> OpenAICompatibleChatModel {
-        self.0.chat(model_id)
-    }
-
-    /// The provider as a function: the chat model for an id.
-    #[must_use]
-    pub fn call(&self, model_id: &str) -> Arc<dyn LanguageModel> {
-        Arc::new(self.chat(model_id))
-    }
-}
-
-impl Provider for VertexXaiProvider {
-    fn language_model(&self, model_id: &str) -> Result<Arc<dyn LanguageModel>, AiMuxError> {
-        Ok(self.call(model_id))
-    }
-
-    fn embedding_model(&self, model_id: &str) -> Result<Arc<dyn EmbeddingModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "embeddingModel"))
-    }
-
-    fn image_model(&self, model_id: &str) -> Result<Arc<dyn ImageModel>, AiMuxError> {
-        Err(AiMuxError::no_such_model(model_id, "imageModel"))
-    }
 }

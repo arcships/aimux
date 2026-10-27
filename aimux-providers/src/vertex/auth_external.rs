@@ -8,7 +8,7 @@ use aimux_provider_utils::{FetchFunction, FetchRequest, default_fetch};
 use futures::TryStreamExt;
 use serde_json::{Value, json};
 
-use super::auth::required;
+use super::auth_google_auth_library::required;
 
 pub(super) async fn text(
     fetch: Option<FetchFunction>,

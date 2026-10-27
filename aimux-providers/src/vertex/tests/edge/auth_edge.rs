@@ -1,16 +1,16 @@
 //! Port of `@ai-sdk/google-vertex` 5.0.100 `src/edge/google-vertex-auth-edge.test.ts`.
 //!
 //! The edge `generateAuthToken(credentials)` signs a service-account JWT with
-//! Web Crypto and exchanges it at the OAuth token endpoint. aimux has one
-//! entry point: the provider's Google credential resolver (`GoogleAuth` in
-//! `src/vertex/auth.rs`) does the same exchange for service-account
-//! credentials. Upstream's `GoogleCredentials` (`clientEmail`, `privateKey`,
-//! `privateKeyId`) is the service-account JSON (`client_email`,
+//! Web Crypto and exchanges it at the OAuth token endpoint. aimux has one entry
+//! point: the provider's Google credential resolver (`GoogleAuth` in
+//! `src/vertex/auth_google_auth_library.rs`) does the same exchange for
+//! service-account credentials. Upstream's `GoogleCredentials` (`clientEmail`,
+//! `privateKey`, `privateKeyId`) is the service-account JSON (`client_email`,
 //! `private_key`, `private_key_id`) here. Upstream mocks Web Crypto, so its
 //! `'mock-private-key'` is never parsed; aimux signs for real, so the harness
 //! uses a test RSA key. `global.fetch` is the resolver's transport, and the
-//! stubbed `atob` (which returns the same payload for any input) is
-//! [`atob`] below.
+//! stubbed `atob` (which returns the same payload for any input) is [`atob`]
+//! below.
 
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 
 use crate::test_support::mock_fetch::{Canned, MockFetch};
 use crate::vertex::GoogleAuthOptions;
-use crate::vertex::auth::GoogleAuth;
+use crate::vertex::auth_google_auth_library::GoogleAuth;
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
 
 const TEST_RSA_KEY: &str = include_str!("../fixtures/aimux-test-rsa-key.pem");
