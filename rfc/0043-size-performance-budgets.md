@@ -500,6 +500,9 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | Node `.node` | 根 `release` 同样的 profile，`unwind` | 15,524,256 | 6,584,671 |
 | Python 扩展 | Cargo 默认 release | 39,004,536 | 12,460,847 |
 | Python 扩展 | 根 `release` 同样的 profile，`unwind` | 15,398,984 | 6,542,729 |
+| iOS `aarch64-apple-ios` 的 `.a`（CI macOS runner，master c35acb2，#375） | `staticlib-release`（opt z、cgu 1、无 LTO、abort），`strip -Sx` 前 | 65,127,144 | — |
+| 同一片，`strip -Sx` 后（xcframework 里的二进制） | 585 个成员，`__text` 8,066,824，sysroot bitcode 9,664,823 | 54,063,640 | — |
+| iOS `aarch64-apple-ios-sim` | 同上 | 65,073,904 → 54,024,416 | — |
 
 结论：
 
@@ -593,3 +596,14 @@ ROADMAP §6.1 的目标表在 S2 登记完成后按实测修订；在此之前�
 **其余架构层候选（文献数字，aimux 未测，均为待讨论）：** `AiMuxError` 各变体用 `#[cold] #[inline(never)]` 构造函数，调用点不再各自展开 `format!`（ring、std 的做法，3% 到 8%）；async 函数拆分，请求构造与响应解析放进同步函数，每个 async 函数一个 await（2% 到 5%）；注册表 JSON 构建期转二进制或压缩嵌入（50 到 80 KB）。按厂商 cargo feature 的上限是 18%（§15.3），按 2026-10-19 的决定暂不做。
 
 同类参考：rig-core、genai、llm 等 Rust LLM SDK 没有公开体积数据；上游 AI SDK 每个 provider 包压缩前约 120 到 140 KB JS，aimux 每厂商约 38 KB 机器码。
+
+### 15.6 S1 实现记录（2026-10-27，#375）
+
+S1 按 §5.1 实现：`[profile.staticlib-release]` 取代 `ios-release`，release.yml 的 go-build 与 iOS 脚本改用它并切换目录，ci.yml 的 profile 覆盖变量跟着改名，Go 的 cgo 搜索路径把 `target/staticlib-release` 放在 `target/release` 前面。每个产物的构建 job 用 `scripts/check_native_artifact.py` 打印 `size <path> <bytes> bytes`，这就是 §3.1 的 raw_bytes 来源；它直接读 ar、ELF、Mach-O、COFF 头，三种 runner 同一实现，不依赖 binutils。
+
+**实测修正 §5.2 的「无 bitcode」。** `lto = false` 只影响工作区 crate 的对象。rustup 发布的 sysroot（std、alloc、core、addr2line……）本身带 `-C embed-bitcode=yes` 编译的 `.llvmbc`，所以任何 `.a` 都有一层 bitcode：Linux x64 档案 95,003,454 B 里 10,017,424 B 在 292 个 sysroot 成员，iOS 片 65,127,144 B 里 9,664,823 B 在 247 个成员，工作区 crate 的 bitcode 都是 0。因此检查的判据是「工作区 crate 的成员带 bitcode 即 fat LTO」，而不是「档案无 bitcode」；fat-LTO 档案（194 MB，461 个成员带 bitcode，含全部 6 个 aimux_* 成员）被判失败，`lto = false` 档案通过。去掉 sysroot 这一层属于 §15.5 的后处理（`llvm-objcopy --remove-section`），或 `-Zbuild-std`（nightly），单独 PR。
+
+**iOS 片的构成（master c35acb2）。** `strip -Sx` 后 54.1 MB 里只有 8.1 MB 是 `__text`，9.7 MB 是 sysroot bitcode，其余约 36 MB 是符号表、字符串表、重定位和常量段。§15.5 的「去 bitcode 后每片约 33 MB」按 0.5.0 的 42.3 MB 估的；现在的数字是 54.1 − 9.7 ≈ 44 MB，离 64 MiB 的门禁只剩 10 MB 余量，所以后处理 PR 比预想的更急。合并目标文件、去局部符号之后仍是约 10 MB 的量级。
+
+**CI go-binding 未切。** ci.yml 的 `ffi-build` 腿仍用 fat-LTO 的 `--release` 档案跑 Go 测试：切换要在同一 job 多编一个 profile，时长约翻倍；正式档案的 Go vet/test 在 release.yml 的四台机器上跑。待讨论：是否值得加一条 Linux 腿。macOS、Windows 的 Go 档案和 Android 三 ABI 的字节数由 release.yml 首次运行打印后回填到 §15.1。
+
