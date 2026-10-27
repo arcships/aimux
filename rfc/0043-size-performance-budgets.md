@@ -169,7 +169,7 @@ lto = false
 - iOS 脚本两 target 同样切 profile 和目录，保留 `strip -Sx` 与每片大小 gate；不要恢复已因兼容性问题移除的 `bitcode_strip`
 - `ffi-build`、Android、Java/Kotlin/Swift/Flutter 的动态链接测试与 release 保持 `--release`。桌面 DLL 的 MSVC 与 Go archive 的 GNU target 不混用
 - 在单独 target 目录中构建两种 profile；上传清单只允许 `staticlib-release/*.a` 或 `release/*.{so,dylib,dll}`。即使 Cargo 因 crate-type 同时产出其他文件，非授权变体一律不复制、不上传
-- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁。2026-10-27 修订：两个绑定 workspace 没有 `[profile.release]`，发布的是 Cargo 默认 release（opt-level 3、无 LTO、不 strip），实测 39 MB；加上根 `release` 同样的 size profile（`panic` 保持 `unwind`）后 15.5 MB。before/after 证据见 §15.1，性能对比随该 PR 附上（§15.4 步骤 2）
+- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁。2026-10-27 修订：两个绑定 workspace 没有 `[profile.release]`，发布的是 Cargo 默认 release（opt-level 3、无 LTO、不 strip），实测 39 MB；加 size profile（`panic` 保持 `unwind`）后：`opt-level = "z"` 15.5 MB，但大响应慢 28–35%；选定 `"s"` 16.9 / 16.8 MB，性能与现状无可测差别。before/after 与 bench 见 §15.8，PR 是 B-profile PR（§15.4 步骤 2）
 
 ### 5.2 防止“瘦了但不能用”
 
@@ -638,3 +638,26 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 
 档案成员的构成（4ae85b4 的 `lto = false` 档案，80.5 MB 成员字节）：`.shstrtab` 14.6 MB、`.strtab` 12.4 MB、ELF 头与段表 11.8 MB、`.text` 11.1 MB、`.rela` 10.5 MB、bitcode 10.0 MB、`.symtab` 4.2 MB、`.eh_frame` 3.0 MB、`.rodata` 2.1 MB。rustc 给每个函数一个段，段名表加段表就占三分之一，这解释了为什么合并目标文件比任何 strip 都有效。合并出的目标文件有六万多个段，走 ELF 扩展段编号，#375 的检查器已能读。
 
+### 15.8 B-profile 实现记录（2026-10-27，master a23a636，Linux x86_64）
+
+两个绑定 workspace 加同一个 `[profile.release]`：`opt-level = "s"`、`lto = true`、`codegen-units = 1`、`strip = true`，`panic` 不写（保持 `unwind`）。构建命令不变（`napi build --release`、`maturin build/publish --release`）。raw 是文件字节数，gz9 是 `gzip -9` 后的字节数，近似 npm / wheel 的传输体积。
+
+| 产物 | profile | raw | gz9 |
+|---|---|---:|---:|
+| `aimux.node` | 现状：Cargo 默认 release（opt 3，无 LTO，不 strip） | 39,148,376 | 12,434,256 |
+| | **选定：`"s"` + fat LTO + cgu 1 + strip** | **16,913,144** | **7,246,332** |
+| | `"z"`，其余同 | 15,530,896 | 6,581,741 |
+| | `3` + fat LTO + cgu 1 + strip | 23,479,480 | 9,850,717 |
+| Python `aimux.so` | 现状：Cargo 默认 release | 38,703,752 | 12,367,264 |
+| | **选定：`"s"` + fat LTO + cgu 1 + strip** | **16,777,456** | **7,198,405** |
+| | `"z"`，其余同 | 15,401,528 | 6,539,976 |
+| | `3` + fat LTO + cgu 1 + strip | 23,314,856 | 9,796,333 |
+| | `"z"` + 三个热点包 `opt-level = 3`（§12 B-profile 行的「按包覆盖」） | 22,827,032 | — |
+
+性能：`bindings/python/bench/bench_profile.py` 与 `bindings/node/bench/bench_profile.cjs`，六个场景（text.generate 与 text.stream 的小 / 大响应、model.info、provider.create+drop），进程内 localhost mock，三个构建交替 3 轮、每轮 300 次，比较中位数。结果：`"s"` 与 `3`+LTO 在所有场景都在轮间噪声内（同一构建两组基线相差 6–40%）；`"z"` 在两个绑定的 64 KB 响应场景上稳定慢 28–35%，Python 的 `"z"` 加热点包 `opt-level = 3` 回到 22.8 MB 却仍慢 10%，所以「按包覆盖」不采用，整体 `"s"`。明细表在 B-profile PR 正文。
+
+构建时间（本地 3 并发，从头）：Python 199 s → 243 s，Node 192 s → 243 s。CI 的 node job 是 debug 构建，不受影响；python job 用 `maturin build --release`，若过慢可用 `CARGO_PROFILE_RELEASE_LTO=false` 只给 CI 关 LTO。
+
+可比项目（2026-10-27 查各仓库 `Cargo.toml`）：pydantic-core `lto = "fat"`、`codegen-units = 1`、`strip = true`，opt-level 默认 3；orjson `lto = "fat"`、`codegen-units = 1`、`opt-level = 3`、`panic = "abort"`；tokenizers 的 Python 绑定没有 profile。都没选 `"s"`；aimux 选 `"s"` 的依据是上面的 bench：热路径是 I/O 和 JSON，不是数值计算，`3` 比 `"s"` 大 6.5 MB 而没有可测收益。
+
+待讨论：§15.4 步骤 2 写的「maturin 压缩级别 9」没有进 B-profile PR；wheel 是 zip，压缩级别只影响下载体积不影响安装后的 `.so`，是否值得单独一条由 eric 决定。macOS / Windows / aarch64 的字节数等下个 release 跑完回填。
