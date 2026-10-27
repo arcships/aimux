@@ -1333,6 +1333,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `speech::google_speech_input` become crate-internal, with no public
   replacement. `google::files` and `google::transcription` keep their paths.
 
+- `aimux_provider_utils::stream_error_api_call` is replaced by
+  `create_provider_stream_error` (RFC-0046 R1). Pass the message, provider
+  code, status, retryability and raw data as a `ProviderStreamError`, then
+  the event, URL, request body and response headers as before.
+  `is_retryable: None` keeps the old rule (retryable from the status); the
+  error data is the `data` field instead of the event.
+
 - `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
   layout (RFC-0046). The sub-modules `mistral::convert` and
   `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
@@ -1398,8 +1405,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in provider reads its key from when `create_provider` gets none, and
   `provider_default_base_url(name)`, the endpoint it calls when given no base
   URL (`None` when that is built from settings).
+- `aimux_provider_utils::create_provider_stream_error` and
+  `ProviderStreamError`, as `@ai-sdk/provider-utils` 5.0.55
+  `createProviderStreamError` (RFC-0046 R1). Every in-stream error event
+  (Anthropic, DeepSeek, Google, Groq, Hugging Face, Mistral, OpenAI, OpenAI
+  compatible, Open Responses, xAI and the Codex subscription channel) is
+  built with it; each provider keeps only its own status table.
 
 ### Fixed
+
+- Amazon Bedrock's in-stream exception errors redact and bound the request
+  body, sanitize the URL and carry the frame as the response body and the
+  response headers, as the other providers' stream errors do. The request
+  body was copied as sent, data URLs and long prompts included.
 
 - Anthropic AWS models are named `anthropic-aws.messages` by default, the
   provider name the AI SDK gives them, instead of `anthropic-aws`. A `name`
