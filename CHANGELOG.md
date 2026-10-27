@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Build
+
+- The static archives (`libaimux_ffi.a` for Go and the iOS xcframework
+  slices) are built with the `staticlib-release` profile, the `release`
+  profile without LTO. It replaces `ios-release`, and the Go archives used
+  to be built with `--release`:
+
+  ```sh
+  # before                                   # now
+  cargo build -p aimux-ffi --release         cargo build -p aimux-ffi --profile staticlib-release
+  cargo build -p aimux-ffi --profile ios-release  (same)
+  ```
+
+  The archive lands in `target/<triple>/staticlib-release/` instead of
+  `release/` or `ios-release/`; the Go binding's cgo flags look there first.
+  A static archive is linked by the consumer's toolchain, so fat LTO only
+  embedded every crate's LLVM bitcode into it: the Linux Go archive goes from
+  191 MB to 92 MB with the same linked code (RFC-0043 §5.1, §15.1). The shared
+  libraries (`.so`, `.dylib`, `.dll`, Node, Python) keep their profiles.
+  Release and iOS builds check the archive members for bitcode and print
+  every artifact's byte size (`scripts/check_native_artifact.py`).
+
 ### Breaking
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
