@@ -77,10 +77,14 @@ fn create_groq_stream_error(
     response_headers: HashMap<String, String>,
 ) -> AiMuxError {
     match serde_json::from_value::<GroqErrorData>(data.clone()) {
-        Ok(GroqErrorData { error }) => aimux_provider_utils::stream_error_api_call(
-            error.message,
-            Some(error.r#type.clone()),
-            groq_stream_error_status(&error.r#type),
+        Ok(GroqErrorData { error }) => aimux_provider_utils::create_provider_stream_error(
+            aimux_provider_utils::ProviderStreamError {
+                status_code: groq_stream_error_status(&error.r#type),
+                message: error.message,
+                provider_code: Some(error.r#type),
+                is_retryable: None,
+                data: data.clone(),
+            },
             data,
             url,
             request_body_values,

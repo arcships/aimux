@@ -116,10 +116,14 @@ impl<'a> HuggingFaceStreamError<'a> {
             .and_then(|status| u16::try_from(status).ok())
             .filter(|status| (400..=599).contains(status));
         let provider_code = Some(self.raw_finish_reason());
-        aimux_provider_utils::stream_error_api_call(
-            self.message,
-            provider_code,
-            status_code,
+        aimux_provider_utils::create_provider_stream_error(
+            aimux_provider_utils::ProviderStreamError {
+                message: self.message.to_owned(),
+                provider_code,
+                status_code,
+                is_retryable: None,
+                data: event.clone(),
+            },
             event,
             url,
             request_body_values,

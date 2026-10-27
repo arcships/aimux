@@ -460,10 +460,14 @@ pub(in crate::openai_compatible) fn stream_error(
         Value::Number(value) => Some(value.to_string()),
         _ => None,
     });
-    aimux_provider_utils::stream_error_api_call(
-        message,
-        provider_code,
-        None,
+    aimux_provider_utils::create_provider_stream_error(
+        aimux_provider_utils::ProviderStreamError {
+            message,
+            provider_code,
+            status_code: None,
+            is_retryable: None,
+            data: error.clone(),
+        },
         error,
         url,
         request_body_values,

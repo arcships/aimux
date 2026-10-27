@@ -91,17 +91,17 @@ pub(crate) fn openai_stream_error(
     });
     let quota = provider_code.as_deref() == Some("insufficient_quota")
         || error_type == "insufficient_quota";
-    let mut result = aimux_provider_utils::stream_error_api_call(
-        message,
-        provider_code,
-        Some(status),
+    aimux_provider_utils::create_provider_stream_error(
+        aimux_provider_utils::ProviderStreamError {
+            message,
+            provider_code,
+            status_code: Some(status),
+            is_retryable: quota.then_some(false),
+            data: error.clone(),
+        },
         error,
         url,
         request_body_values,
         response_headers,
-    );
-    if quota && let AiMuxError::ApiCall(details) = &mut result {
-        details.is_retryable = false;
-    }
-    result
+    )
 }

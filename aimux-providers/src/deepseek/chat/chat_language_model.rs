@@ -119,19 +119,19 @@ fn deepseek_stream_error(
         .and_then(Value::as_str)
         .unwrap_or("DeepSeek stream failed before any output was generated")
         .to_owned();
-    let mut error = aimux_provider_utils::stream_error_api_call(
-        message,
-        provider_code,
-        status_code,
+    aimux_provider_utils::create_provider_stream_error(
+        aimux_provider_utils::ProviderStreamError {
+            message,
+            provider_code,
+            status_code,
+            is_retryable: quota_exhausted.then_some(false),
+            data: event.clone(),
+        },
         event,
         url,
         request_body_values,
         response_headers,
-    );
-    if quota_exhausted && let AiMuxError::ApiCall(api_error) = &mut error {
-        api_error.is_retryable = false;
-    }
-    error
+    )
 }
 
 impl DeepSeekChatLanguageModel {

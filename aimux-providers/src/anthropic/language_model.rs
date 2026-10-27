@@ -237,24 +237,19 @@ pub(crate) fn anthropic_stream_error(
         .and_then(|status| u16::try_from(status).ok())
         .or(inferred_status);
     let is_retryable = error.is_retryable.flatten().or(inferred_retryable);
-    let parsed = parsed_stream_error(error);
-    let data = stream_error_data(error);
-    let mut result = aimux_provider_utils::stream_error_api_call(
-        error.message.clone(),
-        error.error_type.clone(),
-        status_code,
-        &json!({ "type": "error", "error": parsed }),
+    aimux_provider_utils::create_provider_stream_error(
+        aimux_provider_utils::ProviderStreamError {
+            message: error.message.clone(),
+            provider_code: error.error_type.clone(),
+            status_code,
+            is_retryable,
+            data: stream_error_data(error),
+        },
+        &json!({ "type": "error", "error": parsed_stream_error(error) }),
         url,
         request_body_values,
         response_headers,
-    );
-    if let AiMuxError::ApiCall(details) = &mut result {
-        if let Some(is_retryable) = is_retryable {
-            details.is_retryable = is_retryable;
-        }
-        details.data = (!data.is_null()).then(|| aimux_provider_utils::redact_error_context(data));
-    }
-    result
+    )
 }
 
 /// The error as the chunk schema parses it (anthropic-api.ts:1450-1459):

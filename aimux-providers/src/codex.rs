@@ -397,13 +397,17 @@ impl CodexModel {
                             // Provider-declared in-band failure: keep the
                             // observed 2xx envelope status (§2.2). The shared
                             // helper redacts the raw request context.
-                            failure = Some(aimux_provider_utils::stream_error_api_call(
-                                message,
-                                err_obj
-                                    .and_then(|e| e.get("code").or_else(|| e.get("type")))
-                                    .and_then(|c| c.as_str())
-                                    .map(std::string::ToString::to_string),
-                                Some(200),
+                            failure = Some(aimux_provider_utils::create_provider_stream_error(
+                                aimux_provider_utils::ProviderStreamError {
+                                    message: message.to_owned(),
+                                    provider_code: err_obj
+                                        .and_then(|e| e.get("code").or_else(|| e.get("type")))
+                                        .and_then(|c| c.as_str())
+                                        .map(std::string::ToString::to_string),
+                                    status_code: Some(200),
+                                    is_retryable: None,
+                                    data: data.clone(),
+                                },
                                 &data,
                                 endpoint.clone(),
                                 body.clone(),
