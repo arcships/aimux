@@ -1,0 +1,379 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-start"
+  },
+  {
+    "delta": "The",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " user",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " is",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " asking",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " for",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " the",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " weather",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " in",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " San",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " Francisco",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ".",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " I",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " have",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " a",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " weather",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " function",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " available",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " that",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " takes",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " a",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " location",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " parameter",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ".",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " The",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " user",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " has",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " provided",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " the",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " location",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " as",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " \"",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "San",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " Francisco",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "\",",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " so",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " I",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " have",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " all",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " the",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " required",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " parameters",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " to",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " make",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " the",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " function",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " call",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ".",
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "type": "reasoning-delta"
+  },
+  {
+    "id": "rs_jm2uvisepha7peu2y40spd",
+    "providerMetadata": {
+      "lmstudio": {
+        "itemId": "rs_jm2uvisepha7peu2y40spd",
+        "reasoningContent": [
+          {
+            "text": "The user is asking for the weather in San Francisco. I have a weather function available that takes a location parameter. The user has provided the location as \"San Francisco\", so I have all the required parameters to make the function call.",
+            "type": "reasoning_text"
+          }
+        ],
+        "reasoningSummary": []
+      }
+    },
+    "type": "reasoning-end"
+  },
+  {
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-start"
+  },
+  {
+    "delta": "I",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": "'ll",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " get",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " current",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " weather",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " information",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " for",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " San",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Francisco",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " for",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": " you",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "type": "text-delta"
+  },
+  {
+    "id": "msg_pgh5uhkjz68thx8ph44ia",
+    "providerMetadata": {
+      "lmstudio": {
+        "itemId": "msg_pgh5uhkjz68thx8ph44ia"
+      }
+    },
+    "type": "text-end"
+  },
+  {
+    "input": "{\"location\":\"San Francisco\"}",
+    "providerMetadata": {
+      "lmstudio": {
+        "itemId": "fc_5ee21s0i48xzoskcmd67h"
+      }
+    },
+    "toolCallId": "call_3466696471230001",
+    "toolName": "weather",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "unified": "tool-calls"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 52,
+        "noCache": 130,
+        "total": 182
+      },
+      "outputTokens": {
+        "reasoning": 47,
+        "text": 13,
+        "total": 60
+      },
+      "raw": {
+        "input_tokens": 182,
+        "input_tokens_details": {
+          "cached_tokens": 52
+        },
+        "output_tokens": 60,
+        "output_tokens_details": {
+          "reasoning_tokens": 47
+        },
+        "total_tokens": 242
+      }
+    }
+  }
+]
