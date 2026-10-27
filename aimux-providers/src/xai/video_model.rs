@@ -706,7 +706,7 @@ impl VideoModel for XaiVideoModel {
             exchange.request(exchange.url(path), options),
             body,
             aimux_provider_utils::create_json_response_handler::<CreateResponse>(),
-            super::xai_failed_response_handler(),
+            super::error::xai_failed_response_handler(),
         )
         .await?;
         let request_id = resp
@@ -742,7 +742,7 @@ impl VideoModel for XaiVideoModel {
         let resp = aimux_provider_utils::get_from_api(
             exchange.request(url.clone(), options),
             status_response_handler(),
-            super::xai_failed_response_handler(),
+            super::error::xai_failed_response_handler(),
         )
         .await?;
         let headers = resp.response_headers;
