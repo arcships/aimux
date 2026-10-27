@@ -643,4 +643,55 @@ mod tests {
         assert!(!printed.contains("rt-secret-value"));
         assert!(printed.contains("3600"));
     }
+
+    // The error a subscription `response.failed` event becomes: the observed
+    // 200 status, the event as response body and data.
+    #[tokio::test]
+    async fn subscription_response_failed_becomes_an_api_call_error() {
+        use aimux_core::error::AiMuxError;
+        use aimux_core::language_model::LanguageModel;
+        use aimux_core::language_model_message::LanguageModelMessage;
+        use aimux_core::options::CallOptions;
+        use aimux_provider_utils::Resolvable;
+        use serde_json::json;
+
+        use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+        let event = json!({
+            "type": "response.failed",
+            "response": { "error": { "code": "server_error", "message": "Something went wrong" } },
+        });
+        let mock = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+            body: format!("data: {event}\n\n").into_bytes(),
+        }]);
+        let provider = super::create_codex(super::CodexProviderSettings {
+            mode: super::CodexMode::ChatGptAccount {
+                token: Resolvable::Value("token".into()),
+                account_id: None,
+            },
+            fetch: Some(mock.transport()),
+            ..Default::default()
+        })
+        .expect("valid settings");
+
+        let error = provider
+            .responses("gpt-5")
+            .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+                "Hello",
+            )]))
+            .await
+            .expect_err("the response failed");
+
+        let AiMuxError::ApiCall(error) = error else {
+            panic!("expected an ApiCall error, got {error:?}");
+        };
+        assert_eq!(error.message, "Something went wrong");
+        assert_eq!(error.provider_code.as_deref(), Some("server_error"));
+        assert_eq!(error.status_code, Some(200));
+        assert!(!error.is_retryable);
+        assert_eq!(error.data, Some(event.clone()));
+        assert_eq!(error.response_body, Some(event.to_string()));
+    }
 }

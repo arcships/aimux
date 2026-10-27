@@ -8006,3 +8006,53 @@ mod older_upstream_e2e {
         );
     }
 }
+
+// Not an upstream case: the shape of the error an in-stream `{"error": ...}`
+// event becomes (`google_stream_error` through `create_provider_stream_error`).
+mod in_stream_error {
+    use super::*;
+
+    use aimux_core::error::AiMuxError;
+
+    #[tokio::test]
+    async fn an_error_event_becomes_an_api_call_error_with_its_status_and_data() {
+        let error_event = json!({
+            "error": {
+                "code": 429,
+                "message": "Resource has been exhausted",
+                "status": "RESOURCE_EXHAUSTED",
+            }
+        });
+        let mock = sse_stream_mock(vec![
+            sse_text_chunks(&["Hello"], None, None).concat(),
+            sse_data_chunk(&error_event),
+        ]);
+        let model = stream_test_provider(&mock).chat("gemini-pro");
+
+        let parts: Vec<StreamPart> = model
+            .do_stream(&stream_call_options_with(json!({})))
+            .await
+            .expect("doStream succeeds")
+            .stream
+            .map(|part| part.expect("stream part"))
+            .collect()
+            .await;
+        let Some(StreamPart::Error {
+            error: AiMuxError::ApiCall(error),
+        }) = parts
+            .iter()
+            .find(|part| matches!(part, StreamPart::Error { .. }))
+        else {
+            panic!("expected an in-stream ApiCall error, got {parts:?}");
+        };
+
+        assert_eq!(error.message, "Resource has been exhausted");
+        assert_eq!(error.status_code, Some(429));
+        assert_eq!(error.provider_code.as_deref(), Some("RESOURCE_EXHAUSTED"));
+        assert!(error.is_retryable);
+        assert_eq!(error.data, Some(error_event.clone()));
+        assert_eq!(error.response_body, Some(error_event.to_string()));
+        assert!(error.url.starts_with(STREAM_TEST_BASE_URL));
+        assert!(matches!(parts.last(), Some(StreamPart::Finish { .. })));
+    }
+}

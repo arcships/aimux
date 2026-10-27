@@ -1477,3 +1477,48 @@ mod reference_content_parsing {
         );
     }
 }
+
+// Not an upstream case: the shape of the error an in-stream `{"error": ...}`
+// chunk becomes (`mistral_stream_error` through `create_provider_stream_error`).
+mod in_stream_error {
+    use super::*;
+
+    use aimux_core::error::AiMuxError;
+    use aimux_core::stream_part::StreamPart;
+
+    #[tokio::test]
+    async fn an_error_chunk_becomes_an_api_call_error_with_its_status_and_data() {
+        let error = json!({
+            "message": "Rate limit exceeded",
+            "type": "rate_limit_error",
+            "status_code": 429,
+        });
+        let chunk = json!({ "error": error }).to_string();
+        let fetch = stream_fetch(&[&chunk]);
+
+        let parts: Vec<StreamPart> = provider(&fetch)
+            .chat(MODEL)
+            .do_stream(&options())
+            .await
+            .expect("doStream succeeds")
+            .stream
+            .map(|part| part.expect("stream part"))
+            .collect()
+            .await;
+        let Some(StreamPart::Error {
+            error: AiMuxError::ApiCall(api_error),
+        }) = parts
+            .iter()
+            .find(|part| matches!(part, StreamPart::Error { .. }))
+        else {
+            panic!("expected an in-stream ApiCall error, got {parts:?}");
+        };
+
+        assert_eq!(api_error.message, "Rate limit exceeded");
+        assert_eq!(api_error.status_code, Some(429));
+        assert_eq!(api_error.provider_code.as_deref(), Some("rate_limit_error"));
+        assert!(api_error.is_retryable);
+        assert_eq!(api_error.data, Some(error.clone()));
+        assert_eq!(api_error.response_body, Some(error.to_string()));
+    }
+}
