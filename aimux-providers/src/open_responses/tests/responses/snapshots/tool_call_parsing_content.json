@@ -1,0 +1,13 @@
+[
+  {
+    "input": "{\"location\":\"San Francisco\"}",
+    "providerMetadata": {
+      "lmstudio": {
+        "itemId": "fc_ru0kcno9erlzp8573yub"
+      }
+    },
+    "toolCallId": "call_2866856768160095",
+    "toolName": "weather",
+    "type": "tool-call"
+  }
+]
