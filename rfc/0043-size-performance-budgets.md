@@ -30,7 +30,7 @@
 | 事实 | 证据及解释 |
 |---|---|
 | 根 release 使用 `lto=true`、`codegen-units=1`、`opt-level="z"`、`strip=true`、`panic="abort"` | [Cargo.toml](../Cargo.toml)；`aimux-ffi` 同时声明 `cdylib/staticlib/rlib` |
-| iOS 已单独关闭 LTO并保留全局符号 | [build-ios-xcframework.sh](../scripts/build-ios-xcframework.sh) 使用 `ios-release`（#375 起改名 `staticlib-release`）、`strip -Sx`，两片均执行 `67108864` 字节硬上限 |
+| iOS 已单独关闭 LTO并保留全局符号 | [build-ios-xcframework.sh](../scripts/build-ios-xcframework.sh) 使用 `staticlib-release`（#375 把 `ios-release` 改名为它并加了 bitcode 校验；72a37b5 时是 `ios-release`）、`strip -Sx`，两片均执行 `67108864` 字节硬上限 |
 | staticlib 138.4 MB →66.5 MB 是历史 Linux 测量 | #196 合入提交 `7ce40c7` 的记录；不是所有平台的当前值，不能当成每个平台精确基线 |
 | ROADMAP 的桌面 `.a ×5` 与工作流清单有差异 | [release.yml](../.github/workflows/release.yml) 的 `go-build` 实际发布 4 个 target：Linux x64、macOS x64/arm64、Windows GNU x64；没有已配置的第 5 个。S2 以实际清单登记，新增平台必须先扩清单与预算 |
 | Android 21 MB、Node/wheel 15–22 MB、pub 31.7 MB 是汇总或区间 | ROADMAP 没有逐文件字节、哈希、工具链或测量阶段；只能作为制定初始上限的证据，不能冒充 exact baseline |
@@ -86,7 +86,7 @@
 
 | ID / 实际 target | 最终 raw C（bytes） | 依据、后续目标 |
 |---|---:|---|
-| staticlib / `x86_64-unknown-linux-gnu` | 70,000,000 | ROADMAP ≤70 MB；#196 历史 Linux 66.5 MB；S1a 实测 shipped 95,003,454（c35acb2），去 bitcode 后 84,942,462，只有 S1c 的合并加 strip 到 58,742,392 才进 C（§5.3、§15.7）；在此之前 §13 该项不勾 |
+| staticlib / `x86_64-unknown-linux-gnu` | 70,000,000 | ROADMAP ≤70 MB；#196 历史 Linux 66.5 MB；S1a 实测 CI shipped 95,078,500、本地 95,003,454（c35acb2），本地去 bitcode 后 84,942,462，只有 S1c 的合并加 strip 到 58,742,392 才进 C（§5.3、§15.7）；在此之前 §13 该项不勾 |
 | staticlib / `x86_64-apple-darwin` | 70,000,000 | ROADMAP 产品目标，平台基线由 release.yml 首次运行打印（#375） |
 | staticlib / `aarch64-apple-darwin` | 70,000,000 | 同上；#375 的 CI 实测 65,448,272（c35acb2），已在 C 内；Mach-O 档案没有 ELF 每函数一段的段表开销，所以比 Linux 小 30 MB（§15.7） |
 | staticlib / `x86_64-pc-windows-gnu` | 70,000,000 | 同上；仍使用 cgo 可链接 GNU archive |
@@ -98,8 +98,8 @@
 | iOS xcframework / 全目录 | 136,314,880 | 两个 64 MiB slice 加 2 MiB 头文件/元数据预算；还受 pub 解包总量约束 |
 | Android / `aarch64-linux-android` / arm64-v8a | 9,000,000 | 拟议单 ABI 上限；21 MB 总量不能推出单 ABI 实测 |
 | Android / `armv7-linux-androideabi` / armeabi-v7a | 9,000,000 | 同上 |
-| Android / `x86_64-linux-android` / x86_64 | 9,000,000 | 同上；**待讨论**：0.5.0 已发布的 x86_64 片 9.1 MB（§15.5）已超此值，S2 登记时要么模拟器 ABI 单列（拟 10,000,000），要么按实测 +10% 重设 |
-| Android / 三 ABI raw 总量 | 23,100,000 | ROADMAP 历史 21 MB +10%；单片通过不豁免合计 |
+| Android / `x86_64-linux-android` / x86_64 | 10,000,000 | 模拟器 ABI 单列：0.5.0 已发布的 x86_64 片 9,100,000 B 级（§15.5）超过 arm 片的 9,000,000，x86_64 不进设备，只进模拟器，所以单独给 10,000,000（实测 +10%），不放宽两个 arm 片；S2 登记时以 release.yml 打印的字节数复核 |
+| Android / 三 ABI raw 总量 | 23,100,000 | ROADMAP 历史 21 MB +10%；单片通过不豁免合计（9,000,000 + 9,000,000 + 10,000,000 = 28,000,000 只是单片上限之和，合计上限仍是这一行） |
 | `aimux-cli-linux-x64`、`aimux-cli-macos-arm64`、`aimux-cli-windows-x64.exe` | **每个** 32,000,000 | 拟议单二进制产品预算，0.6 登记现有 CLI，0.8 stdio 仍在同一 C 内 |
 | `aimux-replay-linux-x64`、`aimux-replay-macos-arm64`、`aimux-replay-windows-x64.exe` | **每个** 32,000,000 | 现有发布工具，不能遗漏；功能合并后有显式退役记录 |
 | `aimux-web-linux-x64`、`aimux-web-macos-arm64`、`aimux-web-windows-x64.exe` | **每个** 40,000,000 | 含正式 embedded frontend；比 CLI 多 8 MB 为拟议 frontend 预算 |
@@ -169,7 +169,7 @@ lto = false
 - iOS 脚本两 target 同样切 profile 和目录，保留 `strip -Sx` 与每片大小 gate；不要恢复已因兼容性问题移除的 `bitcode_strip`
 - `ffi-build`、Android、Java/Kotlin/Swift/Flutter 的动态链接测试与 release 保持 `--release`。桌面 DLL 的 MSVC 与 Go archive 的 GNU target 不混用
 - 在单独 target 目录中构建两种 profile；上传清单只允许 `staticlib-release/*.a` 或 `release/*.{so,dylib,dll}`。即使 Cargo 因 crate-type 同时产出其他文件，非授权变体一律不复制、不上传
-- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁。2026-10-27 修订：两个绑定 workspace 没有 `[profile.release]`，发布的是 Cargo 默认 release（opt-level 3、无 LTO、不 strip），实测 39 MB；加 size profile（`panic` 保持 `unwind`）后：`opt-level = "z"` 15.5 MB，但大响应慢 28–35%；选定 `"s"` 16.9 / 16.8 MB，性能与现状无可测差别。before/after 与 bench 见 §15.8，PR 是 B-profile PR（§15.4 步骤 2）
+- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁。2026-10-27 修订：两个绑定 workspace 没有 `[profile.release]`，发布的是 Cargo 默认 release（opt-level 3、无 LTO、不 strip），实测 39 MB；加 size profile（`panic` 保持 `unwind`）后：`opt-level = "z"` 15.5 MB，但大响应慢 28–35%；选定 `"s"`，发布命令的产物为 Node 17,355,696 B、Python 16,775,472 B（a23a636，§15.8），性能与现状无可测差别。before/after 与 bench 见 §15.8，PR 是 B-profile PR（§15.4 步骤 2）
 
 ### 5.2 防止“瘦了但不能用”
 
@@ -179,7 +179,7 @@ lto = false
 
 ### 5.3 S1b / S1c：档案后处理（2026-10-27 补）
 
-S1a（profile 切换，#375）之后 Linux `.a` 是 95,003,454 B，仍高于 §4.1 的 70,000,000。进 C 要靠对发布档案的后处理，分两步，每步都以「链接 smoke 通过、14 个导出符号齐全、链接后代码字节不变」为验收，数据见 §15.7：
+S1a（profile 切换，#375）之后 Linux `.a` 是 95,078,500 B（CI shipped；本地 95,003,454），仍高于 §4.1 的 70,000,000。进 C 要靠对发布档案的后处理，分两步，每步都以「链接 smoke 通过、14 个导出符号齐全、链接后代码字节不变」为验收，数据见 §15.7：
 
 - **S1b，去 sysroot bitcode。** `llvm-objcopy --remove-section=.llvmbc --remove-section=.llvmcmd`（Mach-O 为 `__LLVM,__bitcode` 与 `__LLVM,__cmdline`）。Linux 实测 95.0 → 84.9 MB，GNU ld 链接正常。安全，放进 S1，随 #375 之后的一个小 PR。
 - **S1c，合并目标文件再去局部符号。** 以 14 个导出函数为根 `ld -r --gc-sections -u <符号>…` 把全部成员合并成一个目标文件，再 `strip --strip-unneeded`。Linux 实测 84.9 → 71.1 → 58.7 MB，链接后可执行文件与原档案相同。这一步每个平台的工具不同（GNU binutils、Apple `ld -r` 与 `strip -x`、mingw），必须逐平台做链接 smoke，且检查器要能读扩展段编号的 ELF（#375 已加）。放进 S1，但在 S1b 之后单独 PR，哪个平台没过就哪个平台不上。
@@ -497,7 +497,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 
 ## 15. 2026-10-26 实测与修订
 
-本节的数字来自三个来源，每个数字都标明来源：§15.1 到 §15.3 的 Linux x86_64 数字在 `master@4ae85b40409e55c54264f091e0d36f12349703fc`，rustc 1.99.1（CI 当前版本），每个配置用独立 target 目录全新构建；§15.5 的发布包数字是 pub.dev 上 v0.5.0 的实际文件；标 c35acb2 的数字来自 #375 在该 master 上的本地构建与 CI。§2 到 §14 的「现行」仍指 72a37b5。S2 登记基线时在一个 commit 上全部重测，本节不替代登记。MB 为 1,000,000 字节；「shipped」是 release.yml 直接拷贝上传的文件，「measured」是为分析另外处理过的文件，不发布。iOS 两片的数字已由 #375 的 CI 打印（§15.1）；Android、macOS、Windows 的由 release.yml 首次运行补入。
+本节的数字来自四个来源，每个数字都标明来源：§15.1 到 §15.3 的 Linux x86_64 数字在 `master@4ae85b40409e55c54264f091e0d36f12349703fc`，rustc 1.99.1（CI 当前版本），每个配置用独立 target 目录全新构建；§15.5 的发布包数字是 pub.dev 上 v0.5.0 的实际文件；标 c35acb2 的数字来自 #375 在该 master 上的本地构建与 CI；标 a23a636 的数字来自 #376 在该 master 上的本地构建（§15.8）。同一张表里只比较同一来源的数字，跨来源的只用来说明量级。§2 到 §14 的「现行」仍指 72a37b5。S2 登记基线时在一个 commit 上全部重测，本节不替代登记。MB 为 1,000,000 字节；「shipped」是 release.yml 直接拷贝上传的文件，「measured」是为分析另外处理过的文件，不发布。iOS 两片的数字已由 #375 的 CI 打印（§15.1）；Android、macOS、Windows 的由 release.yml 首次运行补入。
 
 ### 15.1 现状
 
@@ -506,7 +506,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | `libaimux_ffi.so` | 根 `release`（fat LTO、opt z、strip、abort） | 15,170,720 | 5,335,367 |
 | `libaimux_ffi.a` | 同上，shipped（release.yml 直接拷贝） | 194,207,810 | — |
 | `libaimux_ffi.a` | 同上，measured：`strip -S -x` 后，不发布 | 191,125,954 | — |
-| `libaimux_ffi.a` | `lto = false`（即 §5.1 的 staticlib-release），shipped；c35acb2 上为 95,003,454 | 91,856,882 | — |
+| `libaimux_ffi.a` | `lto = false`（即 §5.1 的 staticlib-release），本地 4ae85b4，raw（未 strip）；shipped 的同类数字见下面 c35acb2 两行 | 91,856,882 | — |
 | 链接进一个调用全部 14 个导出函数的 C 程序后 | 两种 `.a` | 15,136,768 / 15,132,672 | — |
 | Node `.node`（linux-x64-gnu） | Cargo 默认 release（opt 3、无 LTO、不 strip、unwind） | 39,449,048 | 12,526,469 |
 | Node `.node` | 根 `release` 同样的 profile，`unwind` | 15,524,256 | 6,584,671 |
@@ -516,7 +516,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | 同一片，`strip -Sx` 后（xcframework 里的二进制） | 585 个成员，`__text` 8,066,824，sysroot bitcode 9,664,823 | 54,063,640 | — |
 | iOS `aarch64-apple-ios-sim` | 同上 | 65,073,904 → 54,024,416 | — |
 | `libaimux_ffi.a` macOS `aarch64-apple-darwin`（#375 的 CI ffi-build，c35acb2） | `staticlib-release`，shipped；585 个成员，`__text` 8,053,392，sysroot bitcode 9,809,927 | 65,448,272 | — |
-| `libaimux_ffi.a` Linux `x86_64-unknown-linux-gnu`（同一 CI 运行） | `staticlib-release`，shipped；本地同一 commit 为 95,003,454 | 95,078,500 | — |
+| `libaimux_ffi.a` Linux `x86_64-unknown-linux-gnu`（同一 CI 运行） | `staticlib-release`，**shipped**（release.yml 上传的就是这个文件）；同一 commit 的本地构建为 95,003,454，差 74,046 B 来自 runner 与本地的 rustc 构建环境，§4.1、§5.3、§15.7 以本地数字为起点做后处理实验，S2 登记以 CI 数字为准 | 95,078,500 | — |
 
 结论：
 
@@ -529,7 +529,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | 产物 | abort | unwind | 增量 |
 |---|---:|---:|---:|
 | `libaimux_ffi.so`（fat LTO） | 15,170,720 | 18,653,800 | +3,483,080（+23.0%） |
-| `libaimux_ffi.a`（`lto = false`，strip 后） | 91,856,882 | 106,116,332 | +15.5% |
+| `libaimux_ffi.a`（`lto = false`，raw，本地 4ae85b4，与 §15.1 同一文件） | 91,856,882 | 106,116,332 | +15.5% |
 | 链接后的 C 程序 | 15,136,768 | 18,479,104 | +22.1% |
 | Node `.node`（size profile） | 12,571,152（对照，不可发布） | 15,524,256 | +23.5% |
 | Python 扩展（size profile） | 12,470,016（对照，不可发布） | 15,398,984 | +23.5% |
@@ -583,7 +583,7 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 
 ### 15.4 方案顺序
 
-S1 与 B-profile 只改 profile、构建脚本和 CI，不碰 crate 代码；panic 一步会改 aimux-ffi 的入口（统一接 panic 的宏与专用错误码）。三者与 RFC-0044 / RFC-0046 的 C 系列没有文件重叠。
+S1 与 B-profile 只改 profile、构建脚本和 CI，不碰 crate 代码；panic 一步会改 aimux-ffi 的入口（统一接 panic 的宏与专用错误码）。与 RFC-0044 / RFC-0046 C 系列的文件重叠：C0 和 S1 都改 release.yml（S1 的改动已在 #375，先合入的一方由另一方合并 master 解决）；C7 与 panic 一步都改 aimux-ffi 和它的 Cargo.toml，所以 panic 一步排在 C7 之后，或在 C7 的分支上做；B-profile 只碰两个绑定目录，无重叠。
 
 1. **S1a**（§5.1，#375）：`ios-release` 改名 `staticlib-release`，Go 与桌面 `.a` 改用它；CI 对每个产物打印字节数，补齐 iOS、Android、macOS 的 abort/unwind 与 outliner 数据。**S1b、S1c**（§5.3）：发布档案去 sysroot bitcode，再合并目标文件加 strip，各桌面 `.a` 进 70 MB。
 2. **B-profile**：Node、Python 绑定加 size profile，`unwind` 不变，热点 crate 按包保留 `opt-level = 3`；maturin 压缩级别 9；PR 附绑定 bench 对比。
@@ -623,7 +623,7 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 
 ### 15.7 档案后处理实测（2026-10-27，master c35acb2，Linux x86_64）
 
-起点是 #375 的 shipped 档案 95,003,454 B。每一步都用一个调用 `aimux_manifest_json` 的 C 程序链接并运行，`nm` 核对 14 个 `aimux_*` 导出符号。
+起点是 #375 分支在本地构建的 `staticlib-release` 档案 95,003,454 B（同一 commit 的 CI shipped 档案是 95,078,500 B，§15.1）。每一步都用一个调用 `aimux_manifest_json` 的 C 程序链接并运行，`nm` 核对 14 个 `aimux_*` 导出符号。
 
 | 步骤 | 工具 | 字节 | 链接 |
 |---|---|---:|---|
@@ -646,12 +646,14 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 |---|---|---:|---:|
 | `aimux.node`（`npx napi build --platform --release` 的产物，a23a636） | 现状：Cargo 默认 release（opt 3，无 LTO，不 strip） | 39,945,776 | 12,572,373 |
 | | **选定：`"s"` + fat LTO + cgu 1 + strip** | **17,355,696** | **7,276,291** |
-| `aimux.node`（`cargo build --release` 对照，c35acb2；napi 产物比它大约 440 KB） | 现状 | 39,148,376 | 12,434,256 |
+| `aimux.node`（`cargo build --release` 对照，同一 a23a636；napi 产物比它大 465,832 B） | 现状 | 39,479,944 | — |
+| `aimux.node`（`cargo build --release` 对照系列，c35acb2，只用于 profile 之间的相对比较） | 现状 | 39,148,376 | 12,434,256 |
 | | `"s"` + fat LTO + cgu 1 + strip | 16,913,144 | 7,246,332 |
 | | `"z"`，其余同 | 15,530,896 | 6,581,741 |
 | | `3` + fat LTO + cgu 1 + strip | 23,479,480 | 9,850,717 |
-| Python `aimux.so` | 现状：Cargo 默认 release | 38,703,752 | 12,367,264 |
-| | **选定：`"s"` + fat LTO + cgu 1 + strip**（a23a636 分支构建 16,775,472 / 7,197,549） | **16,777,456** | **7,198,405** |
+| Python `aimux.so`（a23a636，`cargo build --release`，wheel 里就是这个文件） | **选定：`"s"` + fat LTO + cgu 1 + strip** | **16,775,472** | **7,197,549** |
+| Python `aimux.so`（c35acb2 对照系列，只用于 profile 之间的相对比较） | 现状：Cargo 默认 release | 38,703,752 | 12,367,264 |
+| | `"s"` + fat LTO + cgu 1 + strip | 16,777,456 | 7,198,405 |
 | | `"z"`，其余同 | 15,401,528 | 6,539,976 |
 | | `3` + fat LTO + cgu 1 + strip | 23,314,856 | 9,796,333 |
 | | `"z"` + 三个热点包 `opt-level = 3`（§12 B-profile 行的「按包覆盖」） | 22,827,032 | — |
