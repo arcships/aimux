@@ -1218,6 +1218,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- `aimux_providers::vertex` follows the upstream `@ai-sdk/google-vertex` file
+  layout (RFC-0046). The sub-module `vertex::image` is no longer public; use
+  `VertexImageModel`, re-exported at `aimux_providers::vertex`, instead of
+  `vertex::image::VertexImageModel`. Exports at the crate root and the
+  `vertex` module root are unchanged.
+
 - `aimux_providers::bedrock` follows the upstream `@ai-sdk/amazon-bedrock`
   file layout (RFC-0046). The sub-modules `bedrock::convert`,
   `bedrock::embedding` and `bedrock::image` are no longer public, and
