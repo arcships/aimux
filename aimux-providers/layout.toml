@@ -1519,7 +1519,7 @@ package = "@ai-sdk/anthropic-aws"
 
 [[anthropic_aws.files]]
 upstream = "src/anthropic-aws-fetch.ts"
-rust = "anthropic_aws/model.rs"
+rust = "anthropic_aws/fetch.rs"
 status = "mapped"
 
 [anthropic_aws.files.tests]
@@ -1533,7 +1533,7 @@ ts-only = [
 
 [[anthropic_aws.files]]
 upstream = "src/anthropic-aws-provider.ts"
-rust = "anthropic_aws/mod.rs"
+rust = "anthropic_aws/provider.rs"
 status = "mapped"
 
 [anthropic_aws.files.tests]
