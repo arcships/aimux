@@ -13,11 +13,12 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use super::options::{google_metadata, no_null};
+use super::transcription_model_options::{TranscriptionOptions, parse_offset_seconds};
+#[cfg(feature = "realtime")]
+use crate::google::get_realtime_base_url::live_web_socket_url;
+use crate::google::options::google_metadata;
 use crate::shared::EndpointConfig;
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::JsonObject;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionResponse,
     TranscriptionResult, TranscriptionSegment, TranscriptionStreamOptions,
@@ -26,113 +27,6 @@ use aimux_core::transcription_model::{
 
 const LIVE_WEB_SOCKET_PATH: &str =
     "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
-
-// ── Provider options (`google-transcription-model-options.ts`) ──────────────
-
-#[derive(Deserialize)]
-enum Mode {
-    #[serde(rename = "SMART")]
-    Smart,
-    #[serde(rename = "VERBATIM")]
-    Verbatim,
-}
-
-impl Mode {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Smart => "SMART",
-            Self::Verbatim => "VERBATIM",
-        }
-    }
-}
-
-/// Speech recognition options shared by unary and live transcription.
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct TranscriptionOptions {
-    #[serde(default, deserialize_with = "no_null")]
-    language_codes: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "no_null")]
-    custom_vocabulary: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "no_null")]
-    word_timestamp: Option<bool>,
-    #[serde(default, deserialize_with = "no_null")]
-    diarization: Option<bool>,
-    #[serde(default, deserialize_with = "no_null")]
-    mode: Option<Mode>,
-}
-
-impl TranscriptionOptions {
-    pub(crate) fn parse(raw: Option<&JsonObject>) -> Result<Self, AiMuxError> {
-        match raw {
-            None => Ok(Self::default()),
-            Some(raw) => serde_json::from_value(Value::Object(raw.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument {
-                    message: format!("Invalid argument for parameter providerOptions: {error}"),
-                    cause: Some(ErrorCause::source(&error)),
-                }
-            }),
-        }
-    }
-
-    /// Google's `AudioTranscriptionConfig` (the live setup).
-    pub(crate) fn audio_transcription_config(&self) -> Value {
-        let mut config = json!({});
-        if let Some(value) = &self.language_codes {
-            config["languageCodes"] = json!(value);
-        }
-        if let Some(value) = &self.custom_vocabulary {
-            config["customVocabulary"] = json!(value);
-        }
-        if let Some(value) = self.word_timestamp {
-            config["wordTimestamp"] = json!(value);
-        }
-        if let Some(value) = self.diarization {
-            config["diarization"] = json!(value);
-        }
-        if let Some(value) = &self.mode {
-            config["mode"] = json!(value.name());
-        }
-        config
-    }
-
-    /// The Interactions API `transcription_config` (snake_case wire).
-    /// Diarization and word timestamps are expressed inside the `mode` object.
-    fn interactions_config(&self) -> Option<Value> {
-        let mut config = Map::new();
-        if let Some(value) = &self.language_codes {
-            config.insert("language_codes".into(), json!(value));
-        }
-        if let Some(value) = &self.custom_vocabulary {
-            config.insert("custom_vocabulary".into(), json!(value));
-        }
-        let diarization = self.diarization == Some(true);
-        let word_timestamp = self.word_timestamp == Some(true);
-        if self.mode.is_some() || diarization || word_timestamp {
-            let mode = self.mode.as_ref().map_or("VERBATIM", Mode::name);
-            let mut mode = json!({"type": mode.to_lowercase()});
-            if diarization {
-                mode["diarization_mode"] = json!("speaker");
-            }
-            if word_timestamp {
-                mode["timestamp_granularities"] = json!(["word"]);
-            }
-            config.insert("mode".into(), mode);
-        }
-        (!config.is_empty()).then_some(Value::Object(config))
-    }
-}
-
-/// Parses a Google duration offset such as `"1s"` or `"9.400s"` to seconds,
-/// like `Number.parseFloat`: the longest numeric prefix counts.
-pub(crate) fn parse_offset_seconds(offset: Option<&str>) -> Option<f64> {
-    let value = offset?.trim_start();
-    (1..=value.len())
-        .rev()
-        .filter(|end| value.is_char_boundary(*end))
-        .find_map(|end| value[..end].parse::<f64>().ok())
-        .filter(|value| value.is_finite())
-}
 
 // ── Interactions API response ───────────────────────────────────────────────
 
@@ -218,7 +112,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
             )));
         }
         let timestamp = aimux_core::Timestamp::now();
-        let parsed = TranscriptionOptions::parse(super::options::google_options(
+        let parsed = TranscriptionOptions::parse(crate::google::options::google_options(
             options.provider_options.as_ref(),
         ))?;
         let audio = match &options.audio {
@@ -243,7 +137,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
             exchange.request(exchange.url("/interactions"), options),
             exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler::<InteractionsResponse>(),
-            super::google_failed_response_handler(),
+            crate::google::google_failed_response_handler(),
         )
         .await?;
 
@@ -334,7 +228,7 @@ impl GoogleTranscriptionModel {
         use aimux_core::transcription_model::TranscriptionRequest;
         use aimux_provider_utils::ws::{WebSocketRequest, ws_connect};
 
-        let parsed = TranscriptionOptions::parse(super::options::google_options(
+        let parsed = TranscriptionOptions::parse(crate::google::options::google_options(
             options.provider_options.as_ref(),
         ))?;
         validate_live_input_audio_format(&options)?;
@@ -393,26 +287,6 @@ impl GoogleTranscriptionModel {
             }),
         })
     }
-}
-
-/// `getRealtimeWebSocketURL`: the Live API paths carry their own version, so a
-/// trailing `/v1beta` or `/v1alpha` of the base URL is dropped.
-#[cfg(feature = "realtime")]
-fn live_web_socket_url(base_url: &str, path: &str) -> Result<url::Url, AiMuxError> {
-    let mut url = url::Url::parse(base_url).map_err(|error| AiMuxError::InvalidArgument {
-        message: format!("invalid base URL: {error}"),
-        cause: Some(ErrorCause::source(&error)),
-    })?;
-    let mut segments: Vec<&str> = url.path().split('/').collect();
-    if matches!(segments.last(), Some(&("v1beta" | "v1alpha"))) {
-        segments.pop();
-    }
-    let base_path = segments.join("/");
-    let scheme = if url.scheme() == "https" { "wss" } else { "ws" };
-    url.set_path(&format!("{}/ws/{path}", base_path.trim_end_matches('/')));
-    url.set_scheme(scheme)
-        .map_err(|()| AiMuxError::invalid_argument("invalid base URL scheme"))?;
-    Ok(url)
 }
 
 #[cfg(feature = "realtime")]

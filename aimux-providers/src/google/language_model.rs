@@ -1,39 +1,44 @@
-//! Google Gemini language model — implements `LanguageModel`.
+//! `google-language-model.ts`: the Gemini language model, its request body
+//! (`getArgs`) and the response parsing, used by both the Gemini API and
+//! Vertex AI providers.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
-use aimux_core::tool::RawToolCall;
-use aimux_core::tool::ToolResult;
 use async_trait::async_trait;
 use futures::StreamExt;
-use serde_json::{Value, json};
-use std::borrow::Cow;
+use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
-use aimux_core::language_model::LanguageModel;
-use aimux_core::options::CallOptions;
+use aimux_core::language_model::{LanguageModel, SupportedUrls};
+use aimux_core::language_model_message::{
+    AssistantPart, FilePart, LanguageModelMessage, ToolPart, ToolResultContent, ToolResultOutput,
+    UserPart,
+};
+use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{
     GenerateContent, GenerateResult, LanguageModelFile, ReasoningOutput, Source, StreamResult,
 };
-use aimux_core::shared::{FileBytes, GeneratedFileData};
+use aimux_core::shared::{FileBytes, FileData, GeneratedFileData};
 use aimux_core::stream_part::StreamPart;
+use aimux_core::tool::{RawToolCall, Tool, ToolResult};
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, ProviderMetadata, ResponseMetadata, Usage, Warning,
 };
 use aimux_provider_utils::{Transformer, pipe_through};
 
-use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
-
-use aimux_core::language_model::SupportedUrls;
-
-use super::convert::{
-    build_request_body_with_warnings_for_namespace, code_execution_tool_name, convert_usage,
-    extract_sources, parse_finish_reason, validate_call_options_for_namespace,
-};
-use super::options::Namespace;
-use super::types::{Candidate, GenerateContentResponse, GoogleStreamEvent, StreamChunk};
-use super::utils::{GoogleJsonAccumulator, PartialArg};
+use super::api_types::{Candidate, GenerateContentResponse, GoogleStreamEvent, StreamChunk};
+use super::convert_to_messages::convert_to_google_messages_for_namespace;
+use super::convert_usage::convert_usage;
+use super::json_accumulator::{GoogleJsonAccumulator, PartialArg};
+use super::map_finish_reason::parse_finish_reason;
+use super::model_capabilities::{get_google_model_capabilities, matches_prefix_boundary};
+use super::options::{GOOGLE, Namespace};
+use super::prepare_tools::prepare_all_tools;
+use super::prompt::GooglePrompt;
+use super::sanitize_response_json_schema::sanitize_response_json_schema;
 use crate::shared::EndpointConfig;
+use crate::stream::{Controller, Emit, FINISH_ERROR, FINISH_OTHER, StreamContext};
 
 /// A Google Gemini language model (the AI SDK's `GoogleLanguageModel`), used
 /// by both the Gemini API and Vertex AI providers.
@@ -781,7 +786,7 @@ impl Transformer for GoogleLanguageModelStream {
             Ok(GoogleStreamEvent::Chunk(chunk)) => self.transform_chunk(chunk, controller),
             Ok(GoogleStreamEvent::Error(error)) => {
                 controller.enqueue(StreamPart::Error {
-                    error: super::google_stream_error(
+                    error: super::error::google_stream_error(
                         &error.error,
                         &self.ctx.url,
                         self.ctx.request_body.clone(),
@@ -1165,4 +1170,685 @@ fn confirmed_prompt_block_reason(feedback: Option<&Value>) -> Option<String> {
                 && *reason != "BLOCKED_REASON_UNSPECIFIED"
         })
         .map(str::to_owned)
+}
+
+// ── getArgs (request body) ───────────────────────────────────────────────────
+
+/// Build a Vertex Gemini request body using Vertex's provider-metadata
+/// namespaces when replaying response parts.
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub(crate) fn build_vertex_request_body(
+    model_id: &str,
+    options: &CallOptions,
+) -> Result<Value, AiMuxError> {
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex)
+        .map(|(body, _)| body)
+}
+
+/// Build the Gemini `generateContent` request body from `CallOptions` **and**
+/// collect the tool warnings (e.g. unsupported provider-defined tools, mixed
+/// function+provider tools on pre-Gemini-3 models).
+///
+/// Mirrors `getArgs` in `google-language-model.ts`: the sampling settings, the
+/// response format, and the provider options the SDK maps (`thinkingConfig`,
+/// `responseModalities`, `audioTimestamp`, `mediaResolution`, `imageConfig`
+/// into `generationConfig`; `safetySettings`, `cachedContent`, `labels`,
+/// `serviceTier` and `retrievalConfig` next to it).
+///
+/// # Errors
+/// Returns an error when `structuredOutputs` is not a boolean.
+pub fn build_request_body_with_warnings(
+    model_id: &str,
+    options: &CallOptions,
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
+}
+
+pub(crate) fn build_request_body_with_warnings_for_namespace(
+    model_id: &str,
+    options: &CallOptions,
+    namespace: Namespace,
+) -> Result<(Value, Vec<Warning>), AiMuxError> {
+    let provider_options = options.provider_options.as_ref().and_then(|options| {
+        namespace
+            .read_keys()
+            .iter()
+            .find_map(|name| options.get(*name).map(|value| (*name, value)))
+    });
+    let structured_outputs =
+        match provider_options.and_then(|(_, options)| options.get("structuredOutputs")) {
+            None => true,
+            Some(Value::Bool(value)) => *value,
+            Some(_) => {
+                return Err(AiMuxError::invalid_argument(format!(
+                    "invalid {} provider options",
+                    provider_options.unwrap().0
+                )));
+            }
+        };
+    let GooglePrompt {
+        mut system_instruction,
+        mut contents,
+    } = convert_to_google_messages_for_namespace(
+        &options.prompt,
+        namespace,
+        get_google_model_capabilities(model_id).uses_gemini_3_features,
+    );
+    let mut warnings = Vec::new();
+    let provider_options = namespace.read_in(options.provider_options.as_ref());
+    let option = |name: &str| {
+        provider_options
+            .and_then(|o| o.get(name))
+            .filter(|v| !v.is_null())
+    };
+    let is_vertex = namespace == Namespace::Vertex;
+    if !is_vertex
+        && options.tools.as_ref().is_some_and(|tools| {
+            tools.iter().any(
+                |tool| matches!(tool, Tool::Provider(tool) if tool.id == "google.vertex_rag_store"),
+            )
+        })
+    {
+        warnings.push(Warning::Other { message: "The 'vertex_rag_store' tool is only supported with the Google Vertex provider and might not be supported or could behave unexpectedly with the current Google provider (google.generative-ai).".into() });
+    }
+
+    if !is_vertex && option("streamFunctionCallArguments") == Some(&Value::Bool(true)) {
+        warnings.push(Warning::Other { message: "'streamFunctionCallArguments' is only supported on the Vertex AI API and will be ignored with the current Google provider (google.generative-ai). See https://docs.cloud.google.com/vertex-ai/generative-ai/docs/multimodal/function-calling#streaming-fc".into() });
+    }
+    if is_vertex && option("serviceTier").is_some() {
+        warnings.push(Warning::Other { message: "'serviceTier' is a Gemini API option and is not supported on Vertex AI. Use 'sharedRequestType' (and optionally 'requestType') instead. See https://docs.cloud.google.com/vertex-ai/generative-ai/docs/priority-paygo".into() });
+    }
+    if !is_vertex && (option("sharedRequestType").is_some() || option("requestType").is_some()) {
+        warnings.push(Warning::Other { message: "'sharedRequestType' and 'requestType' are Vertex AI options and are ignored with the current Google provider (google.generative-ai).".into() });
+    }
+    let option_warning_count = warnings.len();
+    let mut prompt_warnings = Vec::new();
+    let mut thinking_warnings = Vec::new();
+    let omit_penalties =
+        !is_vertex && matches_prefix_boundary(&model_id.to_lowercase(), "gemini-2.5");
+    if model_id.to_lowercase().starts_with("gemma-")
+        && let Some(system) = system_instruction.take()
+        && let Some(first) = contents.first_mut()
+        && first["role"] == "user"
+        && let Some(parts) = first["parts"].as_array_mut()
+    {
+        let texts = system["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|part| part["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        parts.insert(0, json!({ "text": format!("{texts}\n\n") }));
+    }
+    if get_google_model_capabilities(model_id).uses_gemini_3_features {
+        let mut missing = Vec::new();
+        for content in &mut contents {
+            if content["role"] != "model" {
+                continue;
+            }
+            let mut has_signed_call = false;
+            for part in content["parts"].as_array_mut().unwrap() {
+                let standard = part.get("functionCall").is_some();
+                let server = part.get("toolCall").is_some();
+                if !standard && !server {
+                    continue;
+                }
+                if part.get("thoughtSignature").is_some() {
+                    if standard {
+                        has_signed_call = true;
+                    }
+                } else if server || !has_signed_call {
+                    part["thoughtSignature"] = json!("skip_thought_signature_validator");
+                    missing.push(
+                        part.get("functionCall")
+                            .or_else(|| part.get("toolCall"))
+                            .unwrap()
+                            .get("name")
+                            .or_else(|| part["toolCall"].get("toolType"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                    );
+                }
+            }
+        }
+        if !missing.is_empty() {
+            let mut names = Vec::new();
+            for name in &missing {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+            prompt_warnings.push(Warning::Other { message: format!(
+                "Replayed {} `functionCall` part(s) for a Gemini 3 model without a `thoughtSignature` (tools: {}). Injected the documented `skip_thought_signature_validator` sentinel to keep the request from failing with HTTP 400. The likely cause is application code that drops `providerOptions.google.thoughtSignature` when persisting or serializing assistant tool-call messages. See https://ai.google.dev/gemini-api/docs/thought-signatures.",
+                missing.len(), names.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")) });
+        }
+    }
+
+    let mut generation_config = Map::new();
+
+    if let Some(max_tokens) = options.max_output_tokens {
+        generation_config.insert("maxOutputTokens".to_string(), json!(max_tokens));
+    }
+    if let Some(temp) = options.temperature {
+        generation_config.insert("temperature".to_string(), json!(temp));
+    }
+    if let Some(top_p) = options.top_p {
+        generation_config.insert("topP".to_string(), json!(top_p));
+    }
+    if let Some(top_k) = options.top_k {
+        generation_config.insert("topK".to_string(), json!(top_k));
+    }
+    for (name, value) in [
+        ("frequencyPenalty", options.frequency_penalty),
+        ("presencePenalty", options.presence_penalty),
+    ] {
+        if let Some(value) = value {
+            if omit_penalties {
+                warnings.push(Warning::Unsupported {
+                    feature: name.into(),
+                    details: None,
+                });
+            } else {
+                generation_config.insert(name.into(), json!(value));
+            }
+        }
+    }
+    if let Some(stop) = &options.stop_sequences {
+        generation_config.insert("stopSequences".to_string(), json!(stop));
+    }
+    if let Some(seed) = options.seed {
+        generation_config.insert("seed".to_string(), json!(seed));
+    }
+
+    // JSON output uses responseMimeType and the sanitized responseJsonSchema.
+    if let Some(rf) = &options.response_format
+        && let ResponseFormat::Json { schema, .. } = rf
+    {
+        generation_config.insert("responseMimeType".to_string(), json!("application/json"));
+        if let Some(schema) = schema
+            && structured_outputs
+        {
+            generation_config.insert(
+                "responseJsonSchema".into(),
+                sanitize_response_json_schema(schema),
+            );
+        }
+    }
+
+    // Provider options (`providerOptions.google`, or `googleVertex` for
+    // Vertex): the generation-config members, then the top-level ones.
+    for name in ["responseModalities", "audioTimestamp", "mediaResolution"] {
+        if let Some(value) = option(name)
+            && (name != "audioTimestamp" || value == &Value::Bool(true))
+        {
+            generation_config.insert(name.into(), value.clone());
+        }
+    }
+    let mut thinking = resolve_thinking(options.reasoning, model_id, &mut thinking_warnings);
+    if let Some(explicit) = option("thinkingConfig").and_then(Value::as_object) {
+        thinking
+            .get_or_insert_with(Map::new)
+            .extend(explicit.clone());
+    }
+    if let Some(thinking) = thinking {
+        generation_config.insert("thinkingConfig".into(), Value::Object(thinking));
+    }
+    if let Some(image) = option("imageConfig") {
+        let mut image = image.clone();
+        if !is_vertex && let Some(config) = image.as_object_mut() {
+            let mut dropped = Vec::new();
+            for name in ["personGeneration", "prominentPeople", "imageOutputOptions"] {
+                if config.remove(name).is_some() {
+                    dropped.push(format!("'imageConfig.{name}'"));
+                }
+            }
+            if !dropped.is_empty() {
+                warnings.insert(option_warning_count, Warning::Other {
+                    message: format!(
+                        "{} {} ignored with the current Google provider (google.generative-ai).",
+                        dropped.join(", "),
+                        if dropped.len() == 1 {
+                            "is a Vertex AI option and is"
+                        } else {
+                            "are Vertex AI options and are"
+                        }
+                    ),
+                });
+            }
+        }
+        generation_config.insert("imageConfig".into(), image);
+    }
+    for (name, keys) in [
+        (
+            "thinkingConfig",
+            &["thinkingBudget", "includeThoughts", "thinkingLevel"][..],
+        ),
+        (
+            "imageConfig",
+            &[
+                "aspectRatio",
+                "imageSize",
+                "personGeneration",
+                "prominentPeople",
+                "imageOutputOptions",
+            ][..],
+        ),
+    ] {
+        if let Some(Value::Object(config)) = generation_config.get_mut(name) {
+            config.retain(|key, _| keys.contains(&key.as_str()));
+            if let Some(Value::Object(output)) = config.get_mut("imageOutputOptions") {
+                output.retain(|key, _| ["mimeType", "compressionQuality"].contains(&key.as_str()));
+            }
+        }
+    }
+    let mut body = Map::new();
+    body.insert("contents".to_string(), Value::Array(contents));
+    if let Some(sys) = system_instruction {
+        body.insert("systemInstruction".to_string(), sys);
+    }
+    // Always present, even when empty (`generationConfig: {}`), like the SDK.
+    body.insert(
+        "generationConfig".to_string(),
+        Value::Object(generation_config),
+    );
+    for name in ["safetySettings", "cachedContent", "labels", "serviceTier"] {
+        if let Some(value) = option(name)
+            && !(is_vertex && name == "serviceTier")
+        {
+            body.insert(name.to_string(), value.clone());
+        }
+    }
+    if option("safetySettings").is_none()
+        && let Some(threshold) = option("threshold")
+    {
+        body.insert(
+            "safetySettings".into(),
+            json!(
+                [
+                    "HARM_CATEGORY_HATE_SPEECH",
+                    "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "HARM_CATEGORY_HARASSMENT",
+                    "HARM_CATEGORY_SEXUALLY_EXPLICIT"
+                ]
+                .map(|category| json!({ "category": category, "threshold": threshold }))
+            ),
+        );
+    }
+    if let Some(Value::Array(settings)) = body.get_mut("safetySettings") {
+        for setting in settings {
+            if let Some(setting) = setting.as_object_mut() {
+                setting.retain(|key, _| ["category", "threshold"].contains(&key.as_str()));
+            }
+        }
+    }
+
+    let prepared = prepare_all_tools(&options.tools, options.tool_choice.as_ref(), model_id);
+    if let Some(tools) = prepared.tools {
+        body.insert("tools".to_string(), Value::Array(tools));
+    }
+    let mut tool_config = prepared.tool_config;
+    if is_vertex && let Some(Value::Object(config)) = tool_config.as_mut() {
+        config.remove("includeServerSideToolInvocations");
+    }
+    if let Some(retrieval) = option("retrievalConfig") {
+        let mut config = match tool_config.take() {
+            Some(Value::Object(config)) => config,
+            _ => Map::new(),
+        };
+        let mut retrieval = retrieval.clone();
+        if let Some(retrieval) = retrieval.as_object_mut() {
+            retrieval.retain(|key, _| key == "latLng");
+            if let Some(Value::Object(coordinates)) = retrieval.get_mut("latLng") {
+                coordinates.retain(|key, _| ["latitude", "longitude"].contains(&key.as_str()));
+            }
+        }
+        config.insert("retrievalConfig".to_string(), retrieval);
+        tool_config = Some(Value::Object(config));
+    }
+    if let Some(tc) = tool_config {
+        body.insert("toolConfig".to_string(), tc);
+    }
+
+    // Model id is *not* part of the body for Gemini — it's in the URL path
+    // (`models/{model}:generateContent`). We don't emit it here, matching
+    // the TS SDK. (Some callers include it; the API ignores extra fields.)
+    let _ = model_id;
+
+    warnings.extend(prompt_warnings);
+    warnings.extend(thinking_warnings);
+    warnings.extend(prepared.warnings);
+    Ok((Value::Object(body), warnings))
+}
+
+/// Validate prompt constraints and provider options before sending a request.
+pub(crate) fn validate_call_options(
+    options: &CallOptions,
+) -> Result<(), aimux_core::error::AiMuxError> {
+    validate_call_options_for_namespace(options, Namespace::Google)
+}
+
+pub(crate) fn validate_call_options_for_namespace(
+    options: &CallOptions,
+    namespace: Namespace,
+) -> Result<(), aimux_core::error::AiMuxError> {
+    use aimux_core::error::AiMuxError;
+    let mut initial = true;
+    for message in &options.prompt {
+        if matches!(message, LanguageModelMessage::System { .. }) {
+            if !initial {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "system messages are only supported at the beginning of the conversation"
+                        .into(),
+                ));
+            }
+        } else {
+            initial = false;
+        }
+        match message {
+            LanguageModelMessage::User { content, .. } => {
+                for part in content {
+                    if let UserPart::File(file) = part {
+                        if namespace == Namespace::Vertex
+                            && matches!(file.data, FileData::Reference { .. })
+                        {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "file parts with provider references".into(),
+                            ));
+                        }
+                        validate_file_part(file, false)?;
+                    }
+                }
+            }
+            LanguageModelMessage::Assistant { content, .. } => {
+                for part in content {
+                    match part {
+                        AssistantPart::File(file) => {
+                            if namespace == Namespace::Vertex
+                                && matches!(file.data, FileData::Reference { .. })
+                            {
+                                return Err(AiMuxError::UnsupportedFunctionality(
+                                    "file parts with provider references".into(),
+                                ));
+                            }
+                            validate_file_part(file, true)?;
+                        }
+                        AssistantPart::ReasoningFile(file)
+                            if matches!(
+                                file.data,
+                                aimux_core::shared::GeneratedFileData::Url { .. }
+                            ) =>
+                        {
+                            return Err(AiMuxError::UnsupportedFunctionality(
+                                "File data URLs in assistant messages are not supported".into(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            LanguageModelMessage::Tool { content, .. } => {
+                for part in content {
+                    if let ToolPart::ToolResult(part) = part
+                        && let ToolResultOutput::Content { value } = &part.output
+                    {
+                        for part in value {
+                            if let ToolResultContent::File(file) = part
+                                && matches!(file.data, FileData::Data { .. })
+                            {
+                                aimux_provider_utils::resolve_full_media_type(file)?;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(values) = namespace.read_in(options.provider_options.as_ref()) else {
+        return Ok(());
+    };
+    super::language_model_options::validate_provider_options(values)
+}
+
+fn validate_file_part(
+    file: &FilePart,
+    assistant: bool,
+) -> Result<(), aimux_core::error::AiMuxError> {
+    use aimux_core::error::AiMuxError;
+    if !matches!(file.data, FileData::Text { .. }) {
+        aimux_provider_utils::resolve_full_media_type(file)?;
+    }
+    if assistant && matches!(file.data, FileData::Url { .. }) {
+        return Err(AiMuxError::UnsupportedFunctionality(
+            "File data URLs in assistant messages are not supported".into(),
+        ));
+    }
+    if let FileData::Reference { reference } = &file.data
+        && !reference.contains_key(GOOGLE)
+    {
+        return Err(AiMuxError::invalid_argument(format!(
+            "No provider reference found for provider 'google'. Available providers: {}",
+            reference.keys().cloned().collect::<Vec<_>>().join(", ")
+        )));
+    }
+    Ok(())
+}
+
+fn resolve_thinking(
+    reasoning: Option<aimux_core::types::ReasoningEffort>,
+    model_id: &str,
+    warnings: &mut Vec<Warning>,
+) -> Option<Map<String, Value>> {
+    use aimux_core::types::ReasoningEffort as R;
+    let reasoning = reasoning.filter(|effort| *effort != R::ProviderDefault)?;
+    let lower = model_id.to_lowercase();
+    if get_google_model_capabilities(model_id).uses_gemini_3_features
+        && !model_id.contains("gemini-3-pro-image")
+    {
+        let name = lower.rsplit('/').next().unwrap_or(&lower);
+        let minimum = if name == "gemini-flash-latest"
+            || name
+                .strip_prefix("gemini-")
+                .and_then(|s| s.split_once("-flash"))
+                .is_some_and(|(version, tail)| {
+                    let Some((major, minor)) = version.split_once('.') else {
+                        return false;
+                    };
+                    let major = major.parse::<u32>().unwrap_or(0);
+                    let minor = minor.parse::<u32>().unwrap_or(0);
+                    (tail.is_empty()
+                        || (tail.starts_with('-')
+                            && tail != "-lite"
+                            && !tail.starts_with("-lite-")))
+                        && (major > 3 || major == 3 && minor >= 7)
+                }) {
+            "low"
+        } else {
+            "minimal"
+        };
+        let level = match reasoning {
+            R::None | R::Minimal => minimum,
+            R::Low => "low",
+            R::Medium => "medium",
+            R::High | R::Xhigh => "high",
+            R::ProviderDefault => unreachable!(),
+        };
+        if reasoning != R::None && level != reasoning.to_string() {
+            warnings.push(Warning::Compatibility { feature: "reasoning".into(), details: Some(format!("reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"{level}\".")) });
+        }
+        return Some(Map::from_iter([("thinkingLevel".into(), json!(level))]));
+    }
+    let percentage = match reasoning {
+        R::None => 0.0,
+        R::Minimal => 0.02,
+        R::Low => 0.1,
+        R::Medium => 0.3,
+        R::High => 0.6,
+        R::Xhigh => 0.9,
+        R::ProviderDefault => unreachable!(),
+    };
+    let max = if lower.contains("2.5-pro") || lower.contains("gemini-3-pro-image") {
+        32768
+    } else {
+        24576
+    };
+    Some(Map::from_iter([(
+        "thinkingBudget".into(),
+        json!(((65536.0_f64 * percentage).round() as u32).min(max)),
+    )]))
+}
+
+/// Resolve the caller-facing name for Google's code execution provider tool.
+/// Gemini always uses `code_execution` on the response wire, while callers
+/// may rename the provider tool for a particular request.
+pub(crate) fn code_execution_tool_name(tools: Option<&[Tool]>) -> String {
+    tools
+        .unwrap_or_default()
+        .iter()
+        .find_map(|tool| match tool {
+            Tool::Provider(provider) if provider.id == "google.code_execution" => {
+                Some(provider.name.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| "code_execution".to_string())
+}
+
+// ── source extraction ────────────────────────────────────────────────────────
+
+/// Extract `GenerateContent::Source` items from `groundingMetadata.groundingChunks`,
+/// mirroring the TS `extractSources`.
+///
+/// - `web` → url source (`uri`, `title`)
+/// - `image` → url source (`sourceUri`, `title`)
+/// - `retrievedContext` with http(s) `uri` → url source
+/// - `retrievedContext` with non-http `uri` (e.g. `gs://`) → document source
+///   (title defaults to "Unknown Document"; `url` is `None`)
+/// - `retrievedContext` with `fileSearchStore` (no `uri`) → document source
+/// - `maps` → url source (`uri`, `title`)
+pub fn extract_sources(
+    grounding_metadata: Option<&Value>,
+    id_counter: &mut usize,
+) -> Vec<GenerateContent> {
+    let mut sources = Vec::new();
+    let Some(gm) = grounding_metadata else {
+        return sources;
+    };
+    let Some(chunks) = gm.get("groundingChunks").and_then(|c| c.as_array()) else {
+        return sources;
+    };
+
+    let next_id = |counter: &mut usize| -> String {
+        let id = format!("{counter}");
+        *counter += 1;
+        id
+    };
+
+    for chunk in chunks {
+        if let Some(web) = chunk.get("web").filter(|value| !value.is_null()) {
+            sources.push(GenerateContent::Source(Source::Url {
+                id: next_id(id_counter),
+                url: web
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                title: web
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string),
+                provider_metadata: None,
+            }));
+        } else if let Some(image) = chunk.get("image").filter(|value| !value.is_null()) {
+            sources.push(GenerateContent::Source(Source::Url {
+                id: next_id(id_counter),
+                url: image
+                    .get("sourceUri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                title: image
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string),
+                provider_metadata: None,
+            }));
+        } else if let Some(rc) = chunk
+            .get("retrievedContext")
+            .filter(|value| !value.is_null())
+        {
+            let uri = rc
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+            let file_search_store = rc
+                .get("fileSearchStore")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+            let title = rc.get("title").and_then(|v| v.as_str());
+            if let Some(uri) = uri {
+                if uri.starts_with("http://") || uri.starts_with("https://") {
+                    sources.push(GenerateContent::Source(Source::Url {
+                        id: next_id(id_counter),
+                        url: uri.to_string(),
+                        title: title.map(std::string::ToString::to_string),
+                        provider_metadata: None,
+                    }));
+                } else {
+                    // Document with a file path (gs://, etc.).
+                    let media_type = if uri.ends_with(".pdf") {
+                        "application/pdf"
+                    } else if uri.ends_with(".txt") {
+                        "text/plain"
+                    } else if uri.ends_with(".docx") {
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    } else if uri.ends_with(".doc") {
+                        "application/msword"
+                    } else if uri.ends_with(".md") || uri.ends_with(".markdown") {
+                        "text/markdown"
+                    } else {
+                        "application/octet-stream"
+                    };
+                    sources.push(GenerateContent::Source(Source::Document {
+                        id: next_id(id_counter),
+                        media_type: media_type.to_string(),
+                        title: title.unwrap_or("Unknown Document").to_string(),
+                        filename: uri.rsplit('/').next().map(str::to_string),
+                        provider_metadata: None,
+                    }));
+                }
+            } else if let Some(file_search_store) = file_search_store {
+                // New File Search format (no uri, has fileSearchStore).
+                sources.push(GenerateContent::Source(Source::Document {
+                    id: next_id(id_counter),
+                    media_type: "application/octet-stream".to_string(),
+                    title: title.unwrap_or("Unknown Document").to_string(),
+                    filename: file_search_store.rsplit('/').next().map(str::to_string),
+                    provider_metadata: None,
+                }));
+            }
+            // else: no uri and no fileSearchStore → no source.
+        } else if let Some(maps) = chunk.get("maps").filter(|value| !value.is_null())
+            && let Some(uri) = maps
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .filter(|uri| !uri.is_empty())
+        {
+            sources.push(GenerateContent::Source(Source::Url {
+                id: next_id(id_counter),
+                url: uri.to_string(),
+                title: maps
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(std::string::ToString::to_string),
+                provider_metadata: None,
+            }));
+        }
+    }
+
+    sources
 }

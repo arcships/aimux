@@ -1,4 +1,4 @@
-use crate::google::utils::get_model_path;
+use crate::google::get_model_path::get_model_path;
 
 /// upstream: @ai-sdk/google src/get-model-path.test.ts › should pass through model path for models/*
 #[test]

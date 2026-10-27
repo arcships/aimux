@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use crate::google::convert::get_google_model_capabilities;
+use crate::google::model_capabilities::get_google_model_capabilities;
 
 /// The capabilities as the upstream `{ supportsGemini2Tools, ... }` object.
 fn capabilities_json(model_id: &str) -> Value {

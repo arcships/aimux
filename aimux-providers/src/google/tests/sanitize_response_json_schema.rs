@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use crate::google::convert::sanitize_response_json_schema;
+use crate::google::sanitize_response_json_schema::sanitize_response_json_schema;
 
 /// upstream: @ai-sdk/google src/sanitize-response-json-schema.test.ts › replaces const with enum while preserving JSON Schema
 #[test]
