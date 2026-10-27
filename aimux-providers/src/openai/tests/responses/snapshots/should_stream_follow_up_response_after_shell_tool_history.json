@@ -1,0 +1,145 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "resp_07226f71de51f72b006994e63fe86881a3ac247b9463ce4550",
+    "modelId": "gpt-5.2-2025-12-11",
+    "timestamp": "2026-02-17T22:05:51.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969"
+      }
+    },
+    "type": "text-start"
+  },
+  {
+    "delta": "The",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": " architecture",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": " is",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": " **",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "x",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "86",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "_",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "64",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "**",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": " (",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "64",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-bit",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Intel",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "/",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": "AMD",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "delta": ").",
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "type": "text-delta"
+  },
+  {
+    "id": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "msg_07226f71de51f72b006994e641127c81a3ba3d54eedadff969"
+      }
+    },
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "openai": {
+        "responseId": "resp_07226f71de51f72b006994e63fe86881a3ac247b9463ce4550",
+        "serviceTier": "default"
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "noCache": 802,
+        "total": 802
+      },
+      "outputTokens": {
+        "reasoning": 0,
+        "text": 20,
+        "total": 20
+      },
+      "raw": {
+        "input_tokens": 802,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 20,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 822
+      }
+    }
+  }
+]

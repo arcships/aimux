@@ -1,0 +1,630 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "resp_04a97b4fce127879006949a855fa68819598a2a379fd5b6c38",
+    "modelId": "gpt-5-mini-2025-08-07",
+    "timestamp": "2025-12-22T20:21:42.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d:0",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d",
+        "reasoningEncryptedContent": null
+      }
+    },
+    "type": "reasoning-start"
+  },
+  {
+    "id": "rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d:0",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "rs_04a97b4fce127879006949a857b7c88195818dab6d25ff091d",
+        "reasoningEncryptedContent": null
+      }
+    },
+    "type": "reasoning-end"
+  },
+  {
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e"
+      }
+    },
+    "type": "text-start"
+  },
+  {
+    "delta": "I",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " wasn",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "’t",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " able",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " create",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " short",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " link",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " because",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " URL",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-short",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "ening",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " tool",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " call",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " was",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " not",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " approved",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " I",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " won",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "’t",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " retry",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " it",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " without",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " your",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " permission",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".\n\n",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Options",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ":\n",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " Appro",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "ve",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " tool",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " call",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " and",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " I",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "’ll",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " create",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " short",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " URL",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " with",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " max",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " clicks",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " =",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "100",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " now",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".\n",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " I",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " can",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " suggest",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " a",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " short",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " alias",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " (",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "e",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".g",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".,",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ai",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-sdk",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ",",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " ai",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-sdk",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-dev",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ")",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " for",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " you",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " use",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " when",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " creating",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " short",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " link",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " yourself",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".\n",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " I",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " can",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " give",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " step",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-by",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "-step",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " instructions",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " to",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " create",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " the",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " shortened",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " link",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " manually",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " on",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " zip",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "1",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".io",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " or",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " another",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " short",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "ener",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": ".\n\n",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "Which",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " would",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " you",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": " like",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "delta": "?",
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "type": "text-delta"
+  },
+  {
+    "id": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "msg_04a97b4fce127879006949a85c36b08195b7527e9fb2f8569e"
+      }
+    },
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "openai": {
+        "responseId": "resp_04a97b4fce127879006949a855fa68819598a2a379fd5b6c38",
+        "serviceTier": "default"
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "noCache": 553,
+        "total": 553
+      },
+      "outputTokens": {
+        "reasoning": 256,
+        "text": 115,
+        "total": 371
+      },
+      "raw": {
+        "input_tokens": 553,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 371,
+        "output_tokens_details": {
+          "reasoning_tokens": 256
+        },
+        "total_tokens": 924
+      }
+    }
+  }
+]
