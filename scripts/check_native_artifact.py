@@ -87,6 +87,13 @@ def elf_sections(body):
         shoff = struct.unpack_from(end + "I", body, 0x20)[0]
         shentsize, shnum, shstrndx = struct.unpack_from(end + "HHH", body, 0x2E)
         fmt = end + "IIIIIIIIII"
+    # An object with 65280+ sections (a merged `ld -r` archive member) keeps
+    # the real counts in section header 0 (ELF extended numbering).
+    first = struct.unpack_from(fmt, body, shoff)
+    if shnum == 0:
+        shnum = first[5]
+    if shstrndx == 0xFFFF:
+        shstrndx = first[6]
     headers = [struct.unpack_from(fmt, body, shoff + i * shentsize) for i in range(shnum)]
     str_off, str_size = headers[shstrndx][4], headers[shstrndx][5]
     strtab = body[str_off : str_off + str_size]
