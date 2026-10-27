@@ -1,6 +1,6 @@
 //! Port of `src/chat/is-deepseek-v4-model.test.ts` (`@ai-sdk/deepseek` 3.0.56).
 
-use crate::deepseek::is_v4_model::is_deepseek_v4_model;
+use crate::deepseek::chat::is_v4_model::is_deepseek_v4_model;
 
 mod is_deep_seek_v4_model {
     use super::*;

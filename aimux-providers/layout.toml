@@ -931,35 +931,35 @@ package = "@ai-sdk/deepseek"
 
 [[deepseek.files]]
 upstream = "src/chat/convert-to-deepseek-chat-messages.ts"
-rust = "deepseek/convert.rs"
+rust = "deepseek/chat/convert_to_chat_messages.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/chat/convert-to-deepseek-usage.ts"
-rust = "deepseek/usage.rs"
+rust = "deepseek/chat/convert_to_usage.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/chat/deepseek-chat-api-types.ts"
-rust = "deepseek/types.rs"
+rust = "deepseek/chat/chat_api_types.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/chat/deepseek-chat-language-model-options.ts"
-rust = "deepseek/options.rs"
+rust = "deepseek/chat/chat_language_model_options.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/chat/deepseek-chat-language-model.ts"
-rust = "deepseek/model.rs"
+rust = "deepseek/chat/chat_language_model.rs"
 status = "mapped"
 
 [deepseek.files.tests]
@@ -971,14 +971,14 @@ ts-only = [
 
 [[deepseek.files]]
 upstream = "src/chat/deepseek-file-part-options.ts"
-rust = "deepseek/options.rs"
+rust = "deepseek/chat/file_part_options.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/chat/deepseek-prepare-tools.ts"
-rust = "deepseek/prepare_tools.rs"
+rust = "deepseek/chat/prepare_tools.rs"
 status = "mapped"
 
 [deepseek.files.tests]
@@ -988,28 +988,28 @@ ts-only = [
 
 [[deepseek.files]]
 upstream = "src/chat/get-response-metadata.ts"
-rust = "deepseek/model.rs"
+rust = "deepseek/chat/chat_language_model.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/chat/is-deepseek-v4-model.ts"
-rust = "deepseek/is_v4_model.rs"
+rust = "deepseek/chat/is_v4_model.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/chat/map-deepseek-finish-reason.ts"
-rust = "deepseek/finish_reason.rs"
+rust = "deepseek/chat/map_finish_reason.rs"
 status = "mapped"
 
 [deepseek.files.tests]
 
 [[deepseek.files]]
 upstream = "src/deepseek-provider.ts"
-rust = "deepseek/mod.rs"
+rust = "deepseek/provider.rs"
 status = "mapped"
 
 [deepseek.files.tests]

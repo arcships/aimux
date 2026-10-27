@@ -13,8 +13,9 @@ use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::types::Warning;
 use aimux_provider_utils::resolve_full_media_type;
 
+use super::chat_language_model_options::parse_message_options;
+use super::file_part_options::parse_file_part_options;
 use super::is_v4_model::is_deepseek_v4_model;
-use super::options::{parse_file_part_options, parse_message_options};
 
 const SUPPORTED_IMAGE_MEDIA_TYPES: [&str; 5] = [
     "image/gif",
