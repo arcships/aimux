@@ -20,12 +20,13 @@ cd "$ROOT"
 # after LTO stops mattering — so the workspace's fat-LTO only bloats the
 # archive: cargo passes -C embed-bitcode=yes and every codegen unit carries
 # its full LLVM bitcode (~80% of each slice, ~256MB uncompressed past
-# pub.dev's package limit since 0.5.0). The ios-release profile turns LTO
-# off for this build only; the size gate below fails loudly if that regresses.
+# pub.dev's package limit since 0.5.0). The staticlib-release profile turns
+# LTO off for this build only; the bitcode check and the size gate below
+# fail loudly if that regresses.
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 # One cargo invocation builds both slices in parallel (each crate is one
 # codegen unit, so two sequential builds leave most cores idle).
-cargo build -p aimux-ffi --profile ios-release \
+cargo build -p aimux-ffi --profile staticlib-release \
   --target aarch64-apple-ios --target aarch64-apple-ios-sim
 
 TMP="$(mktemp -d)"
@@ -37,7 +38,8 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
     aarch64-apple-ios-sim) slice=sim ;;
   esac
   mkdir -p "$TMP/$slice/aimux_ffi.framework"
-  cp "target/$triple/ios-release/libaimux_ffi.a" "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
+  python3 scripts/check_native_artifact.py "target/$triple/staticlib-release/libaimux_ffi.a"
+  cp "target/$triple/staticlib-release/libaimux_ffi.a" "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
   # Strip debug + local symbols; global symbols stay (force_load in
   # aimux.podspec resolves against them).
   strip -Sx "$TMP/$slice/aimux_ffi.framework/aimux_ffi"
@@ -45,6 +47,8 @@ for triple in aarch64-apple-ios aarch64-apple-ios-sim; do
   # through and blow pub.dev's 256MiB package limit again: a healthy slice
   # is ~15-30MB; an LTO/bitcode regression lands near 128MB.
   SLICE_BYTES=$(stat -f%z "$TMP/$slice/aimux_ffi.framework/aimux_ffi")
+  # The byte count is the RFC-0043 measurement of this slice (§3.1 raw_bytes).
+  echo "size $triple aimux_ffi.framework/aimux_ffi $SLICE_BYTES bytes"
   if [ "$SLICE_BYTES" -gt 67108864 ]; then
     echo "slice $triple is $SLICE_BYTES bytes (> 64MiB) — bitcode/LTO regression?" >&2
     exit 1

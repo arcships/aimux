@@ -34,8 +34,10 @@ the same PR as the code they describe.
   edition 2024 and MSRV 1.85.
 - **Node.js** 20+ (for the Node binding, `bindings/node`).
 - **Python** 3.11+ with `maturin` and `pytest` (for the Python binding).
-- For C-ABI bindings (Swift/Kotlin/Flutter/Go/C): build `aimux-ffi` first
+- For C-ABI bindings (Swift/Kotlin/Flutter/C): build `aimux-ffi` first
   (`cargo build -p aimux-ffi --release`), then follow `bindings/README.md`.
+  Go links the static archive instead:
+  `cargo build -p aimux-ffi --profile staticlib-release`.
 
 ## Building
 

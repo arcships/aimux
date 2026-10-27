@@ -1,5 +1,5 @@
-//! Native OpenAI Decisions API (an aimux extension; the AI SDK's OpenAI
-//! package decides through its Responses model instead).
+//! aimux 扩展: the native OpenAI Decisions API (the AI SDK's OpenAI package
+//! decides through its Responses model instead).
 //!
 //! The V4 call options carry what the API takes beyond them in
 //! `providerOptions.openai`, camelCase as the OpenAI language models' options
@@ -16,11 +16,11 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use super::config::OpenAIModelConfig;
 use crate::decision_support::{
     DecisionConfig, DecisionImage, DecisionProbabilitySource, invalid, provider_metadata,
     response_info,
 };
+use crate::openai::config::OpenAIModelConfig;
 
 /// The OpenAI Decisions API takes at most this many images per request.
 const MAX_IMAGES: usize = 128;
