@@ -496,16 +496,38 @@ jobs:
           python3 scripts/check_native_artifact.py --strip-bitcode target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
           rm -f target/${{ matrix.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.target }}/staticlib-release/libaimux_ffi.dylib
-      - uses: actions/setup-go@v5
+      # RFC-0043 §5.3 S1c (release.yml go-build does the same): one merged
+      # object rooted at the exported C API, local symbols stripped; Mach-O
+      # archives are left as they are.
+      - name: Merge the archive into one object, strip local symbols
         if: runner.os != 'Windows'
+        shell: bash
+        run: python3 scripts/merge_archive.py target/${{ matrix.target }}/staticlib-release/libaimux_ffi.a
+      # The Windows Go archive is the x86_64-pc-windows-gnu one (Go's cgo
+      # links with mingw gcc), so the Windows leg rehearses release.yml
+      # go-build on that target: build, strip the bitcode, merge the COFF
+      # members with mingw's ld, and link the result from the Go tests.
+      - name: Build, strip and merge the Windows gnu archive
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          cargo build -p aimux-ffi --profile staticlib-release --target x86_64-pc-windows-gnu
+          python scripts/check_native_artifact.py --strip-bitcode target/x86_64-pc-windows-gnu/staticlib-release/libaimux_ffi.a
+          rm -f target/x86_64-pc-windows-gnu/staticlib-release/aimux_ffi.dll
+          python scripts/merge_archive.py target/x86_64-pc-windows-gnu/staticlib-release/libaimux_ffi.a
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
       - name: Vet + test Go binding
-        if: runner.os != 'Windows'
         working-directory: bindings/go
         shell: bash
         run: |
-          export CGO_LDFLAGS="-L${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release"
+          case "${{ runner.os }}" in
+            Windows) ARCHIVE_DIR="${{ github.workspace }}/target/x86_64-pc-windows-gnu/staticlib-release" ;;
+            *) ARCHIVE_DIR="${{ github.workspace }}/target/${{ matrix.target }}/staticlib-release" ;;
+          esac
+          export CGO_LDFLAGS="-L$ARCHIVE_DIR"
           go vet ./...
           go test ./...
       - name: Race test Go binding

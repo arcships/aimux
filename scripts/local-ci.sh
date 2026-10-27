@@ -141,6 +141,7 @@ if want go; then
   if need go "go" \
      && cargo build -p aimux-ffi --profile staticlib-release --quiet \
      && python3 scripts/check_native_artifact.py --strip-bitcode "$REPO"/target/staticlib-release/libaimux_ffi.a \
+     && python3 scripts/merge_archive.py "$REPO"/target/staticlib-release/libaimux_ffi.a \
      && rm -f "$REPO"/target/staticlib-release/libaimux_ffi.so "$REPO"/target/staticlib-release/libaimux_ffi.dylib \
      && (cd bindings/go && export CGO_LDFLAGS="-L$REPO/target/staticlib-release" \
          && go vet ./... \
