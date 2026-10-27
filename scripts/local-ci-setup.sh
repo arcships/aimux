@@ -105,6 +105,19 @@ if [ "$SKIP_FLUTTER" -eq 0 ]; then
   fi
 fi
 
+# ── rustup llvm-tools (rust-objcopy strips the sysroot bitcode out of the
+#    Go/iOS archives; llvm-nm/llvm-strip/llvm-ar merge them; CI installs the
+#    same component via dtolnay/rust-toolchain `components: llvm-tools`) ───
+if command -v rustup >/dev/null 2>&1; then
+  if rustup component list --installed 2>/dev/null | grep -q '^llvm-tools'; then
+    ok "rustup llvm-tools already installed"
+  else
+    rustup component add llvm-tools && ok "Installed rustup llvm-tools"
+  fi
+else
+  fail "rustup not found — install it from https://rustup.rs before llvm-tools"
+fi
+
 # ── cargo PATH fix (idempotent) ────────────────────────────────────────────
 if [ "$SKIP_PATH" -eq 0 ]; then
   if [ -f "$HOME/.cargo/env" ]; then
