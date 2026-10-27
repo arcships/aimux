@@ -4,13 +4,14 @@
 //! Upstream's `createAuthTokenGenerator` wraps `google-auth-library`, which the
 //! test replaces with a mock `GoogleAuth` whose client returns a fixed token.
 //! aimux's counterpart is the provider's Google credential resolver
-//! (`GoogleAuth` in `src/vertex/auth.rs`); it cannot be replaced, so the tests
-//! give it real service-account credentials (a test RSA key written to a
-//! key file) and answer its token request from a mock transport. The scopes
-//! and key file upstream passes to the `GoogleAuth` constructor are read
-//! from the signed assertion the resolver sends; the mocked client's
-//! `{ token: null }` is the `auth_client` option, aimux's replacement for the
-//! OAuth client. Tests that set environment variables are serial.
+//! (`GoogleAuth` in `src/vertex/auth_google_auth_library.rs`); it cannot be
+//! replaced, so the tests give it real service-account credentials (a test RSA
+//! key written to a key file) and answer its token request from a mock
+//! transport. The scopes and key file upstream passes to the `GoogleAuth`
+//! constructor are read from the signed assertion the resolver sends; the
+//! mocked client's `{ token: null }` is the `auth_client` option, aimux's
+//! replacement for the OAuth client. Tests that set environment variables are
+//! serial.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use serial_test::serial;
 
 use crate::test_support::mock_fetch::{Canned, EnvVar, MockFetch, Seen};
 use crate::vertex::GoogleAuthOptions;
-use crate::vertex::auth::GoogleAuth;
+use crate::vertex::auth_google_auth_library::GoogleAuth;
 use aimux_provider_utils::Resolvable;
 
 const TEST_RSA_KEY: &str = include_str!("fixtures/aimux-test-rsa-key.pem");

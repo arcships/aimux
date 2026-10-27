@@ -141,35 +141,35 @@ package = "@ai-sdk/google-vertex"
 
 [[vertex.files]]
 upstream = "src/anthropic/edge/google-vertex-anthropic-provider-edge.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/edge/index.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/google-vertex-anthropic-options.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/google-vertex-anthropic-provider-node.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/anthropic/google-vertex-anthropic-provider.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/anthropic_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -182,23 +182,23 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/anthropic/index.ts"
-rust = "vertex/anthropic_provider.rs"
+rust = "vertex/anthropic/mod.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/edge/google-vertex-auth-edge.ts"
-rust = "vertex/auth.rs"
+rust = "vertex/auth_google_auth_library.rs"
 status = "mapped"
 
 [vertex.files.tests]
 sub-feature = [
-  { case = "Google Vertex Edge Auth › should load credentials from environment variables", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should throw error when client email is missing", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should throw error when private key is missing", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should work with or without private key ID", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
-  { case = "Google Vertex Edge Auth › should handle newlines in private key from env vars", issue = 275, reason = "vertex/auth.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should load credentials from environment variables", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should throw error when client email is missing", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should throw error when private key is missing", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should work with or without private key ID", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
+  { case = "Google Vertex Edge Auth › should handle newlines in private key from env vars", issue = 275, reason = "vertex/auth_google_auth_library.rs does not read GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_PRIVATE_KEY_ID" },
 ]
 ts-only = [
   { case = "Google Vertex Edge Auth › should throw error with invalid credentials", reason = "the edge auth module's own error text (Token request failed: …); aimux has one auth path, which follows google-auth-library" },
@@ -208,35 +208,35 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/edge/google-vertex-provider-edge.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/edge/index.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/gemini-transcription/google-vertex-gemini-transcription-model-options.ts"
-rust = "vertex/gemini_transcription.rs"
+rust = "vertex/gemini_transcription/gemini_transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/gemini-transcription/google-vertex-gemini-transcription-model.ts"
-rust = "vertex/gemini_transcription.rs"
+rust = "vertex/gemini_transcription/gemini_transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-auth-google-auth-library.ts"
-rust = "vertex/auth.rs"
+rust = "vertex/auth_google_auth_library.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -248,21 +248,21 @@ issue = 275
 
 [[vertex.files]]
 upstream = "src/google-vertex-config.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-embedding-model-options.ts"
-rust = "vertex/embedding.rs"
+rust = "vertex/embedding_model_options.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-embedding-model.ts"
-rust = "vertex/embedding.rs"
+rust = "vertex/embedding_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -276,14 +276,14 @@ status = "mapped"
 
 [[vertex.files]]
 upstream = "src/google-vertex-image-model-options.ts"
-rust = "vertex/image.rs"
+rust = "vertex/image_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-image-model.ts"
-rust = "vertex/image.rs"
+rust = "vertex/image_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -293,21 +293,21 @@ sub-feature = [
 
 [[vertex.files]]
 upstream = "src/google-vertex-image-settings.ts"
-rust = "vertex/image.rs"
+rust = "vertex/image_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-options.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-provider-base.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -325,7 +325,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/google-vertex-provider.ts"
-rust = "vertex/mod.rs"
+rust = "vertex/provider_base.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -344,28 +344,28 @@ issue = 275
 
 [[vertex.files]]
 upstream = "src/google-vertex-transcription-model-options.ts"
-rust = "vertex/transcription.rs"
+rust = "vertex/transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-transcription-model.ts"
-rust = "vertex/transcription.rs"
+rust = "vertex/transcription_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-video-model-options.ts"
-rust = "vertex/video.rs"
+rust = "vertex/video_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/google-vertex-video-model.ts"
-rust = "vertex/video.rs"
+rust = "vertex/video_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -375,7 +375,7 @@ sub-feature = [
 
 [[vertex.files]]
 upstream = "src/google-vertex-video-settings.ts"
-rust = "vertex/video.rs"
+rust = "vertex/video_model.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -389,7 +389,7 @@ status = "mapped"
 
 [[vertex.files]]
 upstream = "src/maas/edge/google-vertex-maas-provider-edge.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -400,21 +400,21 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/maas/edge/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/maas/google-vertex-maas-options.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/maas/google-vertex-maas-provider-node.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -425,7 +425,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/maas/google-vertex-maas-provider.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/maas_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -437,7 +437,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/maas/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/maas/mod.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -448,7 +448,7 @@ status = "not-applicable"
 
 [[vertex.files]]
 upstream = "src/xai/edge/google-vertex-xai-provider-edge.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -458,21 +458,21 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/xai/edge/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/xai/google-vertex-xai-options.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
 
 [[vertex.files]]
 upstream = "src/xai/google-vertex-xai-provider-node.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -482,7 +482,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/xai/google-vertex-xai-provider.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/xai_provider.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -494,7 +494,7 @@ ts-only = [
 
 [[vertex.files]]
 upstream = "src/xai/index.ts"
-rust = "vertex/partner_provider.rs"
+rust = "vertex/xai/mod.rs"
 status = "mapped"
 
 [vertex.files.tests]
@@ -2165,6 +2165,374 @@ reason = "the native Decisions API; upstream decides through the Responses model
 rust = "openai/responses/tool_args.rs"
 status = "aimux"
 reason = "the provider tool argument schemas of tool/*.ts, validated in one place"
+
+[bedrock]
+package = "@ai-sdk/amazon-bedrock"
+# amazon-bedrock-chat-language-model-event-stream.test.ts and amazon-bedrock-usage-raw.test.ts
+# have no source file of their own name; every case in them is ported, so they need no
+# exclusions.
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-anthropic-model-support.ts"
+rust = "bedrock/anthropic_model_support.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-api-types.ts"
+rust = "bedrock/api_types.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+sub-feature = [
+  { case = "createAmazonBedrockCachePoint › should return default cache point when no TTL is provided", issue = 275, reason = "no createAmazonBedrockCachePoint builder; a cache point is passed verbatim through providerOptions.amazonBedrock.cachePoint" },
+  { case = "createAmazonBedrockCachePoint › should create cache point with 5m TTL", issue = 275, reason = "no createAmazonBedrockCachePoint builder; a cache point is passed verbatim through providerOptions.amazonBedrock.cachePoint" },
+  { case = "createAmazonBedrockCachePoint › should create cache point with 1h TTL", issue = 275, reason = "no createAmazonBedrockCachePoint builder; a cache point is passed verbatim through providerOptions.amazonBedrock.cachePoint" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-chat-language-model-options.ts"
+rust = "bedrock/chat_language_model_options.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "amazonBedrockLanguageModelChatOptions › type inference › infers AmazonBedrockLanguageModelChatOptions type correctly", reason = "checks a TypeScript type annotation; the Rust options are untyped JSON validated when the request is built" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-chat-language-model.ts"
+rust = "bedrock/chat_language_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "doGenerate › should handle unsupported response format types", reason = "passes responseFormat { type: 'xml' } through a TypeScript `as any`; ResponseFormat is a closed Rust enum (Text, Json)" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-embedding-model-options.ts"
+rust = "bedrock/embedding_model_options.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-embedding-model.ts"
+rust = "bedrock/embedding_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "doEmbed › should return NaN usage for Cohere models when the token count header is absent", reason = "NaN is a JS number; EmbeddingUsage.tokens is a u32" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-error.ts"
+rust = "bedrock/error.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-event-stream-decoder.ts"
+rust = "bedrock/event_stream_decoder.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "createAmazonBedrockEventStreamDecoder › surfaces processEvent errors", reason = "the TS decoder takes a processEvent callback that can throw; decode_stream yields messages and has no callback" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-event-stream-response-handler.ts"
+rust = "bedrock/event_stream_response_handler.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "createEventSourceResponseHandler › throws EmptyResponseBodyError when response body is null", reason = "a FetchResponse always has a body stream; there is no null body" },
+  { case = "createEventSourceResponseHandler › handles schema validation failures", reason = "mocks EventStreamCodec and passes a zod chunk schema to the handler; the Rust handler takes no schema" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-image-model-options.ts"
+rust = "bedrock/image_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-image-model.ts"
+rust = "bedrock/image_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-image-settings.ts"
+rust = "bedrock/image_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-prepare-tools.ts"
+rust = "bedrock/prepare_tools.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+ts-only = [
+  { case = "prepareTools › tool choice › models that reject forced tool use › should pass the forced-tool capability to Anthropic provider tool preparation", reason = "asserts the arguments of a vi.mock spy on the Anthropic prepareTools; there is no seam to observe in Rust" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-provider.ts"
+rust = "bedrock/provider.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+sub-feature = [
+  { case = "AmazonBedrockProvider › provider methods › should expose anthropicTools", issue = 275, reason = "AmazonBedrockProvider has no tools member (#275 厂商内置工具工厂)" },
+]
+ts-only = [
+  { case = "AmazonBedrockProvider › createAmazonBedrock › should throw error when called with new keyword", reason = "Rust has no `new` on a callable; the provider is a struct" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-reasoning-metadata.ts"
+rust = "bedrock/chat_language_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-sigv4-fetch.ts"
+rust = "bedrock/sigv4_fetch.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+registered = [
+  { case = "createSigV4FetchFunction › should bypass signing for non-POST requests", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no API key, GET included, so that list_models is accepted" },
+  { case = "createSigV4FetchFunction › should bypass signing if POST request has no body", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no API key, a bodyless POST included" },
+  { case = "createSigV4FetchFunction › should call original fetch if init is undefined", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "a request with no init is a GET, which upstream forwards unsigned; aimux signs it" },
+]
+ts-only = [
+  { case = "createSigV4FetchFunction › should handle non-string body by stringifying it", reason = "FetchRequest.body is bytes; there is no JS object body for JSON.stringify to coerce" },
+  { case = "createApiKeyFetchFunction › should handle empty string API key", reason = "createApiKeyFetchFunction is a TS module export; the Rust provider sends a non-blank key as a header and has no fetch factory to hand an empty key" },
+]
+
+[[bedrock.files]]
+upstream = "src/amazon-bedrock-stream-error.ts"
+rust = "bedrock/chat_language_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/anthropic/amazon-bedrock-anthropic-fetch.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/anthropic/amazon-bedrock-anthropic-options.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/anthropic/amazon-bedrock-anthropic-provider.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/anthropic/index.ts"
+status = "not-applicable"
+reason = "Bedrock-Anthropic (InvokeModel with the Anthropic Messages body) is not implemented; alignment doc §5 product choice row \"Bedrock 上的 Anthropic InvokeModel\" (anthropic_aws is Claude Platform on AWS, not this)"
+
+[[bedrock.files]]
+upstream = "src/convert-amazon-bedrock-usage.ts"
+rust = "bedrock/convert_usage.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/convert-to-amazon-bedrock-chat-messages.ts"
+rust = "bedrock/convert_to_chat_messages.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/index.ts"
+rust = "bedrock/mod.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/inject-fetch-headers.ts"
+status = "not-applicable"
+reason = "a test helper of the package (not exported); the ported tests keep a Rust copy in bedrock/tests/support.rs"
+
+[[bedrock.files]]
+upstream = "src/mantle/bedrock-mantle-options.ts"
+status = "missing"
+issue = 275
+reason = "Bedrock Mantle is a registry preset (OpenAI-compatible chat), not the full createBedrockMantle provider; #275 \"Bedrock Mantle 改为完整 provider\""
+
+[[bedrock.files]]
+upstream = "src/mantle/bedrock-mantle-provider.ts"
+status = "missing"
+issue = 275
+reason = "Bedrock Mantle is a registry preset (OpenAI-compatible chat), not the full createBedrockMantle provider; #275 \"Bedrock Mantle 改为完整 provider\""
+
+[[bedrock.files]]
+upstream = "src/mantle/index.ts"
+status = "missing"
+issue = 275
+reason = "Bedrock Mantle is a registry preset (OpenAI-compatible chat), not the full createBedrockMantle provider; #275 \"Bedrock Mantle 改为完整 provider\""
+
+[[bedrock.files]]
+upstream = "src/map-amazon-bedrock-finish-reason.ts"
+rust = "bedrock/map_finish_reason.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/normalize-tool-call-id.ts"
+rust = "bedrock/normalize_tool_call_id.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/reranking/amazon-bedrock-reranking-api.ts"
+rust = "bedrock/reranking/reranking_api.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/reranking/amazon-bedrock-reranking-model-options.ts"
+rust = "bedrock/reranking/reranking_model_options.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/reranking/amazon-bedrock-reranking-model.ts"
+rust = "bedrock/reranking/reranking_model.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/resolve-amazon-bedrock-base-url.ts"
+rust = "bedrock/sigv4_fetch.rs"
+status = "mapped"
+
+[bedrock.files.tests]
+
+[[bedrock.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[huggingface]
+package = "@ai-sdk/huggingface"
+
+[[huggingface.files]]
+upstream = "src/huggingface-config.ts"
+rust = "huggingface/provider.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/huggingface-error.ts"
+rust = "huggingface/error.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/huggingface-provider.ts"
+rust = "huggingface/provider.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+sub-feature = [
+  { case = "HuggingFaceProvider › unsupported functionality › should throw for text embedding models", issue = 276, reason = "aimux-core NoSuchModel carries only model_id and model_type and formats as \"no such model: …\", without the provider's own message" },
+  { case = "HuggingFaceProvider › unsupported functionality › should throw for image models", issue = 276, reason = "aimux-core NoSuchModel carries only model_id and model_type and formats as \"no such model: …\", without the provider's own message" },
+]
+
+[[huggingface.files]]
+upstream = "src/index.ts"
+rust = "huggingface/mod.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/responses/convert-huggingface-responses-usage.ts"
+rust = "huggingface/responses/convert_responses_usage.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/responses/convert-to-huggingface-responses-messages.ts"
+rust = "huggingface/responses/convert_to_responses_messages.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/responses/huggingface-responses-language-model-options.ts"
+rust = "huggingface/responses/responses_language_model_options.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/responses/huggingface-responses-language-model.ts"
+rust = "huggingface/responses/responses_language_model.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+registered = [
+  { case = "HuggingFaceResponsesLanguageModel › doStream › preserves $expectedType stream errors", ref = "SSE 预读", reason = "an error as the first SSE event is returned by do_stream as Err, not as an error part of the stream" },
+]
+sub-feature = [
+  { case = "HuggingFaceResponsesLanguageModel › message conversion › should throw for file parts with provider references", issue = 276, reason = "aimux-core formats UnsupportedFunctionalityError as \"unsupported functionality: …\", not upstream's \"'…' functionality not supported.\"" },
+]
+
+[[huggingface.files]]
+upstream = "src/responses/huggingface-responses-prepare-tools.ts"
+rust = "huggingface/responses/responses_prepare_tools.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/responses/map-huggingface-responses-finish-reason.ts"
+rust = "huggingface/responses/map_responses_finish_reason.rs"
+status = "mapped"
+
+[huggingface.files.tests]
+
+[[huggingface.files]]
+upstream = "src/responses/huggingface-responses-settings.ts"
+status = "not-applicable"
+reason = "only the HuggingFaceResponsesModelId string union; Rust takes the model id as &str"
+
+[[huggingface.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
 
 [open_responses]
 package = "@ai-sdk/open-responses"

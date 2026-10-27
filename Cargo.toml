@@ -41,7 +41,12 @@ opt-level = "z"
 # archive as shipped (RFC-0043 §15.1). The code the consumer links is the
 # same size either way. Every shipped .a uses this profile: the iOS slices
 # (scripts/build-ios-xcframework.sh) and the Go archives (release.yml
-# go-build). Shared libraries keep the fat-LTO `release` profile.
+# go-build); both then strip the bitcode rustup's sysroot objects carry
+# regardless of this setting (scripts/check_native_artifact.py
+# --strip-bitcode), and the Go archives are merged into one object rooted
+# at the exported C API with the local symbols stripped
+# (scripts/merge_archive.py; RFC-0043 §5.3). Shared libraries keep the
+# fat-LTO `release` profile.
 [profile.staticlib-release]
 inherits = "release"
 lto = false
