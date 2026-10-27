@@ -301,6 +301,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
+          # rust-objcopy strips the sysroot bitcode out of the archive below.
+          components: llvm-tools
       - uses: Swatinem/rust-cache@v2
       # macos-13 runners do not preinstall Go (ubuntu/windows do) — pin it
       # explicitly so every host has the same toolchain.
@@ -312,17 +314,35 @@ jobs:
       # bitcode into the archive and doubles it (RFC-0043 §5.1, §15.1).
       - name: Build static archive
         run: cargo build -p aimux-ffi --profile staticlib-release --target ${{ matrix.settings.target }}
-      # The Windows runner's bash may know only `python`. cargo emits the
-      # cdylib next to the archive and ld64 would link the .dylib instead of
-      # the .a, so the shared libraries go before the Go tests link.
-      - name: Check archive (no workspace bitcode), keep only the archive
+      # rustup's sysroot objects (std, alloc, core, ...) carry their LLVM
+      # bitcode even under lto = false, about 10 MB per archive that no
+      # consumer's linker reads; --strip-bitcode removes those sections in
+      # place and then requires the archive to carry none (RFC-0043 §5.3
+      # S1b). The Go tests below link the stripped archive, which is the
+      # file that gets staged. The Windows runner's bash may know only
+      # `python`. cargo emits the cdylib next to the archive and ld64 would
+      # link the .dylib instead of the .a, so the shared libraries go before
+      # the Go tests link.
+      - name: Strip sysroot bitcode, check the archive, keep only the archive
         shell: bash
         run: |
-          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py \
+          "$(command -v python3 || command -v python)" scripts/check_native_artifact.py --strip-bitcode \
             target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.a
           rm -f target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.so \
                 target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.dylib \
                 target/${{ matrix.settings.target }}/staticlib-release/aimux_ffi.dll
+      # Merge the members into one object rooted at the 14 exported C
+      # functions and strip its local symbols (RFC-0043 §5.3 S1c): GNU ld
+      # `-r --gc-sections` keeps what a --gc-sections link of the archive
+      # would keep, so the Linux archive drops from 85 MB to 59 MB with the
+      # same linked code. ELF and COFF only; a Mach-O archive is left as it
+      # is (ld64 -r does not dead-strip, and those archives are inside the
+      # budget). The Go tests below link the merged archive.
+      - name: Merge the archive into one object, strip local symbols
+        shell: bash
+        run: |
+          "$(command -v python3 || command -v python)" scripts/merge_archive.py \
+            target/${{ matrix.settings.target }}/staticlib-release/libaimux_ffi.a
       - name: Test Go binding
         working-directory: bindings/go
         shell: bash
