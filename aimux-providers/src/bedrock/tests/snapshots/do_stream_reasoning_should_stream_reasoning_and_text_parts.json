@@ -1,0 +1,159 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "modelId": "anthropic.claude-3-haiku-20240307-v1:0",
+    "type": "response-metadata"
+  },
+  {
+    "id": "0",
+    "type": "reasoning-start"
+  },
+  {
+    "delta": "Let me count the r",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "'s in \"",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "strawberry\":",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "\n\ns-t-r-a",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "-w-b-e-r",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "-r-y\n\nr",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " appears at positions ",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "3, 8",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": ", and 9.\n\nSo there",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": " are 3 r's.",
+    "id": "0",
+    "type": "reasoning-delta"
+  },
+  {
+    "delta": "",
+    "id": "0",
+    "providerMetadata": {
+      "amazonBedrock": {
+        "signature": "Ep0CCkgICxABGAIqQOWPB6/PmA5SW9jC6FvaNq3E+U9ev4FMWcFWuAho+VGLCtazKc5WDjQ5i0MuxsY0o5pKDSVWVKii8KJDusXH4eASDK7jyzuk8iij7fJNihoMxHO9haYzt48R36HVIjCb/EmIFrJLIXShqN6DN//T6vZBtO9qj1QhNWJa3CGm8VZoq80S2/Ok4U0aVaIDiZcqggHC2b8BHuv8BHZrmsR0wjU1ynansBGMdfjnG+iIv8R5lPpRmYGhSVwNybwP3aQZ6o8Dr48Rau8TJfdsArW+r7bvL7bPs4f5nnlp2vG7WkMzWwABHK3fdM44zZ1GZQaWyECNWR2GfY6dXiklo94vgpFTPuZ97mfiN3LY6uYyBwL8RkDaGAE="
+      },
+      "bedrock": {
+        "signature": "Ep0CCkgICxABGAIqQOWPB6/PmA5SW9jC6FvaNq3E+U9ev4FMWcFWuAho+VGLCtazKc5WDjQ5i0MuxsY0o5pKDSVWVKii8KJDusXH4eASDK7jyzuk8iij7fJNihoMxHO9haYzt48R36HVIjCb/EmIFrJLIXShqN6DN//T6vZBtO9qj1QhNWJa3CGm8VZoq80S2/Ok4U0aVaIDiZcqggHC2b8BHuv8BHZrmsR0wjU1ynansBGMdfjnG+iIv8R5lPpRmYGhSVwNybwP3aQZ6o8Dr48Rau8TJfdsArW+r7bvL7bPs4f5nnlp2vG7WkMzWwABHK3fdM44zZ1GZQaWyECNWR2GfY6dXiklo94vgpFTPuZ97mfiN3LY6uYyBwL8RkDaGAE="
+      }
+    },
+    "type": "reasoning-delta"
+  },
+  {
+    "id": "0",
+    "type": "reasoning-end"
+  },
+  {
+    "id": "1",
+    "type": "text-start"
+  },
+  {
+    "delta": "There",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": " are **3** r's in \"",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": "strawberry\":",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": "\n\n1",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": ". st",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": "**",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": "r**awbe",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": "**r****",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "delta": "r**y",
+    "id": "1",
+    "type": "text-delta"
+  },
+  {
+    "id": "1",
+    "type": "text-end"
+  },
+  {
+    "finishReason": {
+      "raw": "end_turn",
+      "unified": "stop"
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "noCache": 51,
+        "total": 51
+      },
+      "outputTokens": {
+        "text": 94,
+        "total": 94
+      },
+      "raw": {
+        "inputTokens": 51,
+        "outputTokens": 94,
+        "serverToolUsage": {},
+        "totalTokens": 145
+      }
+    }
+  }
+]

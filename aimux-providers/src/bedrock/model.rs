@@ -95,7 +95,7 @@ fn bedrock_event_stream_response_handler()
 pub struct BedrockModel {
     model_id: String,
     config: EndpointConfig,
-    model_family: Option<String>,
+    pub(super) model_family: Option<String>,
 }
 
 impl BedrockModel {

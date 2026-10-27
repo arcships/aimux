@@ -46,29 +46,7 @@ fn default_options(values: Vec<String>) -> EmbeddingCallOptions {
     }
 }
 
-/// TS: "should expose model-specific max embeddings per call"
-#[test]
-fn should_expose_max_embeddings_per_call() {
-    let provider = test_provider("https://example.com".to_string());
-
-    let titan_model = provider
-        .embedding_model("amazon.titan-embed-text-v2:0")
-        .unwrap();
-    assert_eq!(titan_model.max_embeddings_per_call(), Some(1));
-
-    let cohere_model = provider.embedding_model("cohere.embed-english-v3").unwrap();
-    assert_eq!(cohere_model.max_embeddings_per_call(), Some(96));
-
-    let cohere_v4_us_model = provider.embedding_model("us.cohere.embed-v4:0").unwrap();
-    assert_eq!(cohere_v4_us_model.max_embeddings_per_call(), Some(96));
-
-    let nova_model = provider
-        .embedding_model("amazon.nova-2-multimodal-embeddings-v1:0")
-        .unwrap();
-    assert_eq!(nova_model.max_embeddings_per_call(), Some(1));
-}
-
-/// TS: "should handle single input value and return embeddings" (Titan)
+/// partial: `should handle single input value and return embeddings`; full port in src/bedrock/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_handle_titan_single_input() {
     let server = MockServer::start().await;
@@ -103,34 +81,7 @@ async fn should_handle_titan_single_input() {
     assert_eq!(body["inputText"], TEST_VALUES[0]);
 }
 
-/// TS: "should handle single input value and extract usage" (Titan)
-#[tokio::test]
-async fn should_extract_titan_usage() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/model/amazon.titan-embed-text-v2%3A0/invoke"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "embedding": mock_embeddings()[0],
-            "inputTextTokenCount": 8
-        })))
-        .mount(&server)
-        .await;
-
-    let provider = test_provider(server.uri());
-    let model = provider
-        .embedding_model("amazon.titan-embed-text-v2:0")
-        .unwrap();
-
-    let result = model
-        .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
-        .await
-        .expect("should succeed");
-
-    let usage = result.usage.expect("usage present");
-    assert_eq!(usage.tokens, 8);
-}
-
-/// TS: "should support Cohere embedding models" (Cohere v3 response)
+/// partial: `should support Cohere embedding models`; full port in src/bedrock/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_support_cohere_v3() {
     let server = MockServer::start().await;
@@ -164,7 +115,7 @@ async fn should_support_cohere_v3() {
     assert_eq!(body["texts"], json!([TEST_VALUES[0]]));
 }
 
-/// TS: "should support Cohere v4 embedding models"
+/// partial: `should support Cohere v4 embedding models`; full port in src/bedrock/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_support_cohere_v4() {
     let server = MockServer::start().await;
@@ -193,7 +144,7 @@ async fn should_support_cohere_v4() {
     assert_eq!(result.usage.unwrap().tokens, 6);
 }
 
-/// TS: "should send multiple values for Cohere embedding models"
+/// partial: `should send multiple values for Cohere embedding models`; full port in src/bedrock/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_send_multiple_values_cohere_v4() {
     let server = MockServer::start().await;
@@ -234,7 +185,7 @@ async fn should_send_multiple_values_cohere_v4() {
     );
 }
 
-/// TS: "should support Cohere models behind cross-region inference profile ids"
+/// partial: `should support Cohere models behind cross-region inference profile ids`; full port in src/bedrock/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_support_cross_region_cohere() {
     let server = MockServer::start().await;
@@ -261,7 +212,7 @@ async fn should_support_cross_region_cohere() {
     assert_eq!(result.usage.unwrap().tokens, 6);
 }
 
-/// TS: "should send SINGLE_EMBEDDING payload for Nova embeddings"
+/// partial: `should send SINGLE_EMBEDDING payload for Nova embeddings`; full port in src/bedrock/tests/embedding_model.rs.
 #[tokio::test]
 async fn should_support_nova_embeddings() {
     let server = MockServer::start().await;
@@ -306,4 +257,57 @@ async fn should_support_nova_embeddings() {
         body["singleEmbeddingParams"]["text"]["value"],
         TEST_VALUES[0]
     );
+}
+
+mod do_embed {
+    use super::*;
+
+    /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-embedding-model.test.ts › doEmbed › should expose model-specific max embeddings per call
+    #[test]
+    fn should_expose_max_embeddings_per_call() {
+        let provider = test_provider("https://example.com".to_string());
+
+        let titan_model = provider
+            .embedding_model("amazon.titan-embed-text-v2:0")
+            .unwrap();
+        assert_eq!(titan_model.max_embeddings_per_call(), Some(1));
+
+        let cohere_model = provider.embedding_model("cohere.embed-english-v3").unwrap();
+        assert_eq!(cohere_model.max_embeddings_per_call(), Some(96));
+
+        let cohere_v4_us_model = provider.embedding_model("us.cohere.embed-v4:0").unwrap();
+        assert_eq!(cohere_v4_us_model.max_embeddings_per_call(), Some(96));
+
+        let nova_model = provider
+            .embedding_model("amazon.nova-2-multimodal-embeddings-v1:0")
+            .unwrap();
+        assert_eq!(nova_model.max_embeddings_per_call(), Some(1));
+    }
+
+    /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-embedding-model.test.ts › doEmbed › should handle single input value and extract usage
+    #[tokio::test]
+    async fn should_extract_titan_usage() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/model/amazon.titan-embed-text-v2%3A0/invoke"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "embedding": mock_embeddings()[0],
+                "inputTextTokenCount": 8
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = test_provider(server.uri());
+        let model = provider
+            .embedding_model("amazon.titan-embed-text-v2:0")
+            .unwrap();
+
+        let result = model
+            .do_embed(&default_options(vec![TEST_VALUES[0].to_string()]))
+            .await
+            .expect("should succeed");
+
+        let usage = result.usage.expect("usage present");
+        assert_eq!(usage.tokens, 8);
+    }
 }
