@@ -1333,6 +1333,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `speech::google_speech_input` become crate-internal, with no public
   replacement. `google::files` and `google::transcription` keep their paths.
 
+- `aimux_providers::xai::responses::resolve_provider_reference` is removed;
+  use `aimux_provider_utils::resolve_provider_reference`, the AI SDK's
+  `resolveProviderReference`, which takes the reference and the provider
+  name the same way (RFC-0046 R1).
+
 - `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
   layout (RFC-0046). The sub-modules `mistral::convert` and
   `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
@@ -1404,6 +1409,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in provider reads its key from when `create_provider` gets none, and
   `provider_default_base_url(name)`, the endpoint it calls when given no base
   URL (`None` when that is built from settings).
+- `aimux_provider_utils::create_language_model_response_metadata` and
+  `aimux_provider_utils::resolve_provider_reference`, as
+  `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1). The OpenAI chat and
+  responses, OpenAI-compatible, Groq, Mistral, DeepSeek, Hugging Face, xAI and
+  Open Responses models build response metadata with the first; the OpenAI,
+  xAI, Anthropic, Google and DeepSeek converters resolve file references with
+  the second. A missing DeepSeek reference now names the providers the
+  reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
 
 ### Fixed
 

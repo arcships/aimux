@@ -11,6 +11,7 @@
 
 mod aisdk_pins;
 pub mod api_key;
+pub mod create_language_model_response_metadata;
 pub mod decision_language_model;
 pub mod download_blob;
 pub mod extract_response_headers;
@@ -27,8 +28,11 @@ pub mod multipart;
 pub mod post_to_api;
 pub mod read_response_with_size_limit;
 pub mod resolvable;
+pub mod resolve_provider_reference;
 pub mod response_handler;
 pub mod sigv4_fetch;
+#[cfg(test)]
+mod tests;
 pub mod transform_stream;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
@@ -38,6 +42,7 @@ pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use create_language_model_response_metadata::create_language_model_response_metadata;
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
@@ -59,6 +64,7 @@ pub use media_type::{
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
 pub use resolvable::Resolvable;
+pub use resolve_provider_reference::resolve_provider_reference;
 pub use response_handler::{
     ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
     create_binary_response_handler, create_event_source_response_handler,

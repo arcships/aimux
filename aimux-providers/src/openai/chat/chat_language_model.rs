@@ -16,7 +16,7 @@ use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Sourc
 use aimux_core::shared::{SharedProviderOptions, provider_namespace};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, RawToolCall, Tool};
-use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{FinishReason, ReasoningEffort, Usage, Warning};
 use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -287,14 +287,18 @@ pub(crate) async fn execute_generate(
         warnings: request_result.warnings,
         provider_metadata,
         response: Some(aimux_core::shared::ResponseInfo {
-            id: data.id,
-            timestamp: data
-                .created
-                .filter(|created| *created != 0)
-                .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-            model_id: data.model,
             headers: Some(response_headers),
             body: Some(response_value),
+            // `created || undefined`: Azure content-filter chunks use 0 as a
+            // placeholder (openai chat/get-response-metadata.ts).
+            ..aimux_provider_utils::create_language_model_response_metadata(
+                data.id,
+                data.model,
+                data.created
+                    .filter(|created| *created != 0)
+                    .map(|secs| secs as f64),
+            )
+            .into()
         }),
         request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
     })
@@ -483,14 +487,16 @@ impl Transformer for OpenAIChatStream {
                 || chunk.created.is_some_and(|created| created != 0))
         {
             self.response_metadata_emitted = true;
-            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                id: chunk.id.clone(),
-                timestamp: chunk
-                    .created
-                    .filter(|created| *created != 0)
-                    .and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-                model_id: chunk.model.clone(),
-            }));
+            controller.enqueue(StreamPart::ResponseMetadata(
+                aimux_provider_utils::create_language_model_response_metadata(
+                    chunk.id.clone(),
+                    chunk.model.clone(),
+                    chunk
+                        .created
+                        .filter(|created| *created != 0)
+                        .map(|secs| secs as f64),
+                ),
+            ));
         }
 
         // Update usage from the chunk that carries it.
