@@ -1255,6 +1255,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tool_name_mapping` stay public. Exports at the crate root and the
   `anthropic` module root are unchanged.
 
+- `aimux_providers::xai` follows the upstream `@ai-sdk/xai` file layout
+  (RFC-0046). The sub-modules `xai::convert`, `xai::responses::convert` and
+  `xai::responses::types` no longer exist; their public items are re-exported
+  instead. `xai::convert::supports_reasoning_effort` is now
+  `xai::supports_reasoning_effort`.
+  `xai::convert::resolve_provider_reference`, the items of
+  `xai::responses::convert` (`build_responses_request_body`,
+  `convert_to_xai_responses_input`, `prepare_responses_tools`,
+  `convert_xai_responses_usage`, `map_xai_responses_finish_reason`, ...) and
+  the items of `xai::responses::types` (`XaiResponsesResponse`,
+  `XaiResponsesUsage`, ...) are now at `xai::responses`. Exports at the crate
+  root and the `xai` module root are unchanged.
+
 - `aimux_providers::vertex` follows the upstream `@ai-sdk/google-vertex` file
   layout (RFC-0046). The sub-module `vertex::image` is no longer public; use
   `VertexImageModel`, re-exported at `aimux_providers::vertex`, instead of
