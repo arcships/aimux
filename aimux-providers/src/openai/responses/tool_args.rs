@@ -1,4 +1,5 @@
-//! Validation of the pinned provider tool argument schemas.
+//! aimux 扩展: validation of the pinned provider tool argument schemas, the
+//! input schemas of upstream's `tool/*.ts` checked in one place.
 
 use aimux_core::AiMuxError;
 use serde_json::Value;
