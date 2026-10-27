@@ -1175,6 +1175,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- `aimux_providers::cohere` follows the upstream `@ai-sdk/cohere` file layout
+  (RFC-0046). The sub-modules `cohere::convert`, `cohere::embedding` and
+  `cohere::reranking` are no longer public; use `CohereEmbeddingModel` and
+  `CohereRerankingModel`, re-exported at `aimux_providers::cohere`, instead of
+  the `embedding` and `reranking` paths. The helpers `cohere::convert` exposed
+  (`prepare_tools`, `convert_prompt_to_cohere`, `build_request_body`,
+  `resolve_cohere_thinking`, `parse_finish_reason`, `PreparedTools`,
+  `ConvertedPrompt`, `RequestBodyResult`) are not reachable from outside the
+  crate any more and have no replacement. Exports at the crate root and the
+  `cohere` module root are unchanged.
+
 - Google's sub-modules follow the `@ai-sdk/google` files (RFC-0046 §4.2):
   `google::embedding`, `google::image`, `google::speech`, `google::video`,
   `google::convert`, `google::types` and `google::utils` are no longer public.
