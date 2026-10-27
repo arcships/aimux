@@ -1,0 +1,25 @@
+[
+  {
+    "providerMetadata": {
+      "openai": {
+        "itemId": "rs_04f6b17429cf2b02006949a68a9c7c8196b850018869363b06",
+        "reasoningEncryptedContent": null
+      }
+    },
+    "text": "",
+    "type": "reasoning"
+  },
+  {
+    "dynamic": true,
+    "input": "{\"alias\":\"\",\"description\":\"\",\"max_clicks\":100,\"password\":\"\",\"url\":\"https://ai-sdk.dev/\"}",
+    "providerExecuted": true,
+    "toolCallId": "id-0",
+    "toolName": "mcp.create_short_url",
+    "type": "tool-call"
+  },
+  {
+    "approvalId": "mcpr_04f6b17429cf2b02006949a68bf5808196b6f2008a315c9aa4",
+    "toolCallId": "id-0",
+    "type": "tool-approval-request"
+  }
+]

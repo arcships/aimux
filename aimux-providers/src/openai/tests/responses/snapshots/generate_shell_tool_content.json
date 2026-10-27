@@ -1,0 +1,13 @@
+[
+  {
+    "input": "{\"action\":{\"commands\":[\"cd ~ && pwd\",\"cd ~/Desktop && pwd\",\"cd ~/Desktop && echo 'THIS WORKS!' > dec1.txt && ls -l dec1.txt && cat dec1.txt\"]}}",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "sh_0f0d479976b1e9a600692f61bec0e08197a0864dc5ddf1d38c"
+      }
+    },
+    "toolCallId": "call_udkLUvR8lWvG8cDO2B6GNpvZ",
+    "toolName": "shell",
+    "type": "tool-call"
+  }
+]
