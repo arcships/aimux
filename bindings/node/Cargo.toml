@@ -25,8 +25,8 @@ napi-derive = "3"
 [workspace]
 
 # Size profile for the shipped extension (RFC-0043 §12 B-profile, #374 §15.8).
-# Cargo's default release (opt 3, no LTO, unstripped) shipped a 39.1 MB
-# library; this profile ships 16.9 MB with the same six benchmark scenarios
+# Cargo's default release (opt 3, no LTO, unstripped) shipped a 39.9 MB
+# library; this profile ships 17.4 MB with the same six benchmark scenarios
 # within noise of the old build (opt-level "z" was 28-35% slower on large
 # responses, so "s"). `panic` stays "unwind": napi-rs catches a
 # panic at the boundary and raises a JS exception; abort would kill the host.
