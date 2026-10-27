@@ -1,0 +1,80 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "resp_04a97b4fce127879006949a837a3a48195b37f26ae73f550c0",
+    "modelId": "gpt-5-mini-2025-08-07",
+    "timestamp": "2025-12-22T20:21:11.000Z",
+    "type": "response-metadata"
+  },
+  {
+    "id": "rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a:0",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a",
+        "reasoningEncryptedContent": null
+      }
+    },
+    "type": "reasoning-start"
+  },
+  {
+    "id": "rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a:0",
+    "providerMetadata": {
+      "openai": {
+        "itemId": "rs_04a97b4fce127879006949a83904c88195977de6cc3f06064a",
+        "reasoningEncryptedContent": null
+      }
+    },
+    "type": "reasoning-end"
+  },
+  {
+    "dynamic": true,
+    "input": "{\"alias\":\"\",\"description\":\"Shortened link for ai-sdk.dev\",\"max_clicks\":100,\"password\":\"\",\"url\":\"https://ai-sdk.dev/\"}",
+    "providerExecuted": true,
+    "toolCallId": "id-0",
+    "toolName": "mcp.create_short_url",
+    "type": "tool-call"
+  },
+  {
+    "approvalId": "mcpr_04a97b4fce127879006949a83ac9308195a7f7b69ea82e91fe",
+    "toolCallId": "id-0",
+    "type": "tool-approval-request"
+  },
+  {
+    "finishReason": {
+      "unified": "stop"
+    },
+    "providerMetadata": {
+      "openai": {
+        "responseId": "resp_04a97b4fce127879006949a837a3a48195b37f26ae73f550c0",
+        "serviceTier": "default"
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "noCache": 422,
+        "total": 422
+      },
+      "outputTokens": {
+        "reasoning": 0,
+        "text": 48,
+        "total": 48
+      },
+      "raw": {
+        "input_tokens": 422,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 48,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 470
+      }
+    }
+  }
+]

@@ -1,0 +1,36 @@
+[
+  {
+    "dynamic": true,
+    "input": "{\"alias\":\"\",\"description\":\"\",\"max_clicks\":100,\"password\":\"\",\"url\":\"https://ai-sdk.dev/\"}",
+    "providerExecuted": true,
+    "toolCallId": "mcp_04f6b17429cf2b02006949a6908fc4819686c02f71f7faecc6",
+    "toolName": "mcp.create_short_url",
+    "type": "tool-call"
+  },
+  {
+    "providerMetadata": {
+      "openai": {
+        "itemId": "mcp_04f6b17429cf2b02006949a6908fc4819686c02f71f7faecc6"
+      }
+    },
+    "result": {
+      "arguments": "{\"alias\":\"\",\"description\":\"\",\"max_clicks\":100,\"password\":\"\",\"url\":\"https://ai-sdk.dev/\"}",
+      "name": "create_short_url",
+      "output": "✅ Short URL created: https://zip1.io/oMAchr\n🔤 Generated code: oMAchr\n🔢 Max clicks: 100\n🔗 Original URL: https://ai-sdk.dev/\n\n📊 View stats: https://zip1.io/stats/oMAchr",
+      "serverLabel": "zip1",
+      "type": "call"
+    },
+    "toolCallId": "mcp_04f6b17429cf2b02006949a6908fc4819686c02f71f7faecc6",
+    "toolName": "mcp.create_short_url",
+    "type": "tool-result"
+  },
+  {
+    "providerMetadata": {
+      "openai": {
+        "itemId": "msg_04f6b17429cf2b02006949a6930b308196a3ad4f35aa6e0b1b"
+      }
+    },
+    "text": "Done — I created a short link for you.\n\nShort URL: https://zip1.io/oMAchr\nOriginal URL: https://ai-sdk.dev/\nMax clicks: 100\nStats page: https://zip1.io/stats/oMAchr\n\nWould you like a custom alias, password protection, or a description added to this short link?",
+    "type": "text"
+  }
+]
