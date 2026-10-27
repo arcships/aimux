@@ -4,7 +4,7 @@ use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{LanguageModelMessage, LanguageModelPrompt, UserPart};
 use aimux_core::shared::{FileBytes, FileData};
 
-use crate::openai_compatible::convert::{MessageSpec, convert_messages};
+use crate::openai_compatible::chat::convert_to_chat_messages::{MessageSpec, convert_messages};
 
 /// A prompt in its AI SDK JSON form.
 fn prompt(value: Value) -> LanguageModelPrompt {
