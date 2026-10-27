@@ -2,11 +2,24 @@
 """Measure a shipped native library and, for a static archive, check its
 members for LLVM bitcode (RFC-0043 §3.1, §5.2).
 
-    check_native_artifact.py <file>...
+    check_native_artifact.py [--strip-bitcode] <file>...
 
 Every file gets one line, `size <path> <bytes> bytes`: the raw_bytes
 measurement of RFC-0043 §3.1, so the CI log of each artifact job carries the
 number the RFC's tables are filled from.
+
+`--strip-bitcode` first removes the bitcode sections from every member of
+each archive, in place, with the `llvm-objcopy` of rustup's `llvm-tools`
+component (`AIMUX_OBJCOPY` names another binary). That is
+RFC-0043 §5.3 S1b: rustup's sysroot objects (std, alloc, core, ...) are
+compiled with `-C embed-bitcode=yes` and keep their LLVM IR even when the
+workspace builds with `lto = false`, about 10 MB of every archive that no
+consumer's linker reads. The fat-LTO check below runs on the members as
+built, before the strip, so a strip cannot "cure" a workspace object that
+carries bitcode and hide a fat-LTO archive; after the strip the archive must
+carry no bitcode at all, and the `size` line is the stripped archive, the
+file the release ships. `scripts/tests/test_check_native_artifact.py` keeps
+the negative case (a workspace member with `.llvmbc`) failing both ways.
 
 A static archive (`!<arch>`) is also opened member by member. A workspace
 crate's object that carries a bitcode section means the archive was built
@@ -15,14 +28,17 @@ with a fat-LTO profile instead of `staticlib-release`: cargo passes
 IR next to the machine code, which the consumer's linker never reads and
 which doubles the archive (RFC-0043 §5.1, §15.1). The sysroot's own objects
 (std, alloc, core, ...) always carry bitcode, because rustup ships them that
-way, so they are only counted and reported.
+way, so without `--strip-bitcode` they are only counted and reported.
 
 The archive, ELF, Mach-O and COFF headers are read directly, so the check
 is the same on the Linux, macOS and Windows runners and needs no binutils.
 """
 
+import os
 import re
+import shutil
 import struct
+import subprocess
 import sys
 from pathlib import Path
 
@@ -172,7 +188,73 @@ def crate_of(member_name):
     return re.split(r"[-.]", member_name, maxsplit=1)[0]
 
 
-def check_archive(path, data, crates):
+def find_llvm_tool(name):
+    """The LLVM tool `name` (objcopy, strip, ar, nm) to use: `AIMUX_<NAME>`
+    (for example `AIMUX_OBJCOPY`), else the `llvm-<name>` of rustup's
+    `llvm-tools` component next to the active rustc, else `llvm-<name>` on
+    PATH."""
+    named = os.environ.get(f"AIMUX_{name.upper()}")
+    if named:
+        return named
+    try:
+        sysroot = subprocess.run(
+            ["rustc", "--print", "sysroot"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        verbose = subprocess.run(["rustc", "-vV"], check=True, capture_output=True, text=True).stdout
+        host = re.search(r"^host: (\S+)", verbose, re.M).group(1)
+        exe = ".exe" if sys.platform == "win32" else ""
+        bindir = Path(sysroot) / "lib" / "rustlib" / host / "bin"
+        for candidate in (bindir / f"llvm-{name}{exe}", bindir / f"rust-{name}{exe}"):
+            # The rust-objcopy stub of a toolchain without llvm-tools exists
+            # but cannot load libLLVM; a --version run tells the two apart.
+            if (
+                candidate.is_file()
+                and subprocess.run([str(candidate), "--version"], capture_output=True).returncode == 0
+            ):
+                return str(candidate)
+    except (OSError, subprocess.CalledProcessError, AttributeError):
+        pass
+    on_path = shutil.which(f"llvm-{name}")
+    if on_path:
+        return on_path
+    sys.exit(
+        f"no llvm-{name}: install rustup's llvm-tools component "
+        f"(`rustup component add llvm-tools`) or set AIMUX_{name.upper()}"
+    )
+
+
+def find_objcopy():
+    return find_llvm_tool("objcopy")
+
+
+def bitcode_section_names(data):
+    """The bitcode section names of the archive's object format: ELF and
+    COFF name them `.llvmbc` / `.llvmcmd`, Mach-O `__LLVM,__bitcode` /
+    `__LLVM,__cmdline`."""
+    for _, body in archive_members(data):
+        if body[:4] in MACHO_MAGICS:
+            return [f"{seg},{sect}" for seg, sect in sorted(MACHO_BITCODE)]
+        if body[:4] == b"\x7fELF" or (
+            len(body) >= 20 and struct.unpack_from("<H", body)[0] in COFF_MACHINES
+        ):
+            return sorted(ELF_BITCODE)
+    sys.exit("archive has no ELF, Mach-O or COFF member")
+
+
+def strip_bitcode(path, data):
+    """Remove the bitcode sections from every member of the archive at
+    `path`, in place, and return the rewritten bytes."""
+    objcopy = find_objcopy()
+    args = [objcopy]
+    for name in bitcode_section_names(data):
+        args += ["--remove-section", name]
+    args.append(str(path))
+    print(f"  before bitcode strip: {len(data)} bytes; {' '.join(args)}")
+    subprocess.run(args, check=True)
+    return path.read_bytes()
+
+
+def check_archive(path, data, crates, expect_no_bitcode=False):
     members = text = bitcode = 0
     bitcode_members = 0
     workspace_members = 0
@@ -205,20 +287,41 @@ def check_archive(path, data, crates):
             file=sys.stderr,
         )
         return False
+    if expect_no_bitcode and bitcode:
+        print(
+            f"{path}: {bitcode} bytes of LLVM bitcode left in {bitcode_members} "
+            f"objects after the strip (RFC-0043 §5.3 S1b: the shipped archive "
+            f"carries none)",
+            file=sys.stderr,
+        )
+        return False
     return True
 
 
 def main(argv):
-    if not argv:
+    strip = "--strip-bitcode" in argv
+    files = [a for a in argv if a != "--strip-bitcode"]
+    if not files:
         sys.exit(__doc__)
     crates = workspace_crates(Path(__file__).resolve().parent.parent)
     ok = True
-    for arg in argv:
+    for arg in files:
         path = Path(arg)
         data = path.read_bytes()
+        is_archive = data.startswith(b"!<arch>\n")
+        if strip and is_archive:
+            # The fat-LTO guard reads the members as built. Stripping first
+            # would remove the very bitcode that betrays a workspace object
+            # compiled under fat LTO, so the archive is judged before the
+            # objcopy and skipped (left as it is) when it fails.
+            if not check_archive(path, data, crates):
+                print(f"size {path} {len(data)} bytes")
+                ok = False
+                continue
+            data = strip_bitcode(path, data)
         print(f"size {path} {len(data)} bytes")
-        if data.startswith(b"!<arch>\n"):
-            ok = check_archive(path, data, crates) and ok
+        if is_archive:
+            ok = check_archive(path, data, crates, expect_no_bitcode=strip) and ok
     sys.exit(0 if ok else 1)
 
 

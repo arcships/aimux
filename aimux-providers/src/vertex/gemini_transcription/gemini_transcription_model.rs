@@ -4,10 +4,10 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::ProjectLocationSource;
 use crate::google::options::{GOOGLE, Namespace};
 use crate::google::transcription::parse_offset_seconds;
 use crate::shared::EndpointConfig;
+use crate::vertex::provider_base::ProjectLocationSource;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::provider_namespace;
 use aimux_core::transcription_model::{
@@ -238,7 +238,7 @@ impl VertexGeminiTranscriptionModel {
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let url = format!(
             "wss://{}/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent",
-            super::location_host(&target.location)
+            crate::vertex::provider_base::location_host(&target.location)
         );
         let mut socket = ws_connect(&WebSocketRequest::for_transcription(
             url,
