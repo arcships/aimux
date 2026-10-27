@@ -5,71 +5,19 @@
 //!
 //! Uses the Bedrock Agent Runtime `/rerank` endpoint.
 
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use serde::Deserialize;
-use serde_json::{Value, json};
-
+use super::super::sigv4_fetch::Auth;
+use super::reranking_api::BedrockRerankingResponse;
+use super::reranking_model_options::parse_bedrock_reranking_options;
+use crate::shared::EndpointConfig;
 use aimux_core::error::AiMuxError;
 use aimux_core::reranking_model::{
     RerankingCallOptions, RerankingDocuments, RerankingModel, RerankingRank, RerankingResponse,
     RerankingResult,
 };
-use aimux_core::shared::SharedProviderOptions;
-
 use aimux_provider_utils::HttpBody;
-
-use super::Auth;
-use super::options;
-use crate::shared::EndpointConfig;
-
-/// Bedrock provider-specific reranking options.
-#[derive(Debug, Clone, Default)]
-struct BedrockRerankingOptions {
-    next_token: Option<String>,
-    additional_model_request_fields: Option<Value>,
-}
-
-fn parse_bedrock_reranking_options(
-    provider_options: Option<&SharedProviderOptions>,
-) -> Result<BedrockRerankingOptions, AiMuxError> {
-    let mut opts = BedrockRerankingOptions::default();
-    if let Some(po) = provider_options {
-        let bedrock = options::read(Some(po));
-        if let Some(bedrock) = bedrock {
-            if bedrock.get("nextToken").is_some_and(|v| !v.is_string())
-                || bedrock
-                    .get("additionalModelRequestFields")
-                    .is_some_and(|v| !v.is_object())
-            {
-                return Err(AiMuxError::invalid_argument(
-                    "invalid amazonBedrock provider options",
-                ));
-            }
-            if let Some(token) = bedrock.get("nextToken").and_then(|v| v.as_str()) {
-                opts.next_token = Some(token.to_string());
-            }
-            if let Some(fields) = bedrock.get("additionalModelRequestFields") {
-                opts.additional_model_request_fields = Some(fields.clone());
-            }
-        }
-    }
-    Ok(opts)
-}
-
-/// The response from the Bedrock `/rerank` endpoint.
-#[derive(Debug, Deserialize)]
-struct BedrockRerankingResponse {
-    results: Vec<BedrockRerankingResult>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(non_snake_case)]
-struct BedrockRerankingResult {
-    index: u32,
-    relevanceScore: f64,
-}
+use async_trait::async_trait;
+use serde_json::{Value, json};
+use std::sync::Arc;
 
 /// An Amazon Bedrock reranking model.
 ///
@@ -182,7 +130,7 @@ impl RerankingModel for BedrockRerankingModel {
             exchange.request(url, options),
             HttpBody::Bytes(body_str.into_bytes(), "application/json".to_string()),
             aimux_provider_utils::create_json_response_handler::<BedrockRerankingResponse>(),
-            super::bedrock_failed_response_handler(),
+            super::super::error::bedrock_failed_response_handler(),
         )
         .await?;
 
