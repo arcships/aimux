@@ -1344,6 +1344,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no replacement. Exports at the crate root and the `mistral` module root are
   unchanged.
 
+- Two `aimux-provider-utils` helpers that nothing called are removed
+  (RFC-0046 §3.2): `headers::with_user_agent_suffix_fn` and
+  `without_trailing_slash_opt`. Append the suffix to resolved headers with
+  `with_user_agent_suffix`, and map an optional URL with
+  `url.map(without_trailing_slash)`.
+
 - The ops error envelope is `{kind, code, message, error}`: the derived
   `retryAfterMs` is removed, together with the clock and cached projection
   behind it (`Ctx.now`, `Operation::start_with_clock`, `OpsError::Projected`,

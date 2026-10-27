@@ -10,13 +10,6 @@ pub fn without_trailing_slash(url: &str) -> String {
     }
 }
 
-/// Remove a trailing slash from an optional URL string, mirroring the TS
-/// `withoutTrailingSlash(url: string | undefined)` signature: `None` in,
-/// `None` out.
-pub fn without_trailing_slash_opt(url: Option<&str>) -> Option<String> {
-    url.map(without_trailing_slash)
-}
-
 /// Validate that a base URL is a valid HTTP(S) URL.
 ///
 /// Parses the URL with the `url` crate and requires:

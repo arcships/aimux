@@ -67,4 +67,4 @@ pub use response_handler::{
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
-pub use url::{validate_base_url, without_trailing_slash, without_trailing_slash_opt};
+pub use url::{validate_base_url, without_trailing_slash};
