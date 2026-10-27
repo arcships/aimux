@@ -14,9 +14,12 @@ each archive, in place, with `rust-objcopy` (the `llvm-objcopy` of rustup's
 RFC-0043 §5.3 S1b: rustup's sysroot objects (std, alloc, core, ...) are
 compiled with `-C embed-bitcode=yes` and keep their LLVM IR even when the
 workspace builds with `lto = false`, about 10 MB of every archive that no
-consumer's linker reads. After the strip the archive must carry no bitcode
-at all, and the `size` line is the stripped archive, the file the release
-ships.
+consumer's linker reads. The fat-LTO check below runs on the members as
+built, before the strip, so a strip cannot "cure" a workspace object that
+carries bitcode and hide a fat-LTO archive; after the strip the archive must
+carry no bitcode at all, and the `size` line is the stripped archive, the
+file the release ships. `scripts/tests/test_check_native_artifact.py` keeps
+the negative case (a workspace member with `.llvmbc`) failing both ways.
 
 A static archive (`!<arch>`) is also opened member by member. A workspace
 crate's object that carries a bitcode section means the archive was built
@@ -299,6 +302,14 @@ def main(argv):
         data = path.read_bytes()
         is_archive = data.startswith(b"!<arch>\n")
         if strip and is_archive:
+            # The fat-LTO guard reads the members as built. Stripping first
+            # would remove the very bitcode that betrays a workspace object
+            # compiled under fat LTO, so the archive is judged before the
+            # objcopy and skipped (left as it is) when it fails.
+            if not check_archive(path, data, crates):
+                print(f"size {path} {len(data)} bytes")
+                ok = False
+                continue
             data = strip_bitcode(path, data)
         print(f"size {path} {len(data)} bytes")
         if is_archive:
