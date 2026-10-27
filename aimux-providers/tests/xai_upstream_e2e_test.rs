@@ -68,7 +68,8 @@ fn sse(events: &[Value]) -> Canned {
     }
 }
 
-/// TS: "should extract usage correctly" (xai/src/responses/xai-responses-language-model.test.ts)
+/// partial: `should extract usage correctly`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn generate_converts_usage() {
     // The port used an unrelated search fixture for this case; restore the TS response.
@@ -98,7 +99,8 @@ async fn generate_converts_usage() {
     assert_eq!(result.response.unwrap().id.as_deref(), Some("resp_123"));
 }
 
-/// TS: "should expose cost_in_usd_ticks in finish providerMetadata" (xai/src/responses/xai-responses-language-model.test.ts)
+/// partial: `should expose cost_in_usd_ticks in finish providerMetadata`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn stream_reports_cost_and_text() {
     let events = vec![
@@ -152,7 +154,8 @@ async fn stream_reports_cost_and_text() {
     );
 }
 
-/// TS: "should forward web_search_call action and sources to tool-result" (xai/src/responses/xai-responses-language-model.test.ts)
+/// partial: `should forward web_search_call action and sources to tool-result`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn tool_results_preserve_actions_and_sources() {
     let body = json!({
@@ -214,7 +217,8 @@ async fn tool_results_preserve_actions_and_sources() {
     assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
 }
 
-/// TS: "should set finish reason to error" (xai/src/responses/xai-responses-language-model.test.ts)
+/// partial: `should set finish reason to error`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn failed_response_emits_error_and_finish() {
     let events = vec![
@@ -266,7 +270,7 @@ async fn failed_response_emits_error_and_finish() {
     assert_eq!(usage.output_tokens.total, Some(0));
 }
 
-/// TS: `xaiResponsesSupportedUrls` (xai-responses-language-model.ts:142-149):
+/// `xaiResponsesSupportedUrls` (xai-responses-language-model.ts:142-149):
 /// image, PDF and text URLs go to the API as they are.
 #[tokio::test]
 async fn responses_support_http_image_pdf_and_text_urls() {

@@ -466,3 +466,6 @@ impl ProviderDiscovery for XAIProvider {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
