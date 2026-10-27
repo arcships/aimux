@@ -169,7 +169,7 @@ lto = false
 - iOS 脚本两 target 同样切 profile 和目录，保留 `strip -Sx` 与每片大小 gate；不要恢复已因兼容性问题移除的 `bitcode_strip`
 - `ffi-build`、Android、Java/Kotlin/Swift/Flutter 的动态链接测试与 release 保持 `--release`。桌面 DLL 的 MSVC 与 Go archive 的 GNU target 不混用
 - 在单独 target 目录中构建两种 profile；上传清单只允许 `staticlib-release/*.a` 或 `release/*.{so,dylib,dll}`。即使 Cargo 因 crate-type 同时产出其他文件，非授权变体一律不复制、不上传
-- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁。2026-10-27 修订：两个绑定 workspace 没有 `[profile.release]`，发布的是 Cargo 默认 release（opt-level 3、无 LTO、不 strip），实测 39 MB；加 size profile（`panic` 保持 `unwind`）后：`opt-level = "z"` 15.5 MB，但大响应慢 28–35%；选定 `"s"`，发布命令的产物为 Node 17,355,696 B、Python 16,775,472 B（a23a636，§15.8），性能与现状无可测差别。before/after 与 bench 见 §15.8，PR 是 B-profile PR（§15.4 步骤 2）
+- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁。2026-10-27 修订：两个绑定 workspace 没有 `[profile.release]`，发布的是 Cargo 默认 release（opt-level 3、无 LTO、不 strip），实测 39 MB；加 size profile（`panic` 保持 `unwind`）后：`opt-level = "z"` 15.5 MB，但大响应慢 28–35%；选定 `"s"`，发布命令的产物为 Node `aimux.node` 17,355,696 B、Python wheel 里的 `aimux.abi3.so` 17,314,784 B（a23a636，§15.8），性能与现状无可测差别。Python 的「现状」要按 `maturin publish` 的默认 strip 算：发布的 `.so` 是 30,576,792 B，不是 cargo 产物的 39.5 MB。before/after 与 bench 见 §15.8，PR 是 B-profile PR（§15.4 步骤 2）
 
 ### 5.2 防止“瘦了但不能用”
 
@@ -651,7 +651,9 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 | | `"s"` + fat LTO + cgu 1 + strip | 16,913,144 | 7,246,332 |
 | | `"z"`，其余同 | 15,530,896 | 6,581,741 |
 | | `3` + fat LTO + cgu 1 + strip | 23,479,480 | 9,850,717 |
-| Python `aimux.so`（a23a636，`cargo build --release`，wheel 里就是这个文件） | **选定：`"s"` + fat LTO + cgu 1 + strip** | **16,775,472** | **7,197,549** |
+| Python wheel 里的 `aimux.abi3.so`（a23a636，`maturin build --release` 产出的 wheel 成员；`maturin publish` 默认 strip，`--no-strip` 才保留符号） | 现状：Cargo 默认 release，发布时被 strip（`maturin build` 产物 39,538,368，`strip --strip-all` 后） | 30,576,792 | 11,335,814 |
+| | **选定：`"s"` + fat LTO + cgu 1 + strip**；wheel 文件 12,983,469 → 7,598,813 | **17,314,784** | **7,259,792** |
+| Python `aimux.so`（a23a636，`cargo build --release` 对照；maturin 产物比它大 539,312 B） | 选定 profile | 16,775,472 | 7,197,549 |
 | Python `aimux.so`（c35acb2 对照系列，只用于 profile 之间的相对比较） | 现状：Cargo 默认 release | 38,703,752 | 12,367,264 |
 | | `"s"` + fat LTO + cgu 1 + strip | 16,777,456 | 7,198,405 |
 | | `"z"`，其余同 | 15,401,528 | 6,539,976 |
