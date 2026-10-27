@@ -11,6 +11,7 @@
 
 mod aisdk_pins;
 pub mod api_key;
+pub mod create_provider_stream_error;
 pub mod decision_language_model;
 pub mod download_blob;
 pub mod extract_response_headers;
@@ -31,6 +32,10 @@ pub mod response_handler;
 pub mod sigv4_fetch;
 pub mod transform_stream;
 pub mod url;
+
+#[cfg(test)]
+mod tests;
+
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
 /// `ws` feature is enabled.
 #[cfg(feature = "ws")]
@@ -38,6 +43,7 @@ pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
 pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use create_provider_stream_error::{ProviderStreamError, create_provider_stream_error};
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
@@ -63,7 +69,7 @@ pub use response_handler::{
     ProviderErrorParts, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
     create_binary_response_handler, create_event_source_response_handler,
     create_json_error_response_handler, create_json_response_handler,
-    create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
+    create_status_code_error_response_handler, invalid_response_api_call,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
