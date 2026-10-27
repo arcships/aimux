@@ -77,7 +77,7 @@ fn base64_file(media_type: &str, b64: &str) -> ImageFile {
 // Image model tests
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TS: "should pass headers"
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -132,19 +132,44 @@ async fn should_respect_max_images_per_call_setting() {
     assert_eq!(model.max_images_per_call(), Some(2));
 }
 
-/// TS: "should use default maxImagesPerCall when not specified"
-#[tokio::test]
-async fn should_use_default_max_images_per_call_when_not_specified() {
-    let provider = create_google(GoogleProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.image_model("gemini-2.5-flash-image").unwrap();
-    assert_eq!(model.max_images_per_call(), Some(1));
+mod google_image_model {
+    use super::*;
+
+    mod max_images_per_call {
+        use super::*;
+
+        /// upstream: @ai-sdk/google src/google-image-model.test.ts › GoogleImageModel › maxImagesPerCall › should default to a supported per-call limit
+        #[tokio::test]
+        async fn should_use_default_max_images_per_call_when_not_specified() {
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some("test-api-key".to_string()),
+                ..Default::default()
+            })
+            .unwrap();
+            let model = provider.image_model("gemini-2.5-flash-image").unwrap();
+            assert_eq!(model.max_images_per_call(), Some(1));
+        }
+
+        /// upstream: @ai-sdk/google src/google-image-model.test.ts › GoogleImageModel › maxImagesPerCall › should respect a custom setting
+        #[tokio::test]
+        async fn gemini_should_respect_custom_max_images_per_call() {
+            let provider = create_google(GoogleProviderSettings {
+                api_key: Some("test-api-key".to_string()),
+                ..Default::default()
+            })
+            .unwrap();
+            let model = provider.image_with_settings(
+                "gemini-2.5-flash-image",
+                GoogleImageSettings {
+                    max_images_per_call: Some(5),
+                },
+            );
+            assert_eq!(model.max_images_per_call(), Some(5));
+        }
+    }
 }
 
-/// TS: "should extract the generated images"
+/// partial: `should use the language model endpoint and extract generated images`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn should_extract_the_generated_images() {
     let server = MockServer::start().await;
@@ -235,7 +260,7 @@ async fn should_return_warnings_for_unsupported_settings() {
     }
 }
 
-/// TS: "should include response data with timestamp, modelId and headers"
+/// partial: `should include usage and response metadata`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn should_include_response_data_with_timestamp_model_id_and_headers() {
     let server = MockServer::start().await;
@@ -280,7 +305,7 @@ async fn should_include_response_data_with_timestamp_model_id_and_headers() {
     );
 }
 
-/// TS: "should throw error when mask is provided"
+/// partial: `should reject unsupported URL editing input and masks`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn should_throw_error_when_mask_is_provided() {
     let server = MockServer::start().await;
@@ -320,24 +345,7 @@ async fn gemini_should_return_10_for_max_images_per_call() {
     assert_eq!(model.max_images_per_call(), Some(1));
 }
 
-/// TS: "should respect custom maxImagesPerCall setting"
-#[tokio::test]
-async fn gemini_should_respect_custom_max_images_per_call() {
-    let provider = create_google(GoogleProviderSettings {
-        api_key: Some("test-api-key".to_string()),
-        ..Default::default()
-    })
-    .unwrap();
-    let model = provider.image_with_settings(
-        "gemini-2.5-flash-image",
-        GoogleImageSettings {
-            max_images_per_call: Some(5),
-        },
-    );
-    assert_eq!(model.max_images_per_call(), Some(5));
-}
-
-/// TS: "should extract the generated image"
+/// partial: `should use the language model endpoint and extract generated images`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_extract_the_generated_image() {
     let server = MockServer::start().await;
@@ -364,7 +372,7 @@ async fn gemini_should_extract_the_generated_image() {
     }
 }
 
-/// TS: "should send correct request body with responseModalities"
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_send_correct_request_body() {
     let server = MockServer::start().await;
@@ -423,7 +431,7 @@ async fn gemini_should_pass_aspect_ratio_via_image_config() {
     );
 }
 
-/// TS: "should support Gemini-only aspect ratios like 21:9"
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_support_21_9_aspect_ratio() {
     let server = MockServer::start().await;
@@ -451,7 +459,7 @@ async fn gemini_should_support_21_9_aspect_ratio() {
     );
 }
 
-/// TS: "should pass seed in generationConfig"
+/// partial: `should send response modalities, aspect ratio, seed, and headers`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_pass_seed_in_generation_config() {
     let server = MockServer::start().await;
@@ -476,7 +484,7 @@ async fn gemini_should_pass_seed_in_generation_config() {
     assert_eq!(body["generationConfig"]["seed"], 12345);
 }
 
-/// TS: "should include usage in response"
+/// partial: `should include usage and response metadata`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_include_usage_in_response() {
     let server = MockServer::start().await;
@@ -523,7 +531,7 @@ async fn gemini_should_include_usage_in_response() {
     assert_eq!(usage.total_tokens, Some(220));
 }
 
-/// TS: "should return warning for unsupported size option"
+/// partial: `should return a warning for the unsupported size option`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_return_warning_for_size() {
     let server = MockServer::start().await;
@@ -549,7 +557,7 @@ async fn gemini_should_return_warning_for_size() {
     }));
 }
 
-/// TS: "should include input images in request for editing"
+/// partial: `should include input images for editing`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_include_input_images_for_editing() {
     let server = MockServer::start().await;
@@ -580,7 +588,7 @@ async fn gemini_should_include_input_images_for_editing() {
     );
 }
 
-/// TS: "should throw error when mask is provided"
+/// partial: `should reject unsupported URL editing input and masks`; full port in src/google/tests/image_model.rs.
 #[tokio::test]
 async fn gemini_should_throw_error_when_mask_is_provided() {
     let server = MockServer::start().await;
