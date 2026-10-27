@@ -1415,7 +1415,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bedrock document names drop everything from the first dot of the filename,
   as the AI SDK's `stripFileExtension` does: `report.v2.pdf` is sent as
-  `report`, not `report.v2`.
+  `report`, not `reportv2`.
 - Anthropic AWS models are named `anthropic-aws.messages` by default, the
   provider name the AI SDK gives them, instead of `anthropic-aws`. A `name`
   setting still replaces it, and the providerOptions key stays `anthropic`.
