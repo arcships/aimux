@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Build
+
+- The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
+  a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. The
+  shipped Linux x86_64 libraries go from 39.1 MB / 38.7 MB to 16.9 MB /
+  16.8 MB (−57%); the six paired benchmark scenarios in
+  `bindings/node/bench/bench_profile.cjs` and
+  `bindings/python/bench/bench_profile.py` stay within noise of the old
+  build. `panic` stays `unwind`, so a panic still surfaces as a JS exception
+  or a Python `PanicException`. `npx napi build --release` and
+  `maturin build --release` pick the profile up; no command changes.
+
 ### Breaking
 
 - `anthropic::types::StreamErrorData::is_retryable` is an
