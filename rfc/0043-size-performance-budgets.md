@@ -2,13 +2,13 @@
 
 > **Status**: Draft
 >
-> **Date**: 2026-10-03
+> **Date**: 2026-10-03；2026-10-27 修订（§15，实测与方案顺序）
 >
 > **Scope**: ROADMAP 的 0.6 S1 / S2 / P、0.7 S3、0.8 stdio P，以及 0.6–1.0 的持续发布门禁。定义产物计量、预算注册、基准测试方法、CI 判定、例外与验收；不改变默认 API、默认功能或协议。
 >
 > **Baseline**: `master@72a37b5058ecd620d75dfe66bee34ef51f89294a`。下文的“现行”均指该提交；拟新增文件、命令及工作流明确标为设计。
 >
-> **Related**: [ROADMAP](../ROADMAP.md) §2 / §6.1、[RFC-0036](0036-positioning-and-layered-architecture.md) §4.3 / §7、[RFC-0010](0010-perf-benchmark-vs-aisdk.md)、[#166](https://github.com/arcships/aimux/issues/166)、[#196](https://github.com/arcships/aimux/pull/196)。
+> **Related**: [ROADMAP](../ROADMAP.md) §2 / §6.1、[RFC-0036](0036-positioning-and-layered-architecture.md) §4.3 / §7、[RFC-0010](0010-perf-benchmark-vs-aisdk.md)、[#166](https://github.com/arcships/aimux/issues/166)、[#196](https://github.com/arcships/aimux/pull/196)、[#267](https://github.com/arcships/aimux/issues/267)（toolchain 固定与 S2）、[#273](https://github.com/arcships/aimux/issues/273)（S1 / P / S3 清单）、[#372](https://github.com/arcships/aimux/issues/372)（panic 策略）。
 >
 > **Amends**: RFC-0010 的“基准结果如何成为内部回归门禁”，不重写其竞品比较研究。PR [#200](https://github.com/arcships/aimux/pull/200) 的 V4 全链路 / 一次性切换方向尚未合入本基线；本 RFC 不以它合入为 S1/S2/P 前提，也不将它描述为现有 API。
 
@@ -479,3 +479,96 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | 没有完整逐平台历史测量 | 不虚构当前值；把当前上限与待注册状态分开，0.6 发布以真实登记为阻塞条件 |
 
 **决定结果**：本 RFC 将“体积与性能是第一基准线”变为有产物身份、有测量契约、有可重现统计、有失败原因、有发布前置条件的工程约束。缺少证据与发生回归同样不能视为完成；优化收益必须来自可验证的构建与运行改进。
+
+## 15. 2026-10-26 实测与修订
+
+基线 `master@4ae85b40409e55c54264f091e0d36f12349703fc`，rustc 1.99.1（CI 当前版本），Linux x86_64。每个配置用独立 target 目录全新构建；MB 为 1,000,000 字节。iOS、Android 与 macOS 的数字由 S1 的 PR 在 CI 里打印后补入本节；本节的 Linux 数据不代表那些平台。原始数据与过程记录在项目文件 `aimux/size-reduction/measurements-1026.md`。
+
+### 15.1 现状
+
+| 产物 | 配置 | raw | gzip -9 |
+|---|---|---:|---:|
+| `libaimux_ffi.so` | 根 `release`（fat LTO、opt z、strip、abort） | 15,170,720 | 5,335,367 |
+| `libaimux_ffi.a` | 同上，`strip -S -x` 后 | 191,125,954 | — |
+| `libaimux_ffi.a` | `lto = false`（即 §5.1 的 staticlib-release） | 91,856,882 | — |
+| 链接进一个调用全部 14 个导出函数的 C 程序后 | 两种 `.a` | 15,136,768 / 15,132,672 | — |
+| Node `.node`（linux-x64-gnu） | Cargo 默认 release（opt 3、无 LTO、不 strip、unwind） | 39,449,048 | 12,526,469 |
+| Node `.node` | 根 `release` 同样的 profile，`unwind` | 15,524,256 | 6,584,671 |
+| Python 扩展 | Cargo 默认 release | 39,004,536 | 12,460,847 |
+| Python 扩展 | 根 `release` 同样的 profile，`unwind` | 15,398,984 | 6,542,729 |
+
+结论：
+
+- fat LTO 对 cdylib 没有可测的收益（15,170,720 对 `lto = false` 的 15,163,192），对 `.a` 使体积翻倍（内嵌 bitcode）。`.a` 链接进宿主程序后两种配置都约 15.1 MB，所以 S1 只改下载体积和 pub 包体积，不改用户 App 的体积。§5.1 不变。
+- 绑定的 39 MB 来自没有 profile，不是来自代码量。这是现状里最大的一项，见 §12 的 B-profile。
+- `.so` 里 `.eh_frame` 与 `.eh_frame_hdr` 合计 2.6 MB（17%）：Rust 1.92 起 `panic = "abort"` 默认仍生成 unwind 表；`-C force-unwind-tables=no` 可再减 11%，但只在 abort 下有意义，与 #372 的方向相反，不采用。
+
+### 15.2 panic 策略的体积增量（#372 要求实测）
+
+| 产物 | abort | unwind | 增量 |
+|---|---:|---:|---:|
+| `libaimux_ffi.so`（fat LTO） | 15,170,720 | 18,653,800 | +3,483,080（+23.0%） |
+| `libaimux_ffi.a`（`lto = false`，strip 后） | 91,856,882 | 106,116,332 | +15.5% |
+| 链接后的 C 程序 | 15,136,768 | 18,479,104 | +22.1% |
+| Node `.node`（size profile） | 12,571,152（对照，不可发布） | 15,524,256 | +23.5% |
+| Python 扩展（size profile） | 12,470,016（对照，不可发布） | 15,398,984 | +23.5% |
+
+增量的构成（`.so`）：`.text` +2.0 MB（landing pad）、新增 `.gcc_except_table` 1.16 MB、`.eh_frame` +0.3 MB。Node、Python 必须保持 `unwind`（napi-rs 与 PyO3 用 `catch_unwind` 把 panic 转成宿主异常），对照行只用来看增量。arm64 的增量由 S1 的 PR 在 CI 里补测。本 RFC 不决定 abort 还是 unwind：**待讨论（#372）**。两种策略各登记一套 B/H，#372 决议后以选定策略的基线为准。
+
+### 15.3 体积构成与各手段的实测
+
+`.text` 按符号归属（未 strip 的同配置构建，`nm --size-sort`；`cargo-bloat` 不支持同时声明三种 crate-type 的 crate）：
+
+| 类别 | 大小 | 占比 |
+|---|---:|---:|
+| 反序列化（serde derive 展开、`serde_json::Value`、内部 tagged 枚举的 `Content` 缓冲） | 1.73 MB | 18.6% |
+| 厂商实现（aimux-providers） | 1.72 MB | 18.6% |
+| jsonschema、fancy-regex、regex、num-bigint、referencing | 0.96 MB | 10.3% |
+| rustls、ring、webpki | 0.85 MB | 9.1%（另有 0.18 MB 预计算表在 `.rodata`） |
+| schemars（ops manifest 的运行时 schema 生成） | 0.64 MB | 6.9% |
+| tokio、hyper、reqwest、http | 0.40 MB | 4.3% |
+| core、alloc 的泛型实例化及其他 | 其余 | |
+
+把各块代码直接拿掉再编（只作测量，不是方案）：
+
+| 拿掉什么 | 体积 | 省 |
+|---|---:|---:|
+| 45 个厂商只留 OpenAI 与 Anthropic | 12,418,240 | 18% |
+| JSON schema 校验（工具输入、结构化输出） | 13,981,512 | 8% |
+| ops manifest 的运行时 schema 生成 | 14,088,152 | 7% |
+| 三项一起 | 10,157,632 | 33% |
+
+稳定版编译与链接选项（与现状 15,170,720 比）：
+
+| 选项 | 结果 | 结论 |
+|---|---:|---|
+| `opt-level = "s"` | +3.8% | 保持 `z` |
+| `opt-level = 3` | +32% | 绑定现状 |
+| `lto = "thin"` | ±0 | 与 fat 等价，编译更快 |
+| lld `--icf=all` | −2.4% | 采用（Linux、Android） |
+| `-z pack-relative-relocs`（RELR） | −8.8% | Android 需 minSdk ≥ 28（现 21）、Linux 需 glibc ≥ 2.36（Node 包承诺 2.17）：**待讨论** |
+| `-C llvm-args=-enable-machine-outliner=always` | −1.2%（x86_64） | clang 在 `-Oz` 对 AArch64 默认开启；arm64 在 CI 补测后决定 |
+| `-C llvm-args=-inline-threshold=25` | ±0 | 不采用 |
+| nightly：build-std、`optimize_for_size`、`immediate-abort`、`location-detail=none`、`fmt-debug=shallow` | −0.5% 至 −7%，`immediate-abort` 仅 abort 可用 | 发布不用 nightly，只作参考 |
+
+代码层面的候选（都改行为或改实现方式，各自单独提案，本 RFC 只登记测量；**均为待讨论**）：
+
+1. 工具输入与结构化输出的 schema 校验改为调用方提供校验器时才校验。上游 `provider-utils/src/validate-types.ts` 第 67 行对没有 `validate` 函数的纯 JSON Schema 直接返回成功；aimux 现在用 jsonschema 对所有 schema 校验，比上游严。改法可以是可选校验器，或默认关闭的 cargo feature。省 8%，去掉 jsonschema 后 `regex` 才有换 `regex-lite` 的余地。
+2. ops manifest 的类型 schema 在构建期由 codegen 生成并嵌入，运行时只返回文本与摘要，不再链接 schemars 的 JsonSchema 实现。省 7%，输出不变。
+3. TLS 精简：只保留 TLS 1.3、X25519 与 P-256、两个加密套件，rustls 关闭 `tls12` 与 `logging`；Apple、Windows、Android 用 `rustls-platform-verifier` 代替内置根证书；tokio 不用 `full`。估计合计 2% 到 3%。只会 TLS 1.2 的企业代理会失败。
+4. serde：统一一种反序列化入口（都从文本或都从 `Value`），把内部 tagged 枚举改为先读 tag 再分发。按符号估算最多 3%，改动面大，排在最后。
+
+同类参考（2026-10-27 查）：Signal、Matrix、Mozilla、Bitwarden 的 Rust SDK 都发静态 xcframework，动态 framework 只在小项目用于解决符号冲突；Rust 原生 npm 包每平台 2 到 11 MB（oxc 2、swc 和 lightningcss 10），PyPI wheel 2 到 5 MB（pydantic-core 2.2、tokenizers 3.4）。`.a` 的发布体积可用 Tweag 2025 的后处理（合并目标文件、去 bitcode 与段名表）从 92 MB 再压到约 30 MB，Linux 上第一步实测 92 → 57 MB；这是 iOS 改动态 framework 的替代。
+
+### 15.4 方案顺序
+
+前三步只改 profile、构建脚本和 CI，不碰 crate 代码，与 RFC-0044 / RFC-0046 的 crate 拆分不冲突。
+
+1. **S1**（§5）：`ios-release` 改名 `staticlib-release`，Go 与桌面 `.a` 改用它；CI 对每个产物打印字节数，补齐 iOS、Android、macOS 的 abort/unwind 与 outliner 数据。
+2. **B-profile**：Node、Python 绑定加 size profile，`unwind` 不变，热点 crate 按包保留 `opt-level = 3`；maturin 压缩级别 9；PR 附绑定 bench 对比。
+3. **panic**（#372）：按决议改 profile，aimux-ffi 入口统一接 panic；体积增量按 §15.2 登记。改到 aimux-ffi 的导出函数，排在 RFC-0044 的 C3（错误信封）之后。
+4. **S2**（§3、§4、§9）：按前三步之后的实测登记 B/H。
+5. **S3**（§6）：§15.3 的待讨论项各自提案通过后逐项实施，等 crate 拆分合并后再动代码。
+
+ROADMAP §6.1 的目标表在 S2 登记完成后按实测修订；在此之前不改写目标。
+
