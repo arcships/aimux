@@ -2584,3 +2584,49 @@ async fn convert_should_reject_prefix_completion_on_a_non_final_assistant_messag
         "{error}"
     );
 }
+
+/// aimux's own: a usage count that is not a number fails the response, as
+/// `tokenUsageSchema` requires numbers or null (deepseek-chat-api-types.ts:95-113).
+#[tokio::test]
+async fn generate_rejects_a_usage_count_that_is_not_a_number() {
+    let mut body = text_response();
+    body["usage"]["prompt_tokens"] = json!("100");
+    let server = json_server(body).await;
+    let error = chat(&server, "deepseek-chat")
+        .do_generate(&options())
+        .await
+        .expect_err("a string count must be rejected");
+    assert!(
+        error
+            .to_string()
+            .contains("usage/prompt_tokens must be a number"),
+        "{error}"
+    );
+}
+
+/// aimux's own: the same check on a stream chunk's usage.
+#[tokio::test]
+async fn stream_rejects_a_usage_count_that_is_not_a_number() {
+    let mut chunks = text_chunks();
+    chunks.pop();
+    chunks.push(data_event(&json!({
+        "id": "c1", "object": "chat.completion.chunk", "created": 1764656316,
+        "model": "deepseek-chat",
+        "choices": [{ "index": 0, "delta": { "content": "" }, "finish_reason": "stop" }],
+        "usage": { "prompt_tokens": 13, "completion_tokens": "3", "total_tokens": 16 }
+    })));
+    let server = sse_server(chunks).await;
+    let parts = collect(
+        chat(&server, "deepseek-chat")
+            .do_stream(&options())
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::Error { .. })),
+        "{parts:?}"
+    );
+}

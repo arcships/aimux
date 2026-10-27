@@ -1243,6 +1243,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- DeepSeek rejects a response whose usage counts are not numbers, as
+  `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
+  string such as `"prompt_tokens": "100"` as 0. Applies to generate and
+  stream.
 - Open Responses fails a response without `output` as an API call error
   with status 500, not retryable, as the AI SDK does. It was an
   `InvalidResponseData` error.
