@@ -5,7 +5,12 @@ mod convert_usage;
 mod evaluation;
 mod files;
 mod language_model;
+mod language_model_stream;
 mod message_lifecycle;
 mod prepare_tools;
 mod provider;
+mod remaining_support;
+#[allow(clippy::module_inception)]
+mod sanitize_json_schema;
 mod skills;
+mod tool_name_mapping;

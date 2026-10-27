@@ -11,24 +11,18 @@ use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 use serde_json::Value;
 
-use super::options::{CANONICAL, anthropic_options};
+use super::language_model_options::{CANONICAL, anthropic_options};
 
 /// Anthropic allows a maximum of 4 cache breakpoints per request.
 const MAX_CACHE_BREAKPOINTS: u32 = 4;
 
 /// Extract the `cache_control` value from provider metadata, mirroring the TS
 /// `getCacheControl` helper. Accepts both the camelCase `cacheControl` and the
-/// snake_case `cache_control` keys under `providerOptions.anthropic`.
+/// snake_case `cache_control` keys under `providerOptions.anthropic` merged with
+/// `providerOptions[name]` for a provider created with a custom `name`, the
+/// custom key winning.
 ///
 /// The value is passed through unchanged (the Anthropic API validates it).
-#[must_use]
-pub fn extract_cache_control(provider_options: Option<&SharedProviderOptions>) -> Option<Value> {
-    extract_cache_control_for(provider_options, CANONICAL)
-}
-
-/// [`extract_cache_control`] for a provider created with a custom `name`: the
-/// options are read from `providerOptions.anthropic` merged with
-/// `providerOptions[name]`, the custom key winning.
 #[must_use]
 pub(crate) fn extract_cache_control_for(
     provider_options: Option<&SharedProviderOptions>,

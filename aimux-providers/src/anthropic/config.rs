@@ -23,7 +23,7 @@ use aimux_provider_utils::{
     normalize_headers,
 };
 
-use super::convert::RequestProfile;
+use super::language_model::RequestProfile;
 use crate::shared::Endpoint;
 pub use crate::shared::TransformRequestBody;
 
@@ -111,7 +111,7 @@ impl Default for AnthropicModelHooks {
         Self {
             messages_url: MessagesUrl::Messages,
             prepare_body: None,
-            failed_response_handler: super::anthropic_failed_response_handler,
+            failed_response_handler: super::error::anthropic_failed_response_handler,
             supports_native_structured_output: true,
             supports_strict_tools: true,
         }
@@ -119,7 +119,7 @@ impl Default for AnthropicModelHooks {
 }
 
 /// What a model needs to talk to the API. Built by the provider that owns the
-/// model; read by [`AnthropicMessagesModel`](super::model::AnthropicMessagesModel)
+/// model; read by [`AnthropicMessagesModel`](super::AnthropicMessagesModel)
 /// and the files interface.
 #[derive(Clone)]
 pub(crate) struct AnthropicModelConfig {

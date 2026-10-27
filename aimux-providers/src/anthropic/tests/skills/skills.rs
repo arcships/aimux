@@ -9,7 +9,7 @@ use aimux_core::files_model::UploadFileData;
 use aimux_core::shared::FileBytes;
 use aimux_core::skills_model::{SkillFile, Skills, UploadSkillCallOptions};
 
-use crate::anthropic::options::CANONICAL;
+use crate::anthropic::language_model_options::CANONICAL;
 use crate::anthropic::{AnthropicProvider, AnthropicProviderSettings, create_anthropic};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
 
