@@ -22,6 +22,7 @@ pub mod handle_fetch_error;
 pub mod headers;
 pub mod http;
 pub mod inject_json_instruction;
+pub mod is_valid_hostname_part;
 pub mod logging;
 pub mod media_type;
 pub mod multipart;
@@ -41,7 +42,7 @@ pub mod url;
 pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
-pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use api_key::{base_url_setting, load_api_key, load_optional_setting, load_setting};
 pub use create_language_model_response_metadata::create_language_model_response_metadata;
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
@@ -56,6 +57,7 @@ pub use headers::{
 };
 pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
 pub use inject_json_instruction::{inject_json_instruction, inject_json_instruction_into_messages};
+pub use is_valid_hostname_part::is_valid_hostname_part;
 pub use logging::{init_logging, redact_error_context};
 pub use media_type::{
     MAX_ID3_TAG_BYTES, MediaTypeData, detect_media_type, get_top_level_media_type,

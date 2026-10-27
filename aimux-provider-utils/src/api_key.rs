@@ -60,3 +60,34 @@ pub fn load_optional_setting(
         None => std::env::var(environment_variable_name).ok(),
     }
 }
+
+/// The base URL of a native package: the explicit setting, else the
+/// environment variable `var` read when the provider is created (the AI SDK's
+/// `loadOptionalSetting`), else `default`.
+///
+/// An invalid explicit value fails the factory (`Err` from the outer
+/// result). An invalid environment value does not: the AI SDK does not
+/// validate it when the provider is created and the first request fails, so
+/// the inner `Err` is kept and reported by every request of that provider.
+/// Creating a default provider therefore never fails on the environment.
+///
+/// # Errors
+///
+/// The outer `Err` is `normalize`'s error for an invalid explicit value.
+pub fn base_url_setting(
+    explicit: Option<&str>,
+    var: &str,
+    default: &str,
+    normalize: impl Fn(&str) -> Result<String, AiMuxError>,
+) -> Result<Result<String, AiMuxError>, AiMuxError> {
+    if let Some(url) = explicit {
+        return normalize(url).map(Ok);
+    }
+    Ok(match load_optional_setting(None, var) {
+        Some(url) => normalize(&url).map_err(|error| AiMuxError::InvalidArgument {
+            message: format!("{var}: {error}"),
+            cause: Some(error.into()),
+        }),
+        None => Ok(default.to_string()),
+    })
+}
