@@ -15,7 +15,7 @@ use aimux_core::result::StreamResult;
 use aimux_core::stream_part::StreamPart;
 
 use crate::openai_compatible::completion::{CompletionConfig, OpenAICompatibleCompletionModel};
-use crate::openai_compatible::config::{BaseUrl, ChatSettings, CompatModelConfig};
+use crate::openai_compatible::{BaseUrl, ChatSettings, CompatModelConfig};
 use crate::openai_compatible::{
     OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
 };
@@ -918,5 +918,52 @@ mod do_stream {
                 json!("camel-value")
             );
         }
+    }
+}
+
+// ── Older ports (previously `tests/openai_compatible_upstream_e2e_test.rs`) ──
+//
+// End-to-end subset of the pinned openai-compatible upstream tests.
+
+mod upstream_e2e {
+    use aimux_core::AiMuxError;
+    use aimux_core::language_model::LanguageModel;
+    use aimux_core::stream_part::StreamPart;
+    use futures::StreamExt;
+    use serde_json::json;
+
+    use crate::openai_compatible::tests::support::*;
+    use crate::test_support::mock_fetch::MockFetch;
+
+    /// Upstream: @ai-sdk/openai-compatible 3.0.62
+    /// src/completion/openai-compatible-completion-language-model.ts:320-324
+    /// passes an error chunk on as it is (`error: value.error`): unlike
+    /// @ai-sdk/openai, no status is inferred from its `code`/`type`.
+    #[tokio::test]
+    async fn completion_stream_error_infers_no_status() {
+        let fetch = MockFetch::new(vec![stream_response(&[json!({"error":{
+            "message":"Slow down","type":"requests","code":"rate_limit_exceeded"}})])]);
+        let parts: Vec<_> = provider(&fetch)
+            .completion("test-model")
+            .do_stream(&options())
+            .await
+            .unwrap()
+            .stream
+            .map(|part| part.unwrap())
+            .collect()
+            .await;
+        let error = parts
+            .iter()
+            .find_map(|part| match part {
+                StreamPart::Error {
+                    error: AiMuxError::ApiCall(error),
+                } => Some(error),
+                _ => None,
+            })
+            .expect("expected an API error part");
+        assert_eq!(error.message, "Slow down");
+        assert_eq!(error.provider_code.as_deref(), Some("rate_limit_exceeded"));
+        assert_eq!(error.status_code, None);
+        assert!(!error.is_retryable);
     }
 }

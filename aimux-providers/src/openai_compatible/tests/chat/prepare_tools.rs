@@ -2,7 +2,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::options::CallOptions;
 
-use crate::openai_compatible::convert::{PreparedTools, prepare_function_tools};
+use crate::openai_compatible::chat::prepare_tools::{PreparedTools, prepare_function_tools};
 
 /// `prepareTools({ tools, toolChoice })`: the Rust form reads both from the
 /// call options, given here in their AI SDK JSON form.
