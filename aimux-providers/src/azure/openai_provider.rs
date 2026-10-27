@@ -18,8 +18,8 @@ use aimux_core::transcription_model::{
 };
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HttpRequest,
-    RequestCredentials, Resolvable, default_fetch, load_setting, validate_base_url,
-    without_trailing_slash,
+    RequestCredentials, Resolvable, default_fetch, is_valid_hostname_part, load_setting,
+    validate_base_url, without_trailing_slash,
 };
 use futures::future::BoxFuture;
 
@@ -29,7 +29,7 @@ use crate::openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
     OpenAITranscriptionModel,
 };
-use crate::shared::{AuthScheme, Credential, ProviderHeaders, is_valid_hostname_part};
+use crate::shared::{AuthScheme, Credential, ProviderHeaders};
 
 use super::options;
 use super::transcription_model_options::{Api, AzureOptions, is_default_speech, parse_options};

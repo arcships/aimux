@@ -125,7 +125,7 @@ impl std::fmt::Debug for AnthropicProviderSettings {
 pub fn create_anthropic(
     settings: AnthropicProviderSettings,
 ) -> Result<AnthropicProvider, AiMuxError> {
-    let base_url = crate::shared::base_url_setting(
+    let base_url = aimux_provider_utils::base_url_setting(
         settings.base_url.as_deref(),
         "ANTHROPIC_BASE_URL",
         DEFAULT_BASE_URL,
