@@ -42,9 +42,7 @@ fn convert_image_part(
     tool_result: bool,
 ) -> Result<Value, AiMuxError> {
     if tool_result && let FileData::Reference { reference } = &part.data {
-        let file_id = reference.get("deepseek").ok_or_else(|| {
-            AiMuxError::invalid_argument("No provider reference found for provider 'deepseek'.")
-        })?;
+        let file_id = aimux_provider_utils::resolve_provider_reference(reference, "deepseek")?;
         return Ok(json!({ "type": "file", "file_id": file_id }));
     }
     let mut options =
@@ -61,11 +59,7 @@ fn convert_image_part(
     };
     match &part.data {
         FileData::Reference { reference } => {
-            let file_id = reference.get("deepseek").ok_or_else(|| {
-                AiMuxError::invalid_argument(
-                    "No provider reference found for provider 'deepseek'.".to_string(),
-                )
-            })?;
+            let file_id = aimux_provider_utils::resolve_provider_reference(reference, "deepseek")?;
             Ok(json!({ "type": "file", "file_id": file_id }))
         }
         FileData::Url { url, .. } => {

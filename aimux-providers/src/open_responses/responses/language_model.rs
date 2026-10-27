@@ -12,8 +12,7 @@ use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::Tool;
 use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ProviderMetadata, ReasoningEffort, ResponseMetadata, Usage,
-    Warning,
+    FinishReason, FinishReasonUnified, ProviderMetadata, ReasoningEffort, Usage, Warning,
 };
 use aimux_provider_utils::{Transformer, pipe_through};
 use async_trait::async_trait;
@@ -256,20 +255,15 @@ impl LanguageModel for OpenResponsesModel {
             raw: incomplete_reason.map(std::string::ToString::to_string),
         };
 
-        let response = ResponseMetadata {
-            id: raw
-                .get("id")
+        let response = aimux_provider_utils::create_language_model_response_metadata(
+            raw.get("id")
                 .and_then(|v| v.as_str())
                 .map(std::string::ToString::to_string),
-            timestamp: raw
-                .get("created_at")
-                .and_then(serde_json::Value::as_f64)
-                .and_then(aimux_core::Timestamp::from_unix_seconds),
-            model_id: raw
-                .get("model")
+            raw.get("model")
                 .and_then(|v| v.as_str())
                 .map(std::string::ToString::to_string),
-        };
+            raw.get("created_at").and_then(serde_json::Value::as_f64),
+        );
 
         Ok(GenerateResult {
             content,

@@ -24,9 +24,7 @@ use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{RawToolCall, ToolResult};
-use aimux_core::types::{
-    FinishReason, FinishReasonUnified, ReasoningEffort, ResponseMetadata, Usage, Warning,
-};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ReasoningEffort, Usage, Warning};
 use aimux_provider_utils::{Transformer, pipe_through};
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -485,10 +483,6 @@ impl LanguageModel for XaiResponsesModel {
             data.safety_identifier.as_deref(),
         );
 
-        let timestamp = data
-            .created_at
-            .and_then(|c| aimux_core::Timestamp::from_unix_seconds(c as f64));
-
         Ok(GenerateResult {
             content,
             finish_reason,
@@ -496,11 +490,14 @@ impl LanguageModel for XaiResponsesModel {
             warnings: request_result.warnings,
             provider_metadata,
             response: Some(aimux_core::shared::ResponseInfo {
-                id: data.id,
-                timestamp,
-                model_id: data.model,
                 headers: Some(response_headers),
                 body: Some(raw_value),
+                ..aimux_provider_utils::create_language_model_response_metadata(
+                    data.id,
+                    data.model,
+                    data.created_at.map(|c| c as f64),
+                )
+                .into()
             }),
             request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
         })
@@ -659,13 +656,13 @@ impl XaiResponsesStream {
                         let created_at = response
                             .get("created_at")
                             .and_then(serde_json::Value::as_u64);
-                        let timestamp = created_at
-                            .and_then(|c| aimux_core::Timestamp::from_unix_seconds(c as f64));
-                        controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                            id,
-                            timestamp,
-                            model_id: model,
-                        }));
+                        controller.enqueue(StreamPart::ResponseMetadata(
+                            aimux_provider_utils::create_language_model_response_metadata(
+                                id,
+                                model,
+                                created_at.map(|c| c as f64),
+                            ),
+                        ));
                     }
                     return;
                 }

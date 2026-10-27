@@ -16,7 +16,7 @@ use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Warning};
+use aimux_core::types::{FinishReason, ReasoningEffort, Warning};
 use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
 use crate::shared::EndpointConfig;
@@ -38,19 +38,6 @@ use super::prepare_tools::prepare_tools;
 pub struct GroqChatLanguageModel {
     model_id: String,
     config: EndpointConfig,
-}
-
-/// `getResponseMetadata`.
-fn response_metadata(
-    id: Option<String>,
-    created: Option<u64>,
-    model_id: Option<String>,
-) -> ResponseMetadata {
-    ResponseMetadata {
-        id,
-        timestamp: created.and_then(|secs| aimux_core::Timestamp::from_unix_seconds(secs as f64)),
-        model_id,
-    }
 }
 
 /// `getGroqStreamErrorMetadata`: the HTTP status an error type stands for.
@@ -336,7 +323,12 @@ impl LanguageModel for GroqChatLanguageModel {
             response: Some(ResponseInfo {
                 headers: Some(response_headers),
                 body: resp.raw_value,
-                ..response_metadata(response.id, response.created, response.model).into()
+                ..aimux_provider_utils::create_language_model_response_metadata(
+                    response.id,
+                    response.model,
+                    response.created.map(|secs| secs as f64),
+                )
+                .into()
             }),
             request: Some(RequestInfo { body: Some(body) }),
         })
@@ -466,7 +458,11 @@ impl Transformer for GroqChatStream {
 
         if !self.metadata_emitted {
             self.metadata_emitted = true;
-            let metadata = response_metadata(value.id, value.created, value.model);
+            let metadata = aimux_provider_utils::create_language_model_response_metadata(
+                value.id,
+                value.model,
+                value.created.map(|secs| secs as f64),
+            );
             controller.enqueue(StreamPart::ResponseMetadata(metadata));
         }
 

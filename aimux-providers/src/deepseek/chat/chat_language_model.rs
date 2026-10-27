@@ -12,7 +12,7 @@ use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, StreamResult};
 use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::types::{FinishReason, ReasoningEffort, ResponseMetadata, Warning};
+use aimux_core::types::{FinishReason, ReasoningEffort, Warning};
 use aimux_provider_utils::{Transformer, generate_id, pipe_through};
 
 use super::chat_api_types::{ChatChunk, ChatResponse};
@@ -52,11 +52,6 @@ struct RequestBodyResult {
     body: Value,
     /// Warnings raised while building it.
     warnings: Vec<Warning>,
-}
-
-/// `new Date(created * 1000)`.
-fn timestamp(created: Option<f64>) -> Option<aimux_core::Timestamp> {
-    created.and_then(aimux_core::Timestamp::from_unix_seconds)
 }
 
 /// The HTTP status a stream error code stands for: a number or a three-digit
@@ -465,11 +460,14 @@ impl LanguageModel for DeepSeekChatLanguageModel {
                 Value::Object(metadata),
             )?),
             response: Some(ResponseInfo {
-                id: data.id,
-                timestamp: timestamp(data.created),
-                model_id: data.model,
                 headers: Some(response_headers),
                 body: Some(raw),
+                ..aimux_provider_utils::create_language_model_response_metadata(
+                    data.id,
+                    data.model,
+                    data.created,
+                )
+                .into()
             }),
             request: Some(RequestInfo { body: Some(body) }),
         })
@@ -595,11 +593,13 @@ impl Transformer for DeepSeekChatStream {
 
         if !self.metadata_emitted {
             self.metadata_emitted = true;
-            controller.enqueue(StreamPart::ResponseMetadata(ResponseMetadata {
-                id: chunk.id.clone(),
-                timestamp: timestamp(chunk.created),
-                model_id: chunk.model.clone(),
-            }));
+            controller.enqueue(StreamPart::ResponseMetadata(
+                aimux_provider_utils::create_language_model_response_metadata(
+                    chunk.id.clone(),
+                    chunk.model.clone(),
+                    chunk.created,
+                ),
+            ));
         }
 
         if let Some(chunk_usage) = chunk.usage.filter(|usage| !usage.is_null()) {

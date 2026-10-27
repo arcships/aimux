@@ -2,3 +2,4 @@
 //! `.test.ts` (RFC-0044 L6).
 
 mod map_reasoning_to_provider;
+mod resolve_provider_reference;

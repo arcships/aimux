@@ -3,11 +3,10 @@
 //!
 //! The TS `withoutTrailingSlash(url: string | undefined)` returns `undefined`
 //! for `undefined` input. The Rust [`aimux_provider_utils::without_trailing_slash`]
-//! operates on `&str`; the `Option`-aware variant
-//! [`aimux_provider_utils::without_trailing_slash_opt`] mirrors the TS
-//! `string | undefined` signature and is used for the `None` case.
+//! operates on `&str`; an optional URL is mapped over it, which covers the
+//! `None` case.
 
-use aimux_provider_utils::{without_trailing_slash, without_trailing_slash_opt};
+use aimux_provider_utils::without_trailing_slash;
 
 #[test]
 fn removes_a_trailing_slash() {
@@ -21,14 +20,16 @@ fn removes_a_trailing_slash() {
 #[test]
 fn returns_none_when_url_is_none() {
     // TS: "returns undefined when the URL is undefined"
-    assert_eq!(without_trailing_slash_opt(None), None);
+    let url: Option<&str> = None;
+    assert_eq!(url.map(without_trailing_slash), None);
 }
 
 #[test]
 fn preserves_an_empty_string() {
     // TS: "preserves an empty string"
     assert_eq!(without_trailing_slash(""), "");
-    assert_eq!(without_trailing_slash_opt(Some("")), Some(String::new()));
+    let url: Option<&str> = Some("");
+    assert_eq!(url.map(without_trailing_slash), Some(String::new()));
 }
 
 #[test]
