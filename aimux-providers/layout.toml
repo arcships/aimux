@@ -1513,3 +1513,49 @@ sub-feature = [
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[anthropic_aws]
+package = "@ai-sdk/anthropic-aws"
+
+[[anthropic_aws.files]]
+upstream = "src/anthropic-aws-fetch.ts"
+rust = "anthropic_aws/model.rs"
+status = "mapped"
+
+[anthropic_aws.files.tests]
+registered = [
+  { case = "createSigV4FetchFunction › should bypass signing for non-POST requests", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no x-api-key, GET included, so that list_models is accepted" },
+  { case = "createSigV4FetchFunction › should bypass signing if POST request has no body", ref = "AWS SigV4 fetch 也给 GET 请求签名（§9.1 已知差距）", reason = "aimux signs every request that carries no x-api-key, a bodyless POST included" },
+]
+ts-only = [
+  { case = "createSigV4FetchFunction › should handle non-string body by stringifying it", reason = "FetchRequest.body is bytes; there is no JS object body for JSON.stringify to coerce" },
+]
+
+[[anthropic_aws.files]]
+upstream = "src/anthropic-aws-provider.ts"
+rust = "anthropic_aws/mod.rs"
+status = "mapped"
+
+[anthropic_aws.files.tests]
+registered = [
+  { case = "anthropicAws provider - region › throws when region is not resolvable at model creation time", ref = "不可失败的默认 provider 访问", reason = "creating a model reads no setting; a missing region fails the first request with LoadSetting (§3.3 Anthropic-AWS row: aimux 统一推迟到请求阶段)" },
+]
+sub-feature = [
+  { case = "anthropicAws provider - model identity › exposes files() returning an AnthropicFiles instance", issue = 275, reason = "AnthropicAwsProvider has no files(); only the Anthropic provider has one" },
+  { case = "anthropicAws provider - model identity › exposes skills() returning an AnthropicSkills instance", issue = 275, reason = "AnthropicAwsProvider has no skills(); only the Anthropic provider has one" },
+]
+ts-only = [
+  { case = "anthropicAws provider - model identity › throws if the provider function is called with new", reason = "Rust has no `new` on a callable; the provider is called with call()" },
+]
+
+[[anthropic_aws.files]]
+upstream = "src/index.ts"
+rust = "anthropic_aws/mod.rs"
+status = "mapped"
+
+[anthropic_aws.files.tests]
+
+[[anthropic_aws.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"

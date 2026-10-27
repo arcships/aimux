@@ -270,3 +270,6 @@ impl ProviderDiscovery for AnthropicAwsProvider {
         Box::pin(async move { crate::anthropic::list_models_once(&config).await })
     }
 }
+
+#[cfg(test)]
+mod tests;
