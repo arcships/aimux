@@ -1,66 +1,34 @@
-//! Hugging Face Responses API language model.
-//!
-//! Implements the [`LanguageModel`] trait against the Hugging Face Responses
-//! API (`POST /responses`). This is the lightest Responses implementation in
-//! the SDK: it supports function tools only (no built-in tools), uses
-//! `text.format` for structured output, and surfaces reasoning content from
-//! `reasoning` output items.
-//!
-//! Translation of the TS sources:
-//! - `huggingface-responses-language-model.ts` — request/response + streaming
-//! - `convert-to-huggingface-responses-messages.ts` — prompt → `input` array
-//! - `huggingface-responses-prepare-tools.ts` — tool / tool-choice mapping
-//! - `convert-huggingface-responses-usage.ts` — usage mapping
-//! - `map-huggingface-responses-finish-reason.ts` — finish-reason mapping
-//! - `huggingface-responses-language-model-options.ts` — provider options
+//! The Hugging Face Responses language model (`huggingface-responses-language-model.ts`):
+//! request body, `doGenerate`, `doStream` and the response parsing.
 
 use aimux_core::tool::RawToolCall;
 use aimux_core::tool::ToolResult;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use base64::Engine;
 use futures::StreamExt;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
-use aimux_core::language_model_message::{
-    AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart, UserPart,
-};
-use aimux_core::options::{CallOptions, LanguageModelV4ToolChoice, ResponseFormat};
+use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, ReasoningOutput, Source, StreamResult};
-use aimux_core::shared::{FileBytes, FileData};
 use aimux_core::stream_part::StreamPart;
-use aimux_core::tool::Tool;
-use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Usage, Warning};
+use aimux_core::types::{FinishReason, FinishReasonUnified, ResponseMetadata, Warning};
 
-use aimux_provider_utils::{
-    MediaTypeData, Transformer, detect_media_type, get_top_level_media_type, is_full_media_type,
-    pipe_through,
-};
+use aimux_provider_utils::{Transformer, pipe_through};
 
 use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
 
 use crate::shared::EndpointConfig;
 
-fn huggingface_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-    aimux_provider_utils::create_json_error_response_handler(|data| {
-        let error = data.get("error");
-        aimux_provider_utils::ProviderErrorParts {
-            message: error
-                .and_then(|value| value.get("message"))
-                .and_then(Value::as_str)
-                .unwrap_or("Hugging Face request failed")
-                .to_string(),
-            provider_code: error
-                .and_then(|value| value.get("code").or_else(|| value.get("type")))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        }
-    })
-}
+use super::convert_responses_usage::convert_usage;
+use super::convert_to_responses_messages::convert_to_huggingface_responses_messages;
+use super::map_responses_finish_reason::map_finish_reason;
+use super::responses_language_model_options as options;
+use super::responses_prepare_tools::prepare_responses_tools;
+use crate::huggingface::error::huggingface_failed_response_handler;
 
 fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
     aimux_provider_utils::ResponseHandler::new(|input| async move {
@@ -166,7 +134,7 @@ impl<'a> HuggingFaceStreamError<'a> {
 
 /// A Hugging Face Responses API language model.
 ///
-/// Created via [`super::HuggingFaceProvider::responses`].
+/// Created via [`crate::huggingface::HuggingFaceProvider::responses`].
 pub struct HuggingFaceResponsesModel {
     model_id: String,
     config: EndpointConfig,
@@ -235,7 +203,7 @@ impl LanguageModel for HuggingFaceResponsesModel {
             finish_reason,
             usage,
             warnings: request.warnings,
-            provider_metadata: Some(super::options::huggingface_metadata(
+            provider_metadata: Some(options::huggingface_metadata(
                 json!({ "responseId": response_id }),
             )),
             response: Some(aimux_core::shared::ResponseInfo {
@@ -402,11 +370,9 @@ impl HuggingFaceResponsesStream {
                                             .to_string();
                                         controller.enqueue(StreamPart::TextStart {
                                             id: id.clone(),
-                                            provider_metadata: Some(
-                                                super::options::huggingface_metadata(
-                                                    json!({ "itemId": id }),
-                                                ),
-                                            ),
+                                            provider_metadata: Some(options::huggingface_metadata(
+                                                json!({ "itemId": id }),
+                                            )),
                                         });
                                     }
                                 }
@@ -431,11 +397,9 @@ impl HuggingFaceResponsesStream {
                                         .to_string();
                                     controller.enqueue(StreamPart::ReasoningStart {
                                         id: id.clone(),
-                                        provider_metadata: Some(
-                                            super::options::huggingface_metadata(
-                                                json!({ "itemId": id }),
-                                            ),
-                                        ),
+                                        provider_metadata: Some(options::huggingface_metadata(
+                                            json!({ "itemId": id }),
+                                        )),
                                     });
                                 }
                                 _ => {}
@@ -593,7 +557,7 @@ impl HuggingFaceResponsesStream {
         controller.enqueue(StreamPart::Finish {
             finish_reason: self.finish_reason.clone(),
             usage,
-            provider_metadata: Some(super::options::huggingface_metadata(
+            provider_metadata: Some(options::huggingface_metadata(
                 json!({ "responseId": self.response_id }),
             )),
         });
@@ -665,7 +629,7 @@ pub fn build_request_body_with_warnings(
     let hf_options = options
         .provider_options
         .as_ref()
-        .and_then(|m| super::options::huggingface_options(Some(m)));
+        .and_then(|m| options::huggingface_options(Some(m)));
     let metadata = hf_options.and_then(|o| o.get("metadata")).cloned();
     let instructions = hf_options
         .and_then(|o| o.get("instructions"))
@@ -751,221 +715,6 @@ pub fn build_request_body_with_warnings(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Message conversion
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Convert a [`LanguageModelPrompt`] into the Hugging Face Responses `input`
-/// array, returning the JSON value and any warnings.
-///
-/// Mirrors the TS `convertToHuggingFaceResponsesMessages`. Returns an error
-/// for unsupported file part variants (provider references, non-image media
-/// types) — matching the TS `UnsupportedFunctionalityError`.
-///
-/// # Errors
-///
-/// Returns `AiMuxError::UnsupportedFunctionality` for file parts with no
-/// Responses representation (provider references, non-image media types).
-pub fn convert_to_huggingface_responses_messages(
-    prompt: &LanguageModelPrompt,
-) -> Result<(Value, Vec<Warning>), AiMuxError> {
-    let mut messages: Vec<Value> = Vec::new();
-    let mut warnings: Vec<Warning> = Vec::new();
-
-    for msg in prompt {
-        match msg {
-            LanguageModelMessage::System { content, .. } => {
-                messages.push(json!({ "role": "system", "content": content }));
-            }
-            LanguageModelMessage::User { content, .. } => {
-                let mut parts: Vec<Value> = Vec::new();
-                for part in content {
-                    match part {
-                        UserPart::Text(TextPart { text, .. }) => {
-                            parts.push(json!({ "type": "input_text", "text": text }));
-                        }
-                        UserPart::File(file) => {
-                            parts.push(match &file.data {
-                                FileData::Data {
-                                    data: FileBytes::Binary(bytes),
-                                } => {
-                                    let encoded =
-                                        base64::engine::general_purpose::STANDARD.encode(bytes);
-                                    convert_file_part_base64(&file.media_type, &encoded)?
-                                }
-                                FileData::Data {
-                                    data: FileBytes::Base64(data),
-                                } => convert_file_part_base64(&file.media_type, data)?,
-                                FileData::Url { url, .. } => {
-                                    convert_file_part_url(&file.media_type, url)?
-                                }
-                                FileData::Reference { .. } => {
-                                    return Err(AiMuxError::UnsupportedFunctionality(
-                                        "file parts with provider references".into(),
-                                    ));
-                                }
-                                FileData::Text { .. } => {
-                                    return Err(AiMuxError::UnsupportedFunctionality(
-                                        "text file parts".into(),
-                                    ));
-                                }
-                            });
-                        }
-                    }
-                }
-                messages.push(json!({ "role": "user", "content": parts }));
-            }
-
-            LanguageModelMessage::Assistant { content, .. } => {
-                for part in content {
-                    match part {
-                        AssistantPart::Text(TextPart { text, .. }) => {
-                            messages.push(json!({
-                                "role": "assistant",
-                                "content": [{ "type": "output_text", "text": text }]
-                            }));
-                        }
-                        AssistantPart::Reasoning(ReasoningPart { text, .. }) => {
-                            messages.push(json!({
-                                "role": "assistant",
-                                "content": [{ "type": "output_text", "text": text }]
-                            }));
-                        }
-                        // Tool calls and tool results are handled by the
-                        // Responses API — skip (no warning, matching TS).
-                        AssistantPart::ToolCall(_)
-                        | AssistantPart::ToolResult(_)
-                        | AssistantPart::File(_)
-                        | AssistantPart::ReasoningFile(_)
-                        | AssistantPart::Custom(_) => {}
-                    }
-                }
-            }
-
-            LanguageModelMessage::Tool { .. } => {
-                warnings.push(Warning::Unsupported {
-                    feature: "tool messages".into(),
-                    details: None,
-                });
-            }
-        }
-    }
-
-    Ok((Value::Array(messages), warnings))
-}
-
-/// Convert a file part with inline base64 data to the HF `input_image` format.
-///
-/// Returns the JSON object `{ type: "input_image", image_url: "data:...;base64,..." }`
-/// or an error if the media type is not an image.
-fn convert_file_part_base64(media_type: &str, data: &str) -> Result<Value, AiMuxError> {
-    let top_level = get_top_level_media_type(media_type);
-    if top_level == "image" {
-        let full_type = resolve_full_media_type_base64(media_type, data)?;
-        Ok(json!({
-            "type": "input_image",
-            "image_url": format!("data:{};base64,{}", full_type, data)
-        }))
-    } else {
-        Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file part media type {media_type}"
-        )))
-    }
-}
-
-/// Convert a file part with a URL source to the HF `input_image` format.
-fn convert_file_part_url(media_type: &str, url: &str) -> Result<Value, AiMuxError> {
-    let top_level = get_top_level_media_type(media_type);
-    if top_level == "image" {
-        Ok(json!({
-            "type": "input_image",
-            "image_url": url
-        }))
-    } else {
-        Err(AiMuxError::UnsupportedFunctionality(format!(
-            "file part media type {media_type}"
-        )))
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Media type detection (top-level-only media type resolution)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Resolve a media type to its full `type/subtype` form.
-///
-/// - If already a full media type, return as-is.
-/// - Otherwise, detect the subtype from the base64 data bytes.
-fn resolve_full_media_type_base64(media_type: &str, data: &str) -> Result<String, AiMuxError> {
-    if is_full_media_type(media_type) {
-        return Ok(media_type.to_string());
-    }
-
-    let top_level = get_top_level_media_type(media_type);
-    if let Some(detected) = detect_media_type(MediaTypeData::Base64(data), Some(top_level))? {
-        return Ok(detected.to_string());
-    }
-
-    Err(AiMuxError::UnsupportedFunctionality(format!(
-        "file of media type \"{media_type}\" must specify subtype since it could not be auto-detected"
-    )))
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tool preparation
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Prepare tools and tool choice for the Hugging Face Responses API.
-///
-/// Returns `(tools, tool_choice, warnings)`. Only function tools are supported;
-/// provider-defined tools produce a warning.
-#[must_use]
-pub fn prepare_responses_tools(
-    tools: &Option<Vec<Tool>>,
-    tool_choice: Option<&LanguageModelV4ToolChoice>,
-) -> (Option<Vec<Value>>, Option<Value>, Vec<Warning>) {
-    let tools = match tools {
-        Some(t) if !t.is_empty() => t,
-        _ => return (None, None, vec![]),
-    };
-
-    let mut hf_tools: Vec<Value> = Vec::new();
-    let mut warnings: Vec<Warning> = Vec::new();
-
-    for tool in tools {
-        match tool {
-            Tool::Function(ft) => {
-                let mut t = Map::new();
-                t.insert("type".into(), json!("function"));
-                t.insert("name".into(), json!(ft.name));
-                if let Some(desc) = &ft.description {
-                    t.insert("description".into(), json!(desc));
-                }
-                t.insert("parameters".into(), ft.input_schema.clone());
-                hf_tools.push(Value::Object(t));
-            }
-            Tool::Provider(pt) => {
-                warnings.push(Warning::Unsupported {
-                    feature: format!("provider-defined tool {}", pt.id),
-                    details: None,
-                });
-            }
-        }
-    }
-
-    let mapped_tool_choice = match tool_choice {
-        Some(LanguageModelV4ToolChoice::Auto) => Some(json!("auto")),
-        Some(LanguageModelV4ToolChoice::Required) => Some(json!("required")),
-        None | Some(LanguageModelV4ToolChoice::None) => None, // not supported, ignore
-        Some(LanguageModelV4ToolChoice::Tool { tool_name }) => Some(json!({
-            "type": "function",
-            "function": { "name": tool_name }
-        })),
-    };
-
-    (Some(hf_tools), mapped_tool_choice, warnings)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Response parsing
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -995,7 +744,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Text {
                         text: text.to_string(),
-                        provider_metadata: Some(super::options::huggingface_metadata(
+                        provider_metadata: Some(options::huggingface_metadata(
                             json!({ "itemId": item_id }),
                         )),
                     });
@@ -1027,7 +776,7 @@ fn build_generate_content(response: &Value) -> Result<Vec<GenerateContent>, AiMu
                     let item_id = part.get("id").and_then(|v| v.as_str()).unwrap_or("");
                     content.push(GenerateContent::Reasoning(ReasoningOutput {
                         text: text.to_string(),
-                        provider_metadata: Some(super::options::huggingface_metadata(
+                        provider_metadata: Some(options::huggingface_metadata(
                             json!({ "itemId": item_id }),
                         )),
                     }));
@@ -1144,68 +893,6 @@ fn parse_finish_reason(response: &Value) -> FinishReason {
     FinishReason {
         unified: map_finish_reason(incomplete_reason.unwrap_or("stop")),
         raw: incomplete_reason.map(std::string::ToString::to_string),
-    }
-}
-
-/// Map a Hugging Face finish-reason string to the unified enum.
-fn map_finish_reason(reason: &str) -> FinishReasonUnified {
-    match reason {
-        "stop" => FinishReasonUnified::Stop,
-        "length" => FinishReasonUnified::Length,
-        "content_filter" => FinishReasonUnified::ContentFilter,
-        "tool_calls" => FinishReasonUnified::ToolCalls,
-        "error" => FinishReasonUnified::Error,
-        _ => FinishReasonUnified::Other,
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Usage conversion
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Convert a Hugging Face Responses usage object to the unified [`Usage`].
-///
-/// Mirrors the TS `convertHuggingFaceResponsesUsage`. `None` / null usage
-/// produces an all-`None` `Usage` (matching the TS undefined-fields case).
-fn convert_usage(usage: Option<&Value>) -> Usage {
-    let u = match usage {
-        None | Some(Value::Null) => return Usage::default(),
-        Some(u) => u,
-    };
-
-    let input_tokens = u
-        .get("input_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0) as u32;
-    let output_tokens = u
-        .get("output_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0) as u32;
-    let cached_tokens = u
-        .get("input_tokens_details")
-        .and_then(|d| d.get("cached_tokens"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0) as u32;
-    let reasoning_tokens = u
-        .get("output_tokens_details")
-        .and_then(|d| d.get("reasoning_tokens"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0) as u32;
-
-    Usage {
-        input_tokens: aimux_core::types::InputTokenUsage {
-            total: Some(input_tokens),
-            no_cache: Some(input_tokens - cached_tokens),
-            cache_read: Some(cached_tokens),
-            cache_write: None,
-        },
-        output_tokens: aimux_core::types::OutputTokenUsage {
-            total: Some(output_tokens),
-            text: Some(output_tokens - reasoning_tokens),
-            reasoning: Some(reasoning_tokens),
-        },
-        // RFC-0015 P0-3: keep the raw provider usage payload.
-        raw: u.as_object().cloned(),
     }
 }
 

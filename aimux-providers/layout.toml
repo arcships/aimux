@@ -2446,21 +2446,21 @@ package = "@ai-sdk/huggingface"
 
 [[huggingface.files]]
 upstream = "src/huggingface-config.ts"
-rust = "huggingface.rs"
+rust = "huggingface/provider.rs"
 status = "mapped"
 
 [huggingface.files.tests]
 
 [[huggingface.files]]
 upstream = "src/huggingface-error.ts"
-rust = "huggingface/responses.rs"
+rust = "huggingface/error.rs"
 status = "mapped"
 
 [huggingface.files.tests]
 
 [[huggingface.files]]
 upstream = "src/huggingface-provider.ts"
-rust = "huggingface.rs"
+rust = "huggingface/provider.rs"
 status = "mapped"
 
 [huggingface.files.tests]
@@ -2471,35 +2471,35 @@ sub-feature = [
 
 [[huggingface.files]]
 upstream = "src/index.ts"
-rust = "huggingface.rs"
+rust = "huggingface/mod.rs"
 status = "mapped"
 
 [huggingface.files.tests]
 
 [[huggingface.files]]
 upstream = "src/responses/convert-huggingface-responses-usage.ts"
-rust = "huggingface/responses.rs"
+rust = "huggingface/responses/convert_responses_usage.rs"
 status = "mapped"
 
 [huggingface.files.tests]
 
 [[huggingface.files]]
 upstream = "src/responses/convert-to-huggingface-responses-messages.ts"
-rust = "huggingface/responses.rs"
+rust = "huggingface/responses/convert_to_responses_messages.rs"
 status = "mapped"
 
 [huggingface.files.tests]
 
 [[huggingface.files]]
 upstream = "src/responses/huggingface-responses-language-model-options.ts"
-rust = "huggingface/options.rs"
+rust = "huggingface/responses/responses_language_model_options.rs"
 status = "mapped"
 
 [huggingface.files.tests]
 
 [[huggingface.files]]
 upstream = "src/responses/huggingface-responses-language-model.ts"
-rust = "huggingface/responses.rs"
+rust = "huggingface/responses/responses_language_model.rs"
 status = "mapped"
 
 [huggingface.files.tests]
@@ -2512,14 +2512,14 @@ sub-feature = [
 
 [[huggingface.files]]
 upstream = "src/responses/huggingface-responses-prepare-tools.ts"
-rust = "huggingface/responses.rs"
+rust = "huggingface/responses/responses_prepare_tools.rs"
 status = "mapped"
 
 [huggingface.files.tests]
 
 [[huggingface.files]]
 upstream = "src/responses/map-huggingface-responses-finish-reason.ts"
-rust = "huggingface/responses.rs"
+rust = "huggingface/responses/map_responses_finish_reason.rs"
 status = "mapped"
 
 [huggingface.files.tests]
