@@ -576,3 +576,20 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 
 ROADMAP §6.1 的目标表在 S2 登记完成后按实测修订；在此之前不改写目标。
 
+### 15.5 第二轮补充（2026-10-27）
+
+**provider-utils 的泛型复制。** `execute_exchange<T>`、`create_json_response_handler<T>`、`create_json_error_response_handler<T>` 按每个厂商的响应类型各实例化一份：39、73、39 份，合计约 280 KB（1.8%）。`execute_exchange` 的网络、重试、中止、错误处理状态机只因为 `T` 流过而重复；`create_json_response_handler` 对同一响应体先 `from_slice::<T>` 再 `from_slice::<Value>`。改法：读取、限长、错误构造写成非泛型，`T` 只在最外层薄壳里反序列化。只改 aimux-provider-utils，不碰厂商文件，不改行为，列入 S3 的第一项。厂商自身的 `do_generate` 99 份、`do_stream` 42 份是不同实现，不算重复。
+
+**只读数据。** `.rodata` 1.4 MB 里字符串 0.55 MB，其余是表。源码路径合计约 80 KB（`--remap-path-prefix` 最多 0.5%，不单独做）；std 的 backtrace 符号化代码约 175 KB，`panic = "abort"` 下也链进来，稳定版去不掉。
+
+**发布包里的 0.5.0 实测（pub.dev 下载）。** 包 33.2 MB 压缩、103 MB 解包。iOS 每片 42.3 MB 的 `.a`：`__LLVM,__bitcode` 9.1 MB、`__text` 6.3 MB、常量约 2 MB、符号表与字符串表 11.4 MB（`strip -Sx` 之后仍在），代码加数据约 8.5 MB，与 Android arm64 的 `.so`（stripped 7.6 MB；armv7 4.8 MB；x86_64 9.1 MB）一致。Xcode 链接时 dead strip，App 瘦身后每台设备只有一个架构，所以 `.a` 的体积只影响开发者，不影响用户 App；§4.1 的 iOS 行按 framework 二进制计量，不按归档。
+
+**分发方式。** Signal、Matrix、Mozilla、Bitwarden、Automerge 都发静态 xcframework；构建时下载二进制（cargokit、realm、Signal 的 podspec）都有记录在案的失败模式（GitHub 超时、代理、没装 rustup 时回退失败、校验和轮换），esbuild 因此从 postinstall 下载退回平台可选包。本 RFC 的立场：**二进制留在包里，修产物本身**。pub 包的候选，均为**待讨论**：
+
+1. iOS 改发链接好的动态 framework：每片 42 → 约 8 MB，pub 包约 17 MB（≤25 MB 达标），用户 App 不变。要改 Flutter 插件与 podspec 的嵌入和签名。
+2. 保持静态时：S1 的 `lto = false` 加 `llvm-objcopy --remove-section __LLVM,__bitcode`，每片约 33 MB；再按 Tweag 2025 的方法合并目标文件、去符号表，约 10 MB。
+3. Android 的 `.so` 改从 Maven Central 的 AAR 取（objectbox、sqlite3 的做法），pub 包再少约 9.5 MB。
+
+**其余架构层候选（文献数字，aimux 未测，均为待讨论）：** `AiMuxError` 各变体用 `#[cold] #[inline(never)]` 构造函数，调用点不再各自展开 `format!`（ring、std 的做法，3% 到 8%）；async 函数拆分，请求构造与响应解析放进同步函数，每个 async 函数一个 await（2% 到 5%）；注册表 JSON 构建期转二进制或压缩嵌入（50 到 80 KB）。按厂商 cargo feature 的上限是 18%（§15.3），按 2026-10-19 的决定暂不做。
+
+同类参考：rig-core、genai、llm 等 Rust LLM SDK 没有公开体积数据；上游 AI SDK 每个 provider 包压缩前约 120 到 140 KB JS，aimux 每厂商约 38 KB 机器码。
