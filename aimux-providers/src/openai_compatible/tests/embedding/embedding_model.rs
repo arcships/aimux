@@ -360,3 +360,51 @@ mod do_embed {
         );
     }
 }
+
+// ── Older ports (previously `tests/openai_compatible_upstream_e2e_test.rs`) ──
+//
+// End-to-end subset of the pinned openai-compatible upstream tests.
+
+mod upstream_e2e {
+    use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
+    use serde_json::json;
+
+    use crate::openai_compatible::tests::support::*;
+    use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+    /// partial: `should extract embedding`; full port in src/openai_compatible/tests/embedding/embedding_model.rs.
+    /// partial: `should pass the model and the values`; full port in src/openai_compatible/tests/embedding/embedding_model.rs.
+    #[tokio::test]
+    async fn embedding_request_and_result() {
+        let body = json!({"object":"list","data":[
+            {"object":"embedding","index":0,"embedding":[0.1,0.2,0.3,0.4,0.5]},
+            {"object":"embedding","index":1,"embedding":[0.6,0.7,0.8,0.9,1.0]}],
+            "model":"test-embedding","usage":{"prompt_tokens":8,"total_tokens":8}});
+        let fetch = MockFetch::new(vec![Canned::json(&body)]);
+        let mut opts = EmbeddingCallOptions::new("sunny day at the beach");
+        opts.values.push("rainy day in the city".into());
+        let result = provider(&fetch)
+            .embedding("test-embedding")
+            .do_embed(&opts)
+            .await
+            .unwrap();
+        assert_request(
+            &fetch,
+            "/embeddings",
+            json!({"model":"test-embedding",
+            "input":["sunny day at the beach","rainy day in the city"],"encoding_format":"float"}),
+        );
+        assert_eq!(
+            result.embeddings,
+            vec![vec![0.1, 0.2, 0.3, 0.4, 0.5], vec![0.6, 0.7, 0.8, 0.9, 1.0]]
+        );
+        assert_eq!(result.usage.unwrap().tokens, 8);
+        let response = result.response.unwrap();
+        assert_eq!(response.body, Some(body));
+        assert_eq!(
+            response.headers.unwrap()["content-type"],
+            "application/json"
+        );
+        assert!(result.warnings.is_empty());
+    }
+}
