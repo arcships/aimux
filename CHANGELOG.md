@@ -1175,6 +1175,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- --check` and `python3 scripts/check_dto_vectors.py <languages>` guard the
   files and the codecs.
 
+- Google's sub-modules follow the `@ai-sdk/google` files (RFC-0046 §4.2):
+  `google::embedding`, `google::image`, `google::speech`, `google::video`,
+  `google::convert`, `google::types` and `google::utils` are no longer public.
+  The models and settings stay at the `google` root and the crate root:
+  `google::{GoogleEmbeddingModel, GoogleImageModel, GoogleImageSettings,
+  GoogleSpeechModel, GoogleVideoModel}`. The request and response helpers of
+  `convert`, `types` and `utils` (`convert_to_google_messages`,
+  `build_request_body`, `build_request_body_with_warnings`, `prepare_tools`,
+  `prepare_all_tools`, `get_google_model_capabilities`,
+  `sanitize_response_json_schema`, `parse_finish_reason`, `convert_usage`,
+  `extract_sources`, the response types, `get_model_path`,
+  `is_supported_file_url`, `GoogleJsonAccumulator`) and
+  `speech::google_speech_input` become crate-internal, with no public
+  replacement. `google::files` and `google::transcription` keep their paths.
+
 - `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
   layout (RFC-0046). The sub-modules `mistral::convert` and
   `mistral::embedding` are no longer public; use `MistralEmbeddingModel`,
@@ -1243,6 +1258,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Google image models `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`
+  and `gemini-3.1-flash-image-preview` report `supports_file_inputs: true`
+  and `supports_mask_inputs: false` (also in the ops capabilities), as
+  `@ai-sdk/google` 4.0.87 does; other ids stay unknown. Both were unknown for
+  every id.
 - DeepSeek rejects a response whose usage counts are not numbers, as
   `@ai-sdk/deepseek` 3.0.56 does (`tokenUsageSchema`); it used to read a
   string such as `"prompt_tokens": "100"` as 0. Applies to generate and

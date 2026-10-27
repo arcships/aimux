@@ -1,0 +1,103 @@
+[
+  {
+    "type": "stream-start",
+    "warnings": []
+  },
+  {
+    "id": "b36LacjwM668nsEP2tbsgQQ",
+    "type": "response-metadata"
+  },
+  {
+    "id": "test-id",
+    "providerMetadata": {
+      "google": {
+        "thoughtSignature": "EqUCCqICAb4+9vsh8Pd5taZVoPzSvjWWwzBrvhEQWBLCGa7IdY8FBMm7Z6dCKFU3Ft0la15gF7RaHe1NlPRygQec0bFwPDfMwGcUOMNiJiNIKxusCs4ejCZRuouNYQ4etEIt7CujEUHiILLfZXSJZYhs4UCrD2bLqPq0sE0lWgYJnzHkkKUOnMsA2hKffAhtF4DWn5INYj8pPssvch/2VpDFW2F9XSE04zLDzkIWF2eztJX50Y0lTehRZC3FW7fOrXCzGx+PwdataD6eXlF5O1zn+86XtmktOs2DEp4o1PMvXFFAXe8GGvPt8Idf3UtHMq7AsapwMW9sjiKj+FJk54m+9LMTSaj7C86smfvoQryYBEHTVazr1bEnpl4bPG5JUtm2yAMkHj4="
+      }
+    },
+    "toolName": "weather",
+    "type": "tool-input-start"
+  },
+  {
+    "delta": "{\"location\":\"San Francisco\"}",
+    "id": "test-id",
+    "providerMetadata": {
+      "google": {
+        "thoughtSignature": "EqUCCqICAb4+9vsh8Pd5taZVoPzSvjWWwzBrvhEQWBLCGa7IdY8FBMm7Z6dCKFU3Ft0la15gF7RaHe1NlPRygQec0bFwPDfMwGcUOMNiJiNIKxusCs4ejCZRuouNYQ4etEIt7CujEUHiILLfZXSJZYhs4UCrD2bLqPq0sE0lWgYJnzHkkKUOnMsA2hKffAhtF4DWn5INYj8pPssvch/2VpDFW2F9XSE04zLDzkIWF2eztJX50Y0lTehRZC3FW7fOrXCzGx+PwdataD6eXlF5O1zn+86XtmktOs2DEp4o1PMvXFFAXe8GGvPt8Idf3UtHMq7AsapwMW9sjiKj+FJk54m+9LMTSaj7C86smfvoQryYBEHTVazr1bEnpl4bPG5JUtm2yAMkHj4="
+      }
+    },
+    "type": "tool-input-delta"
+  },
+  {
+    "id": "test-id",
+    "providerMetadata": {
+      "google": {
+        "thoughtSignature": "EqUCCqICAb4+9vsh8Pd5taZVoPzSvjWWwzBrvhEQWBLCGa7IdY8FBMm7Z6dCKFU3Ft0la15gF7RaHe1NlPRygQec0bFwPDfMwGcUOMNiJiNIKxusCs4ejCZRuouNYQ4etEIt7CujEUHiILLfZXSJZYhs4UCrD2bLqPq0sE0lWgYJnzHkkKUOnMsA2hKffAhtF4DWn5INYj8pPssvch/2VpDFW2F9XSE04zLDzkIWF2eztJX50Y0lTehRZC3FW7fOrXCzGx+PwdataD6eXlF5O1zn+86XtmktOs2DEp4o1PMvXFFAXe8GGvPt8Idf3UtHMq7AsapwMW9sjiKj+FJk54m+9LMTSaj7C86smfvoQryYBEHTVazr1bEnpl4bPG5JUtm2yAMkHj4="
+      }
+    },
+    "type": "tool-input-end"
+  },
+  {
+    "input": "{\"location\":\"San Francisco\"}",
+    "providerMetadata": {
+      "google": {
+        "thoughtSignature": "EqUCCqICAb4+9vsh8Pd5taZVoPzSvjWWwzBrvhEQWBLCGa7IdY8FBMm7Z6dCKFU3Ft0la15gF7RaHe1NlPRygQec0bFwPDfMwGcUOMNiJiNIKxusCs4ejCZRuouNYQ4etEIt7CujEUHiILLfZXSJZYhs4UCrD2bLqPq0sE0lWgYJnzHkkKUOnMsA2hKffAhtF4DWn5INYj8pPssvch/2VpDFW2F9XSE04zLDzkIWF2eztJX50Y0lTehRZC3FW7fOrXCzGx+PwdataD6eXlF5O1zn+86XtmktOs2DEp4o1PMvXFFAXe8GGvPt8Idf3UtHMq7AsapwMW9sjiKj+FJk54m+9LMTSaj7C86smfvoQryYBEHTVazr1bEnpl4bPG5JUtm2yAMkHj4="
+      }
+    },
+    "toolCallId": "test-id",
+    "toolName": "weather",
+    "type": "tool-call"
+  },
+  {
+    "finishReason": {
+      "raw": "STOP",
+      "unified": "tool-calls"
+    },
+    "providerMetadata": {
+      "google": {
+        "finishMessage": null,
+        "groundingMetadata": null,
+        "promptFeedback": null,
+        "safetyRatings": null,
+        "serviceTier": null,
+        "urlContextMetadata": null,
+        "usageMetadata": {
+          "candidatesTokenCount": 15,
+          "promptTokenCount": 29,
+          "promptTokensDetails": [
+            {
+              "modality": "TEXT",
+              "tokenCount": 29
+            }
+          ],
+          "thoughtsTokenCount": 45,
+          "totalTokenCount": 89
+        }
+      }
+    },
+    "type": "finish",
+    "usage": {
+      "inputTokens": {
+        "cacheRead": 0,
+        "noCache": 29,
+        "total": 29
+      },
+      "outputTokens": {
+        "reasoning": 45,
+        "text": 15,
+        "total": 60
+      },
+      "raw": {
+        "candidatesTokenCount": 15,
+        "promptTokenCount": 29,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 29
+          }
+        ],
+        "thoughtsTokenCount": 45,
+        "totalTokenCount": 89
+      }
+    }
+  }
+]
