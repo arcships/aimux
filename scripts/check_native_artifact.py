@@ -87,6 +87,8 @@ def elf_sections(body):
         shoff = struct.unpack_from(end + "I", body, 0x20)[0]
         shentsize, shnum, shstrndx = struct.unpack_from(end + "HHH", body, 0x2E)
         fmt = end + "IIIIIIIIII"
+    if shoff == 0 or shoff + shentsize > len(body):
+        return  # no section header table (e.g. a truncated or stripped-down object)
     # An object with 65280+ sections (a merged `ld -r` archive member) keeps
     # the real counts in section header 0 (ELF extended numbering).
     first = struct.unpack_from(fmt, body, shoff)

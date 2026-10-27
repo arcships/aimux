@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   linked by the consumer's toolchain, so fat LTO only embedded every crate's
   LLVM bitcode into it: the Linux Go archive as shipped goes from 194.2 MB
   to 95.0 MB with the same linked code (RFC-0043 §5.1, §15.1). The shared
-  libraries (`.so`, `.dylib`, `.dll`, Node, Python) keep their profiles.
+  libraries (`.so`, `.dylib`, `.dll`) and the Node and Python extensions are
+  not changed by this PR.
   Release and CI builds check the archive's workspace objects for bitcode
   and print every artifact's byte size (`scripts/check_native_artifact.py`).
 
