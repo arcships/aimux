@@ -30,9 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Release and CI builds check the archive's workspace objects for bitcode
   and print every artifact's byte size (`scripts/check_native_artifact.py`).
 - The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
-  a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. The
-  shipped Linux x86_64 libraries go from 39.9 MB / 38.7 MB to 17.4 MB /
-  16.8 MB (−57%); the six paired benchmark scenarios in
+  a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. On
+  Linux x86_64 the published `aimux.node` goes from 39.9 MB (unstripped) to
+  17.4 MB (−57%) and the wheel's `aimux.abi3.so` from 30.6 MB (`maturin
+  publish` already stripped it) to 17.3 MB (−43%); the six paired benchmark
+  scenarios in
   `bindings/node/bench/bench_profile.cjs` and
   `bindings/python/bench/bench_profile.py` stay within noise of the old
   build. `panic` stays `unwind`, so a panic still surfaces as a JS exception
