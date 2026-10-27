@@ -1,0 +1,129 @@
+//! Mistral embedding model — implements the `EmbeddingModel` trait.
+//!
+//! Aligned with Vercel AI SDK `MistralEmbeddingModel`
+//! (`reference/ai/packages/mistral/src/mistral-embedding-model.ts`).
+//!
+//! Endpoint: `POST {base_url}/embeddings`
+
+use async_trait::async_trait;
+use serde_json::{Map, Value, json};
+
+use aimux_core::embedding_model::{
+    EmbeddingCallOptions, EmbeddingModel, EmbeddingResponse, EmbeddingResult, EmbeddingUsage,
+};
+use aimux_core::error::AiMuxError;
+
+use crate::shared::EndpointConfig;
+
+use super::embedding_model_options::parse_mistral_provider_options;
+
+/// A Mistral embedding model (e.g. `"mistral-embed"`).
+pub struct MistralEmbeddingModel {
+    model_id: String,
+    config: EndpointConfig,
+}
+
+impl MistralEmbeddingModel {
+    pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
+        Self { model_id, config }
+    }
+}
+
+#[async_trait]
+impl EmbeddingModel for MistralEmbeddingModel {
+    fn provider(&self) -> &str {
+        &self.config.provider
+    }
+
+    fn model_id(&self) -> &str {
+        &self.model_id
+    }
+
+    fn max_embeddings_per_call(&self) -> Option<u32> {
+        Some(32)
+    }
+
+    fn supports_parallel_calls(&self) -> bool {
+        false
+    }
+
+    async fn do_embed(
+        &self,
+        options: &EmbeddingCallOptions,
+    ) -> Result<EmbeddingResult, AiMuxError> {
+        if options.values.len() > 32 {
+            return Err(AiMuxError::invalid_argument(format!(
+                "{} model {} supports at most 32 embeddings per call; received {}",
+                self.provider(),
+                self.model_id,
+                options.values.len()
+            )));
+        }
+        let mistral_options = parse_mistral_provider_options(options.provider_options.as_ref())?;
+
+        let mut body = Map::new();
+        body.insert("model".to_string(), json!(self.model_id));
+        body.insert("input".to_string(), json!(options.values));
+        if let Some(metadata) = mistral_options.metadata {
+            body.insert("metadata".to_string(), metadata);
+        }
+        if let Some(output_dimension) = mistral_options.output_dimension {
+            body.insert("output_dimension".to_string(), json!(output_dimension));
+        }
+        if let Some(output_dtype) = mistral_options.output_dtype {
+            body.insert("output_dtype".to_string(), json!(output_dtype));
+        }
+        body.insert("encoding_format".to_string(), json!("float"));
+
+        let exchange = self.config.exchange(options.headers.as_ref()).await?;
+
+        let resp = aimux_provider_utils::post_json_to_api(
+            exchange.request(exchange.url("/embeddings"), options),
+            exchange.transform_body(Value::Object(body)),
+            aimux_provider_utils::create_json_response_handler(),
+            super::error::mistral_failed_response_handler(),
+        )
+        .await?;
+
+        let response_headers = resp.response_headers;
+
+        let raw_value: Value = resp.value;
+
+        let embeddings: Vec<Vec<f32>> = raw_value
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        item.get("embedding")
+                            .and_then(|e| e.as_array())
+                            .map(|vals| {
+                                vals.iter()
+                                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                                    .collect()
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let usage = raw_value
+            .get("usage")
+            .and_then(|u| u.get("prompt_tokens"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|tokens| EmbeddingUsage {
+                tokens: tokens as u32,
+            });
+
+        Ok(EmbeddingResult {
+            embeddings,
+            usage,
+            provider_metadata: None,
+            response: Some(EmbeddingResponse {
+                headers: Some(response_headers),
+                body: Some(raw_value),
+            }),
+            warnings: Vec::new(),
+        })
+    }
+}
