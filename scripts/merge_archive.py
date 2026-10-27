@@ -125,11 +125,14 @@ def main(argv):
         print(f"  {len(members)} members, {len(exports)} exports: {' '.join(sorted(exports))}")
 
         merged = tmp / MERGED_MEMBER
-        cmd = [ld, "-r", "--gc-sections"]
-        for export in sorted(exports):
-            cmd += ["-u", export]
-        cmd += [str(m) for m, _ in members] + ["-o", str(merged)]
-        subprocess.run(cmd, check=True)
+        # Thousands of member paths overflow the Windows command line (WinError 206),
+        # so the inputs go through a GNU ld response file. Forward slashes keep the
+        # paths out of the response-file backslash escaping; mingw ld accepts them.
+        response = tmp / "members.rsp"
+        lines = [f"-u {export}" for export in sorted(exports)]
+        lines += [f'"{m.as_posix()}"' for m, _ in members]
+        response.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        subprocess.run([ld, "-r", "--gc-sections", f"@{response}", "-o", str(merged)], check=True)
         print(f"  before merge: {len(data)} bytes; merged object {merged.stat().st_size} bytes ({ld} -r --gc-sections)")
         subprocess.run([strip, "--strip-unneeded", str(merged)], check=True)
         print(f"  after strip --strip-unneeded: {merged.stat().st_size} bytes ({strip})")
