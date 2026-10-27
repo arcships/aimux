@@ -1047,3 +1047,469 @@ issue = 275
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "the crate version is used instead (RFC-0046 §4.2)"
+
+[google]
+package = "@ai-sdk/google"
+# google-language-model.test.ts has two cases named `doGenerate › should pass tools and
+# toolChoice`; the second marker ends in `#2` (RFC-0045 §4).
+
+[[google.files]]
+upstream = "src/convert-google-usage.ts"
+rust = "google/convert_usage.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/convert-to-google-messages.ts"
+rust = "google/convert_to_messages.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "tool messages › should convert supported tool result URLs into functionResponse file data", issue = 275, reason = "convert_to_google_messages_for_namespace has no supportedFunctionResponseUrls allow-list; it keeps gs:// file data for the Vertex namespace only" },
+  { case = "tool messages › should preserve the original supported GCS tool result URL", issue = 275, reason = "convert_to_google_messages_for_namespace has no supportedFunctionResponseUrls allow-list; it keeps gs:// file data for the Vertex namespace only" },
+]
+
+[[google.files]]
+upstream = "src/download-tool-result-files.ts"
+status = "missing"
+issue = 275
+reason = "no tool result file download (#275 tool result file download, downloadToolResultFiles)"
+
+[[google.files]]
+upstream = "src/get-model-path.ts"
+rust = "google/get_model_path.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/get-realtime-base-url.ts"
+rust = "google/get_realtime_base_url.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-batch.ts"
+status = "missing"
+issue = 275
+reason = "no Batch API (#275 Google Batch API)"
+
+[[google.files]]
+upstream = "src/google-embedding-model-options.ts"
+rust = "google/embedding_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-embedding-model.ts"
+rust = "google/embedding_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "GoogleEmbeddingModel › should slice per-value multimodal content for automatic batches", issue = 275, reason = "EmbeddingModel has no per-batch provider-options transformer (EXPERIMENTAL_EMBEDDING_MODEL_PROVIDER_OPTIONS_TRANSFORMER)" },
+]
+
+[[google.files]]
+upstream = "src/google-error.ts"
+rust = "google/error.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-files.ts"
+rust = "google/files.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "GoogleFiles › uploadFile › should thread per-call headers and abortSignal through the upload", issue = 275, reason = "UploadFileCallOptions has no per-call headers or abort signal" },
+]
+ts-only = [
+  { case = "GoogleFiles › uploadFile › should preserve ArrayBuffer-backed upload data", reason = "asserts that the same Uint8Array view reaches fetch (object identity of a typed-array view); Rust upload data is an owned Vec<u8>" },
+  { case = "GoogleFiles › uploadFile › should reject stream data at runtime and cancel the stream", reason = "a ReadableStream passed where the type forbids it is a JS runtime check; UploadFileData has no stream variant, so Rust cannot express the input" },
+]
+
+[[google.files]]
+upstream = "src/google-image-model-options.ts"
+rust = "google/image_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-image-model.ts"
+rust = "google/image_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "GoogleImageModel › doGenerate › should preserve prompt feedback when a prompt block returns no candidates", issue = 275, reason = "aimux-core ImageResult has no isRetryable field" },
+]
+
+[[google.files]]
+upstream = "src/google-image-settings.ts"
+rust = "google/image_settings.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-json-accumulator.ts"
+rust = "google/json_accumulator.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-language-model-options.ts"
+rust = "google/language_model_options.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-language-model.ts"
+rust = "google/language_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "doGenerate › should not forward unsupported Vertex %s tool result URLs", issue = 275, reason = "the rejection comes from the tool result file download step (downloadToolResultFiles), which aimux does not have" },
+  { case = "groundingMetadataSchema › rejects invalid data types", issue = 275, reason = "aimux keeps candidates[].groundingMetadata as untyped JSON (types::Candidate::grounding_metadata) and validates no grounding metadata schema" },
+]
+ts-only = [
+  { case = "doGenerate › should preserve Vertex tool result URL handling across workflow serialization", reason = "WORKFLOW_SERIALIZE / WORKFLOW_DESERIALIZE are JS workflow-runtime hooks; it also needs downloadToolResultFiles, which aimux does not have" },
+]
+
+[[google.files]]
+upstream = "src/google-model-capabilities.ts"
+rust = "google/model_capabilities.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-prepare-tools.ts"
+rust = "google/prepare_tools.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-prompt.ts"
+rust = "google/prompt.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-provider.ts"
+rust = "google/provider.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "google-provider › should only advertise URL support shared by all batch models", issue = 275, reason = "no Batch API (experimental_batch)" },
+]
+ts-only = [
+  { case = "google provider - video › should pass custom generateId to video model", reason = "checks a mocked constructor argument; upstream GoogleVideoModel never calls generateId, so nothing observable follows from it" },
+]
+
+[[google.files]]
+upstream = "src/google-speech-api.ts"
+rust = "google/speech_api.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-speech-input.ts"
+rust = "google/speech_input.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-speech-model-options.ts"
+rust = "google/speech_model_options.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-speech-model.ts"
+rust = "google/speech_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-supported-file-url.ts"
+rust = "google/supported_file_url.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-tools.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/google-video-model-options.ts"
+rust = "google/video_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-video-model.ts"
+rust = "google/video_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/google-video-settings.ts"
+rust = "google/video_model.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/index.ts"
+rust = "google/mod.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/interactions/build-google-interactions-stream-transform.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/cancel-google-interaction.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/convert-google-interactions-usage.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/convert-to-google-interactions-input.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/extract-google-interactions-sources.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-agent.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-api.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-language-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-language-model.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-prompt.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/google-interactions-provider-metadata.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/map-google-interactions-finish-reason.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/parse-google-interactions-outputs.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/poll-google-interactions.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/prepare-google-interactions-tools.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/stream-google-interactions.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/interactions/synthesize-google-interactions-agent-stream.ts"
+status = "missing"
+issue = 275
+reason = "no Google Interactions language model (#275 Google interactions model); aimux only calls the Interactions API for unary transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/internal/index.ts"
+rust = "google/mod.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/map-google-finish-reason.ts"
+rust = "google/map_finish_reason.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/realtime/google-realtime-event-mapper.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/realtime/google-realtime-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/realtime/google-realtime-model.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/realtime/index.ts"
+status = "missing"
+issue = 275
+reason = "no realtime model (#275 realtime models); the Live API is used only by live transcription (google/transcription/transcription_model.rs)"
+
+[[google.files]]
+upstream = "src/sanitize-response-json-schema.ts"
+rust = "google/sanitize_response_json_schema.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/speech-translation/google-speech-translation-model-options.ts"
+status = "missing"
+issue = 275
+reason = "no speech translation model (#275 speech translation models)"
+
+[[google.files]]
+upstream = "src/speech-translation/google-speech-translation-model.ts"
+status = "missing"
+issue = 275
+reason = "no speech translation model (#275 speech translation models)"
+
+[[google.files]]
+upstream = "src/tool/code-execution.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/enterprise-web-search.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/file-search.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/google-maps.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/google-search.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/url-context.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/tool/vertex-rag-store.ts"
+status = "missing"
+issue = 275
+reason = "no tool factory on the Google provider (#275 厂商内置工具工厂); provider tools are sent by their id through prepare_tools in google/prepare_tools.rs"
+
+[[google.files]]
+upstream = "src/transcription/google-transcription-model-options.ts"
+rust = "google/transcription/transcription_model_options.rs"
+status = "mapped"
+
+[google.files.tests]
+
+[[google.files]]
+upstream = "src/transcription/google-transcription-model.ts"
+rust = "google/transcription/transcription_model.rs"
+status = "mapped"
+
+[google.files.tests]
+sub-feature = [
+  { case = "doGenerate › transcribes audio via the Interactions API with transcription_config", issue = 275, reason = "aimux-core TranscriptionResult has no usage field" },
+  { case = "doStream › streams transcription over the Gemini Live API WebSocket", issue = 275, reason = "the aimux-core transcription stream Finish part has no usage field" },
+]
+
+[[google.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
