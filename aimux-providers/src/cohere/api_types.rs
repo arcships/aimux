@@ -1,9 +1,11 @@
-//! Cohere API request/response types.
+//! The response and stream-event schemas of `cohere-chat-language-model.ts`.
 
 #![allow(dead_code)]
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
+
+use super::convert_usage::UsageResponse;
 
 // ── Non-streaming response ──
 
@@ -52,38 +54,6 @@ pub struct ToolCallResponse {
 pub struct FunctionCallResponse {
     pub name: String,
     pub arguments: String,
-}
-
-#[derive(Debug)]
-pub struct UsageResponse {
-    pub tokens: TokenPair,
-    pub raw: Value,
-}
-
-impl<'de> Deserialize<'de> for UsageResponse {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = Value::deserialize(deserializer)?;
-        #[derive(Deserialize)]
-        struct Validated {
-            tokens: TokenPair,
-            #[serde(default)]
-            billed_units: Option<TokenPair>,
-            #[serde(default)]
-            cached_tokens: Option<f64>,
-        }
-        let validated: Validated =
-            serde_json::from_value(raw.clone()).map_err(serde::de::Error::custom)?;
-        Ok(Self {
-            tokens: validated.tokens,
-            raw,
-        })
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct TokenPair {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
 }
 
 // ── Streaming response ──
