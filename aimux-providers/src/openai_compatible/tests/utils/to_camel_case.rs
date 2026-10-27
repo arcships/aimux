@@ -3,10 +3,11 @@ use serde_json::{Value, json};
 use aimux_core::options::CallOptions;
 use aimux_core::types::Warning;
 
-use crate::openai_compatible::config::ChatSettings;
-use crate::openai_compatible::convert::{
-    ChatBodySpec, RequestBodyResult, build_request_body, to_camel_case,
+use crate::openai_compatible::ChatSettings;
+use crate::openai_compatible::chat::chat_language_model::{
+    ChatBodySpec, RequestBodyResult, build_request_body,
 };
+use crate::openai_compatible::utils::to_camel_case;
 
 /// `resolveProviderOptionsKey` and `warnIfDeprecatedProviderOptionsKey` have
 /// no standalone Rust form: both run inside `build_request_body` (the
@@ -212,5 +213,23 @@ mod warn_if_deprecated_provider_options_key {
     fn should_not_push_a_warning_when_provider_options_is_undefined() {
         let warnings = warn_if_deprecated_provider_options_key("black-forest-labs", None);
         assert_eq!(warnings_json(&warnings), json!([]));
+    }
+}
+
+// ── Older aimux tests (previously the unit tests of `openai_compatible/convert.rs`) ──
+
+mod camel_case {
+    use crate::openai_compatible::utils::to_camel_case;
+
+    #[test]
+    fn camel_case_follows_the_ai_sdk() {
+        assert_eq!(to_camel_case("acme"), "acme");
+        assert_eq!(to_camel_case("my_provider"), "myProvider");
+        assert_eq!(to_camel_case("my-provider"), "myProvider");
+        assert_eq!(
+            to_camel_case("vertex_ai_openai_models"),
+            "vertexAiOpenaiModels"
+        );
+        assert_eq!(to_camel_case("a_1"), "a_1");
     }
 }

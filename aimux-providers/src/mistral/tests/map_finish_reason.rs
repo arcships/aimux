@@ -1,6 +1,6 @@
 //! Ports of the upstream `@ai-sdk/mistral` `map-mistral-finish-reason.test.ts`.
 
-use crate::mistral::convert::parse_finish_reason;
+use crate::mistral::map_finish_reason::parse_finish_reason;
 use aimux_core::types::FinishReasonUnified;
 
 mod map_mistral_finish_reason {
