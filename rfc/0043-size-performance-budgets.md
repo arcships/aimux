@@ -644,12 +644,14 @@ S1a 在 #375 实现（评审中）：`[profile.staticlib-release]` 取代 `ios-r
 
 | 产物 | profile | raw | gz9 |
 |---|---|---:|---:|
-| `aimux.node` | 现状：Cargo 默认 release（opt 3，无 LTO，不 strip） | 39,148,376 | 12,434,256 |
-| | **选定：`"s"` + fat LTO + cgu 1 + strip** | **16,913,144** | **7,246,332** |
+| `aimux.node`（`npx napi build --platform --release` 的产物，a23a636） | 现状：Cargo 默认 release（opt 3，无 LTO，不 strip） | 39,945,776 | 12,572,373 |
+| | **选定：`"s"` + fat LTO + cgu 1 + strip** | **17,355,696** | **7,276,291** |
+| `aimux.node`（`cargo build --release` 对照，c35acb2；napi 产物比它大约 440 KB） | 现状 | 39,148,376 | 12,434,256 |
+| | `"s"` + fat LTO + cgu 1 + strip | 16,913,144 | 7,246,332 |
 | | `"z"`，其余同 | 15,530,896 | 6,581,741 |
 | | `3` + fat LTO + cgu 1 + strip | 23,479,480 | 9,850,717 |
 | Python `aimux.so` | 现状：Cargo 默认 release | 38,703,752 | 12,367,264 |
-| | **选定：`"s"` + fat LTO + cgu 1 + strip** | **16,777,456** | **7,198,405** |
+| | **选定：`"s"` + fat LTO + cgu 1 + strip**（a23a636 分支构建 16,775,472 / 7,197,549） | **16,777,456** | **7,198,405** |
 | | `"z"`，其余同 | 15,401,528 | 6,539,976 |
 | | `3` + fat LTO + cgu 1 + strip | 23,314,856 | 9,796,333 |
 | | `"z"` + 三个热点包 `opt-level = 3`（§12 B-profile 行的「按包覆盖」） | 22,827,032 | — |
