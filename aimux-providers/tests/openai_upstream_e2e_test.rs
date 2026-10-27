@@ -61,9 +61,9 @@ fn assert_request(fetch: &MockFetch, endpoint: &str, expected: Value) {
     assert_eq!(seen[0].json_body(), expected);
 }
 
-/// TS: "should extract text response" (src/chat/openai-chat-language-model.test.ts)
-/// TS: "should send request body" (src/chat/openai-chat-language-model.test.ts)
-/// TS: "should extract usage" (src/chat/openai-chat-language-model.test.ts)
+/// partial: `should extract text response`; full port in src/openai/tests/chat/chat_language_model.rs.
+/// partial: `should send request body`; full port in src/openai/tests/chat/chat_language_model.rs.
+/// partial: `should extract usage`; full port in src/openai/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_generate() {
     let fetch = MockFetch::new(vec![Canned::json(&chat_response())]);
@@ -169,7 +169,7 @@ async fn chat_json_schema_unwraps_singleton_reference_all_of() {
     );
 }
 
-/// TS: "should stream text deltas" (src/chat/openai-chat-language-model.test.ts)
+/// partial: `should stream text deltas`; full port in src/openai/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_stream() {
     let chunk = |delta: Value, finish: Value| json!({"id":"chatcmpl-test","model":"test-model","created":1702657020,"choices":[{"index":0,"delta":delta,"finish_reason":finish}]});
@@ -223,7 +223,7 @@ async fn chat_stream() {
     );
 }
 
-/// TS: "should parse tool results" (src/chat/openai-chat-language-model.test.ts)
+/// partial: `should parse tool results`; full port in src/openai/tests/chat/chat_language_model.rs.
 #[tokio::test]
 async fn chat_tool_call() {
     let mut response = chat_response();
@@ -251,6 +251,7 @@ async fn chat_tool_call() {
     );
 }
 
+/// partial: `should stream tool call with missing type field (Azure AI Foundry / Mistral)`; full port in src/openai/tests/chat/chat_language_model.rs.
 /// Upstream: @ai-sdk/openai 4.0.83 src/chat/openai-chat-language-model.ts:539-542
 /// creates the stream's tool-call tracker with `typeValidation: 'if-present'`:
 /// a tool-call delta without `type` starts a call, one whose `type` is
@@ -306,6 +307,7 @@ async fn chat_stream_tool_call_type_is_validated_if_present() {
     );
 }
 
+/// partial: `should throw an api error when the first stream chunk is an error`; full port in src/openai/tests/chat/chat_language_model.rs.
 /// Upstream: @ai-sdk/openai 4.0.83 src/openai-stream-error.ts:18-37,
 /// :235-267 and :303-315: an error frame before any output fails the call
 /// with the status `createOpenAIProviderStreamError` gives it — an HTTP
@@ -483,7 +485,7 @@ async fn chat_logprobs_metadata_has_no_bytes() {
     );
 }
 
-/// TS: "should parse OpenRouter resource exhausted error" (src/openai-error.test.ts)
+/// partial: `should parse OpenRouter resource exhausted error`; full port in src/openai/tests/error.rs.
 #[tokio::test]
 async fn chat_error_response() {
     let message = "{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"Resource has been exhausted (e.g. check quota).\",\n    \"status\": \"RESOURCE_EXHAUSTED\"\n  }\n}\n";
@@ -509,8 +511,8 @@ async fn chat_error_response() {
     assert_eq!(error.data, Some(response));
 }
 
-/// TS: "should generate text" (src/responses/openai-responses-language-model.test.ts)
-/// TS: "should extract usage" (src/responses/openai-responses-language-model.test.ts)
+/// partial: `should generate text`; full port in src/openai/tests/responses/responses_language_model.rs.
+/// partial: `should extract usage`; full port in src/openai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn responses_generate() {
     let response = responses_response();
@@ -546,7 +548,7 @@ async fn responses_generate() {
     assert_eq!(result.response.unwrap().id.as_deref(), Some("resp_test"));
 }
 
-/// TS: "should stream text deltas" (src/responses/openai-responses-language-model.test.ts)
+/// partial: `should stream text deltas`; full port in src/openai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn responses_stream() {
     let events=json!([{"type": "response.created", "response": {"id": "resp_67c9a81b6a048190a9ee441c5755a4e8", "object": "response", "created_at": 1741269019, "status": "in_progress", "error": null, "incomplete_details": null, "input": [], "instructions": null, "max_output_tokens": null, "model": "test-model", "output": [], "parallel_tool_calls": true, "previous_response_id": null, "reasoning": {"effort": null, "summary": null}, "store": true, "temperature": 0.3, "text": {"format": {"type": "text"}}, "tool_choice": "auto", "tools": [], "top_p": 1, "truncation": "disabled", "usage": null, "user": null, "metadata": {}}}, {"type": "response.in_progress", "response": {"id": "resp_67c9a81b6a048190a9ee441c5755a4e8", "object": "response", "created_at": 1741269019, "status": "in_progress", "error": null, "incomplete_details": null, "input": [], "instructions": null, "max_output_tokens": null, "model": "test-model", "output": [], "parallel_tool_calls": true, "previous_response_id": null, "reasoning": {"effort": null, "summary": null}, "store": true, "temperature": 0.3, "text": {"format": {"type": "text"}}, "tool_choice": "auto", "tools": [], "top_p": 1, "truncation": "disabled", "usage": null, "user": null, "metadata": {}}}, {"type": "response.output_item.added", "output_index": 0, "item": {"id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "type": "message", "status": "in_progress", "role": "assistant", "content": []}}, {"type": "response.content_part.added", "item_id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": [], "logprobs": []}}, {"type": "response.output_text.delta", "item_id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "output_index": 0, "content_index": 0, "delta": "Hello,", "logprobs": []}, {"type": "response.output_text.delta", "item_id": "msg_67c9a81dea8c8190b79651a2b3adf91e", "output_index": 0, "content_index": 0, "delta": " World!", "logprobs": []}, {"type": "response.output_text.done", "item_id": "msg_67c9a8787f4c8190b49c858d4c1cf20c", "output_index": 0, "content_index": 0, "text": "Hello, World!"}, {"type": "response.content_part.done", "item_id": "msg_67c9a8787f4c8190b49c858d4c1cf20c", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "Hello, World!", "annotations": [], "logprobs": []}}, {"type": "response.output_item.done", "output_index": 0, "item": {"id": "msg_67c9a8787f4c8190b49c858d4c1cf20c", "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "Hello, World!", "annotations": [], "logprobs": []}]}}, {"type": "response.completed", "response": {"id": "resp_67c9a878139c8190aa2e3105411b408b", "object": "response", "created_at": 1741269112, "status": "completed", "error": null, "incomplete_details": null, "input": [], "instructions": null, "max_output_tokens": null, "model": "test-model", "output": [{"id": "msg_67c9a8787f4c8190b49c858d4c1cf20c", "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "Hello, World!", "annotations": []}]}], "parallel_tool_calls": true, "previous_response_id": null, "reasoning": {"effort": null, "summary": null}, "store": true, "temperature": 0.3, "text": {"format": {"type": "text"}}, "tool_choice": "auto", "tools": [], "top_p": 1, "truncation": "disabled", "usage": {"input_tokens": 543, "input_tokens_details": {"cached_tokens": 234}, "output_tokens": 478, "output_tokens_details": {"reasoning_tokens": 123}, "total_tokens": 512}, "user": null, "metadata": {}}}]).as_array().unwrap().clone();
@@ -608,7 +610,7 @@ async fn responses_stream() {
     );
 }
 
-/// TS: "should throw a descriptive error when the response has no output" (src/responses/openai-responses-language-model.test.ts)
+/// partial: `should throw a descriptive error when the response has no output`; full port in src/openai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn responses_error_response() {
     let fetch = MockFetch::new(vec![Canned::json(
@@ -720,8 +722,8 @@ fn transcription_response() -> Value {
 "#).unwrap()
 }
 
-/// TS: "should extract embedding" (src/embedding/openai-embedding-model.test.ts)
-/// TS: "should pass the model and the values" (src/embedding/openai-embedding-model.test.ts)
+/// partial: `should extract embedding`; full port in src/openai/tests/embedding/embedding_model.rs.
+/// partial: `should pass the model and the values`; full port in src/openai/tests/embedding/embedding_model.rs.
 #[tokio::test]
 async fn embedding_generate() {
     let response = embedding_response();
@@ -761,8 +763,8 @@ async fn embedding_generate() {
     assert_eq!(result.response.unwrap().body, Some(response));
 }
 
-/// TS: "should pass the model and the settings" (src/image/openai-image-model.test.ts)
-/// TS: "should extract the generated images" (src/image/openai-image-model.test.ts)
+/// partial: `should pass the model and the settings`; full port in src/openai/tests/image/image_model.rs.
+/// partial: `should extract the generated images`; full port in src/openai/tests/image/image_model.rs.
 #[tokio::test]
 async fn image_generate() {
     let response = image_response();
@@ -823,8 +825,8 @@ async fn image_edit_url_files_are_downloaded_through_the_guard() {
     }
 }
 
-/// TS: "should pass the model and text" (src/speech/openai-speech-model.test.ts)
-/// TS: "should return audio data with correct content type" (src/speech/openai-speech-model.test.ts)
+/// partial: `should pass the model and text`; full port in src/openai/tests/speech/speech_model.rs.
+/// partial: `should return audio data with correct content type`; full port in src/openai/tests/speech/speech_model.rs.
 #[tokio::test]
 async fn speech_generate() {
     let audio = vec![1, 2, 3, 4];
@@ -850,7 +852,7 @@ async fn speech_generate() {
     );
 }
 
-/// TS: "should extract the transcription text" (src/transcription/openai-transcription-model.test.ts)
+/// partial: `should extract the transcription text`; full port in src/openai/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn transcription_generate() {
     let response = transcription_response();
@@ -876,7 +878,7 @@ async fn transcription_generate() {
     assert_eq!(result.segments.len(), 5);
 }
 
-/// TS: "should handle streaming web search without action" (src/responses/openai-responses-language-model.test.ts)
+/// partial: `should handle streaming web search without action`; full port in src/openai/tests/responses/responses_language_model.rs.
 #[tokio::test]
 async fn responses_web_search_stream() {
     let fetch = MockFetch::new(vec![sse(vec![

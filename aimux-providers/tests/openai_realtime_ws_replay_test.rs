@@ -96,6 +96,7 @@ fn fixture_events() -> Vec<Value> {
     fixture["events"].as_array().expect("events array").clone()
 }
 
+/// partial: `should stream gpt-realtime-whisper using OpenAI realtime transcription`; full port in src/openai/tests/transcription/transcription_model.rs.
 #[tokio::test]
 async fn realtime_transcription_replays_through_injected_web_socket() {
     let seen = Arc::new(Mutex::new(Seen::default()));
