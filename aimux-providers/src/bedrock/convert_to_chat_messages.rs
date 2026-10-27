@@ -20,7 +20,6 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_provider_utils::is_full_media_type;
-use base64::Engine;
 use serde_json::{Value, json};
 
 // ── Prompt conversion ───────────────────────────────────────────────────────
@@ -302,11 +301,11 @@ fn push_file_part(file: &FilePart, content: &mut Vec<Value>, doc_counter: &mut u
     let b64 = match &file.data {
         FileData::Data {
             data: FileBytes::Binary(bytes),
-        } => base64::engine::general_purpose::STANDARD.encode(bytes),
+        } => aimux_provider_utils::convert_uint8_array_to_base64(bytes),
         FileData::Data {
             data: FileBytes::Base64(data),
         } => data.clone(),
-        FileData::Text { text } => base64::engine::general_purpose::STANDARD.encode(text),
+        FileData::Text { text } => aimux_provider_utils::convert_uint8_array_to_base64(text),
         FileData::Url { .. } => String::new(),
         FileData::Reference { .. } => return,
     };
@@ -449,12 +448,8 @@ fn resolve_tool_result_output(output: &ToolResultOutput, doc_counter: &mut u32) 
                             content.push(if part.media_type.starts_with("image/") { json!({ "image": { "format": mime_to_image_format(&part.media_type), "source": source } }) } else { json!({ "video": { "format": format, "source": source } }) });
                         } else if part.media_type.starts_with("video/") {
                             if let FileData::Data { data } = &part.data {
-                                let bytes = match data {
-                                    FileBytes::Binary(bytes) => {
-                                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                                    }
-                                    FileBytes::Base64(data) => data.clone(),
-                                };
+                                let bytes =
+                                    aimux_provider_utils::convert_to_base64(data).into_owned();
                                 content.push(json!({ "video": { "format": mime_to_video_format(&part.media_type).unwrap_or(""), "source": { "bytes": bytes } } }));
                             }
                         } else {

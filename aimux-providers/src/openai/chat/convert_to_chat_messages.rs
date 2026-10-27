@@ -67,7 +67,6 @@ pub(crate) fn resolve_provider_reference(
 
 /// Convert a file part to the OpenAI format, handling images, audio, and PDF.
 fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Value, AiMuxError> {
-    use base64::Engine;
     let FilePart {
         data,
         media_type,
@@ -92,10 +91,7 @@ fn convert_file_part_to_openai(file: &FilePart, part_index: usize) -> Result<Val
         }
         FileData::Url { url, .. } => (None, Some(url.as_str())),
         FileData::Data { data } => (
-            Some(match data {
-                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
-                FileBytes::Base64(data) => data.clone(),
-            }),
+            Some(aimux_provider_utils::convert_to_base64(data).into_owned()),
             None,
         ),
     };

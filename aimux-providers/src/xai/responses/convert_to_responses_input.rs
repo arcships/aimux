@@ -52,9 +52,8 @@ pub fn convert_to_xai_responses_input(
                                 FileData::Data {
                                     data: FileBytes::Binary(bytes),
                                 } => {
-                                    use base64::Engine;
                                     let b64 =
-                                        base64::engine::general_purpose::STANDARD.encode(bytes);
+                                        aimux_provider_utils::convert_uint8_array_to_base64(bytes);
                                     convert_image_part(file, Some(&b64), None)?
                                 }
                                 FileData::Data {
@@ -233,13 +232,8 @@ fn convert_tool_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
                         let image_url = match &part.data {
                             FileData::Url { url, .. } => url.clone(),
                             FileData::Data { data } => {
-                                use base64::Engine;
-                                let encoded = match data {
-                                    FileBytes::Base64(data) => data.clone(),
-                                    FileBytes::Binary(bytes) => {
-                                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                                    }
-                                };
+                                let encoded =
+                                    aimux_provider_utils::convert_to_base64(data).into_owned();
                                 format!("data:{};base64,{encoded}", resolve_full_media_type(part)?)
                             }
                             _ => continue,

@@ -5,7 +5,7 @@ use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
+use aimux_core::shared::{FileData, SharedProviderOptions};
 use aimux_core::tool::Tool;
 use aimux_core::types::Warning;
 use aimux_core::{AiMuxError, ErrorCause};
@@ -654,13 +654,7 @@ fn convert_user_part(
         UserPart::Text(part) => json!({ "type": "input_text", "text": part.text }),
         UserPart::File(file) => match &file.data {
             FileData::Data { data } => {
-                use base64::Engine;
-                let b64 = match data {
-                    FileBytes::Binary(bytes) => {
-                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                    }
-                    FileBytes::Base64(data) => data.clone(),
-                };
+                let b64 = aimux_provider_utils::convert_to_base64(data).into_owned();
                 inline_file(
                     ns,
                     &aimux_provider_utils::resolve_full_media_type(file)?,

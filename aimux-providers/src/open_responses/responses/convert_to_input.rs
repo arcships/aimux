@@ -5,7 +5,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
     ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::FileData;
 use aimux_core::types::Warning;
 use serde_json::{Value, json};
 
@@ -270,8 +270,6 @@ fn convert_user_content(
     provider_options_name: &str,
     warnings: &mut Vec<Warning>,
 ) -> Value {
-    use base64::Engine;
-
     let mut parts: Vec<Value> = Vec::new();
     for part in content {
         match part {
@@ -298,12 +296,7 @@ fn convert_user_content(
                                 continue;
                             }
                         };
-                        let b64 = match data {
-                            FileBytes::Binary(bytes) => {
-                                base64::engine::general_purpose::STANDARD.encode(bytes)
-                            }
-                            FileBytes::Base64(data) => data.clone(),
-                        };
+                        let b64 = aimux_provider_utils::convert_to_base64(data).into_owned();
                         let data_url = format!("data:{media_type};base64,{b64}");
                         parts.push(if image {
                             json!({
@@ -420,7 +413,6 @@ fn resolve_tool_result_output(
                 let image = top_level_media_type(&part.media_type) == "image";
                 let mut converted = match &part.data {
                     FileData::Data { data } => {
-                        use base64::Engine;
                         let media_type = match aimux_provider_utils::resolve_full_media_type(part) {
                             Ok(media_type) => media_type,
                             Err(error) => {
@@ -430,12 +422,7 @@ fn resolve_tool_result_output(
                                 continue;
                             }
                         };
-                        let b64 = match data {
-                            FileBytes::Binary(bytes) => {
-                                base64::engine::general_purpose::STANDARD.encode(bytes)
-                            }
-                            FileBytes::Base64(data) => data.clone(),
-                        };
+                        let b64 = aimux_provider_utils::convert_to_base64(data).into_owned();
                         let data_url = format!("data:{media_type};base64,{b64}");
                         if image {
                             json!({"type":"input_image", "image_url":data_url})
