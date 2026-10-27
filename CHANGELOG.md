@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not changed by this PR.
   Release and CI builds check the archive's workspace objects for bitcode
   and print every artifact's byte size (`scripts/check_native_artifact.py`).
+- The shipped static archives carry no LLVM bitcode at all. rustup's sysroot
+  objects (std, alloc, core, ...) embed their bitcode whatever the profile
+  says, about 10 MB of each archive that no consumer's linker reads;
+  `scripts/check_native_artifact.py --strip-bitcode` removes those sections
+  with `rust-objcopy` (rustup's `llvm-tools` component) before the Go
+  archives are staged and the iOS slices are packed, and fails if any
+  bitcode is left. The Linux Go archive goes from 95.0 MB to 85.0 MB, the
+  iOS slices lose ~9.7 MB each; the code the consumer links is unchanged
+  (RFC-0043 §5.3 S1b, §15.7). CI's Go tests link the stripped archive.
 - The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
   a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. On
   Linux x86_64 the published `aimux.node` goes from 39.9 MB (unstripped) to
