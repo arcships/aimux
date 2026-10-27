@@ -80,7 +80,8 @@ data: [DONE]
 "###
 }
 
-/// TS: "should use the baseURL correctly" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should use the baseURL correctly`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn chat_generate() {
     let fetch = MockFetch::new(vec![Canned::json(&chat_response())]);
@@ -104,8 +105,8 @@ async fn chat_generate() {
     );
 }
 
-/// TS: "should extract text content" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
-/// TS: "should extract usage" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should extract text content`, `should extract usage`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn responses_generate() {
     let fixture = text_fixture();
@@ -152,7 +153,8 @@ async fn responses_generate() {
     );
 }
 
-/// TS: "should extract tool call content" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should extract tool call content`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn responses_tool_call() {
     let mut fixture = text_fixture();
@@ -178,7 +180,8 @@ async fn responses_tool_call() {
     }
 }
 
-/// TS: "should stream text content" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should stream text content`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn responses_stream() {
     let fetch = MockFetch::new(vec![Canned {
@@ -227,7 +230,8 @@ async fn responses_stream() {
     }
 }
 
-/// TS: "should set the correct api version" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should set the correct api version`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn embedding_generate() {
     let fetch = MockFetch::new(vec![Canned::json(
@@ -251,9 +255,9 @@ async fn embedding_generate() {
     assert_eq!(result.usage.unwrap().tokens, 8);
 }
 
-/// TS: "should send the correct request body" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
-/// Azure deployment names do not identify the model family, so file and mask
-/// support stay unknown (`azure-openai-provider.ts:372-376`).
+/// partial: `should send the correct request body` (file and mask support
+/// stay unknown for deployments, `azure-openai-provider.ts:372-376`); full
+/// port in src/azure/tests/openai_provider.rs.
 #[test]
 fn image_input_capabilities_are_unknown_for_deployments() {
     let fetch = MockFetch::new(vec![]);
@@ -262,7 +266,9 @@ fn image_input_capabilities_are_unknown_for_deployments() {
     assert_eq!(model.supports_mask_inputs(), None);
 }
 
-/// TS: "should extract the generated images" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should send the correct request body`,
+/// `should extract the generated images`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn image_generate() {
     let fetch = MockFetch::new(vec![Canned::json(&image_response())]);
@@ -286,7 +292,8 @@ async fn image_generate() {
     }
 }
 
-/// TS: "should use correct URL format" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should use correct URL format`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn transcription_generate() {
     let fetch = MockFetch::new(vec![Canned::json(
@@ -318,7 +325,8 @@ async fn transcription_generate() {
     assert_eq!(result.duration_in_seconds, Some(5.0));
 }
 
-/// TS: "should use correct URL format" (@ai-sdk/azure/src/azure-openai-provider.test.ts)
+/// partial: `should use correct URL format`; full port in
+/// src/azure/tests/openai_provider.rs.
 #[tokio::test]
 async fn speech_generate() {
     let fetch = MockFetch::new(vec![Canned {
@@ -338,7 +346,8 @@ async fn speech_generate() {
     assert!(matches!(result.audio, AudioData::Binary(audio) if audio == vec![1,2,3]));
 }
 
-/// TS: "sends audio and the required model definition" (azure-transcription-model.test.ts)
+/// partial: `sends audio and the required model definition`; full port in
+/// src/azure/tests/transcription_model.rs.
 #[tokio::test]
 async fn speech_transcription_request() {
     for audio in [

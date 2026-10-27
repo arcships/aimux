@@ -2792,3 +2792,83 @@ sub-feature = [
 upstream = "src/xai-video-settings.ts"
 status = "not-applicable"
 reason = "only the XaiVideoModelId string union; Rust takes the model id as &str"
+
+[azure]
+package = "@ai-sdk/azure"
+
+[[azure.files]]
+upstream = "src/azure-openai-provider-metadata.ts"
+rust = "azure/options.rs"
+status = "mapped"
+
+[azure.files.tests]
+
+# azure-openai-provider.test.ts tests this file. azure-transcription-model.test.ts
+# has no source file of its own name: it tests AzureTranscriptionModel, which is
+# defined here (aimux: azure/transcription.rs), so its exclusions are listed here too.
+[[azure.files]]
+upstream = "src/azure-openai-provider.ts"
+rust = "azure/mod.rs"
+status = "mapped"
+
+[azure.files.tests]
+sub-feature = [
+  { case = "deepseek › should map top-level reasoning to Azure DeepSeek reasoning effort", issue = 275, reason = "AzureOpenAIProvider has no deepseek(); the Azure-hosted DeepSeek model is not ported" },
+  { case = "deepseek › should parse providerOptions from the azure namespace", issue = 275, reason = "AzureOpenAIProvider has no deepseek(); the Azure-hosted DeepSeek model is not ported" },
+  { case = "deepseek › should send a json_schema response format for structured output", issue = 275, reason = "AzureOpenAIProvider has no deepseek(); the Azure-hosted DeepSeek model is not ported" },
+  { case = "deepseek › should stream reasoning content", issue = 275, reason = "AzureOpenAIProvider has no deepseek(); the Azure-hosted DeepSeek model is not ported" },
+  { case = "completion › doGenerate › should set the correct api version", issue = 275, reason = "AzureOpenAIProvider has no completion(); the legacy completion model is not ported for Azure" },
+  { case = "completion › doGenerate › should pass headers", issue = 275, reason = "AzureOpenAIProvider has no completion(); the legacy completion model is not ported for Azure" },
+  { case = "embedding › should expose the aggregate token limit", issue = 275, reason = "EmbeddingModel has max_embeddings_per_call() only; there is no per-call input size limit like EXPERIMENTAL_EMBEDDING_MODEL_MAX_INPUT_BYTES_PER_CALL" },
+  { case = "streaming and serialization › restores request-time routing after a workflow serialization round trip", issue = 275, reason = "aimux models have no WORKFLOW_SERIALIZE / WORKFLOW_DESERIALIZE; a model and its settings (which hold a fetch function) are not serializable" },
+]
+ts-only = [
+  { case = "streaming and serialization › delegates OpenAI streaming without changing call options", reason = "the case spies on OpenAITranscriptionModel.prototype.doStream with vi.spyOn; the Rust model has no seam to replace that method" },
+]
+
+[[azure.files]]
+upstream = "src/azure-openai-tools.ts"
+rust = "openai/tools.rs"
+status = "elsewhere"
+
+[azure.files.tests]
+
+[[azure.files]]
+upstream = "src/azure-speech-transcription-model-options.ts"
+rust = "azure/transcription.rs"
+status = "mapped"
+
+[azure.files.tests]
+
+[[azure.files]]
+upstream = "src/azure-speech-transcription-model.ts"
+rust = "azure/transcription.rs"
+status = "mapped"
+
+[azure.files.tests]
+
+[[azure.files]]
+upstream = "src/azure-transcription-model-options.ts"
+rust = "azure/transcription.rs"
+status = "mapped"
+
+[azure.files.tests]
+
+[[azure.files]]
+upstream = "src/azure-transcription-provider-metadata.ts"
+rust = "azure/transcription.rs"
+status = "mapped"
+
+[azure.files.tests]
+
+[[azure.files]]
+upstream = "src/index.ts"
+rust = "azure/mod.rs"
+status = "mapped"
+
+[azure.files.tests]
+
+[[azure.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"

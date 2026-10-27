@@ -636,3 +636,6 @@ impl ProviderDiscovery for AzureOpenAIProvider {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
