@@ -1188,6 +1188,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `XaiResponsesUsage`, ...) are now at `xai::responses`. Exports at the crate
   root and the `xai` module root are unchanged.
 
+- `aimux_providers::cohere` follows the upstream `@ai-sdk/cohere` file layout
+  (RFC-0046). The sub-modules `cohere::convert`, `cohere::embedding` and
+  `cohere::reranking` are no longer public; use `CohereEmbeddingModel` and
+  `CohereRerankingModel`, re-exported at `aimux_providers::cohere`, instead of
+  the `embedding` and `reranking` paths. The helpers `cohere::convert` exposed
+  (`prepare_tools`, `convert_prompt_to_cohere`, `build_request_body`,
+  `resolve_cohere_thinking`, `parse_finish_reason`, `PreparedTools`,
+  `ConvertedPrompt`, `RequestBodyResult`) are not reachable from outside the
+  crate any more and have no replacement. Exports at the crate root and the
+  `cohere` module root are unchanged.
+
 - Google's sub-modules follow the `@ai-sdk/google` files (RFC-0046 §4.2):
   `google::embedding`, `google::image`, `google::speech`, `google::video`,
   `google::convert`, `google::types` and `google::utils` are no longer public.
@@ -1271,6 +1282,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Anthropic AWS models are named `anthropic-aws.messages` by default, the
+  provider name the AI SDK gives them, instead of `anthropic-aws`. A `name`
+  setting still replaces it, and the providerOptions key stays `anthropic`.
+
+- Anthropic AWS models report `http(s)` image (`image/*`) and PDF
+  (`application/pdf`) URLs as supported, as the AI SDK does, so those URLs go
+  to the Messages API as they are instead of being downloaded first.
+
+- Anthropic AWS fails a SigV4 request whose `AWS_ACCESS_KEY_ID` or
+  `AWS_SECRET_ACCESS_KEY` is missing with the AI SDK's guidance on providing
+  credentials (an `AiMuxError::Other` that ends with the setting error as
+  `Original error:`), instead of the bare `LoadSetting` error. A missing
+  region is still `LoadSetting`.
+
+- Anthropic AWS reports a failing SigV4 credential producer as
+  `AWS credential provider failed: <error>. Please ensure your credential
+  provider returns valid AWS credentials …`, the AI SDK's message, instead of
+  the producer's error alone.
+
+- Anthropic AWS with no `fetch` setting uses the process default transport
+  current at each request, as its settings document and the AI SDK does with
+  `globalThis.fetch`, instead of the one current when the provider was
+  created; a later `set_default_transport` now reaches existing providers.
 - Google image models `gemini-2.5-flash-image`, `gemini-3-pro-image-preview`
   and `gemini-3.1-flash-image-preview` report `supports_file_inputs: true`
   and `supports_mask_inputs: false` (also in the ops capabilities), as
