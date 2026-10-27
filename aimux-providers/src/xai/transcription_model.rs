@@ -179,7 +179,7 @@ impl TranscriptionModel for XaiTranscriptionModel {
             exchange.request(exchange.url("/stt"), options),
             HttpBody::Bytes(body, content_type),
             aimux_provider_utils::create_json_response_handler::<SttResponse>(),
-            super::xai_failed_response_handler(),
+            super::error::xai_failed_response_handler(),
         )
         .await?;
         let response = resp.value;

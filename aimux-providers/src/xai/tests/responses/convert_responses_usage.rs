@@ -6,8 +6,8 @@
 use aimux_core::types::Usage;
 use serde_json::{Value, json};
 
-use crate::xai::responses::convert::convert_xai_responses_usage;
-use crate::xai::responses::types::XaiResponsesUsage;
+use crate::xai::responses::XaiResponsesUsage;
+use crate::xai::responses::convert_xai_responses_usage;
 
 /// `convertXaiResponsesUsage(usage)` for a usage object as the API returns it.
 fn convert(usage: Value) -> Usage {

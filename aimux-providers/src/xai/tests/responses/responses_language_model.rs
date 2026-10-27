@@ -13,20 +13,25 @@
 //! - `undefined` properties are absent from the expected JSON.
 //! - `toMatchSnapshot()` values are `snapshots/<test name>.json`, converted
 //!   from the vitest `.snap` file (their text matches the fixtures).
+//!
+//! The last top-level cases are the older Responses subset (formerly
+//! `tests/xai_upstream_e2e_test.rs`), on the same [`MockFetch`].
 
 use std::sync::Arc;
 
+use aimux_core::AiMuxError;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolCallPart,
     ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::{CallOptions, ResponseFormat};
-use aimux_core::result::{GenerateResult, StreamResult};
+use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions, provider_namespace};
+use aimux_core::stream_part::StreamPart;
 use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
-use aimux_core::types::ReasoningEffort;
-use futures::StreamExt;
+use aimux_core::types::{FinishReasonUnified, ReasoningEffort};
+use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -351,6 +356,59 @@ fn empty_response(usage: Value) -> Value {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── The harness of the older Responses subset ─────────────────────────────────
+
+fn model(fetch: &std::sync::Arc<MockFetch>) -> XaiResponsesModel {
+    create_xai(XAIProviderSettings {
+        base_url: Some("https://example.test/v1/".into()),
+        api_key: Some("test-key".into()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap()
+    .responses("grok-4-fast-non-reasoning")
+}
+
+fn options() -> CallOptions {
+    CallOptions {
+        prompt: vec![LanguageModelMessage::user_text("hello")],
+        ..Default::default()
+    }
+}
+
+fn assert_request(fetch: &MockFetch, stream: bool, tools: bool) {
+    let requests = fetch.seen();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.url, "https://example.test/v1/responses");
+    assert_eq!(request.headers["authorization"], "Bearer test-key");
+    let mut expected = json!({
+        "model": "grok-4-fast-non-reasoning",
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]
+    });
+    if stream {
+        expected["stream"] = json!(true);
+    }
+    if tools {
+        expected["tools"] = json!([{"type": "web_search"}]);
+    }
+    assert_eq!(request.json_body(), expected);
+}
+
+fn sse(events: &[Value]) -> Canned {
+    Canned {
+        status: 200,
+        headers: vec![("content-type".into(), "text/event-stream".into())],
+        body: (events
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>()
+            + "data: [DONE]\n\n")
+            .into_bytes(),
+    }
+}
 
 mod xai_responses_language_model {
     use super::*;
@@ -5196,5 +5254,222 @@ mod xai_responses_language_model {
                 }),
             );
         }
+    }
+}
+
+/// partial: `should extract usage correctly`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
+#[tokio::test]
+async fn generate_converts_usage() {
+    // The port used an unrelated search fixture for this case; restore the TS response.
+    let usage = json!({
+        "input_tokens": 345, "output_tokens": 538, "total_tokens": 883,
+        "output_tokens_details": {"reasoning_tokens": 123}
+    });
+    let body = json!({
+        "id": "resp_123", "object": "response", "status": "completed",
+        "model": "grok-4-fast-non-reasoning", "output": [], "usage": usage
+    });
+    let fetch = MockFetch::new(vec![Canned::json(&body)]);
+    let result = model(&fetch).do_generate(&options()).await.unwrap();
+    assert_request(&fetch, false, false);
+    assert!(result.content.is_empty());
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(result.finish_reason.raw.as_deref(), Some("completed"));
+    assert_eq!(
+        serde_json::to_value(result.usage).unwrap(),
+        json!({
+            "inputTokens": {"total": 345, "noCache": 345, "cacheRead": 0},
+            "outputTokens": {"total": 538, "text": 415, "reasoning": 123},
+            "raw": usage
+        })
+    );
+    assert!(result.provider_metadata.is_none());
+    assert_eq!(result.response.unwrap().id.as_deref(), Some("resp_123"));
+}
+
+/// partial: `should expose cost_in_usd_ticks in finish providerMetadata`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
+#[tokio::test]
+async fn stream_reports_cost_and_text() {
+    let events = vec![
+        json!({"type": "response.created", "response": {"id": "resp_123", "object": "response", "model": "grok-4-fast-non-reasoning", "output": []}}),
+        json!({"type": "response.output_text.delta", "output_index": 0, "content_index": 0, "delta": "Hello"}),
+        json!({"type": "response.completed", "response": {"id": "resp_123", "object": "response", "model": "grok-4-fast-non-reasoning", "status": "completed", "output": [{"type": "message", "id": "msg_001", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "Hello"}]}], "usage": {"input_tokens": 10, "output_tokens": 5, "cost_in_usd_ticks": 113500}}}),
+    ];
+    let fetch = MockFetch::new(vec![sse(&events)]);
+    let parts: Vec<_> = model(&fetch)
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .try_collect()
+        .await
+        .unwrap();
+    assert_request(&fetch, true, false);
+    let text: String = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::TextDelta { delta, .. } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, "Hello");
+    let finishes: Vec<_> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::Finish {
+                finish_reason,
+                usage,
+                provider_metadata,
+            } => Some((finish_reason, usage, provider_metadata)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finishes.len(), 1);
+    let (reason, usage, metadata) = finishes[0];
+    assert_eq!(reason.unified, FinishReasonUnified::Stop);
+    assert_eq!(reason.raw.as_deref(), Some("completed"));
+    assert_eq!(usage.input_tokens.total, Some(10));
+    assert_eq!(usage.output_tokens.total, Some(5));
+    assert_eq!(
+        metadata.as_ref().unwrap(),
+        &provider_namespace("xai", json!({"costInUsdTicks": 113500})).unwrap()
+    );
+    assert!(
+        !parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::Error { .. }))
+    );
+}
+
+/// partial: `should forward web_search_call action and sources to tool-result`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
+#[tokio::test]
+async fn tool_results_preserve_actions_and_sources() {
+    let body = json!({
+        "id": "resp_123",
+        "object": "response",
+        "status": "completed",
+        "model": "grok-4-fast-non-reasoning",
+        "output": [
+            {"type": "web_search_call", "id": "ws_action_1", "name": "web_search", "call_id": "", "status": "completed", "action": {"type": "search", "query": "latest AI news", "sources": [{"type": "url", "url": "https://example.com/a"}, {"type": "url", "url": "https://example.com/b"}]}},
+            {"type": "web_search_call", "id": "ws_action_2", "name": "web_search", "call_id": "", "status": "completed", "action": {"type": "open_page", "url": "https://example.com/a"}},
+            {"type": "web_search_call", "id": "ws_action_3", "name": "web_search", "call_id": "", "status": "completed", "action": {"type": "find_in_page", "url": "https://example.com/a", "pattern": "climate"}},
+            {"type": "web_search_call", "id": "ws_action_4", "name": "web_search", "call_id": "", "status": "completed", "action": {"type": "search", "query": null, "sources": null}},
+            {"type": "web_search_call", "id": "ws_action_5", "name": "web_search", "call_id": "", "status": "completed", "action": {"type": "open_page", "url": null}},
+        ],
+        "usage": {"input_tokens": 10, "output_tokens": 5},
+    });
+    let fetch = MockFetch::new(vec![Canned::json(&body)]);
+    let mut options = options();
+    options.tools = Some(vec![Tool::Provider(ProviderTool {
+        id: "xai.web_search".parse().unwrap(),
+        name: "web_search".into(),
+        args: serde_json::Map::new(),
+        supports_deferred_results: None,
+    })]);
+    let result = model(&fetch).do_generate(&options).await.unwrap();
+    assert_request(&fetch, false, true);
+    let expected = vec![
+        json!({"action": {"type": "search", "query": "latest AI news"}, "sources": [{"type": "url", "url": "https://example.com/a"}, {"type": "url", "url": "https://example.com/b"}]}),
+        json!({"action": {"type": "openPage", "url": "https://example.com/a"}}),
+        json!({"action": {"type": "findInPage", "url": "https://example.com/a", "pattern": "climate"}}),
+        json!({"action": {"type": "search"}}),
+        json!({"action": {"type": "openPage", "url": null}}),
+    ];
+    assert_eq!(result.content.len(), expected.len() * 2);
+    for (index, (pair, expected_result)) in result
+        .content
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(expected)
+        .enumerate()
+    {
+        let id = format!("ws_action_{}", index + 1);
+        let GenerateContent::ToolCall(call) = &pair[0] else {
+            panic!("missing tool call")
+        };
+        assert_eq!(call.tool_call_id, id);
+        assert_eq!(call.tool_name, "web_search");
+        assert_eq!(call.input, "");
+        assert_eq!(call.provider_executed, Some(true));
+        let GenerateContent::ToolResult(output) = &pair[1] else {
+            panic!("missing tool result")
+        };
+        assert_eq!(output.tool_call_id, id);
+        assert_eq!(output.tool_name, "web_search");
+        assert_eq!(output.result, expected_result);
+        assert_eq!(output.is_error, None);
+    }
+    assert_eq!(result.finish_reason.unified, FinishReasonUnified::Stop);
+}
+
+/// partial: `should set finish reason to error`; full port in
+/// src/xai/tests/responses/responses_language_model.rs.
+#[tokio::test]
+async fn failed_response_emits_error_and_finish() {
+    let events = vec![
+        json!({"type": "response.created", "response": {"id": "resp_123", "object": "response", "model": "grok-4-fast-non-reasoning", "output": []}}),
+        json!({"type": "response.failed", "response": {"error": {"code": "server_error", "message": "Internal server error"}, "usage": {"input_tokens": 50, "output_tokens": 0}}}),
+    ];
+    let fetch = MockFetch::new(vec![sse(&events)]);
+    let parts: Vec<_> = model(&fetch)
+        .do_stream(&options())
+        .await
+        .unwrap()
+        .stream
+        .try_collect()
+        .await
+        .unwrap();
+    assert_request(&fetch, true, false);
+    let errors: Vec<_> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::Error { error } => Some(error),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(errors.len(), 1);
+    let AiMuxError::ApiCall(error) = errors[0] else {
+        panic!("expected API error")
+    };
+    assert_eq!(error.message, "Internal server error");
+    assert_eq!(error.provider_code.as_deref(), Some("server_error"));
+    assert_eq!(error.status_code, Some(500));
+    assert!(error.is_retryable);
+    assert_eq!(error.data.as_ref(), Some(&events[1]));
+    let finishes: Vec<_> = parts
+        .iter()
+        .filter_map(|part| match part {
+            StreamPart::Finish {
+                finish_reason,
+                usage,
+                ..
+            } => Some((finish_reason, usage)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finishes.len(), 1);
+    let (reason, usage) = finishes[0];
+    assert_eq!(reason.unified, FinishReasonUnified::Error);
+    assert_eq!(reason.raw.as_deref(), Some("error"));
+    assert_eq!(usage.input_tokens.total, Some(50));
+    assert_eq!(usage.output_tokens.total, Some(0));
+}
+
+/// `xaiResponsesSupportedUrls` (xai-responses-language-model.ts:142-149):
+/// image, PDF and text URLs go to the API as they are.
+#[tokio::test]
+async fn responses_support_http_image_pdf_and_text_urls() {
+    let fetch = MockFetch::new(vec![]);
+    let urls = model(&fetch).supported_urls().await;
+    let mut kinds: Vec<_> = urls.0.keys().map(String::as_str).collect();
+    kinds.sort_unstable();
+    assert_eq!(kinds, ["application/pdf", "image/*", "text/*"]);
+    for patterns in urls.0.values() {
+        assert!(patterns[0].is_match("https://example.com/file"));
+        assert!(!patterns[0].is_match("ftp://example.com/file"));
     }
 }

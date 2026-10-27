@@ -8,7 +8,7 @@ use aimux_core::tool::{FunctionTool, ProviderTool, Tool};
 use aimux_core::types::Warning;
 use serde_json::{Value, json};
 
-use crate::xai::responses::convert::{PreparedResponsesTools, prepare_responses_tools};
+use crate::xai::responses::{PreparedResponsesTools, prepare_responses_tools};
 
 /// A provider-defined tool as the caller passes it: `{ type: 'provider', id, name, args }`.
 fn provider_tool(id: &str, name: &str, args: Value) -> Tool {
