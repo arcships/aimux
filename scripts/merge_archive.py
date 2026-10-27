@@ -14,7 +14,13 @@ This script does that work once, at release time:
    `aimux_ffi` members define (`llvm-nm`);
 2. `ld -r --gc-sections -u <export>...` links every member into one
    relocatable object and drops every section no export reaches (GNU ld, the
-   linker the archive's consumers use: the file it writes is what they read);
+   linker the archive's consumers use: the file it writes is what they read).
+   A COFF archive is merged without `--gc-sections`: GNU ld's PE garbage
+   collection in a relocatable link drops the `.text$f` of an unreferenced
+   gcc-built function (ring's C code) but keeps its `.pdata$f`/`.xdata$f`,
+   whose relocations then overflow in the consumer's link ("relocation
+   truncated to fit: IMAGE_REL_AMD64_ADDR32NB"), and it removed 77 KB of a
+   42 MB object in the first place;
 3. `llvm-strip --strip-unneeded` removes the local symbols the merged object
    no longer needs for relocation;
 4. `llvm-ar` writes the archive back with the merged object as its first
@@ -156,8 +162,9 @@ def main(argv):
         lines = [f"-u {export}" for export in sorted(exports)]
         lines += [f'"{m.as_posix()}"' for m, _ in members]
         response.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        subprocess.run([ld, "-r", "--gc-sections", f"@{response}", "-o", str(merged)], check=True)
-        print(f"  before merge: {len(data)} bytes; merged object {merged.stat().st_size} bytes ({ld} -r --gc-sections)")
+        gc = ["--gc-sections"] if fmt == "elf" else []  # see the module docstring for COFF
+        subprocess.run([ld, "-r", *gc, f"@{response}", "-o", str(merged)], check=True)
+        print(f"  before merge: {len(data)} bytes; merged object {merged.stat().st_size} bytes ({' '.join([ld, '-r', *gc])})")
         subprocess.run([strip, "--strip-unneeded", str(merged)], check=True)
         print(f"  after strip --strip-unneeded: {merged.stat().st_size} bytes ({strip})")
 

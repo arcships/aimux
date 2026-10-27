@@ -49,9 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what a `--gc-sections` link of the old archive kept, and a consumer that
   does not pass `--gc-sections` (Go's cgo link, for one) now gets that
   smaller result too: the Go test binary drops from 39.1 MB to 27.6 MB. The
-  macOS archives and the iOS slices are unchanged (ld64's `-r` does not
-  dead-strip; they are inside the 70 MB and 64 MiB budgets already). CI
-  rehearses the Windows gnu archive on the Windows leg (RFC-0043 §5.3 S1c).
+  Windows gnu archive keeps its DLL import-library members as they are
+  (two import libraries for the same DLLs coexist in it, which `ld -r`
+  would reject) and is merged without `--gc-sections` (GNU ld's PE garbage
+  collection in a relocatable link leaves `.pdata`/`.xdata` of discarded
+  gcc-built functions dangling, and removed 77 KB); it goes from 57.1 MB to
+  48.1 MB, and a program linked against it grows by 160 KB (1%) because the
+  merged object carries every code member, not only the ones a link would
+  have pulled. The macOS archives and the iOS slices are unchanged (ld64's
+  `-r` does not dead-strip; they are inside the 70 MB and 64 MiB budgets
+  already). CI rehearses the Windows gnu archive on the Windows leg
+  (RFC-0043 §5.3 S1c).
 - The Node and Python extensions (`aimux.node`, `aimux` wheel) are built with
   a size profile: `opt-level = "s"`, fat LTO, one codegen unit, stripped. On
   Linux x86_64 the published `aimux.node` goes from 39.9 MB (unstripped) to
