@@ -1,0 +1,24 @@
+{
+  "inputTokens": {
+    "cacheRead": 0,
+    "noCache": 9,
+    "total": 9
+  },
+  "outputTokens": {
+    "reasoning": 244,
+    "text": 28,
+    "total": 272
+  },
+  "raw": {
+    "candidatesTokenCount": 28,
+    "promptTokenCount": 9,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 9
+      }
+    ],
+    "thoughtsTokenCount": 244,
+    "totalTokenCount": 281
+  }
+}
