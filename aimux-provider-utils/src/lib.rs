@@ -33,6 +33,7 @@ pub mod response_handler;
 pub mod sigv4_fetch;
 #[cfg(test)]
 mod tests;
+pub mod tool_result_to_content;
 pub mod transform_stream;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
@@ -72,5 +73,6 @@ pub use response_handler::{
     create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
+pub use tool_result_to_content::{tool_result_content_value, tool_result_to_content};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
 pub use url::{validate_base_url, without_trailing_slash};
