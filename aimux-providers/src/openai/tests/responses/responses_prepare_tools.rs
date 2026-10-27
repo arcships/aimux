@@ -3,7 +3,7 @@ use aimux_core::options::LanguageModelV4ToolChoice;
 use aimux_core::tool::Tool;
 use serde_json::{Value, json};
 
-use crate::openai::responses::convert::prepare_responses_tools_for;
+use crate::openai::responses::responses_prepare_tools::prepare_responses_tools_for;
 
 /// `prepareResponsesTools({ tools, toolChoice, allowedTools,
 /// supportsAsyncToolCalling })` as the upstream result object; keys whose
