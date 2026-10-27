@@ -1,0 +1,144 @@
+{
+  "content": [
+    {
+      "text": "The user is asking for the weather in San Francisco. I have a weather tool available that can get weather information for a location. I should use this tool with the location parameter set to \"San Francisco\". Let me call the weather function.",
+      "type": "reasoning"
+    },
+    {
+      "input": "{\"location\": \"San Francisco\"}",
+      "toolCallId": "call_00_9V0vrf86Pc9aelHCJMZqnJBo",
+      "toolName": "weather",
+      "type": "tool-call"
+    }
+  ],
+  "finishReason": {
+    "raw": "tool_calls",
+    "unified": "tool-calls"
+  },
+  "providerMetadata": {
+    "deepseek": {
+      "choiceIndex": 0,
+      "messageRole": "assistant",
+      "promptCacheHitTokens": 320,
+      "promptCacheMissTokens": 19,
+      "responseObject": "chat.completion",
+      "systemFingerprint": "fp_eaab8d114b_prod0820_fp8_kvcache",
+      "toolCallTypes": [
+        "function"
+      ]
+    }
+  },
+  "request": {
+    "body": {
+      "messages": [
+        {
+          "content": "Hello",
+          "role": "user"
+        }
+      ],
+      "model": "deepseek-reasoner",
+      "thinking": {
+        "type": "enabled"
+      },
+      "tools": [
+        {
+          "function": {
+            "name": "weather",
+            "parameters": {
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "additionalProperties": false,
+              "properties": {
+                "location": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "location"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    }
+  },
+  "response": {
+    "body": {
+      "choices": [
+        {
+          "finish_reason": "tool_calls",
+          "index": 0,
+          "logprobs": null,
+          "message": {
+            "content": "",
+            "reasoning_content": "The user is asking for the weather in San Francisco. I have a weather tool available that can get weather information for a location. I should use this tool with the location parameter set to \"San Francisco\". Let me call the weather function.",
+            "role": "assistant",
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "{\"location\": \"San Francisco\"}",
+                  "name": "weather"
+                },
+                "id": "call_00_9V0vrf86Pc9aelHCJMZqnJBo",
+                "index": 0,
+                "type": "function"
+              }
+            ]
+          }
+        }
+      ],
+      "created": 1764665845,
+      "id": "7a630f5b-b7e6-4878-82f8-d77db164d42b",
+      "model": "deepseek-reasoner",
+      "object": "chat.completion",
+      "system_fingerprint": "fp_eaab8d114b_prod0820_fp8_kvcache",
+      "usage": {
+        "completion_tokens": 92,
+        "completion_tokens_details": {
+          "reasoning_tokens": 48
+        },
+        "prompt_cache_hit_tokens": 320,
+        "prompt_cache_miss_tokens": 19,
+        "prompt_tokens": 339,
+        "prompt_tokens_details": {
+          "cached_tokens": 320
+        },
+        "total_tokens": 431
+      }
+    },
+    "headers": {
+      "content-length": "952",
+      "content-type": "application/json"
+    },
+    "id": "7a630f5b-b7e6-4878-82f8-d77db164d42b",
+    "modelId": "deepseek-reasoner",
+    "timestamp": "2025-12-02T08:57:25.000Z"
+  },
+  "usage": {
+    "inputTokens": {
+      "cacheRead": 320,
+      "noCache": 19,
+      "total": 339
+    },
+    "outputTokens": {
+      "reasoning": 48,
+      "text": 44,
+      "total": 92
+    },
+    "raw": {
+      "completion_tokens": 92,
+      "completion_tokens_details": {
+        "reasoning_tokens": 48
+      },
+      "prompt_cache_hit_tokens": 320,
+      "prompt_cache_miss_tokens": 19,
+      "prompt_tokens": 339,
+      "prompt_tokens_details": {
+        "cached_tokens": 320
+      },
+      "total_tokens": 431
+    }
+  },
+  "warnings": []
+}
