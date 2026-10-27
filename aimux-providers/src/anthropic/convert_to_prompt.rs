@@ -9,7 +9,7 @@
 //! PDF beta and top-level media-type sniffing), and provider-referenced files.
 
 use indexmap::IndexSet;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 
 use crate::anthropic::get_cache_control::CacheControlValidator;
 use crate::anthropic::language_model_options::{CANONICAL, anthropic_options};
-use crate::anthropic::tool_name_mapping::ToolNameMapping;
+use aimux_provider_utils::ToolNameMapping;
 
 /// Beta header emitted when a PDF file part is present.
 const BETA_PDFS: &str = "pdfs-2024-09-25";
@@ -71,7 +71,12 @@ pub(super) fn convert_prompt_to_anthropic_full_fallible(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
-    convert_prompt_to_anthropic_full_with_tools(prompt, send_reasoning, &ToolNameMapping::default())
+    convert_prompt_to_anthropic_full_with_tools(
+        prompt,
+        send_reasoning,
+        &ToolNameMapping::default(),
+        &HashMap::new(),
+    )
 }
 
 /// [`convert_prompt_to_anthropic_full_fallible`] with the call's tool-name
@@ -94,8 +99,9 @@ pub(super) fn convert_prompt_to_anthropic_full_with_tools(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
-    convert_prompt_for(prompt, send_reasoning, tool_names, CANONICAL)
+    convert_prompt_for(prompt, send_reasoning, tool_names, toolset_names, CANONICAL)
 }
 
 /// [`convert_prompt_to_anthropic_full_with_tools`] for a provider whose
@@ -111,6 +117,7 @@ pub(super) fn convert_prompt_for(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
     options_name: &str,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
     let mut validator = CacheControlValidator::for_options_name(options_name);
@@ -118,6 +125,7 @@ pub(super) fn convert_prompt_for(
         prompt,
         send_reasoning,
         tool_names,
+        toolset_names,
         options_name,
         &mut validator,
     )
@@ -127,6 +135,7 @@ pub(super) fn convert_prompt_with_validator(
     prompt: &LanguageModelPrompt,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
     options_name: &str,
     validator: &mut CacheControlValidator,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
@@ -361,7 +370,7 @@ pub(super) fn convert_prompt_with_validator(
                         idx + 1 == content.len(),
                         provider_options.as_ref(),
                         options_name,
-                        tool_names,
+                        toolset_names,
                     )?);
                 }
             }
@@ -386,6 +395,7 @@ pub(super) fn convert_prompt_with_validator(
                         part,
                         send_reasoning,
                         tool_names,
+                        toolset_names,
                         &mut betas,
                         &mut warnings,
                         validator,
@@ -671,7 +681,7 @@ fn convert_tool_result(
     is_last_part: bool,
     message_provider_options: Option<&SharedProviderOptions>,
     options_name: &str,
-    tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
 ) -> Result<Value, AiMuxError> {
     let ToolResultPart {
         tool_call_id,
@@ -688,7 +698,7 @@ fn convert_tool_result(
         "type": "tool_result",
         "tool_use_id": tool_call_id,
     });
-    if let Some(name) = toolset_name(tool_names, tool_name, provider_options.as_ref()) {
+    if let Some(name) = toolset_name(toolset_names, tool_name, provider_options.as_ref()) {
         block["toolset_name"] = json!(name);
     }
     block["content"] = content;
@@ -724,6 +734,7 @@ fn convert_assistant_part(
     part: &AssistantPart,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
     betas: &mut IndexSet<String>,
     warnings: &mut Vec<Warning>,
     validator: &mut CacheControlValidator,
@@ -890,7 +901,7 @@ fn convert_assistant_part(
             };
             let caller = tool_caller(provider_options.as_ref(), options_name);
             if let Some(toolset_name) =
-                toolset_name(tool_names, tool_name, provider_options.as_ref())
+                toolset_name(toolset_names, tool_name, provider_options.as_ref())
             {
                 // A toolset member call: the `action` is the member tool
                 // name. The input goes back as it is, `action` included, and
@@ -1012,20 +1023,17 @@ fn collect_mcp_tool_use_ids<'a>(
 /// the canonical `anthropic` key is read, where the response side writes it
 /// (`getAnthropicToolsetName`, convert-to-anthropic-prompt.ts:1624-1641).
 fn toolset_name(
-    tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
     tool_name: &str,
     provider_options: Option<&SharedProviderOptions>,
 ) -> Option<String> {
-    tool_names
-        .toolset_name(tool_name)
-        .map(str::to_string)
-        .or_else(|| {
-            provider_options?
-                .get(CANONICAL)?
-                .get("toolsetName")?
-                .as_str()
-                .map(str::to_string)
-        })
+    toolset_names.get(tool_name).cloned().or_else(|| {
+        provider_options?
+            .get(CANONICAL)?
+            .get("toolsetName")?
+            .as_str()
+            .map(str::to_string)
+    })
 }
 
 fn tool_caller(
