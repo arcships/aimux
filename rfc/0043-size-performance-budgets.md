@@ -169,7 +169,7 @@ lto = false
 - iOS 脚本两 target 同样切 profile 和目录，保留 `strip -Sx` 与每片大小 gate；不要恢复已因兼容性问题移除的 `bitcode_strip`
 - `ffi-build`、Android、Java/Kotlin/Swift/Flutter 的动态链接测试与 release 保持 `--release`。桌面 DLL 的 MSVC 与 Go archive 的 GNU target 不混用
 - 在单独 target 目录中构建两种 profile；上传清单只允许 `staticlib-release/*.a` 或 `release/*.{so,dylib,dll}`。即使 Cargo 因 crate-type 同时产出其他文件，非授权变体一律不复制、不上传
-- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁
+- Node/Python 先记录其有效优化 profile，不在 S1 添加 `lto=false`。以后选择 fat-LTO/size profile 要有独立 before/after 证据和对应性能门禁。2026-10-27 修订：两个绑定 workspace 没有 `[profile.release]`，发布的是 Cargo 默认 release（opt-level 3、无 LTO、不 strip），实测 39 MB；加上根 `release` 同样的 size profile（`panic` 保持 `unwind`）后 15.5 MB。before/after 证据见 §15.1，性能对比随该 PR 附上（§15.4 步骤 2）
 
 ### 5.2 防止“瘦了但不能用”
 
@@ -422,6 +422,8 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | P0 | 0.6，固定 runner | 修现有 bench、synthetic fixtures、成对运行、raw/typed 路径 | 校准与误差实验、故意 10% 退化被阻塞 |
 | P1 | 0.6，P0 | 请求/吞吐/RSS 正式 hard gate 与固定 anchor | 全后端注册及连续绿开始 |
 | S3 | 0.7，S2/P1；不以 B 轨完成为前提 | 归因报告、逐项体积优化、可选 slim 的端到端 feature 和能力测试 | 目标与实际分别列明；默认全量回归不变 |
+| B-profile | 0.6，S1 后 | Node、Python 绑定加 size profile，`panic = "unwind"` 不变；按包覆盖 opt-level 保热点性能 | §15.1 before/after、绑定 bench 对比、contract tests 全绿 |
+| panic | 0.6/0.7，#372 决议后 | 按 #372 选定的方案改 profile，aimux-ffi 入口加统一接 panic 的宏与专用错误码 | §15.2 的体积增量登记为新基线；panic 测试 |
 | P-stdio | 0.8，ops dispatch/帧实现 | §8 场景与预算注册、CLI bytes 更新 | 父子资源/背压/取消等全量通过 |
 | release gates | 各 minor /1.0 | 连续绿统计、证据清单和发布前校验 | 正确窗口与精确 tag/hash |
 
@@ -477,6 +479,8 @@ release 手动选择子集只影响哪些 publisher 执行，不豁免该子集�
 | 体积优化伤害语义或安全 | 保留字节级 cassette、错误/取消/限额测试；任何 correctness failure 不可性能豁免 |
 | CI 耗时增加 | artifact 缓存 keyed by SHA/lock/recipe/profile/target；PR 用依赖闭包，nightly/tag 全量。缓存命中仍需校验 bytes，不能缓存“通过”状态跨 SHA |
 | 没有完整逐平台历史测量 | 不虚构当前值；把当前上限与待注册状态分开，0.6 发布以真实登记为阻塞条件 |
+| `panic = "abort"` 换 `unwind`（#372） | 每个原生库约 +23%（§15.2）；换不换由 #372 决定，本 RFC 只登记两种策略各自的基线，不替它决定 |
+| 为了体积改变校验、manifest 或 TLS 行为 | 这些是行为变化，不在 S1/S2/B-profile 内；各自单独提案（§15.3 待讨论项），通过后再作为 S3 的优化项计量 |
 
 **决定结果**：本 RFC 将“体积与性能是第一基准线”变为有产物身份、有测量契约、有可重现统计、有失败原因、有发布前置条件的工程约束。缺少证据与发生回归同样不能视为完成；优化收益必须来自可验证的构建与运行改进。
 
