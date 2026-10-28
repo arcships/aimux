@@ -1408,6 +1408,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of an untrusted URL through the download guard with no headers, so no
   `user-agent`. OpenAI-compatible image edits download URL files with it, as
   upstream does, and no longer send `ai-sdk-provider-utils/5.0.53` there.
+- `aimux_provider_utils::map_reasoning_to_provider_effort` and
+  `map_reasoning_to_provider_budget`, with `DEFAULT_REASONING_BUDGET_PERCENTAGES`
+  and `DEFAULT_MIN_REASONING_BUDGET`, as `@ai-sdk/provider-utils` 5.0.55
+  (RFC-0046 R1). Anthropic, Amazon Bedrock, Cohere, DeepSeek, Google, Groq,
+  Mistral, Open Responses and xAI map the top-level `reasoning` level with
+  them, each with its upstream effort map or budget limits.
 - `HttpRequest::omit_provider_utils_user_agent` (`aimux-provider-utils`):
   sends the `user-agent` as given, without the `ai-sdk-provider-utils/<v>`
   part, for an exchange the AI SDK makes with a plain `fetch`. A struct
@@ -1943,6 +1949,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider and model no longer match each other's prefix history. The trace
   scope isolates by provider name and model id; `TraceLayer::with_scope_name`
   names a scope for a host that calls one provider at several endpoints.
+- Open Responses warns when it maps a top-level `reasoning` level to a
+  different effort (`minimal` is sent as `low`), as the AI SDK's
+  `mapReasoningToProviderEffort` does.
 
 ### Removed
 
