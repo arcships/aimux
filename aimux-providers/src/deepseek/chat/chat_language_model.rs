@@ -267,22 +267,17 @@ impl DeepSeekChatLanguageModel {
                 Some(mapped)
             }
             (None, Some(ReasoningEffort::None) | None) => None,
-            (None, Some(reasoning)) => {
-                let mapped = match reasoning {
-                    ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
-                    ReasoningEffort::Medium | ReasoningEffort::High => "high",
-                    _ => "max",
-                };
-                if mapped != reasoning.to_string() {
-                    warnings.push(Warning::Compatibility {
-                        feature: "reasoning".to_string(),
-                        details: Some(format!(
-                            "reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"{mapped}\"."
-                        )),
-                    });
-                }
-                Some(mapped)
-            }
+            (None, Some(reasoning)) => aimux_provider_utils::map_reasoning_to_provider_effort(
+                reasoning,
+                &[
+                    (ReasoningEffort::Minimal, "low"),
+                    (ReasoningEffort::Low, "low"),
+                    (ReasoningEffort::Medium, "high"),
+                    (ReasoningEffort::High, "high"),
+                    (ReasoningEffort::Xhigh, "max"),
+                ],
+                &mut warnings,
+            ),
         };
 
         let mut body = Map::new();

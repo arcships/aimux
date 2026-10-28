@@ -532,7 +532,9 @@ pub fn build_request_body(
     }
 
     // Reasoning / thinking.
-    if let Some(thinking) = resolve_cohere_thinking(options.reasoning, &options.provider_options)? {
+    if let Some(thinking) =
+        resolve_cohere_thinking(options.reasoning, &options.provider_options, &mut warnings)?
+    {
         body["thinking"] = thinking;
     }
 
@@ -540,23 +542,6 @@ pub fn build_request_body(
 }
 
 // ── Reasoning / thinking ────────────────────────────────────────────────────
-
-/// Default token budget used when reasoning is enabled without an explicit
-/// `max_output_tokens`. Mirrors the TS `maxOutputTokens: 32768`.
-const DEFAULT_REASONING_MAX_TOKENS: u32 = 32768;
-
-/// Default reasoning budget percentages (of the max output token budget),
-/// mirroring the TS `mapReasoningToProviderBudget`.
-fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
-    match reasoning {
-        ReasoningEffort::Minimal => Some(0.02),
-        ReasoningEffort::Low => Some(0.10),
-        ReasoningEffort::Medium => Some(0.30),
-        ReasoningEffort::High => Some(0.60),
-        ReasoningEffort::Xhigh => Some(0.90),
-        ReasoningEffort::ProviderDefault | ReasoningEffort::None => None,
-    }
-}
 
 /// Resolve the Cohere `thinking` config from the top-level `reasoning` option
 /// and `providerOptions.cohere.thinking`.
@@ -572,6 +557,7 @@ fn reasoning_budget_percentage(reasoning: ReasoningEffort) -> Option<f64> {
 pub fn resolve_cohere_thinking(
     reasoning: Option<ReasoningEffort>,
     provider_options: &Option<SharedProviderOptions>,
+    warnings: &mut Vec<Warning>,
 ) -> Result<Option<Value>, AiMuxError> {
     // Provider options take precedence.
     if let Some(cohere) =
@@ -616,11 +602,15 @@ pub fn resolve_cohere_thinking(
         return Ok(Some(json!({ "type": "disabled" })));
     }
 
-    let Some(pct) = reasoning_budget_percentage(reasoning) else {
+    let Some(budget) = aimux_provider_utils::map_reasoning_to_provider_budget(
+        reasoning,
+        32768,
+        32768,
+        aimux_provider_utils::DEFAULT_MIN_REASONING_BUDGET,
+        aimux_provider_utils::DEFAULT_REASONING_BUDGET_PERCENTAGES,
+        warnings,
+    ) else {
         return Ok(None);
     };
-    let max_tokens = DEFAULT_REASONING_MAX_TOKENS;
-    let raw = (max_tokens as f64 * pct).round() as u32;
-    let budget = max_tokens.min(1024.max(raw));
     Ok(Some(json!({ "type": "enabled", "token_budget": budget })))
 }
