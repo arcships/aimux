@@ -476,6 +476,7 @@ fn assemble(
         headers: settings.headers,
         query_params: None,
         fetch,
+        body_rewrite: None,
         transform_request_body: settings.transform_request_body,
         chat,
         package,
