@@ -1453,14 +1453,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Anthropic, DeepSeek, Google, Groq, Hugging Face, Mistral, OpenAI, OpenAI
   compatible, Open Responses, xAI and the Codex subscription channel) is
   built with it; each provider keeps only its own status table.
-
-### Fixed
-
-- Amazon Bedrock's in-stream exception errors redact and bound the request
-  body, sanitize the URL and carry the frame as the response body and the
-  response headers, as the other providers' stream errors do. The request
-  body was copied as sent, data URLs and long prompts included.
-
 - `aimux_provider_utils::tool_result_to_content` and
   `aimux_provider_utils::tool_result_content_value`: the tool message content
   the AI SDK's chat converters build from a tool result (RFC-0046 R1). They
@@ -1475,6 +1467,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock's in-stream exception errors redact and bound the request
+  body, sanitize the URL and carry the frame as the response body and the
+  response headers, as the other providers' stream errors do. The request
+  body was copied as sent, data URLs and long prompts included.
 - Bedrock document names drop everything from the first dot of the filename,
   as the AI SDK's `stripFileExtension` does: `report.v2.pdf` is sent as
   `report`, not `reportv2`.
