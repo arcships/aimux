@@ -27,7 +27,6 @@ use aimux_provider_utils::{
 use futures::future::BoxFuture;
 use serde_json::Value;
 
-use crate::preset::PresetDescriptor;
 use crate::shared::aisdk_pins::Package;
 use crate::shared::{AuthScheme, Credential, ProviderHeaders};
 
@@ -360,19 +359,14 @@ pub(crate) trait ResolveFetchHeaders: Send + Sync {
 
 /// Where the base URL comes from.
 ///
-/// A plain provider has a [`Fixed`](Self::Fixed) URL. A preset whose URL is
-/// read from the environment or expanded from template parameters is
-/// [`Preset`](Self::Preset): it is evaluated per request, so creating the
-/// provider (and the preset default instances) never reads the environment
-/// and never fails.
+/// A plain provider has a [`Fixed`](Self::Fixed) URL. A URL read from the
+/// environment or built from settings (a preset's template, a Vertex AI
+/// partner's project and location) is [`Dynamic`](Self::Dynamic): it is
+/// evaluated per request, so creating the provider never reads the
+/// environment and never fails.
 #[derive(Clone, Debug)]
 pub(crate) enum BaseUrl {
     Fixed(String),
-    Preset {
-        descriptor: &'static PresetDescriptor,
-        /// The explicit template parameters of the settings.
-        params: Arc<HashMap<String, String>>,
-    },
     /// A package's own base URL, resolved when a request is made.
     Dynamic(Arc<dyn ResolveBaseUrl>),
 }
@@ -381,9 +375,6 @@ impl BaseUrl {
     pub(crate) fn resolve(&self) -> Result<String, AiMuxError> {
         match self {
             Self::Fixed(url) => Ok(url.clone()),
-            Self::Preset { descriptor, params } => {
-                crate::preset::resolve_base_url(descriptor, params)
-            }
             Self::Dynamic(resolver) => resolver.resolve(),
         }
     }
