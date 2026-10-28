@@ -13,7 +13,7 @@ use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 
 use aimux_provider_utils::HttpBody;
 
-use super::config::AnthropicModelConfig;
+use super::config::AnthropicConfig;
 use super::language_model_options::CANONICAL;
 
 /// The beta header value for the Anthropic Files API.
@@ -40,11 +40,11 @@ struct AnthropicFilesResponse {
 /// Aligned with TS `AnthropicFiles`. Does **not** hold an HTTP client —
 /// the `aimux-provider-utils` API helpers use the process-wide shared `Client` internally (RFC-0009 §4.1).
 pub struct AnthropicFiles {
-    config: AnthropicModelConfig,
+    config: AnthropicConfig,
 }
 
 impl AnthropicFiles {
-    pub(crate) fn from_config(config: AnthropicModelConfig) -> Self {
+    pub(crate) fn from_config(config: AnthropicConfig) -> Self {
         Self { config }
     }
 }

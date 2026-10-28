@@ -7,4 +7,5 @@ mod create_tool_name_mapping;
 mod parse_provider_options;
 mod resolve_provider_reference;
 mod strip_file_extension;
+mod tool_result_to_content;
 mod uint8_utils;
