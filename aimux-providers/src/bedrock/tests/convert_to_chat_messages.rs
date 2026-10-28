@@ -311,6 +311,28 @@ mod user_messages {
         );
     }
 
+    // Not an upstream case: `sanitizeDocumentName` cuts at the first dot
+    // (provider-utils `stripFileExtension`), so a multi-dot filename loses
+    // every extension segment.
+    #[test]
+    fn strips_every_extension_segment_of_a_multi_dot_filename() {
+        let result = convert(json!([{
+            "role": "user",
+            "content": [{
+                "type": "file",
+                "data": { "type": "data", "data": "AAECAw==" },
+                "mediaType": "application/pdf",
+                "filename": "report.v2.final.pdf",
+            }],
+        }]))
+        .unwrap();
+
+        assert_eq!(
+            result["messages"][0]["content"][0]["document"]["name"],
+            "report"
+        );
+    }
+
     /// upstream: @ai-sdk/amazon-bedrock src/convert-to-amazon-bedrock-chat-messages.test.ts › user messages › should preserve filename without extension when provided
     #[test]
     fn should_preserve_filename_without_extension_when_provided() {

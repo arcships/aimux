@@ -27,7 +27,6 @@ pub mod prepare_tools;
 mod provider;
 pub mod sanitize_json_schema;
 pub mod skills;
-pub mod tool_name_mapping;
 
 pub use files::AnthropicFiles;
 pub use language_model::AnthropicMessagesModel;
