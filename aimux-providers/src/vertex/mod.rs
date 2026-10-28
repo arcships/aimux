@@ -37,7 +37,7 @@ pub use transcription_model::VertexTranscriptionModel;
 pub use video_model::VertexVideoModel;
 pub use xai::{VertexXaiProvider, create_google_vertex_xai, google_vertex_xai};
 
-pub(crate) use provider_base::{API_KEY_ENV_VAR, Publisher, Resolver};
+pub(crate) use provider_base::API_KEY_ENV_VAR;
 
 #[cfg(test)]
 mod tests;
