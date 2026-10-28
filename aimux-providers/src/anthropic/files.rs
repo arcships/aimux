@@ -8,10 +8,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
-use aimux_core::shared::FileBytes;
+use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 
 use aimux_provider_utils::HttpBody;
 
@@ -20,26 +18,6 @@ use super::language_model_options::CANONICAL;
 
 /// The beta header value for the Anthropic Files API.
 const FILES_BETA_HEADER: &str = "files-api-2025-04-14";
-
-/// Convert `UploadFileData` to raw bytes.
-///
-/// Mirrors the TS `convertInlineFileDataToUint8Array`.
-fn data_to_bytes(data: &UploadFileData) -> Result<Vec<u8>, AiMuxError> {
-    match data {
-        UploadFileData::Data { data } => match data {
-            FileBytes::Binary(bytes) => Ok(bytes.clone()),
-            FileBytes::Base64(b64) => {
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
-                    |e| AiMuxError::InvalidArgument {
-                        message: format!("invalid base64: {e}"),
-                        cause: Some(ErrorCause::source(&e)),
-                    },
-                )
-            }
-        },
-        UploadFileData::Text { text } => Ok(text.as_bytes().to_vec()),
-    }
-}
 
 /// The response from the Anthropic `/v1/files` endpoint.
 #[derive(Debug, Deserialize)]
@@ -82,7 +60,8 @@ impl Files for AnthropicFiles {
         &self,
         options: &UploadFileCallOptions,
     ) -> Result<UploadFileResult, AiMuxError> {
-        let file_bytes = data_to_bytes(&options.data)?;
+        let file_bytes =
+            aimux_provider_utils::convert_inline_file_data_to_uint8_array(&options.data)?;
         let filename = options
             .filename
             .clone()

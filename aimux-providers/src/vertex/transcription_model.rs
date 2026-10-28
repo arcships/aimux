@@ -97,10 +97,7 @@ fn convert_bcp47_to_iso6391(value: &Option<String>) -> Option<String> {
 fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
     match audio {
         AudioInput::Base64(s) => Ok(s.clone()),
-        AudioInput::Binary(bytes) => Ok(base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            bytes,
-        )),
+        AudioInput::Binary(bytes) => Ok(aimux_provider_utils::convert_uint8_array_to_base64(bytes)),
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
