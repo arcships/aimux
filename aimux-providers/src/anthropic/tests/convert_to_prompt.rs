@@ -9,7 +9,7 @@
 //! into `LanguageModelPrompt`; `new URL(x)` is the URL string and
 //! `undefined`-valued keys are omitted.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::LanguageModelPrompt;
@@ -20,8 +20,9 @@ use serde_json::{Value, json};
 use crate::anthropic::convert_to_prompt::{
     AnthropicPromptConversion, convert_prompt_to_anthropic_full_with_tools,
 };
+use crate::anthropic::language_model::anthropic_tool_name_mapping;
 use crate::anthropic::language_model_options::CANONICAL;
-use crate::anthropic::tool_name_mapping::ToolNameMapping;
+use aimux_provider_utils::ToolNameMapping;
 
 /// The V4 prompt written as upstream's JSON.
 fn prompt(value: Value) -> LanguageModelPrompt {
@@ -29,25 +30,36 @@ fn prompt(value: Value) -> LanguageModelPrompt {
 }
 
 /// `createToolNameMapping({ tools, providerToolNames })` for the given V4
-/// tools (the provider tool names are aimux's built-in Anthropic table).
+/// tools (the provider tool names are the language model's Anthropic table).
 fn mapping(tools: Value) -> ToolNameMapping {
     let tools: Vec<Tool> = serde_json::from_value(tools).expect("valid tools");
-    ToolNameMapping::new(Some(&tools))
+    anthropic_tool_name_mapping(Some(&tools))
 }
 
 fn try_convert_with(
     prompt_json: Value,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
-    convert_prompt_to_anthropic_full_with_tools(&prompt(prompt_json), send_reasoning, tool_names)
+    convert_prompt_to_anthropic_full_with_tools(
+        &prompt(prompt_json),
+        send_reasoning,
+        tool_names,
+        toolset_names,
+    )
 }
 
 fn try_convert(
     prompt_json: Value,
     send_reasoning: bool,
 ) -> Result<AnthropicPromptConversion, AiMuxError> {
-    try_convert_with(prompt_json, send_reasoning, &ToolNameMapping::default())
+    try_convert_with(
+        prompt_json,
+        send_reasoning,
+        &ToolNameMapping::default(),
+        &HashMap::new(),
+    )
 }
 
 /// `convertToAnthropicPrompt` with the default (empty) tool name mapping.
@@ -59,8 +71,10 @@ fn convert_with(
     prompt_json: Value,
     send_reasoning: bool,
     tool_names: &ToolNameMapping,
+    toolset_names: &HashMap<String, String>,
 ) -> AnthropicPromptConversion {
-    try_convert_with(prompt_json, send_reasoning, tool_names).expect("conversion succeeds")
+    try_convert_with(prompt_json, send_reasoning, tool_names, toolset_names)
+        .expect("conversion succeeds")
 }
 
 /// A `Set` of betas. Upstream compares them with `toEqual(new Set(...))`,
@@ -191,6 +205,7 @@ mod orphaned_programmatic_callers {
                 &input,
                 false,
                 &ToolNameMapping::default(),
+                &HashMap::new(),
             )
             .unwrap();
 
@@ -341,6 +356,7 @@ mod orphaned_programmatic_callers {
                     "name": "run_code",
                     "args": {},
                 }])),
+                &HashMap::new(),
             );
 
             let content = &result.messages[0]["content"];
@@ -4334,24 +4350,24 @@ mod citations {
 mod toolsets {
     use super::*;
 
-    /// Upstream's `toolsetToolNameMapping` plus `toolsetNames: { [name]:
-    /// 'computer' }`. aimux derives the toolset names from the call's tools,
-    /// so each toolset name is a `computer_toolset_20260801` tool of that
-    /// name.
-    fn toolset_mapping(names: &[&str]) -> ToolNameMapping {
-        mapping(Value::Array(
-            names
-                .iter()
-                .map(|name| {
-                    json!({
-                        "type": "provider",
-                        "id": "anthropic.computer_toolset_20260801",
-                        "name": name,
-                        "args": {},
-                    })
-                })
-                .collect(),
-        ))
+    /// Upstream's `toolsetToolNameMapping`.
+    fn toolset_tool_name_mapping() -> ToolNameMapping {
+        let tools: Vec<Tool> = serde_json::from_value(json!([{
+            "type": "provider",
+            "id": "anthropic.computer_toolset_20260801",
+            "name": "computer",
+            "args": {},
+        }]))
+        .expect("valid tools");
+        aimux_provider_utils::create_tool_name_mapping(
+            Some(&tools),
+            &[("anthropic.computer_toolset_20260801", "computer")],
+        )
+    }
+
+    /// `toolsetNames: { [name]: 'computer' }`.
+    fn toolset_names(name: &str) -> HashMap<String, String> {
+        HashMap::from([(name.to_owned(), "computer".to_owned())])
     }
 
     /// upstream: @ai-sdk/anthropic src/convert-to-anthropic-prompt.test.ts › toolsets › should serialize toolset tool calls and results with toolset_name
@@ -4379,7 +4395,8 @@ mod toolsets {
                 },
             ]),
             true,
-            &toolset_mapping(&["computer"]),
+            &toolset_tool_name_mapping(),
+            &toolset_names("computer"),
         );
 
         assert_eq!(
@@ -4467,11 +4484,6 @@ mod toolsets {
             (json!("invalid JSON"), "computer"),
             (json!({ "action": null }), "desktop"),
         ] {
-            let names: Vec<&str> = if tool_name == "computer" {
-                vec!["computer"]
-            } else {
-                vec!["computer", tool_name]
-            };
             let result = convert_with(
                 json!([
                     {
@@ -4494,7 +4506,8 @@ mod toolsets {
                     },
                 ]),
                 true,
-                &toolset_mapping(&names),
+                &toolset_tool_name_mapping(),
+                &toolset_names(tool_name),
             );
 
             let expected_input = if input.is_string() {

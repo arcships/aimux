@@ -1697,20 +1697,18 @@ fn resolve_thinking(
     )]))
 }
 
-/// Resolve the caller-facing name for Google's code execution provider tool.
-/// Gemini always uses `code_execution` on the response wire, while callers
-/// may rename the provider tool for a particular request.
+/// Resolve the caller-facing name for Google's code execution provider tool:
+/// `toolNameMapping.toCustomToolName('code_execution')` with the
+/// `providerToolNames` of google-language-model.ts. Gemini always uses
+/// `code_execution` on the response wire, while callers may rename the
+/// provider tool for a particular request.
 pub(crate) fn code_execution_tool_name(tools: Option<&[Tool]>) -> String {
-    tools
-        .unwrap_or_default()
-        .iter()
-        .find_map(|tool| match tool {
-            Tool::Provider(provider) if provider.id == "google.code_execution" => {
-                Some(provider.name.clone())
-            }
-            _ => None,
-        })
-        .unwrap_or_else(|| "code_execution".to_string())
+    aimux_provider_utils::create_tool_name_mapping(
+        tools,
+        &[("google.code_execution", "code_execution")],
+    )
+    .to_custom_tool_name("code_execution")
+    .to_owned()
 }
 
 // ── source extraction ────────────────────────────────────────────────────────
