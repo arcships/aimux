@@ -16,8 +16,7 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::image_model::{
-    ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
-    ImageResult,
+    ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
@@ -232,21 +231,6 @@ impl ReplicateImageModel {
         self.model_id.starts_with(FLUX_2_PATTERN)
     }
 
-    fn file_to_data_uri(file: &ImageFile) -> Result<String, AiMuxError> {
-        match file {
-            ImageFile::Url { url } => Ok(url.clone()),
-            ImageFile::File { media_type, data } => {
-                let b64 = match data {
-                    ImageFileData::Base64(s) => s.clone(),
-                    ImageFileData::Binary(b) => {
-                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b)
-                    }
-                };
-                Ok(format!("data:{media_type};base64,{b64}"))
-            }
-        }
-    }
-
     /// The path of the prediction endpoint of this model; a `:version` suffix
     /// of the model id is sent in the body, not in the path.
     fn endpoint_path(&self) -> String {
@@ -302,13 +286,23 @@ impl ImageModel for ReplicateImageModel {
                     } else {
                         format!("input_image_{}", i + 1)
                     };
-                    image_inputs.insert(key, json!(Self::file_to_data_uri(file)?));
+                    image_inputs.insert(
+                        key,
+                        json!(aimux_provider_utils::convert_image_model_file_to_data_uri(
+                            file
+                        )),
+                    );
                 }
                 if files.len() > MAX_FLUX_2_INPUT_IMAGES as usize {
                     warnings.push(Warning::Other { message: format!("Flux-2 models support up to {MAX_FLUX_2_INPUT_IMAGES} input images. Additional images are ignored.") });
                 }
             } else {
-                image_inputs.insert("image".into(), json!(Self::file_to_data_uri(&files[0])?));
+                image_inputs.insert(
+                    "image".into(),
+                    json!(aimux_provider_utils::convert_image_model_file_to_data_uri(
+                        &files[0]
+                    )),
+                );
                 if files.len() > 1 {
                     warnings.push(Warning::Other { message: "This Replicate model only supports a single input image. Additional images are ignored.".into() });
                 }
@@ -324,7 +318,9 @@ impl ImageModel for ReplicateImageModel {
                 });
                 None
             } else {
-                Some(Self::file_to_data_uri(mask)?)
+                Some(aimux_provider_utils::convert_image_model_file_to_data_uri(
+                    mask,
+                ))
             }
         } else {
             None
@@ -458,8 +454,8 @@ impl ImageModel for ReplicateImageModel {
 // ════════════════════════════════════════════════════════════════════════════
 
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoModel, VideoOperationStart,
-    VideoOperationStatus, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoFile, VideoModel, VideoOperationStart, VideoOperationStatus,
+    VideoResponse, VideoResult,
 };
 
 /// Replicate video generation model — implements `VideoModel`.
@@ -483,13 +479,10 @@ impl ReplicateVideoModel {
 fn video_file_to_url(file: &VideoFile) -> Result<String, AiMuxError> {
     match file {
         VideoFile::Url { url, .. } => Ok(url.clone()),
-        VideoFile::File { media_type, data } => match data {
-            VideoFileData::Base64(s) => Ok(format!("data:{media_type};base64,{s}")),
-            VideoFileData::Binary(bytes) => {
-                let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
-                Ok(format!("data:{media_type};base64,{b64}"))
-            }
-        },
+        VideoFile::File { media_type, data } => Ok(format!(
+            "data:{media_type};base64,{}",
+            aimux_provider_utils::convert_to_base64(data)
+        )),
     }
 }
 

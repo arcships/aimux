@@ -7,7 +7,6 @@ use std::sync::Arc;
 use aimux_core::AiMuxError;
 use aimux_core::ErrorCause;
 use aimux_provider_utils::{Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse};
-use base64::Engine;
 use futures::StreamExt;
 use serde_json::Value;
 
@@ -79,7 +78,7 @@ pub(super) fn certificate(
     } else {
         format!(
             "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
-            base64::engine::general_purpose::STANDARD.encode(&leaf)
+            aimux_provider_utils::convert_uint8_array_to_base64(&leaf)
         )
         .into_bytes()
     };
@@ -114,7 +113,7 @@ pub(super) fn certificate(
     let subject_token = serde_json::to_string(
         &chain
             .iter()
-            .map(|der| base64::engine::general_purpose::STANDARD.encode(der))
+            .map(aimux_provider_utils::convert_uint8_array_to_base64)
             .collect::<Vec<_>>(),
     )
     .map_err(invalid_from)?;
@@ -138,9 +137,7 @@ fn pem_certificates(bytes: &[u8]) -> Result<Vec<Vec<u8>>, AiMuxError> {
                 .chars()
                 .filter(|character| !character.is_whitespace())
                 .collect();
-            base64::engine::general_purpose::STANDARD
-                .decode(encoded)
-                .map_err(invalid_from)
+            aimux_provider_utils::convert_base64_to_uint8_array(encoded).map_err(invalid_from)
         })
         .collect()
 }

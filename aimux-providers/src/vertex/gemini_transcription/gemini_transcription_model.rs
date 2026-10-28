@@ -109,9 +109,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         .audio_transcription_config();
         let audio = match &options.audio {
             AudioInput::Base64(value) => value.clone(),
-            AudioInput::Binary(value) => {
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, value)
-            }
+            AudioInput::Binary(value) => aimux_provider_utils::convert_uint8_array_to_base64(value),
             AudioInput::Url(_) => return Err(AudioInput::url_error()),
         };
         let mut body = json!({"contents": [{"role": "user", "parts": [{"inlineData": {"mimeType": options.media_type, "data": audio}}]}]});

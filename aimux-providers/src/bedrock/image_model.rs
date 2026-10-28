@@ -10,8 +10,7 @@ use crate::shared::EndpointConfig;
 use aimux_core::ErrorCause;
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::image_model::{
-    ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
-    ImageResult,
+    ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpBody;
@@ -58,13 +57,9 @@ impl BedrockImageModel {
             ImageFile::Url { .. } => Err(AiMuxError::invalid_argument(
                 "URL-based images are not supported for Amazon Bedrock image editing.",
             )),
-            ImageFile::File { data, .. } => match data {
-                ImageFileData::Base64(s) => Ok(s.clone()),
-                ImageFileData::Binary(b) => Ok(base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    b,
-                )),
-            },
+            ImageFile::File { data, .. } => {
+                Ok(aimux_provider_utils::convert_to_base64(data).into_owned())
+            }
         }
     }
 }

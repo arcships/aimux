@@ -569,10 +569,8 @@ fn convert_file_part(
         FileData::Data {
             data: FileBytes::Base64(data),
         } => {
-            use base64::Engine;
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(data)
-                .unwrap_or_default();
+            let bytes =
+                aimux_provider_utils::convert_base64_to_uint8_array(data).unwrap_or_default();
             let full = if matches!(
                 get_top_level_media_type(media_type),
                 "image" | "application"
@@ -1528,10 +1526,9 @@ fn route_file_bytes(
     title: Option<&str>,
     betas: &mut IndexSet<String>,
 ) -> Result<Value, AiMuxError> {
-    use base64::Engine;
     match get_top_level_media_type(full_media_type) {
         "image" => {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+            let b64 = aimux_provider_utils::convert_uint8_array_to_base64(bytes);
             Ok(json!({
                 "type": "image",
                 "source": { "type": "base64", "media_type": full_media_type, "data": b64 }
@@ -1539,7 +1536,7 @@ fn route_file_bytes(
         }
         "application" if full_media_type == "application/pdf" => {
             betas.insert(BETA_PDFS.to_string());
-            let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+            let b64 = aimux_provider_utils::convert_uint8_array_to_base64(bytes);
             let mut block = json!({
                 "type": "document",
                 "source": { "type": "base64", "media_type": "application/pdf", "data": b64 }
@@ -1723,7 +1720,6 @@ fn resolve_tool_result_output(
                         let source = match &part.data {
                             FileData::Url { url, .. } => json!({ "type": "url", "url": url }),
                             FileData::Data { data } => {
-                                use base64::Engine;
                                 let media_type =
                                     aimux_provider_utils::resolve_full_media_type(part)?;
                                 if !is_image && media_type != "application/pdf" {
@@ -1733,12 +1729,8 @@ fn resolve_tool_result_output(
                                 if !is_image {
                                     betas.insert(BETA_PDFS.to_string());
                                 }
-                                let data = match data {
-                                    FileBytes::Binary(bytes) => {
-                                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                                    }
-                                    FileBytes::Base64(data) => data.clone(),
-                                };
+                                let data =
+                                    aimux_provider_utils::convert_to_base64(data).into_owned();
                                 json!({ "type": "base64", "media_type": media_type, "data": data })
                             }
                             data => {

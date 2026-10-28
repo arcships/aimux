@@ -21,8 +21,8 @@ use serde_json::{Value, json};
 
 use aimux_core::ErrorCause;
 use aimux_core::error::{AiMuxError, ApiCallError};
-use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
-use aimux_core::shared::{FileBytes, SharedProviderOptions};
+use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
+use aimux_core::shared::SharedProviderOptions;
 use aimux_core::types::Warning;
 
 use aimux_provider_utils::{HttpBody, HttpRequest, sleep_or_abort};
@@ -53,24 +53,6 @@ fn parse_google_files_options(
         ));
     }
     Ok(options)
-}
-
-/// Convert `UploadFileData` to raw bytes.
-fn data_to_bytes(data: &UploadFileData) -> Result<Vec<u8>, AiMuxError> {
-    match data {
-        UploadFileData::Data { data } => match data {
-            FileBytes::Binary(bytes) => Ok(bytes.clone()),
-            FileBytes::Base64(b64) => {
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
-                    |e| AiMuxError::InvalidArgument {
-                        message: format!("invalid base64: {e}"),
-                        cause: Some(ErrorCause::source(&e)),
-                    },
-                )
-            }
-        },
-        UploadFileData::Text { text } => Ok(text.as_bytes().to_vec()),
-    }
 }
 
 // Preserve file names in a single path segment, including dot segments.
@@ -171,7 +153,8 @@ impl Files for GoogleFiles {
             });
         }
 
-        let file_bytes = data_to_bytes(&options.data)?;
+        let file_bytes =
+            aimux_provider_utils::convert_inline_file_data_to_uint8_array(&options.data)?;
         let media_type = &options.media_type;
         let display_name = &google_options.display_name;
 

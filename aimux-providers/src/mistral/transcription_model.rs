@@ -6,7 +6,6 @@
 //! Endpoint: `POST {base_url}/audio/transcriptions` (multipart form-data).
 
 use async_trait::async_trait;
-use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::{Map, Number, Value, json};
 
@@ -108,12 +107,11 @@ impl TranscriptionModel for MistralTranscriptionModel {
         let audio = match &options.audio {
             AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
-            AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
-                .decode(data)
+            AudioInput::Base64(data) => aimux_provider_utils::convert_base64_to_uint8_array(data)
                 .map_err(|error| AiMuxError::InvalidArgument {
-                    message: format!("invalid base64: {error}"),
-                    cause: Some(ErrorCause::source(&error)),
-                })?,
+                message: format!("invalid base64: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            })?,
         };
         let mut form = MultipartForm::new();
         form.text("model", &self.model_id)?;

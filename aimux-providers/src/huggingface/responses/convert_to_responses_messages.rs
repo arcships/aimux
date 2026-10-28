@@ -1,6 +1,5 @@
 //! Prompt to Responses `input` (`convert-to-huggingface-responses-messages.ts`).
 
-use base64::Engine;
 use serde_json::{Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -49,7 +48,7 @@ pub fn convert_to_huggingface_responses_messages(
                                     data: FileBytes::Binary(bytes),
                                 } => {
                                     let encoded =
-                                        base64::engine::general_purpose::STANDARD.encode(bytes);
+                                        aimux_provider_utils::convert_uint8_array_to_base64(bytes);
                                     convert_file_part_base64(&file.media_type, &encoded)?
                                 }
                                 FileData::Data {

@@ -10,7 +10,6 @@
 //! provider name and then reads its options under `googleVertex`/`vertex`.
 
 use async_trait::async_trait;
-use base64::Engine;
 use serde_json::{Value, json};
 
 use aimux_core::ErrorCause;
@@ -287,12 +286,14 @@ impl SpeechModel for GoogleSpeechModel {
             .find(|inline| inline.data.as_deref().is_some_and(|data| !data.is_empty()));
         let mime_type = inline.as_ref().and_then(|inline| inline.mime_type.clone());
         let bytes = match inline.and_then(|inline| inline.data) {
-            Some(data) => base64::engine::general_purpose::STANDARD
-                .decode(data)
-                .map_err(|e| AiMuxError::InvalidResponseData {
-                    message: format!("invalid base64 audio: {e}"),
-                    cause: Some(ErrorCause::source(&e)),
-                })?,
+            Some(data) => {
+                aimux_provider_utils::convert_base64_to_uint8_array(data).map_err(|e| {
+                    AiMuxError::InvalidResponseData {
+                        message: format!("invalid base64 audio: {e}"),
+                        cause: Some(ErrorCause::source(&e)),
+                    }
+                })?
+            }
             None => Vec::new(),
         };
 
