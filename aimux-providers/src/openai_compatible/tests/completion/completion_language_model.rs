@@ -14,7 +14,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::StreamResult;
 use aimux_core::stream_part::StreamPart;
 
-use crate::openai_compatible::completion::{CompletionConfig, OpenAICompatibleCompletionModel};
+use crate::openai_compatible::completion::OpenAICompatibleCompletionModel;
 use crate::openai_compatible::{BaseUrl, ChatSettings, CompatModelConfig};
 use crate::openai_compatible::{
     OpenAICompatibleProvider, OpenAICompatibleProviderSettings, create_openai_compatible,
@@ -104,10 +104,7 @@ fn model_with_provider(model_id: &str, provider: &str) -> OpenAICompatibleComple
 /// `model['providerOptionsName']`: the name the compatible config derives
 /// from the provider string.
 fn provider_options_name(model: &OpenAICompatibleCompletionModel) -> String {
-    match &model.config {
-        CompletionConfig::Compatible(config) => config.provider_options_name().to_string(),
-        CompletionConfig::Native(_) => unreachable!("a compatible model"),
-    }
+    model.config.provider_options_name().to_string()
 }
 
 /// A `json-value` response of the test server: `content-type` and

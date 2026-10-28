@@ -27,7 +27,7 @@ mod speech_transcription_model;
 mod speech_transcription_model_options;
 mod transcription_model_options;
 
-pub(crate) use openai_provider::{API_KEY_ENV_VAR, UrlRules};
+pub(crate) use openai_provider::API_KEY_ENV_VAR;
 pub use openai_provider::{
     AzureChatModel, AzureOpenAIProvider, AzureOpenAIProviderSettings, AzureResponsesModel,
     AzureTranscriptionModel, azure, create_azure,

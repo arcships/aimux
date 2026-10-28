@@ -18,18 +18,16 @@ use aimux_core::transcription_model::{
 };
 use aimux_provider_utils::{
     Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt, HttpRequest,
-    RequestCredentials, Resolvable, default_fetch, load_setting, validate_base_url,
-    without_trailing_slash,
+    RequestCredentials, Resolvable, default_fetch, validate_base_url,
 };
 use futures::future::BoxFuture;
 
-use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
+use crate::openai::config::{BaseUrlInfo, OpenAIModelConfig, OpenAIUrl, UrlRules, set_query_param};
 use crate::openai::responses::ResponsesProfile;
 use crate::openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
     OpenAITranscriptionModel,
 };
-use crate::shared::is_valid_hostname_part;
 use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 use super::options;
@@ -43,7 +41,6 @@ pub type AzureChatModel = OpenAIModel;
 pub type AzureResponsesModel = OpenAIResponsesModel;
 
 pub(crate) const API_KEY_ENV_VAR: &str = "AZURE_API_KEY";
-const RESOURCE_NAME_ENV_VAR: &str = "AZURE_RESOURCE_NAME";
 /// The `api-version` of the AI SDK's v1 URL form.
 const DEFAULT_API_VERSION: &str = "v1";
 /// The `api-version` the deployments listing needs: the v1 API has no such
@@ -115,14 +112,6 @@ impl std::fmt::Debug for AzureOpenAIProviderSettings {
             .field("use_deployment_based_urls", &self.use_deployment_based_urls)
             .finish()
     }
-}
-
-/// What the AI SDK's `getAzureOpenAIBaseURLInfo` derives from a base URL.
-#[derive(Debug, Clone, Copy)]
-struct BaseUrlInfo {
-    is_azure_openai: bool,
-    is_foundry_project: bool,
-    is_versioned: bool,
 }
 
 fn base_url_info(base_url: Option<&str>) -> Result<BaseUrlInfo, AiMuxError> {
@@ -299,109 +288,6 @@ pub struct AzureOpenAIProvider {
     fetch: Option<FetchFunction>,
     /// The provider tools (`azure.tools` in the AI SDK).
     pub tools: crate::openai::tools::AzureOpenAITools,
-}
-
-/// Everything the URL of a request depends on.
-#[derive(Clone)]
-pub(crate) struct UrlRules {
-    resource_name: Option<String>,
-    base_url: Option<String>,
-    info: BaseUrlInfo,
-    api_version: String,
-    use_deployment_based_urls: bool,
-}
-
-impl UrlRules {
-    /// The URL prefix: the base URL, or the resource's `/openai` endpoint.
-    fn prefix(&self) -> Result<String, AiMuxError> {
-        if let Some(base_url) = &self.base_url {
-            return Ok(without_trailing_slash(base_url));
-        }
-        let resource = load_setting(
-            self.resource_name.as_deref(),
-            RESOURCE_NAME_ENV_VAR,
-            "resourceName",
-        )?;
-        // The resource name becomes part of the request host, so only a DNS
-        // label is accepted (`user@internal:8080/#` would rewrite the host).
-        if !is_valid_hostname_part(&resource) {
-            return Err(AiMuxError::invalid_argument(
-                "Invalid Azure resource name. Expected a single DNS label (letters, digits, and \
-                 hyphens). Use `base_url` for custom endpoints."
-                    .to_string(),
-            ));
-        }
-        Ok(format!("https://{resource}.openai.azure.com/openai"))
-    }
-
-    /// The AI SDK's `url({ path, modelId })`.
-    pub(crate) fn url(&self, path: &str, model_id: &str) -> Result<String, AiMuxError> {
-        let prefix = self.prefix()?;
-        let info = self.info;
-        let full = if self.use_deployment_based_urls {
-            format!("{prefix}/deployments/{model_id}{path}")
-        } else if !info.is_azure_openai || info.is_versioned {
-            // Custom gateways own Azure routing and versioning themselves, and
-            // complete Azure OpenAI v1 URLs own theirs.
-            format!("{prefix}{path}")
-        } else {
-            format!("{prefix}/v1{path}")
-        };
-        let mut url = url::Url::parse(&full).map_err(|e| AiMuxError::InvalidArgument {
-            message: format!("invalid Azure URL `{full}`: {e}"),
-            cause: Some(ErrorCause::source(&e)),
-        })?;
-        if self.use_deployment_based_urls
-            || (info.is_azure_openai && !info.is_versioned && !info.is_foundry_project)
-        {
-            set_query_param(&mut url, "api-version", &self.api_version);
-        }
-        Ok(url.to_string())
-    }
-
-    /// The Azure AI Speech transcription URL: `speech_base_url`, or the
-    /// resource's Cognitive Services host.
-    pub(crate) fn speech_url(&self, speech_base_url: Option<&str>) -> Result<String, AiMuxError> {
-        let prefix = match speech_base_url {
-            Some(prefix) => without_trailing_slash(prefix),
-            None => {
-                // Reuse the resource-name validation and lazy environment lookup.
-                let mut rules = self.clone();
-                rules.base_url = None;
-                rules
-                    .prefix()?
-                    .replace(".openai.azure.com/openai", ".cognitiveservices.azure.com")
-            }
-        };
-        Ok(format!(
-            "{prefix}/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
-        ))
-    }
-}
-
-/// `URLSearchParams.set`: replace the parameter, or append it.
-fn set_query_param(url: &mut url::Url, name: &str, value: &str) {
-    let mut pairs: Vec<(String, String)> = url
-        .query_pairs()
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect();
-    match pairs.iter().position(|(k, _)| k == name) {
-        Some(index) => {
-            pairs[index].1 = value.to_string();
-            let mut seen = false;
-            pairs.retain(|(k, _)| {
-                if k == name {
-                    let keep = !seen;
-                    seen = true;
-                    keep
-                } else {
-                    true
-                }
-            });
-        }
-        None => pairs.push((name.to_string(), value.to_string())),
-    }
-    url.query_pairs_mut().clear().extend_pairs(pairs);
 }
 
 impl AzureOpenAIProvider {

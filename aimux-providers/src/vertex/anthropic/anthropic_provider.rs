@@ -23,8 +23,9 @@ use crate::anthropic::config::{
     AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks, MessagesUrl, TransformRequestBody,
 };
 use crate::anthropic::options::options_name_of;
+use crate::shared::{Endpoint, ResolveEndpoint};
 use crate::vertex::auth_google_auth_library::GoogleAuth;
-use crate::vertex::provider_base::Resolver;
+use crate::vertex::provider_base::{Publisher, Resolver};
 use crate::vertex::{
     GoogleAuthOptions, VertexProvider, VertexProviderSettings, create_google_vertex,
 };
@@ -174,7 +175,7 @@ pub(super) fn model(
     // every request uses the endpoint resolved for it.
     let config = AnthropicModelConfig {
         provider: PROVIDER.to_string(),
-        headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None).into(),
+        headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
         fetch,
         supported_urls: SupportedUrls::default(),
         transform_request_body,
@@ -187,7 +188,20 @@ pub(super) fn model(
             supports_native_structured_output: false,
             supports_strict_tools: false,
         },
-        endpoint: AnthropicEndpoint::Vertex(resolver),
+        endpoint: AnthropicEndpoint::Resolved(Arc::new(ClaudeEndpoint { resolver })),
     };
     AnthropicMessagesModel::with_config(model_id.to_string(), config)
+}
+
+/// The Vertex endpoint of Anthropic's models (the `anthropic` publisher),
+/// resolved for every request.
+struct ClaudeEndpoint {
+    resolver: Arc<Resolver>,
+}
+
+#[async_trait::async_trait]
+impl ResolveEndpoint for ClaudeEndpoint {
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+        self.resolver.endpoint(Publisher::Anthropic).await
+    }
 }
