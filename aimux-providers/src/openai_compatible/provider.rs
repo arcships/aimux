@@ -326,7 +326,7 @@ impl Provider for OpenAICompatibleProvider {
             crate::runtime_decision::RuntimeDecisionModel::new(
                 &self.name,
                 model_id,
-                self.model_config("decision"),
+                Arc::new(self.model_config("decision")),
             )
             .map(|model| Arc::new(model) as Arc<dyn aimux_core::DecisionModel>),
         )
@@ -400,6 +400,33 @@ pub(crate) struct CompatModelConfig {
     pub fetch: Option<FetchFunction>,
     pub transform_request_body: Option<TransformRequestBody>,
     pub chat: ChatSettings,
+}
+
+/// The decision endpoint of a runtime preset: the base URL, credential and
+/// transport of its other models.
+#[async_trait::async_trait]
+impl crate::decision_support::DecisionEndpoint for CompatModelConfig {
+    fn url(&self, path: &str) -> Result<String, AiMuxError> {
+        Ok(format!(
+            "{}{}",
+            self.base_url.resolve()?.trim_end_matches('/'),
+            path
+        ))
+    }
+
+    async fn request(
+        &self,
+        url: &str,
+        options: &aimux_core::decision_model::DecisionCallOptions,
+    ) -> Result<HttpRequest, AiMuxError> {
+        let headers = self.request_headers(options.headers.as_ref()).await?;
+        let origin = self.base_url.resolve()?;
+        Ok(self.with_transport(
+            HttpRequest::new(url, headers.list, options),
+            origin,
+            headers.fetch_user_agent,
+        ))
+    }
 }
 
 impl CompatModelConfig {
