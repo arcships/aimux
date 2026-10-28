@@ -7,6 +7,7 @@
 //! choice values per question and option label; a label is its own value
 //! otherwise) and `safetyIdentifier` (sent as `safety_identifier`).
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use aimux_core::AiMuxError;
 use aimux_core::ErrorCause;
@@ -17,8 +18,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::decision_support::{
-    DecisionConfig, DecisionImage, DecisionProbabilitySource, invalid, provider_metadata,
-    response_info,
+    DecisionConfig, DecisionEndpoint, DecisionImage, DecisionProbabilitySource, invalid,
+    provider_metadata, response_info,
 };
 use crate::openai::config::OpenAIModelConfig;
 
@@ -46,9 +47,27 @@ impl OpenAIDecisionModel {
             ));
         }
         Ok(Self {
-            config: DecisionConfig::OpenAI(config),
+            config: Arc::new(config),
             model_id: model_id.into(),
         })
+    }
+}
+
+/// The decision endpoint of a native OpenAI provider: the model's URL
+/// callback, credential and transport.
+#[async_trait]
+impl DecisionEndpoint for OpenAIModelConfig {
+    fn url(&self, path: &str) -> Result<String, AiMuxError> {
+        OpenAIModelConfig::url(self, path)
+    }
+
+    async fn request(
+        &self,
+        url: &str,
+        options: &DecisionCallOptions,
+    ) -> Result<aimux_provider_utils::HttpRequest, AiMuxError> {
+        let headers = self.request_headers(options.headers.as_ref()).await?;
+        Ok(self.http_request(url.to_string(), headers, options))
     }
 }
 

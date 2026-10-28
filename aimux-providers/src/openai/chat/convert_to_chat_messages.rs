@@ -4,10 +4,12 @@
 use aimux_core::error::AiMuxError;
 use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
-    ToolResultContent, ToolResultOutput, UserPart,
+    ToolResultOutput, UserPart,
 };
-use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
-use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
+use aimux_core::shared::{FileData, SharedProviderOptions};
+use aimux_provider_utils::{
+    get_top_level_media_type, resolve_full_media_type, tool_result_to_content,
+};
 use serde_json::{Value, json};
 
 use crate::openai::language_model_capabilities::SystemMessageMode;
@@ -283,78 +285,6 @@ fn convert_message_to_openai(
         }
     };
     Ok(vec![message])
-}
-
-pub(crate) fn tool_result_to_content(output: &ToolResultOutput) -> Value {
-    Value::String(match output {
-        ToolResultOutput::Text { value, .. } | ToolResultOutput::ErrorText { value, .. } => {
-            value.clone()
-        }
-        ToolResultOutput::ExecutionDenied { reason, .. } => reason
-            .clone()
-            .unwrap_or_else(|| "Tool call execution denied.".to_string()),
-        ToolResultOutput::Json { value, .. } | ToolResultOutput::ErrorJson { value, .. } => {
-            value.to_string()
-        }
-        ToolResultOutput::Content { value } => tool_result_content_value(value).to_string(),
-    })
-}
-
-pub(crate) fn tool_result_content_value(content: &[ToolResultContent]) -> Value {
-    json!(
-        content
-            .iter()
-            .map(|part| {
-                let (mut item, provider_options) = match part {
-                    ToolResultContent::Text(part) => (
-                        json!({"type":"text", "text":part.text}),
-                        &part.provider_options,
-                    ),
-                    ToolResultContent::File(part) => {
-                        let data = match &part.data {
-                            FileData::Data { data } => {
-                                let data = match data {
-                                    FileBytes::Base64(data) => json!(data),
-                                    FileBytes::Binary(bytes) => Value::Object(
-                                        bytes
-                                            .iter()
-                                            .enumerate()
-                                            .map(|(i, byte)| (i.to_string(), json!(byte)))
-                                            .collect(),
-                                    ),
-                                };
-                                json!({"type":"data", "data":data})
-                            }
-                            FileData::Url { url, original_url } => {
-                                let mut data = json!({"type":"url", "url":url});
-                                if let Some(original_url) = original_url {
-                                    data["originalUrl"] = json!(original_url);
-                                }
-                                data
-                            }
-                            FileData::Reference { reference } => {
-                                json!({"type":"reference", "reference":reference})
-                            }
-                            FileData::Text { text } => json!({"type":"text", "text":text}),
-                        };
-                        let mut item =
-                            json!({"type":"file", "data":data, "mediaType":part.media_type});
-                        if let Some(filename) = &part.filename {
-                            item["filename"] = json!(filename);
-                        }
-                        (item, &part.provider_options)
-                    }
-                    ToolResultContent::Custom { provider_options } => {
-                        (json!({"type":"custom"}), provider_options)
-                    }
-                };
-                if let Some(provider_options) = provider_options {
-                    item["providerOptions"] = json!(provider_options);
-                }
-                item
-            })
-            .collect::<Vec<_>>()
-    )
 }
 
 pub(crate) fn tool_result_cache_breakpoint(output: &ToolResultOutput) -> Option<Value> {

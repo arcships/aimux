@@ -31,13 +31,15 @@ use aimux_core::types::{
     FinishReason, FinishReasonUnified, NamespacedKind, ProviderMetadata, ReasoningEffort,
     ResponseMetadata, Warning,
 };
-use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
+use aimux_provider_utils::{
+    HttpRequest, ToolNameMapping, Transformer, create_tool_name_mapping, pipe_through,
+};
 
 use super::api::{
     AnthropicResponse, AnthropicUsage, ContentBlock, DeltaBlock, FallbackModel, MessageDeltaBody,
     MessageStartData, StreamErrorData, StreamEvent, ToolCallCaller,
 };
-use super::config::AnthropicModelConfig;
+use super::config::AnthropicConfig;
 use super::convert_to_prompt::{convert_prompt_with_validator, field};
 use super::get_cache_control::CacheControlValidator;
 use super::language_model_options::{
@@ -45,8 +47,91 @@ use super::language_model_options::{
 };
 use super::map_stop_reason::parse_stop_reason;
 use super::prepare_tools::{AnthropicTool, prepare_tools_with_validator};
-use super::tool_name_mapping::ToolNameMapping;
 use crate::stream::{Controller, Emit, FINISH_OTHER, StreamContext};
+
+/// The call's tool name mapping, with the provider tool names of
+/// `doGenerate`/`doStream` in anthropic-language-model.ts.
+pub(super) fn anthropic_tool_name_mapping(tools: Option<&[Tool]>) -> ToolNameMapping {
+    create_tool_name_mapping(
+        tools,
+        &[
+            ("anthropic.code_execution_20250522", "code_execution"),
+            ("anthropic.code_execution_20250825", "code_execution"),
+            ("anthropic.code_execution_20260120", "code_execution"),
+            ("anthropic.computer_20241022", "computer"),
+            ("anthropic.computer_20250124", "computer"),
+            ("anthropic.computer_20251124", "computer"),
+            ("anthropic.computer_toolset_20260801", "computer"),
+            ("anthropic.text_editor_20241022", "str_replace_editor"),
+            ("anthropic.text_editor_20250124", "str_replace_editor"),
+            (
+                "anthropic.text_editor_20250429",
+                "str_replace_based_edit_tool",
+            ),
+            (
+                "anthropic.text_editor_20250728",
+                "str_replace_based_edit_tool",
+            ),
+            ("anthropic.bash_20241022", "bash"),
+            ("anthropic.bash_20250124", "bash"),
+            ("anthropic.memory_20250818", "memory"),
+            ("anthropic.web_search_20250305", "web_search"),
+            ("anthropic.web_search_20260209", "web_search"),
+            ("anthropic.web_search_20260318", "web_search"),
+            ("anthropic.web_fetch_20250910", "web_fetch"),
+            ("anthropic.web_fetch_20260209", "web_fetch"),
+            ("anthropic.web_fetch_20260318", "web_fetch"),
+            (
+                "anthropic.tool_search_regex_20251119",
+                "tool_search_tool_regex",
+            ),
+            (
+                "anthropic.tool_search_bm25_20251119",
+                "tool_search_tool_bm25",
+            ),
+            ("anthropic.advisor_20260301", "advisor"),
+        ],
+    )
+}
+
+/// `getAnthropicToolsetNames`: maps the custom tool names of toolset tools
+/// (the computer toolset) to the toolset name that the Anthropic API uses in
+/// `toolset_name`.
+fn get_anthropic_toolset_names(tools: Option<&[Tool]>) -> HashMap<String, String> {
+    let mut toolset_names = HashMap::new();
+    for tool in tools.unwrap_or_default() {
+        if let Tool::Provider(tool) = tool
+            && tool.id == "anthropic.computer_toolset_20260801"
+        {
+            toolset_names.insert(tool.name.clone(), "computer".to_owned());
+        }
+    }
+    toolset_names
+}
+
+/// `hasDynamicFilteringWebToolWithoutCodeExecution`: a 2026 web search or
+/// fetch tool may invoke code execution implicitly, so its calls are marked
+/// dynamic unless the caller also passed a code execution tool.
+fn has_dynamic_filtering_web_tool_without_code_execution(tools: Option<&[Tool]>) -> bool {
+    let provider_tool_ids = || {
+        tools
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|tool| match tool {
+                Tool::Provider(tool) => Some(tool.id.as_str()),
+                Tool::Function(_) => None,
+            })
+    };
+    provider_tool_ids().any(|id| {
+        matches!(
+            id,
+            "anthropic.web_search_20260209"
+                | "anthropic.web_fetch_20260209"
+                | "anthropic.web_search_20260318"
+                | "anthropic.web_fetch_20260318"
+        )
+    }) && !provider_tool_ids().any(|id| id.starts_with("anthropic.code_execution_"))
+}
 
 /// One call, ready to send.
 struct PreparedCall {
@@ -60,13 +145,13 @@ struct PreparedCall {
 /// `provider.messages(id)`.
 pub struct AnthropicMessagesModel {
     model_id: String,
-    config: AnthropicModelConfig,
+    config: AnthropicConfig,
     generate_id: Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl AnthropicMessagesModel {
     /// A model of the host the config describes.
-    pub(crate) fn with_config(model_id: String, config: AnthropicModelConfig) -> Self {
+    pub(crate) fn with_config(model_id: String, config: AnthropicConfig) -> Self {
         Self {
             model_id,
             config,
@@ -179,7 +264,8 @@ impl LanguageModel for AnthropicMessagesModel {
             call.body,
             call.warnings,
             &self.config,
-            &ToolNameMapping::new(options.tools.as_deref()),
+            &anthropic_tool_name_mapping(options.tools.as_deref()),
+            has_dynamic_filtering_web_tool_without_code_execution(options.tools.as_deref()),
             self.uses_custom_options(options),
             call.uses_json_response_tool,
             Self::citation_documents(options),
@@ -870,6 +956,7 @@ pub(crate) fn parse_anthropic_content(
     _options_name: &str,
     blocks: &[ContentBlock],
     names: &ToolNameMapping,
+    mark_code_execution_dynamic: bool,
     uses_json_response_tool: bool,
     mut citation_documents: Vec<CitationDocument>,
     generate_id: &(dyn Fn() -> String + Send + Sync),
@@ -997,9 +1084,8 @@ pub(crate) fn parse_anthropic_content(
                     tool_name: names.to_custom_tool_name(provider_name).to_string(),
                     input: normalized_server_tool_input(name, input).to_string(),
                     provider_executed: Some(true),
-                    dynamic: (provider_name == "code_execution"
-                        && names.mark_code_execution_dynamic())
-                    .then_some(true),
+                    dynamic: (provider_name == "code_execution" && mark_code_execution_dynamic)
+                        .then_some(true),
                     provider_metadata: tool_call_caller_metadata(caller.as_ref(), CANONICAL),
                 }));
             }
@@ -1231,8 +1317,9 @@ pub(crate) async fn anthropic_generate_core(
     request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
-    config: &AnthropicModelConfig,
+    config: &AnthropicConfig,
     tool_names: &ToolNameMapping,
+    mark_code_execution_dynamic: bool,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
@@ -1258,6 +1345,7 @@ pub(crate) async fn anthropic_generate_core(
         &config.provider_options_name,
         &data.content,
         tool_names,
+        mark_code_execution_dynamic,
         uses_json_response_tool,
         citation_documents,
         generate_id.as_ref(),
@@ -1345,14 +1433,16 @@ pub(crate) async fn anthropic_stream_core(
     request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
-    config: &AnthropicModelConfig,
+    config: &AnthropicConfig,
     options: &CallOptions,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
     generate_id: std::sync::Arc<dyn Fn() -> String + Send + Sync>,
 ) -> Result<StreamResult, AiMuxError> {
-    let tool_names = ToolNameMapping::new(options.tools.as_deref());
+    let tool_names = anthropic_tool_name_mapping(options.tools.as_deref());
+    let mark_code_execution_dynamic =
+        has_dynamic_filtering_web_tool_without_code_execution(options.tools.as_deref());
     let include_raw_chunks = options.include_raw_chunks == Some(true);
     let endpoint = request.url.clone();
     let options_name = config.provider_options_name.clone();
@@ -1405,6 +1495,7 @@ pub(crate) async fn anthropic_stream_core(
             },
             options_name,
             tool_names,
+            mark_code_execution_dynamic,
             used_custom_options_key,
             uses_json_response_tool,
             citation_documents,
@@ -1429,6 +1520,7 @@ pub(super) struct AnthropicMessagesStream {
     ctx: StreamContext,
     options_name: String,
     tool_names: ToolNameMapping,
+    mark_code_execution_dynamic: bool,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,
     citation_documents: Vec<CitationDocument>,
@@ -1648,8 +1740,8 @@ impl AnthropicMessagesStream {
                     .to_custom_tool_name(provider_name)
                     .to_string();
                 let dynamic = (provider_name == "code_execution"
-                    && self.tool_names.mark_code_execution_dynamic())
-                .then_some(true);
+                    && self.mark_code_execution_dynamic)
+                    .then_some(true);
                 let initial_input = initial_tool_input(&input);
                 controller.enqueue(StreamPart::ToolInputStart {
                     id: id.clone(),
@@ -3061,7 +3153,8 @@ pub(crate) fn build_request_body_for(
     let conversion = convert_prompt_with_validator(
         &options.prompt,
         send_input_reasoning,
-        &ToolNameMapping::new(options.tools.as_deref()),
+        &anthropic_tool_name_mapping(options.tools.as_deref()),
+        &get_anthropic_toolset_names(options.tools.as_deref()),
         &profile.options_name,
         &mut cache_validator,
     )?;

@@ -19,10 +19,9 @@
 //! Reference: <https://docs.cloud.google.com/claude-on-vertex-ai>
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{
-    AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks, MessagesUrl, TransformRequestBody,
-};
+use crate::anthropic::config::{AnthropicConfig, AnthropicEndpoint, TransformRequestBody};
 use crate::anthropic::options::options_name_of;
+use crate::anthropic::request_rewrite::{AnthropicBodyRewrite, AnthropicRequestUrl};
 use crate::shared::{Credential, Endpoint, ProviderHeaders, ResolveEndpoint};
 use crate::vertex::auth_google_auth_library::GoogleAuth;
 use crate::vertex::provider_base::{Publisher, Resolver};
@@ -35,7 +34,6 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable};
-use serde_json::{Value, json};
 use std::sync::{Arc, OnceLock};
 
 /// Settings for the Vertex Anthropic provider.
@@ -139,28 +137,11 @@ impl Provider for VertexAnthropicProvider {
     }
 }
 
-/// `streamRawPredict` endpoints.
-const ANTHROPIC_VERTEX_VERSION: &str = "vertex-2023-10-16";
-
 /// The provider string of every Anthropic model on Vertex.
 const PROVIDER: &str = "googleVertex.anthropic.messages";
 
 /// An Anthropic Claude language model served via Vertex AI.
 pub type VertexAnthropicModel = AnthropicMessagesModel;
-
-/// Wrap a standard Messages request body in the `rawPredict` envelope: drop
-/// `model` (the URL carries it) and add `anthropic_version`.
-fn raw_predict_envelope(body: Value) -> Value {
-    let mut envelope = serde_json::Map::new();
-    envelope.insert(
-        "anthropic_version".to_string(),
-        json!(ANTHROPIC_VERTEX_VERSION),
-    );
-    if let Value::Object(map) = body {
-        envelope.extend(map.into_iter().filter(|(key, _)| key != "model"));
-    }
-    Value::Object(envelope)
-}
 
 /// The model `model_id` on the Vertex endpoint `resolver` resolves for each
 /// request.
@@ -172,7 +153,7 @@ pub(super) fn model(
 ) -> VertexAnthropicModel {
     // The model's own `base_url` and `headers` only describe its identity;
     // every request uses the endpoint resolved for it.
-    let config = AnthropicModelConfig {
+    let config = AnthropicConfig {
         provider: PROVIDER.to_string(),
         headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
         fetch,
@@ -180,13 +161,11 @@ pub(super) fn model(
         transform_request_body,
         base_url: String::new(),
         provider_options_name: options_name_of(PROVIDER),
-        hooks: AnthropicModelHooks {
-            messages_url: MessagesUrl::RawPredict,
-            prepare_body: Some(raw_predict_envelope),
-            failed_response_handler: crate::google::google_failed_response_handler,
-            supports_native_structured_output: false,
-            supports_strict_tools: false,
-        },
+        build_request_url: AnthropicRequestUrl::VertexRawPredict,
+        body_rewrite: Some(AnthropicBodyRewrite::VertexRawPredict),
+        supports_native_structured_output: false,
+        supports_strict_tools: false,
+        failed_response_handler: crate::google::google_failed_response_handler,
         endpoint: AnthropicEndpoint::Resolved(Arc::new(ClaudeEndpoint { resolver })),
     };
     AnthropicMessagesModel::with_config(model_id.to_string(), config)

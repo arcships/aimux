@@ -476,13 +476,6 @@ fn sanitize_tool_name(name: &str) -> String {
     }
 }
 
-fn strip_file_extension(name: &str) -> String {
-    match name.rfind('.') {
-        Some(i) => name[..i].to_string(),
-        _ => name.to_string(),
-    }
-}
-
 fn mime_to_image_format(media_type: &str) -> &'static str {
     match media_type {
         "image/jpeg" => "jpeg",
@@ -534,7 +527,7 @@ fn flush_assistant(messages: &mut Vec<Value>, content: &mut Vec<Value>) {
 }
 
 fn sanitize_document_name(name: &str) -> String {
-    strip_file_extension(name)
+    aimux_provider_utils::strip_file_extension(name)
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")

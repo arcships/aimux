@@ -954,3 +954,24 @@ mod older_decision {
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 }
+
+/// The native decision URL goes through the model's URL callback.
+#[test]
+fn native_decision_url_passes_endpoint_to_url_callback() {
+    use crate::decision_support::DecisionEndpoint;
+    use crate::openai::config::{OpenAIModelConfig, OpenAIUrl};
+    use crate::shared::{Credential, ProviderHeaders};
+
+    let mut config = OpenAIModelConfig::fixed(
+        "openai".into(),
+        "https://example.com/v1".into(),
+        ProviderHeaders::bearer(Credential::None, Vec::new(), None),
+        None,
+        None,
+    );
+    config.url = OpenAIUrl::Base("https://example.com/decisions-host".into());
+    assert_eq!(
+        DecisionEndpoint::url(&config, "/decisions").unwrap(),
+        "https://example.com/decisions-host/decisions"
+    );
+}

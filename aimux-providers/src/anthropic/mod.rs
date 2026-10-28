@@ -25,15 +25,16 @@ mod map_stop_reason;
 mod message_metadata;
 pub mod prepare_tools;
 mod provider;
+pub(crate) mod request_rewrite;
 pub mod sanitize_json_schema;
 pub mod skills;
-pub mod tool_name_mapping;
 
 pub use files::AnthropicFiles;
 pub use language_model::AnthropicMessagesModel;
 pub use provider::{AnthropicProvider, AnthropicProviderSettings, anthropic, create_anthropic};
 pub use skills::AnthropicSkills;
 
+pub(crate) use error::anthropic_failed_response_handler;
 pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL, list_models_once, supported_urls};
 
 /// The options module under the path Anthropic AWS and Anthropic on Vertex
