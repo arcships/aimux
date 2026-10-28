@@ -838,31 +838,40 @@ impl JsonObjectTextExtractor {
 // The request capabilities come from Anthropic's getModelCapabilities, not
 // Bedrock's separate strict-tool support list. Unknown newer model IDs assume
 // adaptive thinking and reject sampling; legacy IDs retain their defaults.
-fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool, bool) {
+/// `amazonBedrockReasoningEffortMap` of amazon-bedrock-chat-language-model.ts.
+const AMAZON_BEDROCK_REASONING_EFFORT_MAP: &[(aimux_core::types::ReasoningEffort, &str)] = &[
+    (aimux_core::types::ReasoningEffort::Minimal, "low"),
+    (aimux_core::types::ReasoningEffort::Low, "low"),
+    (aimux_core::types::ReasoningEffort::Medium, "medium"),
+    (aimux_core::types::ReasoningEffort::High, "high"),
+    (aimux_core::types::ReasoningEffort::Xhigh, "max"),
+];
+
+fn reasoning_capabilities(model_id: &str) -> (u32, bool, bool, bool) {
     let Some((_, model)) = model_id.split_once("claude-") else {
-        return (4096.0, false, false, false);
+        return (4096, false, false, false);
     };
     if ["opus-5", "fable-5", "sonnet-5", "opus-4-8", "opus-4-7"]
         .iter()
         .any(|id| model.starts_with(id))
     {
-        (128000.0, true, true, true)
+        (128000, true, true, true)
     } else if ["sonnet-4-6", "opus-4-6"]
         .iter()
         .any(|id| model.starts_with(id))
     {
-        (128000.0, true, false, true)
+        (128000, true, false, true)
     } else if ["sonnet-4-5", "opus-4-5", "haiku-4-5"]
         .iter()
         .any(|id| model.starts_with(id))
     {
-        (64000.0, false, false, true)
+        (64000, false, false, true)
     } else if model.starts_with("opus-4-1") {
-        (32000.0, false, false, true)
+        (32000, false, false, true)
     } else if model.starts_with("sonnet-4-") || model.starts_with("sonnet-4@") {
-        (64000.0, false, false, false)
+        (64000, false, false, false)
     } else if model.starts_with("opus-4-") || model.starts_with("opus-4@") {
-        (32000.0, false, false, false)
+        (32000, false, false, false)
     } else {
         let two = model.strip_prefix('v').unwrap_or(model);
         let legacy = model == "instant"
@@ -875,9 +884,9 @@ fn reasoning_capabilities(model_id: &str) -> (f64, bool, bool, bool) {
             || model.starts_with("3-")
             || model.starts_with("3.");
         if legacy {
-            (4096.0, false, false, false)
+            (4096, false, false, false)
         } else {
-            (128000.0, true, true, true)
+            (128000, true, true, true)
         }
     }
 }
@@ -929,31 +938,27 @@ pub fn build_request_body_checked(
                 || nova
                 || bedrock.is_some_and(|b| b.contains_key("reasoningConfig")))
         {
-            let level = match effort {
-                ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
-                ReasoningEffort::Medium => "medium",
-                ReasoningEffort::High => "high",
-                ReasoningEffort::Xhigh => "max",
-                _ => "low",
-            };
-            if (!anthropic || adaptive)
-                && matches!(effort, ReasoningEffort::Minimal | ReasoningEffort::Xhigh)
-            {
-                compatibility.push(Warning::Compatibility { feature: "reasoning".into(), details: Some(format!("reasoning \"{effort}\" is not directly supported by this model. mapped to effort \"{level}\".")) });
-            }
-            let mut derived = if anthropic && adaptive {
-                json!({"type":"adaptive","maxReasoningEffort":level})
-            } else if anthropic {
-                let percentage = match effort {
-                    ReasoningEffort::Minimal => 0.02,
-                    ReasoningEffort::Low => 0.1,
-                    ReasoningEffort::Medium => 0.3,
-                    ReasoningEffort::High => 0.6,
-                    _ => 0.9,
-                };
-                json!({"type":"enabled","budgetTokens":(max_reasoning_tokens * percentage).round().clamp(1024.0, max_reasoning_tokens) as u64})
+            let mut derived = if anthropic && !adaptive {
+                let budget_tokens = aimux_provider_utils::map_reasoning_to_provider_budget(
+                    *effort,
+                    max_reasoning_tokens,
+                    max_reasoning_tokens,
+                    aimux_provider_utils::DEFAULT_MIN_REASONING_BUDGET,
+                    aimux_provider_utils::DEFAULT_REASONING_BUDGET_PERCENTAGES,
+                    &mut compatibility,
+                );
+                json!({"type":"enabled","budgetTokens":budget_tokens})
             } else {
-                json!({"maxReasoningEffort":level})
+                let level = aimux_provider_utils::map_reasoning_to_provider_effort(
+                    *effort,
+                    AMAZON_BEDROCK_REASONING_EFFORT_MAP,
+                    &mut compatibility,
+                );
+                if anthropic {
+                    json!({"type":"adaptive","maxReasoningEffort":level})
+                } else {
+                    json!({"maxReasoningEffort":level})
+                }
             };
             if nova {
                 derived["type"] = json!("enabled");

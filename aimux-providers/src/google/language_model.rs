@@ -1665,36 +1665,40 @@ fn resolve_thinking(
         } else {
             "minimal"
         };
-        let level = match reasoning {
-            R::None | R::Minimal => minimum,
-            R::Low => "low",
-            R::Medium => "medium",
-            R::High | R::Xhigh => "high",
-            R::ProviderDefault => unreachable!(),
-        };
-        if reasoning != R::None && level != reasoning.to_string() {
-            warnings.push(Warning::Compatibility { feature: "reasoning".into(), details: Some(format!("reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"{level}\".")) });
+        if reasoning == R::None {
+            // It's not possible to fully disable thinking with Gemini 3.
+            return Some(Map::from_iter([("thinkingLevel".into(), json!(minimum))]));
         }
+        let level = aimux_provider_utils::map_reasoning_to_provider_effort(
+            reasoning,
+            &[
+                (R::Minimal, minimum),
+                (R::Low, "low"),
+                (R::Medium, "medium"),
+                (R::High, "high"),
+                (R::Xhigh, "high"),
+            ],
+            warnings,
+        )?;
         return Some(Map::from_iter([("thinkingLevel".into(), json!(level))]));
     }
-    let percentage = match reasoning {
-        R::None => 0.0,
-        R::Minimal => 0.02,
-        R::Low => 0.1,
-        R::Medium => 0.3,
-        R::High => 0.6,
-        R::Xhigh => 0.9,
-        R::ProviderDefault => unreachable!(),
-    };
+    if reasoning == R::None {
+        return Some(Map::from_iter([("thinkingBudget".into(), json!(0))]));
+    }
     let max = if lower.contains("2.5-pro") || lower.contains("gemini-3-pro-image") {
         32768
     } else {
         24576
     };
-    Some(Map::from_iter([(
-        "thinkingBudget".into(),
-        json!(((65536.0_f64 * percentage).round() as u32).min(max)),
-    )]))
+    let budget = aimux_provider_utils::map_reasoning_to_provider_budget(
+        reasoning,
+        65536,
+        max,
+        0,
+        aimux_provider_utils::DEFAULT_REASONING_BUDGET_PERCENTAGES,
+        warnings,
+    )?;
+    Some(Map::from_iter([("thinkingBudget".into(), json!(budget))]))
 }
 
 /// Resolve the caller-facing name for Google's code execution provider tool:
