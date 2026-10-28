@@ -409,7 +409,7 @@ fn convert_tool_parts(
                                         files.push(json!({ "inlineData": { "mimeType": media_type, "data": data } }));
                                     } else {
                                         texts.push(
-                                            crate::openai::convert::tool_result_content_value(
+                                            aimux_provider_utils::tool_result_content_value(
                                                 std::slice::from_ref(part),
                                             )[0]
                                             .to_string(),
@@ -435,14 +435,14 @@ fn convert_tool_parts(
                                     files.push(json!({ "fileData": { "mimeType": file.media_type, "fileUri": original_url.as_deref().unwrap_or(url) } }));
                                 }
                                 _ => texts.push(
-                                    crate::openai::convert::tool_result_content_value(
+                                    aimux_provider_utils::tool_result_content_value(
                                         std::slice::from_ref(part),
                                     )[0]
                                     .to_string(),
                                 ),
                             },
                             _ => texts.push(
-                                crate::openai::convert::tool_result_content_value(
+                                aimux_provider_utils::tool_result_content_value(
                                     std::slice::from_ref(part),
                                 )[0]
                                 .to_string(),
@@ -467,8 +467,8 @@ fn convert_tool_parts(
                             let data = aimux_provider_utils::convert_to_base64(data).into_owned();
                             parts.push(json!({ "inlineData": { "mimeType": tool_file_media_type(file).unwrap_or_else(|_| file.media_type.clone()), "data": data } }));
                             parts.push(json!({ "text": format!("Tool executed successfully and returned this {} as a response", if file.media_type.starts_with("image/") { "image" } else { "file" }) }));
-                        } else { parts.push(json!({ "text": crate::openai::convert::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })); },
-                        _ => parts.push(json!({ "text": crate::openai::convert::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })),
+                        } else { parts.push(json!({ "text": aimux_provider_utils::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })); },
+                        _ => parts.push(json!({ "text": aimux_provider_utils::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })),
                     }
                 }
             }

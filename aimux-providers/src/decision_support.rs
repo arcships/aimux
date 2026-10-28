@@ -2,6 +2,7 @@
 //! adapters (aimux extensions; the AI SDK's own decision models wrap a
 //! language model, see `aimux_provider_utils::DecisionLanguageModel`).
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use aimux_core::AiMuxError;
 use aimux_core::ErrorCause;
@@ -78,63 +79,31 @@ pub(crate) fn take_images(
     }
 }
 
-use crate::openai::config::OpenAIModelConfig;
-use crate::openai_compatible::CompatModelConfig;
-
 /// The connection a decision adapter borrows from the provider that made it:
 /// native OpenAI, or an OpenAI-compatible preset (a local runtime,
-/// Cloudflare). Headers are resolved per request, like every other model of
-/// that provider.
-#[derive(Clone)]
-pub(crate) enum DecisionConfig {
-    OpenAI(OpenAIModelConfig),
-    Compatible(CompatModelConfig),
-}
-
-impl DecisionConfig {
-    /// Resolve the full endpoint through the native model's URL callback.
-    pub(crate) fn url(&self, path: &str) -> Result<String, AiMuxError> {
-        match self {
-            Self::OpenAI(config) => config.url(path),
-            Self::Compatible(config) => Ok(format!(
-                "{}{}",
-                config.base_url.resolve()?.trim_end_matches('/'),
-                path
-            )),
-        }
-    }
+/// Cloudflare). The provider implements it on its own model config, so the
+/// decision code names no provider. Headers are resolved per request, like
+/// every other model of that provider.
+#[async_trait::async_trait]
+pub(crate) trait DecisionEndpoint: Send + Sync {
+    /// The full URL of `path` under the provider's base URL.
+    fn url(&self, path: &str) -> Result<String, AiMuxError>;
 
     /// The provider's base URL; adapters append their own endpoint paths.
-    pub(crate) fn base_url(&self) -> Result<String, AiMuxError> {
-        let base = match self {
-            Self::OpenAI(config) => config.url("")?,
-            Self::Compatible(config) => config.base_url.resolve()?,
-        };
-        Ok(base.trim_end_matches('/').to_string())
+    fn base_url(&self) -> Result<String, AiMuxError> {
+        Ok(self.url("")?.trim_end_matches('/').to_string())
     }
 
+    /// A request to `url` with the provider's headers and transport.
     async fn request(
         &self,
         url: &str,
         options: &DecisionCallOptions,
-    ) -> Result<HttpRequest, AiMuxError> {
-        Ok(match self {
-            Self::OpenAI(config) => {
-                let headers = config.request_headers(options.headers.as_ref()).await?;
-                config.http_request(url.to_string(), headers, options)
-            }
-            Self::Compatible(config) => {
-                let headers = config.request_headers(options.headers.as_ref()).await?;
-                let origin = config.base_url.resolve()?;
-                config.with_transport(
-                    HttpRequest::new(url, headers.list, options),
-                    origin,
-                    headers.fetch_user_agent,
-                )
-            }
-        })
-    }
+    ) -> Result<HttpRequest, AiMuxError>;
 }
+
+/// The endpoint a decision model posts to.
+pub(crate) type DecisionConfig = Arc<dyn DecisionEndpoint>;
 
 pub(crate) struct InlineImage {
     pub data_url: String,
@@ -277,26 +246,7 @@ pub(crate) fn options(
 
 #[cfg(test)]
 mod tests {
-    use crate::openai::config::OpenAIUrl;
-    use crate::shared::{Credential, ProviderHeaders};
-
     use super::*;
-
-    #[test]
-    fn native_decision_url_passes_endpoint_to_url_callback() {
-        let mut config = OpenAIModelConfig::fixed(
-            "openai".into(),
-            "https://example.com/v1".into(),
-            ProviderHeaders::bearer(Credential::None, Vec::new(), None),
-            None,
-            None,
-        );
-        config.url = OpenAIUrl::Base("https://example.com/decisions-host".into());
-        assert_eq!(
-            DecisionConfig::OpenAI(config).url("/decisions").unwrap(),
-            "https://example.com/decisions-host/decisions"
-        );
-    }
 
     /// Decision image bytes are a base64 string, read as `atob` reads it
     /// (`provider-utils` `uint8-utils.ts:6-23`) and sent on verbatim.

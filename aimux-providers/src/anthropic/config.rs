@@ -24,19 +24,9 @@ use aimux_provider_utils::{
 };
 
 use super::language_model::RequestProfile;
+use super::request_rewrite::{AnthropicBodyRewrite, AnthropicRequestUrl};
 pub use crate::shared::TransformRequestBody;
 use crate::shared::{Endpoint, ResolveEndpoint};
-
-/// Where the messages call of a model goes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum MessagesUrl {
-    /// `url("/messages")`: the first-party API and hosts that mirror it.
-    #[default]
-    Messages,
-    /// `{base_url}/{model id}:rawPredict`, or `:streamRawPredict` when
-    /// streaming: Anthropic on Vertex AI.
-    RawPredict,
-}
 
 /// Where a model's endpoint (base URL and provider headers) comes from.
 #[derive(Clone, Default)]
@@ -59,42 +49,12 @@ pub(crate) enum AnthropicEndpoint {
 /// Builds the host's error handler for non-2xx responses.
 pub(crate) type ErrorHandlerFn = fn() -> ResponseHandler<AiMuxError>;
 
-/// How a host differs from the first-party Messages API (the upstream
-/// `buildRequestUrl`, `transformRequestBody`, `supportsNativeStructuredOutput`
-/// and `supportsStrictTools` config members, plus its error shape).
+/// What a model needs to talk to the API (upstream `AnthropicConfig`). Built
+/// by the provider that owns the model; read by
+/// [`AnthropicMessagesModel`](super::AnthropicMessagesModel) and the files
+/// interface.
 #[derive(Clone)]
-pub(crate) struct AnthropicModelHooks {
-    /// Where the messages call goes.
-    pub(crate) messages_url: MessagesUrl,
-    /// Applied to the finished request body before the provider's own
-    /// `transform_request_body`.
-    pub(crate) prepare_body: Option<fn(Value) -> Value>,
-    /// Parses a failed response.
-    pub(crate) failed_response_handler: ErrorHandlerFn,
-    /// Structured outputs and their beta header.
-    pub(crate) supports_native_structured_output: bool,
-    /// `strict` on tool definitions.
-    pub(crate) supports_strict_tools: bool,
-}
-
-impl Default for AnthropicModelHooks {
-    /// The first-party API.
-    fn default() -> Self {
-        Self {
-            messages_url: MessagesUrl::Messages,
-            prepare_body: None,
-            failed_response_handler: super::error::anthropic_failed_response_handler,
-            supports_native_structured_output: true,
-            supports_strict_tools: true,
-        }
-    }
-}
-
-/// What a model needs to talk to the API. Built by the provider that owns the
-/// model; read by [`AnthropicMessagesModel`](super::AnthropicMessagesModel)
-/// and the files interface.
-#[derive(Clone)]
-pub(crate) struct AnthropicModelConfig {
+pub(crate) struct AnthropicConfig {
     /// The identity the model reports from `provider()`.
     pub(crate) provider: String,
     /// Provider headers (credential, `anthropic-version`, user headers),
@@ -104,21 +64,30 @@ pub(crate) struct AnthropicModelConfig {
     pub(crate) fetch: Option<FetchFunction>,
     /// URLs the model fetches itself. Empty: the caller downloads them.
     pub(crate) supported_urls: SupportedUrls,
-    /// Provider-level request-body rewrite.
+    /// Where the messages call goes.
+    pub(crate) build_request_url: AnthropicRequestUrl,
+    /// The host's rewrite of the finished request body, before
+    /// `transform_request_body`.
+    pub(crate) body_rewrite: Option<AnthropicBodyRewrite>,
+    /// The user's request-body rewrite from the public settings.
     pub(crate) transform_request_body: Option<TransformRequestBody>,
+    /// Structured outputs and their beta header.
+    pub(crate) supports_native_structured_output: bool,
+    /// `strict` on tool definitions.
+    pub(crate) supports_strict_tools: bool,
+    /// Parses a failed response (aimux: the host's error shape).
+    pub(crate) failed_response_handler: ErrorHandlerFn,
     /// The URL every endpoint path is appended to; also the origin
     /// credentialed headers may be sent to.
     pub(crate) base_url: String,
     /// The providerOptions key read in addition to `anthropic` and written
     /// on response metadata.
     pub(crate) provider_options_name: String,
-    /// Host differences.
-    pub(crate) hooks: AnthropicModelHooks,
     /// Where `base_url` and `headers` of a request come from.
     pub(crate) endpoint: AnthropicEndpoint,
 }
 
-impl AnthropicModelConfig {
+impl AnthropicConfig {
     /// The configuration to use for one request: itself, or itself with the
     /// endpoint the host resolves now.
     ///
@@ -149,31 +118,22 @@ impl AnthropicModelConfig {
 
     /// The URL of the messages call for a model.
     pub(crate) fn messages_url(&self, model_id: &str, stream: bool) -> String {
-        match self.hooks.messages_url {
-            MessagesUrl::Messages => self.url("/messages"),
-            MessagesUrl::RawPredict => {
-                let method = if stream {
-                    "streamRawPredict"
-                } else {
-                    "rawPredict"
-                };
-                format!("{}/{model_id}:{method}", self.base_url)
-            }
-        }
+        self.build_request_url
+            .build(&self.base_url, model_id, stream)
     }
 
     /// What the request body builder needs to know about this host.
     pub(crate) fn request_profile(&self) -> RequestProfile {
         RequestProfile {
             options_name: self.provider_options_name.clone(),
-            supports_native_structured_output: self.hooks.supports_native_structured_output,
-            supports_strict_tools: self.hooks.supports_strict_tools,
+            supports_native_structured_output: self.supports_native_structured_output,
+            supports_strict_tools: self.supports_strict_tools,
         }
     }
 
     /// The host's error handler.
     pub(crate) fn failed_response_handler(&self) -> ResponseHandler<AiMuxError> {
-        (self.hooks.failed_response_handler)()
+        (self.failed_response_handler)()
     }
 
     /// Resolve the provider headers, add the `anthropic-beta` header and
@@ -249,10 +209,10 @@ impl AnthropicModelConfig {
         request
     }
 
-    /// Run the host's body preparation, then the provider-level rewrite.
+    /// Run the host's body rewrite, then the user's.
     pub(crate) fn transform_body(&self, mut body: Value) -> Value {
-        if let Some(prepare) = self.hooks.prepare_body {
-            body = prepare(body);
+        if let Some(rewrite) = self.body_rewrite {
+            body = rewrite.apply(body);
         }
         match &self.transform_request_body {
             Some(transform) => transform(body),

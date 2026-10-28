@@ -173,7 +173,7 @@ pub fn convert_prompt_to_cohere(
                     else {
                         continue;
                     };
-                    let content = crate::openai::convert::tool_result_to_content(output);
+                    let content = aimux_provider_utils::tool_result_to_content(output);
                     messages.push(json!({
                         "role": "tool",
                         "content": content,

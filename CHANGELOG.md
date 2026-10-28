@@ -1333,10 +1333,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `speech::google_speech_input` become crate-internal, with no public
   replacement. `google::files` and `google::transcription` keep their paths.
 
+- `aimux_providers::openai::OpenAICompletionModel`, what
+  `OpenAIProvider::completion` returns, is its own struct instead of an alias
+  of `openai_compatible::OpenAICompatibleCompletionModel` (RFC-0046 R2, #391).
+  Code that used the two names as one type, such as passing an OpenAI
+  completion model where an `OpenAICompatibleCompletionModel` is expected,
+  names `OpenAICompletionModel` instead; both still implement
+  `LanguageModel`, and the requests and results are unchanged.
+
 - `aimux_providers::xai::responses::resolve_provider_reference` is removed;
   use `aimux_provider_utils::resolve_provider_reference`, the AI SDK's
   `resolveProviderReference`, which takes the reference and the provider
   name the same way (RFC-0046 R1).
+
+- `aimux_providers::anthropic::tool_name_mapping` is removed. Its
+  `ToolNameMapping` is `aimux_provider_utils::ToolNameMapping`, built with
+  `aimux_provider_utils::create_tool_name_mapping(tools, provider_tool_names)`
+  and the provider tool id table, as the AI SDK's `createToolNameMapping`;
+  `to_provider_tool_name` and `to_custom_tool_name` are unchanged.
+  `mark_code_execution_dynamic` has no public replacement (RFC-0046 R1).
 
 - `aimux_providers::mistral` follows the upstream `@ai-sdk/mistral` file
   layout (RFC-0046). The sub-modules `mistral::convert` and
@@ -1431,9 +1446,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI, Anthropic, Google and DeepSeek converters resolve file references with
   the second. A missing DeepSeek reference now names the providers the
   reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
+- `aimux_provider_utils::tool_result_to_content` and
+  `aimux_provider_utils::tool_result_content_value`: the tool message content
+  the AI SDK's chat converters build from a tool result (RFC-0046 R1). They
+  move out of the OpenAI chat converter; the OpenAI chat and responses,
+  OpenAI-compatible, Groq, Mistral, DeepSeek, Cohere, xAI, Open Responses and
+  Google converters call them from provider-utils, with unchanged output.
+- `aimux_provider_utils::create_tool_name_mapping` with `ToolNameMapping`,
+  and `aimux_provider_utils::strip_file_extension`, as
+  `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1). The Anthropic, OpenAI
+  Responses and Google models map provider tool names with the first, as
+  their upstream models do.
 
 ### Fixed
 
+- Bedrock document names drop everything from the first dot of the filename,
+  as the AI SDK's `stripFileExtension` does: `report.v2.pdf` is sent as
+  `report`, not `reportv2`.
 - Anthropic AWS models are named `anthropic-aws.messages` by default, the
   provider name the AI SDK gives them, instead of `anthropic-aws`. A `name`
   setting still replaces it, and the providerOptions key stays `anthropic`.

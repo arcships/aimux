@@ -12,7 +12,6 @@ use crate::decision_support::{
     self as support, DecisionConfig, DecisionImage, DecisionProbabilitySource, candidate_count,
     invalid, provider_metadata, response_info,
 };
-use crate::openai_compatible::CompatModelConfig;
 
 pub(crate) fn supported(provider: &str) -> bool {
     matches!(
@@ -83,7 +82,7 @@ impl RuntimeDecisionModel {
     pub(crate) fn new(
         provider: &str,
         model_id: &str,
-        config: CompatModelConfig,
+        config: DecisionConfig,
     ) -> Result<Self, AiMuxError> {
         if !supported(provider) {
             return Err(AiMuxError::UnsupportedFunctionality(format!(
@@ -97,7 +96,7 @@ impl RuntimeDecisionModel {
         }
         Ok(Self {
             provider: provider.into(),
-            config: DecisionConfig::Compatible(config),
+            config,
             model_id: model_id.into(),
         })
     }
