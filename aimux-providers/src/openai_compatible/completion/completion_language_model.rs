@@ -1,21 +1,18 @@
 //! The text-completion model (`{name}.completion`,
-//! `openai-compatible-completion-language-model.ts`), shared by the native and
-//! the compatible packages.
+//! `openai-compatible-completion-language-model.ts`).
 
 use aimux_core::AiMuxError;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::options::{CallOptions, ResponseFormat};
 use aimux_core::result::{GenerateContent, GenerateResult, StreamResult};
-use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo, provider_namespace};
+use aimux_core::shared::{RequestInfo, ResponseInfo, StreamResponseInfo};
 use aimux_core::stream_part::StreamPart;
 use aimux_core::types::{FinishReason, Warning};
 use aimux_provider_utils::{HttpRequest, Transformer, pipe_through};
 use async_trait::async_trait;
-use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::openai::config::OpenAIModelConfig;
 use crate::openai_compatible::CompatModelConfig;
 use crate::openai_compatible::chat::parse_finish_reason;
 use crate::openai_compatible::utils::to_camel_case;
@@ -25,36 +22,16 @@ use super::convert_completion_usage::usage;
 use super::convert_to_completion_prompt::completion_prompt;
 use super::get_response_metadata::metadata;
 
-#[derive(Clone)]
-pub(in crate::openai_compatible) enum CompletionConfig {
-    Compatible(CompatModelConfig),
-    Native(OpenAIModelConfig),
-}
-
 /// A language model for the `/completions` endpoint.
 #[derive(Clone)]
 pub struct OpenAICompatibleCompletionModel {
     model_id: String,
-    pub(in crate::openai_compatible) config: CompletionConfig,
+    pub(in crate::openai_compatible) config: CompatModelConfig,
 }
 
 impl OpenAICompatibleCompletionModel {
     pub(crate) fn from_config(model_id: String, config: CompatModelConfig) -> Self {
-        Self {
-            model_id,
-            config: CompletionConfig::Compatible(config),
-        }
-    }
-
-    pub(crate) fn from_native_config(model_id: String, config: OpenAIModelConfig) -> Self {
-        Self {
-            model_id,
-            config: CompletionConfig::Native(config),
-        }
-    }
-
-    fn native(&self) -> bool {
-        matches!(self.config, CompletionConfig::Native(_))
+        Self { model_id, config }
     }
 
     fn arguments(&self, options: &CallOptions) -> Result<(Value, Vec<Warning>), AiMuxError> {
@@ -85,14 +62,8 @@ impl OpenAICompatibleCompletionModel {
         }
         let name = self.provider().split('.').next().unwrap_or_default().trim();
         let camel = to_camel_case(name);
-        let namespaces = if self.native() {
-            vec!["openai", name]
-        } else {
-            vec![name, camel.as_str()]
-        };
         let mut provider_options = Map::new();
-        if !self.native()
-            && camel != name
+        if camel != name
             && options
                 .provider_options
                 .as_ref()
@@ -103,7 +74,7 @@ impl OpenAICompatibleCompletionModel {
                 message: format!("Use '{camel}' instead."),
             });
         }
-        for namespace in namespaces {
+        for namespace in [name, camel.as_str()] {
             if let Some(values) = options
                 .provider_options
                 .as_ref()
@@ -116,7 +87,6 @@ impl OpenAICompatibleCompletionModel {
                         "logitBias" => value
                             .as_object()
                             .is_some_and(|map| map.values().all(Value::is_number)),
-                        "logprobs" if self.native() => value.is_boolean() || value.is_number(),
                         _ => true,
                     };
                     if !valid {
@@ -140,17 +110,6 @@ impl OpenAICompatibleCompletionModel {
                 body.insert(target.into(), value.clone());
             }
         }
-        if self.native() {
-            match provider_options.get("logprobs") {
-                Some(Value::Bool(true)) => {
-                    body.insert("logprobs".into(), json!(0));
-                }
-                Some(value) if value.is_number() => {
-                    body.insert("logprobs".into(), value.clone());
-                }
-                _ => {}
-            }
-        }
         for (key, value) in [
             ("max_tokens", json!(options.max_output_tokens)),
             ("temperature", json!(options.temperature)),
@@ -163,9 +122,7 @@ impl OpenAICompatibleCompletionModel {
                 body.insert(key.into(), value);
             }
         }
-        if !self.native() {
-            body.extend(provider_options);
-        }
+        body.extend(provider_options);
         body.insert("prompt".into(), json!(completion_prompt(options)?));
         let mut stop = vec!["\nuser:".to_string()];
         stop.extend(options.stop_sequences.iter().flatten().cloned());
@@ -174,33 +131,11 @@ impl OpenAICompatibleCompletionModel {
     }
 
     async fn request(&self, options: &CallOptions) -> Result<HttpRequest, AiMuxError> {
-        match &self.config {
-            CompletionConfig::Compatible(config) => {
-                let headers = config.request_headers(options.headers.as_ref()).await?;
-                config.http_request("/completions", headers, options)
-            }
-            CompletionConfig::Native(config) => {
-                let headers = config.request_headers(options.headers.as_ref()).await?;
-                Ok(config.http_request(config.url("/completions")?, headers, options))
-            }
-        }
-    }
-
-    fn transform_body(&self, body: Value) -> Value {
-        match &self.config {
-            CompletionConfig::Compatible(_) => body,
-            CompletionConfig::Native(config) => match &config.transform_request_body {
-                Some(transform) => transform(body),
-                None => body,
-            },
-        }
-    }
-
-    fn failed_response_handler(&self) -> aimux_provider_utils::ResponseHandler<AiMuxError> {
-        match &self.config {
-            CompletionConfig::Compatible(config) => config.failed_response_handler(),
-            CompletionConfig::Native(_) => crate::openai::openai_failed_response_handler(),
-        }
+        let headers = self
+            .config
+            .request_headers(options.headers.as_ref())
+            .await?;
+        self.config.http_request("/completions", headers, options)
     }
 }
 
@@ -217,14 +152,9 @@ pub(super) struct CompletionResponse {
 struct CompletionChoice {
     text: String,
     finish_reason: Option<String>,
-    logprobs: Option<Value>,
 }
 
-fn parse_response(
-    value: Value,
-    native: bool,
-    streaming: bool,
-) -> Result<CompletionResponse, AiMuxError> {
+fn parse_response(value: Value, streaming: bool) -> Result<CompletionResponse, AiMuxError> {
     let invalid = || AiMuxError::invalid_response_data("invalid completion response");
     if let Some(usage) = value.get("usage").filter(|value| !value.is_null())
         && !["prompt_tokens", "completion_tokens", "total_tokens"]
@@ -246,32 +176,6 @@ fn parse_response(
         if !valid_finish {
             return Err(invalid());
         }
-        if native && let Some(logprobs) = choice.get("logprobs").filter(|value| !value.is_null()) {
-            if !logprobs
-                .get("tokens")
-                .and_then(Value::as_array)
-                .is_some_and(|values| values.iter().all(Value::is_string))
-                || !logprobs
-                    .get("token_logprobs")
-                    .and_then(Value::as_array)
-                    .is_some_and(|values| values.iter().all(Value::is_number))
-            {
-                return Err(invalid());
-            }
-            if let Some(top) = logprobs
-                .get("top_logprobs")
-                .filter(|value| !value.is_null())
-                && !top.as_array().is_some_and(|values| {
-                    values.iter().all(|value| {
-                        value
-                            .as_object()
-                            .is_some_and(|object| object.values().all(Value::is_number))
-                    })
-                })
-            {
-                return Err(invalid());
-            }
-        }
     }
     Ok(serde_json::from_value(value)?)
 }
@@ -279,55 +183,38 @@ fn parse_response(
 #[async_trait]
 impl LanguageModel for OpenAICompatibleCompletionModel {
     fn provider(&self) -> &str {
-        match &self.config {
-            CompletionConfig::Compatible(config) => &config.provider,
-            CompletionConfig::Native(config) => &config.provider,
-        }
+        &self.config.provider
     }
     fn model_id(&self) -> &str {
         &self.model_id
     }
     async fn supported_urls(&self) -> SupportedUrls {
-        match &self.config {
-            CompletionConfig::Compatible(_) => SupportedUrls::default(),
-            CompletionConfig::Native(_) => SupportedUrls::default(),
-        }
+        SupportedUrls::default()
     }
 
     async fn do_generate(&self, options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
         let (body, warnings) = self.arguments(options)?;
-        let body = self.transform_body(body);
         let response = aimux_provider_utils::post_json_to_api(
             self.request(options).await?,
             body.clone(),
             aimux_provider_utils::create_json_response_handler::<Value>(),
-            self.failed_response_handler(),
+            self.config.failed_response_handler(),
         )
         .await?;
-        let mut parsed = parse_response(response.value, self.native(), false)?;
+        let mut parsed = parse_response(response.value, false)?;
         let metadata = metadata(&parsed);
         let choice = parsed
             .choices
             .drain(..)
             .next()
             .ok_or_else(|| AiMuxError::invalid_response_data("no choices in response"))?;
-        let provider_metadata = self.native().then(|| {
-            provider_namespace(
-                "openai",
-                match choice.logprobs {
-                    Some(logprobs) => json!({ "logprobs": logprobs }),
-                    None => json!({}),
-                },
-            )
-            .expect("provider metadata must be an object")
-        });
         let finish_reason = choice
             .finish_reason
             .as_deref()
             .map(parse_finish_reason)
             .unwrap_or(FINISH_OTHER);
         Ok(GenerateResult {
-            content: if self.native() || !choice.text.is_empty() {
+            content: if !choice.text.is_empty() {
                 vec![GenerateContent::Text {
                     text: choice.text,
                     provider_metadata: None,
@@ -336,9 +223,9 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
                 vec![]
             },
             finish_reason,
-            usage: usage(parsed.usage, self.native()),
+            usage: usage(parsed.usage),
             warnings,
-            provider_metadata,
+            provider_metadata: None,
             request: Some(RequestInfo { body: Some(body) }),
             response: Some(ResponseInfo {
                 id: metadata.id,
@@ -353,69 +240,25 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
     async fn do_stream(&self, options: &CallOptions) -> Result<StreamResult, AiMuxError> {
         let (mut body, warnings) = self.arguments(options)?;
         body["stream"] = json!(true);
-        let include_usage = match &self.config {
-            CompletionConfig::Compatible(config) => config.chat.include_usage,
-            CompletionConfig::Native(_) => true,
-        };
-        if include_usage {
+        if self.config.chat.include_usage {
             body["stream_options"] = json!({ "include_usage": true });
         }
-        let body = self.transform_body(body);
         let request = self.request(options).await?;
         let error_url = request.url.clone();
         let response = aimux_provider_utils::post_json_to_api(
             request,
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            self.failed_response_handler(),
+            self.config.failed_response_handler(),
         )
         .await?;
-        let mut events = response.value;
+        let events = response.value;
         let response_headers = response.response_headers;
-        let native = self.native();
-        let mut buffered = Vec::new();
-        if native {
-            while let Some(event) = events.next().await {
-                if let Ok(parsed_event) = &event {
-                    if let Some(error) = parsed_event.get("error") {
-                        return Err(crate::openai::openai_stream_error(
-                            error,
-                            &error_url,
-                            body.clone(),
-                            response_headers.clone(),
-                        ));
-                    }
-                    let output = parsed_event
-                        .get("choices")
-                        .and_then(Value::as_array)
-                        .is_some_and(|choices| {
-                            choices.iter().any(|choice| {
-                                choice
-                                    .get("text")
-                                    .and_then(Value::as_str)
-                                    .is_some_and(|text| !text.is_empty())
-                            })
-                        });
-                    buffered.push(event);
-                    if output {
-                        break;
-                    }
-                } else {
-                    buffered.push(event);
-                    break;
-                }
-            }
-        }
-        let compat_name = match &self.config {
-            CompletionConfig::Compatible(config) => Some(config.provider_options_name().to_owned()),
-            CompletionConfig::Native(_) => None,
-        };
         let stream = pipe_through(
-            futures::stream::iter(buffered).chain(events),
+            events,
             OpenAICompatibleCompletionStream {
                 ctx: StreamContext::new(options, warnings, error_url, &body, &response_headers),
-                native,
-                compat_name,
+                provider_options_name: self.config.provider_options_name().to_owned(),
                 ..OpenAICompatibleCompletionStream::default()
             },
         );
@@ -429,20 +272,16 @@ impl LanguageModel for OpenAICompatibleCompletionModel {
     }
 }
 
-/// The `TransformStream` of `OpenAICompatibleCompletionLanguageModel.doStream`
-/// (and of `OpenAICompletionLanguageModel.doStream` when native).
+/// The `TransformStream` of `OpenAICompatibleCompletionLanguageModel.doStream`.
 #[derive(Default)]
 struct OpenAICompatibleCompletionStream {
     ctx: StreamContext,
-    native: bool,
-    /// The provider options name of a compatible provider; `None` for the
-    /// native OpenAI completion model.
-    compat_name: Option<String>,
+    /// The provider options name the error frames are reported under.
+    provider_options_name: String,
     started: bool,
     /// `other` until a chunk says otherwise.
     finish_reason: Option<FinishReason>,
     usage: Option<Map<String, Value>>,
-    logprobs: Option<Value>,
 }
 
 impl OpenAICompatibleCompletionStream {
@@ -467,28 +306,18 @@ impl Transformer for OpenAICompatibleCompletionStream {
         };
         self.ctx.raw(&event, controller);
         if let Some(error) = event.get("error") {
-            // @ai-sdk/openai maps the frame to a status
-            // (openai-completion-language-model.ts:305-313);
-            // @ai-sdk/openai-compatible passes it on as it is
+            // Passed on as it is
             // (openai-compatible-completion-language-model.ts:320-325).
-            let error = match &self.compat_name {
-                None => crate::openai::openai_stream_error(
-                    error,
-                    &self.ctx.url,
-                    self.ctx.request_body.clone(),
-                    self.ctx.response_headers.clone(),
-                ),
-                Some(name) => crate::openai_compatible::chat::stream_error(
-                    name,
-                    error,
-                    &self.ctx.url,
-                    self.ctx.request_body.clone(),
-                    self.ctx.response_headers.clone(),
-                ),
-            };
+            let error = crate::openai_compatible::chat::stream_error(
+                &self.provider_options_name,
+                error,
+                &self.ctx.url,
+                self.ctx.request_body.clone(),
+                self.ctx.response_headers.clone(),
+            );
             return self.report_error(error, controller);
         }
-        let parsed: CompletionResponse = match parse_response(event, self.native, true) {
+        let parsed: CompletionResponse = match parse_response(event, true) {
             Ok(parsed) => parsed,
             Err(error) => return self.report_error(error, controller),
         };
@@ -504,12 +333,7 @@ impl Transformer for OpenAICompatibleCompletionStream {
             if let Some(reason) = choice.finish_reason {
                 self.finish_reason = Some(parse_finish_reason(&reason));
             }
-            if self.native && choice.logprobs.is_some() {
-                self.logprobs = choice.logprobs;
-            }
-            if !self.native || !choice.text.is_empty() {
-                controller.text_delta("0", choice.text);
-            }
+            controller.text_delta("0", choice.text);
         }
     }
 
@@ -517,21 +341,10 @@ impl Transformer for OpenAICompatibleCompletionStream {
         if self.started {
             controller.text_end("0");
         }
-        let native = self.native;
-        let logprobs = self.logprobs;
         controller.enqueue(StreamPart::Finish {
             finish_reason: self.finish_reason.unwrap_or(FINISH_OTHER),
-            usage: usage(self.usage, native),
-            provider_metadata: native.then(|| {
-                provider_namespace(
-                    "openai",
-                    match logprobs {
-                        Some(logprobs) => json!({ "logprobs": logprobs }),
-                        None => json!({}),
-                    },
-                )
-                .expect("provider metadata must be an object")
-            }),
+            usage: usage(self.usage),
+            provider_metadata: None,
         });
     }
 }
