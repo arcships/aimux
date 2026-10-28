@@ -244,7 +244,7 @@ fn convert_tool_output(output: &ToolResultOutput) -> Result<Value, AiMuxError> {
             }
             Ok(json!(parts))
         }
-        _ => Ok(crate::openai::convert::tool_result_to_content(output)),
+        _ => Ok(aimux_provider_utils::tool_result_to_content(output)),
     }
 }
 

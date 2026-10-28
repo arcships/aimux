@@ -401,7 +401,7 @@ fn resolve_tool_result_output(
     warnings: &mut Vec<Warning>,
 ) -> Value {
     let ToolResultOutput::Content { value } = output else {
-        return crate::openai::convert::tool_result_to_content(output);
+        return aimux_provider_utils::tool_result_to_content(output);
     };
     let mut parts = Vec::new();
     for item in value {

@@ -17,8 +17,9 @@ use aimux_provider_utils::{
 };
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
+use crate::anthropic::config::{AnthropicConfig, AnthropicEndpoint};
 use crate::anthropic::options::{CANONICAL, options_name_of};
+use crate::anthropic::request_rewrite::AnthropicRequestUrl;
 use crate::shared::{Endpoint, ResolveEndpoint, TransformRequestBody};
 
 use super::fetch::{self, AwsHeaders};
@@ -187,8 +188,8 @@ impl AnthropicAwsProvider {
     /// `https://aws-external-anthropic.{region}.api.aws/v1` for the region
     /// resolved then (`getBaseURL`, anthropic-aws-provider.ts:229-231), and
     /// the headers of [`AwsHeaders`].
-    fn model_config(&self) -> AnthropicModelConfig {
-        AnthropicModelConfig {
+    fn model_config(&self) -> AnthropicConfig {
+        AnthropicConfig {
             provider: self.name.clone(),
             headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
             fetch: Some(self.fetch.clone()),
@@ -198,7 +199,11 @@ impl AnthropicAwsProvider {
             transform_request_body: self.transform_request_body.clone(),
             base_url: self.base_url.clone().unwrap_or_default(),
             provider_options_name: self.provider_options_name.clone(),
-            hooks: AnthropicModelHooks::default(),
+            build_request_url: AnthropicRequestUrl::Messages,
+            body_rewrite: None,
+            supports_native_structured_output: true,
+            supports_strict_tools: true,
+            failed_response_handler: crate::anthropic::anthropic_failed_response_handler,
             endpoint: AnthropicEndpoint::Resolved(Arc::new(AwsEndpoint {
                 auth: self.auth.clone(),
                 base_url: self.base_url.clone(),

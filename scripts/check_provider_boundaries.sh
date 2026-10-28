@@ -12,7 +12,7 @@
 #      behavior is injected (flags, hooks, a dialect), not branched on.
 #   5. The builder-era compat types and the placeholder key stay removed.
 #   6. The Anthropic family (anthropic, anthropic_aws, anthropic on Vertex)
-#      keeps no builder-era `AnthropicConfig` state, and the canonical
+#      keeps no builder-era config state, and the canonical
 #      providerOptions key is spelled once, in
 #      `anthropic/language_model_options.rs`.
 #   7. Google, Vertex and Bedrock keep no builder-era config state, the SigV4
@@ -159,13 +159,14 @@ violation 'groq / deepseek literal in the shared OpenAI or compatible package' "
 # vendor's endpoint, base URL, headers or usage accounting is its own data
 # behind a trait or hook of the shared layer. Their code (doc links aside)
 # names only the shared layers (including `stream`), the preset registry and
-# `runtime_decision`; the in-crate tests also name `test_support`.
+# the decision layer (`decision_support`, `runtime_decision`); the in-crate
+# tests also name `test_support`.
 rule4c_hits="$(
     grep -rnE 'crate::[a-z_]+' aimux-providers/src/shared \
         aimux-providers/src/openai_compatible --include='*.rs' |
         awk '{ code = $0; sub(/^[^:]*:[0-9]+:/, "", code) }
              code ~ /^[[:space:]]*\/\// { next }
-             { gsub(/crate::(shared|stream|openai|openai_compatible|preset|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
+             { gsub(/crate::(shared|stream|openai|openai_compatible|preset|decision_support|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
              code ~ /crate::[a-z_]/' || true
 )"
 violation 'shared or openai_compatible names a vendor package (implement its trait in the vendor module)' "$rule4c_hits"
@@ -179,7 +180,8 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 
 # ── Rule 6: the Anthropic family reads its settings only through the model config ─
 #
-# No `AnthropicConfig` / `body_overrides` / `api_key_source` / `from_env`, and
+# No `body_overrides` / `api_key_source` / `from_env` (the builder-era
+# config; `AnthropicConfig` is the RFC-0046 §3.5 model config now), and
 # the providerOptions namespace goes through
 # `language_model_options::anthropic_options` /
 # `CANONICAL`: a `"anthropic"` literal anywhere else would read or write a key
@@ -187,14 +189,14 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic'
 rule6_hits="$(
     # shellcheck disable=SC2086
-    { grep -rnE 'AnthropicConfig\b|body_overrides|api_key_source|from_env' \
+    { grep -rnE 'body_overrides|api_key_source|from_env' \
         $anthropic_family --include='*.rs' || true; } |
         # The upstream workspace-id test value, data rather than a `from_env` call.
         grep -v '^aimux-providers/src/anthropic_aws/tests/provider\.rs:.*"wrkspc_from_env"' |
         # A test name, not a `from_env` call.
         grep -v '^aimux-providers/src/anthropic/tests/provider\.rs:.*fn normalizes_bare_anthropic_url_from_env' || true
 )"
-violation 'Anthropic family reads builder-era AnthropicConfig state' "$rule6_hits"
+violation 'Anthropic family reads builder-era config state' "$rule6_hits"
 rule6b_hits="$(
     # shellcheck disable=SC2086
     { grep -rnE '"anthropic"' $anthropic_family --include='*.rs' --exclude-dir=tests || true; } |

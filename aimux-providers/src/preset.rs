@@ -38,7 +38,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 
 use crate::openai_compatible::chat::usage_from_raw;
 use crate::openai_compatible::{
-    Assembly, BaseUrl, ChatSettings, ConvertUsage, OpenAICompatibleProvider, TransformRequestBody,
+    Assembly, BaseUrl, ChatSettings, ConvertUsage, OpenAICompatibleProvider, ResolveBaseUrl,
+    TransformRequestBody,
 };
 use aimux_provider_utils::Credential;
 
@@ -423,10 +424,10 @@ fn assemble(
         None if descriptor.params.is_empty() && descriptor.base_url_env.is_none() => {
             BaseUrl::Fixed(validate_base_url(&descriptor.base_url)?)
         }
-        None => BaseUrl::Preset {
+        None => BaseUrl::Dynamic(Arc::new(PresetBaseUrl {
             descriptor,
-            params: Arc::new(settings.params),
-        },
+            params: settings.params,
+        })),
     };
 
     let credential = match (descriptor.auth, settings.api_key) {
@@ -526,9 +527,26 @@ fn env_value(names: &[impl AsRef<str>]) -> Option<String> {
     })
 }
 
+/// The base URL of a preset whose URL is read from the environment or
+/// expanded from template parameters, evaluated per request so creating the
+/// provider (and the preset default instances) never reads the environment
+/// and never fails.
+#[derive(Debug)]
+struct PresetBaseUrl {
+    descriptor: &'static PresetDescriptor,
+    /// The explicit template parameters of the settings.
+    params: HashMap<String, String>,
+}
+
+impl ResolveBaseUrl for PresetBaseUrl {
+    fn resolve(&self) -> Result<String, AiMuxError> {
+        resolve_base_url(self.descriptor, &self.params)
+    }
+}
+
 /// The base URL a request goes to: the descriptor's base-URL variable, else
 /// the template expanded from `explicit`, the environment and the defaults.
-pub(crate) fn resolve_base_url(
+fn resolve_base_url(
     descriptor: &PresetDescriptor,
     explicit: &HashMap<String, String>,
 ) -> Result<String, AiMuxError> {

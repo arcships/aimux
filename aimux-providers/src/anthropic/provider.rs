@@ -19,8 +19,9 @@ use aimux_provider_utils::{
 
 use aimux_provider_utils::{AuthScheme, Credential};
 
-use super::config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
+use super::config::{AnthropicConfig, AnthropicEndpoint};
 use super::language_model_options;
+use super::request_rewrite::AnthropicRequestUrl;
 use super::{AnthropicFiles, AnthropicMessagesModel, AnthropicSkills};
 
 const API_ORIGIN: &str = "https://api.anthropic.com";
@@ -203,9 +204,9 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     /// The model configuration reporting `provider` as its identity.
-    pub(super) fn model_config(&self, provider: String) -> AnthropicModelConfig {
+    pub(super) fn model_config(&self, provider: String) -> AnthropicConfig {
         let base_url = self.base_url.clone().unwrap_or_default();
-        AnthropicModelConfig {
+        AnthropicConfig {
             provider,
             headers: self.headers.clone(),
             fetch: self.fetch.clone(),
@@ -213,7 +214,11 @@ impl AnthropicProvider {
             transform_request_body: None,
             base_url,
             provider_options_name: language_model_options::options_name_of(&self.name),
-            hooks: AnthropicModelHooks::default(),
+            build_request_url: AnthropicRequestUrl::Messages,
+            body_rewrite: None,
+            supports_native_structured_output: true,
+            supports_strict_tools: true,
+            failed_response_handler: super::error::anthropic_failed_response_handler,
             // Every request resolves its configuration first; an invalid
             // `ANTHROPIC_BASE_URL` fails it there.
             endpoint: match &self.base_url {
@@ -325,7 +330,7 @@ impl ProviderDiscovery for AnthropicProvider {
 /// `ApiCall` for HTTP/transport failures and `JsonParse` when the body does
 /// not deserialize into the models list.
 pub(crate) async fn list_models_once(
-    config: &AnthropicModelConfig,
+    config: &AnthropicConfig,
 ) -> Result<Vec<RuntimeModel>, AiMuxError> {
     let config = &config.resolved().await?;
     #[derive(serde::Deserialize)]
