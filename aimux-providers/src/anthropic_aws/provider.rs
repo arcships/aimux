@@ -16,11 +16,9 @@ use aimux_provider_utils::{
 };
 
 use crate::anthropic::AnthropicMessagesModel;
-use crate::anthropic::config::{
-    AnthropicEndpoint, AnthropicHeaders, AnthropicModelConfig, AnthropicModelHooks,
-};
+use crate::anthropic::config::{AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks};
 use crate::anthropic::options::{CANONICAL, options_name_of};
-use crate::shared::TransformRequestBody;
+use crate::shared::{Credential, Endpoint, ProviderHeaders, ResolveEndpoint, TransformRequestBody};
 
 use super::fetch::{self, AwsHeaders};
 
@@ -183,33 +181,28 @@ pub struct AnthropicAwsProvider {
 }
 
 impl AnthropicAwsProvider {
-    /// The configuration of requests against `base_url`.
-    fn config_for(&self, base_url: String) -> AnthropicModelConfig {
+    /// The model configuration. The base URL and the provider headers are
+    /// resolved for every request: the explicit base URL or
+    /// `https://aws-external-anthropic.{region}.api.aws/v1` for the region
+    /// resolved then (`getBaseURL`, anthropic-aws-provider.ts:229-231), and
+    /// the headers of [`AwsHeaders`].
+    fn model_config(&self) -> AnthropicModelConfig {
         AnthropicModelConfig {
             provider: self.name.clone(),
-            headers: AnthropicHeaders::Aws(self.headers.clone()),
+            headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
             fetch: Some(self.fetch.clone()),
             // The Messages API fetches http(s) images and PDFs itself
             // (anthropic-aws-provider.ts:251-254).
             supported_urls: crate::anthropic::supported_urls(),
             transform_request_body: self.transform_request_body.clone(),
-            base_url,
+            base_url: self.base_url.clone().unwrap_or_default(),
             provider_options_name: self.provider_options_name.clone(),
             hooks: AnthropicModelHooks::default(),
-            endpoint: AnthropicEndpoint::Fixed,
-        }
-    }
-
-    /// The model configuration. With no explicit base URL every request is
-    /// built against `https://aws-external-anthropic.{region}.api.aws/v1` for
-    /// the region resolved then (`getBaseURL`, anthropic-aws-provider.ts:229-231).
-    fn model_config(&self) -> AnthropicModelConfig {
-        if let Some(base_url) = &self.base_url {
-            return self.config_for(base_url.clone());
-        }
-        AnthropicModelConfig {
-            endpoint: AnthropicEndpoint::AwsRegional(self.auth.clone()),
-            ..self.config_for(String::new())
+            endpoint: AnthropicEndpoint::Resolved(Arc::new(AwsEndpoint {
+                auth: self.auth.clone(),
+                base_url: self.base_url.clone(),
+                headers: self.headers.clone(),
+            })),
         }
     }
 
@@ -251,5 +244,30 @@ impl ProviderDiscovery for AnthropicAwsProvider {
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.model_config();
         Box::pin(async move { crate::anthropic::list_models_once(&config).await })
+    }
+}
+
+/// The endpoint of Claude Platform on AWS, resolved for every request.
+struct AwsEndpoint {
+    auth: Arc<fetch::Auth>,
+    /// The explicit base URL; `None` builds the regional one.
+    base_url: Option<String>,
+    headers: AwsHeaders,
+}
+
+#[async_trait::async_trait]
+impl ResolveEndpoint for AwsEndpoint {
+    async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
+        let base_url = match &self.base_url {
+            Some(base_url) => base_url.clone(),
+            None => format!(
+                "https://aws-external-anthropic.{}.api.aws/v1",
+                self.auth.host_region()?
+            ),
+        };
+        Ok(Endpoint {
+            base_url,
+            headers: self.headers.resolve().await?,
+        })
     }
 }

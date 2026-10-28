@@ -8,7 +8,6 @@ use aimux_core::language_model_message::{
 };
 use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
-use base64::Engine;
 use serde_json::{Map, Value, json};
 
 pub(crate) struct MessageSpec<'a> {
@@ -180,7 +179,7 @@ fn convert_file_part(file: &FilePart) -> Result<Value, AiMuxError> {
             data: FileBytes::Binary(data),
         } => file_part(
             file,
-            FileSource::Base64(&base64::engine::general_purpose::STANDARD.encode(data)),
+            FileSource::Base64(&aimux_provider_utils::convert_uint8_array_to_base64(data)),
         )?,
         FileData::Data {
             data: FileBytes::Base64(data),
@@ -262,8 +261,7 @@ fn file_part(part: &FilePart, source: FileSource<'_>) -> Result<Value, AiMuxErro
                 FileSource::Url(url) => return Ok(json!({ "type": "text", "text": url })),
                 FileSource::Base64(b64) => b64,
             };
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(b64)
+            let bytes = aimux_provider_utils::convert_base64_to_uint8_array(b64)
                 .map_err(|e| unsupported(format!("text file part is not valid base64: {e}")))?;
             let text = String::from_utf8_lossy(&bytes);
             Ok(json!({ "type": "text", "text": text }))

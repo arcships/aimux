@@ -377,12 +377,12 @@ impl ImageModel for StabilityImageModel {
                 let b64 = v.get("image").and_then(|i| i.as_str()).ok_or_else(|| {
                     AiMuxError::invalid_response_data("Stability response missing `image` field")
                 })?;
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
-                    |e| AiMuxError::InvalidResponseData {
+                aimux_provider_utils::convert_base64_to_uint8_array(b64).map_err(|e| {
+                    AiMuxError::InvalidResponseData {
                         message: format!("invalid base64 image: {e}"),
                         cause: Some(ErrorCause::source(&e)),
-                    },
-                )?
+                    }
+                })?
             }
             StabilitySuccess::Binary(bytes) => bytes.to_vec(),
         };

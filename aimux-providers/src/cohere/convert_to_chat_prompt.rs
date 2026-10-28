@@ -55,14 +55,8 @@ pub fn convert_prompt_to_cohere(
                             if get_top_level_media_type(&file.media_type) == "image" {
                                 let url = match &file.data {
                                     FileData::Data { data } => {
-                                        use base64::Engine;
-                                        let b64 = match data {
-                                            FileBytes::Binary(bytes) => {
-                                                base64::engine::general_purpose::STANDARD
-                                                    .encode(bytes)
-                                            }
-                                            FileBytes::Base64(data) => data.clone(),
-                                        };
+                                        let b64 = aimux_provider_utils::convert_to_base64(data)
+                                            .into_owned();
                                         format!(
                                             "data:{};base64,{}",
                                             resolve_full_media_type(file)?,

@@ -66,34 +66,11 @@ pub(super) async fn do_generate(
     let audio = match &options.audio {
         AudioInput::Url(_) => return Err(AudioInput::url_error()),
         AudioInput::Binary(audio) => audio.clone(),
-        AudioInput::Base64(audio) => {
-            let audio: String = audio
-                .chars()
-                .filter(|character| !matches!(character, '\t' | '\n' | '\x0c' | '\r' | ' '))
-                .map(|character| match character {
-                    '-' => '+',
-                    '_' => '/',
-                    other => other,
-                })
-                .collect();
-            if audio.ends_with('=') && !audio.len().is_multiple_of(4) {
-                return Err(AiMuxError::invalid_argument("invalid base64 padding"));
-            }
-            let config = base64::engine::general_purpose::GeneralPurposeConfig::new()
-                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent)
-                .with_decode_allow_trailing_bits(true);
-            base64::Engine::decode(
-                &base64::engine::general_purpose::GeneralPurpose::new(
-                    &base64::alphabet::STANDARD,
-                    config,
-                ),
-                audio,
-            )
+        AudioInput::Base64(audio) => aimux_provider_utils::convert_base64_to_uint8_array(audio)
             .map_err(|error| AiMuxError::InvalidArgument {
                 message: format!("invalid base64: {error}"),
                 cause: Some(ErrorCause::source(&error)),
-            })?
-        }
+            })?,
     };
     let mut definition = json!({"enhancedMode": {
         "enabled": true,

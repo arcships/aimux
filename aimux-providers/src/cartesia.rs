@@ -726,14 +726,11 @@ impl CartesiaTranscriptionModel {
 fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
     match audio {
         AudioInput::Binary(bytes) => Ok(bytes.clone()),
-        AudioInput::Base64(b64) => {
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(|e| {
-                AiMuxError::InvalidArgument {
-                    message: format!("invalid base64: {e}"),
-                    cause: Some(ErrorCause::source(&e)),
-                }
-            })
-        }
+        AudioInput::Base64(b64) => aimux_provider_utils::convert_base64_to_uint8_array(b64)
+            .map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid base64: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            }),
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
