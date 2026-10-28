@@ -19,7 +19,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::types::ProviderMetadata;
 
 use crate::openai_compatible::CompatModelConfig;
-use crate::openai_compatible::completion::{CompletionConfig, OpenAICompatibleCompletionModel};
+use crate::openai_compatible::completion::OpenAICompatibleCompletionModel;
 use crate::openai_compatible::{
     MetadataExtractor, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
     StreamMetadataExtractor, create_openai_compatible,
@@ -69,10 +69,7 @@ fn config_url(config: &CompatModelConfig, path: &str) -> String {
 }
 
 fn completion_config(model: &OpenAICompatibleCompletionModel) -> &CompatModelConfig {
-    match &model.config {
-        CompletionConfig::Compatible(config) => config,
-        CompletionConfig::Native(_) => unreachable!("a compatible model"),
-    }
+    &model.config
 }
 
 /// A server-sent-events chat response; the request body is what the probes
