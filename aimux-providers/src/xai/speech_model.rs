@@ -8,7 +8,6 @@
 //! character-level timings.
 
 use async_trait::async_trait;
-use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -172,15 +171,15 @@ impl SpeechModel for XaiSpeechModel {
             .await?;
             let envelope = resp.value;
             // Empty audio is returned as-is so the core layer reports it.
-            let audio = match &envelope.audio {
-                Some(audio) => base64::engine::general_purpose::STANDARD
-                    .decode(audio)
-                    .map_err(|e| AiMuxError::InvalidResponseData {
-                        message: format!("invalid base64 audio: {e}"),
-                        cause: Some(ErrorCause::source(&e)),
-                    })?,
-                None => Vec::new(),
-            };
+            let audio =
+                match &envelope.audio {
+                    Some(audio) => aimux_provider_utils::convert_base64_to_uint8_array(audio)
+                        .map_err(|e| AiMuxError::InvalidResponseData {
+                            message: format!("invalid base64 audio: {e}"),
+                            cause: Some(ErrorCause::source(&e)),
+                        })?,
+                    None => Vec::new(),
+                };
             (audio, resp.response_headers, resp.raw_value, Some(envelope))
         } else {
             let resp = aimux_provider_utils::post_json_to_api(

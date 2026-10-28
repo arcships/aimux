@@ -20,7 +20,7 @@ use aimux_core::video_model::{
 use crate::google::options::Namespace;
 use crate::shared::EndpointConfig;
 use aimux_core::shared::{Warning, provider_namespace};
-use aimux_core::video_model::{VideoFile, VideoFileData, VideoFrameType};
+use aimux_core::video_model::{VideoFile, VideoFrameType};
 
 /// A Google Vertex AI video generation model.
 ///
@@ -50,12 +50,7 @@ fn convert_image(file: &VideoFile, warnings: &mut Vec<Warning>) -> Option<Value>
             None
         }
         VideoFile::File { media_type, data } => {
-            let data = match data {
-                VideoFileData::Base64(data) => data.clone(),
-                VideoFileData::Binary(data) => {
-                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data)
-                }
-            };
+            let data = aimux_provider_utils::convert_to_base64(data).into_owned();
             Some(
                 json!({"bytesBase64Encoded": data, "mimeType": if media_type.is_empty() { "image/png" } else { media_type }}),
             )
