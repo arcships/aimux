@@ -9,18 +9,18 @@ use aimux_core::AiMuxError;
 use aimux_core::skills_model::{Skills, UploadSkillCallOptions, UploadSkillResult};
 use aimux_provider_utils::{HttpBody, HttpRequest};
 
-use crate::anthropic::config::AnthropicModelConfig;
+use crate::anthropic::config::AnthropicConfig;
 use crate::anthropic::language_model_options::CANONICAL;
 
 use super::skills_api::{SkillResponse, VersionResponse};
 
 /// The provider's skill upload interface.
 pub struct AnthropicSkills {
-    config: AnthropicModelConfig,
+    config: AnthropicConfig,
 }
 
 impl AnthropicSkills {
-    pub(crate) fn from_config(config: AnthropicModelConfig) -> Self {
+    pub(crate) fn from_config(config: AnthropicConfig) -> Self {
         Self { config }
     }
 }
