@@ -95,14 +95,11 @@ impl TranscriptionModel for GroqTranscriptionModel {
         let audio = match &options.audio {
             AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
-            AudioInput::Base64(data) => {
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data).map_err(
-                    |error| AiMuxError::InvalidArgument {
-                        message: format!("invalid base64: {error}"),
-                        cause: Some(ErrorCause::source(&error)),
-                    },
-                )?
-            }
+            AudioInput::Base64(data) => aimux_provider_utils::convert_base64_to_uint8_array(data)
+                .map_err(|error| AiMuxError::InvalidArgument {
+                message: format!("invalid base64: {error}"),
+                cause: Some(ErrorCause::source(&error)),
+            })?,
         };
 
         let mut form = MultipartForm::new();

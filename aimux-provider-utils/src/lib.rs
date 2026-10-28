@@ -11,6 +11,8 @@
 
 mod aisdk_pins;
 pub mod api_key;
+pub mod convert_image_model_file_to_data_uri;
+pub mod convert_inline_file_data_to_uint8_array;
 pub mod create_language_model_response_metadata;
 pub mod decision_language_model;
 pub mod download_blob;
@@ -35,6 +37,7 @@ pub mod sigv4_fetch;
 #[cfg(test)]
 mod tests;
 pub mod transform_stream;
+pub mod uint8_utils;
 pub mod url;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
 /// `ws` feature is enabled.
@@ -43,6 +46,8 @@ pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
 pub use api_key::{base_url_setting, load_api_key, load_optional_setting, load_setting};
+pub use convert_image_model_file_to_data_uri::convert_image_model_file_to_data_uri;
+pub use convert_inline_file_data_to_uint8_array::convert_inline_file_data_to_uint8_array;
 pub use create_language_model_response_metadata::create_language_model_response_metadata;
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
@@ -75,4 +80,8 @@ pub use response_handler::{
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
+pub use uint8_utils::{
+    Base64OrBytes, InvalidBase64Error, convert_base64_to_uint8_array, convert_to_base64,
+    convert_uint8_array_to_base64,
+};
 pub use url::{validate_base_url, without_trailing_slash};

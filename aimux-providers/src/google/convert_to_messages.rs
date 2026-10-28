@@ -22,7 +22,6 @@ use aimux_core::language_model_message::{
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::shared::{FileBytes, FileData};
-use base64::Engine;
 use serde_json::{Map, Value, json};
 
 // ── convertToGoogleMessages ──────────────────────────────────────────────────
@@ -151,12 +150,12 @@ fn convert_file_part(file: &FilePart) -> Value {
     let data = match &file.data {
         FileData::Data {
             data: FileBytes::Binary(bytes),
-        } => base64::engine::general_purpose::STANDARD.encode(bytes),
+        } => aimux_provider_utils::convert_uint8_array_to_base64(bytes),
         FileData::Data {
             data: FileBytes::Base64(data),
         } => data.clone(),
         FileData::Text { text } => {
-            base64::engine::general_purpose::STANDARD.encode(text.as_bytes())
+            aimux_provider_utils::convert_uint8_array_to_base64(text.as_bytes())
         }
         FileData::Url { url, original_url } => {
             let uri = if url.starts_with("gs:") {
@@ -322,12 +321,7 @@ fn convert_assistant_parts(content: &[AssistantPart], namespace: Namespace) -> V
             }
             AssistantPart::ReasoningFile(part) => {
                 if let aimux_core::shared::GeneratedFileData::Data { data } = &part.data {
-                    let data = match data {
-                        FileBytes::Binary(bytes) => {
-                            base64::engine::general_purpose::STANDARD.encode(bytes)
-                        }
-                        FileBytes::Base64(data) => data.clone(),
-                    };
+                    let data = aimux_provider_utils::convert_to_base64(data).into_owned();
                     let mut value = json!({ "inlineData": { "mimeType": part.media_type, "data": data }, "thought": true });
                     if let Some(signature) = namespace
                         .read_part(part.provider_options.as_ref())
@@ -398,12 +392,8 @@ fn convert_tool_parts(
                             ToolResultContent::Text(part) => texts.push(part.text.clone()),
                             ToolResultContent::File(file) => match &file.data {
                                 FileData::Data { data } => {
-                                    let data = match data {
-                                        FileBytes::Binary(bytes) => {
-                                            base64::engine::general_purpose::STANDARD.encode(bytes)
-                                        }
-                                        FileBytes::Base64(data) => data.clone(),
-                                    };
+                                    let data =
+                                        aimux_provider_utils::convert_to_base64(data).into_owned();
                                     files.push(json!({ "inlineData": { "mimeType": tool_file_media_type(file).unwrap_or_else(|_| file.media_type.clone()), "data": data } }));
                                 }
                                 FileData::Url { url, .. } if url.starts_with("data:") => {
@@ -474,7 +464,7 @@ fn convert_tool_parts(
                     match part {
                         ToolResultContent::Text(part) => parts.push(response(json!(part.text))),
                         ToolResultContent::File(file) => if let FileData::Data { data } = &file.data {
-                            let data = match data { FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes), FileBytes::Base64(data) => data.clone() };
+                            let data = aimux_provider_utils::convert_to_base64(data).into_owned();
                             parts.push(json!({ "inlineData": { "mimeType": tool_file_media_type(file).unwrap_or_else(|_| file.media_type.clone()), "data": data } }));
                             parts.push(json!({ "text": format!("Tool executed successfully and returned this {} as a response", if file.media_type.starts_with("image/") { "image" } else { "file" }) }));
                         } else { parts.push(json!({ "text": crate::openai::convert::tool_result_content_value(std::slice::from_ref(part))[0].to_string() })); },
