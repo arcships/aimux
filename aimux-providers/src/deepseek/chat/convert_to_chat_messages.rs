@@ -1,6 +1,5 @@
 //! Prompt to DeepSeek chat messages (`convert-to-deepseek-chat-messages.ts`).
 
-use base64::Engine;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::AiMuxError;
@@ -9,7 +8,7 @@ use aimux_core::language_model_message::{
     ToolCallPart, ToolPart, ToolResultContent, ToolResultOutput, ToolResultPart, UserPart,
 };
 use aimux_core::options::ResponseFormat;
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::FileData;
 use aimux_core::types::Warning;
 use aimux_provider_utils::resolve_full_media_type;
 
@@ -78,10 +77,7 @@ fn convert_image_part(
         }
         FileData::Data { data } => {
             let media_type = resolve_deepseek_image_media_type(part)?;
-            let data = match data {
-                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
-                FileBytes::Base64(data) => data.clone(),
-            };
+            let data = aimux_provider_utils::convert_to_base64(data).into_owned();
             let media_type = if media_type == "image/jpg" {
                 "image/jpeg"
             } else {

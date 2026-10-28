@@ -118,9 +118,7 @@ impl TranscriptionModel for GoogleTranscriptionModel {
         let audio = match &options.audio {
             AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Base64(value) => value.clone(),
-            AudioInput::Binary(value) => {
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, value)
-            }
+            AudioInput::Binary(value) => aimux_provider_utils::convert_uint8_array_to_base64(value),
         };
 
         // Unary transcription is served by the Interactions API.
@@ -370,7 +368,7 @@ pub(crate) fn live_stream(
                         Some(chunk) => {
                             let data = match chunk {
                                 AudioChunk::Base64(data) => data,
-                                AudioChunk::Binary(data) => base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data),
+                                AudioChunk::Binary(data) => aimux_provider_utils::convert_uint8_array_to_base64(data),
                             };
                             json!({"realtimeInput": {"audio": {"data": data, "mimeType": "audio/pcm;rate=16000"}}})
                         }

@@ -689,14 +689,11 @@ impl ElevenLabsTranscriptionModel {
 fn audio_input_to_bytes_stt(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
     match audio {
         AudioInput::Binary(bytes) => Ok(bytes.clone()),
-        AudioInput::Base64(b64) => {
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(|e| {
-                AiMuxError::InvalidArgument {
-                    message: format!("invalid base64: {e}"),
-                    cause: Some(ErrorCause::source(&e)),
-                }
-            })
-        }
+        AudioInput::Base64(b64) => aimux_provider_utils::convert_base64_to_uint8_array(b64)
+            .map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid base64: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            }),
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
@@ -998,8 +995,7 @@ impl ElevenLabsTranscriptionModel {
                                 (held.take().unwrap_or_default(), true)
                             }
                             Some(aimux_core::transcription_model::AudioChunk::Binary(bytes)) => {
-                                use base64::Engine as _;
-                                let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+                                let b64 = aimux_provider_utils::convert_uint8_array_to_base64(bytes);
                                 match held.replace(b64) {
                                     Some(previous) => (previous, false),
                                     // First chunk: hold it, nothing to send yet.

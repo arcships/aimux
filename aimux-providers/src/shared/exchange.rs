@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use base64::Engine as _;
 use serde_json::Value;
 
 use aimux_core::AiMuxError;
@@ -95,8 +94,9 @@ impl EndpointHeaders {
             } => {
                 let login = login.secret().await?.unwrap_or_default();
                 let password = password.secret().await?.unwrap_or_default();
-                let encoded = base64::engine::general_purpose::STANDARD
-                    .encode(format!("{login}:{password}").as_bytes());
+                let encoded = aimux_provider_utils::convert_uint8_array_to_base64(
+                    format!("{login}:{password}").as_bytes(),
+                );
                 let mut layer = HeaderMapOpt::new();
                 layer.insert(
                     "Authorization".to_string(),

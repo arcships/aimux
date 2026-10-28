@@ -6,7 +6,7 @@ use aimux_core::language_model_message::{
     AssistantPart, LanguageModelMessage, LanguageModelPrompt, ReasoningPart, TextPart,
     ToolCallPart, ToolPart, ToolResultPart, UserPart,
 };
-use aimux_core::shared::{FileBytes, FileData};
+use aimux_core::shared::FileData;
 use aimux_provider_utils::{get_top_level_media_type, resolve_full_media_type};
 use serde_json::{Value, json};
 
@@ -87,7 +87,6 @@ pub fn convert_prompt_to_mistral_messages(
 }
 
 fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
-    use base64::Engine;
     let file = match part {
         UserPart::Text(TextPart { text, .. }) => return Ok(json!({"type":"text", "text":text})),
         UserPart::File(file) => file,
@@ -105,10 +104,7 @@ fn convert_user_part(part: &UserPart) -> Result<Value, AiMuxError> {
         }
         FileData::Data { data } => {
             let full = resolve_full_media_type(file)?;
-            let data = match data {
-                FileBytes::Binary(bytes) => base64::engine::general_purpose::STANDARD.encode(bytes),
-                FileBytes::Base64(data) => data.clone(),
-            };
+            let data = aimux_provider_utils::convert_to_base64(data).into_owned();
             format!("data:{full};base64,{data}")
         }
         FileData::Url { url, .. } => url.clone(),
