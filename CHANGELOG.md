@@ -1417,6 +1417,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI, Anthropic, Google and DeepSeek converters resolve file references with
   the second. A missing DeepSeek reference now names the providers the
   reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
+- `aimux_provider_utils::{Credential, AuthScheme, ProviderHeaders}`, the
+  provider-level request headers as data (credential, fixed headers, user
+  headers, `ai-sdk-<package>/<version>` user-agent suffix), and
+  `aimux_provider_utils::{UserAgentFetch, transport_user_agent}`, the
+  user-agent edits a transport makes (RFC-0046 R1). They move out of
+  `aimux-providers`, whose providers build their headers with them unchanged.
 
 ### Fixed
 
