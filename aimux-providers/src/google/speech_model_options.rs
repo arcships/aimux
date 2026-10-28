@@ -5,8 +5,6 @@ use serde::{Deserialize as DeriveDeserialize, Serialize};
 
 use aimux_core::error::AiMuxError;
 
-use super::options::no_null;
-
 /// `z.never().optional()`: the key must not be present.
 fn never<'de, D: Deserializer<'de>>(_: D) -> Result<Option<()>, D::Error> {
     Err(D::Error::custom("Custom voices are not supported"))
@@ -32,7 +30,7 @@ pub(super) struct SpeechMetadata {
     pub(super) speaker: Option<String>,
     #[serde(
         default,
-        deserialize_with = "no_null",
+        deserialize_with = "aimux_provider_utils::optional_field",
         skip_serializing_if = "Option::is_none"
     )]
     pub(super) style: Option<String>,
@@ -42,7 +40,7 @@ pub(super) struct SpeechMetadata {
 #[serde(rename_all = "camelCase")]
 pub(super) struct Turn {
     pub(super) text: String,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub(super) speech_metadata: Option<SpeechMetadata>,
 }
 
@@ -81,11 +79,11 @@ pub(super) struct MultiSpeakerVoiceConfig {
 #[derive(DeriveDeserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct SpeechOptions {
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub(super) speech_metadata: Option<SpeechMetadata>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub(super) turns: Option<Vec<Turn>>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub(super) multi_speaker_voice_config: Option<MultiSpeakerVoiceConfig>,
 }
 

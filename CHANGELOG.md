@@ -1431,6 +1431,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when absent. Azure transcription, DeepSeek chat, Google files, speech and
   transcription, Vertex Gemini transcription, Groq chat and transcription and
   OpenAI embeddings parse their options with it.
+  `aimux_provider_utils::optional_field` is the `deserialize_with` for a zod
+  `.optional()` field (absent is `None`, an explicit `null` fails the
+  schema); it replaces the copies in the DeepSeek, Google and Groq options.
 
 ### Fixed
 
@@ -1971,7 +1974,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameter providerOptions: invalid <provider> provider options` and the
   deserialization error as its cause, the message `parseProviderOptions`
   gives. Each used its own wording with the error
-  inlined. Checks beyond the types (ranges, patterns) keep their messages.
+  inlined. An explicit `null` for an Azure transcription or OpenAI embedding
+  option fails the same way, where Azure said `Invalid Azure transcription
+  options: null field` and OpenAI `invalid openai provider options` without a
+  cause. Checks beyond the types (ranges, patterns) keep their messages.
 - Base64 that providers decode (file parts, image edits, transcription audio,
   Anthropic skill uploads, data URL media sniffing) is read as the AI SDK's
   `atob` reads it: ASCII whitespace is skipped, padding is optional and the

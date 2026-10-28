@@ -35,3 +35,18 @@ pub fn parse_provider_options<T: DeserializeOwned>(
             cause: Some(ErrorCause::source(&error)),
         })
 }
+
+/// `deserialize_with` for a field of a zod `.optional()` schema: an absent
+/// field is `None` (with `#[serde(default)]`), an explicit `null` fails the
+/// schema as a wrong type does.
+///
+/// # Errors
+///
+/// The deserializer's error for `null` or a value that does not match `T`.
+pub fn optional_field<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}

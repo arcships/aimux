@@ -3,7 +3,7 @@
 //!
 //! They are read from the namespace named by the provider (`deepseek`).
 
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use serde_json::Value;
 
 use aimux_core::error::AiMuxError;
@@ -13,7 +13,11 @@ use aimux_core::shared::SharedProviderOptions;
 /// compatibility and mapped to `enabled`.
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct DeepSeekThinkingOptions {
-    #[serde(rename = "type", default, deserialize_with = "deserialize_optional")]
+    #[serde(
+        rename = "type",
+        default,
+        deserialize_with = "aimux_provider_utils::optional_field"
+    )]
     pub kind: Option<ThinkingType>,
 }
 
@@ -43,26 +47,26 @@ pub(crate) enum ProviderReasoningEffort {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DeepSeekChatOptions {
     /// Whether to return log probabilities for generated tokens.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub logprobs: Option<bool>,
     /// Number of most likely tokens to return at each token position (0 to
     /// 20); setting it enables `logprobs`.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub top_logprobs: Option<u8>,
     /// An opaque identifier for the end user: ASCII letters, numbers,
     /// underscores and hyphens, at most 512 characters.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub user_id: Option<String>,
     /// The thinking configuration.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub thinking: Option<DeepSeekThinkingOptions>,
     /// The thinking strength.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub reasoning_effort: Option<ProviderReasoningEffort>,
     #[serde(
         rename = "strictJsonSchema",
         default,
-        deserialize_with = "deserialize_optional"
+        deserialize_with = "aimux_provider_utils::optional_field"
     )]
     pub _strict_json_schema: Option<bool>,
 }
@@ -75,15 +79,6 @@ pub(crate) struct DeepSeekMessageOptions {
     pub name: Option<String>,
     /// Whether the assistant message is a prefix DeepSeek should continue.
     pub prefix: Option<bool>,
-}
-
-// An optional schema field may be absent, but an explicit null is invalid.
-fn deserialize_optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    T::deserialize(deserializer).map(Some)
 }
 
 pub(super) fn invalid(name: &str, message: &str) -> AiMuxError {

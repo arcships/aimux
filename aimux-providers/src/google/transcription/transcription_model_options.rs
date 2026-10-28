@@ -3,7 +3,6 @@
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::google::options::no_null;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
@@ -28,15 +27,15 @@ impl Mode {
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TranscriptionOptions {
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     language_codes: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     custom_vocabulary: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     word_timestamp: Option<bool>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     diarization: Option<bool>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     mode: Option<Mode>,
 }
 
