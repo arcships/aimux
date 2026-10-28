@@ -46,7 +46,7 @@ use aimux_core::tool::{RawToolCall, Tool, ToolResult};
 use aimux_core::types::{
     FinishReason, FinishReasonUnified, NamespacedKind, ProviderMetadata, ReasoningEffort, Warning,
 };
-use aimux_provider_utils::{Transformer, pipe_through};
+use aimux_provider_utils::{ToolNameMapping, Transformer, create_tool_name_mapping, pipe_through};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use serde_json::{Value, json};
@@ -313,7 +313,7 @@ impl LanguageModel for OpenAIResponsesModel {
             endpoint,
             body,
             response_headers,
-            tool_name_mapping(options),
+            ResponsesToolNames::new(options.tools.as_deref()),
             prompt_approval_tool_call_ids(options),
         )
     }
@@ -361,7 +361,7 @@ impl LanguageModel for OpenAIResponsesModel {
             body.clone(),
             response_headers.clone(),
             options.include_raw_chunks == Some(true),
-            tool_name_mapping(options),
+            ResponsesToolNames::new(options.tools.as_deref()),
             prompt_approval_tool_call_ids(options),
         )?;
 
@@ -375,47 +375,66 @@ impl LanguageModel for OpenAIResponsesModel {
     }
 }
 
-/// The provider tools whose names the AI SDK maps back to the caller's tool
-/// names (`providerToolNames` in openai-responses-language-model.ts).
-const PROVIDER_TOOL_NAMES: &[&str] = &[
-    "code_interpreter",
-    "computer",
-    "file_search",
-    "image_generation",
-    "local_shell",
-    "shell",
-    "web_search",
-    "web_search_preview",
-    "mcp",
-    "apply_patch",
-    "tool_search",
-    "programmatic_tool_calling",
-];
+/// The tool names of one call: the AI SDK's `toolNameMapping` (with the
+/// `providerToolNames` of openai-responses-language-model.ts) and
+/// `webSearchToolName`, the caller's name for the web search tool.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ResponsesToolNames {
+    tool_name_mapping: ToolNameMapping,
+    web_search_tool_name: Option<String>,
+}
 
-fn tool_name_mapping(options: &CallOptions) -> HashMap<String, String> {
-    let mut names = HashMap::new();
-    for tool in options.tools.iter().flatten() {
-        if let aimux_core::tool::Tool::Provider(tool) = tool
-            && let Some(name) = tool.id.as_str().strip_prefix("openai.")
-            && PROVIDER_TOOL_NAMES.contains(&name)
-        {
-            names.insert(name.to_owned(), tool.name.clone());
+impl ResponsesToolNames {
+    fn new(tools: Option<&[Tool]>) -> Self {
+        let tool_name_mapping = create_tool_name_mapping(
+            tools,
+            &[
+                ("openai.code_interpreter", "code_interpreter"),
+                ("openai.computer", "computer"),
+                ("openai.file_search", "file_search"),
+                ("openai.image_generation", "image_generation"),
+                ("openai.local_shell", "local_shell"),
+                ("openai.shell", "shell"),
+                ("openai.web_search", "web_search"),
+                ("openai.web_search_preview", "web_search_preview"),
+                ("openai.mcp", "mcp"),
+                ("openai.apply_patch", "apply_patch"),
+                ("openai.tool_search", "tool_search"),
+                (
+                    "openai.programmatic_tool_calling",
+                    "programmatic_tool_calling",
+                ),
+            ],
+        );
+        let web_search_tool_name = tools
+            .unwrap_or_default()
+            .iter()
+            .find_map(|tool| match tool {
+                Tool::Provider(tool)
+                    if matches!(
+                        tool.id.as_str(),
+                        "openai.web_search" | "openai.web_search_preview"
+                    ) =>
+                {
+                    Some(tool.name.clone())
+                }
+                _ => None,
+            });
+        Self {
+            tool_name_mapping,
+            web_search_tool_name,
         }
     }
-    if let Some(name) = options.tools.iter().flatten().find_map(|tool| match tool {
-        aimux_core::tool::Tool::Provider(tool)
-            if matches!(
-                tool.id.as_str(),
-                "openai.web_search" | "openai.web_search_preview"
-            ) =>
-        {
-            Some(tool.name.clone())
-        }
-        _ => None,
-    }) {
-        names.insert("web_search".into(), name);
+
+    /// `toolNameMapping.toCustomToolName(name)`; a web search item asks for
+    /// `webSearchToolName ?? 'web_search'`.
+    fn to_custom_tool_name(&self, provider_tool_name: &str) -> String {
+        let name = match provider_tool_name {
+            "web_search" => self.web_search_tool_name.as_deref().unwrap_or("web_search"),
+            name => name,
+        };
+        self.tool_name_mapping.to_custom_tool_name(name).to_owned()
     }
-    names
 }
 
 fn prompt_approval_tool_call_ids(options: &CallOptions) -> HashMap<String, String> {
@@ -1133,7 +1152,7 @@ pub fn build_responses_generate_result(
         request_url,
         body,
         response_headers,
-        HashMap::new(),
+        ResponsesToolNames::default(),
         HashMap::new(),
     )
 }
@@ -1147,7 +1166,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
     request_url: String,
     body: Value,
     response_headers: HashMap<String, String>,
-    tool_names: HashMap<String, String>,
+    tool_names: ResponsesToolNames,
     prompt_approval_tool_call_ids: HashMap<String, String>,
 ) -> Result<GenerateResult, AiMuxError> {
     // Top-level error field.
@@ -1922,7 +1941,7 @@ where
         request_body,
         response_headers,
         include_raw_chunks,
-        HashMap::new(),
+        ResponsesToolNames::default(),
         HashMap::new(),
     )
 }
@@ -1938,7 +1957,7 @@ pub(crate) fn build_responses_event_stream_with_tools<S>(
     request_body: Value,
     response_headers: HashMap<String, String>,
     include_raw_chunks: bool,
-    tool_names: HashMap<String, String>,
+    tool_names: ResponsesToolNames,
     prompt_approval_tool_call_ids: HashMap<String, String>,
 ) -> Result<ResponsesEventStream, AiMuxError>
 where
@@ -1986,7 +2005,7 @@ struct OpenAIResponsesStream {
     ctx: StreamContext,
     provider_key: String,
     store_flag: bool,
-    tool_names: HashMap<String, String>,
+    tool_names: ResponsesToolNames,
     prompt_approval_tool_call_ids: HashMap<String, String>,
     shell_provider_executed: bool,
     /// Ongoing tool calls keyed by output_index.
@@ -2247,10 +2266,7 @@ impl Transformer for OpenAIResponsesStream {
                     "response.image_generation_call.partial_image" => {
                         controller.enqueue(StreamPart::ToolResult(aimux_core::tool::ToolResult {
                             tool_call_id: parsed["item_id"].as_str().unwrap_or_default().to_owned(),
-                            tool_name: tool_names
-                                .get("image_generation")
-                                .map_or("image_generation", String::as_str)
-                                .to_owned(),
+                            tool_name: tool_names.to_custom_tool_name("image_generation"),
                             result: json!({"result": parsed["partial_image_b64"]}),
                             preliminary: Some(true),
                             is_error: None,
@@ -2941,7 +2957,7 @@ fn escaped_delta(value: &str) -> String {
     value[1..value.len() - 1].to_owned()
 }
 
-fn provider_tool_start(item: &Value, names: &HashMap<String, String>) -> Vec<StreamPart> {
+fn provider_tool_start(item: &Value, names: &ResponsesToolNames) -> Vec<StreamPart> {
     let kind = item["type"].as_str().unwrap_or_default();
     let canonical = match kind {
         "web_search_call" => "web_search",
@@ -2953,10 +2969,7 @@ fn provider_tool_start(item: &Value, names: &HashMap<String, String>) -> Vec<Str
         "tool_search_call" if item["execution"] == "server" => "tool_search",
         _ => return Vec::new(),
     };
-    let name = names
-        .get(canonical)
-        .map_or(canonical, String::as_str)
-        .to_owned();
+    let name = names.to_custom_tool_name(canonical);
     let id = item
         .get("call_id")
         .filter(|v| !v.is_null())
@@ -3053,7 +3066,7 @@ fn hosted_shell(body: &Value) -> bool {
 pub(crate) fn provider_tool_content(
     part: &Value,
     provider_key: &str,
-    tool_names: &HashMap<String, String>,
+    tool_names: &ResponsesToolNames,
     shell_provider_executed: bool,
     mcp_tool_call_id: Option<&str>,
 ) -> Vec<GenerateContent> {
@@ -3066,12 +3079,7 @@ pub(crate) fn provider_tool_content(
                 .expect("provider metadata must be an object"),
         )
     };
-    let name = |canonical: &str| {
-        tool_names
-            .get(canonical)
-            .cloned()
-            .unwrap_or_else(|| canonical.to_string())
-    };
+    let name = |canonical: &str| tool_names.to_custom_tool_name(canonical);
     let call = |id: &str, tool_name: String, input: String, executed, dynamic, meta| {
         GenerateContent::ToolCall(RawToolCall {
             tool_call_id: id.to_string(),

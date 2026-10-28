@@ -14,6 +14,7 @@ pub mod api_key;
 pub mod convert_image_model_file_to_data_uri;
 pub mod convert_inline_file_data_to_uint8_array;
 pub mod create_language_model_response_metadata;
+pub mod create_tool_name_mapping;
 pub mod decision_language_model;
 pub mod download_blob;
 pub mod extract_response_headers;
@@ -34,6 +35,7 @@ pub mod resolvable;
 pub mod resolve_provider_reference;
 pub mod response_handler;
 pub mod sigv4_fetch;
+pub mod strip_file_extension;
 #[cfg(test)]
 mod tests;
 pub mod transform_stream;
@@ -49,6 +51,7 @@ pub use api_key::{base_url_setting, load_api_key, load_optional_setting, load_se
 pub use convert_image_model_file_to_data_uri::convert_image_model_file_to_data_uri;
 pub use convert_inline_file_data_to_uint8_array::convert_inline_file_data_to_uint8_array;
 pub use create_language_model_response_metadata::create_language_model_response_metadata;
+pub use create_tool_name_mapping::{ToolNameMapping, create_tool_name_mapping};
 pub use decision_language_model::DecisionLanguageModel;
 pub use download_blob::download_blob;
 pub use fetch::{
@@ -79,6 +82,7 @@ pub use response_handler::{
     create_status_code_error_response_handler, invalid_response_api_call, stream_error_api_call,
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
+pub use strip_file_extension::strip_file_extension;
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
 pub use uint8_utils::{
     Base64OrBytes, InvalidBase64Error, convert_base64_to_uint8_array, convert_to_base64,

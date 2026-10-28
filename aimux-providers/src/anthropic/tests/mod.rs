@@ -13,4 +13,3 @@ mod remaining_support;
 #[allow(clippy::module_inception)]
 mod sanitize_json_schema;
 mod skills;
-mod tool_name_mapping;
