@@ -207,7 +207,7 @@ impl AnthropicProvider {
         let base_url = self.base_url.clone().unwrap_or_default();
         AnthropicModelConfig {
             provider,
-            headers: self.headers.clone().into(),
+            headers: self.headers.clone(),
             fetch: self.fetch.clone(),
             supported_urls: self.supported_urls.clone(),
             transform_request_body: None,
