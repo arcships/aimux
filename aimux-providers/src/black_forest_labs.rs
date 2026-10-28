@@ -22,8 +22,7 @@ use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::error::ApiCallError;
 use aimux_core::image_model::{
-    ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
-    ImageResult,
+    ImageCallOptions, ImageFile, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 use aimux_core::shared::Warning;
 use aimux_provider_utils::HttpRequest;
@@ -219,13 +218,9 @@ impl BlackForestLabsImageModel {
     fn file_to_string(file: &ImageFile) -> Result<String, AiMuxError> {
         match file {
             ImageFile::Url { url } => Ok(url.clone()),
-            ImageFile::File { data, .. } => match data {
-                ImageFileData::Base64(s) => Ok(s.clone()),
-                ImageFileData::Binary(b) => Ok(base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    b,
-                )),
-            },
+            ImageFile::File { data, .. } => {
+                Ok(aimux_provider_utils::convert_to_base64(data).into_owned())
+            }
         }
     }
 

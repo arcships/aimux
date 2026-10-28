@@ -293,11 +293,12 @@ async fn image_file_to_bytes(
             let bytes = match data {
                 ImageFileData::Binary(bytes) => bytes.clone(),
                 ImageFileData::Base64(value) => {
-                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, value)
-                        .map_err(|error| AiMuxError::InvalidArgument {
+                    aimux_provider_utils::convert_base64_to_uint8_array(value).map_err(|error| {
+                        AiMuxError::InvalidArgument {
                             message: format!("invalid base64: {error}"),
                             cause: Some(ErrorCause::source(&error)),
-                        })?
+                        }
+                    })?
                 }
             };
             Ok((bytes, media_type.clone()))

@@ -270,10 +270,7 @@ struct FalTranscriptionResponse {
 fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
     match audio {
         AudioInput::Base64(s) => Ok(s.clone()),
-        AudioInput::Binary(bytes) => Ok(base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            bytes,
-        )),
+        AudioInput::Binary(bytes) => Ok(aimux_provider_utils::convert_uint8_array_to_base64(bytes)),
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
@@ -454,8 +451,7 @@ impl TranscriptionModel for FalTranscriptionModel {
 // ── Image model ──────────────────────────────────────────────────────────────
 
 use aimux_core::image_model::{
-    ImageCallOptions, ImageFile, ImageFileData, ImageModel, ImageOutputs, ImageResponse,
-    ImageResult,
+    ImageCallOptions, ImageModel, ImageOutputs, ImageResponse, ImageResult,
 };
 
 /// An fal.ai image generation model.
@@ -471,21 +467,6 @@ impl FalImageModel {
 
     fn endpoint_path(&self) -> String {
         format!("/{}", self.model_id)
-    }
-
-    fn file_to_data_uri(file: &ImageFile) -> Result<String, AiMuxError> {
-        match file {
-            ImageFile::Url { url } => Ok(url.clone()),
-            ImageFile::File { media_type, data } => {
-                let b64 = match data {
-                    ImageFileData::Base64(s) => s.clone(),
-                    ImageFileData::Binary(b) => {
-                        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b)
-                    }
-                };
-                Ok(format!("data:{media_type};base64,{b64}"))
-            }
-        }
     }
 
     fn convert_aspect_ratio_to_size(ar: &aimux_core::shared::AspectRatio) -> Value {
@@ -546,13 +527,17 @@ impl ImageModel for FalImageModel {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             if multi {
-                let uris: Result<Vec<String>, _> =
-                    files.iter().map(Self::file_to_data_uri).collect();
-                body.insert("image_urls".into(), json!(uris?));
+                let uris: Vec<String> = files
+                    .iter()
+                    .map(aimux_provider_utils::convert_image_model_file_to_data_uri)
+                    .collect();
+                body.insert("image_urls".into(), json!(uris));
             } else {
                 body.insert(
                     "image_url".into(),
-                    json!(Self::file_to_data_uri(&files[0])?),
+                    json!(aimux_provider_utils::convert_image_model_file_to_data_uri(
+                        &files[0]
+                    )),
                 );
                 if files.len() > 1 {
                     warnings.push(Warning::Other {
@@ -564,7 +549,12 @@ impl ImageModel for FalImageModel {
             }
         }
         if let Some(ref mask) = options.mask {
-            body.insert("mask_url".into(), json!(Self::file_to_data_uri(mask)?));
+            body.insert(
+                "mask_url".into(),
+                json!(aimux_provider_utils::convert_image_model_file_to_data_uri(
+                    mask
+                )),
+            );
         }
 
         if let Some(fal) = fal_opts {
@@ -710,8 +700,8 @@ impl ImageModel for FalImageModel {
 // ════════════════════════════════════════════════════════════════════════════
 
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoModel, VideoOperationStart,
-    VideoOperationStatus, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoFile, VideoModel, VideoOperationStart, VideoOperationStatus,
+    VideoResponse, VideoResult,
 };
 
 /// Fal video generation model — implements `VideoModel`.
@@ -754,13 +744,10 @@ impl FalVideoModel {
 fn video_file_to_data_uri(file: &VideoFile) -> Result<String, AiMuxError> {
     match file {
         VideoFile::Url { url, .. } => Ok(url.clone()),
-        VideoFile::File { media_type, data } => match data {
-            VideoFileData::Base64(s) => Ok(format!("data:{media_type};base64,{s}")),
-            VideoFileData::Binary(bytes) => {
-                let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
-                Ok(format!("data:{media_type};base64,{b64}"))
-            }
-        },
+        VideoFile::File { media_type, data } => Ok(format!(
+            "data:{media_type};base64,{}",
+            aimux_provider_utils::convert_to_base64(data)
+        )),
     }
 }
 

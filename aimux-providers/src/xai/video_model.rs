@@ -8,7 +8,6 @@
 //! polls `GET /videos/{request_id}`.
 
 use async_trait::async_trait;
-use base64::Engine as _;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -16,8 +15,8 @@ use serde_json::{Map, Value, json};
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::shared::{JsonObject, Warning};
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
-    VideoOperationStart, VideoOperationStatus, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoFile, VideoFrameType, VideoModel, VideoOperationStart,
+    VideoOperationStatus, VideoResponse, VideoResult,
 };
 use aimux_provider_utils::get_top_level_media_type;
 
@@ -95,12 +94,7 @@ fn file_to_xai_url(file: &VideoFile) -> String {
     match file {
         VideoFile::Url { url, .. } => url.clone(),
         VideoFile::File { media_type, data } => {
-            let base64 = match data {
-                VideoFileData::Base64(data) => data.clone(),
-                VideoFileData::Binary(bytes) => {
-                    base64::engine::general_purpose::STANDARD.encode(bytes)
-                }
-            };
+            let base64 = aimux_provider_utils::convert_to_base64(data).into_owned();
             format!("data:{media_type};base64,{base64}")
         }
     }

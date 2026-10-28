@@ -22,8 +22,8 @@ use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
 use aimux_core::video_model::{
-    VideoCallOptions, VideoData, VideoFile, VideoFileData, VideoFrameType, VideoModel,
-    VideoOperationStart, VideoOperationStatus, VideoResponse, VideoResult,
+    VideoCallOptions, VideoData, VideoFile, VideoFrameType, VideoModel, VideoOperationStart,
+    VideoOperationStatus, VideoResponse, VideoResult,
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
@@ -167,12 +167,7 @@ crate::impl_single_modality_provider!(RunwaymlProvider, video_model, |p, id| p.v
 fn video_file_to_prompt_image(file: &VideoFile) -> String {
     match file {
         VideoFile::Url { url, .. } => url.clone(),
-        VideoFile::File { data, .. } => match data {
-            VideoFileData::Base64(s) => s.clone(),
-            VideoFileData::Binary(bytes) => {
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
-            }
-        },
+        VideoFile::File { data, .. } => aimux_provider_utils::convert_to_base64(data).into_owned(),
     }
 }
 

@@ -4,10 +4,8 @@
 //! Aligned with Vercel AI SDK `OpenAIFiles`
 //! (`reference/ai/packages/openai/src/files/openai-files.ts`).
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileData, UploadFileResult};
-use aimux_core::shared::FileBytes;
+use aimux_core::files_model::{Files, UploadFileCallOptions, UploadFileResult};
 use aimux_provider_utils::HttpBody;
 use async_trait::async_trait;
 use serde_json::json;
@@ -15,26 +13,6 @@ use serde_json::json;
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::files::files_api::OpenAIFilesResponse;
 use crate::openai::files::files_options::parse_openai_files_options;
-
-/// Convert `UploadFileData` to raw bytes.
-///
-/// Mirrors the TS `convertInlineFileDataToUint8Array`.
-fn data_to_bytes(data: &UploadFileData) -> Result<Vec<u8>, AiMuxError> {
-    match data {
-        UploadFileData::Data { data } => match data {
-            FileBytes::Binary(bytes) => Ok(bytes.clone()),
-            FileBytes::Base64(b64) => {
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(
-                    |e| AiMuxError::InvalidArgument {
-                        message: format!("invalid base64: {e}"),
-                        cause: Some(ErrorCause::source(&e)),
-                    },
-                )
-            }
-        },
-        UploadFileData::Text { text } => Ok(text.as_bytes().to_vec()),
-    }
-}
 
 /// An OpenAI Files interface for uploading files.
 ///
@@ -65,7 +43,8 @@ impl Files for OpenAIFiles {
             .purpose
             .unwrap_or_else(|| "assistants".to_string());
 
-        let file_bytes = data_to_bytes(&options.data)?;
+        let file_bytes =
+            aimux_provider_utils::convert_inline_file_data_to_uint8_array(&options.data)?;
 
         let filename = options
             .filename

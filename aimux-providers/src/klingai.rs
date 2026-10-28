@@ -247,12 +247,9 @@ fn mode_path(mode: &str) -> &'static str {
 fn video_file_to_image_string(file: &aimux_core::video_model::VideoFile) -> String {
     match file {
         aimux_core::video_model::VideoFile::Url { url, .. } => url.clone(),
-        aimux_core::video_model::VideoFile::File { data, .. } => match data {
-            aimux_core::video_model::VideoFileData::Base64(s) => s.clone(),
-            aimux_core::video_model::VideoFileData::Binary(bytes) => {
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes)
-            }
-        },
+        aimux_core::video_model::VideoFile::File { data, .. } => {
+            aimux_provider_utils::convert_to_base64(data).into_owned()
+        }
     }
 }
 

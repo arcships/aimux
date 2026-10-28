@@ -307,7 +307,7 @@ fn convert_image(
     file: &aimux_core::video_model::VideoFile,
     warnings: &mut Vec<aimux_core::shared::Warning>,
 ) -> Option<Value> {
-    use aimux_core::video_model::{VideoFile, VideoFileData};
+    use aimux_core::video_model::VideoFile;
     match file {
         VideoFile::Url { url, .. } if url.starts_with("gs://") => {
             Some(json!({"gcsUri": url, "mimeType": "image/png"}))
@@ -317,12 +317,7 @@ fn convert_image(
             None
         }
         VideoFile::File { data, media_type } => {
-            let data = match data {
-                VideoFileData::Base64(data) => data.clone(),
-                VideoFileData::Binary(data) => {
-                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data)
-                }
-            };
+            let data = aimux_provider_utils::convert_to_base64(data).into_owned();
             Some(
                 json!({"bytesBase64Encoded": data, "mimeType": if media_type.is_empty() { "image/png" } else { media_type }}),
             )

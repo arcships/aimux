@@ -13,7 +13,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -158,12 +157,11 @@ impl TranscriptionModel for XaiTranscriptionModel {
         let audio = match &options.audio {
             AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Binary(bytes) => bytes.clone(),
-            AudioInput::Base64(data) => base64::engine::general_purpose::STANDARD
-                .decode(data)
+            AudioInput::Base64(data) => aimux_provider_utils::convert_base64_to_uint8_array(data)
                 .map_err(|e| AiMuxError::InvalidArgument {
-                    message: format!("invalid base64: {e}"),
-                    cause: Some(ErrorCause::source(&e)),
-                })?,
+                message: format!("invalid base64: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            })?,
         };
         // xAI requires `file` to be the final multipart field.
         form.file(
@@ -437,7 +435,7 @@ mod stream {
                             }
                             Some(AudioChunk::Binary(bytes)) => ws.send_binary(&bytes).await,
                             Some(AudioChunk::Base64(data)) => {
-                                match base64::engine::general_purpose::STANDARD.decode(data) {
+                                match aimux_provider_utils::convert_base64_to_uint8_array(data) {
                                     Ok(bytes) => ws.send_binary(&bytes).await,
                                     Err(e) => Err(AiMuxError::InvalidArgument { message: format!("invalid base64: {e}"), cause: Some(ErrorCause::source(&e)) }),
                                 }
