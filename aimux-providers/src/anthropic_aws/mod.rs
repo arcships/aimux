@@ -20,7 +20,6 @@
 mod fetch;
 mod provider;
 
-pub(crate) use fetch::{Auth, AwsHeaders};
 pub use provider::{
     AnthropicAwsAuth, AnthropicAwsModel, AnthropicAwsProvider, AnthropicAwsProviderSettings,
     anthropic_aws, create_anthropic_aws,

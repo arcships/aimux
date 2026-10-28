@@ -190,10 +190,7 @@ impl OpenAIProvider {
     /// A text-completion model; `provider()` is `"{name}.completion"`.
     #[must_use]
     pub fn completion(&self, model_id: &str) -> OpenAICompletionModel {
-        OpenAICompletionModel::from_native_config(
-            model_id.to_string(),
-            self.model_config("completion"),
-        )
+        OpenAICompletionModel::from_config(model_id.to_string(), self.model_config("completion"))
     }
 
     /// A Responses API model; `provider()` is `"{name}.responses"`.

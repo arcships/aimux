@@ -13,15 +13,130 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::shared::ProviderHeaders;
-use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
+use aimux_core::{AiMuxError, ErrorCause};
 use aimux_provider_utils::{
     ExchangeContext, FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, combine_headers,
-    normalize_headers,
+    is_valid_hostname_part, load_setting, normalize_headers, without_trailing_slash,
 };
 
 use super::responses::ResponsesProfile;
-use crate::azure::UrlRules;
+
+/// The environment variable Azure reads its resource name from.
+const AZURE_RESOURCE_NAME_ENV_VAR: &str = "AZURE_RESOURCE_NAME";
+
+/// What the AI SDK's `getAzureOpenAIBaseURLInfo` derives from a base URL.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BaseUrlInfo {
+    pub(crate) is_azure_openai: bool,
+    pub(crate) is_foundry_project: bool,
+    pub(crate) is_versioned: bool,
+}
+
+/// Everything the URL of an Azure OpenAI request depends on. Azure fills
+/// the values; the rules are part of the OpenAI configuration so the OpenAI
+/// models never reach into the Azure provider (RFC-0046 §3.3).
+#[derive(Clone)]
+pub(crate) struct UrlRules {
+    pub(crate) resource_name: Option<String>,
+    pub(crate) base_url: Option<String>,
+    pub(crate) info: BaseUrlInfo,
+    pub(crate) api_version: String,
+    pub(crate) use_deployment_based_urls: bool,
+}
+
+impl UrlRules {
+    /// The URL prefix: the base URL, or the resource's `/openai` endpoint.
+    pub(crate) fn prefix(&self) -> Result<String, AiMuxError> {
+        if let Some(base_url) = &self.base_url {
+            return Ok(without_trailing_slash(base_url));
+        }
+        let resource = load_setting(
+            self.resource_name.as_deref(),
+            AZURE_RESOURCE_NAME_ENV_VAR,
+            "resourceName",
+        )?;
+        // The resource name becomes part of the request host, so only a DNS
+        // label is accepted (`user@internal:8080/#` would rewrite the host).
+        if !is_valid_hostname_part(&resource) {
+            return Err(AiMuxError::invalid_argument(
+                "Invalid Azure resource name. Expected a single DNS label (letters, digits, and \
+                 hyphens). Use `base_url` for custom endpoints."
+                    .to_string(),
+            ));
+        }
+        Ok(format!("https://{resource}.openai.azure.com/openai"))
+    }
+
+    /// The AI SDK's `url({ path, modelId })`.
+    pub(crate) fn url(&self, path: &str, model_id: &str) -> Result<String, AiMuxError> {
+        let prefix = self.prefix()?;
+        let info = self.info;
+        let full = if self.use_deployment_based_urls {
+            format!("{prefix}/deployments/{model_id}{path}")
+        } else if !info.is_azure_openai || info.is_versioned {
+            // Custom gateways own Azure routing and versioning themselves, and
+            // complete Azure OpenAI v1 URLs own theirs.
+            format!("{prefix}{path}")
+        } else {
+            format!("{prefix}/v1{path}")
+        };
+        let mut url = url::Url::parse(&full).map_err(|e| AiMuxError::InvalidArgument {
+            message: format!("invalid Azure URL `{full}`: {e}"),
+            cause: Some(ErrorCause::source(&e)),
+        })?;
+        if self.use_deployment_based_urls
+            || (info.is_azure_openai && !info.is_versioned && !info.is_foundry_project)
+        {
+            set_query_param(&mut url, "api-version", &self.api_version);
+        }
+        Ok(url.to_string())
+    }
+
+    /// The Azure AI Speech transcription URL: `speech_base_url`, or the
+    /// resource's Cognitive Services host.
+    pub(crate) fn speech_url(&self, speech_base_url: Option<&str>) -> Result<String, AiMuxError> {
+        let prefix = match speech_base_url {
+            Some(prefix) => without_trailing_slash(prefix),
+            None => {
+                // Reuse the resource-name validation and lazy environment lookup.
+                let mut rules = self.clone();
+                rules.base_url = None;
+                rules
+                    .prefix()?
+                    .replace(".openai.azure.com/openai", ".cognitiveservices.azure.com")
+            }
+        };
+        Ok(format!(
+            "{prefix}/speechtotext/transcriptions:transcribe?api-version=2025-10-15"
+        ))
+    }
+}
+
+/// `URLSearchParams.set`: replace the parameter, or append it.
+pub(crate) fn set_query_param(url: &mut url::Url, name: &str, value: &str) {
+    let mut pairs: Vec<(String, String)> = url
+        .query_pairs()
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    match pairs.iter().position(|(k, _)| k == name) {
+        Some(index) => {
+            pairs[index].1 = value.to_string();
+            let mut seen = false;
+            pairs.retain(|(k, _)| {
+                if k == name {
+                    let keep = !seen;
+                    seen = true;
+                    keep
+                } else {
+                    true
+                }
+            });
+        }
+        None => pairs.push((name.to_string(), value.to_string())),
+    }
+    url.query_pairs_mut().clear().extend_pairs(pairs);
+}
 
 /// How an endpoint path (`"/chat/completions"`) becomes the full request URL.
 /// Building it can fail because a host may only know the address when a call
