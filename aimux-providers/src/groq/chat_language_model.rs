@@ -134,26 +134,22 @@ impl GroqChatLanguageModel {
                     });
                     None
                 }
-                _ => {
-                    // `mapReasoningToProviderEffort` with
-                    // minimal -> low, low, medium, high, xhigh -> high.
-                    let (mapped, name) = match reasoning {
-                        ReasoningEffort::Minimal | ReasoningEffort::Low => {
-                            (options::ReasoningEffort::Low, "low")
-                        }
-                        ReasoningEffort::Medium => (options::ReasoningEffort::Medium, "medium"),
-                        _ => (options::ReasoningEffort::High, "high"),
-                    };
-                    if reasoning.to_string() != name {
-                        warnings.push(Warning::Compatibility {
-                            feature: "reasoning".to_string(),
-                            details: Some(format!(
-                                "reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"{name}\"."
-                            )),
-                        });
-                    }
-                    Some(mapped)
-                }
+                _ => aimux_provider_utils::map_reasoning_to_provider_effort(
+                    reasoning,
+                    &[
+                        (ReasoningEffort::Minimal, "low"),
+                        (ReasoningEffort::Low, "low"),
+                        (ReasoningEffort::Medium, "medium"),
+                        (ReasoningEffort::High, "high"),
+                        (ReasoningEffort::Xhigh, "high"),
+                    ],
+                    &mut warnings,
+                )
+                .map(|effort| match effort {
+                    "low" => options::ReasoningEffort::Low,
+                    "medium" => options::ReasoningEffort::Medium,
+                    _ => options::ReasoningEffort::High,
+                }),
             };
         }
 

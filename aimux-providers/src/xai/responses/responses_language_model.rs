@@ -1291,24 +1291,25 @@ pub fn build_responses_request_body(
         } else if reasoning == ReasoningEffort::None {
             reasoning_effort = Some("none".to_string());
         } else {
-            reasoning_effort = Some(match reasoning {
-                ReasoningEffort::Minimal => "low".to_string(),
-                ReasoningEffort::Low => "low".to_string(),
-                ReasoningEffort::Medium => "medium".to_string(),
-                ReasoningEffort::High => "high".to_string(),
-                ReasoningEffort::Xhigh if model_id == "grok-4.6" => "xhigh".to_string(),
-                ReasoningEffort::Xhigh => "high".to_string(),
-                _ => reasoning.to_string(),
-            });
-            if reasoning_effort.as_deref() != Some(reasoning.to_string().as_str()) {
-                warnings.push(Warning::Compatibility {
-                    feature: "reasoning".to_string(),
-                    details: Some(format!(
-                        "reasoning \"{reasoning}\" is not directly supported by this model. mapped to effort \"{}\".",
-                        reasoning_effort.as_deref().unwrap_or_default()
-                    )),
-                });
-            }
+            reasoning_effort = aimux_provider_utils::map_reasoning_to_provider_effort(
+                reasoning,
+                &[
+                    (ReasoningEffort::Minimal, "low"),
+                    (ReasoningEffort::Low, "low"),
+                    (ReasoningEffort::Medium, "medium"),
+                    (ReasoningEffort::High, "high"),
+                    (
+                        ReasoningEffort::Xhigh,
+                        if model_id == "grok-4.6" {
+                            "xhigh"
+                        } else {
+                            "high"
+                        },
+                    ),
+                ],
+                &mut warnings,
+            )
+            .map(str::to_owned);
         }
     }
 

@@ -975,15 +975,22 @@ fn build_request_body(
         .map(str::to_string);
     let resolved_reasoning_effort: Option<String> = if provider_reasoning_effort.is_some() {
         provider_reasoning_effort
-    } else if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
-        match options.reasoning.unwrap() {
-            ReasoningEffort::None => Some("none".to_string()),
-            ReasoningEffort::Minimal => Some("low".to_string()),
-            ReasoningEffort::Low => Some("low".to_string()),
-            ReasoningEffort::Medium => Some("medium".to_string()),
-            ReasoningEffort::High => Some("high".to_string()),
-            ReasoningEffort::Xhigh => Some("xhigh".to_string()),
-            ReasoningEffort::ProviderDefault => None,
+    } else if let Some(reasoning) = options.reasoning.filter(|r| r.is_custom()) {
+        if reasoning == ReasoningEffort::None {
+            Some("none".to_string())
+        } else {
+            aimux_provider_utils::map_reasoning_to_provider_effort(
+                reasoning,
+                &[
+                    (ReasoningEffort::Minimal, "low"),
+                    (ReasoningEffort::Low, "low"),
+                    (ReasoningEffort::Medium, "medium"),
+                    (ReasoningEffort::High, "high"),
+                    (ReasoningEffort::Xhigh, "xhigh"),
+                ],
+                &mut warnings,
+            )
+            .map(str::to_owned)
         }
     } else {
         None
