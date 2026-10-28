@@ -1333,6 +1333,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `speech::google_speech_input` become crate-internal, with no public
   replacement. `google::files` and `google::transcription` keep their paths.
 
+- `aimux_providers::openai::OpenAICompletionModel`, what
+  `OpenAIProvider::completion` returns, is its own struct instead of an alias
+  of `openai_compatible::OpenAICompatibleCompletionModel` (RFC-0046 R2, #391).
+  Code that used the two names as one type, such as passing an OpenAI
+  completion model where an `OpenAICompatibleCompletionModel` is expected,
+  names `OpenAICompletionModel` instead; both still implement
+  `LanguageModel`, and the requests and results are unchanged.
+
 - `aimux_providers::xai::responses::resolve_provider_reference` is removed;
   use `aimux_provider_utils::resolve_provider_reference`, the AI SDK's
   `resolveProviderReference`, which takes the reference and the provider
