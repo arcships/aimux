@@ -1432,6 +1432,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI, Anthropic, Google and DeepSeek converters resolve file references with
   the second. A missing DeepSeek reference now names the providers the
   reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
+- `aimux_provider_utils::tool_result_to_content` and
+  `aimux_provider_utils::tool_result_content_value`: the tool message content
+  the AI SDK's chat converters build from a tool result (RFC-0046 R1). They
+  move out of the OpenAI chat converter; the OpenAI chat and responses,
+  OpenAI-compatible, Groq, Mistral, DeepSeek, Cohere, xAI, Open Responses and
+  Google converters call them from provider-utils, with unchanged output.
 - `aimux_provider_utils::create_tool_name_mapping` with `ToolNameMapping`,
   and `aimux_provider_utils::strip_file_extension`, as
   `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1). The Anthropic, OpenAI

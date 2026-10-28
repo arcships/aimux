@@ -6,4 +6,5 @@ mod convert_inline_file_data_to_uint8_array;
 mod create_tool_name_mapping;
 mod resolve_provider_reference;
 mod strip_file_extension;
+mod tool_result_to_content;
 mod uint8_utils;

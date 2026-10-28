@@ -140,7 +140,7 @@ pub(crate) fn convert_to_groq_chat_messages(
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": crate::openai::convert::tool_result_to_content(output),
+                        "content": aimux_provider_utils::tool_result_to_content(output),
                     }));
                 }
             }
