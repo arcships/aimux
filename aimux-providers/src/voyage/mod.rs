@@ -28,7 +28,8 @@ use aimux_core::provider::Provider;
 use aimux_core::reranking_model::RerankingModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 pub(crate) fn voyage_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError>
 {

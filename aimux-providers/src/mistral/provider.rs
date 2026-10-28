@@ -15,7 +15,8 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
+use crate::shared::{EndpointConfig, SupportedUrlsSource};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 use super::error::mistral_failed_response_handler;
 use super::{MistralEmbeddingModel, MistralModel, MistralSpeechModel, MistralTranscriptionModel};

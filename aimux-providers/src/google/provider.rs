@@ -30,7 +30,8 @@ use super::options::{self, Namespace};
 use super::speech_model::GoogleSpeechModel;
 use super::transcription::GoogleTranscriptionModel;
 use super::video_model::GoogleVideoModel;
-use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
+use crate::shared::{EndpointConfig, SupportedUrlsSource};
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 pub(crate) const API_KEY_ENV_VAR: &str = "GOOGLE_GENERATIVE_AI_API_KEY";

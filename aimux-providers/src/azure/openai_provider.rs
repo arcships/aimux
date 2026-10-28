@@ -29,7 +29,8 @@ use crate::openai::{
     OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
     OpenAITranscriptionModel,
 };
-use crate::shared::{AuthScheme, Credential, ProviderHeaders, is_valid_hostname_part};
+use crate::shared::is_valid_hostname_part;
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 use super::options;
 use super::transcription_model_options::{Api, AzureOptions, is_default_speech, parse_options};

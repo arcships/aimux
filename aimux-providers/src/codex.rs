@@ -48,7 +48,7 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::result::{GenerateResult, StreamResult};
 use aimux_core::types::Warning;
 
-use crate::shared::ProviderHeaders;
+use aimux_provider_utils::ProviderHeaders;
 use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, validate_base_url,
 };
@@ -61,7 +61,7 @@ use crate::openai::responses::{
     OpenAIResponsesModel, ResponsesNamespace, build_responses_request_body,
 };
 pub use crate::shared::TransformRequestBody;
-use crate::shared::{AuthScheme, Credential};
+use aimux_provider_utils::{AuthScheme, Credential};
 
 /// Default API-key base URL (official OpenAI Responses endpoint).
 pub const CODEX_API_BASE_URL: &str = "https://api.openai.com/v1";

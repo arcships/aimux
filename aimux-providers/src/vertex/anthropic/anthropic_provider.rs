@@ -23,7 +23,6 @@ use crate::anthropic::config::{
     AnthropicEndpoint, AnthropicModelConfig, AnthropicModelHooks, MessagesUrl, TransformRequestBody,
 };
 use crate::anthropic::options::options_name_of;
-use crate::shared::{Credential, ProviderHeaders};
 use crate::vertex::auth_google_auth_library::GoogleAuth;
 use crate::vertex::provider_base::Resolver;
 use crate::vertex::{
@@ -34,6 +33,7 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::provider::Provider;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable};
 use serde_json::{Value, json};
 use std::sync::{Arc, OnceLock};

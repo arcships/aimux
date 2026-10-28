@@ -28,9 +28,10 @@ use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, ProviderHeaders,
-    is_poll_control_key, poll_interval_ms, poll_until, retry_download,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
+    poll_until, retry_download,
 };
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// fal errors are FastAPI-style: `{"detail": "..."}` or
 /// `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}` where `type`

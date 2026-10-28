@@ -258,7 +258,7 @@ impl Fetch for AnthropicAwsFetch {
         // `ai-sdk-provider-utils/<v>` and before any signing, on the API-key
         // and SigV4 paths alike (anthropic-aws-fetch.ts:42-46, :126-130).
         let package = crate::shared::aisdk_pins::ANTHROPIC_AWS;
-        crate::shared::transport_user_agent(
+        aimux_provider_utils::transport_user_agent(
             &mut request.headers,
             Some(package.provider_utils),
             Some(&format!("ai-sdk-{}/{}", package.name, package.version)),

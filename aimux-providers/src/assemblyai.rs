@@ -32,9 +32,10 @@ use aimux_provider_utils::HttpBody;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, ProviderHeaders,
-    is_poll_control_key, poll_interval_ms, poll_until,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
+    poll_until,
 };
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// AssemblyAI errors: `{"error": "..."}` where `error` is a plain string
 /// (e.g. `"Authentication error, API token missing/invalid."`). No machine

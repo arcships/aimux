@@ -18,8 +18,8 @@ use crate::openai_compatible::{
     MetadataExtractor, OpenAICompatibleChatModel, OpenAICompatibleProvider,
     OpenAICompatibleProviderSettings, StreamMetadataExtractor, create_openai_compatible,
 };
-use crate::shared::{AuthScheme, Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// The user agent aimux pins (upstream's test server sees `0.0.0-test`
 /// versions and its header snapshots leave the header out).
@@ -4610,7 +4610,7 @@ mod error_structure_and_base_url {
     use aimux_provider_utils::ProviderErrorParts;
 
     use crate::openai_compatible::{Assembly, BaseUrl, ChatSettings, OpenAICompatibleProvider};
-    use crate::shared::Credential;
+    use aimux_provider_utils::Credential;
 
     fn hello() -> CallOptions {
         CallOptions::new(vec![LanguageModelMessage::user_text("hi")])

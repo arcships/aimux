@@ -278,7 +278,7 @@ pub(crate) fn options(
 #[cfg(test)]
 mod tests {
     use crate::openai::config::OpenAIUrl;
-    use crate::shared::{Credential, ProviderHeaders};
+    use aimux_provider_utils::{Credential, ProviderHeaders};
 
     use super::*;
 

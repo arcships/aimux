@@ -24,9 +24,9 @@ use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, ProviderHeaders,
-    is_poll_control_key, poll_interval_ms, retry_download,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, is_poll_control_key, poll_interval_ms, retry_download,
 };
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 /// Replicate's `prefer: wait` holds the connection for at most this long when
 /// no explicit duration is given (their documented default and maximum).

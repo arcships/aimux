@@ -15,10 +15,10 @@ use aimux_core::result::GenerateResult;
 use crate::openai::config::OpenAIModelConfig;
 use crate::openai::responses::OpenAIResponsesModel;
 use crate::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
-use crate::shared::Credential;
-use crate::shared::ProviderHeaders;
 use crate::test_support::mock_fetch::{Canned, MockFetch};
 use aimux_core::result::StreamResult;
+use aimux_provider_utils::Credential;
+use aimux_provider_utils::ProviderHeaders;
 use aimux_provider_utils::Resolvable;
 
 const GENERATE_BASE_URL: &str = "https://api.openai.com/v1";

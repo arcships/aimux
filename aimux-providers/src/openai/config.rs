@@ -12,9 +12,9 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::shared::ProviderHeaders;
 use aimux_core::AiMuxError;
 use aimux_core::language_model::SupportedUrls;
+use aimux_provider_utils::ProviderHeaders;
 use aimux_provider_utils::{
     ExchangeContext, FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, combine_headers,
     normalize_headers,

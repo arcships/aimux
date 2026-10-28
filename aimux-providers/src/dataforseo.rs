@@ -25,7 +25,8 @@ use aimux_core::search_model::{
 };
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, EndpointHeaders};
+use crate::shared::{EndpointConfig, EndpointHeaders};
+use aimux_provider_utils::Credential;
 
 /// Fixed model id for the DataForSEO search model.
 const MODEL_ID: &str = "dataforseo-search";

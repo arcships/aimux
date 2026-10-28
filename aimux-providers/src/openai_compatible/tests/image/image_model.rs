@@ -17,8 +17,8 @@ use aimux_provider_utils::{HeaderMapOpt, ProviderErrorParts};
 use crate::openai_compatible::OpenAICompatibleImageModel;
 use crate::openai_compatible::error::ErrorStructure;
 use crate::openai_compatible::{BaseUrl, ChatSettings, CompatModelConfig};
-use crate::shared::{Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, RouteFetch, Seen};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 const PROMPT: &str = "A photorealistic astronaut riding a horse";
 

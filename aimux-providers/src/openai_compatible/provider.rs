@@ -29,7 +29,7 @@ use serde_json::Value;
 
 use crate::preset::PresetDescriptor;
 use crate::shared::aisdk_pins::Package;
-use crate::shared::{AuthScheme, Credential, ProviderHeaders};
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 use super::chat::{ChatSettings, ConvertUsage, MetadataExtractor, SupportedUrlsFn};
 use super::{

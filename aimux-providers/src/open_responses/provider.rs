@@ -9,9 +9,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{
-    Credential, EndpointConfig, EndpointHeaders, ProviderHeaders, TransformRequestBody,
-};
+use crate::shared::{EndpointConfig, EndpointHeaders, TransformRequestBody};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 use super::responses::OpenResponsesModel;
 
