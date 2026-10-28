@@ -1333,6 +1333,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `speech::google_speech_input` become crate-internal, with no public
   replacement. `google::files` and `google::transcription` keep their paths.
 
+- `aimux_providers::openai::OpenAICompletionModel`, what
+  `OpenAIProvider::completion` returns, is its own struct instead of an alias
+  of `openai_compatible::OpenAICompatibleCompletionModel` (RFC-0046 R2, #391).
+  Code that used the two names as one type, such as passing an OpenAI
+  completion model where an `OpenAICompatibleCompletionModel` is expected,
+  names `OpenAICompletionModel` instead; both still implement
+  `LanguageModel`, and the requests and results are unchanged.
+
 - `aimux_providers::xai::responses::resolve_provider_reference` is removed;
   use `aimux_provider_utils::resolve_provider_reference`, the AI SDK's
   `resolveProviderReference`, which takes the reference and the provider
@@ -1438,6 +1446,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   out of `aimux-providers`; the Azure, Amazon Bedrock, Anthropic AWS and
   Google Vertex host checks and the OpenAI and Anthropic base URLs use them
   unchanged.
+- `aimux_provider_utils::tool_result_to_content` and
+  `aimux_provider_utils::tool_result_content_value`: the tool message content
+  the AI SDK's chat converters build from a tool result (RFC-0046 R1). They
+  move out of the OpenAI chat converter; the OpenAI chat and responses,
+  OpenAI-compatible, Groq, Mistral, DeepSeek, Cohere, xAI, Open Responses and
+  Google converters call them from provider-utils, with unchanged output.
 - `aimux_provider_utils::create_tool_name_mapping` with `ToolNameMapping`,
   and `aimux_provider_utils::strip_file_extension`, as
   `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1). The Anthropic, OpenAI

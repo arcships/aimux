@@ -7,4 +7,5 @@ mod create_tool_name_mapping;
 mod is_valid_hostname_part;
 mod resolve_provider_reference;
 mod strip_file_extension;
+mod tool_result_to_content;
 mod uint8_utils;

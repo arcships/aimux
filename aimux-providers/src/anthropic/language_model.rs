@@ -39,7 +39,7 @@ use super::api::{
     AnthropicResponse, AnthropicUsage, ContentBlock, DeltaBlock, FallbackModel, MessageDeltaBody,
     MessageStartData, StreamErrorData, StreamEvent, ToolCallCaller,
 };
-use super::config::AnthropicModelConfig;
+use super::config::AnthropicConfig;
 use super::convert_to_prompt::{convert_prompt_with_validator, field};
 use super::get_cache_control::CacheControlValidator;
 use super::language_model_options::{
@@ -145,13 +145,13 @@ struct PreparedCall {
 /// `provider.messages(id)`.
 pub struct AnthropicMessagesModel {
     model_id: String,
-    config: AnthropicModelConfig,
+    config: AnthropicConfig,
     generate_id: Arc<dyn Fn() -> String + Send + Sync>,
 }
 
 impl AnthropicMessagesModel {
     /// A model of the host the config describes.
-    pub(crate) fn with_config(model_id: String, config: AnthropicModelConfig) -> Self {
+    pub(crate) fn with_config(model_id: String, config: AnthropicConfig) -> Self {
         Self {
             model_id,
             config,
@@ -1322,7 +1322,7 @@ pub(crate) async fn anthropic_generate_core(
     request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
-    config: &AnthropicModelConfig,
+    config: &AnthropicConfig,
     tool_names: &ToolNameMapping,
     mark_code_execution_dynamic: bool,
     used_custom_options_key: bool,
@@ -1438,7 +1438,7 @@ pub(crate) async fn anthropic_stream_core(
     request: HttpRequest,
     body: serde_json::Value,
     warnings: Vec<Warning>,
-    config: &AnthropicModelConfig,
+    config: &AnthropicConfig,
     options: &CallOptions,
     used_custom_options_key: bool,
     uses_json_response_tool: bool,

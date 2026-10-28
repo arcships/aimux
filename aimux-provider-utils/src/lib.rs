@@ -38,6 +38,7 @@ pub mod sigv4_fetch;
 pub mod strip_file_extension;
 #[cfg(test)]
 mod tests;
+pub mod tool_result_to_content;
 pub mod transform_stream;
 pub mod uint8_utils;
 pub mod url;
@@ -83,6 +84,7 @@ pub use response_handler::{
 };
 pub use sigv4_fetch::{AwsCredentials, SigV4Fetch, SigV4Signing};
 pub use strip_file_extension::strip_file_extension;
+pub use tool_result_to_content::{tool_result_content_value, tool_result_to_content};
 pub use transform_stream::{PipeThrough, TransformStreamController, Transformer, pipe_through};
 pub use uint8_utils::{
     Base64OrBytes, InvalidBase64Error, convert_base64_to_uint8_array, convert_to_base64,

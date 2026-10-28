@@ -4669,15 +4669,26 @@ mod error_structure_and_base_url {
         }
     }
 
-    /// A preset base URL is data the request resolves: creating the provider
-    /// and the model reads nothing, a request that cannot resolve it fails,
-    /// and the next request resolves it again.
+    /// A dynamic base URL (a preset's template, a Vertex AI partner's project
+    /// and location) is data the request resolves: creating the provider and
+    /// the model reads nothing, a request that cannot resolve it fails, and
+    /// the next request resolves it again.
     #[tokio::test]
     #[serial_test::serial]
     async fn a_lazy_base_url_is_evaluated_per_request_and_its_error_fails_the_request() {
-        use crate::preset::{AuthMode, ParamSpec, PresetDescriptor};
-
         const VAR: &str = "AIMUX_TEST_COMPAT_LAZY_BASE_URL";
+
+        /// The base URL in `VAR`, read on every request.
+        #[derive(Debug)]
+        struct EnvBaseUrl;
+
+        impl crate::openai_compatible::ResolveBaseUrl for EnvBaseUrl {
+            fn resolve(&self) -> Result<String, AiMuxError> {
+                std::env::var(VAR)
+                    .map_err(|_| AiMuxError::invalid_argument(format!("{VAR} is not set")))
+            }
+        }
+
         let server = MockServer::start().await;
         serve(
             &server,
@@ -4689,28 +4700,7 @@ mod error_structure_and_base_url {
         .await;
         // SAFETY: the test is `#[serial]` and no other test reads `VAR`.
         unsafe { std::env::remove_var(VAR) };
-        let descriptor: &'static PresetDescriptor = Box::leak(Box::new(PresetDescriptor {
-            name: "acme".to_string(),
-            display: "Acme".to_string(),
-            base_url: "http://{host}/v1".to_string(),
-            env_var: String::new(),
-            auth: AuthMode::None,
-            base_url_env: Some(VAR.to_string()),
-            max_tokens_key: None,
-            convert_usage: None,
-            params: vec![ParamSpec {
-                name: "host".to_string(),
-                env: Vec::new(),
-                default: None,
-                derive: None,
-            }],
-            user_agent: ("openai-compatible", "3.0.62"),
-            structured_output_models: None,
-        }));
-        let lazy = BaseUrl::Preset {
-            descriptor,
-            params: Arc::new(std::collections::HashMap::new()),
-        };
+        let lazy = BaseUrl::Dynamic(Arc::new(EnvBaseUrl));
         let provider = provider(lazy, ChatSettings::default());
         let model = provider.chat("m");
         let error = model.do_generate(&hello()).await.unwrap_err();
