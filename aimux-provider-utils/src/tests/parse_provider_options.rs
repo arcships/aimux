@@ -83,3 +83,28 @@ fn a_strict_schema_rejects_unknown_keys() {
 
     assert!(parse_provider_options::<StrictOptions>("test", Some(&options)).is_err());
 }
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct OptionalFields {
+    #[serde(default, deserialize_with = "crate::optional_field")]
+    user: Option<String>,
+}
+
+// Not an upstream case: a zod `.optional()` field may be absent, but an
+// explicit `null` fails the schema as a wrong type does.
+#[test]
+fn optional_field_is_none_when_absent_and_rejects_null() {
+    let absent = provider_options(json!({ "test": {} }));
+    assert_eq!(
+        parse_provider_options::<OptionalFields>("test", Some(&absent)).unwrap(),
+        Some(OptionalFields { user: None })
+    );
+
+    let null = provider_options(json!({ "test": { "user": null } }));
+    let error = parse_provider_options::<OptionalFields>("test", Some(&null)).unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument { message, cause: Some(_) }
+            if message == "Invalid argument for parameter providerOptions: invalid test provider options"),
+        "{error:?}"
+    );
+}
