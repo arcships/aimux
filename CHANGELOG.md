@@ -1997,6 +1997,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The MaaS and xAI providers on Google Vertex hand the OpenAI-compatible
+  package their request body change as a `CompatibleBodyRewrite` variant
+  (`openai_compatible/request_rewrite.rs`) instead of setting the public
+  `transform_request_body` callback, as Claude on Vertex already does with
+  `AnthropicBodyRewrite` (RFC-0046 §3.5, R5). The requests are unchanged: the
+  Llama 4 models on MaaS still get `max_tokens: 8192` when none is set, and
+  Grok on Vertex still sends no `reasoning_effort`. The architecture
+  alignment document records the enums as a structural difference.
 - Base64 that providers decode (file parts, image edits, transcription audio,
   Anthropic skill uploads, data URL media sniffing) is read as the AI SDK's
   `atob` reads it: ASCII whitespace is skipped, padding is optional and the
