@@ -348,16 +348,15 @@ impl GoogleAuth {
                         encoding.encode(header.to_string()),
                         encoding.encode(claims.to_string())
                     );
-                    let der = base64::engine::general_purpose::STANDARD
-                        .decode(
-                            key.lines()
-                                .filter(|line| !line.starts_with("-----"))
-                                .collect::<String>(),
-                        )
-                        .map_err(|error| AiMuxError::InvalidArgument {
-                            message: "Invalid Google service-account private key encoding".into(),
-                            cause: Some(ErrorCause::source(&error)),
-                        })?;
+                    let der = aimux_provider_utils::convert_base64_to_uint8_array(
+                        key.lines()
+                            .filter(|line| !line.starts_with("-----"))
+                            .collect::<String>(),
+                    )
+                    .map_err(|error| AiMuxError::InvalidArgument {
+                        message: "Invalid Google service-account private key encoding".into(),
+                        cause: Some(ErrorCause::source(&error)),
+                    })?;
                     let key_pair = RsaKeyPair::from_pkcs8(&der)
                         .or_else(|_| RsaKeyPair::from_der(&der))
                         .map_err(|error| AiMuxError::InvalidArgument {
@@ -551,16 +550,15 @@ impl GoogleAuth {
             encoding.encode(claims.to_string())
         );
         let key = required(credentials, "private_key")?;
-        let mut der = base64::engine::general_purpose::STANDARD
-            .decode(
-                key.lines()
-                    .filter(|line| !line.starts_with("-----"))
-                    .collect::<String>(),
-            )
-            .map_err(|error| AiMuxError::InvalidArgument {
-                message: "Invalid Google GDCH private key encoding".into(),
-                cause: Some(ErrorCause::source(&error)),
-            })?;
+        let mut der = aimux_provider_utils::convert_base64_to_uint8_array(
+            key.lines()
+                .filter(|line| !line.starts_with("-----"))
+                .collect::<String>(),
+        )
+        .map_err(|error| AiMuxError::InvalidArgument {
+            message: "Invalid Google GDCH private key encoding".into(),
+            cause: Some(ErrorCause::source(&error)),
+        })?;
         if key.contains("BEGIN EC PRIVATE KEY") {
             let mut wrapped = vec![
                 0x02, 0x01, 0x00, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01,
@@ -1015,8 +1013,10 @@ fn basic_auth(credentials: &Value) -> Result<Vec<(String, String)>, AiMuxError> 
             "Authorization".into(),
             format!(
                 "Basic {}",
-                base64::engine::general_purpose::STANDARD
-                    .encode(format!("{id}:{}", required(credentials, "client_secret")?))
+                aimux_provider_utils::convert_uint8_array_to_base64(format!(
+                    "{id}:{}",
+                    required(credentials, "client_secret")?
+                ))
             ),
         )]),
         None => Ok(Vec::new()),

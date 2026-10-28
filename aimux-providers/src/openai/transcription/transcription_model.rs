@@ -110,14 +110,11 @@ fn is_realtime_transcription_model_id(model_id: &str) -> bool {
 fn audio_input_to_bytes(audio: &AudioInput) -> Result<Vec<u8>, AiMuxError> {
     match audio {
         AudioInput::Binary(bytes) => Ok(bytes.clone()),
-        AudioInput::Base64(b64) => {
-            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64).map_err(|e| {
-                AiMuxError::InvalidArgument {
-                    message: format!("invalid base64: {e}"),
-                    cause: Some(ErrorCause::source(&e)),
-                }
-            })
-        }
+        AudioInput::Base64(b64) => aimux_provider_utils::convert_base64_to_uint8_array(b64)
+            .map_err(|e| AiMuxError::InvalidArgument {
+                message: format!("invalid base64: {e}"),
+                cause: Some(ErrorCause::source(&e)),
+            }),
         AudioInput::Url(_) => Err(AudioInput::url_error()),
     }
 }
@@ -557,8 +554,7 @@ impl OpenAITranscriptionModel {
                     chunk = audio_next => {
                         match chunk {
                             Some(AudioChunk::Binary(bytes)) => {
-                                let b64 = base64::Engine::encode(
-                                    &base64::engine::general_purpose::STANDARD, &bytes);
+                                let b64 = aimux_provider_utils::convert_uint8_array_to_base64(&bytes);
                                 if let Err(e) = ws.send_text(&serde_json::json!({
                                     "type": "input_audio_buffer.append",
                                     "audio": b64,

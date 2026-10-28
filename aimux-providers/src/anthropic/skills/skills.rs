@@ -6,9 +6,6 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use aimux_core::AiMuxError;
-use aimux_core::ErrorCause;
-use aimux_core::files_model::UploadFileData;
-use aimux_core::shared::FileBytes;
 use aimux_core::skills_model::{Skills, UploadSkillCallOptions, UploadSkillResult};
 use aimux_provider_utils::{HttpBody, HttpRequest};
 
@@ -72,37 +69,9 @@ impl Skills for AnthropicSkills {
                 .replace('\n', "%0A")
                 .replace('"', "%22");
             body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"files[]\"; filename=\"{path}\"\r\nContent-Type: application/octet-stream\r\n\r\n").as_bytes());
-            match &file.data {
-                UploadFileData::Text { text } => body.extend_from_slice(text.as_bytes()),
-                UploadFileData::Data {
-                    data: FileBytes::Binary(bytes),
-                } => body.extend_from_slice(bytes),
-                UploadFileData::Data {
-                    data: FileBytes::Base64(data),
-                } => {
-                    use base64::Engine;
-                    let normalized = data
-                        .replace('-', "+")
-                        .replace('_', "/")
-                        .chars()
-                        .filter(|character| {
-                            !matches!(character, '\t' | '\n' | '\u{000C}' | '\r' | ' ')
-                        })
-                        .collect::<String>();
-                    let engine = base64::engine::GeneralPurpose::new(
-                        &base64::alphabet::STANDARD,
-                        base64::engine::GeneralPurposeConfig::new().with_decode_padding_mode(
-                            base64::engine::DecodePaddingMode::Indifferent,
-                        ),
-                    );
-                    body.extend_from_slice(&engine.decode(normalized).map_err(|error| {
-                        AiMuxError::InvalidArgument {
-                            message: format!("invalid base64: {error}"),
-                            cause: Some(ErrorCause::source(&error)),
-                        }
-                    })?);
-                }
-            }
+            body.extend_from_slice(
+                &aimux_provider_utils::convert_inline_file_data_to_uint8_array(&file.data)?,
+            );
             body.extend_from_slice(b"\r\n");
         }
         body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
