@@ -6,7 +6,7 @@ use aimux_core::language_model_message::{
     AssistantPart, FilePart, LanguageModelMessage, LanguageModelPrompt, TextPart, ToolPart,
     ToolResultOutput, UserPart,
 };
-use aimux_core::shared::{FileBytes, FileData, SharedProviderOptions};
+use aimux_core::shared::{FileData, SharedProviderOptions};
 use aimux_provider_utils::{
     get_top_level_media_type, resolve_full_media_type, tool_result_to_content,
 };
