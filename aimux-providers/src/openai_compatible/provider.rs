@@ -31,6 +31,7 @@ use crate::shared::aisdk_pins::Package;
 use crate::shared::{AuthScheme, Credential, ProviderHeaders};
 
 use super::chat::{ChatSettings, ConvertUsage, MetadataExtractor, SupportedUrlsFn};
+use super::request_rewrite::CompatibleBodyRewrite;
 use super::{
     OpenAICompatibleChatModel, OpenAICompatibleCompletionModel, OpenAICompatibleEmbeddingModel,
     OpenAICompatibleImageModel, TransformRequestBody,
@@ -134,6 +135,7 @@ pub fn create_openai_compatible(
         BaseUrl::Fixed(base_url),
         headers,
         None,
+        None,
         crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
     )
 }
@@ -144,12 +146,15 @@ pub fn create_openai_compatible(
 /// `headers` are not read; the user-agent part of `package` (the
 /// openai-compatible version the calling package depends on) is added to
 /// `headers`. `fetch_headers` go over the per-call headers, as headers a
-/// package adds in its own fetch wrapper do.
+/// package adds in its own fetch wrapper do. `body_rewrite` is the package's
+/// own change to the chat request body, run before
+/// `settings.transform_request_body`.
 pub(crate) fn build(
     settings: OpenAICompatibleProviderSettings,
     base_url: BaseUrl,
     headers: ProviderHeaders,
     fetch_headers: Option<Arc<dyn ResolveFetchHeaders>>,
+    body_rewrite: Option<CompatibleBodyRewrite>,
     package: Package,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let defaults = ChatSettings::default();
@@ -161,6 +166,7 @@ pub(crate) fn build(
         headers: None,
         query_params: settings.query_params,
         fetch: settings.fetch,
+        body_rewrite,
         transform_request_body: settings.transform_request_body,
         package,
         chat: ChatSettings {
@@ -191,6 +197,9 @@ pub(crate) struct Assembly {
     pub headers: Option<HeaderMapOpt>,
     pub query_params: Option<HashMap<String, String>>,
     pub fetch: Option<FetchFunction>,
+    /// A host package's own rewrite of the chat request body.
+    pub body_rewrite: Option<CompatibleBodyRewrite>,
+    /// The user's rewrite of the chat request body, after `body_rewrite`.
     pub transform_request_body: Option<TransformRequestBody>,
     pub chat: ChatSettings,
     /// The package the user-agent names: its `ai-sdk-{name}/{version}` part
@@ -207,6 +216,7 @@ pub struct OpenAICompatibleProvider {
     headers: ProviderHeaders,
     fetch_headers: Option<Arc<dyn ResolveFetchHeaders>>,
     fetch: Option<FetchFunction>,
+    body_rewrite: Option<CompatibleBodyRewrite>,
     transform_request_body: Option<TransformRequestBody>,
     chat: ChatSettings,
 }
@@ -234,6 +244,7 @@ impl OpenAICompatibleProvider {
                 assembly.fetch,
                 assembly.package,
             )),
+            body_rewrite: assembly.body_rewrite,
             transform_request_body: assembly.transform_request_body,
             chat: assembly.chat,
         })
@@ -247,6 +258,7 @@ impl OpenAICompatibleProvider {
             headers: self.headers.clone(),
             fetch_headers: self.fetch_headers.clone(),
             fetch: self.fetch.clone(),
+            body_rewrite: self.body_rewrite.filter(|_| method == "chat"),
             transform_request_body: if method == "chat" {
                 self.transform_request_body.clone()
             } else {
@@ -398,6 +410,10 @@ pub(crate) struct CompatModelConfig {
     pub fetch_headers: Option<Arc<dyn ResolveFetchHeaders>>,
     /// Transport; `None` uses the process default, resolved per request.
     pub fetch: Option<FetchFunction>,
+    /// The host package's rewrite of the request body (chat only).
+    pub body_rewrite: Option<CompatibleBodyRewrite>,
+    /// The user's rewrite of the request body (chat only), after
+    /// `body_rewrite`.
     pub transform_request_body: Option<TransformRequestBody>,
     pub chat: ChatSettings,
 }
@@ -521,8 +537,12 @@ impl CompatModelConfig {
         request
     }
 
-    /// Run the provider-level body rewrite, when there is one.
+    /// Run the host's body rewrite, then the user's, when there are any.
     pub(crate) fn transform_body(&self, body: Value) -> Value {
+        let body = match self.body_rewrite {
+            Some(rewrite) => rewrite.apply(body),
+            None => body,
+        };
         match &self.transform_request_body {
             Some(transform) => transform(body),
             None => body,

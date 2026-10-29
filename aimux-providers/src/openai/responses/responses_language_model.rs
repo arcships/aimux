@@ -2088,10 +2088,12 @@ impl Transformer for OpenAIResponsesStream {
                     *stream_errored = true;
                     *final_finish_reason = Some(FINISH_ERROR);
                     controller.enqueue(StreamPart::Error {
-                        error: aimux_provider_utils::stream_error_api_call(
-                            CHAT_COMPLETIONS_MISMATCH,
-                            None,
-                            None,
+                        error: aimux_provider_utils::create_provider_stream_error(
+                            aimux_provider_utils::ProviderStreamError {
+                                message: CHAT_COMPLETIONS_MISMATCH.to_owned(),
+                                data: parsed.clone(),
+                                ..Default::default()
+                            },
                             &parsed,
                             url.clone(),
                             request_body.clone(),

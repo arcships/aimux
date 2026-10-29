@@ -397,13 +397,17 @@ impl CodexModel {
                             // Provider-declared in-band failure: keep the
                             // observed 2xx envelope status (§2.2). The shared
                             // helper redacts the raw request context.
-                            failure = Some(aimux_provider_utils::stream_error_api_call(
-                                message,
-                                err_obj
-                                    .and_then(|e| e.get("code").or_else(|| e.get("type")))
-                                    .and_then(|c| c.as_str())
-                                    .map(std::string::ToString::to_string),
-                                Some(200),
+                            failure = Some(aimux_provider_utils::create_provider_stream_error(
+                                aimux_provider_utils::ProviderStreamError {
+                                    message: message.to_owned(),
+                                    provider_code: err_obj
+                                        .and_then(|e| e.get("code").or_else(|| e.get("type")))
+                                        .and_then(|c| c.as_str())
+                                        .map(std::string::ToString::to_string),
+                                    status_code: Some(200),
+                                    is_retryable: None,
+                                    data: data.clone(),
+                                },
                                 &data,
                                 endpoint.clone(),
                                 body.clone(),
@@ -638,5 +642,56 @@ mod tests {
         assert!(!printed.contains("at-secret-value"));
         assert!(!printed.contains("rt-secret-value"));
         assert!(printed.contains("3600"));
+    }
+
+    // The error a subscription `response.failed` event becomes: the observed
+    // 200 status, the event as response body and data.
+    #[tokio::test]
+    async fn subscription_response_failed_becomes_an_api_call_error() {
+        use aimux_core::error::AiMuxError;
+        use aimux_core::language_model::LanguageModel;
+        use aimux_core::language_model_message::LanguageModelMessage;
+        use aimux_core::options::CallOptions;
+        use aimux_provider_utils::Resolvable;
+        use serde_json::json;
+
+        use crate::test_support::mock_fetch::{Canned, MockFetch};
+
+        let event = json!({
+            "type": "response.failed",
+            "response": { "error": { "code": "server_error", "message": "Something went wrong" } },
+        });
+        let mock = MockFetch::new(vec![Canned {
+            status: 200,
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+            body: format!("data: {event}\n\n").into_bytes(),
+        }]);
+        let provider = super::create_codex(super::CodexProviderSettings {
+            mode: super::CodexMode::ChatGptAccount {
+                token: Resolvable::Value("token".into()),
+                account_id: None,
+            },
+            fetch: Some(mock.transport()),
+            ..Default::default()
+        })
+        .expect("valid settings");
+
+        let error = provider
+            .responses("gpt-5")
+            .do_generate(&CallOptions::new(vec![LanguageModelMessage::user_text(
+                "Hello",
+            )]))
+            .await
+            .expect_err("the response failed");
+
+        let AiMuxError::ApiCall(error) = error else {
+            panic!("expected an ApiCall error, got {error:?}");
+        };
+        assert_eq!(error.message, "Something went wrong");
+        assert_eq!(error.provider_code.as_deref(), Some("server_error"));
+        assert_eq!(error.status_code, Some(200));
+        assert!(!error.is_retryable);
+        assert_eq!(error.data, Some(event.clone()));
+        assert_eq!(error.response_body, Some(event.to_string()));
     }
 }

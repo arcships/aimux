@@ -39,10 +39,14 @@ pub(crate) fn google_stream_error(
             "status": error.status,
         }
     });
-    aimux_provider_utils::stream_error_api_call(
-        error.message.clone(),
-        error.status.clone(),
-        status_code,
+    aimux_provider_utils::create_provider_stream_error(
+        aimux_provider_utils::ProviderStreamError {
+            message: error.message.clone(),
+            provider_code: error.status.clone(),
+            status_code,
+            is_retryable: None,
+            data: data.clone(),
+        },
         &data,
         url,
         request_body_values,

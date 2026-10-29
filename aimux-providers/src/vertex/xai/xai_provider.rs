@@ -2,7 +2,8 @@
 //! `-node` wrapper).
 
 use crate::openai_compatible::{
-    OpenAICompatibleChatModel, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
+    CompatibleBodyRewrite, OpenAICompatibleChatModel, OpenAICompatibleProvider,
+    OpenAICompatibleProviderSettings,
 };
 use crate::vertex::partner_provider::{VertexXaiProviderSettings, partner_parts};
 use aimux_core::embedding_model::EmbeddingModel;
@@ -47,15 +48,6 @@ fn xai_usage(usage: Option<&Value>) -> Usage {
     }
 }
 
-/// Upstream's `transformGoogleVertexXaiRequestBody` (:131-134): Vertex's Grok
-/// endpoint takes no `reasoning_effort`.
-fn xai_request_body(mut body: Value) -> Value {
-    if let Some(object) = body.as_object_mut() {
-        object.remove("reasoning_effort");
-    }
-    body
-}
-
 /// Create a Vertex AI xAI provider: Grok partner models over the
 /// OpenAI-compatible Chat Completions API. Models report
 /// `googleVertex.xai.chat`.
@@ -81,7 +73,6 @@ pub fn create_google_vertex_xai(
                     std::iter::once(("image/*".to_string(), vec![http.clone()])).collect(),
                 )))
             })),
-            transform_request_body: Some(Arc::new(xai_request_body)),
             convert_usage: Some(Arc::new(xai_usage)),
             ..Default::default()
         },
@@ -93,6 +84,7 @@ pub fn create_google_vertex_xai(
             None,
         ),
         Some(fetch_headers),
+        Some(CompatibleBodyRewrite::VertexXai),
         crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )?;
     Ok(VertexXaiProvider(provider))

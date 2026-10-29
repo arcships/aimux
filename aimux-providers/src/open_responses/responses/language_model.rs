@@ -330,10 +330,14 @@ impl LanguageModel for OpenResponsesModel {
                 .or_else(|| err_obj.get("type"))
                 .and_then(|c| c.as_str())
                 .map(std::string::ToString::to_string);
-            return Err(aimux_provider_utils::stream_error_api_call(
-                message,
-                provider_code,
-                status_code,
+            return Err(aimux_provider_utils::create_provider_stream_error(
+                aimux_provider_utils::ProviderStreamError {
+                    message: message.into(),
+                    provider_code,
+                    status_code,
+                    is_retryable: None,
+                    data: event.clone(),
+                },
                 event,
                 endpoint,
                 stream_body,
@@ -742,13 +746,18 @@ fn stream_error(
     request_body: &Value,
     response_headers: &HashMap<String, String>,
 ) -> AiMuxError {
-    aimux_provider_utils::stream_error_api_call(
-        error
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-        error_code(error),
-        None,
+    aimux_provider_utils::create_provider_stream_error(
+        aimux_provider_utils::ProviderStreamError {
+            message: error
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            provider_code: error_code(error),
+            status_code: None,
+            is_retryable: None,
+            data: event.clone(),
+        },
         event,
         url,
         request_body.clone(),

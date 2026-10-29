@@ -90,20 +90,20 @@ pub(crate) fn xai_stream_error(
         Some("bad_request" | "context_length_exceeded" | "invalid_request_error") => Some(400),
         _ => None,
     });
-    let insufficient_quota = provider_code.as_deref() == Some("insufficient_quota");
-    let mut result = aimux_provider_utils::stream_error_api_call(
-        message,
-        provider_code,
-        status_code,
+    let is_retryable = (provider_code.as_deref() == Some("insufficient_quota")).then_some(false);
+    aimux_provider_utils::create_provider_stream_error(
+        aimux_provider_utils::ProviderStreamError {
+            message: message.to_owned(),
+            provider_code,
+            status_code,
+            is_retryable,
+            data: event.clone(),
+        },
         event,
         url,
         request_body_values,
         response_headers,
-    );
-    if insufficient_quota && let AiMuxError::ApiCall(error) = &mut result {
-        error.is_retryable = false;
-    }
-    result
+    )
 }
 
 pub(crate) fn xai_successful_response_handler<T>() -> aimux_provider_utils::ResponseHandler<T>
