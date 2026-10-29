@@ -102,6 +102,7 @@ fn image_model(
                 Some(server.transport()),
                 crate::shared::aisdk_pins::OPENAI_COMPATIBLE,
             )),
+            body_rewrite: None,
             transform_request_body: None,
             chat,
         },

@@ -31,6 +31,7 @@ pub mod embedding;
 mod error;
 pub mod image;
 mod provider;
+pub(crate) mod request_rewrite;
 mod utils;
 
 pub use chat::{
@@ -50,6 +51,7 @@ pub(crate) use chat::ChatSettings;
 pub(crate) use provider::{
     Assembly, BaseUrl, CompatModelConfig, ResolveBaseUrl, ResolveFetchHeaders, build,
 };
+pub(crate) use request_rewrite::CompatibleBodyRewrite;
 
 #[cfg(test)]
 mod tests;

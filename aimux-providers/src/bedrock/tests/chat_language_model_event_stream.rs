@@ -294,6 +294,55 @@ mod amazon_bedrock_chat_language_model_do_stream {
         }
     }
 
+    // Not an upstream case: an exception frame's error carries the request
+    // body bounded and redacted, and the frame as its response body, like
+    // every other provider's in-stream error.
+    #[tokio::test]
+    async fn exception_frame_error_redacts_the_request_body() {
+        let long_prompt = "a".repeat(5000);
+        let exception = json!({ "message": "Too many requests" });
+        let model = model_streaming(
+            "anthropic.claude-3-haiku-20240307-v1:0",
+            &[encode(
+                &[
+                    (":message-type", "exception"),
+                    (":exception-type", "throttlingException"),
+                    (":content-type", "application/json"),
+                ],
+                exception.to_string().as_bytes(),
+            )],
+        );
+        let options: CallOptions = serde_json::from_value(json!({
+            "prompt": [{ "role": "user", "content": [{ "type": "text", "text": long_prompt }] }],
+        }))
+        .expect("valid call options");
+
+        let parts: Vec<StreamPart> = model
+            .do_stream(&options)
+            .await
+            .expect("stream starts")
+            .stream
+            .map(|item| item.expect("stream does not throw"))
+            .collect()
+            .await;
+        let Some(StreamPart::Error {
+            error: AiMuxError::ApiCall(error),
+        }) = parts
+            .iter()
+            .find(|part| matches!(part, StreamPart::Error { .. }))
+        else {
+            panic!("expected a provider stream error, got {parts:?}");
+        };
+
+        let request_body = error.request_body_values.to_string();
+        assert!(!request_body.contains(&long_prompt));
+        assert!(request_body.contains("[STRING 5000 bytes]"));
+        assert_eq!(
+            error.response_body,
+            Some(json!({ "throttlingException": exception }).to_string())
+        );
+    }
+
     /// upstream: @ai-sdk/amazon-bedrock src/amazon-bedrock-chat-language-model-event-stream.test.ts › AmazonBedrockChatLanguageModel doStream › streams reasoning redacted as `redactedContent` for replay
     #[tokio::test]
     async fn streams_reasoning_redacted_as_redacted_content_for_replay() {
