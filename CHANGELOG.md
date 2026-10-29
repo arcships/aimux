@@ -1346,6 +1346,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `resolveProviderReference`, which takes the reference and the provider
   name the same way (RFC-0046 R1).
 
+- `aimux_provider_utils::stream_error_api_call` is replaced by
+  `create_provider_stream_error` (RFC-0046 R1). Pass the message, provider
+  code, status, retryability and raw data as a `ProviderStreamError`, then
+  the event, URL, request body and response headers as before.
+  `is_retryable: None` keeps the old rule (retryable from the status); the
+  error data is the `data` field instead of the event.
+
 - `aimux_providers::anthropic::tool_name_mapping` is removed. Its
   `ToolNameMapping` is `aimux_provider_utils::ToolNameMapping`, built with
   `aimux_provider_utils::create_tool_name_mapping(tools, provider_tool_names)`
@@ -1446,6 +1453,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI, Anthropic, Google and DeepSeek converters resolve file references with
   the second. A missing DeepSeek reference now names the providers the
   reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
+- `aimux_provider_utils::create_provider_stream_error` and
+  `ProviderStreamError`, as `@ai-sdk/provider-utils` 5.0.55
+  `createProviderStreamError` (RFC-0046 R1). Every in-stream error event
+  (Anthropic, DeepSeek, Google, Groq, Hugging Face, Mistral, OpenAI, OpenAI
+  compatible, Open Responses, xAI and the Codex subscription channel) is
+  built with it; each provider keeps only its own status table.
 - `aimux_provider_utils::tool_result_to_content` and
   `aimux_provider_utils::tool_result_content_value`: the tool message content
   the AI SDK's chat converters build from a tool result (RFC-0046 R1). They
@@ -1460,6 +1473,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Amazon Bedrock's in-stream exception errors redact and bound the request
+  body, sanitize the URL and carry the frame as the response body and the
+  response headers, as the other providers' stream errors do. The request
+  body was copied as sent, data URLs and long prompts included.
 - Bedrock document names drop everything from the first dot of the filename,
   as the AI SDK's `stripFileExtension` does: `report.v2.pdf` is sent as
   `report`, not `reportv2`.
