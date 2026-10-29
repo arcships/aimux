@@ -74,7 +74,7 @@ impl GoogleSpeechModel {
         // Vertex reads `googleVertex`/`vertex` (then `google`); every other
         // Google provider reads `google`. The constructor decides.
         let raw = self.namespace.read(options.provider_options.as_ref());
-        let google = parse_options(raw)?;
+        let google = parse_options(self.namespace, options.provider_options.as_ref())?;
 
         // Older Gemini families require prompt-based directions. Default newer
         // and custom model IDs to structured speech.

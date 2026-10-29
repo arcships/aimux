@@ -1168,3 +1168,24 @@ mod older_files {
         }
     }
 }
+
+/// aimux's own: an option of the wrong type fails as `parseProviderOptions`
+/// fails, with the schema error as the cause, before any request.
+#[tokio::test]
+async fn wrong_typed_options_fail_with_the_parse_provider_options_message() {
+    let server = MockServer::start().await;
+    let error = files_for(&server)
+        .upload_file(&upload_options(
+            vec![1],
+            "text/plain",
+            Some(json!({ "google": { "pollIntervalMs": "soon" } })),
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, aimux_core::AiMuxError::InvalidArgument { message, cause: Some(_) }
+            if message == "Invalid argument for parameter providerOptions: invalid google provider options"),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

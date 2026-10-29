@@ -112,9 +112,10 @@ impl TranscriptionModel for GoogleTranscriptionModel {
             )));
         }
         let timestamp = aimux_core::Timestamp::now();
-        let parsed = TranscriptionOptions::parse(crate::google::options::google_options(
+        let parsed = TranscriptionOptions::parse(
+            crate::google::options::Namespace::Google,
             options.provider_options.as_ref(),
-        ))?;
+        )?;
         let audio = match &options.audio {
             AudioInput::Url(_) => return Err(AudioInput::url_error()),
             AudioInput::Base64(value) => value.clone(),
@@ -226,9 +227,10 @@ impl GoogleTranscriptionModel {
         use aimux_core::transcription_model::TranscriptionRequest;
         use aimux_provider_utils::ws::{WebSocketRequest, ws_connect};
 
-        let parsed = TranscriptionOptions::parse(crate::google::options::google_options(
+        let parsed = TranscriptionOptions::parse(
+            crate::google::options::Namespace::Google,
             options.provider_options.as_ref(),
-        ))?;
+        )?;
         validate_live_input_audio_format(&options)?;
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;

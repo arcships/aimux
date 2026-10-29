@@ -1062,3 +1062,21 @@ mod older_transcription {
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 }
+
+/// aimux's own: an option of the wrong type fails as `parseProviderOptions`
+/// fails, with the schema error as the cause.
+#[tokio::test]
+async fn wrong_typed_options_fail_with_the_parse_provider_options_message() {
+    let mock = MockFetch::new(vec![]);
+    let (model, _instances) = create_model("gemini-3.5-transcribe", Some(&mock));
+    let error = model
+        .do_generate(&wav_call(google_options(json!({ "languageCodes": "en" }))))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument { message, cause: Some(_) }
+            if message == "Invalid argument for parameter providerOptions: invalid google provider options"),
+        "{error:?}"
+    );
+    assert!(mock.seen().is_empty());
+}

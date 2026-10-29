@@ -5,7 +5,7 @@ use serde::Deserialize;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 
-use super::chat_language_model_options::{invalid, parse_namespace};
+use super::chat_language_model_options::invalid;
 
 /// The `providerOptions` of a file part.
 #[derive(Debug, Default, Deserialize)]
@@ -29,7 +29,7 @@ pub(crate) fn parse_file_part_options(
     name: &str,
 ) -> Result<DeepSeekFilePartOptions, AiMuxError> {
     let options: DeepSeekFilePartOptions =
-        parse_namespace(provider_options.and_then(|all| all.get(name)), name)?;
+        aimux_provider_utils::parse_provider_options(name, provider_options)?.unwrap_or_default();
     if options.file_data == Some(false) {
         return Err(invalid(name, "fileData must be true"));
     }

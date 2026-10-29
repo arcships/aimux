@@ -1453,6 +1453,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI, Anthropic, Google and DeepSeek converters resolve file references with
   the second. A missing DeepSeek reference now names the providers the
   reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
+- `aimux_provider_utils::parse_provider_options`, as `@ai-sdk/provider-utils`
+  5.0.55 `parseProviderOptions` (RFC-0046 R1): one provider's
+  `providerOptions` namespace deserialized into its options type, `None`
+  when absent. Azure transcription, DeepSeek chat, Google files, speech and
+  transcription, Vertex Gemini transcription, Groq chat and transcription and
+  OpenAI embeddings parse their options with it.
+  `aimux_provider_utils::optional_field` is the `deserialize_with` for a zod
+  `.optional()` field (absent is `None`, an explicit `null` fails the
+  schema); it replaces the copies in the DeepSeek, Google and Groq options.
 - `aimux_provider_utils::create_provider_stream_error` and
   `ProviderStreamError`, as `@ai-sdk/provider-utils` 5.0.55
   `createProviderStreamError` (RFC-0046 R1). Every in-stream error event
@@ -2014,6 +2023,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A provider option of the wrong type for Azure transcription, DeepSeek chat,
+  Google files, speech and transcription, Vertex Gemini transcription, Groq
+  chat and transcription or OpenAI embeddings fails with `Invalid argument for
+  parameter providerOptions: invalid <provider> provider options` and the
+  deserialization error as its cause, the message `parseProviderOptions`
+  gives. Each used its own wording with the error
+  inlined. An explicit `null` for an Azure transcription or OpenAI embedding
+  option fails the same way, where Azure said `Invalid Azure transcription
+  options: null field` and OpenAI `invalid openai provider options` without a
+  cause. Checks beyond the types (ranges, patterns) keep their messages.
 - The MaaS and xAI providers on Google Vertex hand the OpenAI-compatible
   package their request body change as a `CompatibleBodyRewrite` variant
   (`openai_compatible/request_rewrite.rs`) instead of setting the public
