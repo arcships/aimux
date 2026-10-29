@@ -275,64 +275,6 @@ where
     })
 }
 
-/// Build the `ApiCallError` for an error event delivered *inside* a stream.
-///
-/// The event rides on an already-successful response, so its 2xx status is
-/// not the error's: `status_code` is the status the caller maps the frame
-/// to — a numeric HTTP status the payload carried, or the status the
-/// provider's upstream package infers for such a frame (OpenAI's
-/// `createOpenAIProviderStreamError` from `code`/`type`, Anthropic's from the
-/// error type) — and retryability derives from that status alone. A `retry_after_ms` / `retry_after` field in the payload is
-/// surfaced through the response-headers channel so
-/// `AiMuxError::retry_after_hint()` observes it.
-///
-/// Callers reach this from inside a live stream holding the *raw* request
-/// body and URL they built — unlike the exchange path, where `post_*_to_api`
-/// redacts before any handler runs. Redaction and URL sanitization therefore
-/// happen here, so credentials and data URLs never leak into the public
-/// error (or the recordings that persist it).
-#[must_use]
-pub fn stream_error_api_call(
-    message: impl Into<String>,
-    provider_code: Option<String>,
-    status_code: Option<u16>,
-    error_payload: &serde_json::Value,
-    url: impl Into<String>,
-    request_body_values: serde_json::Value,
-    mut response_headers: std::collections::HashMap<String, String>,
-) -> AiMuxError {
-    // Real headers win; the payload hint fills in only when absent (an
-    // in-stream rate-limit error rides on a 200 whose headers carry none).
-    if !response_headers.contains_key("retry-after-ms")
-        && !response_headers.contains_key("retry-after")
-    {
-        if let Some(ms) = error_payload
-            .get("retry_after_ms")
-            .and_then(serde_json::Value::as_f64)
-        {
-            response_headers.insert("retry-after-ms".into(), ms.to_string());
-        } else if let Some(seconds) = error_payload
-            .get("retry_after")
-            .and_then(serde_json::Value::as_f64)
-        {
-            response_headers.insert("retry-after".into(), seconds.to_string());
-        }
-    }
-    AiMuxError::ApiCall(Box::new(ApiCallError {
-        status_code,
-        provider_code,
-        response_body: Some(error_payload.to_string()),
-        response_headers: Some(response_headers),
-        data: Some(crate::logging::redact_error_context(error_payload.clone())),
-        is_retryable: status_code.is_some_and(aimux_core::error::is_retryable_status),
-        ..ApiCallError::new(
-            message,
-            crate::http::sanitized_request_url(&url.into()),
-            crate::logging::redact_error_context(request_body_values),
-        )
-    }))
-}
-
 /// Read a successful response as bytes.
 #[must_use]
 pub fn create_binary_response_handler() -> ResponseHandler<Bytes> {

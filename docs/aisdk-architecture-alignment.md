@@ -1119,6 +1119,7 @@ RFC-0014 的 `tracing` span 保留为统一事件的内建日志适配器。HTTP
 | 产品选择 | 首块超时的起点 | 上游在 provider 响应流开始时才开始计 chunk 超时（`A/generate-text/stream-text.ts:2228-2243`、`:2671`）；aimux 的 provider 在 `do_stream` 内预读首个 SSE 事件，所以 `first_chunk_ms` 在 operation 开始时计时，覆盖请求建立。保留这一差异：provider 等到首个 SSE 事件才从 `do_stream` 返回，若计时推迟到响应流开始，返回 200 之后一直不发数据的流就没有时间上限（RFC-0031 §8.1、§8.3；§9.1 已知差距） |
 | 产品选择 | core 工具循环 | 保持单步，不引入 agent loop |
 | 结构差异 | 流式工具调用累积 | 上游 `@ai-sdk/provider-utils` 把 tracker 作为独立模块导出；aimux 没有 tracker 类型，OpenAI chat 一族（openai、openai-compatible、DeepSeek、Groq、Mistral）的流 Transformer 以 crate 内部的 `ChatToolCalls` 字段保存进行中的调用，各厂商的类型规则作为数据传入（RFC-0042 T2、§4）。关联行为等于 provider-utils 5.0.55 基线：上游 tracker 的测试用例改为驱动真实的 chat 流（`aimux-providers/src/stream/chat_tool_calls_tests.rs`） |
+| 结构差异 | 托管变体对协议包请求的改写 | 上游的托管变体把 `buildRequestUrl`、`transformRequestBody` 回调交给协议包（google-vertex 的 Claude 交给 `AnthropicMessagesLanguageModel`，MaaS、xAI 交给 `createOpenAICompatible`）；aimux 写成协议目录里的封闭枚举（`anthropic/request_rewrite.rs` 的 `AnthropicRequestUrl`、`AnthropicBodyRewrite`，`openai_compatible/request_rewrite.rs` 的 `CompatibleBodyRewrite`），托管变体只选一个变体，配置可以打印和比较。请求和上游相同；用户在公开设置里传的 `transform_request_body` 回调保留，在枚举的改写之后运行（RFC-0046 §3.5） |
 | 不采用 | workflow 模型序列化 | 不用于录制或重建 |
 | 不采用 | 历史版本和 deprecated 兼容 | 不实现 V2/V3 适配、旧方法转发、旧录制读取；旧 namespace 键不在此列，照上游读取并双写（§4.1） |
 | 上游对齐 | Decision | `DecisionModelV4` 与 `decide`；aimux 扩展进 `providerOptions` / `providerMetadata`，无能力结构；不支持决策的 provider 返回 `None`；deprecated evaluation 别名不移植（§3.1） |

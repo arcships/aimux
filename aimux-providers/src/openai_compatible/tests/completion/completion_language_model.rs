@@ -95,6 +95,7 @@ fn model_with_provider(model_id: &str, provider: &str) -> OpenAICompatibleComple
             headers: ProviderHeaders::bearer(Credential::None, Vec::new(), None),
             fetch_headers: None,
             fetch: None,
+            body_rewrite: None,
             transform_request_body: None,
             chat: ChatSettings::default(),
         },
