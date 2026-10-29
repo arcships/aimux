@@ -1,29 +1,12 @@
 //! The Vertex AI MaaS provider (maas/google-vertex-maas-provider.ts and its
 //! `-node` wrapper).
 
-use crate::openai_compatible::{OpenAICompatibleProvider, OpenAICompatibleProviderSettings};
+use crate::openai_compatible::{
+    CompatibleBodyRewrite, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
+};
 use crate::vertex::partner_provider::{VertexMaasProviderSettings, partner_parts};
 use aimux_core::error::AiMuxError;
-use serde_json::Value;
-use std::sync::{Arc, OnceLock};
-
-/// Upstream's `maxOutputTokensByModel` (google-vertex-maas-provider.ts:16-27):
-/// a default `max_tokens` for the models that need one.
-fn maas_request_body(mut body: Value) -> Value {
-    let default = match body.get("model").and_then(Value::as_str) {
-        Some(
-            "meta/llama-4-maverick-17b-128e-instruct-maas"
-            | "meta/llama-4-scout-17b-16e-instruct-maas",
-        ) => 8192,
-        _ => return body,
-    };
-    if let Some(object) = body.as_object_mut()
-        && !object.contains_key("max_tokens")
-    {
-        object.insert("max_tokens".into(), default.into());
-    }
-    body
-}
+use std::sync::OnceLock;
 
 /// Create a Vertex AI MaaS (Model as a Service) provider: partner and open
 /// models over the OpenAI-compatible Chat Completions API. Models report
@@ -42,7 +25,6 @@ pub fn create_google_vertex_maas(
         OpenAICompatibleProviderSettings {
             name: "vertex.maas".into(),
             fetch: settings.fetch,
-            transform_request_body: Some(Arc::new(maas_request_body)),
             ..Default::default()
         },
         base_url,
@@ -53,6 +35,7 @@ pub fn create_google_vertex_maas(
             None,
         ),
         Some(fetch_headers),
+        Some(CompatibleBodyRewrite::VertexMaas),
         crate::shared::aisdk_pins::GOOGLE_VERTEX_OPENAI_COMPATIBLE,
     )
 }
