@@ -1772,6 +1772,7 @@ async fn stream_in_operation(
             let is_output = matches!(&item, Ok(part) if is_output_chunk(part));
 
             // A closed receiver means the consumer dropped the stream.
+            let send_started = Instant::now();
             let send_res = tokio::select! {
                 biased;
                 () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
@@ -1802,6 +1803,11 @@ async fn stream_in_operation(
                         break;
                     }
                 };
+            } else if let Some(deadline) = &mut chunk_deadline {
+                let blocked_dur = Instant::now().saturating_duration_since(send_started);
+                if let Some(shifted) = deadline.at.checked_add(blocked_dur) {
+                    deadline.at = shifted;
+                }
             }
         }
     });

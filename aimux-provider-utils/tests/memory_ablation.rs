@@ -533,6 +533,11 @@ fn run_w4_recording_retention() -> MemStats {
     jsonl.flush();
 
     let stats = g.snapshot();
+    assert_eq!(
+        ring.inconsistent_call_ids().len(),
+        64,
+        "RingRecorder must clean up inconsistent call IDs when completed records are evicted from the ring"
+    );
     drop(jsonl);
     drop(ring);
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -757,12 +762,17 @@ async fn verify_edge_case_invariants() {
         async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
             let s = async_stream::stream! {
                 yield Ok(StreamPart::TextStart { id: "t1".into(), provider_metadata: None });
-                for _ in 0..320 {
-                    yield Ok(StreamPart::TextDelta {
-                        id: "t1".into(),
-                        delta: "x".into(),
-                        provider_metadata: None,
-                    });
+                for i in 0..320 {
+                    if i == 255 || i == 256 {
+                        // Non-output part arriving right as the 256-slot channel fills up
+                        yield Ok(StreamPart::ResponseMetadata(aimux_core::types::ResponseMetadata::default()));
+                    } else {
+                        yield Ok(StreamPart::TextDelta {
+                            id: "t1".into(),
+                            delta: "x".into(),
+                            provider_metadata: None,
+                        });
+                    }
                 }
                 yield Ok(StreamPart::TextEnd { id: "t1".into(), provider_metadata: None });
                 yield Ok(StreamPart::Finish {

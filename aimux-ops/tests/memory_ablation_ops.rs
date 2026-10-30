@@ -89,7 +89,9 @@ impl MeasureGuard {
 
 // W5a: Bedrock event-stream decoder under malicious 2 GiB header (24x 1 MiB chunks) + large frame buffer retention
 async fn run_w5a_bedrock_event_stream() -> MemStats {
-    // Pre-create chunks outside measurement
+    // Pre-create chunks outside measurement and keep `chunks` alive so dropping
+    // stream items inside MeasureGuard only decrements Bytes refcounts without
+    // freeing pre-existing allocations.
     let mut header_chunk = vec![0u8; 1024 * 1024];
     header_chunk[..4].copy_from_slice(&0x7FFF_FFFFu32.to_be_bytes());
     let first_bytes = header_chunk.into();
@@ -97,67 +99,105 @@ async fn run_w5a_bedrock_event_stream() -> MemStats {
     for _ in 0..23 {
         chunks.push(Ok(vec![b'a'; 1024 * 1024].into()));
     }
+    let chunks_for_stream = chunks.clone();
 
-    // Also prepare a 12-byte bad-prelude-CRC chunk claiming a 1 MiB frame length
+    // Prepare a single 16-byte chunk claiming a 1 MiB frame length with a corrupted
+    // prelude CRC (and no subsequent chunks). Without early 12-byte prelude CRC
+    // validation, the decoder would wait for 1 MiB and fail with "Unexpected EOF"
+    // instead of "prelude checksum".
     let mut bad_prelude = vec![0u8; 16];
     bad_prelude[..4].copy_from_slice(&(1024 * 1024u32).to_be_bytes());
     bad_prelude[8..12].copy_from_slice(&0xDEAD_BEEFu32.to_be_bytes());
-    let bad_prelude_chunks = vec![
-        Ok(bad_prelude.into()),
-        Ok(vec![b'z'; 1024 * 1024].into()),
-    ];
+    let bad_prelude_bytes = bad_prelude.into();
+    let bad_prelude_chunks = vec![Ok(bad_prelude_bytes)];
+    let bad_prelude_for_stream = bad_prelude_chunks.clone();
 
-    // Also prepare a valid 2 MiB frame followed by a small frame to measure post-drain buffer retention
-    let large_frame = encode_message(
-        "event",
-        "contentBlockDelta",
-        &"x".repeat(2 * 1024 * 1024),
-    )
-    .into();
-    let small_frame = encode_message("event", "messageStop", "{}").into();
+    // Also prepare a valid 2 MiB frame followed by a small frame to measure post-drain buffer retention.
+    // Keep `large_frame_holder` and `small_frame_holder` alive across `MeasureGuard` so dropping
+    // cloned `Bytes` handles inside the stream never subtracts pre-guard memory.
+    let mut large_frame_holder = chunks.clone();
+    large_frame_holder.clear();
+    large_frame_holder.push(Ok(
+        encode_message(
+            "event",
+            "contentBlockDelta",
+            &"x".repeat(2 * 1024 * 1024),
+        )
+        .into(),
+    ));
+    let mut small_frame_holder = chunks.clone();
+    small_frame_holder.clear();
+    small_frame_holder.push(Ok(encode_message("event", "messageStop", "{}").into()));
+    let large_frame_for_stream = large_frame_holder.remove(0);
+    let small_frame_for_stream = small_frame_holder.remove(0);
+    large_frame_holder.push(large_frame_for_stream.clone());
+    small_frame_holder.push(small_frame_for_stream.clone());
 
-    let g = MeasureGuard::start();
-    let mut stream = decode_stream(futures::stream::iter(chunks).boxed());
+    let g_attack = MeasureGuard::start();
+    let mut stream = decode_stream(futures::stream::iter(chunks_for_stream).boxed());
     let first_outcome = stream.next().await;
+    let first_err = first_outcome
+        .expect("stream must yield an item")
+        .expect_err("oversized 2 GiB frame header must fail immediately");
     assert!(
-        matches!(first_outcome, Some(Err(_))),
-        "oversized 2 GiB frame header must fail immediately"
+        first_err.to_string().contains("frame length"),
+        "expected frame length error, got: {first_err}"
     );
     assert!(
         stream.next().await.is_none(),
         "stream must terminate after frame length error"
     );
+    let attack_stats = g_attack.snapshot();
     drop(stream);
 
-    // Verify early 12-byte prelude CRC check fails before accumulating the rest of the 1 MiB frame
-    let mut bad_crc_stream = decode_stream(futures::stream::iter(bad_prelude_chunks).boxed());
-    let bad_crc_outcome = bad_crc_stream.next().await;
+    // Verify early 12-byte prelude CRC check fails with "prelude checksum" on a single 16-byte chunk
+    // (before accumulating the 1 MiB frame length it claims).
+    let mut bad_crc_stream = decode_stream(futures::stream::iter(bad_prelude_for_stream).boxed());
+    let bad_crc_err = bad_crc_stream
+        .next()
+        .await
+        .expect("stream must yield an item")
+        .expect_err("corrupted 12-byte prelude CRC must fail before full frame buffering");
     assert!(
-        matches!(bad_crc_outcome, Some(Err(_))),
-        "corrupted 12-byte prelude CRC must fail before full frame buffering"
+        bad_crc_err.to_string().contains("prelude checksum"),
+        "expected early prelude checksum error (not EOF), got: {bad_crc_err}"
     );
     drop(bad_crc_stream);
 
-    // Now feed the 2 MiB valid frame, drain it, and measure retained buffer inside live stream before small frame
+    // Now measure the 2 MiB valid frame and post-drain buffer retention in an isolated guard
+    // where no pre-existing allocations are freed.
+    let g_shrink = MeasureGuard::start();
     let (tx, rx) = futures::channel::mpsc::unbounded();
-    tx.unbounded_send(Ok(large_frame)).unwrap();
+    tx.unbounded_send(large_frame_for_stream).unwrap();
     let mut stream2 = decode_stream(rx.boxed());
     let msg1 = stream2.next().await.unwrap().unwrap();
     assert_eq!(msg1.event_type, "contentBlockDelta");
     drop(msg1);
-    let retained_after_large_frame = g.snapshot().retained_bytes;
-    tx.unbounded_send(Ok(small_frame)).unwrap();
+    // At this point `stream2` is still alive and holds its internal `buffer: Vec<u8>`.
+    // Because `large_frame_holder` is kept alive outside `g_shrink`, `retained_after_large_frame`
+    // directly reflects `stream2`'s retained heap (~16 KiB after `shrink_to(16 * 1024)`,
+    // vs >2 MiB without `shrink_to`).
+    let retained_after_large_frame = g_shrink.snapshot().retained_bytes;
+    tx.unbounded_send(small_frame_for_stream).unwrap();
     drop(tx);
     let msg2 = stream2.next().await.unwrap().unwrap();
     assert_eq!(msg2.event_type, "messageStop");
-    let end = g.snapshot();
+    drop(msg2);
+    let shrink_stats = g_shrink.snapshot();
     drop(stream2);
 
+    std::hint::black_box((
+        &chunks,
+        &bad_prelude_chunks,
+        &large_frame_holder,
+        &small_frame_holder,
+    ));
+
     MemStats {
-        peak_bytes: end.peak_bytes,
+        peak_bytes: attack_stats.peak_bytes.max(shrink_stats.peak_bytes),
         retained_bytes: retained_after_large_frame,
-        total_alloc_bytes: end.total_alloc_bytes,
-        alloc_count: end.alloc_count,
+        total_alloc_bytes: attack_stats.total_alloc_bytes + shrink_stats.total_alloc_bytes,
+        alloc_count: attack_stats.alloc_count + shrink_stats.alloc_count,
     }
 }
 
@@ -166,6 +206,19 @@ fn run_w5b_manifest_calls() -> MemStats {
     // Warm up OnceLock cache first so we measure steady-state repeated calls
     let warmup_digest = aimux_ops::manifest::manifest_digest();
     assert!(!warmup_digest.is_empty());
+
+    let g_digest = MeasureGuard::start();
+    for _ in 0..30 {
+        let d = aimux_ops::manifest::manifest_digest();
+        assert_eq!(d, warmup_digest);
+        std::hint::black_box(d);
+    }
+    let digest_only = g_digest.snapshot();
+    assert!(
+        digest_only.total_alloc_bytes < 8 * 1024,
+        "30 cached manifest_digest() calls must allocate < 8 KiB (got {} B)",
+        digest_only.total_alloc_bytes
+    );
 
     let g = MeasureGuard::start();
     for _ in 0..30 {
@@ -282,8 +335,8 @@ async fn memory_ablation_ops_suite() {
         w5a.peak_bytes
     );
     assert!(
-        w5a.retained_bytes < 64 * 1024,
-        "W5a retained buffer after 2 MiB frame ({}) must shrink below 64 KiB",
+        (8 * 1024..64 * 1024).contains(&w5a.retained_bytes),
+        "W5a retained buffer after 2 MiB frame ({}) must be non-zero (~16 KiB) and shrink below 64 KiB",
         w5a.retained_bytes
     );
     assert!(
