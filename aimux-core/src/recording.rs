@@ -795,11 +795,32 @@ pub(crate) fn new_call_id() -> String {
 /// Prodia's `X-Prodia-Key` and the Azure `Ocp-Apim-Subscription-Key`.
 #[must_use]
 pub fn is_sensitive_key(name: &str) -> bool {
+    // Fast stack-only ASCII path for normal header / JSON key lengths (<= 128 B).
+    let bytes = name.as_bytes();
+    if bytes.len() <= 128 {
+        let mut n_buf = [0u8; 128];
+        let mut sq_buf = [0u8; 128];
+        let mut sq_len = 0usize;
+        for (i, &b) in bytes.iter().enumerate() {
+            let low = b.to_ascii_lowercase();
+            n_buf[i] = low;
+            if low != b'-' && low != b'_' {
+                sq_buf[sq_len] = low;
+                sq_len += 1;
+            }
+        }
+        let n = &n_buf[..bytes.len()];
+        let squashed = &sq_buf[..sq_len];
+        return n == b"cookie"
+            || n == b"set-cookie"
+            || n == b"key"
+            || squashed == b"xprodiakey"
+            || squashed.ends_with(b"subscriptionkey")
+            || squashed.ends_with(b"token")
+            || contains_subslice(n, b"authorization")
+            || contains_subslice(squashed, b"apikey");
+    }
     let n = name.to_ascii_lowercase();
-    // Separator-insensitive form so `accessToken`, `access-token`, and
-    // `x-access-token` all classify like `access_token`. A `token` SUFFIX is
-    // the credential shape; plural usage fields (`max_tokens`,
-    // `input_tokens`) end in `tokens` and stay loggable.
     let squashed: String = n.chars().filter(|c| *c != '-' && *c != '_').collect();
     n == "cookie"
         || n == "set-cookie"
@@ -811,25 +832,35 @@ pub fn is_sensitive_key(name: &str) -> bool {
         || squashed.contains("apikey")
 }
 
+#[inline]
+fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.len() >= needle.len() && haystack.windows(needle.len()).any(|w| w == needle)
+}
+
 /// 递归脱敏(JSON 中含敏感键的项值替换为 `[REDACTED]`)。
 /// 覆盖 `CallOptions.headers`/`provider_options` 任意层级。
-pub(crate) fn redact_json(value: serde_json::Value) -> serde_json::Value {
+pub(crate) fn redact_json(mut value: serde_json::Value) -> serde_json::Value {
+    redact_json_in_place(&mut value);
+    value
+}
+
+fn redact_json_in_place(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
-            let mut out = serde_json::Map::with_capacity(map.len());
-            for (k, v) in map {
-                if is_sensitive_key(&k) {
-                    out.insert(k, serde_json::Value::String("[REDACTED]".into()));
+            for (k, v) in map.iter_mut() {
+                if is_sensitive_key(k) {
+                    *v = serde_json::Value::String("[REDACTED]".into());
                 } else {
-                    out.insert(k, redact_json(v));
+                    redact_json_in_place(v);
                 }
             }
-            serde_json::Value::Object(out)
         }
         serde_json::Value::Array(items) => {
-            serde_json::Value::Array(items.into_iter().map(redact_json).collect())
+            for item in items.iter_mut() {
+                redact_json_in_place(item);
+            }
         }
-        other => other,
+        _ => {}
     }
 }
 
@@ -1150,22 +1181,70 @@ impl Recorder for JsonlRecorder {
     }
 }
 
-/// 兜底建条目:事件先于 Input 到达(纯层 B/乱序)时,以空 input 占位。
+/// JsonlRecorder writer 端未完成分片上限:防止异常未终结调用无界驻留内存。
+/// 超限时将最旧未完成条目以 `complete=false` (`OutcomeStatus::Incomplete`) 落盘淘汰。
+const JSONL_PENDING_MAX: usize = 128;
+
+/// 兜底建条目:事件先于 Input 到达(纯层 B/乱序)时,以空 input 占位,并受 `JSONL_PENDING_MAX` 约束。
 fn entry_or_init<'a>(
+    w: &mut impl Write,
     pending: &'a mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
     call_id: &str,
+    damaged: &DamagedCalls,
+    write_error: &Mutex<Option<String>>,
 ) -> &'a mut Recording {
-    pending.entry(call_id.to_string()).or_insert_with(|| {
-        Recording::new(
-            call_id,
-            InputRecord {
-                operation: Default::default(),
-                prompt: Vec::new(),
-                options: serde_json::Value::Null,
-            },
-            ProviderRecord::from_model("", ""),
-        )
-    })
+    if !pending.contains_key(call_id) {
+        evict_jsonl_pending_if_needed(w, pending, pending_order, damaged, write_error);
+        pending_order.push_back(call_id.to_string());
+        pending.insert(
+            call_id.to_string(),
+            Recording::new(
+                call_id,
+                InputRecord {
+                    operation: Default::default(),
+                    prompt: Vec::new(),
+                    options: serde_json::Value::Null,
+                },
+                ProviderRecord::from_model("", ""),
+            ),
+        );
+    }
+    pending.get_mut(call_id).expect("just inserted or present")
+}
+
+fn evict_jsonl_pending_if_needed(
+    w: &mut impl Write,
+    pending: &mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
+    damaged: &DamagedCalls,
+    write_error: &Mutex<Option<String>>,
+) {
+    while pending_order
+        .front()
+        .is_some_and(|id| !pending.contains_key(id))
+    {
+        pending_order.pop_front();
+    }
+    if pending_order.len() > JSONL_PENDING_MAX.saturating_mul(2) {
+        pending_order.retain(|id| pending.contains_key(id));
+        if pending_order.capacity() > JSONL_PENDING_MAX.saturating_mul(4) {
+            pending_order.shrink_to(JSONL_PENDING_MAX.saturating_mul(2));
+        }
+    }
+    while pending.len() >= JSONL_PENDING_MAX {
+        let Some(old) = pending_order.pop_front() else {
+            break;
+        };
+        if let Some(mut rec) = pending.remove(&old) {
+            let _ = damaged.take(&old);
+            rec.complete = false;
+            if rec.outcome.status == OutcomeStatus::Pending {
+                rec.outcome.status = OutcomeStatus::Incomplete;
+            }
+            write_line(w, rec, write_error);
+        }
+    }
 }
 
 /// writer 线程:按 call_id 合并分片;completion barrier 后写一行。
@@ -1181,6 +1260,7 @@ fn writer_loop(
     write_error: Arc<Mutex<Option<String>>>,
 ) {
     let mut pending: HashMap<String, Recording> = HashMap::new();
+    let mut pending_order: VecDeque<String> = VecDeque::new();
 
     while let Ok(ev) = rx.recv() {
         match ev {
@@ -1191,36 +1271,68 @@ fn writer_loop(
             } => {
                 // C4-6:Input 仅在当前 provider 仍为空占位时填充最小 provider,
                 // 避免乱序(Provider 先到)时把已写入的完整快照覆盖回最小值。
-                let rec = pending
-                    .entry(call_id.clone())
-                    .or_insert_with(|| Recording::new(&call_id, input.clone(), provider.clone()));
-                rec.input = input;
-                if rec.provider.provider.is_empty() {
-                    rec.provider = provider;
+                if let Some(rec) = pending.get_mut(&call_id) {
+                    rec.input = input;
+                    if rec.provider.provider.is_empty() {
+                        rec.provider = provider;
+                    }
+                } else {
+                    evict_jsonl_pending_if_needed(
+                        &mut w,
+                        &mut pending,
+                        &mut pending_order,
+                        &damaged,
+                        &write_error,
+                    );
+                    pending_order.push_back(call_id.clone());
+                    pending.insert(call_id.clone(), Recording::new(&call_id, input, provider));
                 }
+                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             RecordEvent::Session {
                 call_id,
                 session_id,
                 step,
             } => {
-                let rec = entry_or_init(&mut pending, &call_id);
+                let rec = entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
                 rec.session_id = Some(session_id);
                 rec.step = Some(step);
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             // C4-6:用 entry_or_init(而非 get_mut)兜底建条目,保证乱序
             // (先于 Input 到达)的 Provider 快照不丢。
             RecordEvent::Provider { call_id, provider } => {
-                entry_or_init(&mut pending, &call_id).provider = provider;
+                entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                )
+                .provider = provider;
             }
             RecordEvent::Exchange { call_id, exchange } => {
                 // C4-7:同 (call_id, attempt) 重复 → 合并骨架并标记 inconsistent。
-                let rec = entry_or_init(&mut pending, &call_id);
+                let rec = entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
                 if insert_exchange(rec, exchange) {
                     mark_inconsistent(&damaged.inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             RecordEvent::ExchangeUpdate {
                 call_id,
@@ -1231,25 +1343,48 @@ fn writer_loop(
             } => {
                 // C4-7:要求恰好一个匹配 attempt;0 或 >1 → 标记 inconsistent,
                 // 不静默 patch 第一条。
-                let rec = entry_or_init(&mut pending, &call_id);
+                let rec = entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
                 if !matches!(
                     apply_exchange_update(rec, attempt, exchange_index, response, error),
                     UpdateMatch::Patched
                 ) {
                     mark_inconsistent(&damaged.inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             RecordEvent::TransportClosed { call_id } => {
-                entry_or_init(&mut pending, &call_id).transport_closed = true;
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                )
+                .transport_closed = true;
+                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             RecordEvent::Outcome { call_id, outcome } => {
-                entry_or_init(&mut pending, &call_id).outcome = outcome;
-                try_finalize(&mut w, &mut pending, &call_id, &damaged, &write_error);
+                entry_or_init(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                )
+                .outcome = outcome;
+                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             RecordEvent::Flush { ack } => {
-                write_ready_all(&mut w, &mut pending, &damaged, &write_error);
+                write_ready_all(&mut w, &mut pending, &mut pending_order, &damaged, &write_error);
                 if let Err(e) = w.flush() {
                     note_write_error(&write_error, &e);
                 }
@@ -1309,6 +1444,7 @@ impl DamagedCalls {
 fn try_finalize(
     w: &mut impl Write,
     pending: &mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
     call_id: &str,
     damaged: &DamagedCalls,
     write_error: &Mutex<Option<String>>,
@@ -1316,6 +1452,18 @@ fn try_finalize(
     if pending.get(call_id).map(Recording::ready).unwrap_or(false)
         && let Some(mut rec) = pending.remove(call_id)
     {
+        while pending_order
+            .front()
+            .is_some_and(|id| !pending.contains_key(id))
+        {
+            pending_order.pop_front();
+        }
+        if pending_order.len() > JSONL_PENDING_MAX.saturating_mul(2) {
+            pending_order.retain(|id| pending.contains_key(id));
+            if pending_order.capacity() > JSONL_PENDING_MAX.saturating_mul(4) {
+                pending_order.shrink_to(JSONL_PENDING_MAX.saturating_mul(2));
+            }
+        }
         if !rec.exchanges.is_empty() || rec.transport_closed {
             rec.complete = !damaged.take(call_id);
         }
@@ -1327,6 +1475,7 @@ fn try_finalize(
 fn write_ready_all(
     w: &mut impl Write,
     pending: &mut HashMap<String, Recording>,
+    pending_order: &mut VecDeque<String>,
     damaged: &DamagedCalls,
     write_error: &Mutex<Option<String>>,
 ) {
@@ -1341,6 +1490,7 @@ fn write_ready_all(
             write_line(w, rec, write_error);
         }
     }
+    pending_order.retain(|id| pending.contains_key(id));
 }
 
 fn write_line(w: &mut impl Write, rec: Recording, write_error: &Mutex<Option<String>>) {
@@ -1696,6 +1846,13 @@ impl RingInner {
         {
             self.pending_order.pop_front();
         }
+        if self.pending_order.len() > self.pending_max.saturating_mul(2) {
+            self.pending_order.retain(|id| self.pending.contains_key(id));
+            if self.pending_order.capacity() > self.pending_max.saturating_mul(4) {
+                self.pending_order
+                    .shrink_to(self.pending_max.saturating_mul(2));
+            }
+        }
         while self.pending.len() >= self.pending_max {
             let Some(old) = self.pending_order.pop_front() else {
                 break;
@@ -1717,6 +1874,20 @@ impl RingInner {
         if self.pending.get(call_id).is_some_and(Recording::ready)
             && let Some(mut rec) = self.pending.remove(call_id)
         {
+            while self
+                .pending_order
+                .front()
+                .is_some_and(|id| !self.pending.contains_key(id))
+            {
+                self.pending_order.pop_front();
+            }
+            if self.pending_order.len() > self.pending_max.saturating_mul(2) {
+                self.pending_order.retain(|id| self.pending.contains_key(id));
+                if self.pending_order.capacity() > self.pending_max.saturating_mul(4) {
+                    self.pending_order
+                        .shrink_to(self.pending_max.saturating_mul(2));
+                }
+            }
             if !rec.exchanges.is_empty() || rec.transport_closed {
                 rec.complete = !self.inconsistent.contains(call_id);
             }
@@ -1727,7 +1898,17 @@ impl RingInner {
     /// FIFO ring 追加;超容淘汰最旧并计数。
     fn push(&mut self, rec: Recording) {
         if self.completed.len() >= self.cap {
-            self.completed.pop_front();
+            if let Some(evicted) = self.completed.pop_front()
+                && !self.pending.contains_key(&evicted.call_id)
+                && !self.completed.iter().any(|r| r.call_id == evicted.call_id)
+            {
+                self.inconsistent.remove(&evicted.call_id);
+                if self.inconsistent.capacity() > self.cap.saturating_mul(4)
+                    && self.inconsistent.len() <= self.cap
+                {
+                    self.inconsistent.shrink_to(self.cap.saturating_mul(2));
+                }
+            }
             self.dropped += 1;
         }
         self.completed.push_back(rec);

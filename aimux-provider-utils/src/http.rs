@@ -193,7 +193,7 @@ pub(crate) struct DownloadValidation {
 #[derive(Debug, Clone)]
 pub(crate) struct PreparedRequest {
     method: HttpMethod,
-    body: HttpBody,
+    pub(crate) body: std::sync::Arc<HttpBody>,
     pub(crate) url: String,
     headers: Vec<(String, String)>,
     pub(crate) abort_signal: Option<aimux_core::AbortSignal>,
@@ -226,7 +226,7 @@ impl HttpRequest {
         }
         PreparedRequest {
             method,
-            body,
+            body: std::sync::Arc::new(body),
             url: self.url,
             headers,
             abort_signal: self.abort_signal,
@@ -324,7 +324,7 @@ pub(crate) async fn send_request_once(
         "request"
     );
     if body_logging_enabled()
-        && let HttpBody::Json(value) = &request.body
+        && let HttpBody::Json(value) = &*request.body
     {
         tracing::trace!(
             target: "aimux_provider_utils::http",
@@ -537,7 +537,7 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
             ) && matches!(current.method, HttpMethod::Post))
         {
             current.method = HttpMethod::Get;
-            current.body = HttpBody::Empty;
+            current.body = std::sync::Arc::new(HttpBody::Empty);
         }
         current.url = next;
     }
@@ -593,7 +593,7 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             })?,
         );
     }
-    let body = match &request.body {
+    let body = match &*request.body {
         HttpBody::Json(value) => {
             if !headers.contains_key(http::header::CONTENT_TYPE) {
                 headers.insert(
@@ -874,14 +874,18 @@ fn to_http_record(request: &PreparedRequest) -> HttpRecord {
             )
         })
         .collect();
-    let body = match &request.body {
-        HttpBody::Json(value) => {
-            serde_json::to_string(&crate::logging::redact_error_context(value.clone())).ok()
-        }
+    let body = match &*request.body {
+        HttpBody::Json(value) => crate::logging::redact_error_context_to_string(value),
         HttpBody::Bytes(bytes, _) => Some(String::from_utf8_lossy(bytes).into_owned()),
         HttpBody::Empty => None,
     }
-    .map(|body| truncate_utf8(&body, RECORD_BODY_CAP).to_owned());
+    .map(|mut body| {
+        if body.len() > RECORD_BODY_CAP {
+            let end = truncate_utf8(&body, RECORD_BODY_CAP).len();
+            body.truncate(end);
+        }
+        body
+    });
     HttpRecord {
         method: request.method.as_str().into(),
         url: sanitized_request_url(&request.url),
@@ -948,7 +952,7 @@ fn truncate_utf8(value: &str, maximum: usize) -> &str {
 }
 
 fn request_body_size(request: &PreparedRequest) -> u64 {
-    match &request.body {
+    match &*request.body {
         HttpBody::Json(value) => serde_json::to_vec(value)
             .map(|bytes| bytes.len() as u64)
             .unwrap_or_default(),

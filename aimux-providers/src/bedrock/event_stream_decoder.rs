@@ -276,6 +276,10 @@ fn checksum_error(frame: &[u8]) -> Option<String> {
     })
 }
 
+/// Maximum valid AWS EventStream frame length (16 MiB per AWS EventStream spec).
+/// Prevents unbounded memory allocation on malformed or malicious length headers (#399).
+pub const MAX_EVENT_STREAM_FRAME_LEN: usize = 16 * 1024 * 1024;
+
 /// Decode frames incrementally, surfacing transport, framing, and checksum errors.
 pub fn decode_stream(
     mut input: futures::stream::BoxStream<'static, Result<bytes::Bytes, aimux_core::AiMuxError>>,
@@ -290,9 +294,19 @@ pub fn decode_stream(
             }
             while buffer.len() >= 4 {
                 let length = u32::from_be_bytes(buffer[..4].try_into().expect("four bytes")) as usize;
-                if length < 16 {
+                if !(16..=MAX_EVENT_STREAM_FRAME_LEN).contains(&length) {
                     yield Err(aimux_core::AiMuxError::invalid_response_data("Invalid Amazon Bedrock event-stream frame length"));
                     return;
+                }
+                if buffer.len() >= 12 {
+                    let expected = u32::from_be_bytes(buffer[8..12].try_into().expect("four bytes"));
+                    let computed = crc32(&buffer[..8]);
+                    if expected != computed {
+                        yield Err(aimux_core::AiMuxError::invalid_response_data(format!(
+                            "The prelude checksum specified in the message ({expected}) does not match the calculated CRC32 checksum ({computed})"
+                        )));
+                        return;
+                    }
                 }
                 if buffer.len() < length { break; }
                 if let Some(message) = checksum_error(&buffer[..length]) {
@@ -305,6 +319,9 @@ pub fn decode_stream(
                     return;
                 };
                 buffer.drain(..length);
+                if buffer.capacity() > 64 * 1024 && buffer.len() < 16 * 1024 {
+                    buffer.shrink_to(16 * 1024);
+                }
                 yield Ok(message);
             }
         }

@@ -97,6 +97,48 @@ pub fn denoise(value: &Value) -> Value {
     denoise_at(value, 0)
 }
 
+/// Serialize `value` to JSON bytes with noise keys stripped on the fly,
+/// avoiding an intermediate cloned `serde_json::Value` tree.
+pub fn denoised_to_vec(value: &Value) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(&DenoisedRef(value, 0))
+}
+
+struct DenoisedRef<'a>(&'a Value, usize);
+
+impl serde::Serialize for DenoisedRef<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        let Self(value, depth) = *self;
+        match value {
+            Value::Object(map) => {
+                let mut m = serializer.serialize_map(None)?;
+                for (k, v) in map {
+                    if depth == 0 {
+                        if NOISE_KEYS.contains(&k.as_str()) {
+                            continue;
+                        }
+                    } else if k == "request_id" || k == "requestId" {
+                        continue;
+                    }
+                    m.serialize_entry(k, &DenoisedRef(v, depth + 1))?;
+                }
+                m.end()
+            }
+            Value::Array(items) => {
+                let mut seq = serializer.serialize_seq(Some(items.len()))?;
+                for item in items {
+                    seq.serialize_element(&DenoisedRef(item, depth + 1))?;
+                }
+                seq.end()
+            }
+            other => other.serialize(serializer),
+        }
+    }
+}
+
 fn denoise_at(value: &Value, depth: usize) -> Value {
     match value {
         Value::Object(map) => {

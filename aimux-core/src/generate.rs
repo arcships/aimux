@@ -1713,7 +1713,8 @@ async fn stream_in_operation(
         crate::recording::RecordingContext::scope_stream(context.clone(), stream);
     let chunk_ms = stream_timeout.chunk_ms;
     let pump_abort = abort_signal.clone();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    const STREAM_PUMP_CHANNEL_CAPACITY: usize = 256;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(STREAM_PUMP_CHANNEL_CAPACITY);
     let pump = tokio::spawn(async move {
         let mut chunk_deadline = first_chunk_deadline;
 
@@ -1724,13 +1725,13 @@ async fn stream_in_operation(
                 // exchange; the consumer side reports the abort.
                 () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
                 () = timeout::wait_for_deadline(operation_deadline) => {
-                    let _ = tx.send((Instant::now(), Err(operation_deadline
+                    let _ = tx.try_send((Instant::now(), Err(operation_deadline
                         .expect("operation deadline future only resolves for a deadline")
                         .error())));
                     break;
                 }
                 () = timeout::wait_for_deadline(chunk_deadline) => {
-                    let _ = tx.send((Instant::now(), Err(chunk_deadline
+                    let _ = tx.try_send((Instant::now(), Err(chunk_deadline
                         .expect("chunk deadline future only resolves for a deadline")
                         .error())));
                     break;
@@ -1750,14 +1751,25 @@ async fn stream_in_operation(
                 {
                     Ok(deadline) => deadline,
                     Err(error) => {
-                        let _ = tx.send((arrived, Err(error)));
+                        let _ = tx.try_send((arrived, Err(error)));
                         break;
                     }
                 };
             }
 
             // A closed receiver means the consumer dropped the stream.
-            if tx.send((arrived, item)).is_err() || terminal {
+            let send_res = tokio::select! {
+                biased;
+                () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
+                () = timeout::wait_for_deadline(operation_deadline) => {
+                    let _ = tx.try_send((Instant::now(), Err(operation_deadline
+                        .expect("operation deadline future only resolves for a deadline")
+                        .error())));
+                    break;
+                }
+                res = tx.send((arrived, item)) => res,
+            };
+            if send_res.is_err() || terminal {
                 break;
             }
         }
@@ -1766,20 +1778,27 @@ async fn stream_in_operation(
 
     let file_abort_signal = abort_signal.clone();
     let tool_choice = call_options.tool_choice.clone();
+    let needs_streamed_content = matches!(
+        tool_choice,
+        Some(
+            crate::tool::LanguageModelV4ToolChoice::Required
+                | crate::tool::LanguageModelV4ToolChoice::Tool { .. }
+        )
+    );
     let step_provider = model.provider().to_owned();
     let step_model_id = model.model_id().to_owned();
     let response_metadata =
         response_metadata_defaults(crate::types::ResponseMetadata::default(), model.model_id());
     let stream_response_headers = response_headers.clone();
-    let step_request = RequestInfo {
+    let mut step_request = Some(RequestInfo {
         body: request_body.clone(),
-    };
+    });
     let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
         async_stream::stream! {
             let _pump = pump;
             let mut step = StreamStep::new(call_started, response_metadata);
             let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
-            let mut content = StreamedContent::default();
+            let mut content = needs_streamed_content.then(StreamedContent::default);
             yield Ok(TextStreamPart::Start {});
             loop {
                 let next = tokio::select! {
@@ -1809,12 +1828,14 @@ async fn stream_in_operation(
                     if !step.started {
                         step.started = true;
                         yield Ok(TextStreamPart::StartStep {
-                            request: step_request.clone(),
+                            request: step_request.take().unwrap_or_default(),
                             warnings: step.warnings.clone(),
                         });
                     }
                     step.record_chunk(&part, arrived);
-                    content.observe(&part);
+                    if let Some(content) = &mut content {
+                        content.observe(&part);
+                    }
                 }
                 match part.split_payload() {
                     StreamPartPayload::ToolCall(raw) => {
@@ -1870,7 +1891,7 @@ async fn stream_in_operation(
                                 finish_reason.unified,
                                 &step_provider,
                                 &step_model_id,
-                                || std::mem::take(&mut content.content),
+                                || content.as_mut().map(|c| std::mem::take(&mut c.content)).unwrap_or_default(),
                             );
                             if violation.is_some() {
                                 finish_reason.unified = FinishReasonUnified::Error;
@@ -2192,13 +2213,18 @@ impl StreamedContent {
         delta: Option<&str>,
         provider_metadata: Option<&ProviderMetadata>,
     ) {
-        let index = *self.text.entry(id.to_owned()).or_insert_with(|| {
-            self.content.push(GenerateContent::Text {
-                text: String::new(),
-                provider_metadata: provider_metadata.cloned(),
-            });
-            self.content.len() - 1
-        });
+        let index = match self.text.get(id) {
+            Some(&idx) => idx,
+            None => {
+                let idx = self.content.len();
+                self.content.push(GenerateContent::Text {
+                    text: String::new(),
+                    provider_metadata: provider_metadata.cloned(),
+                });
+                self.text.insert(id.to_owned(), idx);
+                idx
+            }
+        };
         if let GenerateContent::Text {
             text,
             provider_metadata: metadata,
@@ -2217,14 +2243,19 @@ impl StreamedContent {
         delta: Option<&str>,
         provider_metadata: Option<&ProviderMetadata>,
     ) {
-        let index = *self.reasoning.entry(id.to_owned()).or_insert_with(|| {
-            self.content
-                .push(GenerateContent::Reasoning(crate::result::ReasoningOutput {
-                    text: String::new(),
-                    provider_metadata: provider_metadata.cloned(),
-                }));
-            self.content.len() - 1
-        });
+        let index = match self.reasoning.get(id) {
+            Some(&idx) => idx,
+            None => {
+                let idx = self.content.len();
+                self.content
+                    .push(GenerateContent::Reasoning(crate::result::ReasoningOutput {
+                        text: String::new(),
+                        provider_metadata: provider_metadata.cloned(),
+                    }));
+                self.reasoning.insert(id.to_owned(), idx);
+                idx
+            }
+        };
         if let GenerateContent::Reasoning(reasoning) = &mut self.content[index] {
             reasoning.text.push_str(delta.unwrap_or_default());
             if provider_metadata.is_some() {
