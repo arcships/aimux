@@ -2346,3 +2346,23 @@ async fn usage_raw_keeps_null_fields() {
         }))
     );
 }
+
+/// aimux's own: an option of the wrong type fails as `parseProviderOptions`
+/// fails, with the schema error as the cause.
+#[tokio::test]
+async fn wrong_typed_options_fail_with_the_parse_provider_options_message() {
+    let server = MockServer::start().await;
+    mock_json(&server, groq_text_body()).await;
+    let error = make_provider(&server)
+        .do_generate(&options_with(
+            json!({ "groq": { "parallelToolCalls": "yes" } }),
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, aimux_core::AiMuxError::InvalidArgument { message, cause: Some(_) }
+            if message == "Invalid argument for parameter providerOptions: invalid groq provider options"),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

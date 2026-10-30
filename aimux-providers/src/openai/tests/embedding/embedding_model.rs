@@ -562,3 +562,30 @@ mod older_embedding {
         );
     }
 }
+
+/// aimux's own: an explicit `null` or a wrong type fails as
+/// `parseProviderOptions` fails, with the schema error as the cause.
+#[tokio::test]
+async fn invalid_options_fail_with_the_parse_provider_options_message() {
+    for openai in [
+        json!({ "dimensions": null }),
+        json!({ "user": null }),
+        json!({ "user": 1 }),
+    ] {
+        let mock = MockFetch::new(vec![json_fixture_response(&[])]);
+        let error = provider(&mock)
+            .embedding("text-embedding-3-large")
+            .do_embed(&EmbeddingCallOptions {
+                provider_options: Some(provider_options(json!({ "openai": openai.clone() }))),
+                ..options()
+            })
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, aimux_core::AiMuxError::InvalidArgument { message, cause: Some(_) }
+                if message == "Invalid argument for parameter providerOptions: invalid openai provider options"),
+            "{openai}: {error:?}"
+        );
+        assert!(mock.seen().is_empty(), "{openai}");
+    }
+}

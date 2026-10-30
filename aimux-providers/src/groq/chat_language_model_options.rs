@@ -5,9 +5,7 @@
 //! one place that spells the key.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
 use aimux_core::options::CallOptions;
 
@@ -48,33 +46,25 @@ pub(crate) enum ServiceTier {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct GroqLanguageModelChatOptions {
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub reasoning_format: Option<ReasoningFormat>,
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub reasoning_effort: Option<ReasoningEffort>,
     /// Whether to enable parallel function calling during tool use. Default to true.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub parallel_tool_calls: Option<bool>,
     /// A unique identifier representing the end-user.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub user: Option<String>,
     /// Whether to use structured outputs. Default true.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub structured_outputs: Option<bool>,
     /// Whether to use strict JSON schema validation. Only used when structured
     /// outputs are enabled and a schema is provided. Default true.
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub strict_json_schema: Option<bool>,
-    #[serde(default, deserialize_with = "deserialize_optional")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub service_tier: Option<ServiceTier>,
-}
-
-fn deserialize_optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    T::deserialize(deserializer).map(Some)
 }
 
 /// Parse the Groq options of a call (`parseProviderOptions` with provider
@@ -86,17 +76,6 @@ where
 pub(crate) fn parse_groq_options(
     options: &CallOptions,
 ) -> Result<GroqLanguageModelChatOptions, AiMuxError> {
-    crate::openai::convert::parse_chat_provider_options(
-        options.provider_options.as_ref(),
-        NAMESPACE,
-        |groq| {
-            serde_json::from_value(Value::Object(groq.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument {
-                    message: format!("invalid argument for parameter providerOptions: {error}"),
-                    cause: Some(ErrorCause::source(&error)),
-                }
-            })
-        },
-    )
-    .map(Option::unwrap_or_default)
+    aimux_provider_utils::parse_provider_options(NAMESPACE, options.provider_options.as_ref())
+        .map(Option::unwrap_or_default)
 }

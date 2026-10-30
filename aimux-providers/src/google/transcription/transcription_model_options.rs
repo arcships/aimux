@@ -3,10 +3,8 @@
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::google::options::no_null;
-use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::JsonObject;
+use aimux_core::shared::SharedProviderOptions;
 
 #[derive(Deserialize)]
 enum Mode {
@@ -29,29 +27,26 @@ impl Mode {
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct TranscriptionOptions {
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     language_codes: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     custom_vocabulary: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     word_timestamp: Option<bool>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     diarization: Option<bool>,
-    #[serde(default, deserialize_with = "no_null")]
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     mode: Option<Mode>,
 }
 
 impl TranscriptionOptions {
-    pub(crate) fn parse(raw: Option<&JsonObject>) -> Result<Self, AiMuxError> {
-        match raw {
-            None => Ok(Self::default()),
-            Some(raw) => serde_json::from_value(Value::Object(raw.clone())).map_err(|error| {
-                AiMuxError::InvalidArgument {
-                    message: format!("Invalid argument for parameter providerOptions: {error}"),
-                    cause: Some(ErrorCause::source(&error)),
-                }
-            }),
-        }
+    pub(crate) fn parse(
+        namespace: crate::google::options::Namespace,
+        provider_options: Option<&SharedProviderOptions>,
+    ) -> Result<Self, AiMuxError> {
+        namespace
+            .parse(provider_options)
+            .map(Option::unwrap_or_default)
     }
 
     /// Google's `AudioTranscriptionConfig` (the live setup).
