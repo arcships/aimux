@@ -322,34 +322,36 @@ impl VideoModel for KlingAIVideoModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(submit_url, options),
             request_body,
-            aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
-                let url = input.url.clone();
-                let out =
-                    aimux_provider_utils::create_json_response_handler::<KlingAITaskResponse>()
-                        .handle_with_source(input, Some(body_source.clone()))
-                        .await?;
-                if out.value.code != 0 {
-                    let response_body = out.raw_value.as_ref().map(ToString::to_string);
-                    let code = out.value.code;
-                    let msg = out
-                        .value
-                        .message
-                        .unwrap_or_else(|| format!("KlingAI error code: {code}"));
-                    return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
-                        status_code: Some(200),
-                        provider_code: Some(code.to_string()),
-                        response_body,
-                        ..ApiCallError::new(
-                            msg,
-                            url,
-                            // In-band failure inside a 2xx envelope: lazily materialize
-                            // the redacted request body only when an error occurs.
-                            body_source.materialize(),
-                        )
-                    })));
-                }
-                Ok(out)
-            }),
+            aimux_provider_utils::ResponseHandler::new_with_source(
+                |input, body_source| async move {
+                    let url = input.url.clone();
+                    let out =
+                        aimux_provider_utils::create_json_response_handler::<KlingAITaskResponse>()
+                            .handle_with_source(input, Some(body_source.clone()))
+                            .await?;
+                    if out.value.code != 0 {
+                        let response_body = out.raw_value.as_ref().map(ToString::to_string);
+                        let code = out.value.code;
+                        let msg = out
+                            .value
+                            .message
+                            .unwrap_or_else(|| format!("KlingAI error code: {code}"));
+                        return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                            status_code: Some(200),
+                            provider_code: Some(code.to_string()),
+                            response_body,
+                            ..ApiCallError::new(
+                                msg,
+                                url,
+                                // In-band failure inside a 2xx envelope: lazily materialize
+                                // the redacted request body only when an error occurs.
+                                body_source.materialize(),
+                            )
+                        })));
+                    }
+                    Ok(out)
+                },
+            ),
             klingai_failed_response_handler(),
         )
         .await?;

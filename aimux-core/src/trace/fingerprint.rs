@@ -99,6 +99,10 @@ pub fn denoise(value: &Value) -> Value {
 
 /// Serialize `value` to JSON bytes with noise keys stripped on the fly,
 /// avoiding an intermediate cloned `serde_json::Value` tree.
+///
+/// # Errors
+///
+/// Returns `serde_json::Error` if JSON serialization fails.
 pub fn denoised_to_vec(value: &Value) -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_vec(&DenoisedRef(value, 0))
 }

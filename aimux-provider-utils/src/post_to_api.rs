@@ -47,8 +47,9 @@ pub async fn post_form_data_to_api<T>(
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
     let (content, content_type, values) = form_data.into_parts();
     let prepared = request.prepare(HttpMethod::Post, HttpBody::Bytes(content, content_type));
-    let source =
-        RequestBodySource::Redacted(std::sync::Arc::new(crate::logging::redact_error_context(values)));
+    let source = RequestBodySource::Redacted(std::sync::Arc::new(
+        crate::logging::redact_error_context(values),
+    ));
     call_to_api_source(
         prepared,
         source,

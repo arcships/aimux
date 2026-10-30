@@ -117,14 +117,12 @@ async fn run_w5a_bedrock_event_stream() -> MemStats {
     // cloned `Bytes` handles inside the stream never subtracts pre-guard memory.
     let mut large_frame_holder = chunks.clone();
     large_frame_holder.clear();
-    large_frame_holder.push(Ok(
-        encode_message(
-            "event",
-            "contentBlockDelta",
-            &"x".repeat(2 * 1024 * 1024),
-        )
-        .into(),
-    ));
+    large_frame_holder.push(Ok(encode_message(
+        "event",
+        "contentBlockDelta",
+        &"x".repeat(2 * 1024 * 1024),
+    )
+    .into()));
     let mut small_frame_holder = chunks.clone();
     small_frame_holder.clear();
     small_frame_holder.push(Ok(encode_message("event", "messageStop", "{}").into()));
@@ -292,9 +290,7 @@ async fn memory_ablation_ops_suite() {
     let w5c = run_w5c_catalogue_parse();
 
     println!("\n==================== M5 OPS/PROVIDERS ABLATION METRICS ====================");
-    println!(
-        "| Workload | Peak Heap | Retained / Mid Heap | Total Allocated | Alloc Count |"
-    );
+    println!("| Workload | Peak Heap | Retained / Mid Heap | Total Allocated | Alloc Count |");
     println!("|---|---:|---:|---:|---:|");
     println!(
         "| W5a: Bedrock decode_stream (24MB attack + 2MB frame) | {} ({} B) | {} ({} B) | {} ({} B) | {} |",

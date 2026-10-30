@@ -1731,7 +1731,9 @@ async fn stream_in_operation(
                 if let Err(tokio::sync::mpsc::error::TrySendError::Full((_, Err(err)))) =
                     tx.try_send((ts, Err(err)))
                 {
-                    *overflow.lock().unwrap_or_else(|e| e.into_inner()) = Some((ts, err));
+                    *overflow
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((ts, err));
                 }
             };
 
@@ -1771,25 +1773,42 @@ async fn stream_in_operation(
             let terminal = is_terminal_item(&item);
             let is_output = matches!(&item, Ok(part) if is_output_chunk(part));
 
-            // A closed receiver means the consumer dropped the stream.
-            let send_started = Instant::now();
-            let send_res = tokio::select! {
-                biased;
-                () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
-                () = timeout::wait_for_deadline(operation_deadline) => {
-                    send_terminal_err(
-                        &tx,
-                        &pump_overflow_error,
-                        Instant::now(),
-                        operation_deadline
-                            .expect("operation deadline future only resolves for a deadline")
-                            .error(),
-                    );
-                    break;
+            // Fast path: if the bounded channel has space, enqueue immediately
+            // without awaiting or perturbing timers. Only when the 256-slot
+            // channel is full do we await consumer backpressure.
+            match tx.try_send((arrived, item)) {
+                Ok(()) => {}
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
+                Err(tokio::sync::mpsc::error::TrySendError::Full(pending_item)) => {
+                    let send_started = Instant::now();
+                    let send_res = tokio::select! {
+                        biased;
+                        () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
+                        () = timeout::wait_for_deadline(operation_deadline) => {
+                            send_terminal_err(
+                                &tx,
+                                &pump_overflow_error,
+                                Instant::now(),
+                                operation_deadline
+                                    .expect("operation deadline future only resolves for a deadline")
+                                    .error(),
+                            );
+                            break;
+                        }
+                        res = tx.send(pending_item) => res,
+                    };
+                    if send_res.is_err() {
+                        break;
+                    }
+                    if !is_output && let Some(deadline) = &mut chunk_deadline {
+                        let blocked_dur = Instant::now().saturating_duration_since(send_started);
+                        if let Some(shifted) = deadline.at.checked_add(blocked_dur) {
+                            deadline.at = shifted;
+                        }
+                    }
                 }
-                res = tx.send((arrived, item)) => res,
-            };
-            if send_res.is_err() || terminal {
+            }
+            if terminal {
                 break;
             }
             if is_output {
@@ -1803,11 +1822,6 @@ async fn stream_in_operation(
                         break;
                     }
                 };
-            } else if let Some(deadline) = &mut chunk_deadline {
-                let blocked_dur = Instant::now().saturating_duration_since(send_started);
-                if let Some(shifted) = deadline.at.checked_add(blocked_dur) {
-                    deadline.at = shifted;
-                }
             }
         }
     });
@@ -1850,7 +1864,7 @@ async fn stream_in_operation(
                     item = rx.recv() => item.or_else(|| {
                         overflow_error
                             .lock()
-                            .unwrap_or_else(|e| e.into_inner())
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
                             .take()
                             .map(|(ts, err)| (ts, Err(err)))
                     }),

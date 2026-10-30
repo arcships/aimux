@@ -1184,7 +1184,7 @@ impl Recorder for JsonlRecorder {
 /// JsonlRecorder writer 端未完成分片上限:防止异常未终结调用无界驻留内存。
 /// 超限时将最旧未完成条目以 `complete=false` (`OutcomeStatus::Incomplete`) 落盘淘汰。
 const JSONL_PENDING_MAX: usize = 128;
-const JSONL_EVICTED_TRACK_MAX: usize = 512;
+const JSONL_EVICTED_TRACK_MAX: usize = 2048;
 
 #[derive(Default)]
 struct EvictedCallTracker {
@@ -1198,12 +1198,29 @@ impl EvictedCallTracker {
     }
 
     fn remove(&mut self, call_id: &str) {
-        self.set.remove(call_id);
+        if self.set.remove(call_id) {
+            while self.order.front().is_some_and(|id| !self.set.contains(id)) {
+                self.order.pop_front();
+            }
+            if self.order.len() > JSONL_EVICTED_TRACK_MAX.saturating_mul(2) {
+                self.order.retain(|id| self.set.contains(id));
+                if self.order.capacity() > JSONL_EVICTED_TRACK_MAX.saturating_mul(4) {
+                    self.order
+                        .shrink_to(JSONL_EVICTED_TRACK_MAX.saturating_mul(2));
+                }
+            }
+        }
     }
 
     fn insert(&mut self, call_id: String) {
         if self.set.contains(&call_id) {
             return;
+        }
+        while self.order.front().is_some_and(|id| !self.set.contains(id)) {
+            self.order.pop_front();
+        }
+        if self.order.len() > JSONL_EVICTED_TRACK_MAX.saturating_mul(2) {
+            self.order.retain(|id| self.set.contains(id));
         }
         while self.set.len() >= JSONL_EVICTED_TRACK_MAX {
             let Some(old) = self.order.pop_front() else {
@@ -1331,7 +1348,14 @@ fn writer_loop(
                     pending_order.push_back(call_id.clone());
                     pending.insert(call_id.clone(), Recording::new(&call_id, input, provider));
                 }
-                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::Session {
                 call_id,
@@ -1352,7 +1376,14 @@ fn writer_loop(
                 );
                 rec.session_id = Some(session_id);
                 rec.step = Some(step);
-                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             // C4-6:用 entry_or_init(而非 get_mut)兜底建条目,保证乱序
             // (先于 Input 到达)的 Provider 快照不丢。
@@ -1388,7 +1419,14 @@ fn writer_loop(
                 if insert_exchange(rec, exchange) {
                     mark_inconsistent(&damaged.inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::ExchangeUpdate {
                 call_id,
@@ -1417,7 +1455,14 @@ fn writer_loop(
                 ) {
                     mark_inconsistent(&damaged.inconsistent, &call_id);
                 }
-                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::TransportClosed { call_id } => {
                 if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
@@ -1433,7 +1478,14 @@ fn writer_loop(
                     &write_error,
                 )
                 .transport_closed = true;
-                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::Outcome { call_id, outcome } => {
                 if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
@@ -1449,10 +1501,23 @@ fn writer_loop(
                     &write_error,
                 )
                 .outcome = outcome;
-                try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
+                try_finalize(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &call_id,
+                    &damaged,
+                    &write_error,
+                );
             }
             RecordEvent::Flush { ack } => {
-                write_ready_all(&mut w, &mut pending, &mut pending_order, &damaged, &write_error);
+                write_ready_all(
+                    &mut w,
+                    &mut pending,
+                    &mut pending_order,
+                    &damaged,
+                    &write_error,
+                );
                 if let Err(e) = w.flush() {
                     note_write_error(&write_error, &e);
                 }
@@ -1915,7 +1980,8 @@ impl RingInner {
             self.pending_order.pop_front();
         }
         if self.pending_order.len() > self.pending_max.saturating_mul(2) {
-            self.pending_order.retain(|id| self.pending.contains_key(id));
+            self.pending_order
+                .retain(|id| self.pending.contains_key(id));
             if self.pending_order.capacity() > self.pending_max.saturating_mul(4) {
                 self.pending_order
                     .shrink_to(self.pending_max.saturating_mul(2));
@@ -1950,7 +2016,8 @@ impl RingInner {
                 self.pending_order.pop_front();
             }
             if self.pending_order.len() > self.pending_max.saturating_mul(2) {
-                self.pending_order.retain(|id| self.pending.contains_key(id));
+                self.pending_order
+                    .retain(|id| self.pending.contains_key(id));
                 if self.pending_order.capacity() > self.pending_max.saturating_mul(4) {
                     self.pending_order
                         .shrink_to(self.pending_max.saturating_mul(2));

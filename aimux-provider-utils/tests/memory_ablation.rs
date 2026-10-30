@@ -368,9 +368,12 @@ async fn run_w2_provider_utils_hot_path() -> MemStats {
         if i == 0 {
             active_stream_retained = g.snapshot().retained_bytes;
         }
+        let mut sse_count = 0usize;
         while let Some(ev) = stream_out.value.next().await {
             std::hint::black_box(ev.unwrap());
+            sse_count += 1;
         }
+        assert_eq!(sse_count, 100, "SSE stream must yield all 100 events");
     }
     let end = g.snapshot();
     MemStats {
@@ -733,13 +736,21 @@ async fn verify_edge_case_invariants() {
     let mut res = stream_text(&BurstThenStallModel, "hi", opts).await.unwrap();
     // Let the pump fill the 256-slot channel and trip the 15ms total timeout while full
     tokio::time::sleep(Duration::from_millis(35)).await;
+    let mut ok_count = 0usize;
     let mut saw_timeout_err = false;
     while let Some(item) = res.stream.next().await {
-        if item.is_err() {
-            saw_timeout_err = true;
-            break;
+        match item {
+            Ok(_) => ok_count += 1,
+            Err(_) => {
+                saw_timeout_err = true;
+                break;
+            }
         }
     }
+    assert!(
+        ok_count >= 256,
+        "buffered items in full 256-slot channel must be delivered before overflow timeout error (got {ok_count})"
+    );
     assert!(
         saw_timeout_err,
         "timeout firing while bounded pump channel is full must still deliver Err to consumer"
@@ -809,27 +820,34 @@ async fn verify_edge_case_invariants() {
 
     // 3. M4: JsonlRecorder evicts >128 incomplete calls and ignores late trailing
     // events for already-evicted calls without re-inserting orphan placeholders.
-    let tmp_dir = std::env::temp_dir().join(format!(
-        "aimux_ablation_evict_test_{}",
-        std::process::id()
-    ));
+    let tmp_dir =
+        std::env::temp_dir().join(format!("aimux_ablation_evict_test_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp_dir);
-    let jsonl_file = {
+    let jsonl_file = tmp_dir.join("recordings.jsonl");
+    {
         let jsonl = JsonlRecorder::new(&tmp_dir);
         let call_opts = CallOptions::default();
         for i in 0..140 {
             let cid = format!("evict-call-{i}");
             jsonl.record_input(&cid, &call_opts, "openai", "gpt-4o");
         }
-        // Call 0 was already evicted when call 128..139 arrived; send late trailing events for call 0
+        // Call 0..11 must already be evicted to disk while `jsonl` is still alive
+        jsonl.flush();
+        let mid_content = std::fs::read_to_string(&jsonl_file).unwrap_or_default();
+        assert!(
+            mid_content
+                .lines()
+                .any(|line| line.contains("\"evict-call-0\"")),
+            "JSONL_PENDING_MAX must evict oldest incomplete call to disk before JsonlRecorder is dropped"
+        );
+        // Send late trailing events for already-evicted call 0
         jsonl.record_transport_closed("evict-call-0");
         jsonl.record_outcome(
             "evict-call-0",
             &OutcomeRecord::success(FinishReasonUnified::Stop, &LanguageModelUsage::default()),
         );
         jsonl.flush();
-        tmp_dir.join("recordings.jsonl")
-    };
+    }
     let content = std::fs::read_to_string(&jsonl_file).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&tmp_dir);
     let call0_lines = content
@@ -854,9 +872,7 @@ async fn memory_ablation_suite() {
     let w_all = run_w_all_end_to_end().await;
 
     println!("\n==================== MEMORY ABLATION METRICS ====================");
-    println!(
-        "| Workload | Peak Heap | Retained / Mid Heap | Total Allocated | Alloc Count |"
-    );
+    println!("| Workload | Peak Heap | Retained / Mid Heap | Total Allocated | Alloc Count |");
     println!("|---|---:|---:|---:|---:|");
     println!(
         "| W1a: stream_text (5x 128KB req+resp) | {} ({} B) | {} ({} B) | {} ({} B) | {} |",
