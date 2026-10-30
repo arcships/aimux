@@ -1052,3 +1052,24 @@ mod provider {
         assert!(harness.request().url.contains("/speechtotext/"));
     }
 }
+
+/// aimux's own: an explicit `null` or a wrong type fails as
+/// `parseProviderOptions` fails, with the schema error as the cause.
+#[tokio::test]
+async fn invalid_options_fail_with_the_parse_provider_options_message() {
+    for azure in [json!({ "api": null }), json!({ "locales": "en" })] {
+        let harness = setup(default_settings(), default_body());
+        let error = harness
+            .provider
+            .transcription("mai-transcribe-2")
+            .do_generate(&with_options(input(), json!({ "azure": azure.clone() })))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, AiMuxError::InvalidArgument { message, cause: Some(_) }
+                if message == "Invalid argument for parameter providerOptions: invalid azure provider options"),
+            "{azure}: {error:?}"
+        );
+        assert_eq!(harness.fetch_calls(), 0, "{azure}");
+    }
+}

@@ -43,14 +43,8 @@ struct GoogleFilesUploadOptions {
 fn parse_google_files_options(
     provider_options: Option<&SharedProviderOptions>,
 ) -> Result<GoogleFilesUploadOptions, AiMuxError> {
-    let Some(google) = provider_options.and_then(|options| options.get(GOOGLE)) else {
-        return Ok(GoogleFilesUploadOptions::default());
-    };
-    let options: GoogleFilesUploadOptions = serde_json::from_value(Value::Object(google.clone()))
-        .map_err(|error| AiMuxError::InvalidArgument {
-        message: format!("Invalid Google file options: {error}"),
-        cause: Some(ErrorCause::source(&error)),
-    })?;
+    let options: GoogleFilesUploadOptions =
+        aimux_provider_utils::parse_provider_options(GOOGLE, provider_options)?.unwrap_or_default();
     if options.poll_interval_ms.is_some_and(|value| value <= 0.0)
         || options.poll_timeout_ms.is_some_and(|value| value <= 0.0)
     {

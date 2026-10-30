@@ -181,7 +181,10 @@ mod convert_to_deep_seek_chat_messages {
                 json!({ "deepseek": { "name": 123 } }),
             )]);
             let message = generate_error("deepseek-chat", &options).await;
-            assert!(message.contains("invalid provider options"), "{message}");
+            assert!(
+                message.contains("invalid deepseek provider options"),
+                "{message}"
+            );
         }
     }
 

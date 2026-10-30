@@ -38,6 +38,26 @@ impl Namespace {
         }
     }
 
+    /// `parseProviderOptions` for each of [`read_keys`](Self::read_keys) in
+    /// turn: the first namespace present, which must match `T`.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidArgument` when that namespace does not match `T`.
+    pub(crate) fn parse<T: serde::de::DeserializeOwned>(
+        self,
+        provider_options: Option<&SharedProviderOptions>,
+    ) -> Result<Option<T>, aimux_core::AiMuxError> {
+        for key in self.read_keys() {
+            if let Some(options) =
+                aimux_provider_utils::parse_provider_options(key, provider_options)?
+            {
+                return Ok(Some(options));
+            }
+        }
+        Ok(None)
+    }
+
     /// The keys response metadata is written under.
     pub(crate) fn write_keys(self) -> &'static [&'static str] {
         match self {
@@ -100,14 +120,4 @@ pub(crate) fn google_options(
 /// `{ "google": payload }`.
 pub(crate) fn google_metadata(payload: Value) -> ProviderMetadata {
     Namespace::Google.metadata(payload)
-}
-
-/// `deserialize_with` for a zod `.optional()` field: absence is `None`, an
-/// explicit `null` is an error.
-pub(crate) fn no_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: serde::Deserialize<'de>,
-{
-    T::deserialize(deserializer).map(Some)
 }

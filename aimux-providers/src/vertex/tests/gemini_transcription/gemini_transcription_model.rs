@@ -639,3 +639,29 @@ mod do_stream {
         );
     }
 }
+
+/// aimux's own: Vertex reads the `google` namespace when no Vertex one is
+/// given; a wrong type there fails as `parseProviderOptions` fails, naming
+/// that namespace.
+#[tokio::test]
+async fn a_wrong_typed_google_fallback_fails_with_the_parse_provider_options_message() {
+    let server = default_server();
+    let model = create_model(
+        "gemini-3.5-transcribe",
+        Some(&server),
+        #[cfg(feature = "realtime")]
+        None,
+    );
+    let error = model
+        .do_generate(&generate_options(
+            vec![1],
+            json!({ "google": { "languageCodes": "en" } }),
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, AiMuxError::InvalidArgument { message, cause: Some(_) }
+            if message == "Invalid argument for parameter providerOptions: invalid google provider options"),
+        "{error:?}"
+    );
+}

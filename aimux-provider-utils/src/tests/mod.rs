@@ -7,6 +7,7 @@ mod create_provider_stream_error;
 mod create_tool_name_mapping;
 mod is_valid_hostname_part;
 mod map_reasoning_to_provider;
+mod parse_provider_options;
 mod resolve_provider_reference;
 mod strip_file_extension;
 mod tool_result_to_content;

@@ -1900,3 +1900,14 @@ async fn stream_rejects_a_usage_count_that_is_not_a_number() {
         "{parts:?}"
     );
 }
+
+/// aimux's own: an option of the wrong type fails as `parseProviderOptions`
+/// fails.
+#[tokio::test]
+async fn wrong_typed_options_fail_with_the_parse_provider_options_message() {
+    let options = with_provider_options(options(), json!({ "deepseek": { "userId": 1 } }));
+    assert_eq!(
+        generate_error("deepseek-chat", &options).await,
+        "invalid argument: Invalid argument for parameter providerOptions: invalid deepseek provider options"
+    );
+}

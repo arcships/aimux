@@ -349,3 +349,20 @@ async fn url_audio_is_refused_before_any_request() {
     assert_eq!(error.to_string(), AudioInput::url_error().to_string());
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+/// aimux's own: an option of the wrong type fails as `parseProviderOptions`
+/// fails, with the schema error as the cause.
+#[tokio::test]
+async fn wrong_typed_options_fail_with_the_parse_provider_options_message() {
+    let server = serve(ResponseTemplate::new(200).set_body_json(json_body())).await;
+    let error = model_on(&server, None, "whisper-large-v3-turbo")
+        .do_generate(&call("audio/mpeg", Some(json!({ "temperature": "hot" }))))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, aimux_core::AiMuxError::InvalidArgument { message, cause: Some(_) }
+            if message == "Invalid argument for parameter providerOptions: invalid groq provider options"),
+        "{error:?}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
