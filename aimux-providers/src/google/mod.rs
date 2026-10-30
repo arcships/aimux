@@ -33,12 +33,13 @@ mod get_model_path;
 mod get_realtime_base_url;
 mod image_model;
 mod image_settings;
+pub(crate) mod internal;
 mod json_accumulator;
-pub(crate) mod language_model;
+mod language_model;
 mod language_model_options;
 mod map_finish_reason;
 mod model_capabilities;
-pub(crate) mod options;
+mod options;
 mod prepare_tools;
 mod prompt;
 mod provider;
@@ -61,10 +62,8 @@ pub use speech_model::GoogleSpeechModel;
 pub use transcription::GoogleTranscriptionModel;
 pub use video_model::GoogleVideoModel;
 
-// Paths the other vendors (Vertex, the default registry) import.
-pub(crate) use error::google_failed_response_handler;
-pub(crate) use language_model as convert;
-pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL, list_models_once};
+use error::google_failed_response_handler;
+pub(crate) use provider::{API_KEY_ENV_VAR, DEFAULT_BASE_URL};
 
 #[cfg(test)]
 mod tests;

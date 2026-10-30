@@ -13,8 +13,9 @@
 
 use crate::test_support::mock_fetch::{Canned, EnvVar, MockFetch};
 use crate::vertex::{
-    GoogleAuthOptions, GoogleAuthScopes, VertexProvider, VertexProviderSettings,
-    create_google_vertex,
+    GoogleAuthOptions, GoogleAuthScopes, VertexAnthropicProviderSettings,
+    VertexPartnerProviderSettings, VertexProvider, VertexProviderSettings, create_google_vertex,
+    create_google_vertex_anthropic, create_google_vertex_maas, create_google_vertex_xai,
 };
 use aimux_core::embedding_model::{EmbeddingCallOptions, EmbeddingModel};
 use aimux_core::error::AiMuxError;
@@ -785,8 +786,8 @@ fn partner_response(usage: serde_json::Value) -> Canned {
 fn partner_settings(
     fetch: &Arc<MockFetch>,
     location: Option<&str>,
-) -> crate::VertexPartnerProviderSettings {
-    crate::VertexPartnerProviderSettings {
+) -> VertexPartnerProviderSettings {
+    VertexPartnerProviderSettings {
         project: Some("test-project".into()),
         location: location.map(String::from),
         headers: Some(Resolvable::Value(
@@ -811,11 +812,11 @@ async fn maas_sub_provider_builds_on_openai_compatible() {
         partner_response(json!({"prompt_tokens": 1, "completion_tokens": 1})),
     ]);
     let regional =
-        crate::create_google_vertex_maas(partner_settings(&fetch, Some("us-central1"))).unwrap();
+        create_google_vertex_maas(partner_settings(&fetch, Some("us-central1"))).unwrap();
     let model = regional.chat("meta/llama-4-scout-17b-16e-instruct-maas");
     assert_eq!(model.provider(), "vertex.maas.chat");
     model.do_generate(&prompt()).await.unwrap();
-    let global = crate::create_google_vertex_maas(partner_settings(&fetch, None)).unwrap();
+    let global = create_google_vertex_maas(partner_settings(&fetch, None)).unwrap();
     let mut options = prompt();
     options.max_output_tokens = Some(100);
     global
@@ -853,8 +854,7 @@ async fn xai_sub_provider_builds_on_openai_compatible() {
         "prompt_tokens_details": {"cached_tokens": 4},
         "completion_tokens_details": {"reasoning_tokens": 12}
     }))]);
-    let provider =
-        crate::create_google_vertex_xai(partner_settings(&fetch, Some("us-central1"))).unwrap();
+    let provider = create_google_vertex_xai(partner_settings(&fetch, Some("us-central1"))).unwrap();
     let model = provider.chat("xai/grok-4.1-fast-reasoning");
     assert_eq!(model.provider(), "googleVertex.xai.chat");
     let mut options = prompt();
@@ -897,11 +897,11 @@ async fn partner_sub_providers_require_a_project() {
         "the test needs GOOGLE_VERTEX_PROJECT unset"
     );
     let fetch = MockFetch::new(vec![]);
-    let settings = crate::VertexPartnerProviderSettings {
+    let settings = VertexPartnerProviderSettings {
         project: None,
         ..partner_settings(&fetch, None)
     };
-    let error = crate::create_google_vertex_maas(settings)
+    let error = create_google_vertex_maas(settings)
         .unwrap()
         .chat("m")
         .do_generate(&prompt())
@@ -939,13 +939,13 @@ async fn partner_headers_win_over_per_call_headers() {
         .map(|(name, value)| (name.to_string(), value.to_string()))
         .collect(),
     );
-    crate::create_google_vertex_maas(partner_settings(&fetch, None))
+    create_google_vertex_maas(partner_settings(&fetch, None))
         .unwrap()
         .chat("meta/llama-3.3-70b-instruct-maas")
         .do_generate(&options)
         .await
         .unwrap();
-    crate::create_google_vertex_xai(partner_settings(&fetch, None))
+    create_google_vertex_xai(partner_settings(&fetch, None))
         .unwrap()
         .chat("xai/grok-4.1-fast-reasoning")
         .do_generate(&options)
@@ -995,13 +995,13 @@ async fn partner_user_agent_header_replaces_the_whole_user_agent() {
     };
     let mut options = prompt();
     options.headers = Some([("user-agent".to_string(), "call-agent/2.0".to_string())].into());
-    crate::create_google_vertex_maas(settings())
+    create_google_vertex_maas(settings())
         .unwrap()
         .chat("meta/llama-3.3-70b-instruct-maas")
         .do_generate(&options)
         .await
         .unwrap();
-    crate::create_google_vertex_xai(settings())
+    create_google_vertex_xai(settings())
         .unwrap()
         .chat("xai/grok-4.1-fast-reasoning")
         .do_generate(&options)
@@ -1032,7 +1032,7 @@ async fn only_gemini_models_send_the_google_vertex_user_agent_part() {
         "stop_reason": "end_turn", "stop_sequence": null,
         "usage": {"input_tokens": 1, "output_tokens": 1}
     }))]);
-    let anthropic = crate::create_google_vertex_anthropic(crate::VertexAnthropicProviderSettings {
+    let anthropic = create_google_vertex_anthropic(VertexAnthropicProviderSettings {
         project: Some("test-project".into()),
         location: Some("us-east5".into()),
         fetch: Some(fetch.transport()),

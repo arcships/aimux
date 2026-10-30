@@ -446,7 +446,7 @@ mod older_transcription {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{GoogleProviderSettings, create_google};
+    use crate::google::{GoogleProviderSettings, create_google};
     use aimux_core::error::AiMuxError;
     use aimux_core::provider::Provider;
     use aimux_core::shared::SharedProviderOptions;

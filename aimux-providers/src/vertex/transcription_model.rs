@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::google::options::Namespace;
+use crate::google::internal::{Namespace, google_failed_response_handler};
 use crate::shared::{EndpointConfig, is_valid_hostname_part};
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
@@ -227,7 +227,7 @@ impl TranscriptionModel for VertexTranscriptionModel {
             request,
             exchange.transform_body(request_body.clone()),
             aimux_provider_utils::create_json_response_handler::<GoogleVertexResponse>(),
-            crate::google::google_failed_response_handler(),
+            google_failed_response_handler(),
         )
         .await?;
 

@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use crate::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
 use crate::test_support::mock_fetch::{Canned, MockFetch, Seen};
-use crate::{MistralProviderSettings, create_mistral};
 use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions, TranscriptionModel};
@@ -71,10 +71,7 @@ fn transcription_response() -> Value {
     })
 }
 
-fn provider_with(
-    fetch: &Arc<MockFetch>,
-    settings: MistralProviderSettings,
-) -> crate::MistralProvider {
+fn provider_with(fetch: &Arc<MockFetch>, settings: MistralProviderSettings) -> MistralProvider {
     create_mistral(MistralProviderSettings {
         api_key: Some("test-api-key".into()),
         fetch: Some(fetch.transport()),

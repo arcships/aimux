@@ -53,12 +53,10 @@ use aimux_provider_utils::{
     FetchFunction, HeaderMapOpt, HttpRequest, Resolvable, validate_base_url,
 };
 
-use crate::openai::config::OpenAIModelConfig;
-use crate::openai::responses::responses_convert::{
+use crate::openai::internal::{
+    OpenAIModelConfig, OpenAIResponsesModel, ResponsesNamespace,
     build_responses_event_stream_with_raw, build_responses_generate_result,
-};
-use crate::openai::responses::{
-    OpenAIResponsesModel, ResponsesNamespace, build_responses_request_body,
+    build_responses_request_body, list_models_once, openai_failed_response_handler, supported_urls,
 };
 pub use crate::shared::TransformRequestBody;
 use crate::shared::{AuthScheme, Credential};
@@ -250,7 +248,7 @@ impl CodexProvider {
         );
         // Codex speaks the Responses API, so its models take the URLs the
         // OpenAI Responses model takes.
-        config.supported_urls = crate::openai::config::supported_urls(method);
+        config.supported_urls = supported_urls(method);
         config
     }
 
@@ -296,7 +294,7 @@ impl ProviderDiscovery for CodexProvider {
     /// `GET {base_url}/models` (OpenAI-compatible): one exchange, no retry.
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.model_config("models");
-        Box::pin(async move { crate::openai::model::list_models_once(&config).await })
+        Box::pin(async move { list_models_once(&config).await })
     }
 }
 
@@ -360,7 +358,7 @@ impl CodexModel {
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            crate::openai::openai_failed_response_handler(),
+            openai_failed_response_handler(),
         )
         .await
         .map_err(Self::map_subscription_401)?;
@@ -462,7 +460,7 @@ impl CodexModel {
             self.config.http_request(endpoint.clone(), headers, options),
             body.clone(),
             aimux_provider_utils::create_event_source_response_handler::<Value>(),
-            crate::openai::openai_failed_response_handler(),
+            openai_failed_response_handler(),
         )
         .await
         .map_err(Self::map_subscription_401)?;
@@ -605,7 +603,7 @@ pub async fn codex_refresh_at(
         },
         body,
         aimux_provider_utils::create_json_response_handler(),
-        crate::openai::openai_failed_response_handler(),
+        openai_failed_response_handler(),
     )
     .await?;
 

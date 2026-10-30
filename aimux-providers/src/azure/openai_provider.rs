@@ -22,14 +22,14 @@ use aimux_provider_utils::{
 };
 use futures::future::BoxFuture;
 
-use crate::openai::config::{BaseUrlInfo, OpenAIModelConfig, OpenAIUrl, UrlRules, set_query_param};
-use crate::openai::responses::ResponsesProfile;
-use crate::openai::{
-    OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIResponsesModel, OpenAISpeechModel,
-    OpenAITranscriptionModel,
+use crate::openai::internal::{
+    BaseUrlInfo, OpenAIEmbeddingModel, OpenAIImageModel, OpenAIModel, OpenAIModelConfig,
+    OpenAIResponsesModel, OpenAISpeechModel, OpenAITranscriptionModel, OpenAIUrl, ResponsesProfile,
+    UrlRules, openai_failed_response_handler, set_query_param, supported_urls,
 };
 use crate::shared::{AuthScheme, Credential, ProviderHeaders};
 
+use super::AzureOpenAITools;
 use super::options;
 use super::transcription_model_options::{Api, AzureOptions, is_default_speech, parse_options};
 
@@ -220,7 +220,7 @@ pub fn create_azure(
             crate::shared::aisdk_pins::AZURE.name,
             crate::shared::aisdk_pins::AZURE.version,
         ),
-        tools: crate::openai::tools::AzureOpenAITools,
+        tools: AzureOpenAITools,
     })
 }
 
@@ -287,7 +287,7 @@ pub struct AzureOpenAIProvider {
     headers: ProviderHeaders,
     fetch: Option<FetchFunction>,
     /// The provider tools (`azure.tools` in the AI SDK).
-    pub tools: crate::openai::tools::AzureOpenAITools,
+    pub tools: AzureOpenAITools,
 }
 
 impl AzureOpenAIProvider {
@@ -316,7 +316,7 @@ impl AzureOpenAIProvider {
             headers: self.headers.clone(),
             token_provider: None,
             fetch: self.fetch.clone(),
-            supported_urls: crate::openai::config::supported_urls(provider),
+            supported_urls: supported_urls(provider),
             transform_request_body: None,
             responses: ResponsesProfile::default(),
             chat_options: options::CHAT_OPTIONS,
@@ -486,7 +486,7 @@ impl ProviderDiscovery for AzureOpenAIProvider {
                     ..Default::default()
                 },
                 aimux_provider_utils::create_json_response_handler(),
-                crate::openai::openai_failed_response_handler(),
+                openai_failed_response_handler(),
             )
             .await?;
             let parsed: Resp = resp.value;

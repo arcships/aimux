@@ -10,8 +10,7 @@ use super::gemini_transcription::VertexGeminiTranscriptionModel;
 use super::image_model::VertexImageModel;
 use super::transcription_model::VertexTranscriptionModel;
 use super::video_model::VertexVideoModel;
-use crate::google::options::Namespace;
-use crate::google::{GoogleModel, GoogleSpeechModel};
+use crate::google::internal::{GoogleModel, GoogleSpeechModel, Namespace, list_models_once};
 use crate::shared::{
     Endpoint, EndpointConfig, ResolveEndpoint, SupportedUrlsSource, TransformRequestBody,
     is_valid_hostname_part,
@@ -510,7 +509,7 @@ impl VertexProvider {
         Ok(GoogleSpeechModel::from_config(
             model_id.to_string(),
             self.model_config("google.vertex.speech", false),
-            crate::google::options::Namespace::Vertex,
+            Namespace::Vertex,
         ))
     }
 
@@ -583,6 +582,6 @@ impl ProviderDiscovery for VertexProvider {
     /// `GET {base_url}/models` (Gemini native): one exchange, no retry.
     fn list_models(&self) -> BoxFuture<'_, Result<Vec<RuntimeModel>, AiMuxError>> {
         let config = self.model_config("google.vertex.models", false);
-        Box::pin(async move { crate::google::list_models_once(&config).await })
+        Box::pin(async move { list_models_once(&config).await })
     }
 }

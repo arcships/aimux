@@ -1,8 +1,8 @@
 //! The Vertex AI MaaS provider (maas/google-vertex-maas-provider.ts and its
 //! `-node` wrapper).
 
-use crate::openai_compatible::{
-    CompatibleBodyRewrite, OpenAICompatibleProvider, OpenAICompatibleProviderSettings,
+use crate::openai_compatible::internal::{
+    CompatibleBodyRewrite, OpenAICompatibleProvider, OpenAICompatibleProviderSettings, build,
 };
 use crate::vertex::partner_provider::{VertexMaasProviderSettings, partner_parts};
 use aimux_core::error::AiMuxError;
@@ -21,7 +21,7 @@ pub fn create_google_vertex_maas(
     settings: VertexMaasProviderSettings,
 ) -> Result<OpenAICompatibleProvider, AiMuxError> {
     let (base_url, fetch_headers) = partner_parts(&settings, true)?;
-    crate::openai_compatible::build(
+    build(
         OpenAICompatibleProviderSettings {
             name: "vertex.maas".into(),
             fetch: settings.fetch,

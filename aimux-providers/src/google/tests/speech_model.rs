@@ -315,9 +315,9 @@ mod older_speech {
     use wiremock::matchers::{method, path_regex};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{
-        GoogleProviderSettings, VertexProviderSettings, create_google, create_google_vertex,
-    };
+    use crate::google::options::Namespace;
+    use crate::google::{GoogleProviderSettings, GoogleSpeechModel, create_google};
+    use crate::shared::{AuthScheme, Credential, EndpointConfig, ProviderHeaders};
     use aimux_core::error::AiMuxError;
     use aimux_core::provider::Provider;
     use aimux_core::shared::{SharedProviderOptions, Warning};
@@ -662,13 +662,22 @@ mod older_speech {
         async fn reads_provider_options_under_google_vertex_for_a_vertex_provider() {
             let server = MockServer::start().await;
             mount(&server, "audio/L16;rate=24000", PCM_BASE64).await;
-            let vertex = create_google_vertex(VertexProviderSettings {
-                api_key: Some(Resolvable::Value("test-api-key".to_string())),
-                base_url: Some(server.uri()),
-                ..Default::default()
-            })
-            .unwrap();
-            let model = vertex.speech_model(LEGACY_MODEL).unwrap().unwrap();
+            let model = GoogleSpeechModel::from_config(
+                LEGACY_MODEL.to_string(),
+                EndpointConfig::fixed(
+                    "google.vertex.speech".to_string(),
+                    server.uri(),
+                    ProviderHeaders::new(
+                        Credential::Explicit(Resolvable::Value("test-api-key".to_string())),
+                        AuthScheme::Header("x-goog-api-key"),
+                        Vec::new(),
+                        None,
+                    ),
+                    None,
+                    None,
+                ),
+                Namespace::Vertex,
+            );
             assert_eq!(model.provider(), "google.vertex.speech");
             let mut call = options("Joe: Hi. Jane: Hello.");
             call.provider_options = provider_options(

@@ -32,6 +32,11 @@
 #      image, video, reranking) keep no builder-era config state, and their
 #      providerOptions namespace keys are spelled once, in each package's
 #      `options.rs`.
+#  11. Vendor packages never reach into another vendor package except through
+#      the four upstream internal surfaces (`openai::internal`,
+#      `anthropic::internal`, `google::internal`,
+#      `openai_compatible::internal`), only from the packages that wrap them,
+#      and never through crate-root vendor re-exports.
 #
 # Usage: bash scripts/check_provider_boundaries.sh   (exit 1 on any violation)
 
@@ -51,12 +56,28 @@ violation() {
     fi
 }
 
+# require_paths <path>...: fail when a searched or exempted path is missing so
+# a moved or deleted file is never silently skipped by `|| true`.
+require_paths() {
+    local path
+    for path in "$@"; do
+        if [[ ! -e "$path" ]]; then
+            violation "searched path does not exist: $path" "$path"
+        fi
+    done
+}
+
 # ── Rule 1: no call-level reads inside aimux-providers/src ───────────────────
 #
 # Allowed: lines that build `HttpRequest::new(`, and aimux-providers/src/replay.rs.
 # WebSocket realtime sessions are the one transport that the provider itself
 # opens, so they carry `options.timeout` into `WebSocketRequest` (no core
 # operation owns that timeout); the two sites are listed explicitly.
+require_paths \
+    aimux-providers/src \
+    aimux-providers/src/replay.rs \
+    aimux-providers/src/elevenlabs.rs \
+    aimux-providers/src/openai/transcription/transcription_model.rs
 rule1_pattern='options\.(max_retries|timeout|session_id|call_id)\b'
 rule1_hits="$(
     { grep -rnE "$rule1_pattern" aimux-providers/src --include='*.rs' || true; } |
@@ -94,6 +115,7 @@ for pattern in \
 done
 
 # `shared_client()` lives only in the injectable transport.
+require_paths aimux-provider-utils/src/fetch.rs
 shared_client_hits="$(
     search_removed 'shared_client\(\)' |
         grep -v '^\./aimux-provider-utils/src/fetch\.rs:' ||
@@ -107,6 +129,7 @@ violation 'shared_client() used outside aimux-provider-utils/src/fetch.rs' "$sha
 # the credential is loaded in the request headers, the URL comes from the
 # config's `url` closure and provider-level body rewrites are
 # `transform_request_body`.
+require_paths aimux-providers/src/openai
 rule3_hits="$(
     grep -rnE 'config\.api_key\b|config\.base_url\b|body_overrides|api_key_source|from_env' \
         aimux-providers/src/openai --include='*.rs' || true
@@ -122,6 +145,14 @@ violation 'aimux-providers/src/openai reads builder-era OpenAIConfig state' "$ru
 # rewrite removed. The names checked are every registry row plus the native
 # packages; comparisons against media types, tool names and wire tags are fine.
 # (Unit tests live next to the code and compare no provider names.)
+require_paths \
+    aimux-providers/src/provider_registry.json \
+    aimux-providers/src/openai \
+    aimux-providers/src/openai_compatible \
+    aimux-providers/src/anthropic \
+    aimux-providers/src/google \
+    aimux-providers/src/bedrock \
+    aimux-providers/src/cohere
 rule4_names="$(
     python3 - <<'PY'
 import json
@@ -147,6 +178,9 @@ violation 'provider-name comparison in a shared protocol package (aimux-provider
 # Two vendor test files may name them: the OpenAI evaluation test checks that
 # another preset has no decision model, and the openai-compatible fixtures were
 # recorded with a provider named `groq`.
+require_paths \
+    aimux-providers/src/openai/tests/evaluation.rs \
+    aimux-providers/src/openai_compatible/tests/provider.rs
 rule4b_hits="$(
     { grep -rnE '"(groq|deepseek)"' \
         aimux-providers/src/openai aimux-providers/src/openai_compatible --include='*.rs' || true; } |
@@ -158,20 +192,22 @@ violation 'groq / deepseek literal in the shared OpenAI or compatible package' "
 # `shared/` and `openai_compatible/` never reach into a vendor package: a
 # vendor's endpoint, base URL, headers or usage accounting is its own data
 # behind a trait or hook of the shared layer. Their code (doc links aside)
-# names only the shared layers (including `stream`), the preset registry and
-# the decision layer (`decision_support`, `runtime_decision`); the in-crate
-# tests also name `test_support`.
+# names only the shared layers (including `stream`) and the decision layer
+# (`decision_support`, `runtime_decision`); the in-crate tests also name
+# `test_support`.
+require_paths aimux-providers/src/shared aimux-providers/src/openai_compatible
 rule4c_hits="$(
     grep -rnE 'crate::[a-z_]+' aimux-providers/src/shared \
         aimux-providers/src/openai_compatible --include='*.rs' |
         awk '{ code = $0; sub(/^[^:]*:[0-9]+:/, "", code) }
              code ~ /^[[:space:]]*\/\// { next }
-             { gsub(/crate::(shared|stream|openai|openai_compatible|preset|decision_support|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
+             { gsub(/crate::(shared|stream|openai_compatible|decision_support|runtime_decision|test_support)([^a-z_]|$)/, "", code) }
              code ~ /crate::[a-z_]/' || true
 )"
 violation 'shared or openai_compatible names a vendor package (implement its trait in the vendor module)' "$rule4c_hits"
 
 # ── Rule 5: the builder-era compat names stay removed in the providers crate ──
+require_paths aimux-providers/src aimux-providers/tests
 rule5_hits="$(
     grep -rnE 'OpenAIConfig\b|OpenAIConfigProvider|OpenAICompatProfile|PLACEHOLDER_API_KEY|openai_legacy' \
         aimux-providers/src aimux-providers/tests --include='*.rs' || true
@@ -187,6 +223,12 @@ violation 'OpenAIConfig / OpenAIConfigProvider / OpenAICompatProfile / PLACEHOLD
 # `CANONICAL`: a `"anthropic"` literal anywhere else would read or write a key
 # that ignores the provider's custom name.
 anthropic_family='aimux-providers/src/anthropic aimux-providers/src/anthropic_aws aimux-providers/src/vertex/anthropic'
+# shellcheck disable=SC2086
+require_paths \
+    $anthropic_family \
+    aimux-providers/src/anthropic/language_model_options.rs \
+    aimux-providers/src/anthropic_aws/tests/provider.rs \
+    aimux-providers/src/anthropic/tests/provider.rs
 rule6_hits="$(
     # shellcheck disable=SC2086
     { grep -rnE 'body_overrides|api_key_source|from_env' \
@@ -219,6 +261,11 @@ violation '"anthropic" literal outside aimux-providers/src/anthropic/language_mo
 # aside). The historical `vertex` / `bedrock` aliases are not ported at all, so
 # they are flagged too: no model may read or write them.
 gvb_family='aimux-providers/src/google aimux-providers/src/vertex aimux-providers/src/bedrock'
+# shellcheck disable=SC2086
+require_paths \
+    $gvb_family \
+    aimux-providers/src/google/options.rs \
+    aimux-providers/src/bedrock/options.rs
 rule7_hits="$(
     # shellcheck disable=SC2086
     grep -rnE 'GoogleConfig\b|VertexProviderConfig|BedrockProviderConfig|VertexAuth\b|BedrockAuth\b|api_key_source|\bfrom_env\b|body_overrides' \
@@ -256,6 +303,8 @@ violation 'providerOptions namespace key spelled outside google/options.rs or be
 # Responses namespace through the shared model, and Open Responses derives its
 # key from the provider name, so neither spells a key.
 vendor_family='aimux-providers/src/azure aimux-providers/src/xai aimux-providers/src/mistral aimux-providers/src/cohere aimux-providers/src/voyage aimux-providers/src/huggingface aimux-providers/src/codex.rs aimux-providers/src/open_responses aimux-providers/src/elevenlabs aimux-providers/src/elevenlabs.rs'
+# shellcheck disable=SC2086
+require_paths $vendor_family
 rule8_hits="$(
     # shellcheck disable=SC2086
     grep -rnE '\b(AzureConfig|AzureAuth|TokenProvider|XAIConfig|MistralConfig|CohereConfig|VoyageConfig|HuggingFaceConfig|CodexConfig|OpenResponsesConfig|ElevenLabsConfig|StaticBearerConfig)\b|body_overrides|api_key_source|from_env' \
@@ -281,6 +330,7 @@ violation 'vendor providerOptions namespace key spelled outside the package opti
 #
 # Core owns `prepare_retries`. Providers run their poll / download stages with
 # the bounded helpers of `shared::poll`, and never re-submit a job.
+require_paths aimux-providers/src
 rule9_hits="$(
     grep -rnE 'prepare_retries|aimux_core::retry|use aimux_core::\{[^}]*\bretry\b' \
         aimux-providers/src --include='*.rs' || true
@@ -301,6 +351,8 @@ for name in $single_family; do
     single_paths="$single_paths aimux-providers/src/$name.rs"
     [[ -d "aimux-providers/src/$name" ]] && single_paths="$single_paths aimux-providers/src/$name"
 done
+# shellcheck disable=SC2086
+require_paths $single_paths
 rule10_hits="$(
     # shellcheck disable=SC2086
     grep -rnE '\b(SerperConfig|ProdiaConfig|DeepgramConfig|YouComConfig|LumaConfig|LMNTConfig|KlingAIConfig|DataforseoConfig|ReplicateConfig|FalConfig|RecraftConfig|AwsPollyConfig|JinaAiConfig|GladiaConfig|TavilyConfig|LinkupConfig|TinyfishConfig|BlackForestLabsConfig|AssemblyAIConfig|RevaiConfig|HumeConfig|CartesiaConfig|SearxngConfig|ParallelAiConfig|FirecrawlConfig|RunwaymlConfig|ExaAiConfig|StabilityConfig|GooglePseConfig)\b|body_overrides|api_key_source|from_env|with_base_url' \
@@ -322,6 +374,77 @@ rule10b_hits="$(
         ' || true
 )"
 violation 'single-modality providerOptions namespace key spelled outside the package options.rs' "$rule10b_hits"
+
+# ── Rule 11: cross-vendor references go only through <vendor>::internal ──────
+#
+# In the AI SDK only four packages have an `/internal` surface (`openai`,
+# `anthropic`, `google`, `openai-compatible`), and only their hosted variants
+# import from it:
+#   azure, codex, huggingface -> crate::openai::internal
+#   anthropic_aws, bedrock    -> crate::anthropic::internal
+#   vertex                    -> crate::{google,anthropic,openai_compatible}::internal
+#   preset                    -> crate::openai_compatible::internal
+# No other vendor module (or test) reaches into another vendor module or uses a
+# crate-root vendor re-export (`crate::OpenAI*`, `use crate::{...}`).
+# `stream/chat_tool_calls_tests.rs` is the sole cross-vendor test file until it
+# moves to `aimux-providers/tests/`.
+require_paths \
+    aimux-providers/src/openai/internal/mod.rs \
+    aimux-providers/src/anthropic/internal/mod.rs \
+    aimux-providers/src/google/internal/mod.rs \
+    aimux-providers/src/openai_compatible/internal/mod.rs \
+    aimux-providers/src/stream/chat_tool_calls_tests.rs
+rule11_hits="$(
+    python3 - <<'PY'
+import glob, re
+
+root = "aimux-providers/src"
+shared_items = {
+    "shared", "stream", "test_support", "decision_support", "decision_scoring",
+    "runtime_decision", "catalogue", "default_providers", "replay",
+    "AuthMode", "PresetDescriptor", "PresetEntry", "PresetSettings",
+    "create_provider", "default_providers", "provider_api_key_env",
+    "provider_default_base_url", "provider_names", "init_logging",
+    "get_model_specs", "Catalogue", "rebuild_decision_provider",
+    "rebuild_provider", "__unsupported_required_model", "__optional_model",
+    "impl_single_modality_provider",
+}
+allowed_internal = {
+    "azure": {"openai"},
+    "codex": {"openai"},
+    "huggingface": {"openai"},
+    "anthropic_aws": {"anthropic"},
+    "bedrock": {"anthropic"},
+    "vertex": {"google", "anthropic", "openai_compatible"},
+    "preset": {"openai_compatible"},
+}
+
+for path in sorted(glob.glob(f"{root}/**/*.rs", recursive=True)):
+    rel = path[len(root) + 1:]
+    if rel in ("lib.rs", "default_providers.rs", "catalogue.rs", "replay.rs", "stream/chat_tool_calls_tests.rs"):
+        continue
+    pkg = rel.split("/")[0].removesuffix(".rs")
+    with open(path, encoding="utf-8") as f:
+        for lineno, line in enumerate(f, 1):
+            code = line.split("//", 1)[0]
+            if not code.strip():
+                continue
+            if re.search(r"\bcrate::\{", code):
+                print(f"{path}:{lineno}:{line.rstrip()}")
+                continue
+            for m in re.finditer(r"\bcrate::([A-Za-z0-9_]+)(?:::([A-Za-z0-9_]+))?", code):
+                first, second = m.group(1), m.group(2)
+                if first == pkg or first in shared_items:
+                    continue
+                if first == "systemone" and pkg in ("jev", "runtime_decision"):
+                    continue
+                if first in allowed_internal.get(pkg, set()) and second == "internal":
+                    continue
+                print(f"{path}:{lineno}:{line.rstrip()}")
+                break
+PY
+)"
+violation 'cross-vendor reference outside crate::<vendor>::internal (or via crate-root re-export)' "$rule11_hits"
 
 if [[ "$status" -eq 0 ]]; then
     echo 'provider boundaries: ok'

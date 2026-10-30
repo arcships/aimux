@@ -13,7 +13,7 @@
 //! authenticated with a Google OAuth token like the Anthropic sub-provider.
 //! The base URL, the token and the headers are resolved per request.
 
-use crate::openai_compatible::{BaseUrl, ResolveBaseUrl, ResolveFetchHeaders};
+use crate::openai_compatible::internal::{BaseUrl, ResolveBaseUrl, ResolveFetchHeaders};
 use crate::vertex::auth_google_auth_library::{GoogleAuth, GoogleAuthOptions};
 use crate::vertex::provider_base::{
     LOCATION_ENV_VAR, PROJECT_ENV_VAR, check_location, location_host,

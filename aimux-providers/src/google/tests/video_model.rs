@@ -608,7 +608,7 @@ mod google_video_model {
 mod older_video {
     use std::sync::{Arc, Mutex};
 
-    use crate::{GoogleProviderSettings, create_google};
+    use crate::google::{GoogleProviderSettings, create_google};
     use aimux_core::download::{Download, DownloadRequest, DownloadedFile};
     use aimux_core::provider::Provider;
     use aimux_core::video_model::{VideoCallOptions, generate_video};

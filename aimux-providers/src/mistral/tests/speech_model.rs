@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
+use crate::mistral::{MistralProvider, MistralProviderSettings, create_mistral};
 use crate::test_support::mock_fetch::{Canned, MockFetch};
-use crate::{MistralProviderSettings, create_mistral};
 use aimux_core::error::AiMuxError;
 use aimux_core::provider::Provider;
 use aimux_core::shared::Warning;
@@ -24,10 +24,7 @@ use aimux_core::speech_model::{AudioData, SpeechCallOptions, SpeechModel, Speech
 const MODEL_ID: &str = "voxtral-mini-tts-2603";
 const URL: &str = "https://api.mistral.ai/v1/audio/speech";
 
-fn provider_with(
-    fetch: &Arc<MockFetch>,
-    settings: MistralProviderSettings,
-) -> crate::MistralProvider {
+fn provider_with(fetch: &Arc<MockFetch>, settings: MistralProviderSettings) -> MistralProvider {
     create_mistral(MistralProviderSettings {
         api_key: Some("test-api-key".into()),
         fetch: Some(fetch.transport()),

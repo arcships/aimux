@@ -653,7 +653,7 @@ status = "mapped"
 
 [[openai_compatible.files]]
 upstream = "src/internal/index.ts"
-rust = "openai_compatible/mod.rs"
+rust = "openai_compatible/internal/mod.rs"
 status = "mapped"
 
 [openai_compatible.files.tests]
@@ -1394,7 +1394,7 @@ reason = "no Google Interactions language model (#275 Google interactions model)
 
 [[google.files]]
 upstream = "src/internal/index.ts"
-rust = "google/mod.rs"
+rust = "google/internal/mod.rs"
 status = "mapped"
 
 [google.files.tests]
@@ -1772,7 +1772,7 @@ status = "mapped"
 
 [[openai.files]]
 upstream = "src/internal/index.ts"
-rust = "openai/mod.rs"
+rust = "openai/internal/mod.rs"
 status = "mapped"
 
 [openai.files.tests]
@@ -2828,8 +2828,8 @@ ts-only = [
 
 [[azure.files]]
 upstream = "src/azure-openai-tools.ts"
-rust = "openai/tools.rs"
-status = "elsewhere"
+rust = "azure/openai_tools.rs"
+status = "mapped"
 
 [azure.files.tests]
 
@@ -3105,7 +3105,7 @@ status = "mapped"
 
 [[anthropic.files]]
 upstream = "src/internal/index.ts"
-rust = "anthropic/mod.rs"
+rust = "anthropic/internal/mod.rs"
 status = "mapped"
 
 [anthropic.files.tests]

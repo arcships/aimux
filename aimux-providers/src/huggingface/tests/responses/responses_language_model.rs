@@ -14,7 +14,7 @@
 
 use std::sync::Arc;
 
-use crate::{HuggingFaceProvider, HuggingFaceProviderSettings, create_huggingface};
+use crate::huggingface::{HuggingFaceProvider, HuggingFaceProviderSettings, create_huggingface};
 use aimux_core::language_model::LanguageModel;
 use aimux_core::language_model_message::{
     LanguageModelMessage, LanguageModelPrompt, ToolPart, ToolResultOutput, ToolResultPart,

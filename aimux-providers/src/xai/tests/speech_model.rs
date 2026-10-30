@@ -24,7 +24,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::test_support::mock_fetch::{Canned, MockFetch};
-use crate::{XAIProviderSettings, XaiSpeechModel, create_xai};
+use crate::xai::{XAIProviderSettings, XaiSpeechModel, create_xai};
 
 /// The audio the upstream server answers with (`new Uint8Array([1, 2, 3, 4])`).
 const AUDIO: [u8; 4] = [1, 2, 3, 4];

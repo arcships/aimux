@@ -708,7 +708,7 @@ mod older_image {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{OpenAIProviderSettings, create_openai};
+    use crate::openai::{OpenAIProviderSettings, create_openai};
     use aimux_core::image_model::{ImageCallOptions, ImageFile, ImageFileData, ImageOutputs};
     use aimux_core::provider::Provider;
     use aimux_core::shared::{AspectRatio, Size};

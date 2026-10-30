@@ -215,8 +215,8 @@ pub use anthropic_aws::{
     AnthropicAwsAuth, AnthropicAwsProvider, AnthropicAwsProviderSettings, create_anthropic_aws,
 };
 pub use azure::{
-    AzureChatModel, AzureOpenAIProvider, AzureOpenAIProviderSettings, AzureResponsesModel, azure,
-    create_azure,
+    AzureChatModel, AzureOpenAIProvider, AzureOpenAIProviderSettings, AzureOpenAITools,
+    AzureResponsesModel, azure, create_azure,
 };
 pub use bedrock::{
     AmazonBedrockProvider, AmazonBedrockProviderSettings, BedrockEmbeddingModel, BedrockImageModel,

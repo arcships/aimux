@@ -30,8 +30,9 @@ pub mod completion;
 pub mod embedding;
 mod error;
 pub mod image;
+pub(crate) mod internal;
 mod provider;
-pub(crate) mod request_rewrite;
+mod request_rewrite;
 mod utils;
 
 pub use chat::{
@@ -47,11 +48,13 @@ pub use provider::{
 
 pub use crate::shared::TransformRequestBody;
 
-pub(crate) use chat::ChatSettings;
-pub(crate) use provider::{
-    Assembly, BaseUrl, CompatModelConfig, ResolveBaseUrl, ResolveFetchHeaders, build,
-};
-pub(crate) use request_rewrite::CompatibleBodyRewrite;
+use provider::CompatModelConfig;
+
+// The module tests build compatible models straight from the internals.
+#[cfg(test)]
+use chat::ChatSettings;
+#[cfg(test)]
+use provider::{Assembly, BaseUrl, ResolveBaseUrl};
 
 #[cfg(test)]
 mod tests;
