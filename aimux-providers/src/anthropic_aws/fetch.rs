@@ -19,11 +19,9 @@ use async_trait::async_trait;
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, HeaderMapOpt,
-    Resolvable, SigV4Fetch, SigV4Signing, combine_headers, default_fetch, load_optional_setting,
-    load_setting,
+    Resolvable, SigV4Fetch, SigV4Signing, combine_headers, default_fetch, is_valid_hostname_part,
+    load_optional_setting, load_setting,
 };
-
-use crate::shared::is_valid_hostname_part;
 
 use super::AnthropicAwsAuth;
 
