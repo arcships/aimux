@@ -98,6 +98,15 @@ async fn run_w5a_bedrock_event_stream() -> MemStats {
         chunks.push(Ok(vec![b'a'; 1024 * 1024].into()));
     }
 
+    // Also prepare a 12-byte bad-prelude-CRC chunk claiming a 1 MiB frame length
+    let mut bad_prelude = vec![0u8; 16];
+    bad_prelude[..4].copy_from_slice(&(1024 * 1024u32).to_be_bytes());
+    bad_prelude[8..12].copy_from_slice(&0xDEAD_BEEFu32.to_be_bytes());
+    let bad_prelude_chunks = vec![
+        Ok(bad_prelude.into()),
+        Ok(vec![b'z'; 1024 * 1024].into()),
+    ];
+
     // Also prepare a valid 2 MiB frame followed by a small frame to measure post-drain buffer retention
     let large_frame = encode_message(
         "event",
@@ -109,23 +118,38 @@ async fn run_w5a_bedrock_event_stream() -> MemStats {
 
     let g = MeasureGuard::start();
     let mut stream = decode_stream(futures::stream::iter(chunks).boxed());
-    while let Some(item) = stream.next().await {
-        if item.is_err() {
-            break;
-        }
-    }
+    let first_outcome = stream.next().await;
+    assert!(
+        matches!(first_outcome, Some(Err(_))),
+        "oversized 2 GiB frame header must fail immediately"
+    );
+    assert!(
+        stream.next().await.is_none(),
+        "stream must terminate after frame length error"
+    );
     drop(stream);
+
+    // Verify early 12-byte prelude CRC check fails before accumulating the rest of the 1 MiB frame
+    let mut bad_crc_stream = decode_stream(futures::stream::iter(bad_prelude_chunks).boxed());
+    let bad_crc_outcome = bad_crc_stream.next().await;
+    assert!(
+        matches!(bad_crc_outcome, Some(Err(_))),
+        "corrupted 12-byte prelude CRC must fail before full frame buffering"
+    );
+    drop(bad_crc_stream);
 
     // Now feed the 2 MiB valid frame, drain it, and measure retained buffer inside live stream before small frame
     let (tx, rx) = futures::channel::mpsc::unbounded();
     tx.unbounded_send(Ok(large_frame)).unwrap();
     let mut stream2 = decode_stream(rx.boxed());
     let msg1 = stream2.next().await.unwrap().unwrap();
+    assert_eq!(msg1.event_type, "contentBlockDelta");
     drop(msg1);
     let retained_after_large_frame = g.snapshot().retained_bytes;
     tx.unbounded_send(Ok(small_frame)).unwrap();
     drop(tx);
-    let _ = stream2.next().await;
+    let msg2 = stream2.next().await.unwrap().unwrap();
+    assert_eq!(msg2.event_type, "messageStop");
     let end = g.snapshot();
     drop(stream2);
 
@@ -139,20 +163,28 @@ async fn run_w5a_bedrock_event_stream() -> MemStats {
 
 // W5b: `aimux_ops::manifest::manifest_digest()` (30 calls) + `manifest()` (10 calls)
 fn run_w5b_manifest_calls() -> MemStats {
-    // Warm up one call first so we measure steady-state + repeated calls
+    // Warm up OnceLock cache first so we measure steady-state repeated calls
+    let warmup_digest = aimux_ops::manifest::manifest_digest();
+    assert!(!warmup_digest.is_empty());
+
     let g = MeasureGuard::start();
     for _ in 0..30 {
         let d = aimux_ops::manifest::manifest_digest();
+        assert_eq!(d, warmup_digest);
         std::hint::black_box(d);
     }
     for _ in 0..10 {
         let m = aimux_ops::manifest::manifest();
+        assert_eq!(
+            m.get("digest").and_then(Value::as_str),
+            Some(warmup_digest.as_str())
+        );
         std::hint::black_box(m);
     }
     g.snapshot()
 }
 
-// W5c: `aimux_providers::catalogue::parse_anya2a_all` (1,000 models)
+// W5c: `aimux_providers::catalogue::parse_anya2a_all_owned` (1,000 models)
 fn run_w5c_catalogue_parse() -> MemStats {
     let models: Vec<Value> = (0..1000)
         .map(|i| {
@@ -182,6 +214,11 @@ fn run_w5c_catalogue_parse() -> MemStats {
     let parsed_val: Value = serde_json::from_slice(&raw_bytes).unwrap();
     let cat = aimux_providers::catalogue::parse_anya2a_all_owned(parsed_val).unwrap();
     let stats = g.snapshot();
+    assert_eq!(
+        cat.specs.get("openai").map(std::collections::HashMap::len),
+        Some(1000)
+    );
+    assert!(cat.specs["openai"]["model-0"].raw.is_some());
     std::hint::black_box(&cat);
     drop(cat);
     stats
@@ -237,4 +274,25 @@ async fn memory_ablation_ops_suite() {
         w5c.alloc_count
     );
     println!("===========================================================================\n");
+
+    // Verify M5 memory bounds
+    assert!(
+        w5a.peak_bytes < 6 * 1024 * 1024,
+        "W5a peak heap ({}) must stay well below the 24 MiB attack stream",
+        w5a.peak_bytes
+    );
+    assert!(
+        w5a.retained_bytes < 64 * 1024,
+        "W5a retained buffer after 2 MiB frame ({}) must shrink below 64 KiB",
+        w5a.retained_bytes
+    );
+    assert!(
+        w5b.total_alloc_bytes < 35 * 1024 * 1024,
+        "W5b total allocated bytes ({}) must reflect OnceLock manifest caching",
+        w5b.total_alloc_bytes
+    );
+    assert!(
+        w5c.peak_bytes < 5 * 1024 * 1024 && w5c.total_alloc_bytes < 5 * 1024 * 1024,
+        "W5c peak/total heap ({w5c:?}) must reflect in-place raw Value move without full-tree cloning"
+    );
 }

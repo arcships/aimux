@@ -42,7 +42,14 @@ pub async fn read_response_with_size_limit(
     .await
 }
 
-pub(crate) async fn read_response_with_size_limit_lazy(
+/// Read a response incrementally and lazily construct `request_body_values`
+/// only when an error is returned.
+///
+/// # Errors
+///
+/// Returns an API-call error when the body exceeds `max_bytes` or cannot be
+/// read, and an abort error when the caller cancels.
+pub async fn read_response_with_size_limit_lazy(
     response: FetchResponse,
     url: &str,
     request_body_values: impl FnOnce() -> serde_json::Value,

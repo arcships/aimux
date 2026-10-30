@@ -1184,18 +1184,57 @@ impl Recorder for JsonlRecorder {
 /// JsonlRecorder writer 端未完成分片上限:防止异常未终结调用无界驻留内存。
 /// 超限时将最旧未完成条目以 `complete=false` (`OutcomeStatus::Incomplete`) 落盘淘汰。
 const JSONL_PENDING_MAX: usize = 128;
+const JSONL_EVICTED_TRACK_MAX: usize = 512;
+
+#[derive(Default)]
+struct EvictedCallTracker {
+    set: HashSet<String>,
+    order: VecDeque<String>,
+}
+
+impl EvictedCallTracker {
+    fn contains(&self, call_id: &str) -> bool {
+        self.set.contains(call_id)
+    }
+
+    fn remove(&mut self, call_id: &str) {
+        self.set.remove(call_id);
+    }
+
+    fn insert(&mut self, call_id: String) {
+        if self.set.contains(&call_id) {
+            return;
+        }
+        while self.set.len() >= JSONL_EVICTED_TRACK_MAX {
+            let Some(old) = self.order.pop_front() else {
+                break;
+            };
+            self.set.remove(&old);
+        }
+        self.order.push_back(call_id.clone());
+        self.set.insert(call_id);
+    }
+}
 
 /// 兜底建条目:事件先于 Input 到达(纯层 B/乱序)时,以空 input 占位,并受 `JSONL_PENDING_MAX` 约束。
 fn entry_or_init<'a>(
     w: &mut impl Write,
     pending: &'a mut HashMap<String, Recording>,
     pending_order: &mut VecDeque<String>,
+    evicted_calls: &mut EvictedCallTracker,
     call_id: &str,
     damaged: &DamagedCalls,
     write_error: &Mutex<Option<String>>,
 ) -> &'a mut Recording {
     if !pending.contains_key(call_id) {
-        evict_jsonl_pending_if_needed(w, pending, pending_order, damaged, write_error);
+        evict_jsonl_pending_if_needed(
+            w,
+            pending,
+            pending_order,
+            evicted_calls,
+            damaged,
+            write_error,
+        );
         pending_order.push_back(call_id.to_string());
         pending.insert(
             call_id.to_string(),
@@ -1217,6 +1256,7 @@ fn evict_jsonl_pending_if_needed(
     w: &mut impl Write,
     pending: &mut HashMap<String, Recording>,
     pending_order: &mut VecDeque<String>,
+    evicted_calls: &mut EvictedCallTracker,
     damaged: &DamagedCalls,
     write_error: &Mutex<Option<String>>,
 ) {
@@ -1238,6 +1278,7 @@ fn evict_jsonl_pending_if_needed(
         };
         if let Some(mut rec) = pending.remove(&old) {
             let _ = damaged.take(&old);
+            evicted_calls.insert(old);
             rec.complete = false;
             if rec.outcome.status == OutcomeStatus::Pending {
                 rec.outcome.status = OutcomeStatus::Incomplete;
@@ -1261,6 +1302,7 @@ fn writer_loop(
 ) {
     let mut pending: HashMap<String, Recording> = HashMap::new();
     let mut pending_order: VecDeque<String> = VecDeque::new();
+    let mut evicted_calls = EvictedCallTracker::default();
 
     while let Ok(ev) = rx.recv() {
         match ev {
@@ -1269,6 +1311,7 @@ fn writer_loop(
                 input,
                 provider,
             } => {
+                evicted_calls.remove(&call_id);
                 // C4-6:Input 仅在当前 provider 仍为空占位时填充最小 provider,
                 // 避免乱序(Provider 先到)时把已写入的完整快照覆盖回最小值。
                 if let Some(rec) = pending.get_mut(&call_id) {
@@ -1281,6 +1324,7 @@ fn writer_loop(
                         &mut w,
                         &mut pending,
                         &mut pending_order,
+                        &mut evicted_calls,
                         &damaged,
                         &write_error,
                     );
@@ -1294,10 +1338,14 @@ fn writer_loop(
                 session_id,
                 step,
             } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    continue;
+                }
                 let rec = entry_or_init(
                     &mut w,
                     &mut pending,
                     &mut pending_order,
+                    &mut evicted_calls,
                     &call_id,
                     &damaged,
                     &write_error,
@@ -1309,10 +1357,14 @@ fn writer_loop(
             // C4-6:用 entry_or_init(而非 get_mut)兜底建条目,保证乱序
             // (先于 Input 到达)的 Provider 快照不丢。
             RecordEvent::Provider { call_id, provider } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    continue;
+                }
                 entry_or_init(
                     &mut w,
                     &mut pending,
                     &mut pending_order,
+                    &mut evicted_calls,
                     &call_id,
                     &damaged,
                     &write_error,
@@ -1320,11 +1372,15 @@ fn writer_loop(
                 .provider = provider;
             }
             RecordEvent::Exchange { call_id, exchange } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    continue;
+                }
                 // C4-7:同 (call_id, attempt) 重复 → 合并骨架并标记 inconsistent。
                 let rec = entry_or_init(
                     &mut w,
                     &mut pending,
                     &mut pending_order,
+                    &mut evicted_calls,
                     &call_id,
                     &damaged,
                     &write_error,
@@ -1341,12 +1397,16 @@ fn writer_loop(
                 response,
                 error,
             } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    continue;
+                }
                 // C4-7:要求恰好一个匹配 attempt;0 或 >1 → 标记 inconsistent,
                 // 不静默 patch 第一条。
                 let rec = entry_or_init(
                     &mut w,
                     &mut pending,
                     &mut pending_order,
+                    &mut evicted_calls,
                     &call_id,
                     &damaged,
                     &write_error,
@@ -1360,10 +1420,14 @@ fn writer_loop(
                 try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             RecordEvent::TransportClosed { call_id } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    continue;
+                }
                 entry_or_init(
                     &mut w,
                     &mut pending,
                     &mut pending_order,
+                    &mut evicted_calls,
                     &call_id,
                     &damaged,
                     &write_error,
@@ -1372,10 +1436,14 @@ fn writer_loop(
                 try_finalize(&mut w, &mut pending, &mut pending_order, &call_id, &damaged, &write_error);
             }
             RecordEvent::Outcome { call_id, outcome } => {
+                if !pending.contains_key(&call_id) && evicted_calls.contains(&call_id) {
+                    continue;
+                }
                 entry_or_init(
                     &mut w,
                     &mut pending,
                     &mut pending_order,
+                    &mut evicted_calls,
                     &call_id,
                     &damaged,
                     &write_error,

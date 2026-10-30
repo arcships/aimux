@@ -683,8 +683,159 @@ fn fmt_mb(bytes: usize) -> String {
     format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
 }
 
+async fn verify_edge_case_invariants() {
+    // 1. M1: When the 256-slot bounded pump channel is full and a timeout fires,
+    // the terminal timeout error is preserved in `overflow_error` and delivered
+    // after buffered items rather than being dropped by `try_send`.
+    struct BurstThenStallModel;
+    #[async_trait]
+    impl LanguageModel for BurstThenStallModel {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "burst-stall"
+        }
+        async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unimplemented!()
+        }
+        async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            let s = async_stream::stream! {
+                yield Ok(StreamPart::TextStart { id: "t1".into(), provider_metadata: None });
+                for _ in 0..300 {
+                    yield Ok(StreamPart::TextDelta {
+                        id: "t1".into(),
+                        delta: "chunk".into(),
+                        provider_metadata: None,
+                    });
+                }
+                futures::future::pending::<()>().await;
+            };
+            Ok(StreamResult {
+                stream: Box::pin(s),
+                request: None,
+                response: None,
+            })
+        }
+    }
+
+    let mut opts = GenerateTextOptions::default();
+    opts.timeout = Some(aimux_core::options::TimeoutConfiguration {
+        total_ms: Some(15),
+        chunk_ms: None,
+        ..Default::default()
+    });
+    let mut res = stream_text(&BurstThenStallModel, "hi", opts).await.unwrap();
+    // Let the pump fill the 256-slot channel and trip the 15ms total timeout while full
+    tokio::time::sleep(Duration::from_millis(35)).await;
+    let mut saw_timeout_err = false;
+    while let Some(item) = res.stream.next().await {
+        if item.is_err() {
+            saw_timeout_err = true;
+            break;
+        }
+    }
+    assert!(
+        saw_timeout_err,
+        "timeout firing while bounded pump channel is full must still deliver Err to consumer"
+    );
+
+    // 2. M1: Consumer backpressure on a full bounded channel must not trip chunk_ms
+    // when the provider yields chunks immediately after tx.send unblocks.
+    struct FastBurstModel;
+    #[async_trait]
+    impl LanguageModel for FastBurstModel {
+        fn provider(&self) -> &str {
+            "mock"
+        }
+        fn model_id(&self) -> &str {
+            "fast-burst"
+        }
+        async fn do_generate(&self, _options: &CallOptions) -> Result<GenerateResult, AiMuxError> {
+            unimplemented!()
+        }
+        async fn do_stream(&self, _options: &CallOptions) -> Result<StreamResult, AiMuxError> {
+            let s = async_stream::stream! {
+                yield Ok(StreamPart::TextStart { id: "t1".into(), provider_metadata: None });
+                for _ in 0..320 {
+                    yield Ok(StreamPart::TextDelta {
+                        id: "t1".into(),
+                        delta: "x".into(),
+                        provider_metadata: None,
+                    });
+                }
+                yield Ok(StreamPart::TextEnd { id: "t1".into(), provider_metadata: None });
+                yield Ok(StreamPart::Finish {
+                    finish_reason: FinishReason {
+                        unified: FinishReasonUnified::Stop,
+                        raw: Some("stop".into()),
+                    },
+                    usage: Usage::default(),
+                    provider_metadata: None,
+                });
+            };
+            Ok(StreamResult {
+                stream: Box::pin(s),
+                request: None,
+                response: None,
+            })
+        }
+    }
+
+    let mut opts2 = GenerateTextOptions::default();
+    opts2.timeout = Some(aimux_core::options::TimeoutConfiguration {
+        chunk_ms: Some(15),
+        ..Default::default()
+    });
+    let mut res2 = stream_text(&FastBurstModel, "hi", opts2).await.unwrap();
+    // Consumer stalls 35ms (> 15ms chunk_ms) while the 256-slot channel is full
+    tokio::time::sleep(Duration::from_millis(35)).await;
+    while let Some(item) = res2.stream.next().await {
+        assert!(
+            item.is_ok(),
+            "consumer backpressure on full channel must not trip chunk timeout: {item:?}"
+        );
+    }
+
+    // 3. M4: JsonlRecorder evicts >128 incomplete calls and ignores late trailing
+    // events for already-evicted calls without re-inserting orphan placeholders.
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "aimux_ablation_evict_test_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let jsonl_file = {
+        let jsonl = JsonlRecorder::new(&tmp_dir);
+        let call_opts = CallOptions::default();
+        for i in 0..140 {
+            let cid = format!("evict-call-{i}");
+            jsonl.record_input(&cid, &call_opts, "openai", "gpt-4o");
+        }
+        // Call 0 was already evicted when call 128..139 arrived; send late trailing events for call 0
+        jsonl.record_transport_closed("evict-call-0");
+        jsonl.record_outcome(
+            "evict-call-0",
+            &OutcomeRecord::success(FinishReasonUnified::Stop, &LanguageModelUsage::default()),
+        );
+        jsonl.flush();
+        tmp_dir.join("recordings.jsonl")
+    };
+    let content = std::fs::read_to_string(&jsonl_file).unwrap_or_default();
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let call0_lines = content
+        .lines()
+        .filter(|line| line.contains("\"evict-call-0\""))
+        .count();
+    assert_eq!(
+        call0_lines, 1,
+        "already-evicted call must not produce a second orphan record on late trailing events"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn memory_ablation_suite() {
+    verify_edge_case_invariants().await;
+
     let w1a = run_w1a_stream_text_hot_path().await;
     let w1b = run_w1b_stream_text_backpressure().await;
     let w2 = run_w2_provider_utils_hot_path().await;
@@ -758,4 +909,30 @@ async fn memory_ablation_suite() {
         w_all.alloc_count
     );
     println!("=================================================================\n");
+
+    // Verify memory ceilings for every ablation module (M1-M4 + W_ALL)
+    assert!(
+        w1a.peak_bytes < 512 * 1024 && w1a.retained_bytes < 16 * 1024,
+        "W1a memory regression: {w1a:?}"
+    );
+    assert!(
+        w1b.peak_bytes < 2 * 1024 * 1024 && w1b.retained_bytes < 2 * 1024 * 1024,
+        "W1b backpressure memory regression: {w1b:?}"
+    );
+    assert!(
+        w2.peak_bytes < 1024 * 1024 && w2.retained_bytes < 300 * 1024,
+        "W2 provider-utils memory regression: {w2:?}"
+    );
+    assert!(
+        w3.peak_bytes < 1024 * 1024 && w3.retained_bytes < 600 * 1024,
+        "W3 TraceLayer+TraceStore memory regression: {w3:?}"
+    );
+    assert!(
+        w4.peak_bytes < 20 * 1024 * 1024 && w4.retained_bytes < 10 * 1024 * 1024,
+        "W4 Recorder memory regression: {w4:?}"
+    );
+    assert!(
+        w_all.peak_bytes < 10 * 1024 * 1024 && w_all.retained_bytes < 10 * 1024 * 1024,
+        "W_ALL end-to-end memory regression: {w_all:?}"
+    );
 }

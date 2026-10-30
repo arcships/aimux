@@ -198,7 +198,7 @@ impl Files for GoogleFiles {
                 ..Default::default()
             }),
             exchange.transform_body(init_body_value),
-            aimux_provider_utils::ResponseHandler::new(|input| async move {
+            aimux_provider_utils::ResponseHandler::new_with_source(|input, _body_source| async move {
                 let headers =
                     aimux_provider_utils::extract_response_headers::extract_response_headers(
                         input.response.headers(),

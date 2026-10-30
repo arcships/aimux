@@ -16,14 +16,25 @@ use crate::read_response_with_size_limit::{
     DEFAULT_MAX_DOWNLOAD_SIZE, DEFAULT_MAX_JSON_RESPONSE_SIZE, read_response_with_size_limit_lazy,
 };
 
+tokio::task_local! {
+    static CURRENT_BODY_SOURCE: RequestBodySource;
+}
+
+fn current_request_body_source() -> Option<RequestBodySource> {
+    CURRENT_BODY_SOURCE.try_with(Clone::clone).ok()
+}
+
+/// Shared lazy source for a redacted request body used in error context.
 #[derive(Debug, Clone)]
-pub(crate) enum RequestBodySource {
+pub enum RequestBodySource {
     HttpBody(std::sync::Arc<HttpBody>),
     Redacted(std::sync::Arc<serde_json::Value>),
 }
 
 impl RequestBodySource {
-    pub(crate) fn materialize(&self) -> serde_json::Value {
+    /// Materialize the redacted `serde_json::Value` for an error payload.
+    #[must_use]
+    pub fn materialize(&self) -> serde_json::Value {
         match self {
             Self::HttpBody(body) => crate::logging::redact_request_values(body),
             Self::Redacted(value) => (**value).clone(),
@@ -88,18 +99,22 @@ impl<T> ResponseHandler<T> {
         }
     }
 
-    pub(crate) fn new_with_source<F, Fut>(handler: F) -> Self
+    /// Create a handler that receives a lazy [`RequestBodySource`] instead of
+    /// eagerly materializing `request_body_values` before the handler runs.
+    pub fn new_with_source<F, Fut>(handler: F) -> Self
     where
         F: FnOnce(ResponseHandlerInput, RequestBodySource) -> Fut + Send + 'static,
         Fut: Future<Output = Result<ResponseHandlerOutput<T>, AiMuxError>> + Send + 'static,
     {
         Self {
-            handler: Box::new(move |input, source| {
-                let source = source.unwrap_or_else(|| {
-                    RequestBodySource::Redacted(std::sync::Arc::new(
-                        input.request_body_values.clone(),
-                    ))
-                });
+            handler: Box::new(move |mut input, source| {
+                let source = source
+                    .or_else(current_request_body_source)
+                    .unwrap_or_else(|| {
+                        RequestBodySource::Redacted(std::sync::Arc::new(std::mem::take(
+                            &mut input.request_body_values,
+                        )))
+                    });
                 Box::pin(handler(input, source))
             }),
             streaming: false,
@@ -136,12 +151,24 @@ impl<T> ResponseHandler<T> {
         (self.handler)(input, None).await
     }
 
-    pub(crate) async fn handle_with_source(
+    /// Consume the handler with an explicit lazy [`RequestBodySource`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the handler's contextual API, parse, or caller-abort failure.
+    pub async fn handle_with_source(
         self,
         input: ResponseHandlerInput,
         source: Option<RequestBodySource>,
     ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-        (self.handler)(input, source).await
+        match source {
+            Some(src) => {
+                CURRENT_BODY_SOURCE
+                    .scope(src.clone(), (self.handler)(input, Some(src)))
+                    .await
+            }
+            None => (self.handler)(input, None).await,
+        }
     }
 }
 
@@ -283,7 +310,7 @@ pub fn create_json_error_response_handler<F>(
 where
     F: Fn(&serde_json::Value) -> ProviderErrorParts + Send + 'static,
 {
-    ResponseHandler::new(move |input| async move {
+    ResponseHandler::new_with_source(move |input, body_source| async move {
         let status = input.response.status().as_u16();
         let status_text = input
             .response
@@ -321,7 +348,7 @@ where
             response_headers: Some(headers.clone()),
             data: parsed_data.map(crate::logging::redact_error_context),
             is_retryable: aimux_core::error::is_retryable_status(status),
-            ..ApiCallError::new(message, input.url, input.request_body_values)
+            ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {
             value: error,
@@ -474,7 +501,7 @@ where
 /// Build an error using only status, headers and body.
 #[must_use]
 pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError> {
-    ResponseHandler::new(|input| async move {
+    ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let message = input
             .response
@@ -497,7 +524,7 @@ pub fn create_status_code_error_response_handler() -> ResponseHandler<AiMuxError
             response_body: Some(error_body_string(&body, truncated)),
             response_headers: Some(headers.clone()),
             is_retryable: aimux_core::error::is_retryable_status(status),
-            ..ApiCallError::new(message, input.url, input.request_body_values)
+            ..ApiCallError::new(message, input.url, body_source.materialize())
         }));
         Ok(ResponseHandlerOutput {
             value: error,

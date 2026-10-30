@@ -1697,11 +1697,14 @@ async fn stream_in_operation(
     // A pump task drives the provider stream, so the deadlines below measure
     // when provider output *arrives*: a deadline observed only inside
     // `poll_next` keeps elapsing while nobody polls, charging the provider
-    // for the consumer's latency. The channel is unbounded so the pump never
-    // blocks on the consumer (which would put that latency back into the
-    // timers); the AI SDK's `streamText` consumes eagerly for the same
-    // reason, and buffering is bounded by the response itself. Each item is
-    // stamped with its arrival time, which the step's performance uses.
+    // for the consumer's latency. The channel is bounded to provide
+    // backpressure when a slow consumer lags behind a high-throughput stream;
+    // `chunk_deadline` is armed only after `tx.send` completes so consumer
+    // backpressure time is not charged against the provider chunk timeout, and
+    // any terminal timeout error that arrives while the channel is full is
+    // preserved in `overflow_error` and delivered once buffered items drain.
+    // Each item is stamped with its arrival time, which the step's performance
+    // uses.
     //
     // Spawned even with no abort signal or deadlines armed: the pump is also
     // the stream's terminal fuse — `Finish` and non-recoverable errors must
@@ -1715,8 +1718,22 @@ async fn stream_in_operation(
     let pump_abort = abort_signal.clone();
     const STREAM_PUMP_CHANNEL_CAPACITY: usize = 256;
     let (tx, mut rx) = tokio::sync::mpsc::channel(STREAM_PUMP_CHANNEL_CAPACITY);
+    let overflow_error: std::sync::Arc<std::sync::Mutex<Option<(Instant, AiMuxError)>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let pump_overflow_error = overflow_error.clone();
     let pump = tokio::spawn(async move {
         let mut chunk_deadline = first_chunk_deadline;
+        let send_terminal_err =
+            |tx: &tokio::sync::mpsc::Sender<(Instant, Result<StreamPart, AiMuxError>)>,
+             overflow: &std::sync::Mutex<Option<(Instant, AiMuxError)>>,
+             ts: Instant,
+             err: AiMuxError| {
+                if let Err(tokio::sync::mpsc::error::TrySendError::Full((_, Err(err)))) =
+                    tx.try_send((ts, Err(err)))
+                {
+                    *overflow.lock().unwrap_or_else(|e| e.into_inner()) = Some((ts, err));
+                }
+            };
 
         loop {
             let next = tokio::select! {
@@ -1725,15 +1742,25 @@ async fn stream_in_operation(
                 // exchange; the consumer side reports the abort.
                 () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
                 () = timeout::wait_for_deadline(operation_deadline) => {
-                    let _ = tx.try_send((Instant::now(), Err(operation_deadline
-                        .expect("operation deadline future only resolves for a deadline")
-                        .error())));
+                    send_terminal_err(
+                        &tx,
+                        &pump_overflow_error,
+                        Instant::now(),
+                        operation_deadline
+                            .expect("operation deadline future only resolves for a deadline")
+                            .error(),
+                    );
                     break;
                 }
                 () = timeout::wait_for_deadline(chunk_deadline) => {
-                    let _ = tx.try_send((Instant::now(), Err(chunk_deadline
-                        .expect("chunk deadline future only resolves for a deadline")
-                        .error())));
+                    send_terminal_err(
+                        &tx,
+                        &pump_overflow_error,
+                        Instant::now(),
+                        chunk_deadline
+                            .expect("chunk deadline future only resolves for a deadline")
+                            .error(),
+                    );
                     break;
                 }
                 item = provider_stream.next() => item,
@@ -1742,35 +1769,39 @@ async fn stream_in_operation(
             let Some(item) = next else { break };
             let arrived = Instant::now();
             let terminal = is_terminal_item(&item);
-            if let Ok(part) = &item
-                && is_output_chunk(part)
-            {
-                chunk_deadline = match chunk_ms
-                    .map(|duration_ms| timeout::TimeoutDeadline::from_now("Chunk", duration_ms))
-                    .transpose()
-                {
-                    Ok(deadline) => deadline,
-                    Err(error) => {
-                        let _ = tx.try_send((arrived, Err(error)));
-                        break;
-                    }
-                };
-            }
+            let is_output = matches!(&item, Ok(part) if is_output_chunk(part));
 
             // A closed receiver means the consumer dropped the stream.
             let send_res = tokio::select! {
                 biased;
                 () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
                 () = timeout::wait_for_deadline(operation_deadline) => {
-                    let _ = tx.try_send((Instant::now(), Err(operation_deadline
-                        .expect("operation deadline future only resolves for a deadline")
-                        .error())));
+                    send_terminal_err(
+                        &tx,
+                        &pump_overflow_error,
+                        Instant::now(),
+                        operation_deadline
+                            .expect("operation deadline future only resolves for a deadline")
+                            .error(),
+                    );
                     break;
                 }
                 res = tx.send((arrived, item)) => res,
             };
             if send_res.is_err() || terminal {
                 break;
+            }
+            if is_output {
+                chunk_deadline = match chunk_ms
+                    .map(|duration_ms| timeout::TimeoutDeadline::from_now("Chunk", duration_ms))
+                    .transpose()
+                {
+                    Ok(deadline) => deadline,
+                    Err(error) => {
+                        send_terminal_err(&tx, &pump_overflow_error, Instant::now(), error);
+                        break;
+                    }
+                };
             }
         }
     });
@@ -1810,7 +1841,13 @@ async fn stream_in_operation(
                         yield Ok(TextStreamPart::Abort { reason: Some(error.to_string()) });
                         return;
                     }
-                    item = rx.recv() => item,
+                    item = rx.recv() => item.or_else(|| {
+                        overflow_error
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .take()
+                            .map(|(ts, err)| (ts, Err(err)))
+                    }),
                 };
                 let Some((arrived, item)) = next else { break };
                 let part = match item {

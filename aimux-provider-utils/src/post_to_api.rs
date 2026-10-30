@@ -197,16 +197,20 @@ async fn execute_exchange<T>(
         crate::extract_response_headers::extract_response_headers(response.headers());
 
     if !(200..300).contains(&status) {
-        let request_body_values = request_body_source.materialize();
+        let failed_lazy = failed_response_handler.uses_lazy_request_body();
         let input = ResponseHandlerInput {
             url: url.clone(),
-            request_body_values: request_body_values.clone(),
+            request_body_values: if failed_lazy {
+                serde_json::Value::Null
+            } else {
+                request_body_source.materialize()
+            },
             response,
             abort_signal: request.abort_signal.clone(),
             max_json_response_bytes: request.max_json_response_bytes,
         };
         return match failed_response_handler
-            .handle_with_source(input, Some(request_body_source))
+            .handle_with_source(input, Some(request_body_source.clone()))
             .await
         {
             Ok(output) => Err(output.value),
@@ -223,7 +227,7 @@ async fn execute_exchange<T>(
                 ..ApiCallError::new(
                     format!("Failed to process error response: {error}"),
                     url,
-                    request_body_values,
+                    request_body_source.materialize(),
                 )
                 .caused_by(error)
             }))),

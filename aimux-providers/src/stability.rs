@@ -56,7 +56,7 @@ enum StabilitySuccess {
 
 fn stability_successful_response_handler() -> aimux_provider_utils::ResponseHandler<StabilitySuccess>
 {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let headers = aimux_provider_utils::extract_response_headers::extract_response_headers(
             input.response.headers(),
@@ -67,11 +67,12 @@ fn stability_successful_response_handler() -> aimux_provider_utils::ResponseHand
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.starts_with("application/json"));
+        let read_source = body_source.clone();
         let bytes =
-            aimux_provider_utils::read_response_with_size_limit::read_response_with_size_limit(
+            aimux_provider_utils::read_response_with_size_limit::read_response_with_size_limit_lazy(
                 input.response,
                 &input.url,
-                &input.request_body_values,
+                move || read_source.materialize(),
                 aimux_provider_utils::read_response_with_size_limit::DEFAULT_MAX_DOWNLOAD_SIZE,
                 input.abort_signal.as_ref(),
             )
@@ -86,7 +87,7 @@ fn stability_successful_response_handler() -> aimux_provider_utils::ResponseHand
                     ..aimux_core::ApiCallError::new(
                         format!("Invalid JSON response: {error}"),
                         input.url,
-                        input.request_body_values,
+                        body_source.materialize(),
                     )
                 }))
             })?;
