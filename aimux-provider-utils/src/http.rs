@@ -407,6 +407,7 @@ fn redirect_error(
     AiMuxError::ApiCall(Box::new(ApiCallError {
         status_code: Some(status.as_u16()),
         cause,
+        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
         ..api_call_error(request, message)
     }))
 }

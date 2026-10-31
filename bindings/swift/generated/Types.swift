@@ -166,6 +166,13 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
     /// message: Human-readable failure text. Provider text is verbatim when available;
     /// locally detected transport/parse failures include their source detail.
     /// Never includes an HTTP status prefix.
+    /// origin: The boundary this error was built at: before a response arrived, from
+    /// an HTTP response, from an event inside an accepted stream, or locally.
+    /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    /// could replay output it already delivered cannot tell an HTTP 429 from
+    /// an in-stream 429 frame by the status and response body. Omitted from
+    /// the JSON when `unknown`, which is also what an error serialized
+    /// without the field reads back as.
     /// providerCode: Provider's machine-readable code (OpenAI's `code`/`type`,
     /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     /// status. Our normalized take on `APICallError.data`.
@@ -182,7 +189,7 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
     /// Anthropic from its error type); errors built without an HTTP exchange
     /// leave it `None`.
     /// url: Sanitized request URL. Required for every API-derived failure.
-    case aiapiCallError(cause: ErrorCause?, data: FieldPresence<JSONValue>, isRetryable: Bool, message: String, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
+    case aiapiCallError(cause: ErrorCause?, data: FieldPresence<JSONValue>, isRetryable: Bool, message: String, origin: ApiCallErrorOrigin?, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
     case aiRetryError(errors: [AiMuxError], reason: RetryErrorReason)
     case aijsonParseError(cause: ErrorCause?, message: String)
     case aiNoOutputGeneratedError(cause: ErrorCause?, message: String)
@@ -229,6 +236,7 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
         case modelId = "modelId"
         case modelType = "modelType"
         case name = "name"
+        case origin = "origin"
         case originalError = "originalError"
         case provider = "provider"
         case providerCode = "providerCode"
@@ -252,7 +260,7 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
         let tag = try c.decode(String.self, forKey: .name)
         switch tag {
         case "AI_APICallError":
-            self = .aiapiCallError(cause: try c.decodeIfPresent(ErrorCause.self, forKey: .cause), data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decode(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
+            self = .aiapiCallError(cause: try c.decodeIfPresent(ErrorCause.self, forKey: .cause), data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decode(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), origin: try c.decodeIfPresent(ApiCallErrorOrigin.self, forKey: .origin), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
             return
         case "AI_Error":
             self = .aiError(cause: try c.decodeIfPresent(ErrorCause.self, forKey: .cause), message: try c.decode(String.self, forKey: .message))
@@ -326,18 +334,19 @@ public indirect enum AiMuxError: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8, let v9):
+        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8, let v9, let v10):
             try c.encode("AI_APICallError", forKey: .name)
             try c.encodeIfPresent(v0, forKey: .cause)
             try c.encodePresence(v1, forKey: .data)
             try c.encode(v2, forKey: .isRetryable)
             try c.encode(v3, forKey: .message)
-            try c.encodeIfPresent(v4, forKey: .providerCode)
-            try c.encode(v5, forKey: .requestBodyValues)
-            try c.encodeIfPresent(v6, forKey: .responseBody)
-            try c.encodeIfPresent(v7, forKey: .responseHeaders)
-            try c.encodeIfPresent(v8, forKey: .statusCode)
-            try c.encode(v9, forKey: .url)
+            try c.encodeIfPresent(v4, forKey: .origin)
+            try c.encodeIfPresent(v5, forKey: .providerCode)
+            try c.encode(v6, forKey: .requestBodyValues)
+            try c.encodeIfPresent(v7, forKey: .responseBody)
+            try c.encodeIfPresent(v8, forKey: .responseHeaders)
+            try c.encodeIfPresent(v9, forKey: .statusCode)
+            try c.encode(v10, forKey: .url)
         case .aiRetryError(let v0, let v1):
             try c.encode("AI_RetryError", forKey: .name)
             try c.encode(v0, forKey: .errors)
@@ -454,6 +463,13 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
     /// message: Human-readable failure text. Provider text is verbatim when available;
     /// locally detected transport/parse failures include their source detail.
     /// Never includes an HTTP status prefix.
+    /// origin: The boundary this error was built at: before a response arrived, from
+    /// an HTTP response, from an event inside an accepted stream, or locally.
+    /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    /// could replay output it already delivered cannot tell an HTTP 429 from
+    /// an in-stream 429 frame by the status and response body. Omitted from
+    /// the JSON when `unknown`, which is also what an error serialized
+    /// without the field reads back as.
     /// providerCode: Provider's machine-readable code (OpenAI's `code`/`type`,
     /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     /// status. Our normalized take on `APICallError.data`.
@@ -470,7 +486,7 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
     /// Anthropic from its error type); errors built without an HTTP exchange
     /// leave it `None`.
     /// url: Sanitized request URL. Required for every API-derived failure.
-    case aiapiCallError(cause: ErrorCauseInput?, data: FieldPresence<JSONValue>, isRetryable: Bool?, message: String, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
+    case aiapiCallError(cause: ErrorCauseInput?, data: FieldPresence<JSONValue>, isRetryable: Bool?, message: String, origin: ApiCallErrorOrigin?, providerCode: String?, requestBodyValues: JSONValue, responseBody: String?, responseHeaders: [String: String]?, statusCode: UInt16?, url: String)
     case aiRetryError(errors: [AiMuxErrorInput], reason: RetryErrorReason)
     case aijsonParseError(cause: ErrorCauseInput?, message: String)
     case aiNoOutputGeneratedError(cause: ErrorCauseInput?, message: String)
@@ -517,6 +533,7 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
         case modelId = "modelId"
         case modelType = "modelType"
         case name = "name"
+        case origin = "origin"
         case originalError = "originalError"
         case provider = "provider"
         case providerCode = "providerCode"
@@ -540,7 +557,7 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
         let tag = try c.decode(String.self, forKey: .name)
         switch tag {
         case "AI_APICallError":
-            self = .aiapiCallError(cause: try c.decodeIfPresent(ErrorCauseInput.self, forKey: .cause), data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decodeIfPresent(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
+            self = .aiapiCallError(cause: try c.decodeIfPresent(ErrorCauseInput.self, forKey: .cause), data: try c.decodePresence(JSONValue.self, forKey: .data), isRetryable: try c.decodeIfPresent(Bool.self, forKey: .isRetryable), message: try c.decode(String.self, forKey: .message), origin: try c.decodeIfPresent(ApiCallErrorOrigin.self, forKey: .origin), providerCode: try c.decodeIfPresent(String.self, forKey: .providerCode), requestBodyValues: try c.decode(JSONValue.self, forKey: .requestBodyValues), responseBody: try c.decodeIfPresent(String.self, forKey: .responseBody), responseHeaders: try c.decodeIfPresent([String: String].self, forKey: .responseHeaders), statusCode: try c.decodeIfPresent(UInt16.self, forKey: .statusCode), url: try c.decode(String.self, forKey: .url))
             return
         case "AI_Error":
             self = .aiError(cause: try c.decodeIfPresent(ErrorCauseInput.self, forKey: .cause), message: try c.decode(String.self, forKey: .message))
@@ -614,18 +631,19 @@ public indirect enum AiMuxErrorInput: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8, let v9):
+        case .aiapiCallError(let v0, let v1, let v2, let v3, let v4, let v5, let v6, let v7, let v8, let v9, let v10):
             try c.encode("AI_APICallError", forKey: .name)
             try c.encodeIfPresent(v0, forKey: .cause)
             try c.encodePresence(v1, forKey: .data)
             try c.encodeIfPresent(v2, forKey: .isRetryable)
             try c.encode(v3, forKey: .message)
-            try c.encodeIfPresent(v4, forKey: .providerCode)
-            try c.encode(v5, forKey: .requestBodyValues)
-            try c.encodeIfPresent(v6, forKey: .responseBody)
-            try c.encodeIfPresent(v7, forKey: .responseHeaders)
-            try c.encodeIfPresent(v8, forKey: .statusCode)
-            try c.encode(v9, forKey: .url)
+            try c.encodeIfPresent(v4, forKey: .origin)
+            try c.encodeIfPresent(v5, forKey: .providerCode)
+            try c.encode(v6, forKey: .requestBodyValues)
+            try c.encodeIfPresent(v7, forKey: .responseBody)
+            try c.encodeIfPresent(v8, forKey: .responseHeaders)
+            try c.encodeIfPresent(v9, forKey: .statusCode)
+            try c.encode(v10, forKey: .url)
         case .aiRetryError(let v0, let v1):
             try c.encode("AI_RetryError", forKey: .name)
             try c.encode(v0, forKey: .errors)
@@ -757,6 +775,14 @@ public struct ApiCallError: Codable, Equatable, Sendable {
     /// locally detected transport/parse failures include their source detail.
     /// Never includes an HTTP status prefix.
     public var message: String
+    /// The boundary this error was built at: before a response arrived, from
+    /// an HTTP response, from an event inside an accepted stream, or locally.
+    /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    /// could replay output it already delivered cannot tell an HTTP 429 from
+    /// an in-stream 429 frame by the status and response body. Omitted from
+    /// the JSON when `unknown`, which is also what an error serialized
+    /// without the field reads back as.
+    public var origin: ApiCallErrorOrigin?
     /// Provider's machine-readable code (OpenAI's `code`/`type`,
     /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     /// status. Our normalized take on `APICallError.data`.
@@ -780,11 +806,12 @@ public struct ApiCallError: Codable, Equatable, Sendable {
     /// Sanitized request URL. Required for every API-derived failure.
     public var url: String
 
-    public init(cause: ErrorCause? = nil, data: FieldPresence<JSONValue> = .missing, isRetryable: Bool, message: String, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
+    public init(cause: ErrorCause? = nil, data: FieldPresence<JSONValue> = .missing, isRetryable: Bool, message: String, origin: ApiCallErrorOrigin? = nil, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
         self.cause = cause
         self.data = data
         self.isRetryable = isRetryable
         self.message = message
+        self.origin = origin
         self.providerCode = providerCode
         self.requestBodyValues = requestBodyValues
         self.responseBody = responseBody
@@ -797,6 +824,7 @@ public struct ApiCallError: Codable, Equatable, Sendable {
         case data = "data"
         case isRetryable = "isRetryable"
         case message = "message"
+        case origin = "origin"
         case providerCode = "providerCode"
         case requestBodyValues = "requestBodyValues"
         case responseBody = "responseBody"
@@ -810,6 +838,7 @@ public struct ApiCallError: Codable, Equatable, Sendable {
         self.data = try c.decodePresence(JSONValue.self, forKey: .data)
         self.isRetryable = try c.decode(Bool.self, forKey: .isRetryable)
         self.message = try c.decode(String.self, forKey: .message)
+        self.origin = try c.decodeIfPresent(ApiCallErrorOrigin.self, forKey: .origin)
         self.providerCode = try c.decodeIfPresent(String.self, forKey: .providerCode)
         self.requestBodyValues = try c.decode(JSONValue.self, forKey: .requestBodyValues)
         self.responseBody = try c.decodeIfPresent(String.self, forKey: .responseBody)
@@ -823,6 +852,7 @@ public struct ApiCallError: Codable, Equatable, Sendable {
         try c.encodePresence(self.data, forKey: .data)
         try c.encode(self.isRetryable, forKey: .isRetryable)
         try c.encode(self.message, forKey: .message)
+        try c.encodeIfPresent(self.origin, forKey: .origin)
         try c.encodeIfPresent(self.providerCode, forKey: .providerCode)
         try c.encode(self.requestBodyValues, forKey: .requestBodyValues)
         try c.encodeIfPresent(self.responseBody, forKey: .responseBody)
@@ -868,6 +898,14 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
     /// locally detected transport/parse failures include their source detail.
     /// Never includes an HTTP status prefix.
     public var message: String
+    /// The boundary this error was built at: before a response arrived, from
+    /// an HTTP response, from an event inside an accepted stream, or locally.
+    /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    /// could replay output it already delivered cannot tell an HTTP 429 from
+    /// an in-stream 429 frame by the status and response body. Omitted from
+    /// the JSON when `unknown`, which is also what an error serialized
+    /// without the field reads back as.
+    public var origin: ApiCallErrorOrigin?
     /// Provider's machine-readable code (OpenAI's `code`/`type`,
     /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
     /// status. Our normalized take on `APICallError.data`.
@@ -891,11 +929,12 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
     /// Sanitized request URL. Required for every API-derived failure.
     public var url: String
 
-    public init(cause: ErrorCauseInput? = nil, data: FieldPresence<JSONValue> = .missing, isRetryable: Bool? = nil, message: String, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
+    public init(cause: ErrorCauseInput? = nil, data: FieldPresence<JSONValue> = .missing, isRetryable: Bool? = nil, message: String, origin: ApiCallErrorOrigin? = nil, providerCode: String? = nil, requestBodyValues: JSONValue, responseBody: String? = nil, responseHeaders: [String: String]? = nil, statusCode: UInt16? = nil, url: String) {
         self.cause = cause
         self.data = data
         self.isRetryable = isRetryable
         self.message = message
+        self.origin = origin
         self.providerCode = providerCode
         self.requestBodyValues = requestBodyValues
         self.responseBody = responseBody
@@ -908,6 +947,7 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
         case data = "data"
         case isRetryable = "isRetryable"
         case message = "message"
+        case origin = "origin"
         case providerCode = "providerCode"
         case requestBodyValues = "requestBodyValues"
         case responseBody = "responseBody"
@@ -921,6 +961,7 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
         self.data = try c.decodePresence(JSONValue.self, forKey: .data)
         self.isRetryable = try c.decodeIfPresent(Bool.self, forKey: .isRetryable)
         self.message = try c.decode(String.self, forKey: .message)
+        self.origin = try c.decodeIfPresent(ApiCallErrorOrigin.self, forKey: .origin)
         self.providerCode = try c.decodeIfPresent(String.self, forKey: .providerCode)
         self.requestBodyValues = try c.decode(JSONValue.self, forKey: .requestBodyValues)
         self.responseBody = try c.decodeIfPresent(String.self, forKey: .responseBody)
@@ -934,6 +975,7 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
         try c.encodePresence(self.data, forKey: .data)
         try c.encodeIfPresent(self.isRetryable, forKey: .isRetryable)
         try c.encode(self.message, forKey: .message)
+        try c.encodeIfPresent(self.origin, forKey: .origin)
         try c.encodeIfPresent(self.providerCode, forKey: .providerCode)
         try c.encode(self.requestBodyValues, forKey: .requestBodyValues)
         try c.encodeIfPresent(self.responseBody, forKey: .responseBody)
@@ -941,6 +983,16 @@ public struct ApiCallErrorInput: Codable, Equatable, Sendable {
         try c.encodeIfPresent(self.statusCode, forKey: .statusCode)
         try c.encode(self.url, forKey: .url)
     }
+}
+
+/// Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
+/// says what the underlying error was.
+public enum ApiCallErrorOrigin: String, Codable, Equatable, Sendable {
+    case transport = "transport"
+    case httpResponse = "httpResponse"
+    case streamEvent = "streamEvent"
+    case local = "local"
+    case unknown = "unknown"
 }
 
 /// Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).

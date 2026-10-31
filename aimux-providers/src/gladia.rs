@@ -346,6 +346,7 @@ impl TranscriptionModel for GladiaTranscriptionModel {
                         response_body: Some(
                             resp.raw_value.clone().unwrap_or(Value::Null).to_string(),
                         ),
+                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                         ..ApiCallError::new(
                             "Transcription job failed",
                             init.result_url.clone(),

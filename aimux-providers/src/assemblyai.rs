@@ -371,6 +371,7 @@ impl TranscriptionModel for AssemblyAITranscriptionModel {
                         response_body: Some(
                             resp.raw_value.clone().unwrap_or(Value::Null).to_string(),
                         ),
+                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                         ..ApiCallError::new(
                             format!(
                                 "Transcription failed: {}",

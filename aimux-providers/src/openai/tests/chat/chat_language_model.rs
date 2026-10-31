@@ -1944,6 +1944,42 @@ mod do_stream {
         );
     }
 
+    /// An HTTP 429 and a 429 error frame inside an accepted stream carry the
+    /// same status; `origin` tells them apart (#400), so a host knows which
+    /// one could replay output already delivered if retried.
+    #[tokio::test]
+    async fn a_rate_limit_records_whether_it_came_from_the_response_or_the_stream() {
+        let limited = Canned {
+            status: 429,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: br#"{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}"#.to_vec(),
+        };
+        let (result, _) = stream_result("gpt-4o", limited, no_raw()).await;
+        let Err(AiMuxError::ApiCall(http)) = result else {
+            panic!("expected an API call error, got {:?}", result.map(|_| ()));
+        };
+        assert_eq!(http.status_code, Some(429));
+        assert_eq!(http.origin, aimux_core::ApiCallErrorOrigin::HttpResponse);
+
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}"#,
+            r#"{"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}"#,
+        ]));
+        let (result, _) = stream("gpt-4o", stream_chunks(&chunks), no_raw()).await;
+        let parts: Vec<_> = result.stream.collect().await;
+        let frame = parts
+            .iter()
+            .find_map(|part| match part {
+                Ok(StreamPart::Error {
+                    error: AiMuxError::ApiCall(error),
+                }) => Some(error),
+                _ => None,
+            })
+            .expect("an error part");
+        assert_eq!(frame.status_code, Some(429));
+        assert_eq!(frame.origin, aimux_core::ApiCallErrorOrigin::StreamEvent);
+    }
+
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doStream › should stream text deltas
     #[tokio::test]
     async fn should_stream_text_deltas() {

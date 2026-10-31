@@ -360,6 +360,7 @@ impl ImageModel for BedrockImageModel {
                 status_code: Some(200),
                 provider_code: Some(s.to_string()),
                 response_body,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("Amazon Bedrock request was moderated: {reasons_str}"),
                     url,

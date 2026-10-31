@@ -128,6 +128,15 @@ final class AiMuxErrorAIAPICallError extends AiMuxError {
   /// Never includes an HTTP status prefix.
   final String message;
 
+  /// The boundary this error was built at: before a response arrived, from
+  /// an HTTP response, from an event inside an accepted stream, or locally.
+  /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+  /// could replay output it already delivered cannot tell an HTTP 429 from
+  /// an in-stream 429 frame by the status and response body. Omitted from
+  /// the JSON when `unknown`, which is also what an error serialized
+  /// without the field reads back as.
+  final ApiCallErrorOrigin? origin;
+
   /// Provider's machine-readable code (OpenAI's `code`/`type`,
   /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
   /// status. Our normalized take on `APICallError.data`.
@@ -160,6 +169,7 @@ final class AiMuxErrorAIAPICallError extends AiMuxError {
     this.data = const Field.absent(),
     required this.isRetryable,
     required this.message,
+    this.origin,
     this.providerCode,
     required this.requestBodyValues,
     this.responseBody,
@@ -177,6 +187,9 @@ final class AiMuxErrorAIAPICallError extends AiMuxError {
           : const Field.absent(),
       isRetryable: json['isRetryable'] as bool,
       message: json['message'] as String,
+      origin: json['origin'] == null
+          ? null
+          : ApiCallErrorOrigin.fromJson(json['origin']),
       providerCode: json['providerCode'] as String?,
       requestBodyValues: json['requestBodyValues'],
       responseBody: json['responseBody'] as String?,
@@ -194,6 +207,7 @@ final class AiMuxErrorAIAPICallError extends AiMuxError {
         if (data.isPresent) 'data': data.value,
         'isRetryable': isRetryable,
         'message': message,
+        if (origin != null) 'origin': origin!.toJson(),
         if (providerCode != null) 'providerCode': providerCode,
         'requestBodyValues': requestBodyValues,
         if (responseBody != null) 'responseBody': responseBody,
@@ -837,6 +851,15 @@ final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
   /// Never includes an HTTP status prefix.
   final String message;
 
+  /// The boundary this error was built at: before a response arrived, from
+  /// an HTTP response, from an event inside an accepted stream, or locally.
+  /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+  /// could replay output it already delivered cannot tell an HTTP 429 from
+  /// an in-stream 429 frame by the status and response body. Omitted from
+  /// the JSON when `unknown`, which is also what an error serialized
+  /// without the field reads back as.
+  final ApiCallErrorOrigin? origin;
+
   /// Provider's machine-readable code (OpenAI's `code`/`type`,
   /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
   /// status. Our normalized take on `APICallError.data`.
@@ -869,6 +892,7 @@ final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
     this.data = const Field.absent(),
     this.isRetryable,
     required this.message,
+    this.origin,
     this.providerCode,
     required this.requestBodyValues,
     this.responseBody,
@@ -888,6 +912,9 @@ final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
           : const Field.absent(),
       isRetryable: json['isRetryable'] as bool?,
       message: json['message'] as String,
+      origin: json['origin'] == null
+          ? null
+          : ApiCallErrorOrigin.fromJson(json['origin']),
       providerCode: json['providerCode'] as String?,
       requestBodyValues: json['requestBodyValues'],
       responseBody: json['responseBody'] as String?,
@@ -905,6 +932,7 @@ final class AiMuxErrorInputAIAPICallError extends AiMuxErrorInput {
         if (data.isPresent) 'data': data.value,
         if (isRetryable != null) 'isRetryable': isRetryable,
         'message': message,
+        if (origin != null) 'origin': origin!.toJson(),
         if (providerCode != null) 'providerCode': providerCode,
         'requestBodyValues': requestBodyValues,
         if (responseBody != null) 'responseBody': responseBody,
@@ -1524,6 +1552,15 @@ final class ApiCallError {
   /// Never includes an HTTP status prefix.
   final String message;
 
+  /// The boundary this error was built at: before a response arrived, from
+  /// an HTTP response, from an event inside an accepted stream, or locally.
+  /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+  /// could replay output it already delivered cannot tell an HTTP 429 from
+  /// an in-stream 429 frame by the status and response body. Omitted from
+  /// the JSON when `unknown`, which is also what an error serialized
+  /// without the field reads back as.
+  final ApiCallErrorOrigin? origin;
+
   /// Provider's machine-readable code (OpenAI's `code`/`type`,
   /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
   /// status. Our normalized take on `APICallError.data`.
@@ -1556,6 +1593,7 @@ final class ApiCallError {
     this.data = const Field.absent(),
     required this.isRetryable,
     required this.message,
+    this.origin,
     this.providerCode,
     required this.requestBodyValues,
     this.responseBody,
@@ -1571,6 +1609,9 @@ final class ApiCallError {
           : const Field.absent(),
       isRetryable: json['isRetryable'] as bool,
       message: json['message'] as String,
+      origin: json['origin'] == null
+          ? null
+          : ApiCallErrorOrigin.fromJson(json['origin']),
       providerCode: json['providerCode'] as String?,
       requestBodyValues: json['requestBodyValues'],
       responseBody: json['responseBody'] as String?,
@@ -1587,6 +1628,7 @@ final class ApiCallError {
         if (data.isPresent) 'data': data.value,
         'isRetryable': isRetryable,
         'message': message,
+        if (origin != null) 'origin': origin!.toJson(),
         if (providerCode != null) 'providerCode': providerCode,
         'requestBodyValues': requestBodyValues,
         if (responseBody != null) 'responseBody': responseBody,
@@ -1636,6 +1678,15 @@ final class ApiCallErrorInput {
   /// Never includes an HTTP status prefix.
   final String message;
 
+  /// The boundary this error was built at: before a response arrived, from
+  /// an HTTP response, from an event inside an accepted stream, or locally.
+  /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+  /// could replay output it already delivered cannot tell an HTTP 429 from
+  /// an in-stream 429 frame by the status and response body. Omitted from
+  /// the JSON when `unknown`, which is also what an error serialized
+  /// without the field reads back as.
+  final ApiCallErrorOrigin? origin;
+
   /// Provider's machine-readable code (OpenAI's `code`/`type`,
   /// e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
   /// status. Our normalized take on `APICallError.data`.
@@ -1668,6 +1719,7 @@ final class ApiCallErrorInput {
     this.data = const Field.absent(),
     this.isRetryable,
     required this.message,
+    this.origin,
     this.providerCode,
     required this.requestBodyValues,
     this.responseBody,
@@ -1685,6 +1737,9 @@ final class ApiCallErrorInput {
           : const Field.absent(),
       isRetryable: json['isRetryable'] as bool?,
       message: json['message'] as String,
+      origin: json['origin'] == null
+          ? null
+          : ApiCallErrorOrigin.fromJson(json['origin']),
       providerCode: json['providerCode'] as String?,
       requestBodyValues: json['requestBodyValues'],
       responseBody: json['responseBody'] as String?,
@@ -1701,6 +1756,7 @@ final class ApiCallErrorInput {
         if (data.isPresent) 'data': data.value,
         if (isRetryable != null) 'isRetryable': isRetryable,
         'message': message,
+        if (origin != null) 'origin': origin!.toJson(),
         if (providerCode != null) 'providerCode': providerCode,
         'requestBodyValues': requestBodyValues,
         if (responseBody != null) 'responseBody': responseBody,
@@ -1708,6 +1764,22 @@ final class ApiCallErrorInput {
         if (statusCode != null) 'statusCode': statusCode,
         'url': url,
       };
+}
+
+/// Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
+/// says what the underlying error was.
+enum ApiCallErrorOrigin {
+  transport('transport'),
+  httpResponse('httpResponse'),
+  streamEvent('streamEvent'),
+  local('local'),
+  unknown('unknown');
+
+  const ApiCallErrorOrigin(this.wireValue);
+  final String wireValue;
+  static ApiCallErrorOrigin fromJson(Object? value) =>
+      values.firstWhere((item) => item.wireValue == value);
+  String toJson() => wireValue;
 }
 
 /// Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).

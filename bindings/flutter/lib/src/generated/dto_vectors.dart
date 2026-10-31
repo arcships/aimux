@@ -11,6 +11,8 @@ Object? roundTripDto(String type, Object? value) {
       return ApiCallError.fromJson(value as Map<String, dynamic>).toJson();
     case 'ApiCallErrorInput':
       return ApiCallErrorInput.fromJson(value as Map<String, dynamic>).toJson();
+    case 'ApiCallErrorOrigin':
+      return ApiCallErrorOrigin.fromJson(value).toJson();
     case 'AspectRatio':
       return AspectRatio.fromJson(value).toJson();
     case 'AssistantContent':

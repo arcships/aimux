@@ -246,6 +246,7 @@ impl VideoModel for GoogleVideoModel {
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string),
                 response_body,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(msg, poll_url, serde_json::json!({}))
             })));
         }

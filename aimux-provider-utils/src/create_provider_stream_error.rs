@@ -71,6 +71,7 @@ pub fn create_provider_stream_error(
         data: (!data.is_null()).then(|| crate::logging::redact_error_context(data)),
         is_retryable: is_retryable
             .unwrap_or_else(|| status_code.is_some_and(aimux_core::error::is_retryable_status)),
+        origin: aimux_core::ApiCallErrorOrigin::StreamEvent,
         ..ApiCallError::new(
             message,
             crate::http::sanitized_request_url(&url.into()),

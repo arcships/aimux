@@ -1,0 +1,10 @@
+{
+  "name": "AI_APICallError",
+  "message": "Rate limit reached",
+  "url": "https://mock.invalid",
+  "requestBodyValues": {},
+  "statusCode": 429,
+  "responseBody": "{\"error\":{\"message\":\"Rate limit reached\"}}",
+  "isRetryable": true,
+  "origin": "streamEvent"
+}

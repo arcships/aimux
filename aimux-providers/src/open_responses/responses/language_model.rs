@@ -72,6 +72,7 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                     .map(str::to_string),
                 response_body: Some(output.value.to_string()),
                 response_headers: Some(output.response_headers.clone()),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(message, url, request_body_values)
             })));
         }
@@ -94,6 +95,7 @@ fn open_responses_successful_response_handler() -> aimux_provider_utils::Respons
                 response_body: Some(output.value.to_string()),
                 response_headers: Some(output.response_headers.clone()),
                 is_retryable: false,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(message, url, request_body_values)
             })));
         }

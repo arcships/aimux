@@ -483,6 +483,7 @@ impl ImageModel for BlackForestLabsImageModel {
                         provider_code: Some(poll_status.to_string()),
                         message: "Black Forest Labs generation failed.".into(),
                         response_body,
+                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                         ..ApiCallError::new(
                             "Black Forest Labs generation failed.",
                             poll_url.clone(),

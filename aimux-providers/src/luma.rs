@@ -410,6 +410,7 @@ impl ImageModel for LumaImageModel {
                         provider_code: Some(state.to_string()),
                         message: "Image generation failed.".into(),
                         response_body,
+                        origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                         ..ApiCallError::new(
                             "Image generation failed.",
                             poll_url.clone(),
