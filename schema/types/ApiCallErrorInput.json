@@ -28,6 +28,10 @@
       "description": "Human-readable failure text. Provider text is verbatim when available;\nlocally detected transport/parse failures include their source detail.\nNever includes an HTTP status prefix.",
       "type": "string"
     },
+    "origin": {
+      "$ref": "ApiCallErrorOrigin.json",
+      "description": "The boundary this error was built at: before a response arrived, from\nan HTTP response, from an event inside an accepted stream, or locally.\nNot in the AI SDK's `APICallError`: a host deciding whether a retry\ncould replay output it already delivered cannot tell an HTTP 429 from\nan in-stream 429 frame by the status and response body. Omitted from\nthe JSON when `unknown`, which is also what an error serialized\nwithout the field reads back as."
+    },
     "providerCode": {
       "description": "Provider's machine-readable code (OpenAI's `code`/`type`,\ne.g. `\"rate_limit_exceeded\"` vs `\"insufficient_quota\"`). Never an HTTP\nstatus. Our normalized take on `APICallError.data`.",
       "type": [

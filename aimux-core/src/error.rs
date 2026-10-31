@@ -128,6 +128,53 @@ pub struct ApiCallError {
     /// aimux error a response handler returned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cause: Option<ErrorCause>,
+    /// The boundary this error was built at: before a response arrived, from
+    /// an HTTP response, from an event inside an accepted stream, or locally.
+    /// Not in the AI SDK's `APICallError`: a host deciding whether a retry
+    /// could replay output it already delivered cannot tell an HTTP 429 from
+    /// an in-stream 429 frame by the status and response body. Omitted from
+    /// the JSON when `unknown`, which is also what an error serialized
+    /// without the field reads back as.
+    #[serde(default, skip_serializing_if = "ApiCallErrorOrigin::is_unknown")]
+    pub origin: ApiCallErrorOrigin,
+}
+
+/// Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
+/// says what the underlying error was.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ApiCallErrorOrigin {
+    /// No complete response: connecting, sending, or reading the response
+    /// body failed (connection refused or reset, DNS, TLS, a broken body
+    /// stream, a proxy that refused the tunnel). `status_code` is `None`
+    /// unless the body broke after the status line arrived.
+    Transport,
+    /// Built from an HTTP response before any stream output: a non-2xx
+    /// status, a 2xx body that was too large or did not parse, an error the
+    /// provider reported in a 2xx body (a failed job when polling), or a
+    /// redirect that could not be followed.
+    HttpResponse,
+    /// Built from an event inside an accepted stream: a provider error frame
+    /// (SSE, AWS event stream, WebSocket) or a frame that could not be
+    /// decoded. The stream's HTTP status was 2xx; `status_code` is the one
+    /// the provider maps the event to.
+    StreamEvent,
+    /// Built by aimux with no response to point at, such as the exchange
+    /// response timeout.
+    Local,
+    /// Not recorded: an error deserialized from input that predates the
+    /// field, or built by code that did not set it. Never inferred from the
+    /// other fields.
+    #[default]
+    Unknown,
+}
+
+impl ApiCallErrorOrigin {
+    /// Whether the origin was not recorded.
+    #[must_use]
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
+    }
 }
 
 impl ApiCallError {
@@ -148,7 +195,14 @@ impl ApiCallError {
             data: None,
             is_retryable: false,
             cause: None,
+            origin: ApiCallErrorOrigin::Unknown,
         }
+    }
+
+    /// Set the boundary this error was built at.
+    #[must_use]
+    pub fn with_origin(self, origin: ApiCallErrorOrigin) -> Self {
+        Self { origin, ..self }
     }
 
     /// Set the error this failure was built from.
@@ -1060,6 +1114,37 @@ mod tests {
             available_providers: available.iter().map(|n| (*n).to_string()).collect(),
         }
         .to_string()
+    }
+
+    /// `origin` is written in camelCase when recorded, left out when
+    /// unknown, and an error serialized without it reads back as unknown
+    /// rather than being inferred from the status or body (#400).
+    #[test]
+    fn api_call_error_origin_round_trips_and_defaults_to_unknown() {
+        let error = ApiCallError {
+            status_code: Some(429),
+            ..ApiCallError::new(
+                "Rate limit reached",
+                "https://example.test",
+                serde_json::json!({}),
+            )
+        };
+        let unknown = serde_json::to_value(&error).unwrap();
+        assert!(unknown.get("origin").is_none(), "{unknown}");
+        let read: ApiCallError = serde_json::from_value(unknown).unwrap();
+        assert_eq!(read.origin, ApiCallErrorOrigin::Unknown);
+
+        for (origin, wire) in [
+            (ApiCallErrorOrigin::Transport, "transport"),
+            (ApiCallErrorOrigin::HttpResponse, "httpResponse"),
+            (ApiCallErrorOrigin::StreamEvent, "streamEvent"),
+            (ApiCallErrorOrigin::Local, "local"),
+        ] {
+            let value = serde_json::to_value(error.clone().with_origin(origin)).unwrap();
+            assert_eq!(value["origin"], wire);
+            let read: ApiCallError = serde_json::from_value(value).unwrap();
+            assert_eq!(read.origin, origin);
+        }
     }
 
     /// A misspelled provider name gets the close built-in names first; the

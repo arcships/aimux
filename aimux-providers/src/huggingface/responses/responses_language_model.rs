@@ -52,6 +52,7 @@ fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHa
                     .map(str::to_string),
                 response_body: Some(output.value.to_string()),
                 response_headers: Some(output.response_headers.clone()),
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(message, url, request_body_values)
             })));
         }

@@ -1191,6 +1191,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
             provider_code,
             response_body: Some(raw_body.to_string()),
             response_headers: Some(response_headers.clone()),
+            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
             ..ApiCallError::new(
                 message,
                 request_url,
@@ -1235,6 +1236,7 @@ pub(crate) fn build_responses_generate_result_with_tools(
                             status_code: Some(200),
                             response_body: Some(raw_body.to_string()),
                             response_headers: Some(response_headers.clone()),
+                            origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                             ..ApiCallError::new(
                                 format!(
                                     "Invalid JSON response: message content part of type {} is not output_text",

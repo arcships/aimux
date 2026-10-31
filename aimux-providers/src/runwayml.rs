@@ -350,6 +350,7 @@ impl VideoModel for RunwaymlVideoModel {
                 status_code: Some(200),
                 provider_code: Some(status_str.clone()),
                 response_body,
+                origin: aimux_core::ApiCallErrorOrigin::HttpResponse,
                 ..ApiCallError::new(
                     format!("{PROVIDER_NAME} task {task_id} failed with status {status_str}"),
                     poll_url,

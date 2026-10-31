@@ -38,6 +38,16 @@ export type AiMuxError =
      */
     message: string
     /**
+     * The boundary this error was built at: before a response arrived, from
+     * an HTTP response, from an event inside an accepted stream, or locally.
+     * Not in the AI SDK's `APICallError`: a host deciding whether a retry
+     * could replay output it already delivered cannot tell an HTTP 429 from
+     * an in-stream 429 frame by the status and response body. Omitted from
+     * the JSON when `unknown`, which is also what an error serialized
+     * without the field reads back as.
+     */
+    origin?: ApiCallErrorOrigin
+    /**
      * Provider's machine-readable code (OpenAI's `code`/`type`,
      * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
      * status. Our normalized take on `APICallError.data`.
@@ -243,6 +253,16 @@ export type AiMuxErrorInput =
      * Never includes an HTTP status prefix.
      */
     message: string
+    /**
+     * The boundary this error was built at: before a response arrived, from
+     * an HTTP response, from an event inside an accepted stream, or locally.
+     * Not in the AI SDK's `APICallError`: a host deciding whether a retry
+     * could replay output it already delivered cannot tell an HTTP 429 from
+     * an in-stream 429 frame by the status and response body. Omitted from
+     * the JSON when `unknown`, which is also what an error serialized
+     * without the field reads back as.
+     */
+    origin?: ApiCallErrorOrigin
     /**
      * Provider's machine-readable code (OpenAI's `code`/`type`,
      * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
@@ -459,6 +479,16 @@ export interface ApiCallError {
    */
   message: string
   /**
+   * The boundary this error was built at: before a response arrived, from
+   * an HTTP response, from an event inside an accepted stream, or locally.
+   * Not in the AI SDK's `APICallError`: a host deciding whether a retry
+   * could replay output it already delivered cannot tell an HTTP 429 from
+   * an in-stream 429 frame by the status and response body. Omitted from
+   * the JSON when `unknown`, which is also what an error serialized
+   * without the field reads back as.
+   */
+  origin?: ApiCallErrorOrigin
+  /**
    * Provider's machine-readable code (OpenAI's `code`/`type`,
    * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
    * status. Our normalized take on `APICallError.data`.
@@ -541,6 +571,16 @@ export interface ApiCallErrorInput {
    */
   message: string
   /**
+   * The boundary this error was built at: before a response arrived, from
+   * an HTTP response, from an event inside an accepted stream, or locally.
+   * Not in the AI SDK's `APICallError`: a host deciding whether a retry
+   * could replay output it already delivered cannot tell an HTTP 429 from
+   * an in-stream 429 frame by the status and response body. Omitted from
+   * the JSON when `unknown`, which is also what an error serialized
+   * without the field reads back as.
+   */
+  origin?: ApiCallErrorOrigin
+  /**
    * Provider's machine-readable code (OpenAI's `code`/`type`,
    * e.g. `"rate_limit_exceeded"` vs `"insufficient_quota"`). Never an HTTP
    * status. Our normalized take on `APICallError.data`.
@@ -575,6 +615,12 @@ export interface ApiCallErrorInput {
    */
   url: string
 }
+
+/**
+ * Where an [`ApiCallError`] was built. Orthogonal to its `cause`, which
+ * says what the underlying error was.
+ */
+export type ApiCallErrorOrigin = "transport" | "httpResponse" | "streamEvent" | "local" | "unknown"
 
 /**
  * Aspect ratio in `{width}:{height}` format (e.g. `"16:9"`).

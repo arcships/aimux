@@ -122,3 +122,18 @@ fn keeps_the_event_as_response_body_and_surfaces_its_retry_hint() {
     );
     assert_eq!(error.data, None);
 }
+
+/// aimux's own: the error says it was built from an event inside a stream,
+/// so a host can tell it from an HTTP response with the same status (#400).
+#[test]
+fn records_a_stream_event_origin() {
+    let error = build(
+        ProviderStreamError {
+            message: "Rate limit reached".into(),
+            status_code: Some(429),
+            ..ProviderStreamError::default()
+        },
+        &json!({ "error": { "message": "Rate limit reached" } }),
+    );
+    assert_eq!(error.origin, aimux_core::ApiCallErrorOrigin::StreamEvent);
+}

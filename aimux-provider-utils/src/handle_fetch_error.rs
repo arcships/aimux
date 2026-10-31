@@ -15,6 +15,11 @@ pub fn handle_fetch_error(
         AiMuxError::ApiCall(mut detail) => {
             detail.url = url.to_string();
             detail.request_body_values = request_body_values.clone();
+            // Sending failed before a response could be handled; a redirect
+            // the exchange refused to follow already says `HttpResponse`.
+            if detail.origin.is_unknown() {
+                detail.origin = aimux_core::ApiCallErrorOrigin::Transport;
+            }
             AiMuxError::ApiCall(detail)
         }
         AiMuxError::Aborted(_) | AiMuxError::Timeout(_) => error,
@@ -38,6 +43,7 @@ pub(crate) fn fetch_error_to_ai_mux_error(
         other => AiMuxError::ApiCall(Box::new(ApiCallError {
             is_retryable: other.is_retryable(),
             cause: Some(ErrorCause::source(&other)),
+            origin: aimux_core::ApiCallErrorOrigin::Transport,
             ..ApiCallError::new(other.to_string(), url, request_body_values.clone())
         })),
     }
