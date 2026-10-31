@@ -15,13 +15,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::google::options::Namespace;
-use crate::shared::{EndpointConfig, is_valid_hostname_part};
+use crate::shared::EndpointConfig;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::Warning;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionRequest,
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
+use aimux_provider_utils::is_valid_hostname_part;
 
 use super::provider_base::ProjectLocationSource;
 

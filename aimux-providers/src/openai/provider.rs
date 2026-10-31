@@ -97,7 +97,7 @@ impl std::fmt::Debug for OpenAIProviderSettings {
 /// loaded per request, and an invalid `OPENAI_BASE_URL` is reported by each
 /// request, not here.
 pub fn create_openai(settings: OpenAIProviderSettings) -> Result<OpenAIProvider, AiMuxError> {
-    let base_url = crate::shared::base_url_setting(
+    let base_url = aimux_provider_utils::base_url_setting(
         settings.base_url.as_deref(),
         "OPENAI_BASE_URL",
         DEFAULT_BASE_URL,

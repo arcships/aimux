@@ -26,6 +26,7 @@ pub mod handle_fetch_error;
 pub mod headers;
 pub mod http;
 pub mod inject_json_instruction;
+pub mod is_valid_hostname_part;
 pub mod logging;
 pub mod map_reasoning_to_provider;
 pub mod media_type;
@@ -52,7 +53,7 @@ pub mod user_agent_fetch;
 pub mod ws;
 
 pub use aimux_core::download_guard::same_origin;
-pub use api_key::{load_api_key, load_optional_setting, load_setting};
+pub use api_key::{base_url_setting, load_api_key, load_optional_setting, load_setting};
 pub use convert_image_model_file_to_data_uri::convert_image_model_file_to_data_uri;
 pub use convert_inline_file_data_to_uint8_array::convert_inline_file_data_to_uint8_array;
 pub use create_language_model_response_metadata::create_language_model_response_metadata;
@@ -71,6 +72,7 @@ pub use headers::{
 };
 pub use http::{ExchangeContext, HttpBody, HttpRequest, sleep_or_abort};
 pub use inject_json_instruction::{inject_json_instruction, inject_json_instruction_into_messages};
+pub use is_valid_hostname_part::is_valid_hostname_part;
 pub use logging::{init_logging, redact_error_context};
 pub use map_reasoning_to_provider::{
     DEFAULT_MIN_REASONING_BUDGET, DEFAULT_REASONING_BUDGET_PERCENTAGES,

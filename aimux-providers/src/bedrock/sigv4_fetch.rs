@@ -6,11 +6,11 @@ use super::provider::{
     ACCESS_KEY_ID_ENV_VAR, BEARER_TOKEN_ENV_VAR, REGION_ENV_VAR, SECRET_ACCESS_KEY_ENV_VAR,
     SESSION_TOKEN_ENV_VAR,
 };
-use crate::shared::is_valid_hostname_part;
 use aimux_core::error::AiMuxError;
 use aimux_provider_utils::{
     AwsCredentials, Fetch, FetchError, FetchFunction, FetchRequest, FetchResponse, Resolvable,
-    SigV4Fetch, default_fetch, load_optional_setting, load_setting, validate_base_url,
+    SigV4Fetch, default_fetch, is_valid_hostname_part, load_optional_setting, load_setting,
+    validate_base_url,
 };
 use async_trait::async_trait;
 
