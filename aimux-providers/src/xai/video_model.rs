@@ -107,40 +107,177 @@ fn unsupported(warnings: &mut Vec<Warning>, feature: &str, details: impl Into<St
     });
 }
 
-fn invalid(key: &str, expected: &str) -> AiMuxError {
-    AiMuxError::invalid_argument(format!(
-        "Invalid argument for parameter providerOptions: xai.{key} must be {expected}"
-    ))
+/// `xaiVideoModelOptionsSchema` (`runtimeSchema`, a `z.looseObject`): the
+/// keys it declares, checked; the rest is forwarded from the raw namespace.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoOptions {
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    mode: Option<VideoMode>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    video_url: Option<options::de::NonEmpty>,
+    /// `z.array(nonEmptyString).min(1).max(7).optional()`.
+    #[serde(default, deserialize_with = "reference_image_urls")]
+    reference_image_urls: Option<Vec<String>>,
+    /// `z.array(nonEmptyString).max(3).optional()`.
+    #[serde(default, deserialize_with = "reference_voice_ids")]
+    reference_voice_ids: Option<Vec<String>>,
+    /// `z.array(keyframeSchema).max(4).optional()`.
+    #[serde(default, deserialize_with = "keyframes")]
+    keyframes: Option<Vec<Keyframe>>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    storage_options: Option<StorageOptions>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    user: Option<String>,
+    #[serde(default, deserialize_with = "options::de::nullish_positive")]
+    #[allow(
+        dead_code,
+        reason = "validated only; the poll settings read the raw value"
+    )]
+    poll_interval_ms: Option<f64>,
+    #[serde(default, deserialize_with = "options::de::nullish_positive")]
+    #[allow(
+        dead_code,
+        reason = "validated only; the poll settings read the raw value"
+    )]
+    poll_timeout_ms: Option<f64>,
+    #[serde(default)]
+    resolution: Option<Resolution>,
 }
 
-/// `z.array(nonEmptyString)` with at most `max` (and at least `min`) items.
-fn string_array(
-    xai: &JsonObject,
-    key: &str,
-    min: usize,
-    max: usize,
-) -> Result<Option<Vec<String>>, AiMuxError> {
-    let Some(value) = xai.get(key).filter(|v| !v.is_null()) else {
-        return Ok(None);
-    };
-    let items = value
-        .as_array()
-        .filter(|items| (min..=max).contains(&items.len()))
-        .and_then(|items| {
-            items
-                .iter()
-                .map(|v| v.as_str().filter(|s| !s.is_empty()).map(str::to_owned))
-                .collect::<Option<Vec<_>>>()
-        });
-    items.map(Some).ok_or_else(|| {
-        invalid(
-            key,
-            &format!("an array of {min} to {max} non-empty strings"),
-        )
-    })
+/// `modeSchema`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum VideoMode {
+    EditVideo,
+    ExtendVideo,
+    ReferenceToVideo,
 }
 
-/// `xaiVideoModelOptionsSchema`, validated.
+impl VideoMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::EditVideo => "edit-video",
+            Self::ExtendVideo => "extend-video",
+            Self::ReferenceToVideo => "reference-to-video",
+        }
+    }
+}
+
+/// `resolutionSchema`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+enum Resolution {
+    #[serde(rename = "480p")]
+    P480,
+    #[serde(rename = "720p")]
+    P720,
+    #[serde(rename = "1080p")]
+    P1080,
+}
+
+impl Resolution {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::P480 => "480p",
+            Self::P720 => "720p",
+            Self::P1080 => "1080p",
+        }
+    }
+}
+
+/// `keyframeSchema`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Keyframe {
+    image_url: options::de::NonEmpty,
+    #[serde(deserialize_with = "positive")]
+    timestamp_seconds: f64,
+}
+
+/// `storageOptionsSchema`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageOptions {
+    filename: options::de::NonEmpty,
+    #[serde(default, deserialize_with = "options::de::storage_expires_after")]
+    expires_after: Option<i64>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    public_url: Option<PublicUrl>,
+}
+
+/// `z.union([z.boolean(), z.object({ expiresAfter })])`.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum PublicUrl {
+    Enabled(bool),
+    Expiring(PublicUrlOptions),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicUrlOptions {
+    #[serde(default, deserialize_with = "options::de::public_url_expires_after")]
+    expires_after: Option<i64>,
+}
+
+impl StorageOptions {
+    /// The wire shape (`storage_options`).
+    fn wire(self) -> Value {
+        let mut out = Map::new();
+        out.insert("filename".into(), json!(self.filename.0));
+        if let Some(expires_after) = self.expires_after {
+            out.insert("expires_after".into(), json!(expires_after));
+        }
+        match self.public_url {
+            None => {}
+            Some(PublicUrl::Enabled(enabled)) => {
+                out.insert("public_url".into(), json!(enabled));
+            }
+            Some(PublicUrl::Expiring(public)) => {
+                let mut wire = Map::new();
+                if let Some(expires_after) = public.expires_after {
+                    wire.insert("expires_after".into(), json!(expires_after));
+                }
+                out.insert("public_url".into(), Value::Object(wire));
+            }
+        }
+        Value::Object(out)
+    }
+}
+
+/// `z.number().positive()`.
+fn positive<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    let value = f64::deserialize(d)?;
+    if value > 0.0 {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom("expected a number > 0"))
+    }
+}
+
+fn reference_image_urls<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    options::de::non_empty_strings(d, 1, 7)
+}
+
+fn reference_voice_ids<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Vec<String>>, D::Error> {
+    options::de::non_empty_strings(d, 0, 3)
+}
+
+fn keyframes<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Keyframe>>, D::Error> {
+    let items = Vec::<Keyframe>::deserialize(d)?;
+    if items.len() > 4 {
+        return Err(serde::de::Error::custom(
+            "too big: expected array to have <=4 items",
+        ));
+    }
+    Ok(Some(items))
+}
+
+/// The parsed video options, in the shape the request builder reads.
 #[derive(Default)]
 struct Opts {
     mode: Option<String>,
@@ -154,77 +291,29 @@ struct Opts {
 }
 
 impl Opts {
-    fn parse(xai: &JsonObject) -> Result<Self, AiMuxError> {
-        for key in ["pollIntervalMs", "pollTimeoutMs"] {
-            if let Some(v) = xai.get(key).filter(|v| !v.is_null())
-                && !v.as_f64().is_some_and(|n| n > 0.0)
-            {
-                return Err(invalid(key, "a positive number"));
-            }
-        }
-        let mut keyframes = Vec::new();
-        if let Some(value) = xai.get("keyframes").filter(|v| !v.is_null()) {
-            let items = value.as_array().filter(|items| items.len() <= 4);
-            for item in
-                items.ok_or_else(|| invalid("keyframes", "an array of at most 4 keyframes"))?
-            {
-                let frame = item.as_object().and_then(|o| {
-                    let url = o.get("imageUrl")?.as_str().filter(|s| !s.is_empty())?;
-                    let at = o.get("timestampSeconds")?.as_f64().filter(|t| *t > 0.0)?;
-                    Some((url.to_owned(), at))
-                });
-                keyframes.push(frame.ok_or_else(|| {
-                    invalid("keyframes", "{ imageUrl, timestampSeconds > 0 } items")
-                })?);
-            }
-        }
+    /// `parseProviderOptions({ provider: 'xai', schema: xaiVideoModelOptionsSchema })`.
+    fn parse(
+        provider_options: &aimux_core::shared::SharedProviderOptions,
+    ) -> Result<Self, AiMuxError> {
+        let xai: VideoOptions = options::parse(Some(provider_options))?.unwrap_or_default();
         Ok(Self {
-            mode: options::opt_enum(
-                xai,
-                "mode",
-                &["edit-video", "extend-video", "reference-to-video"],
-            )?,
-            video_url: options::opt_non_empty_string(xai, "videoUrl")?,
-            reference_image_urls: string_array(xai, "referenceImageUrls", 1, 7)?,
-            reference_voice_ids: string_array(xai, "referenceVoiceIds", 0, 3)?,
-            keyframes,
-            storage_options: storage_options(xai)?,
-            user: options::opt_string(xai, "user")?,
-            resolution: options::opt_enum(xai, "resolution", &["480p", "720p", "1080p"])?,
+            mode: xai.mode.map(|mode| mode.as_str().to_owned()),
+            video_url: xai.video_url.map(|url| url.0),
+            reference_image_urls: xai.reference_image_urls,
+            reference_voice_ids: xai.reference_voice_ids,
+            keyframes: xai
+                .keyframes
+                .unwrap_or_default()
+                .into_iter()
+                .map(|frame| (frame.image_url.0, frame.timestamp_seconds))
+                .collect(),
+            storage_options: xai.storage_options.map(StorageOptions::wire),
+            user: xai.user,
+            resolution: xai
+                .resolution
+                .map(|resolution| resolution.as_str().to_owned()),
         })
     }
-}
-
-/// `storageOptions` validated and mapped to the wire shape.
-fn storage_options(xai: &JsonObject) -> Result<Option<Value>, AiMuxError> {
-    let Some(value) = xai.get("storageOptions").filter(|v| !v.is_null()) else {
-        return Ok(None);
-    };
-    let bad = || invalid("storageOptions", "{ filename, expiresAfter?, publicUrl? }");
-    let object = value.as_object().ok_or_else(bad)?;
-    let mut out = Map::new();
-    out.insert(
-        "filename".into(),
-        json!(options::opt_non_empty_string(object, "filename")?.ok_or_else(bad)?),
-    );
-    if let Some(n) = options::opt_int(object, "expiresAfter", 1, 2_592_000, &[])? {
-        out.insert("expires_after".into(), json!(n));
-    }
-    match object.get("publicUrl").filter(|v| !v.is_null()) {
-        None => {}
-        Some(Value::Bool(b)) => {
-            out.insert("public_url".into(), json!(b));
-        }
-        Some(Value::Object(public)) => {
-            let mut wire = Map::new();
-            if let Some(n) = options::opt_int(public, "expiresAfter", 3_600, 2_592_000, &[])? {
-                wire.insert("expires_after".into(), json!(n));
-            }
-            out.insert("public_url".into(), Value::Object(wire));
-        }
-        Some(_) => return Err(bad()),
-    }
-    Ok(Some(Value::Object(out)))
 }
 
 /// Keys of the `xai` options that are not forwarded as body fields.
@@ -249,7 +338,7 @@ fn build_request(
     let mut warnings = Vec::new();
     let empty = JsonObject::new();
     let xai_raw = options::xai_options(Some(&options.provider_options)).unwrap_or(&empty);
-    let xai = Opts::parse(xai_raw)?;
+    let xai = Opts::parse(&options.provider_options)?;
     let references = options.input_references.as_deref().unwrap_or_default();
     let has_image_ref = references.iter().any(is_image_reference);
     let has_audio_ref = references.iter().any(is_audio_reference);
