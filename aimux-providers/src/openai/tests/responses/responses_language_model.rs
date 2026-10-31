@@ -13,7 +13,7 @@ use aimux_core::options::CallOptions;
 use aimux_core::result::GenerateResult;
 
 use crate::openai::config::OpenAIModelConfig;
-use crate::openai::responses::OpenAIResponsesModel;
+use crate::openai::responses::{OpenAIResponsesModel, ResponsesNamespace};
 use crate::openai::{OpenAIProvider, OpenAIProviderSettings, create_openai};
 use crate::shared::Credential;
 use crate::shared::ProviderHeaders;
@@ -23,6 +23,7 @@ use aimux_provider_utils::Resolvable;
 
 const GENERATE_BASE_URL: &str = "https://api.openai.com/v1";
 const GENERATE_API_KEY: &str = "APIKEY";
+const AZURE_RESPONSES: ResponsesNamespace = ResponsesNamespace::new(&["azure", "openai"], "azure");
 
 /// An upstream `__fixtures__/<name>.json` response body.
 macro_rules! json_fixture {
@@ -8113,9 +8114,6 @@ mod openai_responses_language_model {
         mod provider_metadata_key_based_on_provider_string {
             use super::*;
 
-            use crate::azure::{AzureOpenAIProviderSettings, create_azure};
-            use aimux_provider_utils::Resolvable;
-
             fn base_response_body() -> Value {
                 json!({
                   "id": "resp_provider_metadata",
@@ -8169,18 +8167,14 @@ mod openai_responses_language_model {
             }
 
             /// Upstream builds the model with `provider: 'azure.responses'`;
-            /// the aimux model with that provider string is the Azure
-            /// provider's Responses model (same URL and key as `createModel`).
+            /// configure `OpenAIResponsesModel` with the Azure Responses namespace.
             async fn azure_generate(response: Value, options: Value) -> Value {
                 let mock = MockFetch::new(vec![Canned::json(&response)]);
-                let provider = create_azure(AzureOpenAIProviderSettings {
-                    api_key: Some(Resolvable::Value(GENERATE_API_KEY.into())),
-                    base_url: Some(GENERATE_BASE_URL.into()),
-                    fetch: Some(mock.transport()),
-                    ..Default::default()
-                })
-                .expect("azure provider");
-                let model = provider.responses("gpt-4o");
+                let model = OpenAIResponsesModel::from_config("gpt-4o".into(), {
+                    let mut config = stream_config("azure.responses", &mock);
+                    config.responses.namespace = AZURE_RESPONSES;
+                    config
+                });
                 let result = model
                     .do_generate(&generate_call_options(options))
                     .await
@@ -8815,7 +8809,7 @@ mod openai_responses_language_model {
                 let mock = sse_mock(streaming_chunks());
                 let model = OpenAIResponsesModel::from_config("gpt-4o".into(), {
                     let mut config = stream_config("azure.responses", &mock);
-                    config.responses.namespace = crate::azure::options::RESPONSES;
+                    config.responses.namespace = AZURE_RESPONSES;
                     config
                 });
                 let stream = stream_do_with(&model, json!({"prompt": stream_test_prompt(), "includeRawChunks": false, "providerOptions": {"openai": {"reasoningSummary": "auto"}}})).await.unwrap();
@@ -8876,7 +8870,7 @@ mod openai_responses_language_model {
             ]);
                 let model = OpenAIResponsesModel::from_config("o3-mini".into(), {
                     let mut config = stream_config("azure.responses", &mock);
-                    config.responses.namespace = crate::azure::options::RESPONSES;
+                    config.responses.namespace = AZURE_RESPONSES;
                     config
                 });
                 let stream = stream_do_with(

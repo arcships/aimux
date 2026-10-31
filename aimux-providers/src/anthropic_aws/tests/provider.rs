@@ -26,8 +26,8 @@ use serde_json::json;
 use serial_test::serial;
 
 use crate::anthropic_aws::AnthropicAwsProvider;
+use crate::anthropic_aws::{AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws};
 use crate::test_support::mock_fetch::{Canned, EnvVar, MockFetch, Seen};
-use crate::{AnthropicAwsAuth, AnthropicAwsProviderSettings, create_anthropic_aws};
 
 /// `TEST_PROMPT`: one user message with the text `Hello`.
 fn prompt() -> CallOptions {

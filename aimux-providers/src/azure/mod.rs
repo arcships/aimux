@@ -22,6 +22,7 @@
 //! the legacy completion model and MAI-Voice (`maiBaseURL`, `webSocket`).
 
 mod openai_provider;
+mod openai_tools;
 pub(crate) mod options;
 mod speech_transcription_model;
 mod speech_transcription_model_options;
@@ -32,6 +33,7 @@ pub use openai_provider::{
     AzureChatModel, AzureOpenAIProvider, AzureOpenAIProviderSettings, AzureResponsesModel,
     AzureTranscriptionModel, azure, create_azure,
 };
+pub use openai_tools::AzureOpenAITools;
 
 #[cfg(test)]
 mod tests;

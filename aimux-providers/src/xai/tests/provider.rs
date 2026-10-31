@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 use crate::shared::aisdk_pins;
 use crate::test_support::mock_fetch::{Canned, EnvVar, MockFetch, Seen};
 use crate::xai::{API_KEY_ENV_VAR, XAIProvider};
-use crate::{XAIProviderSettings, create_xai};
+use crate::xai::{XAIProviderSettings, create_xai};
 
 /// The key the upstream `loadApiKey` mock returns.
 const MOCK_API_KEY: &str = "mock-api-key";

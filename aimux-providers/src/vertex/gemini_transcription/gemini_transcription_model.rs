@@ -4,8 +4,9 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::google::options::{GOOGLE, Namespace};
-use crate::google::transcription::parse_offset_seconds;
+use crate::google::internal::{
+    GOOGLE, Namespace, TranscriptionOptions, google_failed_response_handler, parse_offset_seconds,
+};
 use crate::shared::EndpointConfig;
 use crate::vertex::provider_base::ProjectLocationSource;
 use aimux_core::error::AiMuxError;
@@ -102,11 +103,9 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
         }
         self.project_location.resolve().await?;
         let timestamp = aimux_core::Timestamp::now();
-        let config = crate::google::transcription::TranscriptionOptions::parse(
-            Namespace::Vertex,
-            options.provider_options.as_ref(),
-        )?
-        .audio_transcription_config();
+        let config =
+            TranscriptionOptions::parse(Namespace::Vertex, options.provider_options.as_ref())?
+                .audio_transcription_config();
         let audio = match &options.audio {
             AudioInput::Base64(value) => value.clone(),
             AudioInput::Binary(value) => aimux_provider_utils::convert_uint8_array_to_base64(value),
@@ -124,7 +123,7 @@ impl TranscriptionModel for VertexGeminiTranscriptionModel {
             ),
             exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler::<Response>(),
-            crate::google::google_failed_response_handler(),
+            google_failed_response_handler(),
         )
         .await?;
         let parts = response
@@ -224,13 +223,11 @@ impl VertexGeminiTranscriptionModel {
         use aimux_core::transcription_model::TranscriptionRequest;
         use aimux_provider_utils::ws::{WebSocketRequest, ws_connect};
 
-        crate::google::transcription::validate_live_input_audio_format(&options)?;
+        crate::google::internal::validate_live_input_audio_format(&options)?;
         let target = self.project_location.resolve().await?;
-        let config = crate::google::transcription::TranscriptionOptions::parse(
-            Namespace::Vertex,
-            options.provider_options.as_ref(),
-        )?
-        .audio_transcription_config();
+        let config =
+            TranscriptionOptions::parse(Namespace::Vertex, options.provider_options.as_ref())?
+                .audio_transcription_config();
         let setup = json!({"setup": {
             "model": format!("projects/{}/locations/{}/publishers/google/models/{}", target.project, target.location, self.model_id),
             "inputAudioTranscription": config,
@@ -256,7 +253,7 @@ impl VertexGeminiTranscriptionModel {
             model_id: Some(self.model_id.clone()),
             ..Default::default()
         });
-        let stream = crate::google::transcription::live_stream(
+        let stream = crate::google::internal::live_stream(
             socket,
             options.audio,
             options.include_raw_chunks,

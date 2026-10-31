@@ -17,7 +17,9 @@ use aimux_core::video_model::{
     VideoResponse, VideoResult,
 };
 
-use crate::google::options::Namespace;
+use crate::google::internal::{
+    Namespace, VERTEX_VIDEO_METADATA_KEYS, google_failed_response_handler,
+};
 use crate::shared::EndpointConfig;
 use aimux_core::shared::{Warning, provider_namespace};
 use aimux_core::video_model::{VideoFile, VideoFrameType};
@@ -181,7 +183,7 @@ impl VideoModel for VertexVideoModel {
             exchange.request(url, options),
             exchange.transform_body(body),
             aimux_provider_utils::create_json_response_handler(),
-            crate::google::google_failed_response_handler(),
+            google_failed_response_handler(),
         )
         .await?;
 
@@ -228,7 +230,7 @@ impl VideoModel for VertexVideoModel {
             exchange.request(poll_url.clone(), options),
             exchange.transform_body(json!({"operationName": operation_name})),
             aimux_provider_utils::create_json_response_handler::<Value>(),
-            crate::google::google_failed_response_handler(),
+            google_failed_response_handler(),
         )
         .await?;
 
@@ -308,7 +310,7 @@ impl VideoModel for VertexVideoModel {
             })
             .collect();
         let payload = json!({"videos": video_metadata});
-        let metadata = crate::google::options::VERTEX_VIDEO_METADATA_KEYS
+        let metadata = VERTEX_VIDEO_METADATA_KEYS
             .into_iter()
             .flat_map(|key| {
                 provider_namespace(key, payload.clone())

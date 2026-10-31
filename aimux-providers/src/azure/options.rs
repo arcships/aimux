@@ -7,7 +7,7 @@
 //! routing and Speech options and `openai` for OpenAI transcription options;
 //! the other models read `openai` only.
 
-use crate::openai::responses::ResponsesNamespace;
+use crate::openai::internal::{ChatOptionsParser, ResponsesNamespace, parse_chat_options};
 
 /// The Azure providerOptions / providerMetadata key.
 pub(crate) const NAMESPACE: &str = "azure";
@@ -18,5 +18,4 @@ pub(crate) const RESPONSES: ResponsesNamespace =
     ResponsesNamespace::new(&[NAMESPACE, "openai"], NAMESPACE);
 
 /// Chat uses the same option schema as the OpenAI package.
-pub(crate) const CHAT_OPTIONS: crate::openai::options::ChatOptionsParser =
-    crate::openai::options::parse_chat_options;
+pub(crate) const CHAT_OPTIONS: ChatOptionsParser = parse_chat_options;

@@ -67,7 +67,7 @@ pub(crate) fn anthropic_options_in(
 
 pub(super) fn parse_anthropic_option_object(shape: &str, value: &Value) -> Result<Value, ()> {
     let object = value.as_object().ok_or(())?;
-    let parsed = crate::openai::convert::parse_option_fields(object, CANONICAL, |key, value| {
+    let parsed = aimux_provider_utils::parse_option_fields(object, CANONICAL, |key, value| {
         let kind = match (shape, key) {
             ("options", "sendReasoning" | "disableParallelToolUse" | "toolStreaming") => "bool",
             ("options", "structuredOutputMode") => "outputFormat|jsonTool|auto",

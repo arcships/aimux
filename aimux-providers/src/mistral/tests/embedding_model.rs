@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use crate::{MistralProviderSettings, create_mistral};
+use crate::mistral::{MistralProviderSettings, create_mistral};
 use aimux_core::embedding_model::EmbeddingCallOptions;
 use aimux_core::provider::Provider;
 

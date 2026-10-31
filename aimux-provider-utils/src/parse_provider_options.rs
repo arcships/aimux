@@ -4,7 +4,7 @@
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use aimux_core::shared::SharedProviderOptions;
+use aimux_core::shared::{JsonObject, SharedProviderOptions};
 use aimux_core::{AiMuxError, ErrorCause};
 
 /// The `provider` namespace of `provider_options`, deserialized as `T`.
@@ -49,4 +49,27 @@ where
     T: serde::Deserialize<'de>,
 {
     T::deserialize(deserializer).map(Some)
+}
+
+/// Parse declared namespace fields, discarding unknown keys like a default z.object.
+///
+/// # Errors
+/// Returns a parse error when a declared field fails its schema.
+pub fn parse_option_fields(
+    options: &JsonObject,
+    provider: &str,
+    parse: impl Fn(&str, &Value) -> Option<Result<Value, ()>>,
+) -> Result<JsonObject, AiMuxError> {
+    let mut parsed = JsonObject::new();
+    for (key, value) in options {
+        if let Some(result) = parse(key, value) {
+            parsed.insert(
+                key.clone(),
+                result.map_err(|()| {
+                    AiMuxError::invalid_argument(format!("invalid {provider} provider options"))
+                })?,
+            );
+        }
+    }
+    Ok(parsed)
 }

@@ -17,7 +17,7 @@ use aimux_core::options::CallOptions;
 use aimux_provider_utils::Resolvable;
 use serde_json::json;
 
-use crate::openai_compatible::OpenAICompatibleProvider;
+use crate::openai_compatible::internal::OpenAICompatibleProvider;
 use crate::test_support::mock_fetch::{Canned, EnvVar, MockFetch, Seen};
 use crate::vertex::{VertexMaasProviderSettings, create_google_vertex_maas};
 

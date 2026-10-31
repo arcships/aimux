@@ -490,7 +490,7 @@ impl GoogleAuth {
                             ..Default::default()
                         },
                         create_json_response_handler::<TokenResponse>(),
-                        crate::google::google_failed_response_handler(),
+                        crate::google::internal::google_failed_response_handler(),
                     )
                     .await?;
                     if !response.response_headers.iter().any(|(name, value)| {
@@ -584,7 +584,7 @@ impl GoogleAuth {
             }
         })?;
         let assertion = format!("{unsigned}.{}", encoding.encode(signature.as_ref()));
-        let response = post_to_api(HttpRequest { url: token_url.into(), response_timeout: Some(Duration::from_secs(10)), fetch, ..Default::default() }, HttpBody::Json(json!({"audience": audience, "grant_type": "urn:ietf:params:oauth:token-type:token-exchange", "requested_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": assertion, "subject_token_type": "urn:k8s:params:oauth:token-type:serviceaccount"})), create_json_response_handler::<TokenResponse>(), crate::google::google_failed_response_handler()).await?.value;
+        let response = post_to_api(HttpRequest { url: token_url.into(), response_timeout: Some(Duration::from_secs(10)), fetch, ..Default::default() }, HttpBody::Json(json!({"audience": audience, "grant_type": "urn:ietf:params:oauth:token-type:token-exchange", "requested_token_type": "urn:ietf:params:oauth:token-type:access_token", "subject_token": assertion, "subject_token_type": "urn:k8s:params:oauth:token-type:serviceaccount"})), create_json_response_handler::<TokenResponse>(), crate::google::internal::google_failed_response_handler()).await?.value;
         if response.access_token.is_empty()
             || response.expires_in.is_none_or(|seconds| seconds == 0)
         {
@@ -663,7 +663,7 @@ impl GoogleAuth {
                     ..Default::default()
                 },
                 create_binary_response_handler(),
-                crate::google::google_failed_response_handler(),
+                crate::google::internal::google_failed_response_handler(),
             )
             .await?
             .value;
@@ -865,7 +865,7 @@ impl GoogleAuth {
             },
             HttpBody::Json(body),
             create_json_response_handler::<ImpersonationToken>(),
-            crate::google::google_failed_response_handler(),
+            crate::google::internal::google_failed_response_handler(),
         )
         .await?
         .value;
@@ -990,7 +990,7 @@ impl GoogleAuth {
                 "application/x-www-form-urlencoded".into(),
             ),
             create_json_response_handler::<TokenResponse>(),
-            crate::google::google_failed_response_handler(),
+            crate::google::internal::google_failed_response_handler(),
         )
         .await
         .map(|response| response.value)

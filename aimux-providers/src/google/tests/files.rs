@@ -594,7 +594,7 @@ mod older_files {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{GoogleProvider, GoogleProviderSettings, create_google};
+    use crate::google::{GoogleProvider, GoogleProviderSettings, create_google};
     use aimux_core::files_model::{UploadFileCallOptions, UploadFileData};
     use aimux_core::provider::Provider;
     use aimux_core::shared::FileBytes;

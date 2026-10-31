@@ -1305,7 +1305,7 @@ mod older_transcription {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use crate::{OpenAIProviderSettings, create_openai};
+    use crate::openai::{OpenAIProviderSettings, create_openai};
     use aimux_core::error::AiMuxError;
     use aimux_core::provider::Provider;
     use aimux_core::transcription_model::{AudioInput, TranscriptionCallOptions};
@@ -1882,7 +1882,9 @@ mod older_transcription_stream {
     use tokio::net::TcpListener;
     use tokio_tungstenite::tungstenite::Message;
 
-    use crate::{OpenAIProvider, OpenAIProviderSettings, create_openai};
+    use crate::openai::{
+        OpenAIProvider, OpenAIProviderSettings, OpenAITranscriptionModel, create_openai,
+    };
     use aimux_core::AbortSignal;
     use aimux_core::error::AiMuxError;
     use aimux_core::transcription_model::{
@@ -2042,7 +2044,7 @@ mod older_transcription_stream {
         .expect("valid settings")
     }
 
-    fn realtime_model(base_url: &str) -> crate::OpenAITranscriptionModel {
+    fn realtime_model(base_url: &str) -> OpenAITranscriptionModel {
         openai_at(base_url, "test-api-key").transcription("gpt-realtime-whisper")
     }
 
@@ -2722,7 +2724,7 @@ mod older_transcription_stream {
 mod older_realtime_ws_replay {
     use std::sync::{Arc, Mutex};
 
-    use crate::{OpenAIProviderSettings, create_openai};
+    use crate::openai::{OpenAIProviderSettings, create_openai};
     use aimux_core::error::AiMuxError;
     use aimux_core::transcription_model::{
         AudioChunk, InputAudioFormat, TranscriptionModel, TranscriptionStreamOptions,

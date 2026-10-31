@@ -1,7 +1,7 @@
 //! Provider options of the Vertex embedding model
 //! (google-vertex-embedding-model-options.ts).
 
-use crate::google::options::Namespace;
+use crate::google::internal::Namespace;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
 use serde_json::Value;

@@ -6,8 +6,10 @@ use aimux_core::options::CallOptions;
 use futures::StreamExt;
 use serde_json::{Value, json};
 
-use crate::azure::{AzureOpenAIProviderSettings, create_azure};
+use crate::openai::config::OpenAIModelConfig;
+use crate::openai::responses::{OpenAIResponsesModel, ResponsesNamespace};
 use crate::openai::{OpenAIProviderSettings, create_openai};
+use crate::shared::{Credential, ProviderHeaders};
 use crate::test_support::mock_fetch::{Canned, MockFetch};
 
 const METHODS: [&str; 2] = ["generate", "stream"];
@@ -89,18 +91,21 @@ async fn request_with(
     };
     let fetch: Arc<MockFetch> = MockFetch::new(vec![canned]);
     let model: Box<dyn LanguageModel> = if azure {
-        Box::new(
-            create_azure(AzureOpenAIProviderSettings {
-                resource_name: Some("test-resource".into()),
-                api_key: Some(aimux_provider_utils::Resolvable::Value(
+        let mut config = OpenAIModelConfig::fixed(
+            "azure.responses".into(),
+            URL.into(),
+            ProviderHeaders::bearer(
+                Credential::Explicit(aimux_provider_utils::Resolvable::Value(
                     "test-api-key".into(),
                 )),
-                fetch: Some(fetch.transport()),
-                ..Default::default()
-            })
-            .unwrap()
-            .responses(model_id),
-        )
+                Vec::new(),
+                None,
+            ),
+            Some(fetch.transport()),
+            None,
+        );
+        config.responses.namespace = ResponsesNamespace::new(&["azure", "openai"], "azure");
+        Box::new(OpenAIResponsesModel::from_config(model_id.into(), config))
     } else {
         Box::new(
             create_openai(OpenAIProviderSettings {

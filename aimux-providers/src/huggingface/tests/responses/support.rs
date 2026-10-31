@@ -22,7 +22,9 @@ pub(super) use aimux_core::stream_part::StreamPart;
 pub(super) use aimux_core::types::{FinishReasonUnified, ResponseMetadata};
 
 pub(super) use crate::huggingface::responses::convert_to_huggingface_responses_messages;
-pub(super) use crate::{HuggingFaceProvider, HuggingFaceProviderSettings, create_huggingface};
+pub(super) use crate::huggingface::{
+    HuggingFaceProvider, HuggingFaceProviderSettings, create_huggingface,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
