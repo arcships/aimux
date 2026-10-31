@@ -122,7 +122,6 @@ impl SpeechModel for MistralSpeechModel {
             ref_audio: ref_audio.map(|_| "[redacted]"),
             ..body
         };
-        let request_values = serde_json::to_value(&body_values)?;
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
         let resp = aimux_provider_utils::post_json_to_api(
@@ -134,7 +133,8 @@ impl SpeechModel for MistralSpeechModel {
         .await
         .map_err(|error| match error {
             AiMuxError::ApiCall(mut call) => {
-                call.request_body_values = request_values;
+                call.request_body_values =
+                    serde_json::to_value(&body_values).unwrap_or(Value::Null);
                 AiMuxError::ApiCall(call)
             }
             other => other,

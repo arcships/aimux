@@ -32,6 +32,30 @@ pub async fn read_response_with_size_limit(
     max_bytes: usize,
     abort_signal: Option<&aimux_core::AbortSignal>,
 ) -> Result<Bytes, AiMuxError> {
+    read_response_with_size_limit_lazy(
+        response,
+        url,
+        || request_body_values.clone(),
+        max_bytes,
+        abort_signal,
+    )
+    .await
+}
+
+/// Read a response incrementally and lazily construct `request_body_values`
+/// only when an error is returned.
+///
+/// # Errors
+///
+/// Returns an API-call error when the body exceeds `max_bytes` or cannot be
+/// read, and an abort error when the caller cancels.
+pub async fn read_response_with_size_limit_lazy(
+    response: FetchResponse,
+    url: &str,
+    request_body_values: impl FnOnce() -> serde_json::Value,
+    max_bytes: usize,
+    abort_signal: Option<&aimux_core::AbortSignal>,
+) -> Result<Bytes, AiMuxError> {
     let status = response.status().as_u16();
     let response_headers =
         crate::extract_response_headers::extract_response_headers(response.headers());
@@ -45,13 +69,14 @@ pub async fn read_response_with_size_limit(
             ..ApiCallError::new(
                 format!("Response exceeded maximum size of {max_bytes} bytes"),
                 url,
-                request_body_values.clone(),
+                request_body_values(),
             )
         })));
     }
 
     let mut stream = response.bytes_stream();
     let mut bytes = Vec::new();
+    let mut make_body = Some(request_body_values);
     loop {
         let next = match abort_signal {
             Some(signal) => tokio::select! {
@@ -64,24 +89,22 @@ pub async fn read_response_with_size_limit(
         let Some(chunk) = next else {
             break;
         };
-        let chunk = chunk.map_err(|error| {
-            AiMuxError::ApiCall(Box::new(ApiCallError {
-                // Transport failure mid-body: retryable, and carrying NO
-                // status — the exchange died before a complete response, and
-                // an "HTTP 200: failed to read body" would contradict the
-                // transport-error contract (pre-response transport path and
-                // the SSE body path both report status-less errors).
-                status_code: None,
-                response_headers: Some(response_headers.clone()),
-                is_retryable: true,
-                cause: Some(ErrorCause::source(&error)),
-                ..ApiCallError::new(
-                    format!("Failed to read response body: {error}"),
-                    url,
-                    request_body_values.clone(),
-                )
-            }))
-        })?;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
+                    status_code: None,
+                    response_headers: Some(response_headers.clone()),
+                    is_retryable: true,
+                    cause: Some(ErrorCause::source(&error)),
+                    ..ApiCallError::new(
+                        format!("Failed to read response body: {error}"),
+                        url,
+                        make_body.take().map(|f| f()).unwrap_or_default(),
+                    )
+                })));
+            }
+        };
         if bytes.len().saturating_add(chunk.len()) > max_bytes {
             return Err(AiMuxError::ApiCall(Box::new(ApiCallError {
                 status_code: Some(status),
@@ -90,7 +113,7 @@ pub async fn read_response_with_size_limit(
                 ..ApiCallError::new(
                     format!("Response exceeded maximum size of {max_bytes} bytes"),
                     url,
-                    request_body_values.clone(),
+                    make_body.take().map(|f| f()).unwrap_or_default(),
                 )
             })));
         }
