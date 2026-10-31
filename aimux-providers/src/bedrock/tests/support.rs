@@ -29,7 +29,7 @@ impl Fetch for InjectFetchHeaders {
         for (name, value) in &self.custom_headers {
             request.headers.insert(name.clone(), value.clone());
         }
-        crate::shared::transport_user_agent(
+        aimux_provider_utils::transport_user_agent(
             &mut request.headers,
             None,
             Some(BEDROCK_USER_AGENT_PART),

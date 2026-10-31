@@ -29,9 +29,10 @@ use aimux_provider_utils::HttpRequest;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, ProviderHeaders,
-    is_poll_control_key, poll_interval_ms, poll_until, retry_download,
+    EndpointConfig, POLL_INTERVAL_MILLIS_KEY, PollStep, is_poll_control_key, poll_interval_ms,
+    poll_until, retry_download,
 };
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// AI SDK's `isTrustedUrl` (black-forest-labs-api.ts): credentials may go to
 /// the configured origin, or over HTTPS to `bfl.ai` and its subdomains — BFL

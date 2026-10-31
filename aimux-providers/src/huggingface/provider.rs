@@ -14,8 +14,9 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 
 use super::responses::HuggingFaceResponsesModel;
 use crate::openai::config::OpenAIModelConfig;
+use crate::shared::EndpointConfig;
 use crate::shared::TransformRequestBody;
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://router.huggingface.co/v1";
 pub(crate) const API_KEY_ENV_VAR: &str = "HUGGINGFACE_API_KEY";

@@ -14,7 +14,8 @@ use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable};
 use futures::future::BoxFuture;
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 use super::error::xai_failed_response_handler;
 use super::{XaiResponsesModel, XaiSpeechModel, XaiTranscriptionModel, XaiVideoModel};

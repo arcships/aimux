@@ -33,6 +33,7 @@ pub mod media_type;
 pub mod multipart;
 pub mod parse_provider_options;
 pub mod post_to_api;
+pub mod provider_headers;
 pub mod read_response_with_size_limit;
 pub mod resolvable;
 pub mod resolve_provider_reference;
@@ -45,6 +46,7 @@ pub mod tool_result_to_content;
 pub mod transform_stream;
 pub mod uint8_utils;
 pub mod url;
+pub mod user_agent_fetch;
 /// WebSocket client for realtime provider APIs (RFC-0028). Empty unless the
 /// `ws` feature is enabled.
 #[cfg(feature = "ws")]
@@ -83,6 +85,7 @@ pub use media_type::{
 pub use multipart::{MultipartForm, media_type_to_extension};
 pub use parse_provider_options::{optional_field, parse_provider_options};
 pub use post_to_api::{post_form_data_to_api, post_json_to_api, post_to_api};
+pub use provider_headers::{AuthScheme, Credential, ProviderHeaders};
 pub use resolvable::Resolvable;
 pub use resolve_provider_reference::resolve_provider_reference;
 pub use response_handler::{
@@ -100,3 +103,4 @@ pub use uint8_utils::{
     convert_uint8_array_to_base64,
 };
 pub use url::{validate_base_url, without_trailing_slash};
+pub use user_agent_fetch::{UserAgentFetch, transport_user_agent};

@@ -29,7 +29,8 @@ use aimux_core::shared::Warning;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 use aimux_provider_utils::{HttpBody, MultipartForm};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// Stability error response structure: `{ "id": "...", "name": "...", "errors": ["..."] }`.
 ///

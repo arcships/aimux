@@ -32,9 +32,9 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
 
 use crate::shared::{
-    Credential, EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, ProviderHeaders, poll_interval_ms,
-    poll_until, retry_download,
+    EndpointConfig, POLL_INTERVAL_MS_KEY, PollStep, poll_interval_ms, poll_until, retry_download,
 };
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 fn revai_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxError> {
     aimux_provider_utils::create_json_error_response_handler(|data| {

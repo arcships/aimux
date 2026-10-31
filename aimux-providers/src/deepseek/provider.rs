@@ -16,7 +16,8 @@ use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_bas
 use super::chat::{
     DeepSeekChatConfig, DeepSeekChatLanguageModel, deepseek_failed_response_handler,
 };
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders, SupportedUrlsSource};
+use crate::shared::{EndpointConfig, SupportedUrlsSource};
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 pub(crate) const API_KEY_ENV_VAR: &str = "DEEPSEEK_API_KEY";

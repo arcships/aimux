@@ -21,7 +21,8 @@ use aimux_provider_utils::{
     load_setting, normalize_headers, validate_base_url,
 };
 
-use super::{Credential, ProviderHeaders, TransformRequestBody};
+use super::TransformRequestBody;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 /// What one request is addressed to: the base URL and the provider headers,
 /// both resolved for this request.

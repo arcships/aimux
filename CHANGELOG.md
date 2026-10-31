@@ -1459,6 +1459,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   out of `aimux-providers`; the Azure, Amazon Bedrock, Anthropic AWS and
   Google Vertex host checks and the OpenAI and Anthropic base URLs use them
   unchanged.
+- `aimux_provider_utils::{Credential, AuthScheme, ProviderHeaders}`, the
+  provider-level request headers as data (credential, fixed headers, user
+  headers, `ai-sdk-<package>/<version>` user-agent suffix), and
+  `aimux_provider_utils::{UserAgentFetch, transport_user_agent}`, the
+  user-agent edits a transport makes (RFC-0046 R1). They move out of
+  `aimux-providers`, whose providers build their headers with them unchanged.
 - `aimux_provider_utils::parse_provider_options`, as `@ai-sdk/provider-utils`
   5.0.55 `parseProviderOptions` (RFC-0046 R1): one provider's
   `providerOptions` namespace deserialized into its options type, `None`

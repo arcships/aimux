@@ -31,9 +31,8 @@ use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HttpBody, Resolvable, validate_base_url};
 
-use crate::shared::{
-    AuthScheme, Credential, EndpointConfig, ProviderHeaders, TransformRequestBody,
-};
+use crate::shared::{EndpointConfig, TransformRequestBody};
+use aimux_provider_utils::{AuthScheme, Credential, ProviderHeaders};
 
 pub(crate) mod options;
 

@@ -14,7 +14,8 @@ use aimux_core::provider::{Provider, ProviderDiscovery};
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_provider_utils::{FetchFunction, HeaderMapOpt, Resolvable, validate_base_url};
 
-use crate::shared::{Credential, EndpointConfig, ProviderHeaders};
+use crate::shared::EndpointConfig;
+use aimux_provider_utils::{Credential, ProviderHeaders};
 
 use super::{GroqChatLanguageModel, GroqTranscriptionModel};
 

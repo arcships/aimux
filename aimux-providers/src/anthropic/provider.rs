@@ -4,7 +4,6 @@ use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
 
-use crate::shared::ProviderHeaders;
 use aimux_core::decision_model::DecisionModel;
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
@@ -13,11 +12,12 @@ use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::{LanguageModel, SupportedUrls};
 use aimux_core::model_catalogue::RuntimeModel;
 use aimux_core::provider::{Provider, ProviderDiscovery};
+use aimux_provider_utils::ProviderHeaders;
 use aimux_provider_utils::{
     DecisionLanguageModel, FetchFunction, HeaderMapOpt, Resolvable, validate_base_url,
 };
 
-use crate::shared::{AuthScheme, Credential};
+use aimux_provider_utils::{AuthScheme, Credential};
 
 use super::config::{AnthropicConfig, AnthropicEndpoint};
 use super::language_model_options;
