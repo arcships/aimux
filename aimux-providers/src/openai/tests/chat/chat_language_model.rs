@@ -1944,6 +1944,75 @@ mod do_stream {
         );
     }
 
+    /// Strict stream mode (#403): a reply that ends without a
+    /// `finish_reason` fails instead of finishing with `other`, and the tool
+    /// call it accumulated is not delivered. With the option off the tool
+    /// call is flushed at the end of the body, as in the AI SDK.
+    #[tokio::test]
+    async fn strict_stream_fails_without_a_finish_reason_and_holds_back_tool_calls() {
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"weather","arguments":"{\"city\":\"Rome\"}"}}]},"finish_reason":null}]}"#,
+        ]));
+        let is_tool_call = |part: &Result<StreamPart, AiMuxError>| matches!(part, Ok(StreamPart::ToolCall(call)) if call.tool_call_id == "call_1");
+
+        let (result, _) = stream_result("gpt-4o", stream_chunks(&chunks), no_raw()).await;
+        let lenient: Vec<_> = result.unwrap().stream.collect().await;
+        assert!(lenient.iter().any(is_tool_call), "{lenient:?}");
+
+        let (result, _) = stream_result(
+            "gpt-4o",
+            stream_chunks(&chunks),
+            json!({ "includeRawChunks": false, "strictStream": true }),
+        )
+        .await;
+        let strict: Vec<_> = result.unwrap().stream.collect().await;
+        assert!(!strict.iter().any(is_tool_call), "{strict:?}");
+        assert!(
+            !strict
+                .iter()
+                .any(|part| matches!(part, Ok(StreamPart::Finish { .. }))),
+            "{strict:?}"
+        );
+        let Some(Err(AiMuxError::InvalidResponseData { message, .. })) = strict.last() else {
+            panic!("expected the strict stream to fail: {strict:?}");
+        };
+        assert_eq!(
+            message,
+            "Strict stream: the stream ended without a finish_reason"
+        );
+    }
+
+    /// Strict stream mode (#403): a complete reply finishes as usual; its
+    /// tool call is delivered right before `Finish`.
+    #[tokio::test]
+    async fn strict_stream_delivers_a_complete_reply() {
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"weather","arguments":"{\"city\":\"Rome\"}"}}]},"finish_reason":null}]}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+        ]));
+        let (result, _) = stream_result(
+            "gpt-4o",
+            stream_chunks(&chunks),
+            json!({ "includeRawChunks": false, "strictStream": true }),
+        )
+        .await;
+        let parts: Vec<_> = result.unwrap().stream.collect().await;
+        let n = parts.len();
+        assert!(n >= 2, "{parts:?}");
+        assert!(
+            matches!(&parts[n - 2], Ok(StreamPart::ToolCall(call)) if call.tool_call_id == "call_1"),
+            "{parts:?}"
+        );
+        assert!(
+            matches!(
+                &parts[n - 1],
+                Ok(StreamPart::Finish { finish_reason, .. })
+                    if finish_reason.unified == aimux_core::types::FinishReasonUnified::ToolCalls
+            ),
+            "{parts:?}"
+        );
+    }
+
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doStream › should stream text deltas
     #[tokio::test]
     async fn should_stream_text_deltas() {

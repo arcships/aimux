@@ -115,6 +115,13 @@
         "null"
       ]
     },
+    "strictStream": {
+      "description": "Strict stream mode: fail the stream with `InvalidResponseData` when\nthe protocol's evidence of a complete reply is missing (the stream\nends without its terminal event, a block delta arrives outside a\nstarted block, a block starts twice). Client tool calls are delivered\nonly right before the finish. Off by default, as in the AI SDK.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "temperature": {
       "format": "double",
       "type": [

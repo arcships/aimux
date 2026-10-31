@@ -1822,6 +1822,14 @@ export interface GenerateTextOptions {
    */
   sessionId?: string | null
   stopSequences?: Array<string> | null
+  /**
+   * Strict stream mode: fail the stream with `InvalidResponseData` when
+   * the protocol's evidence of a complete reply is missing (the stream
+   * ends without its terminal event, a block delta arrives outside a
+   * started block, a block starts twice). Client tool calls are delivered
+   * only right before the finish. Off by default, as in the AI SDK.
+   */
+  strictStream?: boolean | null
   temperature?: number | null
   /**
    * Per-call timeout configuration (total / first-chunk / chunk idle).
@@ -2761,6 +2769,14 @@ export interface Options {
    */
   sessionId?: string | null
   stopSequences?: Array<string> | null
+  /**
+   * Strict stream mode: fail the stream with `InvalidResponseData` when
+   * the protocol's evidence of a complete reply is missing (the stream
+   * ends without its terminal event, a block delta arrives outside a
+   * started block, a block starts twice). Client tool calls are delivered
+   * only right before the finish. Off by default, as in the AI SDK.
+   */
+  strictStream?: boolean | null
   temperature?: number | null
   /**
    * Per-call timeout configuration (total / first-chunk / chunk idle).

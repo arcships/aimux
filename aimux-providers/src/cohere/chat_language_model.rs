@@ -240,19 +240,23 @@ impl LanguageModel for CohereModel {
                 ctx: StreamContext {
                     warnings: stream_warnings,
                     include_raw_chunks: options.include_raw_chunks == Some(true),
+                    strict: options.strict_stream == Some(true),
                     ..StreamContext::default()
                 },
                 ..CohereChatStream::default()
             },
         );
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -423,6 +427,13 @@ impl Transformer for CohereChatStream {
     }
 
     fn flush(self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.finish_reason.is_some(),
+            "a message-end event",
+            controller,
+        ) {
+            return;
+        }
         controller.enqueue(StreamPart::Finish {
             finish_reason: self.finish_reason.unwrap_or(FINISH_OTHER),
             usage: self.final_usage,

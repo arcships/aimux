@@ -1391,6 +1391,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Strict stream mode: `CallOptions.strict_stream` and
+  `GenerateTextOptions.strict_stream` (`strictStream` in JSON), off by
+  default. When on, a language-model stream fails with
+  `InvalidResponseData` instead of finishing when the protocol's evidence of
+  a complete reply is missing: the stream ends without its terminal event
+  (OpenAI Chat and Completion, the OpenAI-compatible models, Groq, DeepSeek
+  and Mistral: a `finish_reason`; Anthropic: `message_stop`; Bedrock:
+  `messageStop`; Google: a candidate `finishReason`; Cohere: `message-end`;
+  OpenAI, Codex, Open Responses, xAI and Hugging Face Responses:
+  `response.completed`, `response.incomplete` or `response.failed`) or
+  without a `Finish` part, a delta or end arrives for a text, reasoning or
+  tool-input block that was not started, or a block is started while it is
+  open. A client tool call is held back until `Finish` and delivered right
+  before it; a stream that fails or finishes with an error never delivers
+  it. With the option off every stream behaves as before, as the AI SDK
+  does. Every binding's generated options carry it (#403).
+
 - `aimux_provider_utils` base64 and inline-file helpers, as
   `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1): `convert_base64_to_uint8_array`,
   `convert_uint8_array_to_base64` and `convert_to_base64` (`uint8-utils.ts`,

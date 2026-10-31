@@ -250,13 +250,16 @@ impl LanguageModel for MistralModel {
             }),
         );
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -428,6 +431,13 @@ impl Transformer for MistralChatStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some(),
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
         // Close any remaining open segments.
         if self.text_started {
             controller.text_end(TEXT_ID);

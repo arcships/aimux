@@ -3861,7 +3861,13 @@ type GenerateTextOptions struct {
 	// may be inferred from prompt-prefix continuation.
 	SessionID     *string  `json:"sessionId,omitzero"`
 	StopSequences []string `json:"stopSequences,omitzero"`
-	Temperature   *float64 `json:"temperature,omitzero"`
+	// Strict stream mode: fail the stream with `InvalidResponseData` when
+	// the protocol's evidence of a complete reply is missing (the stream
+	// ends without its terminal event, a block delta arrives outside a
+	// started block, a block starts twice). Client tool calls are delivered
+	// only right before the finish. Off by default, as in the AI SDK.
+	StrictStream *bool    `json:"strictStream,omitzero"`
+	Temperature  *float64 `json:"temperature,omitzero"`
 	// Per-call timeout configuration (total / first-chunk / chunk idle).
 	Timeout    *TimeoutConfiguration `json:"timeout,omitzero"`
 	ToolChoice *ToolChoice           `json:"toolChoice,omitzero"`
@@ -5294,7 +5300,13 @@ type Options struct {
 	// may be inferred from prompt-prefix continuation.
 	SessionID     *string  `json:"sessionId,omitzero"`
 	StopSequences []string `json:"stopSequences,omitzero"`
-	Temperature   *float64 `json:"temperature,omitzero"`
+	// Strict stream mode: fail the stream with `InvalidResponseData` when
+	// the protocol's evidence of a complete reply is missing (the stream
+	// ends without its terminal event, a block delta arrives outside a
+	// started block, a block starts twice). Client tool calls are delivered
+	// only right before the finish. Off by default, as in the AI SDK.
+	StrictStream *bool    `json:"strictStream,omitzero"`
+	Temperature  *float64 `json:"temperature,omitzero"`
 	// Per-call timeout configuration (total / first-chunk / chunk idle).
 	Timeout    *TimeoutConfiguration `json:"timeout,omitzero"`
 	ToolChoice *ToolChoice           `json:"toolChoice,omitzero"`

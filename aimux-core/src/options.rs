@@ -172,6 +172,20 @@ pub struct CallOptions {
     /// families do not emit `Raw` yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
+
+    /// Strict stream mode. When `Some(true)`, a streaming model fails the
+    /// stream with `InvalidResponseData` instead of finishing it when the
+    /// protocol's evidence of a complete reply is missing: the stream ends
+    /// without the protocol's terminal event (a `finish_reason`,
+    /// `message_stop`, `messageStop`, `response.completed`, ...) or without a
+    /// `Finish` part, a delta arrives for a text, reasoning or tool-input
+    /// block that was not started, or a block is started twice. A client
+    /// tool call is delivered only once the terminal event has been seen,
+    /// right before `Finish`; a stream that fails or finishes with an error
+    /// never delivers it. `None` / `Some(false)` keeps the AI SDK's lenient
+    /// behavior. Not part of the AI SDK.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict_stream: Option<bool>,
 }
 
 impl CallOptions {
@@ -202,6 +216,7 @@ impl CallOptions {
             reasoning: None,
             abort_signal: None,
             include_raw_chunks: None,
+            strict_stream: None,
         }
     }
 }

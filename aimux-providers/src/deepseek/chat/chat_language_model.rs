@@ -501,13 +501,16 @@ impl LanguageModel for DeepSeekChatLanguageModel {
             },
         );
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(RequestInfo { body: Some(body) }),
-            response: Some(StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(RequestInfo { body: Some(body) }),
+                response: Some(StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -697,6 +700,13 @@ impl Transformer for DeepSeekChatStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.finish_reason.is_some(),
+            "a finish_reason",
+            controller,
+        ) {
+            return;
+        }
         self.end_active_reasoning(controller);
         if self.is_active_text {
             controller.text_end("txt-0");
