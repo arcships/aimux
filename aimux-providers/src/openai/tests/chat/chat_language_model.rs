@@ -1944,6 +1944,39 @@ mod do_stream {
         );
     }
 
+    /// A chunk with `"error": null` is a normal chunk (#397). Upstream's chunk
+    /// schema is a union of the chunk object and `openaiErrorDataSchema`
+    /// (openai-chat-api.ts); a chunk with `choices` takes the first branch,
+    /// which drops the unknown `error` key, so `'error' in value` is false.
+    /// Gateways put the null member on the first chunk and the usage chunk;
+    /// on the first chunk it used to fail the whole call with a 500.
+    #[tokio::test]
+    async fn a_null_error_member_is_not_an_error_frame() {
+        let chunks = done(data(&[
+            r#"{"id":"x","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}],"error":null}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}"#,
+            r#"{"id":"x","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+            r#"{"id":"x","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2},"error":null}"#,
+        ]));
+
+        let (parts, _) = stream_parts("gpt-4o", stream_chunks(&chunks), no_raw()).await;
+
+        let kinds: Vec<&str> = parts
+            .iter()
+            .map(|part| part["type"].as_str().unwrap_or("stream-error"))
+            .collect();
+        assert!(!kinds.contains(&"error"), "{parts:?}");
+        assert!(!kinds.contains(&"stream-error"), "{parts:?}");
+        assert!(
+            parts.contains(&json!({ "delta": "hello", "id": "0", "type": "text-delta" })),
+            "{parts:?}"
+        );
+        let finish = parts.last().unwrap();
+        assert_eq!(finish["type"], "finish", "{parts:?}");
+        assert_eq!(finish["finishReason"]["unified"], "stop", "{parts:?}");
+        assert_eq!(finish["usage"]["outputTokens"]["total"], 1, "{parts:?}");
+    }
+
     /// upstream: @ai-sdk/openai src/chat/openai-chat-language-model.test.ts › doStream › should stream text deltas
     #[tokio::test]
     async fn should_stream_text_deltas() {
