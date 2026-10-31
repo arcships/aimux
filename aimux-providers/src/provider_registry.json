@@ -853,6 +853,7 @@
     "base_url": "https://api.moonshot.ai/v1",
     "env_var": "MOONSHOT_API_KEY",
     "profile": {
+      "max_tokens_key": "max_completion_tokens",
       "structured_output_models": [
         "kimi-k*",
         "moonshot-v1-8k",
@@ -1185,6 +1186,7 @@
     "env_var": "MOONSHOT_API_KEY",
     "profile": {
       "convert_usage": "moonshotai",
+      "max_tokens_key": "max_completion_tokens",
       "structured_output_models": [
         "kimi-k*",
         "moonshot-v1-8k",
@@ -2349,7 +2351,9 @@
     "display": "ZenMux",
     "base_url": "https://zenmux.ai/api/v1",
     "env_var": "ZENMUX_API_KEY",
-    "profile": {}
+    "profile": {
+      "max_tokens_key": "max_completion_tokens"
+    }
   },
   {
     "name": "zhipu_v4",
