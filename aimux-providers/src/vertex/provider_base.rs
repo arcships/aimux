@@ -13,7 +13,6 @@ use super::video_model::VertexVideoModel;
 use crate::google::internal::{GoogleModel, GoogleSpeechModel, Namespace, list_models_once};
 use crate::shared::{
     Endpoint, EndpointConfig, ResolveEndpoint, SupportedUrlsSource, TransformRequestBody,
-    is_valid_hostname_part,
 };
 use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::error::AiMuxError;
@@ -25,8 +24,8 @@ use aimux_core::speech_model::SpeechModel;
 use aimux_core::transcription_model::TranscriptionModel;
 use aimux_core::video_model::VideoModel;
 use aimux_provider_utils::{
-    FetchFunction, HeaderMapOpt, Resolvable, combine_headers, load_setting, normalize_headers,
-    with_user_agent_suffix,
+    FetchFunction, HeaderMapOpt, Resolvable, combine_headers, is_valid_hostname_part, load_setting,
+    normalize_headers, with_user_agent_suffix,
 };
 use futures::future::BoxFuture;
 use std::sync::{Arc, OnceLock};

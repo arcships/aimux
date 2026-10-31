@@ -1458,6 +1458,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   xAI, Anthropic, Google and DeepSeek converters resolve file references with
   the second. A missing DeepSeek reference now names the providers the
   reference has, as the AI SDK's `NoSuchProviderReferenceError` does.
+- `aimux_provider_utils::is_valid_hostname_part`, as `@ai-sdk/provider-utils`
+  5.0.55 `isValidHostnamePart`, and `aimux_provider_utils::base_url_setting`,
+  the explicit-or-environment base URL of a provider (RFC-0046 R1). They move
+  out of `aimux-providers`; the Azure, Amazon Bedrock, Anthropic AWS and
+  Google Vertex host checks and the OpenAI and Anthropic base URLs use them
+  unchanged.
 - `aimux_provider_utils::parse_provider_options`, as `@ai-sdk/provider-utils`
   5.0.55 `parseProviderOptions` (RFC-0046 R1): one provider's
   `providerOptions` namespace deserialized into its options type, `None`
