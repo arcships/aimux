@@ -1522,3 +1522,43 @@ mod in_stream_error {
         assert_eq!(api_error.response_body, Some(error.to_string()));
     }
 }
+
+/// aimux's own: the `mistral` namespace is parsed against
+/// `mistralLanguageModelChatOptions` with `parseProviderOptions`. A wrong
+/// type, a value outside `reasoningEffort`'s enum or an explicit `null`
+/// fails with the upstream message and nothing is sent.
+mod provider_options_schema {
+    use super::*;
+
+    use aimux_core::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for mistral in [
+            json!({ "safePrompt": "yes" }),
+            json!({ "documentImageLimit": "8" }),
+            json!({ "reasoningEffort": "medium" }),
+            json!({ "promptCacheKey": null }),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let call = CallOptions {
+                provider_options: Some(
+                    serde_json::from_value(json!({ "mistral": mistral })).unwrap(),
+                ),
+                ..options()
+            };
+            let Err(error) = provider(&fetch).chat(MODEL).do_generate(&call).await else {
+                panic!("an invalid namespace fails: {mistral}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {mistral}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid mistral provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+}

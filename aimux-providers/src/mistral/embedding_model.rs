@@ -65,13 +65,13 @@ impl EmbeddingModel for MistralEmbeddingModel {
         body.insert("model".to_string(), json!(self.model_id));
         body.insert("input".to_string(), json!(options.values));
         if let Some(metadata) = mistral_options.metadata {
-            body.insert("metadata".to_string(), metadata);
+            body.insert("metadata".to_string(), Value::Object(metadata));
         }
         if let Some(output_dimension) = mistral_options.output_dimension {
             body.insert("output_dimension".to_string(), json!(output_dimension));
         }
         if let Some(output_dtype) = mistral_options.output_dtype {
-            body.insert("output_dtype".to_string(), json!(output_dtype));
+            body.insert("output_dtype".to_string(), json!(output_dtype.as_str()));
         }
         body.insert("encoding_format".to_string(), json!("float"));
 

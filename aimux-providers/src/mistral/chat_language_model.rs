@@ -457,12 +457,11 @@ pub fn build_request_body(
     options: &CallOptions,
     stream: bool,
 ) -> Result<Value, AiMuxError> {
-    let provider_options = super::chat_language_model_options::validated_mistral_options(
-        options.provider_options.as_ref(),
-    )?;
+    let provider_options =
+        super::chat_language_model_options::chat_options(options.provider_options.as_ref())?;
+    let provider_options = provider_options.as_ref();
     let structured_outputs = provider_options
-        .and_then(|o| o.get("structuredOutputs"))
-        .and_then(Value::as_bool)
+        .and_then(|o| o.structured_outputs)
         .unwrap_or(true);
     // Mistral's JSON object mode needs the instruction in the prompt
     // (@ai-sdk/mistral@4.0.55 mistral-chat-language-model.ts:171-181).
@@ -530,8 +529,7 @@ pub fn build_request_body(
                     }
                     schema_obj["strict"] = json!(
                         provider_options
-                            .and_then(|o| o.get("strictJsonSchema"))
-                            .and_then(Value::as_bool)
+                            .and_then(|o| o.strict_json_schema)
                             .unwrap_or(false)
                     );
                     body["response_format"] = json!({
@@ -546,15 +544,17 @@ pub fn build_request_body(
     }
 
     if let Some(provider_options) = provider_options {
-        for (key, wire_key) in [
-            ("safePrompt", "safe_prompt"),
-            ("documentImageLimit", "document_image_limit"),
-            ("documentPageLimit", "document_page_limit"),
-            ("promptCacheKey", "prompt_cache_key"),
-        ] {
-            if let Some(value) = provider_options.get(key) {
-                body[wire_key] = value.clone();
-            }
+        if let Some(safe_prompt) = provider_options.safe_prompt {
+            body["safe_prompt"] = json!(safe_prompt);
+        }
+        if let Some(limit) = &provider_options.document_image_limit {
+            body["document_image_limit"] = json!(limit);
+        }
+        if let Some(limit) = &provider_options.document_page_limit {
+            body["document_page_limit"] = json!(limit);
+        }
+        if let Some(key) = &provider_options.prompt_cache_key {
+            body["prompt_cache_key"] = json!(key);
         }
     }
     if supports_reasoning_effort(model_id) {
@@ -590,8 +590,8 @@ pub fn build_request_body(
         if let Some(choice) = prepared.tool_choice {
             body["tool_choice"] = choice;
         }
-        if let Some(value) = provider_options.and_then(|o| o.get("parallelToolCalls")) {
-            body["parallel_tool_calls"] = value.clone();
+        if let Some(parallel) = provider_options.and_then(|o| o.parallel_tool_calls) {
+            body["parallel_tool_calls"] = json!(parallel);
         }
     }
     Ok(body)
@@ -602,11 +602,11 @@ pub fn build_request_body(
 /// the top-level reasoning level mapped to Mistral's efforts.
 fn resolve_reasoning_effort(
     options: &CallOptions,
-    provider_options: Option<&aimux_core::shared::JsonObject>,
+    provider_options: Option<&super::chat_language_model_options::MistralChatOptions>,
     warnings: &mut Vec<Warning>,
 ) -> Option<Value> {
-    if let Some(effort) = provider_options.and_then(|o| o.get("reasoningEffort")) {
-        return Some(effort.clone());
+    if let Some(effort) = provider_options.and_then(|o| o.reasoning_effort) {
+        return Some(json!(effort.as_str()));
     }
     let reasoning = options.reasoning.filter(|r| r.is_custom())?;
     if reasoning == ReasoningEffort::None {
@@ -660,11 +660,13 @@ pub fn request_warnings(options: &CallOptions, model_id: &str) -> Vec<Warning> {
         });
     }
     if supports_reasoning_effort(model_id) {
-        resolve_reasoning_effort(
-            options,
-            super::chat_language_model_options::mistral_options(options.provider_options.as_ref()),
-            &mut warnings,
-        );
+        // An invalid namespace fails the request body; its warnings are
+        // computed as if it were absent.
+        let provider_options =
+            super::chat_language_model_options::chat_options(options.provider_options.as_ref())
+                .ok()
+                .flatten();
+        resolve_reasoning_effort(options, provider_options.as_ref(), &mut warnings);
     } else if options.reasoning.is_some_and(ReasoningEffort::is_custom) {
         warnings.push(Warning::Unsupported {
             feature: "reasoning".into(),
