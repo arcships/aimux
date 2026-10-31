@@ -1488,6 +1488,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A raw byte request body (`HttpBody::Bytes`: audio uploads, Bedrock, file
+  uploads) no longer replaces a `content-type` the caller set in
+  `HttpRequest.headers`, `ProviderSettings.headers` or `CallOptions.headers`;
+  the body's media type is sent only when the caller set none, as for JSON
+  bodies and in the AI SDK's `postToApi`. A multipart body still sends its
+  own `multipart/...; boundary=...` type, since the boundary is generated
+  with the body (#398).
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
