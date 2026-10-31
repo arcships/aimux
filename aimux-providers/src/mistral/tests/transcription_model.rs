@@ -452,11 +452,9 @@ mod provider_options_schema {
             let fetch = MockFetch::new(vec![]);
             let model =
                 provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
-            let error = model
-                .do_generate(&wav(Some(mistral.clone())))
-                .await
-                .err()
-                .expect("an invalid namespace fails");
+            let Err(error) = model.do_generate(&wav(Some(mistral.clone()))).await else {
+                panic!("an invalid namespace fails: {mistral}");
+            };
             let AiMuxError::InvalidArgument { message, cause } = &error else {
                 panic!("expected InvalidArgument for {mistral}, got {error:?}");
             };

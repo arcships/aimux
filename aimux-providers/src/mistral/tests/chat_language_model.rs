@@ -1547,12 +1547,9 @@ mod provider_options_schema {
                 ),
                 ..options()
             };
-            let error = provider(&fetch)
-                .chat(MODEL)
-                .do_generate(&call)
-                .await
-                .err()
-                .expect("an invalid namespace fails");
+            let Err(error) = provider(&fetch).chat(MODEL).do_generate(&call).await else {
+                panic!("an invalid namespace fails: {mistral}");
+            };
             let AiMuxError::InvalidArgument { message, cause } = &error else {
                 panic!("expected InvalidArgument for {mistral}, got {error:?}");
             };

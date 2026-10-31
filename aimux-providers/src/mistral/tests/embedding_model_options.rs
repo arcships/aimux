@@ -62,7 +62,7 @@ mod refinements {
     fn output_dimension_is_a_positive_integer() {
         assert!(parse(json!({ "outputDimension": 2.0 })).is_ok());
         for value in [json!(0), json!(-1), json!(1.5), json!("8"), Value::Null] {
-            let error = parse(json!({ "outputDimension": value })).err().unwrap();
+            let error = parse(json!({ "outputDimension": value })).unwrap_err();
             let AiMuxError::InvalidArgument { message, cause } = &error else {
                 panic!("expected InvalidArgument for {value}, got {error:?}");
             };
