@@ -1,52 +1,78 @@
 //! `mistral-embedding-model-options.ts`.
 
-use serde_json::Value;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
+use serde_json::{Map, Value};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
+use aimux_provider_utils::optional_field;
 
+use super::chat_language_model_options::parse;
+
+/// `mistralEmbeddingModelOptions`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct MistralEmbeddingProviderOptions {
-    pub(super) metadata: Option<Value>,
-    pub(super) output_dimension: Option<Value>,
-    pub(super) output_dtype: Option<String>,
+    /// `z.record(z.string(), z.any())`.
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(super) metadata: Option<Map<String, Value>>,
+    /// `z.number().int().positive()`.
+    #[serde(default, deserialize_with = "positive_int")]
+    pub(super) output_dimension: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(super) output_dtype: Option<OutputDtype>,
 }
 
+/// `z.enum(['float', 'int8', 'uint8', 'binary', 'ubinary'])`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum OutputDtype {
+    Float,
+    Int8,
+    Uint8,
+    Binary,
+    Ubinary,
+}
+
+impl OutputDtype {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Float => "float",
+            Self::Int8 => "int8",
+            Self::Uint8 => "uint8",
+            Self::Binary => "binary",
+            Self::Ubinary => "ubinary",
+        }
+    }
+}
+
+/// zod's `.int().positive()`: a safe integer above zero (`2.0` passes, as
+/// it is an integer in JavaScript).
+fn positive_int<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Number>, D::Error> {
+    let number = serde_json::Number::deserialize(deserializer)?;
+    let value = number
+        .as_f64()
+        .ok_or_else(|| D::Error::custom("expected a number"))?;
+    if value.fract() != 0.0 || value > 9_007_199_254_740_991.0 {
+        return Err(D::Error::custom("expected int, received number"));
+    }
+    if value <= 0.0 {
+        return Err(D::Error::custom("too small: expected number to be >0"));
+    }
+    Ok(Some(number))
+}
+
+/// The embedding options, parsed (all `None` without a `mistral` namespace).
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid mistral provider options" when the namespace
+/// does not match the schema.
 pub(super) fn parse_mistral_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Result<MistralEmbeddingProviderOptions, AiMuxError> {
-    let provider_opts = super::chat_language_model_options::mistral_options(options);
-    let metadata = provider_opts.and_then(|o| o.get("metadata")).cloned();
-    let output_dimension = provider_opts
-        .and_then(|o| o.get("outputDimension"))
-        .cloned();
-    let output_dtype = provider_opts.and_then(|o| o.get("outputDtype"));
-    if metadata.as_ref().is_some_and(|value| !value.is_object()) {
-        return Err(AiMuxError::invalid_argument(
-            "mistral.metadata must be a record",
-        ));
-    }
-    if output_dimension.as_ref().is_some_and(|value| {
-        !value.as_f64().is_some_and(|number| {
-            number > 0.0 && number.fract() == 0.0 && number <= 9_007_199_254_740_991.0
-        })
-    }) {
-        return Err(AiMuxError::invalid_argument(
-            "mistral.outputDimension must be a positive integer",
-        ));
-    }
-    if output_dtype.is_some_and(|value| {
-        !matches!(
-            value.as_str(),
-            Some("float" | "int8" | "uint8" | "binary" | "ubinary")
-        )
-    }) {
-        return Err(AiMuxError::invalid_argument(
-            "mistral.outputDtype must be float, int8, uint8, binary, or ubinary",
-        ));
-    }
-    Ok(MistralEmbeddingProviderOptions {
-        metadata,
-        output_dimension,
-        output_dtype: output_dtype.and_then(Value::as_str).map(str::to_owned),
-    })
+    Ok(parse(options)?.unwrap_or_default())
 }

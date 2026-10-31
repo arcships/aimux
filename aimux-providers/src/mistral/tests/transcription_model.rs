@@ -431,3 +431,41 @@ async fn url_audio_is_refused_before_any_request() {
     assert_eq!(error.to_string(), AudioInput::url_error().to_string());
     assert!(fetch.seen().is_empty());
 }
+
+/// aimux's own: every refinement of `mistralTranscriptionModelOptions`
+/// fails with the upstream `parseProviderOptions` message, and nothing is
+/// sent.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        let too_many: Vec<String> = (0..101).map(|i| format!("term{i}")).collect();
+        for mistral in [
+            json!({ "language": "" }),
+            json!({ "timestampGranularities": [] }),
+            json!({ "timestampGranularities": ["sentence"] }),
+            json!({ "contextBias": [""] }),
+            json!({ "contextBias": too_many }),
+            json!({ "diarize": null }),
+        ] {
+            let fetch = MockFetch::new(vec![]);
+            let model =
+                provider_with(&fetch, MistralProviderSettings::default()).transcription(MODEL_ID);
+            let error = model
+                .do_generate(&wav(Some(mistral.clone())))
+                .await
+                .err()
+                .expect("an invalid namespace fails");
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {mistral}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid mistral provider options"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+}
