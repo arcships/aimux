@@ -257,8 +257,10 @@ impl LanguageModel for HuggingFaceResponsesModel {
                     url: endpoint,
                     request_body: body.clone(),
                     response_headers: response_headers.clone(),
+                    strict: options.strict_stream == Some(true),
                     ..StreamContext::default()
                 },
+                terminal_seen: false,
                 finish_reason: FINISH_OTHER,
                 response_id: None,
                 usage_raw: None,
@@ -266,18 +268,24 @@ impl LanguageModel for HuggingFaceResponsesModel {
             },
         );
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
 /// The `TransformStream` of the Hugging Face Responses `doStream`.
 struct HuggingFaceResponsesStream {
+    /// A `response.completed`, `response.incomplete`, `response.failed` or
+    /// `error` event arrived (strict stream mode).
+    terminal_seen: bool,
     /// Raw chunks are never forwarded.
     ctx: StreamContext,
     finish_reason: FinishReason,
@@ -297,6 +305,16 @@ impl Transformer for HuggingFaceResponsesStream {
     }
 
     fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        if matches!(
+            event
+                .as_ref()
+                .ok()
+                .and_then(|event| event.get("type"))
+                .and_then(Value::as_str),
+            Some("response.completed" | "response.incomplete" | "response.failed" | "error")
+        ) {
+            self.terminal_seen = true;
+        }
         self.transform_event(event, controller);
         if self.finished {
             // An error event ends the response: the rest of the body is not
@@ -307,6 +325,13 @@ impl Transformer for HuggingFaceResponsesStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.terminal_seen,
+            "a response.completed, response.incomplete or response.failed event",
+            controller,
+        ) {
+            return;
+        }
         self.finish(controller);
     }
 }

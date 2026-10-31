@@ -73,6 +73,15 @@ public final class Options {
     private final String sessionId;
     @JsonProperty("stopSequences")
     private final List<String> stopSequences;
+    /**
+     * Strict stream mode: fail the stream with `InvalidResponseData` when
+     * the protocol's evidence of a complete reply is missing (the stream
+     * ends without its terminal event, a block delta arrives outside a
+     * started block, a block starts twice). Client tool calls are delivered
+     * only right before the finish. Off by default, as in the AI SDK.
+     */
+    @JsonProperty("strictStream")
+    private final Boolean strictStream;
     @JsonProperty("temperature")
     private final BigDecimal temperature;
     /**
@@ -104,6 +113,7 @@ public final class Options {
         @JsonProperty(value = "seed") Long seed,
         @JsonProperty(value = "sessionId") String sessionId,
         @JsonProperty(value = "stopSequences") List<String> stopSequences,
+        @JsonProperty(value = "strictStream") Boolean strictStream,
         @JsonProperty(value = "temperature") BigDecimal temperature,
         @JsonProperty(value = "timeout") TimeoutConfiguration timeout,
         @JsonProperty(value = "toolChoice") ToolChoice toolChoice,
@@ -123,6 +133,7 @@ public final class Options {
         this.seed = seed;
         this.sessionId = sessionId;
         this.stopSequences = stopSequences == null ? null : Collections.unmodifiableList(new ArrayList<>(stopSequences));
+        this.strictStream = strictStream;
         this.temperature = temperature;
         this.timeout = timeout;
         this.toolChoice = toolChoice;
@@ -145,6 +156,7 @@ public final class Options {
     public Long getSeed() { return seed; }
     public String getSessionId() { return sessionId; }
     public List<String> getStopSequences() { return stopSequences; }
+    public Boolean getStrictStream() { return strictStream; }
     public BigDecimal getTemperature() { return temperature; }
     public TimeoutConfiguration getTimeout() { return timeout; }
     public ToolChoice getToolChoice() { return toolChoice; }
@@ -166,6 +178,7 @@ public final class Options {
         private Long seed;
         private String sessionId;
         private List<String> stopSequences;
+        private Boolean strictStream;
         private BigDecimal temperature;
         private TimeoutConfiguration timeout;
         private ToolChoice toolChoice;
@@ -238,6 +251,11 @@ public final class Options {
             return this;
         }
 
+        public Builder strictStream(Boolean value) {
+            this.strictStream = value;
+            return this;
+        }
+
         public Builder temperature(BigDecimal value) {
             this.temperature = value;
             return this;
@@ -268,6 +286,6 @@ public final class Options {
             return this;
         }
 
-        public Options build() { return new Options(frequencyPenalty, headers, includeRawChunks, instructions, maxOutputTokens, maxRetries, output, presencePenalty, providerOptions, reasoning, seed, sessionId, stopSequences, temperature, timeout, toolChoice, tools, topK, topP); }
+        public Options build() { return new Options(frequencyPenalty, headers, includeRawChunks, instructions, maxOutputTokens, maxRetries, output, presencePenalty, providerOptions, reasoning, seed, sessionId, stopSequences, strictStream, temperature, timeout, toolChoice, tools, topK, topP); }
     }
 }

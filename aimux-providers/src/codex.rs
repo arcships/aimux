@@ -483,15 +483,19 @@ impl CodexModel {
             body.clone(),
             response_headers.clone(),
             options.include_raw_chunks == Some(true),
+            options.strict_stream == Some(true),
         )?;
 
-        Ok(StreamResult {
-            stream,
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream,
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 

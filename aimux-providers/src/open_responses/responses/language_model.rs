@@ -359,16 +359,21 @@ impl LanguageModel for OpenResponsesModel {
                 active_reasoning_id: None,
                 tool_calls: HashMap::new(),
                 include_raw_chunks: options.include_raw_chunks == Some(true),
+                strict: options.strict_stream == Some(true),
+                terminal_seen: false,
             },
         );
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -388,6 +393,11 @@ struct OpenResponsesStream {
     /// Tool-call accumulators keyed by item_id.
     tool_calls: HashMap<String, ToolCallAccum>,
     include_raw_chunks: bool,
+    /// Strict stream mode (`CallOptions.strict_stream`).
+    strict: bool,
+    /// A `response.completed`, `response.incomplete`, `response.failed` or
+    /// `error` event arrived.
+    terminal_seen: bool,
 }
 
 impl Transformer for OpenResponsesStream {
@@ -401,6 +411,16 @@ impl Transformer for OpenResponsesStream {
     }
 
     fn transform(&mut self, event: Result<Value, AiMuxError>, controller: &mut Controller) {
+        if matches!(
+            event
+                .as_ref()
+                .ok()
+                .and_then(|event| event.get("type"))
+                .and_then(Value::as_str),
+            Some("response.completed" | "response.incomplete" | "response.failed" | "error")
+        ) {
+            self.terminal_seen = true;
+        }
         // Every chunk first, as `raw` when requested
         // (open-responses-language-model.ts:685-690); a chunk that is not
         // JSON has no raw value.
@@ -722,6 +742,13 @@ impl Transformer for OpenResponsesStream {
     }
 
     fn flush(self, controller: &mut Controller) {
+        if self.strict && !self.terminal_seen {
+            controller.error(crate::stream::strict_error(
+                "the stream ended without a response.completed, response.incomplete or \
+                 response.failed event",
+            ));
+            return;
+        }
         // Close any dangling reasoning segment.
         if let Some(id) = self.active_reasoning_id {
             controller.reasoning_end(id);

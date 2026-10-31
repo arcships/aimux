@@ -129,3 +129,128 @@ mod anthropic_message_lifecycle {
         );
     }
 }
+
+/// Strict stream mode (`CallOptions.strict_stream`, #403) on the Messages
+/// stream: the AI SDK accepts each of these, and so does aimux with the
+/// option off.
+mod strict_stream {
+    use super::*;
+
+    const MESSAGE_START: &str = r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-3-haiku-20240307","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}}"#;
+    const TEXT_START: &str =
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#;
+    const TEXT_DELTA: &str =
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#;
+    const TEXT_STOP: &str = r#"{"type":"content_block_stop","index":0}"#;
+    const MESSAGE_DELTA: &str = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}"#;
+    const MESSAGE_STOP: &str = r#"{"type":"message_stop"}"#;
+
+    fn options(strict: bool) -> CallOptions {
+        CallOptions {
+            strict_stream: Some(strict),
+            ..CallOptions::new(prompt())
+        }
+    }
+
+    async fn parts(events: &[&str], strict: bool) -> Vec<StreamPart> {
+        collect(&create_model(&events.join("\n")), &options(strict)).await
+    }
+
+    fn strict_failure(parts: &[StreamPart]) -> Option<String> {
+        match parts.last() {
+            Some(StreamPart::Error {
+                error: AiMuxError::InvalidResponseData { message, .. },
+            }) if message.starts_with("Strict stream: ") => Some(message.clone()),
+            _ => None,
+        }
+    }
+
+    fn has_finish(parts: &[StreamPart]) -> bool {
+        parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::Finish { .. }))
+    }
+
+    #[tokio::test]
+    async fn a_complete_message_finishes() {
+        let events = [
+            MESSAGE_START,
+            TEXT_START,
+            TEXT_DELTA,
+            TEXT_STOP,
+            MESSAGE_DELTA,
+            MESSAGE_STOP,
+        ];
+        let parts = parts(&events, true).await;
+        assert_eq!(strict_failure(&parts), None, "{parts:?}");
+        assert!(has_finish(&parts), "{parts:?}");
+    }
+
+    /// Without `message_stop` the lenient stream ends silently, with no
+    /// `Finish`; the strict stream fails.
+    #[tokio::test]
+    async fn a_message_without_message_stop_fails() {
+        let events = [
+            MESSAGE_START,
+            TEXT_START,
+            TEXT_DELTA,
+            TEXT_STOP,
+            MESSAGE_DELTA,
+        ];
+        let lenient = parts(&events, false).await;
+        assert_eq!(strict_failure(&lenient), None, "{lenient:?}");
+        assert!(!has_finish(&lenient), "{lenient:?}");
+
+        let strict = parts(&events, true).await;
+        assert_eq!(
+            strict_failure(&strict).as_deref(),
+            Some("Strict stream: the stream ended without a finish part"),
+            "{strict:?}"
+        );
+    }
+
+    /// A `content_block_delta` for an index whose block never started.
+    #[tokio::test]
+    async fn a_delta_outside_a_started_block_fails() {
+        let orphan =
+            r#"{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"x"}}"#;
+        let events = [
+            MESSAGE_START,
+            TEXT_START,
+            TEXT_DELTA,
+            orphan,
+            TEXT_STOP,
+            MESSAGE_DELTA,
+            MESSAGE_STOP,
+        ];
+        let lenient = parts(&events, false).await;
+        assert_eq!(strict_failure(&lenient), None, "{lenient:?}");
+        assert!(has_finish(&lenient), "{lenient:?}");
+
+        let strict = parts(&events, true).await;
+        let failure = strict_failure(&strict).expect("the strict stream fails");
+        assert!(failure.contains("that was not started"), "{failure}");
+        assert!(!has_finish(&strict), "{strict:?}");
+    }
+
+    /// A second `content_block_start` for an index that is open.
+    #[tokio::test]
+    async fn a_block_started_twice_fails() {
+        let events = [
+            MESSAGE_START,
+            TEXT_START,
+            TEXT_START,
+            TEXT_DELTA,
+            TEXT_STOP,
+            MESSAGE_DELTA,
+            MESSAGE_STOP,
+        ];
+        let lenient = parts(&events, false).await;
+        assert_eq!(strict_failure(&lenient), None, "{lenient:?}");
+
+        let strict = parts(&events, true).await;
+        let failure = strict_failure(&strict).expect("the strict stream fails");
+        assert!(failure.contains("started twice"), "{failure}");
+        assert!(!has_finish(&strict), "{strict:?}");
+    }
+}

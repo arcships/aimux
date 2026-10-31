@@ -245,13 +245,16 @@ impl LanguageModel for BedrockModel {
             },
         );
 
-        Ok(StreamResult {
-            stream: Box::pin(stream),
-            request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
-            response: Some(aimux_core::shared::StreamResponseInfo {
-                headers: Some(response_headers),
-            }),
-        })
+        Ok(crate::stream::strict_guard(
+            StreamResult {
+                stream: Box::pin(stream),
+                request: Some(aimux_core::shared::RequestInfo { body: Some(body) }),
+                response: Some(aimux_core::shared::StreamResponseInfo {
+                    headers: Some(response_headers),
+                }),
+            },
+            options,
+        ))
     }
 }
 
@@ -603,6 +606,13 @@ impl Transformer for AmazonBedrockChatStream {
     }
 
     fn flush(mut self, controller: &mut Controller) {
+        if self.ctx.fail_without_terminal(
+            self.final_finish_reason.is_some(),
+            "a messageStop event",
+            controller,
+        ) {
+            return;
+        }
         // #26: merge the stop sentinel into the metadata payload, then build
         // the Finish provider_metadata under `amazonBedrock` (mirrors the
         // TS `doStream` flush handler).

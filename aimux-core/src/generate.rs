@@ -179,6 +179,13 @@ pub struct GenerateTextOptions {
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
+    /// Strict stream mode: fail the stream with `InvalidResponseData` when
+    /// the protocol's evidence of a complete reply is missing (the stream
+    /// ends without its terminal event, a block delta arrives outside a
+    /// started block, a block starts twice). Client tool calls are delivered
+    /// only right before the finish. Off by default, as in the AI SDK.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict_stream: Option<bool>,
     /// Optional one-shot repair callback for unknown, malformed, or
     /// schema-invalid tool calls.
     #[serde(skip)]
@@ -240,6 +247,7 @@ impl GenerateTextOptions {
             reasoning: self.reasoning,
             abort_signal: self.abort_signal,
             include_raw_chunks: self.include_raw_chunks,
+            strict_stream: self.strict_stream,
         }
     }
 }
