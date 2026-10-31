@@ -535,11 +535,12 @@ mod provider_options_schema {
             json!({ "replace": { "a": 1 } }),
         ] {
             let fetch = MockFetch::new(vec![]);
-            let error = speech_model(&fetch)
+            let Err(error) = speech_model(&fetch)
                 .do_generate(&with_xai(options("Hello"), xai.clone()))
                 .await
-                .err()
-                .expect("a value outside the schema fails");
+            else {
+                panic!("a value outside the schema fails: {xai}");
+            };
             let AiMuxError::InvalidArgument { message, cause } = &error else {
                 panic!("expected InvalidArgument for {xai}, got {error:?}");
             };
