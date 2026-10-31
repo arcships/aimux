@@ -1,59 +1,72 @@
+use std::sync::OnceLock;
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::{ABI_VERSION, HandleKind, OPS_VERSION};
 
+static MANIFEST_CACHE: OnceLock<(Box<str>, String)> = OnceLock::new();
+
+fn cached_manifest() -> &'static (Box<str>, String) {
+    MANIFEST_CACHE.get_or_init(|| {
+        let (input_types, input) = type_contract(false);
+        let (output_types, output) = type_contract(true);
+        let mut types = std::collections::BTreeMap::new();
+        for ty in input_types.into_iter().chain(output_types) {
+            let id = ty["id"].as_str().unwrap().to_owned();
+            let entry = types
+                .entry(id.clone())
+                .or_insert_with(|| json!({"id": id, "rustPath": id}));
+            entry[ty["direction"].as_str().unwrap()] = ty["name"].clone();
+        }
+        let types: Vec<_> = types.into_values().collect();
+        let ops: Vec<_> = crate::dispatch::registrations()
+            .iter()
+            .map(|(descriptor, _)| json!(descriptor))
+            .collect();
+        let mut error_codes = Vec::new();
+        for (kind, entries) in ERROR_CODES {
+            for (code, name) in *entries {
+                error_codes.push(
+                    json!({ "kind": kind, "code": code, "name": name, "aliases": aliases(*code) }),
+                );
+            }
+        }
+        let mut value = json!({
+            "abiVersion": ABI_VERSION,
+            "opsVersion": OPS_VERSION,
+            "manifestRevision": "1",
+            "ops": ops,
+            "handleKinds": HandleKind::ALL,
+            "packages": crate::ops::provider::packages(),
+            "errorCodes": error_codes,
+            "types": types,
+            "typeDefs": {"input": input, "output": output},
+            "registeredGaps": [
+                "G-a: recording/session/infer state remains process-wide",
+                "G-b: recording schema migration belongs to RFC-0041",
+                "G-c: replay transport capabilities and credential creation are future",
+                "G-e: per-asset platform install verification is not claimed"
+            ],
+        });
+        canonicalize(&mut value);
+        let digest_str = format!("{:x}", Sha256::digest(value.to_string().as_bytes()));
+        value["digest"] = json!(digest_str.clone());
+        let compact_json = value.to_string().into_boxed_str();
+        (compact_json, digest_str)
+    })
+}
+
 /// Describe all registered operations and their wire metadata.
 #[must_use]
 pub fn manifest() -> Value {
-    let (input_types, input) = type_contract(false);
-    let (output_types, output) = type_contract(true);
-    let mut types = std::collections::BTreeMap::new();
-    for ty in input_types.into_iter().chain(output_types) {
-        let id = ty["id"].as_str().unwrap().to_owned();
-        let entry = types
-            .entry(id.clone())
-            .or_insert_with(|| json!({"id": id, "rustPath": id}));
-        entry[ty["direction"].as_str().unwrap()] = ty["name"].clone();
-    }
-    let types: Vec<_> = types.into_values().collect();
-    let ops: Vec<_> = crate::dispatch::registrations()
-        .iter()
-        .map(|(descriptor, _)| json!(descriptor))
-        .collect();
-    let mut error_codes = Vec::new();
-    for (kind, entries) in ERROR_CODES {
-        for (code, name) in *entries {
-            error_codes.push(
-                json!({ "kind": kind, "code": code, "name": name, "aliases": aliases(*code) }),
-            );
-        }
-    }
-    let mut value = json!({
-        "abiVersion": ABI_VERSION,
-        "opsVersion": OPS_VERSION,
-        "manifestRevision": "1",
-        "ops": ops,
-        "handleKinds": HandleKind::ALL,
-        "packages": crate::ops::provider::packages(),
-        "errorCodes": error_codes,
-        "types": types,
-        "typeDefs": {"input": input, "output": output},
-        "registeredGaps": [
-            "G-a: recording/session/infer state remains process-wide",
-            "G-b: recording schema migration belongs to RFC-0041",
-            "G-c: replay transport capabilities and credential creation are future",
-            "G-e: per-asset platform install verification is not claimed"
-        ],
-    });
-    value["digest"] = json!(digest(value.clone()));
-    value
+    serde_json::from_str(&cached_manifest().0).expect("cached manifest is valid JSON")
 }
 
 /// SHA-256 of recursively key-sorted compact JSON, independent of map insertion order.
 #[must_use]
 pub fn manifest_digest() -> String {
-    digest(manifest())
+    cached_manifest().1.clone()
 }
 
 fn canonicalize(value: &mut Value) {
@@ -73,6 +86,7 @@ fn canonicalize(value: &mut Value) {
     }
 }
 
+#[cfg(test)]
 fn digest(mut value: Value) -> String {
     if let Some(object) = value.as_object_mut() {
         object.remove("digest");
