@@ -205,6 +205,95 @@ async fn list_models_empty_data() {
     assert!(models.is_empty());
 }
 
+/// `list_models` of a by-name provider against `body` served at `/v1/models`.
+async fn listed(name: &str, body: Value) -> Vec<RuntimeModel> {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(&server)
+        .await;
+    let provider = create_provider(
+        name,
+        PresetSettings {
+            api_key: Some("test-key".to_string().into()),
+            base_url: Some(format!("{}/v1", server.uri())),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    provider
+        .discovery()
+        .expect("the provider lists its models")
+        .list_models()
+        .await
+        .unwrap()
+}
+
+fn limits(models: &[RuntimeModel], id: &str) -> Value {
+    let model = models.iter().find(|model| model.id == id).unwrap();
+    serde_json::to_value(&model.limits).unwrap()
+}
+
+/// The limits a provider declares in its list response are carried on the
+/// listed model (#402): OpenRouter's `context_length` and
+/// `top_provider.max_completion_tokens`, vLLM's `max_model_len`. Nothing is
+/// inferred: a model with no limit keys has none, and a value that is not an
+/// integer is ignored rather than failing the list.
+#[tokio::test]
+#[serial]
+async fn list_models_carries_the_limits_the_provider_declares() {
+    let models = listed(
+        "openrouter",
+        serde_json::json!({ "data": [
+            { "id": "openai/gpt-4o", "context_length": 128000,
+              "top_provider": { "context_length": 128000, "max_completion_tokens": 16384,
+                                "is_moderated": true } },
+            { "id": "meta/llama", "context_length": 131072,
+              "top_provider": { "max_completion_tokens": null } },
+            { "id": "odd/model", "context_length": "8k" },
+            { "id": "bare/model" }
+        ] }),
+    )
+    .await;
+    assert_eq!(
+        limits(&models, "openai/gpt-4o"),
+        serde_json::json!({ "context": 128000, "output": 16384 })
+    );
+    assert_eq!(
+        limits(&models, "meta/llama"),
+        serde_json::json!({ "context": 131072 })
+    );
+    assert_eq!(limits(&models, "odd/model"), Value::Null);
+    assert_eq!(limits(&models, "bare/model"), Value::Null);
+
+    let models = listed(
+        "vllm",
+        serde_json::json!({ "object": "list", "data": [
+            { "id": "Qwen/Qwen3-8B", "object": "model", "owned_by": "vllm",
+              "max_model_len": 32768 }
+        ] }),
+    )
+    .await;
+    assert_eq!(
+        limits(&models, "Qwen/Qwen3-8B"),
+        serde_json::json!({ "context": 32768 })
+    );
+
+    // A native package on the shared OpenAI-shaped list reads the same keys.
+    let models = listed(
+        "groq",
+        serde_json::json!({ "data": [
+            { "id": "llama-3.3-70b-versatile", "owned_by": "Meta", "context_length": 131072 }
+        ] }),
+    )
+    .await;
+    assert_eq!(
+        limits(&models, "llama-3.3-70b-versatile"),
+        serde_json::json!({ "context": 131072 })
+    );
+}
+
 #[tokio::test]
 #[serial]
 async fn list_models_http_error() {

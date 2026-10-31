@@ -444,6 +444,7 @@ impl ProviderDiscovery for AmazonBedrockProvider {
                     id: entry.id,
                     owned_by: entry.name.or(Some("amazon".to_string())),
                     created: None,
+                    limits: None,
                 })
                 .collect())
         })

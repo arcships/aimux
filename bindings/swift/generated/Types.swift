@@ -5419,12 +5419,19 @@ public struct RuntimeModel: Codable, Equatable, Sendable {
     public var created: UInt64?
     /// Model identifier, e.g. `"gpt-4o"`.
     public var id: String
+    /// The token limits the provider declared for the model in the same list
+    /// response (OpenRouter's `context_length` and
+    /// `top_provider.max_completion_tokens`, vLLM's `max_model_len`). Absent
+    /// when the provider declared none; never filled from the community
+    /// catalogue or inferred.
+    public var limits: ModelLimits?
     /// `owned_by` field from OpenAI-compatible `/models` responses.
     public var ownedBy: String?
 
-    public init(created: UInt64? = nil, id: String, ownedBy: String? = nil) {
+    public init(created: UInt64? = nil, id: String, limits: ModelLimits? = nil, ownedBy: String? = nil) {
         self.created = created
         self.id = id
+        self.limits = limits
         self.ownedBy = ownedBy
     }
 }

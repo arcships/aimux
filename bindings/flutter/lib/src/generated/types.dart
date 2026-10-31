@@ -10493,17 +10493,28 @@ final class RuntimeModel {
   /// Model identifier, e.g. `"gpt-4o"`.
   final String id;
 
+  /// The token limits the provider declared for the model in the same list
+  /// response (OpenRouter's `context_length` and
+  /// `top_provider.max_completion_tokens`, vLLM's `max_model_len`). Absent
+  /// when the provider declared none; never filled from the community
+  /// catalogue or inferred.
+  final ModelLimits? limits;
+
   /// `owned_by` field from OpenAI-compatible `/models` responses.
   final String? ownedBy;
   const RuntimeModel({
     this.created,
     required this.id,
+    this.limits,
     this.ownedBy,
   });
   factory RuntimeModel.fromJson(Map<String, dynamic> json) {
     return RuntimeModel(
       created: json['created'] as int?,
       id: json['id'] as String,
+      limits: json['limits'] == null
+          ? null
+          : ModelLimits.fromJson(json['limits'] as Map<String, dynamic>),
       ownedBy: json['ownedBy'] as String?,
     );
   }
@@ -10511,6 +10522,7 @@ final class RuntimeModel {
   Map<String, dynamic> toJson() => {
         if (created != null) 'created': created,
         'id': id,
+        if (limits != null) 'limits': limits!.toJson(),
         if (ownedBy != null) 'ownedBy': ownedBy,
       };
 }

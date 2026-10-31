@@ -497,6 +497,7 @@ impl ProviderDiscovery for AzureOpenAIProvider {
                     id: entry.id,
                     owned_by: entry.model_name.or(entry.model),
                     created: None,
+                    limits: None,
                 })
                 .collect())
         })

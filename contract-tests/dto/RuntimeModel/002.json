@@ -1,0 +1,9 @@
+{
+  "id": "openai/gpt-4o",
+  "ownedBy": "openai",
+  "created": 1715367049,
+  "limits": {
+    "context": 128000,
+    "output": 16384
+  }
+}
