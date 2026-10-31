@@ -2038,8 +2038,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   invalid <namespace> provider options` and the serde error as its cause,
   instead of aimux's own per-field messages (`` `user` must be a string ``,
   `invalid <namespace> provider option echo`, `invalid
-  providerOptions.<namespace>.dimensions`). An explicit `null` used to pass
-  the completion and chat checks. The body is unchanged (RFC-0046 R1).
+  providerOptions.<namespace>.dimensions`). The body is unchanged
+  (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
