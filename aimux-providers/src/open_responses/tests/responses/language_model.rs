@@ -3075,6 +3075,48 @@ async fn stream_errors_become_error_parts() {
     }
 }
 
+/// A first event with `"error": null` is not an early error (#397): the
+/// call starts streaming instead of failing before any output.
+#[tokio::test]
+async fn a_null_error_member_on_the_first_event_is_not_an_error() {
+    let created = json!({ "type": "response.created",
+                          "response": { "id": "resp_1", "status": "in_progress" },
+                          "error": null });
+    let completed = json!({ "type": "response.completed",
+                            "response": { "id": "resp_1", "status": "completed",
+                                          "usage": { "input_tokens": 1, "output_tokens": 1 } } });
+    let server = MockServer::start().await;
+    mock_sse(
+        &server,
+        [created, completed]
+            .iter()
+            .map(|event| sse_event(&event.to_string()))
+            .collect(),
+    )
+    .await;
+
+    let result = make_model(&server, "m")
+        .do_stream(&default_options(wiremock_test_prompt()))
+        .await
+        .expect("the first event is not an error");
+    let parts = collect_stream(result).await;
+
+    assert!(
+        !parts
+            .iter()
+            .any(|part| matches!(part, StreamPart::Error { .. })),
+        "{parts:?}"
+    );
+    let Some(StreamPart::Finish { finish_reason, .. }) = parts.last() else {
+        panic!("no finish: {parts:?}");
+    };
+    assert_ne!(
+        finish_reason.unified,
+        FinishReasonUnified::Error,
+        "{parts:?}"
+    );
+}
+
 /// TS: `getArgs` (open-responses-language-model.ts:304-315): a JSON response
 /// format without a schema is sent as `{ type: "json_object" }`.
 #[tokio::test]

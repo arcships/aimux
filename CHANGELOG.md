@@ -1488,6 +1488,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A stream chunk whose `error` member is `null` is a normal chunk, not an
+  error frame: OpenAI Chat and Completion (Azure and Codex included), the
+  OpenAI-compatible chat and completion models (every preset), Groq,
+  DeepSeek, Mistral, and the first event of Open Responses. A gateway that
+  sends `"error": null` on healthy chunks failed the whole call with a 500
+  when the first chunk carried it, and ended the stream with an error part
+  when a later one did. As in the AI SDK, where a chunk with `choices`
+  matches the chunk schema and the unknown key is dropped (#397).
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
