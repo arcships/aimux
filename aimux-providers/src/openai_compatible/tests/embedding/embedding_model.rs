@@ -408,3 +408,45 @@ mod upstream_e2e {
         assert!(result.warnings.is_empty());
     }
 }
+
+/// aimux's own: the namespaces are parsed against
+/// `openaiCompatibleEmbeddingModelOptions` with `parseProviderOptions`
+/// (openai-compatible-embedding-model.ts:101-134). A wrong type or an
+/// explicit `null` fails with the upstream message and nothing is sent; a
+/// field a later namespace sets wins.
+mod provider_options_schema {
+    use super::*;
+
+    use aimux_core::AiMuxError;
+
+    #[tokio::test]
+    async fn a_wrong_type_or_null_fails_with_the_upstream_message() {
+        for (provider_options, namespace) in [
+            (
+                json!({ "openaiCompatible": { "dimensions": "64" } }),
+                "openaiCompatible",
+            ),
+            (
+                json!({ "test-provider": { "user": null } }),
+                "test-provider",
+            ),
+        ] {
+            let mock = MockFetch::new(Vec::new());
+            let error = model(&mock)
+                .do_embed(&with_provider_options(embed_options(), provider_options))
+                .await
+                .unwrap_err();
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                )
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(mock.seen().is_empty());
+        }
+    }
+}

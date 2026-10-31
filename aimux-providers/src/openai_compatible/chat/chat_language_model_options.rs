@@ -1,9 +1,11 @@
 //! The provider options of the chat model
-//! (`openai-compatible-chat-language-model-options.ts`): the keys of
-//! `openaiCompatibleLanguageModelChatOptions` and their checks.
+//! (`openai-compatible-chat-language-model-options.ts`):
+//! `openaiCompatibleLanguageModelChatOptions`.
 
 use aimux_core::error::AiMuxError;
-use serde_json::{Map, Value};
+use aimux_core::shared::SharedProviderOptions;
+use aimux_provider_utils::{optional_field, parse_provider_options};
+use serde::Deserialize;
 
 /// Option keys of the generic compatible schema
 /// (`openaiCompatibleLanguageModelChatOptions`): consumed by the model, never
@@ -15,34 +17,37 @@ pub(super) const SCHEMA_KEYS: [&str; 4] = [
     "strictJsonSchema",
 ];
 
-pub(super) fn option_string(
-    merged: &Map<String, Value>,
-    namespace_name: &str,
-    key: &str,
-) -> Result<Option<String>, AiMuxError> {
-    match merged.get(key) {
-        None => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(AiMuxError::invalid_argument(format!(
-            "invalid provider options for \"{namespace_name}\": `{key}` must be a string"
-        ))),
-    }
+/// `openaiCompatibleLanguageModelChatOptions`: a zod object of `.optional()`
+/// fields, so unknown keys are dropped and an explicit `null` is rejected.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ChatOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(super) user: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(super) reasoning_effort: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(super) text_verbosity: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    pub(super) strict_json_schema: Option<bool>,
 }
 
-pub(super) fn validate_options(
-    options: &Map<String, Value>,
-    namespace_name: &str,
-) -> Result<(), AiMuxError> {
-    for key in ["user", "reasoningEffort", "textVerbosity"] {
-        option_string(options, namespace_name, key)?;
+impl ChatOptions {
+    /// `parseProviderOptions({ provider, providerOptions, schema })`.
+    pub(super) fn parse(
+        provider: &str,
+        provider_options: Option<&SharedProviderOptions>,
+    ) -> Result<Option<Self>, AiMuxError> {
+        parse_provider_options(provider, provider_options)
     }
-    if options
-        .get("strictJsonSchema")
-        .is_some_and(|value| !value.is_boolean())
-    {
-        return Err(AiMuxError::invalid_argument(format!(
-            "invalid provider options for \"{namespace_name}\": `strictJsonSchema` must be a boolean"
-        )));
+
+    /// `Object.assign(self, later)`: every field `later` sets wins.
+    pub(super) fn assign(self, later: Self) -> Self {
+        Self {
+            user: later.user.or(self.user),
+            reasoning_effort: later.reasoning_effort.or(self.reasoning_effort),
+            text_verbosity: later.text_verbosity.or(self.text_verbosity),
+            strict_json_schema: later.strict_json_schema.or(self.strict_json_schema),
+        }
     }
-    Ok(())
 }

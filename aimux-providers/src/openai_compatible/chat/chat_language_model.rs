@@ -38,7 +38,7 @@ use crate::stream::{
 };
 
 use super::api_types::{ChatCompletionResponse, StreamChunk, UsageResponse};
-use super::chat_language_model_options::{SCHEMA_KEYS, option_string, validate_options};
+use super::chat_language_model_options::{ChatOptions, SCHEMA_KEYS};
 use super::convert_chat_usage::usage_from_raw;
 use super::convert_to_chat_messages::{MessageSpec, convert_messages};
 use super::map_finish_reason::parse_finish_reason;
@@ -235,22 +235,16 @@ pub(crate) fn build_request_body(
     let chat = spec.chat;
     let mut warnings = Vec::new();
 
-    // Resolved provider options: the generic namespace, then the provider's
-    // own, then its camelCase form; later wins per key.
-    let mut merged = Map::new();
-    if let Some(deprecated) = namespace(options, "openai-compatible") {
-        validate_options(deprecated, "openai-compatible")?;
+    // Resolved provider options (`Object.assign` of the parsed namespaces):
+    // the deprecated generic namespace, the generic one, the provider's own,
+    // then its camelCase form; a field a later namespace sets wins.
+    let provider_options = options.provider_options.as_ref();
+    let deprecated = ChatOptions::parse("openai-compatible", provider_options)?;
+    if deprecated.is_some() {
         warnings.push(Warning::Deprecated {
             setting: "providerOptions key 'openai-compatible'".to_string(),
             message: "Use 'openaiCompatible' instead.".to_string(),
         });
-        merged.extend(deprecated.iter().map(|(k, v)| (k.clone(), v.clone())));
-    }
-    for key in ["openaiCompatible", name, camel.as_str()] {
-        if let Some(object) = namespace(options, key) {
-            validate_options(object, key)?;
-            merged.extend(object.iter().map(|(k, v)| (k.clone(), v.clone())));
-        }
     }
     if camel != name && namespace(options, name).is_some() {
         warnings.push(Warning::Deprecated {
@@ -258,19 +252,22 @@ pub(crate) fn build_request_body(
             message: format!("Use '{camel}' instead."),
         });
     }
+    let mut compatible = deprecated.unwrap_or_default();
+    for key in ["openaiCompatible", name, camel.as_str()] {
+        if let Some(parsed) = ChatOptions::parse(key, provider_options)? {
+            compatible = compatible.assign(parsed);
+        }
+    }
 
-    let user = option_string(&merged, name, "user")?;
-    let reasoning_effort = option_string(&merged, name, "reasoningEffort")?.or_else(|| {
+    let user = compatible.user;
+    let reasoning_effort = compatible.reasoning_effort.or_else(|| {
         options
             .reasoning
             .filter(|effort| effort.is_custom())
             .map(|effort| effort.to_string())
     });
-    let verbosity = option_string(&merged, name, "textVerbosity")?;
-    let strict_json_schema = merged
-        .get("strictJsonSchema")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
+    let verbosity = compatible.text_verbosity;
+    let strict_json_schema = compatible.strict_json_schema.unwrap_or(true);
 
     let metadata_key = resolve_metadata_key(name, options);
     let mut body = Map::new();
