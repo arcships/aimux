@@ -1697,11 +1697,14 @@ async fn stream_in_operation(
     // A pump task drives the provider stream, so the deadlines below measure
     // when provider output *arrives*: a deadline observed only inside
     // `poll_next` keeps elapsing while nobody polls, charging the provider
-    // for the consumer's latency. The channel is unbounded so the pump never
-    // blocks on the consumer (which would put that latency back into the
-    // timers); the AI SDK's `streamText` consumes eagerly for the same
-    // reason, and buffering is bounded by the response itself. Each item is
-    // stamped with its arrival time, which the step's performance uses.
+    // for the consumer's latency. The channel is bounded to provide
+    // backpressure when a slow consumer lags behind a high-throughput stream;
+    // `chunk_deadline` is armed only after `tx.send` completes so consumer
+    // backpressure time is not charged against the provider chunk timeout, and
+    // any terminal timeout error that arrives while the channel is full is
+    // preserved in `overflow_error` and delivered once buffered items drain.
+    // Each item is stamped with its arrival time, which the step's performance
+    // uses.
     //
     // Spawned even with no abort signal or deadlines armed: the pump is also
     // the stream's terminal fuse — `Finish` and non-recoverable errors must
@@ -1713,9 +1716,26 @@ async fn stream_in_operation(
         crate::recording::RecordingContext::scope_stream(context.clone(), stream);
     let chunk_ms = stream_timeout.chunk_ms;
     let pump_abort = abort_signal.clone();
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    const STREAM_PUMP_CHANNEL_CAPACITY: usize = 256;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(STREAM_PUMP_CHANNEL_CAPACITY);
+    let overflow_error: std::sync::Arc<std::sync::Mutex<Option<(Instant, AiMuxError)>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let pump_overflow_error = overflow_error.clone();
     let pump = tokio::spawn(async move {
         let mut chunk_deadline = first_chunk_deadline;
+        let send_terminal_err =
+            |tx: &tokio::sync::mpsc::Sender<(Instant, Result<StreamPart, AiMuxError>)>,
+             overflow: &std::sync::Mutex<Option<(Instant, AiMuxError)>>,
+             ts: Instant,
+             err: AiMuxError| {
+                if let Err(tokio::sync::mpsc::error::TrySendError::Full((_, Err(err)))) =
+                    tx.try_send((ts, Err(err)))
+                {
+                    *overflow
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((ts, err));
+                }
+            };
 
         loop {
             let next = tokio::select! {
@@ -1724,15 +1744,25 @@ async fn stream_in_operation(
                 // exchange; the consumer side reports the abort.
                 () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
                 () = timeout::wait_for_deadline(operation_deadline) => {
-                    let _ = tx.send((Instant::now(), Err(operation_deadline
-                        .expect("operation deadline future only resolves for a deadline")
-                        .error())));
+                    send_terminal_err(
+                        &tx,
+                        &pump_overflow_error,
+                        Instant::now(),
+                        operation_deadline
+                            .expect("operation deadline future only resolves for a deadline")
+                            .error(),
+                    );
                     break;
                 }
                 () = timeout::wait_for_deadline(chunk_deadline) => {
-                    let _ = tx.send((Instant::now(), Err(chunk_deadline
-                        .expect("chunk deadline future only resolves for a deadline")
-                        .error())));
+                    send_terminal_err(
+                        &tx,
+                        &pump_overflow_error,
+                        Instant::now(),
+                        chunk_deadline
+                            .expect("chunk deadline future only resolves for a deadline")
+                            .error(),
+                    );
                     break;
                 }
                 item = provider_stream.next() => item,
@@ -1741,24 +1771,57 @@ async fn stream_in_operation(
             let Some(item) = next else { break };
             let arrived = Instant::now();
             let terminal = is_terminal_item(&item);
-            if let Ok(part) = &item
-                && is_output_chunk(part)
-            {
+            let is_output = matches!(&item, Ok(part) if is_output_chunk(part));
+
+            // Fast path: if the bounded channel has space, enqueue immediately
+            // without awaiting or perturbing timers. Only when the 256-slot
+            // channel is full do we await consumer backpressure.
+            match tx.try_send((arrived, item)) {
+                Ok(()) => {}
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => break,
+                Err(tokio::sync::mpsc::error::TrySendError::Full(pending_item)) => {
+                    let send_started = Instant::now();
+                    let send_res = tokio::select! {
+                        biased;
+                        () = timeout::wait_for_abort(pump_abort.as_ref()) => break,
+                        () = timeout::wait_for_deadline(operation_deadline) => {
+                            send_terminal_err(
+                                &tx,
+                                &pump_overflow_error,
+                                Instant::now(),
+                                operation_deadline
+                                    .expect("operation deadline future only resolves for a deadline")
+                                    .error(),
+                            );
+                            break;
+                        }
+                        res = tx.send(pending_item) => res,
+                    };
+                    if send_res.is_err() {
+                        break;
+                    }
+                    if !is_output && let Some(deadline) = &mut chunk_deadline {
+                        let blocked_dur = Instant::now().saturating_duration_since(send_started);
+                        if let Some(shifted) = deadline.at.checked_add(blocked_dur) {
+                            deadline.at = shifted;
+                        }
+                    }
+                }
+            }
+            if terminal {
+                break;
+            }
+            if is_output {
                 chunk_deadline = match chunk_ms
                     .map(|duration_ms| timeout::TimeoutDeadline::from_now("Chunk", duration_ms))
                     .transpose()
                 {
                     Ok(deadline) => deadline,
                     Err(error) => {
-                        let _ = tx.send((arrived, Err(error)));
+                        send_terminal_err(&tx, &pump_overflow_error, Instant::now(), error);
                         break;
                     }
                 };
-            }
-
-            // A closed receiver means the consumer dropped the stream.
-            if tx.send((arrived, item)).is_err() || terminal {
-                break;
             }
         }
     });
@@ -1766,20 +1829,27 @@ async fn stream_in_operation(
 
     let file_abort_signal = abort_signal.clone();
     let tool_choice = call_options.tool_choice.clone();
+    let needs_streamed_content = matches!(
+        tool_choice,
+        Some(
+            crate::tool::LanguageModelV4ToolChoice::Required
+                | crate::tool::LanguageModelV4ToolChoice::Tool { .. }
+        )
+    );
     let step_provider = model.provider().to_owned();
     let step_model_id = model.model_id().to_owned();
     let response_metadata =
         response_metadata_defaults(crate::types::ResponseMetadata::default(), model.model_id());
     let stream_response_headers = response_headers.clone();
-    let step_request = RequestInfo {
+    let mut step_request = Some(RequestInfo {
         body: request_body.clone(),
-    };
+    });
     let stream: Pin<Box<dyn Stream<Item = Result<TextStreamPart, AiMuxError>> + Send>> = Box::pin(
         async_stream::stream! {
             let _pump = pump;
             let mut step = StreamStep::new(call_started, response_metadata);
             let mut tool_calls: HashMap<String, ToolCall> = HashMap::new();
-            let mut content = StreamedContent::default();
+            let mut content = needs_streamed_content.then(StreamedContent::default);
             yield Ok(TextStreamPart::Start {});
             loop {
                 let next = tokio::select! {
@@ -1791,7 +1861,13 @@ async fn stream_in_operation(
                         yield Ok(TextStreamPart::Abort { reason: Some(error.to_string()) });
                         return;
                     }
-                    item = rx.recv() => item,
+                    item = rx.recv() => item.or_else(|| {
+                        overflow_error
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .take()
+                            .map(|(ts, err)| (ts, Err(err)))
+                    }),
                 };
                 let Some((arrived, item)) = next else { break };
                 let part = match item {
@@ -1809,12 +1885,14 @@ async fn stream_in_operation(
                     if !step.started {
                         step.started = true;
                         yield Ok(TextStreamPart::StartStep {
-                            request: step_request.clone(),
+                            request: step_request.take().unwrap_or_default(),
                             warnings: step.warnings.clone(),
                         });
                     }
                     step.record_chunk(&part, arrived);
-                    content.observe(&part);
+                    if let Some(content) = &mut content {
+                        content.observe(&part);
+                    }
                 }
                 match part.split_payload() {
                     StreamPartPayload::ToolCall(raw) => {
@@ -1870,7 +1948,7 @@ async fn stream_in_operation(
                                 finish_reason.unified,
                                 &step_provider,
                                 &step_model_id,
-                                || std::mem::take(&mut content.content),
+                                || content.as_mut().map(|c| std::mem::take(&mut c.content)).unwrap_or_default(),
                             );
                             if violation.is_some() {
                                 finish_reason.unified = FinishReasonUnified::Error;
@@ -2192,13 +2270,18 @@ impl StreamedContent {
         delta: Option<&str>,
         provider_metadata: Option<&ProviderMetadata>,
     ) {
-        let index = *self.text.entry(id.to_owned()).or_insert_with(|| {
-            self.content.push(GenerateContent::Text {
-                text: String::new(),
-                provider_metadata: provider_metadata.cloned(),
-            });
-            self.content.len() - 1
-        });
+        let index = match self.text.get(id) {
+            Some(&idx) => idx,
+            None => {
+                let idx = self.content.len();
+                self.content.push(GenerateContent::Text {
+                    text: String::new(),
+                    provider_metadata: provider_metadata.cloned(),
+                });
+                self.text.insert(id.to_owned(), idx);
+                idx
+            }
+        };
         if let GenerateContent::Text {
             text,
             provider_metadata: metadata,
@@ -2217,14 +2300,19 @@ impl StreamedContent {
         delta: Option<&str>,
         provider_metadata: Option<&ProviderMetadata>,
     ) {
-        let index = *self.reasoning.entry(id.to_owned()).or_insert_with(|| {
-            self.content
-                .push(GenerateContent::Reasoning(crate::result::ReasoningOutput {
-                    text: String::new(),
-                    provider_metadata: provider_metadata.cloned(),
-                }));
-            self.content.len() - 1
-        });
+        let index = match self.reasoning.get(id) {
+            Some(&idx) => idx,
+            None => {
+                let idx = self.content.len();
+                self.content
+                    .push(GenerateContent::Reasoning(crate::result::ReasoningOutput {
+                        text: String::new(),
+                        provider_metadata: provider_metadata.cloned(),
+                    }));
+                self.reasoning.insert(id.to_owned(), idx);
+                idx
+            }
+        };
         if let GenerateContent::Reasoning(reasoning) = &mut self.content[index] {
             reasoning.text.push_str(delta.unwrap_or_default());
             if provider_metadata.is_some() {
