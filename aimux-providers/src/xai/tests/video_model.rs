@@ -1993,3 +1993,53 @@ async fn do_status_metadata_includes_optional_fields_only_when_present() {
     ));
     assert!(!meta.contains_key("progress"));
 }
+
+/// aimux's own: `providerOptions.xai` is parsed against
+/// `xaiVideoModelOptionsSchema` with `parseProviderOptions`: a value outside
+/// it fails with the upstream message and nothing is sent. `.optional()`
+/// keys reject `null`; `.nullish()` ones (`resolution`, the poll settings)
+/// take it as unset.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_with_the_upstream_message() {
+        for xai in [
+            json!({ "mode": "remix" }),
+            json!({ "resolution": "4k" }),
+            json!({ "user": null }),
+            json!({ "keyframes": [{ "imageUrl": "https://example.com/a.png", "timestampSeconds": 0 }] }),
+            json!({ "storageOptions": { "filename": "" } }),
+            json!({ "storageOptions": { "filename": "a.mp4", "publicUrl": { "expiresAfter": 60 } } }),
+            json!({ "pollIntervalMs": -1 }),
+        ] {
+            let options = with_xai(default_options(), xai.clone());
+            let (result, seen) =
+                do_start_answered(V15, &options, Canned::json(&create_video_response())).await;
+            let Err(error) = result else {
+                panic!("expected an error for {xai}");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {xai}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid xai provider options",
+                "{xai}"
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(seen.is_empty(), "{xai}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_nullish_key_takes_null_as_unset() {
+        let options = with_xai(
+            default_options(),
+            json!({ "resolution": null, "pollIntervalMs": null }),
+        );
+        let (result, _) =
+            do_start_answered(V15, &options, Canned::json(&create_video_response())).await;
+        assert!(result.is_ok(), "{:?}", result.err());
+    }
+}

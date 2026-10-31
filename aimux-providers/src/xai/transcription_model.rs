@@ -18,7 +18,6 @@ use serde_json::Value;
 
 use aimux_core::ErrorCause;
 use aimux_core::error::AiMuxError;
-use aimux_core::shared::JsonObject;
 use aimux_core::transcription_model::{
     AudioInput, TranscriptionCallOptions, TranscriptionModel, TranscriptionResponse,
     TranscriptionResult, TranscriptionSegment,
@@ -70,38 +69,86 @@ struct Opts {
     smart_turn_timeout: Option<i64>,
 }
 
+/// `xaiTranscriptionModelOptionsSchema`: the top-level fields are
+/// `.nullish()`, `streaming` and its fields `.optional()`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptionOptions {
+    #[serde(default)]
+    audio_format: Option<AudioFormat>,
+    #[serde(default, deserialize_with = "options::de::sample_rate")]
+    sample_rate: Option<i64>,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    format: Option<bool>,
+    #[serde(default)]
+    multichannel: Option<bool>,
+    #[serde(default, deserialize_with = "options::de::channels")]
+    channels: Option<i64>,
+    #[serde(default)]
+    diarize: Option<bool>,
+    #[serde(default, deserialize_with = "options::de::keyterm")]
+    keyterm: Vec<String>,
+    #[serde(default)]
+    filler_words: Option<bool>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    streaming: Option<StreamingOptions>,
+}
+
+/// `z.enum(['pcm', 'mulaw', 'alaw'])`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AudioFormat {
+    Pcm,
+    Mulaw,
+    Alaw,
+}
+
+impl AudioFormat {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Pcm => "pcm",
+            Self::Mulaw => "mulaw",
+            Self::Alaw => "alaw",
+        }
+    }
+}
+
+/// `streaming` of the schema.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamingOptions {
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    interim_results: Option<bool>,
+    #[serde(default, deserialize_with = "options::de::endpointing")]
+    endpointing: Option<i64>,
+    #[serde(default, deserialize_with = "options::de::smart_turn")]
+    smart_turn: Option<f64>,
+    #[serde(default, deserialize_with = "options::de::smart_turn_timeout")]
+    smart_turn_timeout: Option<i64>,
+}
+
 impl Opts {
     fn parse(
         provider_options: Option<&aimux_core::shared::SharedProviderOptions>,
     ) -> Result<Self, AiMuxError> {
-        let Some(xai) = options::xai_options(provider_options) else {
-            return Ok(Self::default());
-        };
-        let streaming = match xai.get("streaming").filter(|v| !v.is_null()) {
-            None => None,
-            Some(Value::Object(map)) => Some(map),
-            Some(_) => {
-                return Err(AiMuxError::invalid_argument(
-                    "Invalid argument for parameter providerOptions: xai.streaming must be an object",
-                ));
-            }
-        };
-        let empty = JsonObject::new();
-        let streaming = streaming.unwrap_or(&empty);
+        let xai: TranscriptionOptions = options::parse(provider_options)?.unwrap_or_default();
+        let streaming = xai.streaming.unwrap_or_default();
         Ok(Self {
-            audio_format: options::opt_enum(xai, "audioFormat", &["pcm", "mulaw", "alaw"])?,
-            sample_rate: options::sample_rate(xai)?,
-            language: options::opt_string(xai, "language")?,
-            format: options::opt_bool(xai, "format")?,
-            multichannel: options::opt_bool(xai, "multichannel")?,
-            channels: options::opt_int(xai, "channels", 2, 8, &[])?,
-            diarize: options::opt_bool(xai, "diarize")?,
-            keyterm: options::keyterms(xai)?,
-            filler_words: options::opt_bool(xai, "fillerWords")?,
-            interim_results: options::opt_bool(streaming, "interimResults")?,
-            endpointing: options::opt_int(streaming, "endpointing", 0, 5000, &[])?,
-            smart_turn: options::opt_f64(streaming, "smartTurn", 0.0, 1.0)?,
-            smart_turn_timeout: options::opt_int(streaming, "smartTurnTimeout", 1, 5000, &[])?,
+            audio_format: xai.audio_format.map(|format| format.as_str().to_owned()),
+            sample_rate: xai.sample_rate,
+            language: xai.language,
+            format: xai.format,
+            multichannel: xai.multichannel,
+            channels: xai.channels,
+            diarize: xai.diarize,
+            keyterm: xai.keyterm,
+            filler_words: xai.filler_words,
+            interim_results: streaming.interim_results,
+            endpointing: streaming.endpointing,
+            smart_turn: streaming.smart_turn,
+            smart_turn_timeout: streaming.smart_turn_timeout,
         })
     }
 }
