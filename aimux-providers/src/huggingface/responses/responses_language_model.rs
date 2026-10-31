@@ -31,12 +31,11 @@ use super::responses_prepare_tools::prepare_responses_tools;
 use crate::huggingface::error::huggingface_failed_response_handler;
 
 fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHandler<Value> {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let url = input.url.clone();
-        let request_body_values = input.request_body_values.clone();
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
-            .handle(input)
+            .handle_with_source(input, Some(body_source.clone()))
             .await?;
         if let Some(error) = output.value.get("error").filter(|value| !value.is_null()) {
             let message = error
@@ -52,7 +51,7 @@ fn huggingface_successful_response_handler() -> aimux_provider_utils::ResponseHa
                     .map(str::to_string),
                 response_body: Some(output.value.to_string()),
                 response_headers: Some(output.response_headers.clone()),
-                ..ApiCallError::new(message, url, request_body_values)
+                ..ApiCallError::new(message, url, body_source.materialize())
             })));
         }
         Ok(output)

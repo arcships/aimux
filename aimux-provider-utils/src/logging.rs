@@ -176,6 +176,74 @@ pub fn redact_error_context(value: serde_json::Value) -> serde_json::Value {
     redact_value(value, 0)
 }
 
+/// Serialize a redacted view of `value` directly to a JSON string without
+/// cloning the input `serde_json::Value` tree or allocating an intermediate
+/// redacted `Value` tree.
+#[must_use]
+pub(crate) fn redact_error_context_to_string(value: &serde_json::Value) -> Option<String> {
+    struct RedactedRef<'a>(&'a serde_json::Value, usize);
+    struct TruncatedItems(usize);
+
+    impl serde::Serialize for TruncatedItems {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::SerializeMap;
+            let mut m = serializer.serialize_map(Some(1))?;
+            m.serialize_entry("__truncated_items__", &self.0)?;
+            m.end()
+        }
+    }
+
+    impl serde::Serialize for RedactedRef<'_> {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            use serde::ser::{SerializeMap, SerializeSeq};
+            use serde_json::Value;
+            if self.1 >= ERROR_CONTEXT_MAX_DEPTH {
+                return serializer.serialize_str("[MAX_DEPTH]");
+            }
+            match self.0 {
+                Value::Object(map) => {
+                    let truncated = map.len() > ERROR_CONTEXT_MAX_ITEMS;
+                    let len = map.len().min(ERROR_CONTEXT_MAX_ITEMS) + usize::from(truncated);
+                    let mut out = serializer.serialize_map(Some(len))?;
+                    for (index, (key, value)) in map.iter().enumerate() {
+                        if index == ERROR_CONTEXT_MAX_ITEMS {
+                            out.serialize_entry("__truncated__", &true)?;
+                            break;
+                        }
+                        if aimux_core::recording::is_sensitive_key(key) {
+                            out.serialize_entry(key, "[REDACTED]")?;
+                        } else {
+                            out.serialize_entry(key, &RedactedRef(value, self.1 + 1))?;
+                        }
+                    }
+                    out.end()
+                }
+                Value::Array(items) => {
+                    let original_len = items.len();
+                    let truncated = original_len > ERROR_CONTEXT_MAX_ITEMS;
+                    let len = original_len.min(ERROR_CONTEXT_MAX_ITEMS) + usize::from(truncated);
+                    let mut seq = serializer.serialize_seq(Some(len))?;
+                    for value in items.iter().take(ERROR_CONTEXT_MAX_ITEMS) {
+                        seq.serialize_element(&RedactedRef(value, self.1 + 1))?;
+                    }
+                    if truncated {
+                        seq.serialize_element(&TruncatedItems(
+                            original_len - ERROR_CONTEXT_MAX_ITEMS,
+                        ))?;
+                    }
+                    seq.end()
+                }
+                Value::String(value) if value.len() > ERROR_CONTEXT_MAX_STRING => {
+                    serializer.serialize_str(&format!("[STRING {} bytes]", value.len()))
+                }
+                other => other.serialize(serializer),
+            }
+        }
+    }
+
+    serde_json::to_string(&RedactedRef(value, 0)).ok()
+}
+
 fn redact_value(value: serde_json::Value, depth: usize) -> serde_json::Value {
     use serde_json::Value;
     if depth >= ERROR_CONTEXT_MAX_DEPTH {

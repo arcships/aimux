@@ -110,12 +110,11 @@ pub(crate) fn xai_successful_response_handler<T>() -> aimux_provider_utils::Resp
 where
     T: DeserializeOwned + Send + 'static,
 {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let status = input.response.status().as_u16();
         let url = input.url.clone();
-        let request_body_values = input.request_body_values.clone();
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
-            .handle(input)
+            .handle_with_source(input, Some(body_source.clone()))
             .await?;
         let headers = output.response_headers.clone();
         let raw = output.value;
@@ -138,7 +137,7 @@ where
                 provider_code,
                 response_body: Some(raw.to_string()),
                 response_headers: Some(headers),
-                ..aimux_core::ApiCallError::new(message, url, request_body_values)
+                ..aimux_core::ApiCallError::new(message, url, body_source.materialize())
             })));
         }
         // Borrow `raw` instead of `from_value(raw.clone())`: the whole body is
@@ -153,7 +152,7 @@ where
                 ..aimux_core::ApiCallError::new(
                     format!("Invalid JSON response: {error}"),
                     url,
-                    request_body_values,
+                    body_source.materialize(),
                 )
             }))
         })?;
@@ -173,7 +172,7 @@ pub(crate) fn xai_event_source_response_handler<T>()
 where
     T: DeserializeOwned + Send + 'static,
 {
-    aimux_provider_utils::ResponseHandler::new(|input| async move {
+    aimux_provider_utils::ResponseHandler::new_with_source(|input, body_source| async move {
         let is_json = input
             .response
             .headers()
@@ -182,15 +181,14 @@ where
             .is_some_and(|value| value.contains("application/json"));
         if !is_json {
             return aimux_provider_utils::create_event_source_response_handler::<T>()
-                .handle(input)
+                .handle_with_source(input, Some(body_source))
                 .await;
         }
 
         let status = input.response.status().as_u16();
         let url = input.url.clone();
-        let request_body_values = input.request_body_values.clone();
         let output = aimux_provider_utils::create_json_response_handler::<Value>()
-            .handle(input)
+            .handle_with_source(input, Some(body_source.clone()))
             .await?;
         let headers = output.response_headers;
         let raw = output.value;
@@ -216,7 +214,7 @@ where
             provider_code,
             response_body: Some(raw.to_string()),
             response_headers: Some(headers),
-            ..aimux_core::ApiCallError::new(message, url, request_body_values)
+            ..aimux_core::ApiCallError::new(message, url, body_source.materialize())
         })))
     })
     .streaming()

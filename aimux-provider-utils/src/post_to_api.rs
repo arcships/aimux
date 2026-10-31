@@ -7,7 +7,9 @@ use aimux_core::{AiMuxError, ApiCallError};
 use crate::handle_fetch_error::handle_fetch_error;
 use crate::http::{HttpBody, HttpMethod, HttpRequest, PreparedRequest};
 use crate::multipart::MultipartForm;
-use crate::response_handler::{ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput};
+use crate::response_handler::{
+    RequestBodySource, ResponseHandler, ResponseHandlerInput, ResponseHandlerOutput,
+};
 
 /// POST a JSON request. The body type is fixed by this signature.
 ///
@@ -20,10 +22,11 @@ pub async fn post_json_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let request_body_values = crate::logging::redact_error_context(body.clone());
-    call_to_api(
-        request.prepare(HttpMethod::Post, HttpBody::Json(body)),
-        request_body_values,
+    let prepared = request.prepare(HttpMethod::Post, HttpBody::Json(body));
+    let source = RequestBodySource::HttpBody(prepared.body.clone());
+    call_to_api_source(
+        prepared,
+        source,
         successful_response_handler,
         failed_response_handler,
     )
@@ -43,9 +46,13 @@ pub async fn post_form_data_to_api<T>(
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
     let (content, content_type, values) = form_data.into_parts();
-    call_to_api(
-        request.prepare(HttpMethod::Post, HttpBody::Bytes(content, content_type)),
+    let prepared = request.prepare(HttpMethod::Post, HttpBody::Bytes(content, content_type));
+    let source = RequestBodySource::Redacted(std::sync::Arc::new(
         crate::logging::redact_error_context(values),
+    ));
+    call_to_api_source(
+        prepared,
+        source,
         successful_response_handler,
         failed_response_handler,
     )
@@ -63,10 +70,11 @@ pub async fn post_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
-    let request_body_values = crate::logging::redact_request_values(&body);
-    call_to_api(
-        request.prepare(HttpMethod::Post, body),
-        request_body_values,
+    let prepared = request.prepare(HttpMethod::Post, body);
+    let source = RequestBodySource::HttpBody(prepared.body.clone());
+    call_to_api_source(
+        prepared,
+        source,
         successful_response_handler,
         failed_response_handler,
     )
@@ -87,14 +95,29 @@ pub(crate) async fn call_to_api<T>(
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    call_to_api_source(
+        request,
+        RequestBodySource::Redacted(std::sync::Arc::new(request_body_values)),
+        successful_response_handler,
+        failed_response_handler,
+    )
+    .await
+}
+
+pub(crate) async fn call_to_api_source<T>(
+    request: PreparedRequest,
+    request_body_source: RequestBodySource,
+    successful_response_handler: ResponseHandler<T>,
+    failed_response_handler: ResponseHandler<AiMuxError>,
+) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
     // A provider whose endpoint legitimately holds the connection longer
     // (e.g. Replicate `prefer: wait`) declares its own bound on the request.
     let response_timeout = request
         .response_timeout
         .unwrap_or(EXCHANGE_RESPONSE_TIMEOUT);
-    call_to_api_with_deadline(
+    call_to_api_with_deadline_source(
         request,
-        request_body_values,
+        request_body_source,
         successful_response_handler,
         failed_response_handler,
         response_timeout,
@@ -102,9 +125,27 @@ pub(crate) async fn call_to_api<T>(
     .await
 }
 
+#[allow(dead_code)]
 pub(crate) async fn call_to_api_with_deadline<T>(
     request: PreparedRequest,
     request_body_values: serde_json::Value,
+    successful_response_handler: ResponseHandler<T>,
+    failed_response_handler: ResponseHandler<AiMuxError>,
+    response_timeout: Duration,
+) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
+    call_to_api_with_deadline_source(
+        request,
+        RequestBodySource::Redacted(std::sync::Arc::new(request_body_values)),
+        successful_response_handler,
+        failed_response_handler,
+        response_timeout,
+    )
+    .await
+}
+
+pub(crate) async fn call_to_api_with_deadline_source<T>(
+    request: PreparedRequest,
+    request_body_source: RequestBodySource,
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
     response_timeout: Duration,
@@ -113,7 +154,7 @@ pub(crate) async fn call_to_api_with_deadline<T>(
     if successful_response_handler.is_streaming() {
         return execute_exchange(
             request,
-            request_body_values,
+            request_body_source,
             successful_response_handler,
             failed_response_handler,
         )
@@ -121,7 +162,7 @@ pub(crate) async fn call_to_api_with_deadline<T>(
     }
     let exchange = execute_exchange(
         request,
-        request_body_values.clone(),
+        request_body_source.clone(),
         successful_response_handler,
         failed_response_handler,
     );
@@ -135,7 +176,7 @@ pub(crate) async fn call_to_api_with_deadline<T>(
                     response_timeout.as_secs()
                 ),
                 url,
-                request_body_values,
+                request_body_source.materialize(),
             )
         }))),
     }
@@ -143,7 +184,7 @@ pub(crate) async fn call_to_api_with_deadline<T>(
 
 async fn execute_exchange<T>(
     request: PreparedRequest,
-    request_body_values: serde_json::Value,
+    request_body_source: RequestBodySource,
     successful_response_handler: ResponseHandler<T>,
     failed_response_handler: ResponseHandler<AiMuxError>,
 ) -> Result<ResponseHandlerOutput<T>, AiMuxError> {
@@ -151,20 +192,28 @@ async fn execute_exchange<T>(
     let url = crate::http::sanitized_request_url(&request.url);
     let response = crate::http::send_request_once(&request)
         .await
-        .map_err(|error| handle_fetch_error(error, &url, &request_body_values))?;
+        .map_err(|error| handle_fetch_error(error, &url, &request_body_source.materialize()))?;
     let status = response.status().as_u16();
     let response_headers =
         crate::extract_response_headers::extract_response_headers(response.headers());
-    let input = ResponseHandlerInput {
-        url: url.clone(),
-        request_body_values: request_body_values.clone(),
-        response,
-        abort_signal: request.abort_signal.clone(),
-        max_json_response_bytes: request.max_json_response_bytes,
-    };
 
     if !(200..300).contains(&status) {
-        return match failed_response_handler.handle(input).await {
+        let failed_lazy = failed_response_handler.uses_lazy_request_body();
+        let input = ResponseHandlerInput {
+            url: url.clone(),
+            request_body_values: if failed_lazy {
+                serde_json::Value::Null
+            } else {
+                request_body_source.materialize()
+            },
+            response,
+            abort_signal: request.abort_signal.clone(),
+            max_json_response_bytes: request.max_json_response_bytes,
+        };
+        return match failed_response_handler
+            .handle_with_source(input, Some(request_body_source.clone()))
+            .await
+        {
             Ok(output) => Err(output.value),
             Err(
                 error @ (AiMuxError::ApiCall(_) | AiMuxError::Aborted(_) | AiMuxError::Timeout(_)),
@@ -179,14 +228,30 @@ async fn execute_exchange<T>(
                 ..ApiCallError::new(
                     format!("Failed to process error response: {error}"),
                     url,
-                    request_body_values,
+                    request_body_source.materialize(),
                 )
                 .caused_by(error)
             }))),
         };
     }
 
-    match successful_response_handler.handle(input).await {
+    let lazy = successful_response_handler.uses_lazy_request_body();
+    let input = ResponseHandlerInput {
+        url: url.clone(),
+        request_body_values: if lazy {
+            serde_json::Value::Null
+        } else {
+            request_body_source.materialize()
+        },
+        response,
+        abort_signal: request.abort_signal.clone(),
+        max_json_response_bytes: request.max_json_response_bytes,
+    };
+
+    match successful_response_handler
+        .handle_with_source(input, Some(request_body_source.clone()))
+        .await
+    {
         Ok(output) => Ok(output),
         Err(error @ (AiMuxError::ApiCall(_) | AiMuxError::Aborted(_) | AiMuxError::Timeout(_))) => {
             Err(error)
@@ -197,7 +262,7 @@ async fn execute_exchange<T>(
             ..ApiCallError::new(
                 format!("Failed to process successful response: {error}"),
                 url,
-                request_body_values,
+                request_body_source.materialize(),
             )
             .caused_by(error)
         }))),
