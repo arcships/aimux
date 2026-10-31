@@ -312,6 +312,7 @@ fn parse_event<T: DeserializeOwned>(data: &str) -> Result<T, AiMuxError> {
 
 /// Parse an SSE response and deserialize each `data:` field as `T`.
 ///
+/// A `data: [DONE]` event ends the stream; nothing after it is read.
 /// Invalid JSON in a complete event remains a recoverable frame error. SSE
 /// decoding failures terminate the byte stream and are non-retryable API errors.
 #[must_use]
@@ -365,7 +366,14 @@ where
                     break;
                 };
                 match item {
-                    Ok(event) if event.data == "[DONE]" => continue,
+                    // `data: [DONE]` is OpenAI's terminal frame ("the stream
+                    // terminated by a `data: [DONE]` message", openai-openapi
+                    // `CreateChatCompletionRequest.stream`). End here rather
+                    // than wait for the body to close: a server that keeps
+                    // the connection open after it would otherwise hold the
+                    // caller's last `next()` forever. The AI SDK skips the
+                    // frame and waits for EOF (`parse-json-event-stream.ts`).
+                    Ok(event) if event.data == "[DONE]" => break,
                     Ok(event) => yield parse_event::<T>(&event.data),
                     Err(aimux_stream::SseError::Stream(error)) => {
                         // Preserve response transport failures as ApiCallError
