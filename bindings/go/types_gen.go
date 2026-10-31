@@ -6262,6 +6262,12 @@ type RuntimeModel struct {
 	Created *uint64 `json:"created,omitzero"`
 	// Model identifier, e.g. `"gpt-4o"`.
 	ID string `json:"id"`
+	// The token limits the provider declared for the model in the same list
+	// response (OpenRouter's `context_length` and
+	// `top_provider.max_completion_tokens`, vLLM's `max_model_len`). Absent
+	// when the provider declared none; never filled from the community
+	// catalogue or inferred.
+	Limits *ModelLimits `json:"limits,omitzero"`
 	// `owned_by` field from OpenAI-compatible `/models` responses.
 	OwnedBy *string `json:"ownedBy,omitzero"`
 }

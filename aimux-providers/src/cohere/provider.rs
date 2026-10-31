@@ -231,6 +231,7 @@ impl ProviderDiscovery for CohereProvider {
                     id: entry.name,
                     owned_by: Some(super::chat_language_model_options::NAMESPACE.to_string()),
                     created: None,
+                    limits: None,
                 })
                 .collect())
         })

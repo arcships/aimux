@@ -10,7 +10,7 @@ mod discovery;
 mod exchange;
 mod poll;
 
-pub(crate) use discovery::list_data_models;
+pub(crate) use discovery::{ModelListEntry, list_data_models};
 pub(crate) use exchange::{
     BaseUrl, Endpoint, EndpointConfig, EndpointHeaders, HttpEndpoint, ResolveEndpoint,
     SupportedUrlsSource,

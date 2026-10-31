@@ -764,6 +764,7 @@ mod tests {
                         id: "mock-model".into(),
                         owned_by: None,
                         created: None,
+                        limits: None,
                     }]),
                     Discovery::Error => Err(AiMuxError::invalid_argument("discovery failed")),
                     Discovery::Pending => futures::future::pending().await,

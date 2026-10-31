@@ -34,6 +34,13 @@ pub struct RuntimeModel {
     /// `created` unix timestamp from OpenAI-compatible `/models` responses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<u64>,
+    /// The token limits the provider declared for the model in the same list
+    /// response (OpenRouter's `context_length` and
+    /// `top_provider.max_completion_tokens`, vLLM's `max_model_len`). Absent
+    /// when the provider declared none; never filled from the community
+    /// catalogue or inferred.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<ModelLimits>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,6 +258,7 @@ mod tests {
             id: "gpt-4o".into(),
             owned_by: Some("openai".into()),
             created: Some(1715367049),
+            limits: None,
         };
         assert_eq!(r.id, "gpt-4o");
         assert_eq!(r.owned_by.as_deref(), Some("openai"));

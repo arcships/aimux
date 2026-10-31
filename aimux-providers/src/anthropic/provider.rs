@@ -366,6 +366,7 @@ pub(crate) async fn list_models_once(
             id: entry.id,
             owned_by: entry.display_name,
             created: None,
+            limits: None,
         })
         .collect())
 }

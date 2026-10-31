@@ -17,6 +17,17 @@
       "description": "Model identifier, e.g. `\"gpt-4o\"`.",
       "type": "string"
     },
+    "limits": {
+      "anyOf": [
+        {
+          "$ref": "ModelLimits.json"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The token limits the provider declared for the model in the same list\nresponse (OpenRouter's `context_length` and\n`top_provider.max_completion_tokens`, vLLM's `max_model_len`). Absent\nwhen the provider declared none; never filled from the community\ncatalogue or inferred."
+    },
     "ownedBy": {
       "description": "`owned_by` field from OpenAI-compatible `/models` responses.",
       "type": [
