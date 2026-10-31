@@ -118,28 +118,53 @@ impl TraceStore {
         }
         let slot = self.next % self.cap;
         self.next += 1;
-        // The slot may hold an older record (global ring wrap): drop its
-        // scope count so `records_in_scope` stays an accurate live count.
-        if let Some(old) = &self.ring[slot].record
-            && let Some(n) = self.scope_count.get_mut(&old.scope)
-        {
-            *n = n.saturating_sub(1);
-        }
+        // The slot may hold an older record (global ring wrap): remove its
+        // reverse-index ref and drop its scope count so `records_in_scope`
+        // and `index` stay bounded to live records.
+        self.remove_slot_from_index(slot);
         let generation = self.ring[slot].generation.wrapping_add(1);
+        let scope = rec.scope;
+        let first_hash = rec.block_hashes.first().copied();
         self.ring[slot] = RingSlot {
             generation,
-            record: Some(rec.clone()),
+            record: Some(rec),
         };
-        *self.scope_count.entry(rec.scope).or_insert(0) += 1;
-        for (block, h) in rec.block_hashes.iter().enumerate() {
+        *self.scope_count.entry(scope).or_insert(0) += 1;
+        if let Some(first) = first_hash {
             self.index
-                .entry((rec.scope, hash::low64(*h)))
+                .entry((scope, hash::low64(first)))
                 .or_default()
                 .push(BlockRef {
                     slot: slot as u32,
                     generation,
-                    block: block as u32,
+                    block: 0,
                 });
+        }
+    }
+
+    fn remove_slot_from_index(&mut self, slot: usize) {
+        let Some(old) = self.ring[slot].record.take() else {
+            return;
+        };
+        let old_gen = self.ring[slot].generation;
+        if let Some(&first) = old.block_hashes.first() {
+            let key = (old.scope, hash::low64(first));
+            let mut empty = false;
+            if let Some(bucket) = self.index.get_mut(&key) {
+                bucket.retain(|r| !(r.slot == slot as u32 && r.generation == old_gen));
+                empty = bucket.is_empty();
+            }
+            if empty {
+                self.index.remove(&key);
+            }
+        }
+        let mut zero_scope = false;
+        if let Some(n) = self.scope_count.get_mut(&old.scope) {
+            *n = n.saturating_sub(1);
+            zero_scope = *n == 0;
+        }
+        if zero_scope {
+            self.scope_count.remove(&old.scope);
         }
     }
 
@@ -154,11 +179,8 @@ impl TraceStore {
             }
         }
         if let Some((slot, _)) = oldest {
+            self.remove_slot_from_index(slot);
             self.ring[slot].generation = self.ring[slot].generation.wrapping_add(1);
-            self.ring[slot].record = None;
-            if let Some(n) = self.scope_count.get_mut(&scope) {
-                *n = n.saturating_sub(1);
-            }
         }
     }
 
@@ -255,17 +277,17 @@ impl TraceStore {
         if live > 0 && self.tombstone_hits * 4 > live as u64 {
             let mut new_index: HashMap<(u64, u64), Vec<BlockRef>> = HashMap::new();
             for (slot, s) in self.ring.iter().enumerate() {
-                if let Some(rec) = &s.record {
-                    for (block, h) in rec.block_hashes.iter().enumerate() {
-                        new_index
-                            .entry((rec.scope, hash::low64(*h)))
-                            .or_default()
-                            .push(BlockRef {
-                                slot: slot as u32,
-                                generation: s.generation,
-                                block: block as u32,
-                            });
-                    }
+                if let Some(rec) = &s.record
+                    && let Some(&first) = rec.block_hashes.first()
+                {
+                    new_index
+                        .entry((rec.scope, hash::low64(first)))
+                        .or_default()
+                        .push(BlockRef {
+                            slot: slot as u32,
+                            generation: s.generation,
+                            block: 0,
+                        });
                 }
             }
             self.index = new_index;

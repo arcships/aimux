@@ -5,10 +5,14 @@
 //! No trait changes, no provider changes. The auditor is pluggable and off by
 //! default (verdict = `None`, plain passthrough).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+/// Maximum number of active sessions tracked in `TraceLayer::session_tracker`
+/// before FIFO eviction of the oldest session state.
+const MAX_TRACKED_SESSIONS: usize = 256;
 
 /// Process-unique trace id sequence (trace ids are `trace-{pid}-{mono}-{seq}`).
 static TRACE_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -33,7 +37,7 @@ use crate::result::{GenerateResult, StreamResult};
 use crate::stream_part::StreamPart;
 use crate::types::Usage;
 
-use super::fingerprint::{BlockChainFingerprint, Chain, Fingerprint, denoise};
+use super::fingerprint::{BlockChainFingerprint, Chain, Fingerprint, denoised_to_vec};
 use super::hash;
 use super::record::{TraceRecord, UsageSnapshot};
 use super::store::{LcpResult, RingTraceStore, TraceSink};
@@ -63,6 +67,48 @@ struct SessionTracker {
     prev_body_len: u64,
 }
 
+#[derive(Default)]
+struct BoundedSessionTracker {
+    map: HashMap<String, SessionTracker>,
+    order: VecDeque<String>,
+}
+
+impl BoundedSessionTracker {
+    fn update(&mut self, sid: &str, lcp_bytes: u64, body_len: u64) -> SessionStats {
+        if let Some(t) = self.map.get_mut(sid) {
+            let rounds = t.rounds + 1;
+            let stable = t.prev_body_len > 0 && lcp_bytes * 100 >= t.prev_body_len * 95;
+            t.rounds = rounds;
+            t.prev_body_len = body_len;
+            return SessionStats {
+                same_session_rounds: rounds,
+                prefix_stable: stable,
+                lcp_gt_1024: lcp_bytes / 4 > 1024,
+            };
+        }
+        while self.map.len() >= MAX_TRACKED_SESSIONS {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            self.map.remove(&oldest);
+        }
+        let owned = sid.to_string();
+        self.order.push_back(owned.clone());
+        self.map.insert(
+            owned,
+            SessionTracker {
+                rounds: 1,
+                prev_body_len: body_len,
+            },
+        );
+        SessionStats {
+            same_session_rounds: 1,
+            prefix_stable: false,
+            lcp_gt_1024: lcp_bytes / 4 > 1024,
+        }
+    }
+}
+
 /// The probe decorator. Wrap a model; every call is fingerprinted and
 /// recorded to the sink.
 pub struct TraceLayer {
@@ -78,7 +124,7 @@ pub struct TraceLayer {
     scope_salt: u64,
     /// Name the scope key isolates by; `None` uses the model's `provider()`.
     scope_name: Option<String>,
-    session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
+    session_tracker: Arc<Mutex<BoundedSessionTracker>>,
 }
 
 /// Request identity computed before dispatch.
@@ -99,11 +145,11 @@ struct RecordCtx {
     auditor: Option<Arc<dyn CacheAuditor>>,
     strict: bool,
     scope_salt: u64,
-    session_tracker: Arc<Mutex<HashMap<String, SessionTracker>>>,
+    session_tracker: Arc<Mutex<BoundedSessionTracker>>,
     ctx: RequestCtx,
     /// RFC-0023 关联 ID:取自当前的录制作用域(`RecordingContext::current`;缺失时由构造处生成)。
     call_id: Option<String>,
-    request_body: Option<serde_json::Value>,
+    precomputed_fp: Option<(Fingerprint, Chain)>,
     response_headers: Option<HashMap<String, String>>,
     ttft_ms: Arc<AtomicU64>,
 }
@@ -119,7 +165,7 @@ impl TraceLayer {
             default_session: None,
             scope_salt: hash::mix(0x5eed_5eed ^ std::process::id() as u64),
             scope_name: None,
-            session_tracker: Arc::new(Mutex::new(HashMap::new())),
+            session_tracker: Arc::new(Mutex::new(BoundedSessionTracker::default())),
         }
     }
 
@@ -170,7 +216,7 @@ impl TraceLayer {
 
     fn make_record_ctx(
         &self,
-        request_body: Option<serde_json::Value>,
+        request_body: Option<&serde_json::Value>,
         response_headers: Option<HashMap<String, String>>,
         ttft_ms: Arc<AtomicU64>,
     ) -> RecordCtx {
@@ -200,6 +246,7 @@ impl TraceLayer {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         let monotonic_ms = monotonic_origin().elapsed().as_millis() as u64;
+        let precomputed_fp = RecordCtx::compute_fp(self.scope_salt, request_body);
         RecordCtx {
             provider: provider.to_string(),
             model: model_id.to_string(),
@@ -215,7 +262,7 @@ impl TraceLayer {
                 sent_at_unix_ms,
                 monotonic_ms,
             },
-            request_body,
+            precomputed_fp,
             response_headers,
             ttft_ms,
         }
@@ -223,11 +270,17 @@ impl TraceLayer {
 }
 
 impl RecordCtx {
-    /// Denoised bytes for the request body (fingerprint + LCP chain share
-    /// the same bytes).
-    fn denoised_bytes(&self) -> Option<Vec<u8>> {
-        let body = self.request_body.as_ref()?;
-        serde_json::to_vec(&denoise(body)).ok()
+    /// Compute the denoised block-chain fingerprint from a borrowed request body
+    /// without cloning the `serde_json::Value` tree or retaining the body.
+    fn compute_fp(
+        scope_salt: u64,
+        request_body: Option<&serde_json::Value>,
+    ) -> Option<(Fingerprint, Chain)> {
+        let body = request_body?;
+        let bytes = denoised_to_vec(body).ok()?;
+        let fp = BlockChainFingerprint::new(super::fingerprint::DEFAULT_BLOCK_SIZE, scope_salt);
+        let c = fp.compute(&bytes);
+        Some((Fingerprint::from(&c), c))
     }
 
     fn usage_snapshot(usage: &Usage) -> UsageSnapshot {
@@ -245,17 +298,8 @@ impl RecordCtx {
 
     /// Per-session chain stats for R-2.2 (rounds + prefix stability).
     fn session_stats_for(&self, sid: &str, lcp_bytes: u64, body_len: u64) -> SessionStats {
-        let mut map = self.session_tracker.lock().unwrap();
-        let t = map.entry(sid.to_string()).or_default();
-        let rounds = t.rounds + 1;
-        let stable = t.prev_body_len > 0 && lcp_bytes * 100 >= t.prev_body_len * 95;
-        t.rounds = rounds;
-        t.prev_body_len = body_len;
-        SessionStats {
-            same_session_rounds: rounds,
-            prefix_stable: stable,
-            lcp_gt_1024: lcp_bytes / 4 > 1024,
-        }
+        let mut tracker = self.session_tracker.lock().unwrap();
+        tracker.update(sid, lcp_bytes, body_len)
     }
 
     fn ring_store(&self) -> Option<&RingTraceStore> {
@@ -292,13 +336,8 @@ impl RecordCtx {
     /// Build and record the trace for a completed call.
     fn record(&self, usage: &Usage, error: Option<String>, request_id: Option<String>) {
         let spec = verdict_matrix::for_provider(&self.provider, &self.model);
-        let fp =
-            BlockChainFingerprint::new(super::fingerprint::DEFAULT_BLOCK_SIZE, self.scope_salt);
-        let (fingerprint, chain) = match self.denoised_bytes() {
-            Some(bytes) => {
-                let c = fp.compute(&bytes);
-                (Fingerprint::from(&c), c)
-            }
+        let (fingerprint, chain) = match &self.precomputed_fp {
+            Some((fp, c)) => (fp.clone(), c.clone()),
             None => (
                 Fingerprint {
                     body_hash: String::new(),
@@ -324,12 +363,15 @@ impl RecordCtx {
                 (None, 0, 0, false)
             };
 
-        let sid = self
-            .ctx
-            .session_id
-            .clone()
-            .unwrap_or_else(|| format!("<scope:{}>", self.ctx.scope_key));
-        let session_stats = self.session_stats_for(&sid, lcp_bytes, fingerprint.len_bytes);
+        let fallback_sid;
+        let sid = match &self.ctx.session_id {
+            Some(s) => s.as_str(),
+            None => {
+                fallback_sid = format!("<scope:{}>", self.ctx.scope_key);
+                fallback_sid.as_str()
+            }
+        };
+        let session_stats = self.session_stats_for(sid, lcp_bytes, fingerprint.len_bytes);
 
         let verdict = if let Some(auditor) = &self.auditor {
             let usage_present = usage.input_tokens.total.is_some();
@@ -539,10 +581,13 @@ impl LanguageModel for TraceLayer {
                     .as_ref()
                     .and_then(|response| response.id.clone());
                 let mut rec_ctx = ctx;
-                rec_ctx.request_body = result
-                    .request
-                    .as_ref()
-                    .and_then(|request| request.body.clone());
+                rec_ctx.precomputed_fp = RecordCtx::compute_fp(
+                    rec_ctx.scope_salt,
+                    result
+                        .request
+                        .as_ref()
+                        .and_then(|request| request.body.as_ref()),
+                );
                 rec_ctx.response_headers = result
                     .response
                     .as_ref()
@@ -569,11 +614,15 @@ impl LanguageModel for TraceLayer {
             }
         };
 
-        let rec_ctx = Arc::new(RecordCtx {
-            request_body: result
+        let precomputed_fp = RecordCtx::compute_fp(
+            ctx.scope_salt,
+            result
                 .request
                 .as_ref()
-                .and_then(|request| request.body.clone()),
+                .and_then(|request| request.body.as_ref()),
+        );
+        let rec_ctx = Arc::new(RecordCtx {
+            precomputed_fp,
             response_headers: result
                 .response
                 .as_ref()
