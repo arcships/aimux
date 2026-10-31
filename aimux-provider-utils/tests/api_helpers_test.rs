@@ -207,6 +207,71 @@ async fn event_source_handler_deserializes_each_data_event() {
     );
 }
 
+/// The `content-type` a raw-body request goes out with: the caller's
+/// header against the body's own media type.
+async fn sent_content_type(caller: Option<&str>, body_type: &str) -> String {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"value": "ok"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut call = request(format!("{}/upload", server.uri()));
+    if let Some(caller) = caller {
+        call.headers.push(("Content-Type".into(), caller.into()));
+    }
+
+    post_to_api(
+        call,
+        HttpBody::Bytes(b"raw".to_vec(), body_type.into()),
+        create_json_response_handler::<Reply>(),
+        failed_response_handler(),
+    )
+    .await
+    .unwrap();
+
+    let received = server.received_requests().await.unwrap();
+    received[0].headers["content-type"]
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// A caller's `content-type` wins over a byte body's media type, as it does
+/// for JSON bodies and in the AI SDK's `postToApi` (#398); without one the
+/// body's media type is sent.
+#[tokio::test]
+async fn byte_body_keeps_the_callers_content_type() {
+    assert_eq!(
+        sent_content_type(
+            Some("application/x-caller-type"),
+            "application/octet-stream"
+        )
+        .await,
+        "application/x-caller-type"
+    );
+    assert_eq!(
+        sent_content_type(None, "application/octet-stream").await,
+        "application/octet-stream"
+    );
+}
+
+/// A multipart body's boundary is generated with the body, so its own media
+/// type is sent whatever the caller's headers say: a caller's value could not
+/// name the boundary.
+#[tokio::test]
+async fn multipart_byte_body_keeps_its_boundary() {
+    assert_eq!(
+        sent_content_type(
+            Some("application/json"),
+            "multipart/form-data; boundary=aimux-boundary"
+        )
+        .await,
+        "multipart/form-data; boundary=aimux-boundary"
+    );
+}
+
 /// An event that is not JSON yields the AI SDK's `JSONParseError` message
 /// (`@ai-sdk/provider` `src/errors/json-parse-error.ts:16-19`), and the
 /// stream goes on with the next event.

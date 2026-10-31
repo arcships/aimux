@@ -548,6 +548,15 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
 /// bytes and an ordered-by-name header map. Headers are *inserted*, so a
 /// later entry for the same (case-insensitive) name replaces an earlier one —
 /// a request never goes out with duplicate `Authorization` headers.
+/// Whether a media type is `multipart/*`, whose boundary parameter is part of
+/// the body it describes.
+fn is_multipart(media_type: &str) -> bool {
+    media_type
+        .trim_start()
+        .get(..10)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("multipart/"))
+}
+
 fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxError> {
     let url = url::Url::parse(&request.url).map_err(|error| AiMuxError::InvalidArgument {
         message: format!("invalid request URL: {error}"),
@@ -609,13 +618,19 @@ fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxE
             )
         }
         HttpBody::Bytes(bytes, content_type) => {
-            let content_type = http::HeaderValue::try_from(content_type).map_err(|error| {
+            let value = http::HeaderValue::try_from(content_type).map_err(|error| {
                 AiMuxError::InvalidArgument {
                     message: format!("invalid content type: {content_type}"),
                     cause: Some(ErrorCause::source(&error)),
                 }
             })?;
-            headers.insert(http::header::CONTENT_TYPE, content_type);
+            // A caller's `content-type` wins, as for JSON bodies above and as
+            // the AI SDK's `postToApi` leaves the caller's headers alone. A
+            // multipart body is the exception: its boundary is generated with
+            // the body, so only the body's own media type describes the bytes.
+            if is_multipart(content_type) || !headers.contains_key(http::header::CONTENT_TYPE) {
+                headers.insert(http::header::CONTENT_TYPE, value);
+            }
             Bytes::copy_from_slice(bytes)
         }
         HttpBody::Empty => Bytes::new(),
