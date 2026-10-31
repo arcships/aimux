@@ -5139,3 +5139,71 @@ mod upstream_e2e {
         assert!(fetch.seen().is_empty());
     }
 }
+
+/// aimux's own: every namespace is parsed against
+/// `openaiCompatibleLanguageModelChatOptions` with `parseProviderOptions`
+/// (openai-compatible-chat-language-model.ts:197-235). A wrong type or an
+/// explicit `null` (zod `.optional()`) fails with the upstream message and
+/// nothing is sent; a field a later namespace sets wins (`Object.assign`).
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_wrong_type_or_null_fails_with_the_upstream_message() {
+        for (provider_options, namespace) in [
+            (
+                json!({ "openaiCompatible": { "user": 1 } }),
+                "openaiCompatible",
+            ),
+            (
+                json!({ "testProvider": { "strictJsonSchema": "yes" } }),
+                "testProvider",
+            ),
+            (
+                json!({ "test-provider": { "reasoningEffort": null } }),
+                "test-provider",
+            ),
+            (
+                json!({ "openai-compatible": { "textVerbosity": false } }),
+                "openai-compatible",
+            ),
+        ] {
+            let fetch = MockFetch::new(Vec::new());
+            let error = model(&fetch)
+                .do_generate(&call_options(
+                    json!({ "providerOptions": provider_options }),
+                ))
+                .await
+                .unwrap_err();
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                )
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(fetch.seen().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_later_namespace_wins_and_unknown_own_keys_pass_through() {
+        let fetch = MockFetch::new(vec![prepare_json_response(json!({}))]);
+        model(&fetch)
+            .do_generate(&call_options(json!({ "providerOptions": {
+                "openaiCompatible": { "user": "generic", "reasoningEffort": "low", "generic": 1 },
+                "testProvider": { "user": "own", "extra": true },
+            } })))
+            .await
+            .unwrap();
+
+        let body = request_body(&fetch);
+        assert_eq!(body["user"], "own");
+        assert_eq!(body["reasoning_effort"], "low");
+        assert_eq!(body["extra"], true);
+        assert!(body.get("generic").is_none(), "{body}");
+    }
+}

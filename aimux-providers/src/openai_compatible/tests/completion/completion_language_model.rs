@@ -965,3 +965,81 @@ mod upstream_e2e {
         assert!(!error.is_retryable);
     }
 }
+
+/// aimux's own: both namespaces are parsed against
+/// `openaiCompatibleLanguageModelCompletionOptions` with
+/// `parseProviderOptions` (openai-compatible-completion-language-model.ts:
+/// 135-146). A wrong type or an explicit `null` fails with the upstream
+/// message and nothing is sent; the camelCase namespace wins, and both are
+/// also spread into the body as given.
+mod provider_options_schema {
+    use super::*;
+
+    fn completion_body() -> Value {
+        json!({
+            "id": "cmpl-1",
+            "object": "text_completion",
+            "created": 1711363706,
+            "model": "gpt-3.5-turbo-instruct",
+            "choices": [{ "text": "ok", "index": 0, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 },
+        })
+    }
+
+    #[tokio::test]
+    async fn a_wrong_type_or_null_fails_with_the_upstream_message() {
+        for (provider_options, namespace) in [
+            (
+                json!({ "test-provider": { "echo": "yes" } }),
+                "test-provider",
+            ),
+            (
+                json!({ "testProvider": { "logitBias": { "50256": "x" } } }),
+                "testProvider",
+            ),
+            (
+                json!({ "testProvider": { "suffix": null } }),
+                "testProvider",
+            ),
+        ] {
+            let mock = MockFetch::new(Vec::new());
+            let error = model(&mock)
+                .do_generate(&with_provider_options(call_options(), provider_options))
+                .await
+                .unwrap_err();
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                )
+            );
+            assert!(cause.is_some(), "{error:?}");
+            assert!(mock.seen().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn the_camel_case_namespace_wins_and_both_are_spread() {
+        let mock = MockFetch::new(vec![json_response(&completion_body(), &[])]);
+        model(&mock)
+            .do_generate(&with_provider_options(
+                call_options(),
+                json!({
+                    "test-provider": { "user": "raw", "echo": true, "rawOnly": 1 },
+                    "testProvider": { "user": "camel", "logitBias": { "50256": -100 } },
+                }),
+            ))
+            .await
+            .unwrap();
+
+        let body = mock.seen()[0].json_body();
+        assert_eq!(body["user"], "camel");
+        assert_eq!(body["echo"], true);
+        assert_eq!(body["logit_bias"], json!({ "50256": -100 }));
+        assert_eq!(body["logitBias"], json!({ "50256": -100 }));
+        assert_eq!(body["rawOnly"], 1);
+    }
+}
