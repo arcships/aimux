@@ -1498,9 +1498,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `providerOptions.luma` is parsed against `lumaImageModelOptionsSchema`
   (`invalid luma provider options`); and the generation answers are parsed
   against `lumaGenerationResponseSchema`, so an unknown `state` fails at
-  once instead of being polled until the attempts run out. The generated
-  image is downloaded through the provider's `fetch` too (it went out on
-  the process default transport).
+  once instead of being polled until the attempts run out.
 
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
