@@ -241,6 +241,7 @@ mod luma_image_model {
                     EndpointConfig::new(
                         "luma.image".to_string(),
                         StaticEndpoint {
+                            base_url: "https://api.example.com".to_string(),
                             headers: HeaderMapOpt::new(),
                         },
                         None,
