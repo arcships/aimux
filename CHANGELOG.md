@@ -2040,7 +2040,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Invalid Google provider option: <key>`, `Invalid Google video option:
   <key>`, `Invalid Google image googleSearch option`,
   `outputDimensionality must be a number` and the like. What is checked and
-  the requests are unchanged (RFC-0046 R1).
+  the requests are unchanged, but for the Vertex Gemini image model: it now
+  checks the options it hands to the language model against
+  `googleLanguageModelOptions` too, as upstream's inner `doGenerate` does,
+  where it used to send them unchecked (only a `structuredOutputs` that is
+  not a boolean failed, with `invalid googleVertex provider options`)
+  (RFC-0046 R1).
 
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq

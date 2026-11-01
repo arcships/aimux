@@ -124,11 +124,8 @@ impl GoogleModel {
         options: &CallOptions,
         streaming: bool,
     ) -> Result<(Value, Vec<Warning>), AiMuxError> {
-        let (mut body, mut warnings) = build_request_body_with_warnings_for_namespace(
-            &self.model_id,
-            options,
-            self.namespace,
-        )?;
+        let (mut body, mut warnings) =
+            build_request_body_with_warnings_for_namespace(&self.model_id, options, self.namespace);
         for warning in &mut warnings {
             if let Warning::Other { message } = warning {
                 *message = message.replace("google.generative-ai", &self.config.provider);
@@ -1175,16 +1172,10 @@ fn confirmed_prompt_block_reason(feedback: Option<&Value>) -> Option<String> {
 // ── getArgs (request body) ───────────────────────────────────────────────────
 
 /// Build a Vertex Gemini request body using Vertex's provider-metadata
-/// namespaces when replaying response parts.
-///
-/// # Errors
-/// Returns an error when `structuredOutputs` is not a boolean.
-pub(crate) fn build_vertex_request_body(
-    model_id: &str,
-    options: &CallOptions,
-) -> Result<Value, AiMuxError> {
-    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex)
-        .map(|(body, _)| body)
+/// namespaces when replaying response parts. The provider options are
+/// checked first, by [`validate_call_options_for_namespace`].
+pub(crate) fn build_vertex_request_body(model_id: &str, options: &CallOptions) -> Value {
+    build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Vertex).0
 }
 
 /// Build the Gemini `generateContent` request body from `CallOptions` **and**
@@ -1195,14 +1186,12 @@ pub(crate) fn build_vertex_request_body(
 /// response format, and the provider options the SDK maps (`thinkingConfig`,
 /// `responseModalities`, `audioTimestamp`, `mediaResolution`, `imageConfig`
 /// into `generationConfig`; `safetySettings`, `cachedContent`, `labels`,
-/// `serviceTier` and `retrievalConfig` next to it).
-///
-/// # Errors
-/// Returns an error when `structuredOutputs` is not a boolean.
+/// `serviceTier` and `retrievalConfig` next to it). The provider options are
+/// checked first, by [`validate_call_options`].
 pub fn build_request_body_with_warnings(
     model_id: &str,
     options: &CallOptions,
-) -> Result<(Value, Vec<Warning>), AiMuxError> {
+) -> (Value, Vec<Warning>) {
     build_request_body_with_warnings_for_namespace(model_id, options, Namespace::Google)
 }
 
@@ -1210,24 +1199,21 @@ pub(crate) fn build_request_body_with_warnings_for_namespace(
     model_id: &str,
     options: &CallOptions,
     namespace: Namespace,
-) -> Result<(Value, Vec<Warning>), AiMuxError> {
-    let provider_options = options.provider_options.as_ref().and_then(|options| {
-        namespace
-            .read_keys()
-            .iter()
-            .find_map(|name| options.get(*name).map(|value| (*name, value)))
-    });
-    let structured_outputs =
-        match provider_options.and_then(|(_, options)| options.get("structuredOutputs")) {
-            None => true,
-            Some(Value::Bool(value)) => *value,
-            Some(_) => {
-                return Err(AiMuxError::invalid_argument(format!(
-                    "invalid {} provider options",
-                    provider_options.unwrap().0
-                )));
-            }
-        };
+) -> (Value, Vec<Warning>) {
+    // `structuredOutputs` is a boolean: `validate_provider_options` checked
+    // the namespace before the body is built.
+    let structured_outputs = options
+        .provider_options
+        .as_ref()
+        .and_then(|options| {
+            namespace
+                .read_keys()
+                .iter()
+                .find_map(|name| options.get(*name))
+        })
+        .and_then(|options| options.get("structuredOutputs"))
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let GooglePrompt {
         mut system_instruction,
         mut contents,
@@ -1521,7 +1507,7 @@ pub(crate) fn build_request_body_with_warnings_for_namespace(
     warnings.extend(prompt_warnings);
     warnings.extend(thinking_warnings);
     warnings.extend(prepared.warnings);
-    Ok((Value::Object(body), warnings))
+    (Value::Object(body), warnings)
 }
 
 /// Validate prompt constraints and provider options before sending a request.

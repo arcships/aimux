@@ -8,7 +8,7 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use crate::google::convert::build_vertex_request_body;
+use crate::google::convert::{build_vertex_request_body, validate_call_options_for_namespace};
 use crate::google::google_failed_response_handler;
 use crate::google::options::Namespace;
 use crate::shared::EndpointConfig;
@@ -149,7 +149,10 @@ impl VertexImageModel {
         // passes them to the inner language model.
         call_options.provider_options =
             Some(Namespace::Vertex.metadata(Value::Object(inner_options)));
-        let body = build_vertex_request_body(&self.model_id, &call_options)?;
+        // The inner language model's `doGenerate` parses these options
+        // against `googleLanguageModelOptions` before it sends anything.
+        validate_call_options_for_namespace(&call_options, Namespace::Vertex)?;
+        let body = build_vertex_request_body(&self.model_id, &call_options);
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
         let resp = aimux_provider_utils::post_json_to_api(

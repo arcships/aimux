@@ -8094,6 +8094,12 @@ mod provider_options_schema {
             json!({ "retrievalConfig": { "latLng": { "latitude": 1 } } }),
             json!({ "serviceTier": "batch" }),
             json!({ "requestType": "dedicated" }),
+            json!({ "structuredOutputs": "yes" }),
+            json!({ "threshold": "BLOCK_ALL" }),
+            json!({ "audioTimestamp": "true" }),
+            json!({ "mediaResolution": "MEDIA_RESOLUTION_ULTRA" }),
+            json!({ "streamFunctionCallArguments": 1 }),
+            json!({ "sharedRequestType": "batch" }),
         ] {
             let mock = MockFetch::new(vec![]);
             let model = generate_test_provider(&mock).chat("gemini-pro");
