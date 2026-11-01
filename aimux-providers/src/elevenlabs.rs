@@ -43,7 +43,7 @@ pub(crate) mod options;
 /// ElevenLabs errors: `{"detail": {"status": "invalid_api_key", "message": ...}}`
 /// where `detail.status` is the machine code. FastAPI validation errors carry
 /// `detail` as a plain string or a `[{loc, msg, type}]` list instead.
-fn elevenlabs_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
+pub(crate) fn elevenlabs_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
     let detail = data.get("detail");
     let message = detail
         .and_then(|value| value.get("message"))
@@ -1437,3 +1437,6 @@ impl ElevenLabsTranscriptionModel {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests;

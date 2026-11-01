@@ -3280,3 +3280,118 @@ reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工�
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[elevenlabs]
+package = "@ai-sdk/elevenlabs"
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-api-types.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-config.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-error.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-provider.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-speech-api-types.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-speech-model-options.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-speech-model.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+sub-feature = [
+  { case = "ElevenLabsSpeechModel › doGenerate › should include user-agent header", issue = 328, reason = "the ai-sdk-elevenlabs/<version> user-agent part is not sent yet; it lands with the shared user-agent work after #388" },
+]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-speech-options.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-transcription-model-options.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-transcription-model.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+sub-feature = [
+  { case = "doStream › streams Scribe v2 Realtime and maps partial, committed, and timestamped output", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › detects language without returning timestamps unless requested", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › finishes with committed text when the socket closes before timestamps arrive", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › finishes a timestamp-only response to the final commit", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › drains commits received after the input ends and correlates partial IDs", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › handles legacy final transcript event variants", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › finishes normally when the final empty commit is rejected", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › errors when the upstream closes before the final commit", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › supports 8 kHz mu-law input", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › defaults PCM input without a rate to 16 kHz", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › rejects non-realtime models and unsupported input formats", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › rejects background filtering together with timestamps", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › rejects background filtering together with language detection", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › accepts explicit null values in realtime provider options", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › warns about batch-only provider options", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › errors the stream with the provider error message", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › explains the native WebSocket header requirement on socket errors", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+  { case = "doStream › cancels the audio stream when the WebSocket constructor throws", issue = 275, reason = "realtime transcription keeps the RFC-0034 D5 surface (languageCode, includeTimestamps; commit_strategy manual, the commit riding the last audio chunk); upstream drives a MockWebSocket through the full streaming option set" },
+]
+
+[[elevenlabs.files]]
+upstream = "src/elevenlabs-transcription-options.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/index.ts"
+rust = "elevenlabs.rs"
+status = "mapped"
+
+[elevenlabs.files.tests]
+
+[[elevenlabs.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
