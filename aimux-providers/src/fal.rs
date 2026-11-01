@@ -69,6 +69,21 @@ fn fal_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMuxE
     aimux_provider_utils::create_json_error_response_handler(fal_error_parts)
 }
 
+/// Whether a failed status poll only says the job has not finished: its body
+/// is `{"detail": "Request is still in progress"}`, whatever the status code
+/// (the status `failedResponseHandler` of fal-transcription-model.ts and
+/// fal-video-model.ts).
+fn is_in_progress(error: &AiMuxError) -> bool {
+    let AiMuxError::ApiCall(detail) = error else {
+        return false;
+    };
+    detail
+        .response_body
+        .as_deref()
+        .and_then(|body| serde_json::from_str::<Value>(body).ok())
+        .is_some_and(|body| body["detail"] == "Request is still in progress")
+}
+
 // ── Config ──────────────────────────────────────────────────────────────────
 
 /// Milliseconds between two polls of a queued transcription request
@@ -427,8 +442,6 @@ impl TranscriptionModel for FalTranscriptionModel {
             )),
             MAX_POLL_ATTEMPTS,
             || async {
-                // Fal returns 400/404 while a queued request is still
-                // registering; that is pending, not a failure.
                 match aimux_provider_utils::get_from_api(
                     exchange.request(poll_url.clone(), options),
                     aimux_provider_utils::create_json_response_handler::<FalTranscriptionResponse>(
@@ -438,11 +451,7 @@ impl TranscriptionModel for FalTranscriptionModel {
                 .await
                 {
                     Ok(response) => Ok(PollStep::Ready(response)),
-                    Err(AiMuxError::ApiCall(detail))
-                        if matches!(detail.status_code, Some(400 | 404)) =>
-                    {
-                        Ok(PollStep::Pending)
-                    }
+                    Err(error) if is_in_progress(&error) => Ok(PollStep::Pending),
                     Err(error) => Err(error),
                 }
             },

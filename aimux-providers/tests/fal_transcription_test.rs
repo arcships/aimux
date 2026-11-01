@@ -294,3 +294,54 @@ async fn should_reject_options_outside_the_schema() {
         assert!(cause.is_some(), "{fal}");
     }
 }
+
+/// A poll answered with `detail: "Request is still in progress"` is pending,
+/// whatever its status; any other error response ends the call
+/// (fal-transcription-model.ts doGenerate, the status `failedResponseHandler`).
+#[tokio::test]
+async fn should_poll_only_while_the_request_is_in_progress() {
+    let in_progress = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/fal-ai/wizper/requests/test-id"))
+        .respond_with(
+            ResponseTemplate::new(400)
+                .set_body_json(json!({ "detail": "Request is still in progress" })),
+        )
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&in_progress)
+        .await;
+    mock_queue_and_result(&in_progress, &fixture_result(), &[]).await;
+    let result = wizper(&in_progress.uri())
+        .do_generate(&with_fal(json!({ "pollIntervalMs": 0 })))
+        .await
+        .unwrap();
+    assert_eq!(result.text, "Hello from the Versal AISDK.");
+
+    let failed = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/fal-ai/wizper/requests/test-id"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_json(json!({ "detail": "Invalid audio file" })),
+        )
+        .with_priority(1)
+        .mount(&failed)
+        .await;
+    mock_queue_and_result(&failed, &fixture_result(), &[]).await;
+    let error = wizper(&failed.uri())
+        .do_generate(&with_fal(json!({ "pollIntervalMs": 0 })))
+        .await
+        .unwrap_err();
+    let aimux_core::error::AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected ApiCall, got {error:?}");
+    };
+    assert_eq!(detail.status_code, Some(400));
+    let polls = failed
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.method.as_str() == "GET")
+        .count();
+    assert_eq!(polls, 1);
+}
