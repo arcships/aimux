@@ -81,3 +81,53 @@ mod amazon_bedrock_language_model_chat_options {
         }
     }
 }
+
+/// aimux's own: a value outside the schema fails with the message
+/// `parseProviderOptions` gives, naming the namespace it read (`amazonBedrock`,
+/// else the legacy `bedrock`), with the serde error as its cause.
+mod parse_provider_options_message {
+    use super::*;
+
+    fn invalid(namespace: &str, options: Value) -> (String, bool) {
+        let call: CallOptions = serde_json::from_value(json!({
+            "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+            "providerOptions": { namespace: options },
+        }))
+        .expect("valid call options");
+        match build_request_body_checked("anthropic.claude-3-haiku-20240307-v1:0", &call, None) {
+            Err(AiMuxError::InvalidArgument { message, cause }) => (message, cause.is_some()),
+            Err(other) => panic!("expected InvalidArgument, got {other:?}"),
+            Ok(_) => panic!("expected {options} under {namespace} to fail"),
+        }
+    }
+
+    #[test]
+    fn names_the_namespace_it_read() {
+        for options in [
+            json!({ "structuredOutputMode": "strict" }),
+            json!({ "reasoningConfig": { "type": "on" } }),
+            json!({ "reasoningConfig": { "budgetTokens": "1024" } }),
+            json!({ "anthropicBeta": "a" }),
+            json!({ "serviceTier": null }),
+        ] {
+            assert_eq!(
+                invalid("amazonBedrock", options.clone()),
+                (
+                    "Invalid argument for parameter providerOptions: invalid amazonBedrock provider options"
+                        .to_owned(),
+                    true
+                ),
+                "{options}"
+            );
+            assert_eq!(
+                invalid("bedrock", options.clone()),
+                (
+                    "Invalid argument for parameter providerOptions: invalid bedrock provider options"
+                        .to_owned(),
+                    true
+                ),
+                "{options}"
+            );
+        }
+    }
+}

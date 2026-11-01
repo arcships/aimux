@@ -17,6 +17,71 @@ use aimux_provider_utils::HttpBody;
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
+/// `amazonBedrockImageModelOptionsSchema`. Only checked: the request reads
+/// the namespace as given.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "parsed for its validation; the request reads the raw namespace"
+)]
+struct ImageOptions {
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    quality: Option<ImageQuality>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    negative_text: Option<String>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    cfg_scale: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    style: Option<ImageStyle>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    task_type: Option<ImageTaskType>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    mask_prompt: Option<String>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    out_painting_mode: Option<OutPaintingMode>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    similarity_strength: Option<serde_json::Number>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ImageQuality {
+    Standard,
+    Premium,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum ImageStyle {
+    #[serde(rename = "3D_ANIMATED_FAMILY_FILM")]
+    AnimatedFamilyFilm3d,
+    DesignSketch,
+    FlatVectorIllustration,
+    GraphicNovelIllustration,
+    Maximalism,
+    MidcenturyRetro,
+    Photorealism,
+    SoftDigitalPainting,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum ImageTaskType {
+    TextImage,
+    ImageVariation,
+    Inpainting,
+    Outpainting,
+    BackgroundRemoval,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum OutPaintingMode {
+    Default,
+    Precise,
+}
+
 /// Returns the max images per call for the given model ID.
 fn get_max_images_per_call(model_id: &str) -> u32 {
     match model_id {
@@ -84,61 +149,10 @@ impl ImageModel for BedrockImageModel {
             .unwrap_or((None, None));
         let has_files = options.files.as_ref().is_some_and(|f| !f.is_empty());
 
-        // Parse provider options (`amazonBedrock`)
+        // Check the namespace against `amazonBedrockImageModelOptionsSchema`
+        // (amazon-bedrock-image-model.ts:97-107); the request reads it as given.
+        options::parse::<ImageOptions>(Some(&options.provider_options))?;
         let ab_opts = options::read(Some(&options.provider_options));
-
-        if let Some(opts) = ab_opts {
-            for (key, allowed) in [
-                ("quality", &["standard", "premium"][..]),
-                (
-                    "style",
-                    &[
-                        "3D_ANIMATED_FAMILY_FILM",
-                        "DESIGN_SKETCH",
-                        "FLAT_VECTOR_ILLUSTRATION",
-                        "GRAPHIC_NOVEL_ILLUSTRATION",
-                        "MAXIMALISM",
-                        "MIDCENTURY_RETRO",
-                        "PHOTOREALISM",
-                        "SOFT_DIGITAL_PAINTING",
-                    ][..],
-                ),
-                (
-                    "taskType",
-                    &[
-                        "TEXT_IMAGE",
-                        "IMAGE_VARIATION",
-                        "INPAINTING",
-                        "OUTPAINTING",
-                        "BACKGROUND_REMOVAL",
-                    ][..],
-                ),
-                ("outPaintingMode", &["DEFAULT", "PRECISE"][..]),
-            ] {
-                if opts
-                    .get(key)
-                    .is_some_and(|v| !v.as_str().is_some_and(|s| allowed.contains(&s)))
-                {
-                    return Err(AiMuxError::invalid_argument(
-                        "invalid amazonBedrock provider options",
-                    ));
-                }
-            }
-            for key in ["negativeText", "maskPrompt"] {
-                if opts.get(key).is_some_and(|v| !v.is_string()) {
-                    return Err(AiMuxError::invalid_argument(
-                        "invalid amazonBedrock provider options",
-                    ));
-                }
-            }
-            for key in ["cfgScale", "similarityStrength"] {
-                if opts.get(key).is_some_and(|v| !v.is_number()) {
-                    return Err(AiMuxError::invalid_argument(
-                        "invalid amazonBedrock provider options",
-                    ));
-                }
-            }
-        }
 
         // Build image generation config
         let mut image_gen_config = Map::new();

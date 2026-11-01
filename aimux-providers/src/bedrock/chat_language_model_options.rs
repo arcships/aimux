@@ -1,7 +1,9 @@
 //! Settings and provider options of the Amazon Bedrock chat model
 //! (amazon-bedrock-chat-language-model-options.ts).
 
-use serde_json::Value;
+use aimux_provider_utils::optional_field;
+use serde::Deserialize;
+use serde_json::{Map, Value};
 
 /// The chat family override supported by the upstream provider.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,75 +25,96 @@ pub struct AmazonBedrockChatModelSettings {
     pub model_family: Option<AmazonBedrockChatModelFamily>,
 }
 
+/// `amazonBedrockLanguageModelChatOptions`. Only checked here: the request
+/// body is built from the namespace as given.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "parsed for its validation; the body reads the raw namespace"
+)]
+struct ChatOptions {
+    #[serde(default, deserialize_with = "optional_field")]
+    structured_output_mode: Option<StructuredOutputMode>,
+    #[serde(default, deserialize_with = "optional_field")]
+    additional_model_request_fields: Option<Map<String, Value>>,
+    #[serde(default, deserialize_with = "optional_field")]
+    reasoning_config: Option<ReasoningConfig>,
+    #[serde(default, deserialize_with = "optional_field")]
+    anthropic_beta: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "optional_field")]
+    service_tier: Option<ServiceTier>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum StructuredOutputMode {
+    OutputFormat,
+    JsonTool,
+    Auto,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ServiceTier {
+    Reserved,
+    Priority,
+    Default,
+    Flex,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "parsed for its validation; the body reads the raw namespace"
+)]
+struct ReasoningConfig {
+    #[serde(default, rename = "type", deserialize_with = "optional_field")]
+    kind: Option<ReasoningType>,
+    #[serde(default, deserialize_with = "optional_field")]
+    budget_tokens: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "optional_field")]
+    max_reasoning_effort: Option<MaxReasoningEffort>,
+    #[serde(default, deserialize_with = "optional_field")]
+    display: Option<ReasoningDisplay>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ReasoningType {
+    Enabled,
+    Disabled,
+    Adaptive,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum MaxReasoningEffort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ReasoningDisplay {
+    Omitted,
+    Summarized,
+}
+
+/// Check the Bedrock namespace of `provider_options` against
+/// `amazonBedrockLanguageModelChatOptions`
+/// (amazon-bedrock-chat-language-model.ts:156-167).
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid amazonBedrock provider options" (or `bedrock`)
+/// when it does not match.
 pub(super) fn validate_options(
-    options: Option<&aimux_core::shared::JsonObject>,
+    provider_options: Option<&aimux_core::shared::SharedProviderOptions>,
 ) -> Result<(), aimux_core::AiMuxError> {
-    let Some(options) = options else {
-        return Ok(());
-    };
-    for (key, choices) in [
-        (
-            "structuredOutputMode",
-            &["outputFormat", "jsonTool", "auto"][..],
-        ),
-        (
-            "serviceTier",
-            &["reserved", "priority", "default", "flex"][..],
-        ),
-    ] {
-        if let Some(value) = options.get(key)
-            && !value.as_str().is_some_and(|v| choices.contains(&v))
-        {
-            return Err(aimux_core::AiMuxError::invalid_argument(format!(
-                "Invalid Bedrock {key}"
-            )));
-        }
-    }
-    if let Some(value) = options.get("additionalModelRequestFields")
-        && !value.is_object()
-    {
-        return Err(aimux_core::AiMuxError::invalid_argument(
-            "Invalid Bedrock additionalModelRequestFields",
-        ));
-    }
-    if let Some(value) = options.get("anthropicBeta")
-        && !value
-            .as_array()
-            .is_some_and(|a| a.iter().all(Value::is_string))
-    {
-        return Err(aimux_core::AiMuxError::invalid_argument(
-            "Invalid Bedrock anthropicBeta",
-        ));
-    }
-    if let Some(reasoning) = options.get("reasoningConfig") {
-        if !reasoning.is_object() {
-            return Err(aimux_core::AiMuxError::invalid_argument(
-                "Invalid Bedrock reasoningConfig",
-            ));
-        }
-        for (key, choices) in [
-            ("type", &["enabled", "disabled", "adaptive"][..]),
-            ("display", &["omitted", "summarized"][..]),
-            (
-                "maxReasoningEffort",
-                &["low", "medium", "high", "xhigh", "max"][..],
-            ),
-        ] {
-            if let Some(value) = reasoning.get(key)
-                && !value.as_str().is_some_and(|v| choices.contains(&v))
-            {
-                return Err(aimux_core::AiMuxError::invalid_argument(format!(
-                    "Invalid Bedrock reasoningConfig.{key}"
-                )));
-            }
-        }
-        if let Some(budget) = reasoning.get("budgetTokens")
-            && !budget.is_number()
-        {
-            return Err(aimux_core::AiMuxError::invalid_argument(
-                "Invalid Bedrock reasoningConfig.budgetTokens",
-            ));
-        }
-    }
-    Ok(())
+    super::options::parse::<ChatOptions>(provider_options).map(|_| ())
 }
