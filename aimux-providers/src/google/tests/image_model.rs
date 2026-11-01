@@ -1147,3 +1147,40 @@ mod older_image {
         }
     }
 }
+
+/// aimux's own: `providerOptions.google` is parsed against
+/// `googleImageModelOptionsSchema` (google-image-model.ts:169-173), and the
+/// rest of the namespace against the language model's schema. A value
+/// outside either fails with the upstream message before anything is sent.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for google in [
+            json!({ "googleSearch": null }),
+            json!({ "googleSearch": "on" }),
+            json!({ "googleSearch": { "searchTypes": { "webSearch": true } } }),
+            json!({ "googleSearch": { "timeRangeFilter": { "startTime": "2024-01-01T00:00:00Z" } } }),
+            json!({ "imageConfig": { "imageSize": "8K" } }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let mut options = call_options("A beautiful sunset");
+            options.provider_options = google_options(google.clone());
+            let Err(error) = model(&mock).do_generate(&options).await else {
+                panic!("{google} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {google}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid google provider options",
+                "{google}"
+            );
+            assert!(cause.is_some(), "{google}");
+            assert!(mock.seen().is_empty(), "{google}");
+        }
+    }
+}

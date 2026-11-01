@@ -1608,10 +1608,10 @@ pub(crate) fn validate_call_options_for_namespace(
             _ => {}
         }
     }
-    let Some(values) = namespace.read_in(options.provider_options.as_ref()) else {
-        return Ok(());
-    };
-    super::language_model_options::validate_provider_options(values)
+    super::language_model_options::validate_provider_options(
+        namespace,
+        options.provider_options.as_ref(),
+    )
 }
 
 fn validate_file_part(

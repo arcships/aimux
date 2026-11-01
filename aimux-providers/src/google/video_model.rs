@@ -12,11 +12,13 @@ use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use aimux_core::error::{AiMuxError, ApiCallError};
+use aimux_core::shared::{JsonObject, SharedProviderOptions};
 use aimux_core::video_model::{
     VideoCallOptions, VideoData, VideoModel, VideoOperationStart, VideoOperationStatus,
     VideoResponse, VideoResult,
 };
 
+use super::options::GOOGLE;
 use crate::shared::EndpointConfig;
 
 /// A Google video generation model.
@@ -32,6 +34,81 @@ impl GoogleVideoModel {
     pub(crate) fn from_config(model_id: String, config: EndpointConfig) -> Self {
         Self { model_id, config }
     }
+}
+
+/// `googleVideoModelOptionsSchema` (google-video-model-options.ts), a
+/// `z.looseObject` whose keys are all `.nullish()`. Only checked: the request
+/// is built from the namespace as given, which also forwards the keys the
+/// schema does not declare.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request is built from the raw namespace"
+)]
+struct GoogleVideoOptions {
+    #[serde(default, deserialize_with = "nullish_positive")]
+    poll_interval_ms: Option<f64>,
+    #[serde(default, deserialize_with = "nullish_positive")]
+    poll_timeout_ms: Option<f64>,
+    #[serde(default)]
+    person_generation: Option<PersonGeneration>,
+    #[serde(default)]
+    negative_prompt: Option<String>,
+    #[serde(default)]
+    reference_images: Option<Vec<ReferenceImage>>,
+}
+
+/// `z.enum(['dont_allow', 'allow_adult', 'allow_all'])`.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PersonGeneration {
+    DontAllow,
+    AllowAdult,
+    AllowAll,
+}
+
+/// One `referenceImages` entry.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the request is built from the raw namespace"
+)]
+struct ReferenceImage {
+    #[serde(default)]
+    bytes_base64_encoded: Option<String>,
+    #[serde(default)]
+    gcs_uri: Option<String>,
+}
+
+/// `z.number().positive().nullish()`.
+fn nullish_positive<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    use serde::Deserialize as _;
+    use serde::de::Error as _;
+    match Option::<f64>::deserialize(deserializer)? {
+        Some(value) if value <= 0.0 => Err(D::Error::custom("expected a number > 0")),
+        other => Ok(other),
+    }
+}
+
+/// `parseProviderOptions` with `googleVideoModelOptionsSchema` under `google`
+/// (google-video-model.ts:169-173): the namespace, once it matches the schema.
+///
+/// # Errors
+///
+/// `InvalidArgument` "invalid google provider options" when the namespace
+/// does not match the schema.
+fn google_video_options(
+    provider_options: &SharedProviderOptions,
+) -> Result<Option<&JsonObject>, AiMuxError> {
+    let checked = aimux_provider_utils::parse_provider_options::<GoogleVideoOptions>(
+        GOOGLE,
+        Some(provider_options),
+    )?;
+    Ok(checked.and(provider_options.get(GOOGLE)))
 }
 
 #[async_trait]
@@ -52,34 +129,7 @@ impl VideoModel for GoogleVideoModel {
     ) -> Result<VideoOperationStart, AiMuxError> {
         use aimux_core::video_model::VideoFrameType;
         let mut warnings = Vec::new();
-        let google = super::options::google_options(Some(&options.provider_options));
-        if let Some(google) = google {
-            for (key, value) in google.iter().filter(|(_, v)| !v.is_null()) {
-                let valid = match key.as_str() {
-                    "pollIntervalMs" | "pollTimeoutMs" => value.as_f64().is_some_and(|v| v > 0.0),
-                    "personGeneration" => matches!(
-                        value.as_str(),
-                        Some("dont_allow" | "allow_adult" | "allow_all")
-                    ),
-                    "negativePrompt" => value.is_string(),
-                    "referenceImages" => value.as_array().is_some_and(|images| {
-                        images.iter().all(|image| {
-                            image.as_object().is_some_and(|image| {
-                                ["bytesBase64Encoded", "gcsUri"].iter().all(|key| {
-                                    image.get(*key).is_none_or(|v| v.is_null() || v.is_string())
-                                })
-                            })
-                        })
-                    }),
-                    _ => true,
-                };
-                if !valid {
-                    return Err(AiMuxError::invalid_argument(format!(
-                        "Invalid Google video option: {key}"
-                    )));
-                }
-            }
-        }
+        let google = google_video_options(&options.provider_options)?;
         let mut instance = Map::new();
         if let Some(prompt) = &options.prompt {
             instance.insert("prompt".into(), json!(prompt));

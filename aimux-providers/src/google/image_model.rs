@@ -19,6 +19,57 @@ use aimux_core::types::NamespacedKind;
 use async_trait::async_trait;
 use serde_json::json;
 
+/// `googleImageModelOptionsSchema` (google-image-model-options.ts), read
+/// under `google`. The rest of the namespace goes to the language model,
+/// which checks it against its own schema.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleImageOptions {
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    google_search: Option<GoogleSearchArgs>,
+}
+
+/// `googleSearchToolArgsBaseSchema` (tool/google-search.ts), a
+/// `z.looseObject`. Only checked: the tool's args are the value as given.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the tool args are the value as given"
+)]
+struct GoogleSearchArgs {
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    search_types: Option<SearchTypes>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    time_range_filter: Option<TimeRangeFilter>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the tool args are the value as given"
+)]
+struct SearchTypes {
+    /// `z.object({})`: any object.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    web_search: Option<serde_json::Map<String, serde_json::Value>>,
+    /// `z.object({})`: any object.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    image_search: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the tool args are the value as given"
+)]
+struct TimeRangeFilter {
+    start_time: String,
+    end_time: String,
+}
+
 /// `googleImageModelsWithFileInputSupport` (google-image-model.ts:35).
 const MODELS_WITH_FILE_INPUTS: [&str; 3] = [
     "gemini-2.5-flash-image",
@@ -126,6 +177,10 @@ impl ImageModel for GoogleImageModel {
         call.seed = options.seed;
         call.headers = options.headers.clone();
         call.abort_signal = options.abort_signal.clone();
+        // google-image-model.ts:169-173
+        let image_options: GoogleImageOptions =
+            aimux_provider_utils::parse_provider_options(GOOGLE, Some(&options.provider_options))?
+                .unwrap_or_default();
         call.provider_options = Some(options.provider_options.clone());
         let google = call
             .provider_options
@@ -133,30 +188,15 @@ impl ImageModel for GoogleImageModel {
             .expect("set above")
             .entry(GOOGLE.into())
             .or_default();
-        if let Some(search) = google.remove("googleSearch") {
-            let invalid =
-                || AiMuxError::invalid_argument("Invalid Google image googleSearch option");
-            let object = search.as_object().ok_or_else(invalid)?;
-            if object.get("searchTypes").is_some_and(|types| {
-                !types.as_object().is_some_and(|types| {
-                    ["webSearch", "imageSearch"]
-                        .iter()
-                        .all(|key| types.get(*key).is_none_or(serde_json::Value::is_object))
-                })
-            }) || object.get("timeRangeFilter").is_some_and(|range| {
-                !range.as_object().is_some_and(|range| {
-                    ["startTime", "endTime"]
-                        .iter()
-                        .all(|key| range.get(*key).is_some_and(serde_json::Value::is_string))
-                })
-            }) {
-                return Err(invalid());
-            }
+        let search = google.remove("googleSearch");
+        if image_options.google_search.is_some()
+            && let Some(serde_json::Value::Object(args)) = search
+        {
             call.tools = Some(vec![Tool::Provider(ProviderTool {
                 id: NamespacedKind::new("google.google_search")
                     .expect("google.google_search is namespaced"),
                 name: "google_search".into(),
-                args: object.clone(),
+                args,
                 supports_deferred_results: None,
             })]);
         }

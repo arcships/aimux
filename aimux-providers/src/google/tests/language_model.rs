@@ -8056,3 +8056,77 @@ mod in_stream_error {
         assert!(matches!(parts.last(), Some(StreamPart::Finish { .. })));
     }
 }
+
+/// aimux's own: the first of the namespace's read keys present (`google`; for
+/// Vertex `googleVertex`, `vertex`, then `google`) is parsed against
+/// `googleLanguageModelOptions` (google-language-model.ts:173-191). A value
+/// outside the schema fails with the upstream message, naming that namespace,
+/// before anything is sent, for generate and stream alike.
+mod provider_options_schema {
+    use super::*;
+    use aimux_core::error::AiMuxError;
+
+    fn assert_invalid(error: &AiMuxError, namespace: &str, case: &Value) {
+        let AiMuxError::InvalidArgument { message, cause } = error else {
+            panic!("expected InvalidArgument for {case}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            &format!(
+                "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+            ),
+            "{case}"
+        );
+        assert!(cause.is_some(), "{case}");
+    }
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for google in [
+            json!({ "responseModalities": ["AUDIO"] }),
+            json!({ "thinkingConfig": { "thinkingLevel": "max" } }),
+            json!({ "thinkingConfig": { "thinkingBudget": "1024" } }),
+            json!({ "cachedContent": null }),
+            json!({ "safetySettings": [{ "category": "HARM_CATEGORY_HATE_SPEECH" }] }),
+            json!({ "labels": { "team": 1 } }),
+            json!({ "imageConfig": { "prominentPeople": "ALLOW" } }),
+            json!({ "imageConfig": { "imageOutputOptions": { "mimeType": "image/webp" } } }),
+            json!({ "retrievalConfig": { "latLng": { "latitude": 1 } } }),
+            json!({ "serviceTier": "batch" }),
+            json!({ "requestType": "dedicated" }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let model = generate_test_provider(&mock).chat("gemini-pro");
+            let options = generate_call_options(json!({
+                "prompt": generate_test_prompt(),
+                "providerOptions": { "google": google },
+            }));
+            let Err(generate_error) = model.do_generate(&options).await else {
+                panic!("generate with {google} fails");
+            };
+            assert_invalid(&generate_error, "google", &google);
+            let Err(stream_error) = model.do_stream(&options).await else {
+                panic!("stream with {google} fails");
+            };
+            assert_invalid(&stream_error, "google", &google);
+            assert!(mock.seen().is_empty(), "{google}");
+        }
+    }
+
+    #[tokio::test]
+    async fn vertex_names_the_namespace_it_read() {
+        for namespace in ["googleVertex", "vertex", "google"] {
+            let mock = MockFetch::new(vec![]);
+            let model = generate_direct_model("gemini-pro", "google.vertex.chat", &[], &mock);
+            let options = generate_call_options(json!({
+                "prompt": generate_test_prompt(),
+                "providerOptions": { namespace: { "serviceTier": "batch" } },
+            }));
+            let Err(error) = model.do_generate(&options).await else {
+                panic!("generate with {namespace} fails");
+            };
+            assert_invalid(&error, namespace, &json!(namespace));
+            assert!(mock.seen().is_empty(), "{namespace}");
+        }
+    }
+}
