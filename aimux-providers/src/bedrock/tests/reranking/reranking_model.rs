@@ -436,3 +436,54 @@ mod bedrock_upstream_e2e {
         assert_eq!(result.response.unwrap().body.unwrap(), response);
     }
 }
+
+/// aimux's own: the namespace is parsed against
+/// `amazonBedrockRerankingModelOptionsSchema` (`amazonBedrock`, else the
+/// legacy `bedrock`). A wrong type or `null` fails with the upstream message,
+/// naming the namespace read, and nothing is sent.
+mod provider_options_schema {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for (namespace, bedrock) in [
+            ("amazonBedrock", json!({ "nextToken": 1 })),
+            (
+                "amazonBedrock",
+                json!({ "additionalModelRequestFields": "test" }),
+            ),
+            ("bedrock", json!({ "additionalModelRequestFields": null })),
+        ] {
+            let mock = MockFetch::new(Vec::new());
+            let Err(error) = model(&mock)
+                .do_rerank(&RerankingCallOptions {
+                    provider_options: Some(
+                        aimux_core::shared::provider_namespace(namespace, bedrock.clone())
+                            .expect("options are an object"),
+                    ),
+                    ..RerankingCallOptions::new(
+                        "rainy day",
+                        RerankingDocuments::Text {
+                            values: vec!["sunny day at the beach".to_string()],
+                        },
+                    )
+                })
+                .await
+            else {
+                panic!("{bedrock} under {namespace} fails");
+            };
+            let AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {bedrock}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                &format!(
+                    "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+                ),
+                "{bedrock}"
+            );
+            assert!(cause.is_some(), "{bedrock}");
+            assert!(mock.seen().is_empty(), "{bedrock}");
+        }
+    }
+}

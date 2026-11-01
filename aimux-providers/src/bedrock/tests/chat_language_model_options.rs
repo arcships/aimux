@@ -131,3 +131,42 @@ mod parse_provider_options_message {
         }
     }
 }
+
+/// aimux's own: the schema only checks the namespace; the body is built from
+/// the same namespace as given. Valid options under `amazonBedrock` or the
+/// legacy `bedrock` key give the same body, and each checked key reaches it.
+mod checked_namespace_body {
+    use super::*;
+
+    fn build(namespace: &str) -> Value {
+        let call: CallOptions = serde_json::from_value(json!({
+            "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+            "providerOptions": {
+                namespace: {
+                    "additionalModelRequestFields": { "custom_field": "value" },
+                    "reasoningConfig": { "type": "enabled", "budgetTokens": 1024 },
+                    "anthropicBeta": ["context-1m-2025-08-07"],
+                    "serviceTier": "priority",
+                },
+            },
+        }))
+        .expect("valid call options");
+        build_request_body_checked("anthropic.claude-3-haiku-20240307-v1:0", &call, None)
+            .expect("valid options build a body")
+            .0
+    }
+
+    #[test]
+    fn the_body_reads_the_namespace_the_schema_checked() {
+        let body = build("amazonBedrock");
+        assert_eq!(body, build("bedrock"));
+        let fields = &body["additionalModelRequestFields"];
+        assert_eq!(fields["custom_field"], json!("value"));
+        assert_eq!(
+            fields["thinking"],
+            json!({ "type": "enabled", "budget_tokens": 1024 })
+        );
+        assert_eq!(fields["anthropic_beta"], json!(["context-1m-2025-08-07"]));
+        assert_eq!(body["serviceTier"], json!({ "type": "priority" }));
+    }
+}
