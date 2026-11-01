@@ -453,3 +453,47 @@ async fn should_parse_the_luma_provider_options() {
         json!([{ "url": "https://example.com/a.jpg", "weight": 0.85 }])
     );
 }
+
+/// The submit and poll answers are parsed against
+/// `lumaGenerationResponseSchema` (luma-image-model.ts): a state outside
+/// `queued | dreaming | completed | failed` fails the call as an invalid JSON
+/// response instead of being polled again until the attempts run out.
+#[tokio::test]
+async fn should_fail_on_a_generation_state_outside_the_schema() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/dream-machine/v1/generations/image"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "id": "gen-123", "state": "queued" })),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/dream-machine/v1/generations/gen-123"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "id": "gen-123", "state": "processing" })),
+        )
+        .mount(&server)
+        .await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let error = model.do_generate(&options(PROMPT)).await.unwrap_err();
+    assert!(
+        error.to_string().contains("Invalid JSON response"),
+        "{error:?}"
+    );
+    let polls = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|request| request.method.as_str() == "GET")
+        .count();
+    assert_eq!(polls, 1);
+}

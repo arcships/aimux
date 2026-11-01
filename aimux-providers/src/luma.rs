@@ -47,6 +47,32 @@ fn luma_failed_response_handler() -> aimux_provider_utils::ResponseHandler<AiMux
     })
 }
 
+/// `lumaGenerationResponseSchema` (luma-image-model.ts), the submit and poll
+/// answers: what the implementation reads, checked.
+#[derive(serde::Deserialize)]
+struct LumaGenerationResponse {
+    id: String,
+    state: GenerationState,
+    #[serde(default)]
+    assets: Option<LumaAssets>,
+}
+
+/// `z.enum(['queued', 'dreaming', 'completed', 'failed'])`.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum GenerationState {
+    Queued,
+    Dreaming,
+    Completed,
+    Failed,
+}
+
+#[derive(serde::Deserialize)]
+struct LumaAssets {
+    /// The URL of the generated image.
+    image: String,
+}
+
 /// Milliseconds between two polls of a generation (`providerOptions.luma.pollIntervalMillis`
 /// overrides it for one call).
 const POLL_INTERVAL_MS: u64 = 500;
@@ -405,18 +431,12 @@ impl ImageModel for LumaImageModel {
         let resp = aimux_provider_utils::post_json_to_api(
             exchange.request(generations_url(None), options),
             Value::Object(body),
-            aimux_provider_utils::create_json_response_handler(),
+            aimux_provider_utils::create_json_response_handler::<LumaGenerationResponse>(),
             luma_failed_response_handler(),
         )
         .await?;
         let rh = resp.response_headers;
-        let submit_body: Value = resp.value;
-
-        let generation_id = submit_body
-            .get("id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| AiMuxError::invalid_response_data("missing id in Luma response"))?
-            .to_string();
+        let generation_id = resp.value.id;
 
         // Poll for completion.
         let poll_url = generations_url(Some(&generation_id));
@@ -428,30 +448,29 @@ impl ImageModel for LumaImageModel {
             || async {
                 let pr = aimux_provider_utils::get_from_api(
                     exchange.request(poll_url.clone(), options),
-                    aimux_provider_utils::create_json_response_handler::<Value>(),
+                    aimux_provider_utils::create_json_response_handler::<LumaGenerationResponse>(),
                     luma_failed_response_handler(),
                 )
                 .await?;
-                let pv = pr.value;
-
-                let state = pv.get("state").and_then(|v| v.as_str()).unwrap_or("");
                 // luma-image-model.ts pollForImageUrl
-                if state == "completed" {
-                    return pv
-                        .get("assets")
-                        .and_then(|a| a.get("image"))
-                        .and_then(|v| v.as_str())
-                        .map(|url| PollStep::Ready(url.to_string()))
-                        .ok_or_else(|| {
-                            AiMuxError::invalid_response_data(
-                                "Image generation completed but no image was found.",
-                            )
-                        });
-                }
-                if state == "failed" {
-                    return Err(AiMuxError::invalid_response_data(
-                        "Image generation failed.",
-                    ));
+                match pr.value.state {
+                    GenerationState::Completed => {
+                        return pr
+                            .value
+                            .assets
+                            .map(|assets| PollStep::Ready(assets.image))
+                            .ok_or_else(|| {
+                                AiMuxError::invalid_response_data(
+                                    "Image generation completed but no image was found.",
+                                )
+                            });
+                    }
+                    GenerationState::Failed => {
+                        return Err(AiMuxError::invalid_response_data(
+                            "Image generation failed.",
+                        ));
+                    }
+                    GenerationState::Queued | GenerationState::Dreaming => {}
                 }
                 Ok(PollStep::Pending)
             },
