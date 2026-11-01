@@ -267,3 +267,37 @@ async fn should_include_api_key_header() {
     let h = &requests[0].headers;
     assert_eq!(h.get("xi-api-key").unwrap(), "test-api-key");
 }
+
+/// `providerOptions.elevenlabs` is parsed against
+/// `elevenLabsSpeechModelOptionsSchema` (elevenlabs-speech-model.ts
+/// getArgs): a value outside it fails with the upstream message before
+/// anything is sent.
+#[tokio::test]
+async fn should_reject_speech_options_outside_the_schema() {
+    let provider = test_provider("test-api-key", "http://127.0.0.1:9", None);
+    let model = provider.speech("eleven_multilingual_v2");
+    for elevenlabs in [
+        json!({ "voiceSettings": { "stability": 1.5 } }),
+        json!({ "voiceSettings": { "useSpeakerBoost": "yes" } }),
+        json!({ "seed": -1 }),
+        json!({ "seed": 4_294_967_296_u64 }),
+        json!({ "previousRequestIds": ["a", "b", "c", "d"] }),
+        json!({ "pronunciationDictionaryLocators": [{ "versionId": "v1" }] }),
+        json!({ "applyTextNormalization": "always" }),
+        json!({ "enableLogging": null }),
+    ] {
+        let mut options = speech_options("Hello, world!");
+        options.provider_options =
+            Some(serde_json::from_value(json!({ "elevenlabs": elevenlabs })).unwrap());
+        let error = model.do_generate(&options).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {elevenlabs}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid elevenlabs provider options",
+            "{elevenlabs}"
+        );
+        assert!(cause.is_some(), "{elevenlabs}");
+    }
+}

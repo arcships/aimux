@@ -16,6 +16,7 @@
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use aimux_core::ErrorCause;
@@ -29,7 +30,9 @@ use aimux_core::embedding_model::EmbeddingModel;
 use aimux_core::image_model::ImageModel;
 use aimux_core::language_model::LanguageModel;
 use aimux_core::provider::Provider;
-use aimux_provider_utils::{FetchFunction, HeaderMapOpt, HttpBody, Resolvable, validate_base_url};
+use aimux_provider_utils::{
+    FetchFunction, HeaderMapOpt, HttpBody, Resolvable, optional_field, validate_base_url,
+};
 
 use crate::shared::{
     AuthScheme, Credential, EndpointConfig, ProviderHeaders, TransformRequestBody,
@@ -390,7 +393,7 @@ fn build_request(
     }
 
     // Parse and apply provider-specific options.
-    let elevenlabs_options = parse_elevenlabs_provider_options(options.provider_options.as_ref());
+    let elevenlabs_options = parse_elevenlabs_provider_options(options.provider_options.as_ref())?;
     if let Some(ref opts) = elevenlabs_options {
         // Voice settings from provider options.
         if let Some(ref vs) = opts.voice_settings {
@@ -437,7 +440,7 @@ fn build_request(
             );
         }
 
-        if let Some(seed) = opts.seed {
+        if let Some(ref seed) = opts.seed {
             body.insert("seed".to_string(), json!(seed));
         }
         if let Some(ref pt) = opts.previous_text {
@@ -507,121 +510,121 @@ fn map_output_format(format: &str) -> String {
 
 // ── Provider options parsing ─────────────────────────────────────────────────
 
-/// Parsed `elevenlabs` speech provider options.
-#[derive(Debug, Default)]
+/// `elevenLabsSpeechModelOptionsSchema` (elevenlabs-speech-model-options.ts).
+/// Every key is `.optional()`: absent is `None`, `null` fails.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ElevenLabsSpeechProviderOptions {
+    #[serde(default, deserialize_with = "optional_field")]
     language_code: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
     voice_settings: Option<ElevenLabsVoiceSettings>,
+    /// At most 3.
+    #[serde(default, deserialize_with = "at_most_three")]
     pronunciation_dictionary_locators: Option<Vec<ElevenLabsPronunciationLocator>>,
-    seed: Option<u64>,
+    /// `z.number().min(0).max(4294967295)`, sent as written.
+    #[serde(default, deserialize_with = "seed")]
+    seed: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "optional_field")]
     previous_text: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
     next_text: Option<String>,
+    /// At most 3.
+    #[serde(default, deserialize_with = "at_most_three")]
     previous_request_ids: Option<Vec<String>>,
+    /// At most 3.
+    #[serde(default, deserialize_with = "at_most_three")]
     next_request_ids: Option<Vec<String>>,
-    apply_text_normalization: Option<String>,
+    #[serde(default, deserialize_with = "optional_field")]
+    apply_text_normalization: Option<TextNormalization>,
+    #[serde(default, deserialize_with = "optional_field")]
     apply_language_text_normalization: Option<bool>,
+    #[serde(default, deserialize_with = "optional_field")]
     enable_logging: Option<bool>,
 }
 
-#[derive(Debug, Default)]
+/// `z.enum(['auto', 'on', 'off'])`, sent as written.
+#[derive(Debug, Clone, Copy, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum TextNormalization {
+    Auto,
+    On,
+    Off,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ElevenLabsVoiceSettings {
+    /// 0 to 1.
+    #[serde(default, deserialize_with = "unit_interval")]
     stability: Option<f64>,
+    /// 0 to 1.
+    #[serde(default, deserialize_with = "unit_interval")]
     similarity_boost: Option<f64>,
+    /// 0 to 1.
+    #[serde(default, deserialize_with = "unit_interval")]
     style: Option<f64>,
+    #[serde(default, deserialize_with = "optional_field")]
     use_speaker_boost: Option<bool>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ElevenLabsPronunciationLocator {
     pronunciation_dictionary_id: String,
+    #[serde(default, deserialize_with = "optional_field")]
     version_id: Option<String>,
 }
 
-/// Extract ElevenLabs-specific speech options from the shared provider options.
+/// `.max(3)` on an `.optional()` array.
+fn at_most_three<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let items = Vec::<T>::deserialize(deserializer)?;
+    if items.len() > 3 {
+        return Err(serde::de::Error::custom("expected at most 3 items"));
+    }
+    Ok(Some(items))
+}
+
+/// `z.number().min(0).max(1)` on an `.optional()` key.
+fn unit_interval<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    let value = f64::deserialize(deserializer)?;
+    if (0.0..=1.0).contains(&value) {
+        Ok(Some(value))
+    } else {
+        Err(serde::de::Error::custom("expected a number from 0 to 1"))
+    }
+}
+
+/// `seed`: `z.number().min(0).max(4294967295)` on an `.optional()` key.
+fn seed<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<serde_json::Number>, D::Error> {
+    let number = serde_json::Number::deserialize(deserializer)?;
+    if number
+        .as_f64()
+        .is_some_and(|value| (0.0..=4_294_967_295.0).contains(&value))
+    {
+        Ok(Some(number))
+    } else {
+        Err(serde::de::Error::custom(
+            "expected a number from 0 to 4294967295",
+        ))
+    }
+}
+
+/// `parseProviderOptions({ provider: 'elevenlabs', providerOptions, schema:
+/// elevenLabsSpeechModelOptionsSchema })` (elevenlabs-speech-model.ts
+/// getArgs).
 fn parse_elevenlabs_provider_options(
     options: Option<&SharedProviderOptions>,
-) -> Option<ElevenLabsSpeechProviderOptions> {
-    let opts = options::elevenlabs_options(options)?;
-
-    let voice_settings = opts
-        .get("voiceSettings")
-        .and_then(|vs| vs.as_object())
-        .map(|vs| ElevenLabsVoiceSettings {
-            stability: vs.get("stability").and_then(serde_json::Value::as_f64),
-            similarity_boost: vs
-                .get("similarityBoost")
-                .and_then(serde_json::Value::as_f64),
-            style: vs.get("style").and_then(serde_json::Value::as_f64),
-            use_speaker_boost: vs
-                .get("useSpeakerBoost")
-                .and_then(serde_json::Value::as_bool),
-        });
-
-    let pronunciation_dictionary_locators = opts
-        .get("pronunciationDictionaryLocators")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|loc| loc.as_object())
-                .map(|loc| ElevenLabsPronunciationLocator {
-                    pronunciation_dictionary_id: loc
-                        .get("pronunciationDictionaryId")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    version_id: loc
-                        .get("versionId")
-                        .and_then(|v| v.as_str())
-                        .map(std::string::ToString::to_string),
-                })
-                .collect()
-        });
-
-    Some(ElevenLabsSpeechProviderOptions {
-        language_code: opts
-            .get("languageCode")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        voice_settings,
-        pronunciation_dictionary_locators,
-        seed: opts.get("seed").and_then(serde_json::Value::as_u64),
-        previous_text: opts
-            .get("previousText")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        next_text: opts
-            .get("nextText")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        previous_request_ids: opts
-            .get("previousRequestIds")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
-                    .collect()
-            }),
-        next_request_ids: opts
-            .get("nextRequestIds")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str())
-                    .map(std::string::ToString::to_string)
-                    .collect()
-            }),
-        apply_text_normalization: opts
-            .get("applyTextNormalization")
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        apply_language_text_normalization: opts
-            .get("applyLanguageTextNormalization")
-            .and_then(serde_json::Value::as_bool),
-        enable_logging: opts
-            .get("enableLogging")
-            .and_then(serde_json::Value::as_bool),
-    })
+) -> Result<Option<ElevenLabsSpeechProviderOptions>, AiMuxError> {
+    aimux_provider_utils::parse_provider_options(options::NAMESPACE, options)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -633,7 +636,6 @@ use aimux_core::transcription_model::{
     TranscriptionResponse, TranscriptionResult, TranscriptionSegment,
 };
 use aimux_provider_utils::{MultipartForm, media_type_to_extension};
-use serde::Deserialize;
 
 /// ElevenLabs transcription response word.
 #[derive(Debug, Deserialize)]
