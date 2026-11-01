@@ -409,3 +409,35 @@ async fn should_take_the_media_type_from_the_response() {
     };
     assert_eq!(media_type, "video/webm");
 }
+
+/// fal-video-model.ts doStart returns `response: { ..., headers: undefined }`:
+/// the queue submission's headers are not carried.
+#[tokio::test]
+async fn should_not_report_headers_from_the_queue_submission() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/kling-video"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("x-request-id", "queue-request-id")
+                .set_body_json(json!({
+                    "request_id": "test-id",
+                    "response_url": format!("{}/fal-ai/kling-video/requests/test-id", server.uri()),
+                })),
+        )
+        .mount(&server)
+        .await;
+    let model = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .video("fal-ai/kling-video");
+
+    let start = model
+        .do_start(&VideoCallOptions::new("A cat playing"))
+        .await
+        .unwrap();
+    assert_eq!(start.response.headers, None);
+}

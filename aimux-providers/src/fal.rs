@@ -1231,7 +1231,6 @@ impl VideoModel for FalVideoModel {
         )
         .await?;
 
-        let response_headers = resp.response_headers;
         let job: FalVideoJobResponse = resp.value;
         let response_url = job.response_url.ok_or_else(|| {
             AiMuxError::invalid_response_data("No response URL returned from queue endpoint")
@@ -1244,7 +1243,9 @@ impl VideoModel for FalVideoModel {
             response: VideoResponse {
                 timestamp: Some(aimux_core::Timestamp::now()),
                 model_id: Some(self.model_id.clone()),
-                headers: Some(response_headers),
+                // fal-video-model.ts doStart reports `headers: undefined`:
+                // the submission's headers are not carried.
+                headers: None,
             },
         })
     }
