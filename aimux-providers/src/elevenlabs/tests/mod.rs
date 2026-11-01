@@ -2,3 +2,5 @@
 //! upstream test file.
 
 mod error;
+mod speech_model;
+mod transcription_model;
