@@ -227,6 +227,22 @@ async fn should_pass_the_fal_options() {
     }
 }
 
+/// A seed or duration of 0 is not sent: upstream tests `if (options.seed)`
+/// and `if (options.duration)`.
+#[tokio::test]
+async fn should_not_send_a_zero_seed_or_duration() {
+    let server = MockServer::start().await;
+    let model = luma_dream_machine(&server).await;
+    let mut call = VideoCallOptions::new(LUMA_PROMPT);
+    call.seed = Some(0);
+    call.duration = Some(0);
+    model.do_start(&call).await.unwrap();
+    assert_eq!(
+        submitted_body(&server).await,
+        json!({ "prompt": LUMA_PROMPT })
+    );
+}
+
 /// `providerOptions.fal` is parsed against `falVideoModelOptionsSchema`
 /// first: a value outside it fails before anything is sent.
 #[tokio::test]

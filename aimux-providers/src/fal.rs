@@ -1038,10 +1038,12 @@ impl VideoModel for FalVideoModel {
         if let Some(ar) = options.aspect_ratio {
             body.insert("aspect_ratio".to_string(), json!(ar.to_string()));
         }
-        if let Some(duration) = options.duration {
-            body.insert("duration".to_string(), json!(format!("{}s", duration)));
+        // Upstream tests `if (options.duration)` and `if (options.seed)`: a 0
+        // is not sent.
+        if let Some(duration) = options.duration.filter(|&duration| duration != 0) {
+            body.insert("duration".to_string(), json!(format!("{duration}s")));
         }
-        if let Some(seed) = options.seed {
+        if let Some(seed) = options.seed.filter(|&seed| seed != 0) {
             body.insert("seed".to_string(), json!(seed));
         }
 
