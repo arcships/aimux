@@ -64,6 +64,7 @@ async fn mock_response_with_headers(server: &MockServer, body: &Value, headers: 
         .await;
 }
 
+/// partial: `should pass the model`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_model_in_query() {
     let server = MockServer::start().await;
@@ -88,6 +89,7 @@ async fn should_pass_model_in_query() {
     assert!(requests[0].url.as_str().contains("model=nova-3"));
 }
 
+/// partial: `should pass headers`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_headers() {
     let server = MockServer::start().await;
@@ -131,6 +133,7 @@ async fn should_pass_headers() {
     );
 }
 
+/// partial: `should extract the transcription text`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_extract_text() {
     let server = MockServer::start().await;
@@ -152,6 +155,7 @@ async fn should_extract_text() {
     assert_eq!(result.text, "galileo was an american robotic space program");
 }
 
+/// partial: `should pass detectLanguage as detect_language query parameter`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_pass_detect_language_query_param() {
     let server = MockServer::start().await;
@@ -176,6 +180,7 @@ async fn should_pass_detect_language_query_param() {
     assert!(requests[0].url.as_str().contains("detect_language=true"));
 }
 
+/// partial: `should return detected language from response`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_return_detected_language() {
     let server = MockServer::start().await;
@@ -199,6 +204,7 @@ async fn should_return_detected_language() {
     assert_eq!(result.language, Some("en".to_string()));
 }
 
+/// partial: `should include response data with timestamp, modelId and headers`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_include_response_data() {
     let server = MockServer::start().await;
@@ -232,6 +238,7 @@ async fn should_include_response_data() {
     assert_eq!(headers.get("x-ratelimit-remaining").unwrap(), "123");
 }
 
+/// partial: `should use real date when no custom date provider is specified`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_use_real_date() {
     let server = MockServer::start().await;
@@ -254,6 +261,7 @@ async fn should_use_real_date() {
     assert_eq!(result.response.model_id, Some("nova-3".to_string()));
 }
 
+/// partial: `should return detected language from inline response`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_return_language_from_inline_response() {
     let server = MockServer::start().await;
@@ -289,6 +297,7 @@ async fn should_return_language_from_inline_response() {
     assert_eq!(result.language, Some("sv".to_string()));
 }
 
+/// partial: `should return undefined language when not detected`; full port in src/deepgram/tests/transcription_model.rs.
 #[tokio::test]
 async fn should_return_none_language_when_not_detected() {
     let server = MockServer::start().await;
