@@ -954,6 +954,45 @@ impl FalVideoModel {
     }
 }
 
+/// `falVideoModelOptionsSchema` (fal-video-model-options.ts), checked only:
+/// a loose object whose five known keys are `.nullish()`. The body is built
+/// from the raw namespace, which keeps every unknown key.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "validated only; the body is built from the raw namespace"
+)]
+struct FalVideoOptions {
+    #[serde(default, rename = "loop")]
+    loop_video: Option<bool>,
+    #[serde(default, deserialize_with = "motion_strength")]
+    motion_strength: Option<f64>,
+    #[serde(default)]
+    resolution: Option<String>,
+    #[serde(default)]
+    negative_prompt: Option<String>,
+    #[serde(default)]
+    prompt_optimizer: Option<bool>,
+}
+
+/// `motionStrength`: `z.number().min(0).max(1)`.
+fn motion_strength<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    number_in(deserializer, 0.0, 1.0)
+}
+
+/// The schema keys of [`FalVideoOptions`] and the body keys they are sent
+/// as (fal-video-model.ts buildRequestBody).
+const FAL_VIDEO_OPTION_KEYS: [(&str, &str); 5] = [
+    ("loop", "loop"),
+    ("motionStrength", "motion_strength"),
+    ("resolution", "resolution"),
+    ("negativePrompt", "negative_prompt"),
+    ("promptOptimizer", "prompt_optimizer"),
+];
+
 fn video_file_to_data_uri(file: &VideoFile) -> Result<String, AiMuxError> {
     match file {
         VideoFile::Url { url, .. } => Ok(url.clone()),
@@ -981,6 +1020,10 @@ impl VideoModel for FalVideoModel {
         options: &VideoCallOptions,
     ) -> Result<VideoOperationStart, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
+        aimux_provider_utils::parse_provider_options::<FalVideoOptions>(
+            options::NAMESPACE,
+            Some(&options.provider_options),
+        )?;
         let mut body = Map::new();
 
         if let Some(ref prompt) = options.prompt {
@@ -1000,6 +1043,22 @@ impl VideoModel for FalVideoModel {
         }
         if let Some(seed) = options.seed {
             body.insert("seed".to_string(), json!(seed));
+        }
+
+        if let Some(fal) = options::fal_options(Some(&options.provider_options)) {
+            // The schema keys first, a non-null value renamed; then every
+            // other key as given, so an unknown key wins over a renamed one.
+            for (key, wire_key) in FAL_VIDEO_OPTION_KEYS {
+                if let Some(value) = fal.get(key).filter(|value| !value.is_null()) {
+                    body.insert(wire_key.to_string(), value.clone());
+                }
+            }
+            for (key, value) in fal {
+                let known = FAL_VIDEO_OPTION_KEYS.iter().any(|(k, _)| k == key);
+                if !known && !is_poll_control_key(key) {
+                    body.insert(key.clone(), value.clone());
+                }
+            }
         }
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
