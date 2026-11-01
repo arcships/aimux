@@ -1488,6 +1488,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- ElevenLabs speech and batch transcription follow `@ai-sdk/elevenlabs`
+  3.0.54: `providerOptions.elevenlabs` is parsed against
+  `elevenLabsSpeechModelOptionsSchema` and
+  `elevenLabsTranscriptionModelOptionsSchema` (`invalid elevenlabs provider
+  options`; it was read key by key, unchecked); with the namespace present,
+  batch transcription sends the schema's defaults for the keys left out
+  (`diarize=false`, `tag_audio_events=true`, `timestamps_granularity=word`,
+  `file_format=other`); `streaming` options on a batch transcription are
+  reported as unsupported; and an empty `previousText` / `nextText` is left
+  out of speech.
+
 - Amazon Bedrock's in-stream exception errors redact and bound the request
   body, sanitize the URL and carry the frame as the response body and the
   response headers, as the other providers' stream errors do. The request
