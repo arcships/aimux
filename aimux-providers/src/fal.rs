@@ -709,6 +709,42 @@ const FAL_IMAGE_RENAMED_KEYS: [(&str, &str); 8] = [
     ("safetyTolerance", "safety_tolerance"),
 ];
 
+/// Models with an inpainting endpoint, which take a mask
+/// (fal-image-model.ts `supportsMaskInputs`).
+const FAL_MASK_MODELS: [&str; 2] = [
+    "fal-ai/flux-general/inpainting",
+    "fal-ai/flux-lora/inpainting",
+];
+
+/// Image-to-image models, which take an input file (fal-image-model.ts
+/// `supportsFileInputs`).
+const FAL_FILE_MODELS: [&str; 10] = [
+    "fal-ai/flux-2/edit",
+    "fal-ai/flux-pro/kontext",
+    "fal-ai/flux-pro/kontext/max",
+    "fal-ai/flux-general/image-to-image",
+    "fal-ai/flux-general/inpainting",
+    "fal-ai/flux-lora/image-to-image",
+    "fal-ai/flux-lora/inpainting",
+    "fal-ai/flux/dev/image-to-image",
+    "fal-ai/flux/krea/image-to-image",
+    "fal-ai/recraft/v3/image-to-image",
+];
+
+/// Text-to-image models that do not take an input file
+/// (fal-image-model.ts `supportsFileInputs`).
+const FAL_TEXT_ONLY_MODELS: [&str; 9] = [
+    "bria/text-to-image/3.2",
+    "fal-ai/bria/text-to-image/base",
+    "fal-ai/bria/text-to-image/fast",
+    "fal-ai/bria/text-to-image/hd",
+    "fal-ai/bytedance/dreamina/v3.1/text-to-image",
+    "fal-ai/flux-kontext-lora/text-to-image",
+    "fal-ai/recraft/v3/text-to-image",
+    "fal-ai/wan/v2.2-5b/text-to-image",
+    "fal-ai/wan/v2.2-a14b/text-to-image",
+];
+
 /// An fal.ai image generation model.
 pub struct FalImageModel {
     model_id: String,
@@ -750,6 +786,29 @@ impl ImageModel for FalImageModel {
     }
     fn max_images_per_call(&self) -> Option<u32> {
         Some(1)
+    }
+
+    /// Whether the model takes an input file; `None` for an unknown model.
+    fn supports_file_inputs(&self) -> Option<bool> {
+        if FAL_FILE_MODELS.contains(&self.model_id.as_str()) {
+            Some(true)
+        } else if FAL_TEXT_ONLY_MODELS.contains(&self.model_id.as_str()) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// Whether the model takes a mask: the inpainting models do, a model
+    /// known not to take files does not, an unknown one says nothing.
+    fn supports_mask_inputs(&self) -> Option<bool> {
+        if FAL_MASK_MODELS.contains(&self.model_id.as_str()) {
+            Some(true)
+        } else if self.supports_file_inputs().is_none() {
+            None
+        } else {
+            Some(false)
+        }
     }
 
     async fn do_generate(&self, options: &ImageCallOptions) -> Result<ImageResult, AiMuxError> {

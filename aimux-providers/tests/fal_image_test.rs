@@ -548,3 +548,34 @@ async fn should_merge_the_nsfw_flags_into_the_image_metadata() {
         })
     );
 }
+
+/// fal-image-model.ts `supportsFileInputs` / `supportsMaskInputs`: a known
+/// model advertises whether it takes files and a mask, an unknown one says
+/// nothing (upstream "capabilities").
+#[test]
+fn should_advertise_file_and_mask_capabilities() {
+    let provider = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        ..Default::default()
+    })
+    .unwrap();
+    for (model_id, file_inputs, mask_inputs) in [
+        ("fal-ai/flux/dev/image-to-image", Some(true), Some(false)),
+        ("fal-ai/flux-2/edit", Some(true), Some(false)),
+        ("fal-ai/flux-pro/kontext", Some(true), Some(false)),
+        ("fal-ai/flux-pro/kontext/max", Some(true), Some(false)),
+        ("fal-ai/flux-general/inpainting", Some(true), Some(true)),
+        ("fal-ai/recraft/v3/text-to-image", Some(false), Some(false)),
+        ("custom/image-model", None, None),
+        ("custom/image-to-image", None, None),
+        ("custom/inpainting", None, None),
+        ("custom/text-to-image", None, None),
+        ("fal-ai/custom/image-to-image", None, None),
+        ("fal-ai/custom/inpainting", None, None),
+        ("fal-ai/custom/text-to-image", None, None),
+    ] {
+        let model = provider.image(model_id);
+        assert_eq!(model.supports_file_inputs(), file_inputs, "{model_id}");
+        assert_eq!(model.supports_mask_inputs(), mask_inputs, "{model_id}");
+    }
+}
