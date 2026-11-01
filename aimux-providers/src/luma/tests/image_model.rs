@@ -301,7 +301,9 @@ mod luma_image_model {
             let downloads = server.images.received_requests().await.unwrap();
             assert_eq!(downloads.len(), 1);
             assert_eq!(downloads[0].method.as_str(), "GET");
-            assert_eq!(downloads[0].url.as_str(), server.url(IMAGE_PATH));
+            // The download goes through the download guard's pinned
+            // transport, so the server sees the path, not the base URL host.
+            assert_eq!(downloads[0].url.path(), IMAGE_PATH);
         }
 
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › should pass headers
