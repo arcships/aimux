@@ -544,10 +544,6 @@ async fn send_following_redirects(request: &PreparedRequest) -> Result<FetchResp
     unreachable!("redirect loop returns on response or error")
 }
 
-/// Materialise one prepared request for a [`Fetch`]: validated URL, final body
-/// bytes and an ordered-by-name header map. Headers are *inserted*, so a
-/// later entry for the same (case-insensitive) name replaces an earlier one —
-/// a request never goes out with duplicate `Authorization` headers.
 /// Whether a media type is `multipart/*`, whose boundary parameter is part of
 /// the body it describes.
 fn is_multipart(media_type: &str) -> bool {
@@ -557,6 +553,10 @@ fn is_multipart(media_type: &str) -> bool {
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("multipart/"))
 }
 
+/// Materialise one prepared request for a [`Fetch`]: validated URL, final body
+/// bytes and an ordered-by-name header map. Headers are *inserted*, so a
+/// later entry for the same (case-insensitive) name replaces an earlier one —
+/// a request never goes out with duplicate `Authorization` headers.
 fn build_fetch_request(request: &PreparedRequest) -> Result<FetchRequest, AiMuxError> {
     let url = url::Url::parse(&request.url).map_err(|error| AiMuxError::InvalidArgument {
         message: format!("invalid request URL: {error}"),
