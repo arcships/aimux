@@ -1379,3 +1379,6 @@ fn fal_video_metadata(
     metadata.insert(options::NAMESPACE.into(), fal);
     metadata
 }
+
+#[cfg(test)]
+mod tests;

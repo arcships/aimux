@@ -3280,3 +3280,127 @@ reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工�
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[fal]
+package = "@ai-sdk/fal"
+
+[[fal.files]]
+upstream = "src/fal-api-types.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-config.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-error.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-model-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-model.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-image-settings.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-provider.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-speech-model-options.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no fal speech (TTS) model; the provider offers image, transcription and video"
+
+[[fal.files]]
+upstream = "src/fal-speech-model.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no fal speech (TTS) model; the provider offers image, transcription and video"
+
+[[fal.files]]
+upstream = "src/fal-speech-settings.ts"
+status = "missing"
+issue = 275
+reason = "aimux has no fal speech (TTS) model; the provider offers image, transcription and video"
+
+[[fal.files]]
+upstream = "src/fal-transcription-model-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-transcription-model.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-transcription-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-model-options.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-model.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/fal-video-settings.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/index.ts"
+rust = "fal.rs"
+status = "mapped"
+
+[fal.files.tests]
+
+[[fal.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
