@@ -579,3 +579,31 @@ fn should_advertise_file_and_mask_capabilities() {
         assert_eq!(model.supports_mask_inputs(), mask_inputs, "{model_id}");
     }
 }
+
+/// fal-image-model.ts getArgs: more than one file without
+/// `useMultipleImages` warns that only the first is used and names the
+/// option (upstream "should warn when multiple files are provided").
+#[tokio::test]
+async fn should_warn_when_multiple_files_are_sent() {
+    let server = MockServer::start().await;
+    mock_fal(&server, fal_response(&server.uri())).await;
+    let file = json!({ "type": "file", "data": "iVBORw==", "mediaType": "image/png" });
+    let mut call = options(PROMPT);
+    call.files = Some(vec![
+        serde_json::from_value(file.clone()).unwrap(),
+        serde_json::from_value(file).unwrap(),
+    ]);
+    let result = flux_schnell(&server.uri())
+        .do_generate(&call)
+        .await
+        .unwrap();
+    let [aimux_core::shared::Warning::Other { message }] = result.warnings.as_slice() else {
+        panic!("expected one warning, got {:?}", result.warnings);
+    };
+    assert_eq!(
+        message,
+        "Multiple input images provided but useMultipleImages is not enabled. \
+         Only the first image will be used. Set providerOptions.fal.useMultipleImages \
+         to true for models that support multiple images (e.g., fal-ai/flux-2/edit)."
+    );
+}

@@ -865,9 +865,8 @@ impl ImageModel for FalImageModel {
                 );
                 if files.len() > 1 {
                     warnings.push(Warning::Other {
-                        message:
-                            "Multiple input images provided but useMultipleImages is not enabled."
-                                .into(),
+                        message: "Multiple input images provided but useMultipleImages is not enabled. Only the first image will be used. Set providerOptions.fal.useMultipleImages to true for models that support multiple images (e.g., fal-ai/flux-2/edit)."
+                            .into(),
                     });
                 }
             }
