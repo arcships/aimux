@@ -3280,3 +3280,46 @@ reason = "no tool factory on the Anthropic provider (#275 厂商内置工具工�
 upstream = "src/version.ts"
 status = "not-applicable"
 reason = "VERSION is the package version string; aimux pins it in shared/aisdk_pins.rs, which the user-agent tests read"
+
+[luma]
+package = "@ai-sdk/luma"
+
+[[luma.files]]
+upstream = "src/index.ts"
+rust = "luma.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-image-model-options.ts"
+rust = "luma/options.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-image-model.ts"
+rust = "luma.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-image-settings.ts"
+rust = "luma.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/luma-provider.ts"
+rust = "luma.rs"
+status = "mapped"
+
+[luma.files.tests]
+
+[[luma.files]]
+upstream = "src/version.ts"
+status = "not-applicable"
+reason = "the crate version is used instead (RFC-0046 §4.2)"
