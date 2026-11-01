@@ -1,6 +1,9 @@
 //! Rust translation of the Replicate image model tests.
 //! Source: `reference/ai/packages/replicate/src/replicate-image-model.test.ts`
 
+#[path = "common/mock_fetch.rs"]
+mod mock_fetch;
+
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -205,4 +208,40 @@ async fn should_use_versioned_endpoint() {
     let reqs = server.received_requests().await.unwrap();
     let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
     assert_eq!(body["version"], "abc123");
+}
+
+/// The output images are downloaded through the provider's `fetch`, like
+/// the prediction; they used to go out on the process default transport.
+#[tokio::test]
+async fn should_download_the_output_through_the_provider_fetch() {
+    use mock_fetch::{Canned, RouteFetch};
+
+    let fetch = RouteFetch::new(|seen| {
+        if seen.url.ends_with("/predictions") {
+            Canned::json(&json!({ "output": "https://api.example.com/image.png" }))
+        } else {
+            Canned {
+                status: 200,
+                headers: Vec::new(),
+                body: b"fake-image-data".to_vec(),
+            }
+        }
+    });
+    let model = create_replicate(ReplicateProviderSettings {
+        api_key: Some(Resolvable::Value("test-token".to_string())),
+        base_url: Some("https://api.example.com".to_string()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("black-forest-labs/flux-schnell");
+    let result = model.do_generate(&options(PROMPT)).await.unwrap();
+
+    let ImageOutputs::Binary(images) = result.images else {
+        panic!("expected binary images");
+    };
+    assert_eq!(images, vec![b"fake-image-data".to_vec()]);
+    let seen = fetch.seen();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[1].url, "https://api.example.com/image.png");
 }

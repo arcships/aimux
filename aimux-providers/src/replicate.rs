@@ -417,15 +417,15 @@ impl ImageModel for ReplicateImageModel {
                     DOWNLOAD_RETRY_INTERVAL_MS,
                 )),
                 || {
+                    // Through the provider's `fetch`, like the prediction.
                     aimux_provider_utils::get_from_api(
-                        HttpRequest {
+                        exchange.with_transport(HttpRequest {
                             url: url.clone(),
                             abort_signal: options.abort_signal.clone(),
                             validate_url: true,
                             trusted_origin: Some(exchange.base_url().to_string()),
-                            credentialed_origin: Some(exchange.base_url().to_string()),
                             ..Default::default()
-                        },
+                        }),
                         aimux_provider_utils::create_binary_response_handler(),
                         replicate_failed_response_handler(),
                     )
