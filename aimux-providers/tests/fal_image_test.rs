@@ -401,3 +401,50 @@ async fn should_rewrite_the_options_like_the_upstream_transform() {
         json!({ "prompt": PROMPT, "num_images": 1, "guidance_scale": 12 })
     );
 }
+
+/// fal-image-model.ts `falFailedResponseHandler`: a FastAPI validation
+/// error is reported as `loc.join('.'): msg` per entry, joined by newlines;
+/// anything else as its `message` (upstream "should handle API errors").
+#[tokio::test]
+async fn should_report_a_validation_error_by_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/flux/schnell"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "detail": [
+                { "loc": ["prompt"], "msg": "Invalid prompt", "type": "value_error" },
+                { "loc": ["image_size", "width"], "msg": "must be positive", "type": "value_error" },
+            ],
+        })))
+        .mount(&server)
+        .await;
+    let error = flux_schnell(&server.uri())
+        .do_generate(&options(PROMPT))
+        .await
+        .unwrap_err();
+    let aimux_core::error::AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected ApiCall, got {error:?}");
+    };
+    assert_eq!(
+        detail.message,
+        "prompt: Invalid prompt\nimage_size.width: must be positive"
+    );
+    assert_eq!(detail.status_code, Some(400));
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/fal-ai/flux/schnell"))
+        .respond_with(
+            ResponseTemplate::new(500).set_body_json(json!({ "message": "Unknown fal error" })),
+        )
+        .mount(&server)
+        .await;
+    let error = flux_schnell(&server.uri())
+        .do_generate(&options(PROMPT))
+        .await
+        .unwrap_err();
+    let aimux_core::error::AiMuxError::ApiCall(detail) = &error else {
+        panic!("expected ApiCall, got {error:?}");
+    };
+    assert_eq!(detail.message, "Unknown fal error");
+}

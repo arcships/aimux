@@ -35,31 +35,57 @@ use crate::shared::{
 /// fal errors are FastAPI-style: `{"detail": "..."}` or
 /// `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}` where `type`
 /// is the machine code (https://fal.ai/docs/model-apis/errors).
+///
+/// fal-image-model.ts reads a validation error as one `loc.join('.'): msg`
+/// line per entry, and any other error as its `message` (fal-error.ts); the
+/// two are handled the same way here, so a validation error keeps every
+/// entry instead of the first.
 fn fal_error_parts(data: &Value) -> aimux_provider_utils::ProviderErrorParts {
     let detail = data.get("detail");
-    let first_detail = detail
-        .and_then(Value::as_array)
-        .and_then(|items| items.first());
-    let message = detail
-        .and_then(Value::as_str)
-        .or_else(|| {
-            first_detail
-                .and_then(|item| item.get("msg"))
-                .and_then(Value::as_str)
+    let entries = detail.and_then(Value::as_array);
+    let message = entries
+        .filter(|entries| !entries.is_empty())
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| {
+                    let loc = entry
+                        .get("loc")
+                        .and_then(Value::as_array)
+                        .map(|loc| {
+                            loc.iter()
+                                .map(|part| match part {
+                                    Value::String(part) => part.clone(),
+                                    other => other.to_string(),
+                                })
+                                .collect::<Vec<_>>()
+                                .join(".")
+                        })
+                        .unwrap_or_default();
+                    let msg = entry.get("msg").and_then(Value::as_str).unwrap_or_default();
+                    format!("{loc}: {msg}")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
         })
+        .or_else(|| detail.and_then(Value::as_str).map(str::to_owned))
         .or_else(|| {
             data.get("error")
                 .and_then(|value| value.get("message"))
                 .and_then(Value::as_str)
+                .map(str::to_owned)
         })
-        .or_else(|| data.get("error").and_then(Value::as_str))
-        .or_else(|| data.get("message").and_then(Value::as_str))
-        .unwrap_or("Fal request failed")
-        .to_string();
+        .or_else(|| {
+            data.get("message")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "Unknown fal error".to_string());
     aimux_provider_utils::ProviderErrorParts {
         message,
-        provider_code: first_detail
-            .and_then(|item| item.get("type"))
+        provider_code: entries
+            .and_then(|entries| entries.first())
+            .and_then(|entry| entry.get("type"))
             .and_then(Value::as_str)
             .map(str::to_owned),
     }
