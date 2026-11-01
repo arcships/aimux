@@ -262,6 +262,7 @@ async fn extract_images(
     response: &Value,
     abort_signal: Option<aimux_core::AbortSignal>,
     base_url: &str,
+    transport: impl Fn(HttpRequest) -> HttpRequest,
     retry_interval: Duration,
 ) -> Result<ImageOutputs, AiMuxError> {
     let items = response.get("data").and_then(|d| d.as_array());
@@ -295,15 +296,15 @@ async fn extract_images(
         // data[].url is a generated-image URL from the response body, so it
         // goes through the SSRF download guard.
         let resp = retry_download(abort_signal.as_ref(), retry_interval, || {
+            // Through the provider's `fetch`, like the generation request.
             aimux_provider_utils::get_from_api(
-                HttpRequest {
+                transport(HttpRequest {
                     url: url.clone(),
                     abort_signal: abort_signal.clone(),
                     validate_url: true,
                     trusted_origin: Some(base_url.to_string()),
-                    credentialed_origin: Some(base_url.to_string()),
                     ..Default::default()
-                },
+                }),
                 aimux_provider_utils::create_binary_response_handler(),
                 recraft_failed_response_handler(),
             )
@@ -361,6 +362,7 @@ impl ImageModel for RecraftImageModel {
             &value,
             options.abort_signal.clone(),
             exchange.base_url(),
+            |request| exchange.with_transport(request),
             Duration::from_millis(poll_interval_ms(
                 options::recraft_options(Some(&options.provider_options)),
                 POLL_INTERVAL_MS_KEY,

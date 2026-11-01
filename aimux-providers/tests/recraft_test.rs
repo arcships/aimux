@@ -6,6 +6,9 @@
 //!
 //! Tests do not hit the public network and do not read real credentials.
 
+#[path = "common/mock_fetch.rs"]
+mod mock_fetch;
+
 use serde_json::{Value, json};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -229,4 +232,41 @@ async fn should_match_request_with_bearer_header() {
     let model = make_model(&server);
     // Will panic if the request did not carry the expected Authorization header.
     model.do_generate(&options(PROMPT)).await.unwrap();
+}
+
+/// A `data[].url` image is downloaded through the provider's `fetch`, like
+/// the generation request; it used to go out on the process default
+/// transport.
+#[tokio::test]
+async fn should_download_url_images_through_the_provider_fetch() {
+    use mock_fetch::{Canned, RouteFetch};
+
+    let fetch = RouteFetch::new(|seen| {
+        if seen.url.ends_with("/images/generations") {
+            Canned::json(&json!({ "data": [{ "url": "https://api.example.com/image.png" }] }))
+        } else {
+            Canned {
+                status: 200,
+                headers: Vec::new(),
+                body: b"fake-recraft-image".to_vec(),
+            }
+        }
+    });
+    let model = create_recraft(RecraftProviderSettings {
+        api_key: Some(Resolvable::Value(API_KEY.to_string())),
+        base_url: Some("https://api.example.com".to_string()),
+        fetch: Some(fetch.transport()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image(MODEL);
+    let result = model.do_generate(&options(PROMPT)).await.unwrap();
+
+    let ImageOutputs::Binary(images) = result.images else {
+        panic!("expected binary images");
+    };
+    assert_eq!(images, vec![b"fake-recraft-image".to_vec()]);
+    let seen = fetch.seen();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[1].url, "https://api.example.com/image.png");
 }
