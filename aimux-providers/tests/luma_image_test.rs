@@ -393,3 +393,63 @@ fn should_advertise_file_and_mask_support_per_model() {
         assert_eq!(model.supports_mask_inputs(), mask, "{model_id}");
     }
 }
+
+/// `providerOptions.luma` is parsed against `lumaImageModelOptionsSchema`
+/// (luma-image-model.ts doGenerate): a value outside it fails with the
+/// upstream message before anything is sent, `null` passes (`.nullish()`).
+#[tokio::test]
+async fn should_parse_the_luma_provider_options() {
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    for luma in [
+        json!({ "referenceType": "face" }),
+        json!({ "images": [{ "weight": 2 }] }),
+        json!({ "images": [{ "id": 1 }] }),
+        json!({ "pollIntervalMillis": "1000" }),
+        json!({ "maxPollAttempts": true }),
+    ] {
+        let mut opts = options(PROMPT);
+        opts.provider_options = serde_json::from_value(json!({ "luma": luma })).unwrap();
+        let error = model.do_generate(&opts).await.unwrap_err();
+        let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+            panic!("expected InvalidArgument for {luma}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Invalid argument for parameter providerOptions: invalid luma provider options",
+            "{luma}"
+        );
+        assert!(cause.is_some(), "{luma}");
+    }
+
+    let server = MockServer::start().await;
+    mock_luma(&server).await;
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.files = Some(vec![url_file("https://example.com/a.jpg")]);
+    opts.provider_options = serde_json::from_value(json!({ "luma": {
+        "referenceType": null,
+        "images": [{ "weight": null, "id": null }],
+        "pollIntervalMillis": null,
+        "maxPollAttempts": null,
+    } }))
+    .unwrap();
+    model.do_generate(&opts).await.unwrap();
+    let reqs = server.received_requests().await.unwrap();
+    let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
+    assert_eq!(
+        body["image"],
+        json!([{ "url": "https://example.com/a.jpg", "weight": 0.85 }])
+    );
+}

@@ -218,6 +218,7 @@ impl ImageModel for LumaImageModel {
             });
         }
 
+        options::validate(Some(&options.provider_options))?;
         let luma_opts = options::luma_options(Some(&options.provider_options));
 
         // Extract non-request options
