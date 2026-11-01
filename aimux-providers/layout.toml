@@ -3286,49 +3286,49 @@ package = "@ai-sdk/fal"
 
 [[fal.files]]
 upstream = "src/fal-api-types.ts"
-rust = "fal.rs"
+rust = "fal/transcription_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-config.ts"
-rust = "fal.rs"
+rust = "fal/provider.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-error.ts"
-rust = "fal.rs"
+rust = "fal/error.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-image-model-options.ts"
-rust = "fal.rs"
+rust = "fal/image_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-image-model.ts"
-rust = "fal.rs"
+rust = "fal/image_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-image-settings.ts"
-rust = "fal.rs"
+rust = "fal/image_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-provider.ts"
-rust = "fal.rs"
+rust = "fal/provider.rs"
 status = "mapped"
 
 [fal.files.tests]
@@ -3353,35 +3353,35 @@ reason = "aimux has no fal speech (TTS) model; the provider offers image, transc
 
 [[fal.files]]
 upstream = "src/fal-transcription-model-options.ts"
-rust = "fal.rs"
+rust = "fal/transcription_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-transcription-model.ts"
-rust = "fal.rs"
+rust = "fal/transcription_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-transcription-options.ts"
-rust = "fal.rs"
+rust = "fal/transcription_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-video-model-options.ts"
-rust = "fal.rs"
+rust = "fal/video_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/fal-video-model.ts"
-rust = "fal.rs"
+rust = "fal/video_model.rs"
 status = "mapped"
 
 [fal.files.tests]
@@ -3392,14 +3392,14 @@ ts-only = [
 
 [[fal.files]]
 upstream = "src/fal-video-settings.ts"
-rust = "fal.rs"
+rust = "fal/video_model.rs"
 status = "mapped"
 
 [fal.files.tests]
 
 [[fal.files]]
 upstream = "src/index.ts"
-rust = "fal.rs"
+rust = "fal/mod.rs"
 status = "mapped"
 
 [fal.files.tests]
