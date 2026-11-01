@@ -481,3 +481,6 @@ impl TranscriptionModel for DeepgramTranscriptionModel {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
