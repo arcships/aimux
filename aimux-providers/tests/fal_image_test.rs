@@ -200,6 +200,31 @@ async fn should_handle_single_image_response() {
     }
 }
 
+/// fal-image-model.ts keeps the response's other keys in
+/// `providerMetadata.fal` (`...responseMetaData`), the single-image `image`
+/// key included: `base` is a `looseObject`, so it survives the schema.
+#[tokio::test]
+async fn should_keep_the_single_image_key_in_the_provider_metadata() {
+    let server = MockServer::start().await;
+    mock_fal(
+        &server,
+        json!({ "image": { "url": format!("{}/image.png", server.uri()), "width": 1024, "height": 1024 } }),
+    )
+    .await;
+    let config = FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    };
+    let model = create_fal(config).unwrap().image("fal-ai/flux/schnell");
+    let result = model.do_generate(&options(PROMPT)).await.unwrap();
+    let metadata = result.provider_metadata.as_ref().unwrap();
+    let fal = metadata.get("fal").unwrap();
+    assert_eq!(fal["image"]["width"], 1024);
+    assert_eq!(fal["images"][0]["width"], 1024);
+    assert!(fal.get("prompt").is_none());
+}
+
 /// `providerOptions.fal` is parsed against `falImageModelOptionsSchema`
 /// (fal-image-model.ts doGenerate): a value outside the schema fails with
 /// the upstream message before anything is sent.

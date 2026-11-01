@@ -1050,7 +1050,7 @@ impl ImageModel for FalImageModel {
             for (k, v) in o {
                 if !matches!(
                     k.as_str(),
-                    "images" | "image" | "prompt" | "has_nsfw_concepts" | "nsfw_content_detected"
+                    "images" | "prompt" | "has_nsfw_concepts" | "nsfw_content_detected"
                 ) {
                     fm.insert(k.clone(), v.clone());
                 }
