@@ -3385,6 +3385,10 @@ rust = "fal.rs"
 status = "mapped"
 
 [fal.files.tests]
+ts-only = [
+  { case = "FalVideoModel › doStart › should append webhookUrl as fal_webhook query parameter", reason = "aimux's VideoCallOptions has no webhookUrl, so the submit URL never gets a fal_webhook parameter (core difference; the closest injection point, providerOptions.fal.webhookUrl, is not read)" },
+  { case = "FalVideoModel › doStatus › should return error status for non-polling API errors", reason = "VideoOperationStatus has only Pending and Completed, so a terminal API error ends do_status with Err(ApiCall) instead of a `status: 'error'` result (core difference, all video providers)" },
+]
 
 [[fal.files]]
 upstream = "src/fal-video-settings.ts"
