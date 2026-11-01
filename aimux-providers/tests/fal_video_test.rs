@@ -376,3 +376,36 @@ async fn should_poll_only_while_the_request_is_in_progress() {
     };
     assert_eq!(detail.status_code, Some(400));
 }
+
+/// fal-video-model.ts buildResult: `mediaType` is the response's
+/// `content_type`, falling back to `video/mp4`. Read through `do_status`,
+/// which returns the model's own answer before Core downloads it.
+#[tokio::test]
+async fn should_take_the_media_type_from_the_response() {
+    let server = MockServer::start().await;
+    mock_queue_and_result(
+        &server,
+        &json!({
+            "video": { "url": "https://cdn.fal.run/video.webm", "content_type": "video/webm" },
+        }),
+    )
+    .await;
+    let model = create_fal(FalProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some(server.uri().to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .video("fal-ai/kling-video");
+    let call = VideoCallOptions::new("A cat playing");
+    let start = model.do_start(&call).await.unwrap();
+
+    let status = model.do_status(&start.operation, &call).await.unwrap();
+    let VideoOperationStatus::Completed(result) = status else {
+        panic!("expected a completed status, got {status:?}");
+    };
+    let aimux_core::video_model::VideoData::Url { media_type, .. } = &result.videos[0] else {
+        panic!("expected a URL video");
+    };
+    assert_eq!(media_type, "video/webm");
+}

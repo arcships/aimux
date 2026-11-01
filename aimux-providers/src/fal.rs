@@ -1295,7 +1295,15 @@ impl VideoModel for FalVideoModel {
         let response_headers = resp.response_headers;
         let raw_body = resp.value;
 
-        // Extract video URL from response.
+        // Extract video URL from response. fal-video-model.ts buildResult:
+        // `mediaType` is the response's `content_type`, else `video/mp4`.
+        let media_type = raw_body
+            .get("video")
+            .and_then(|video| video.get("content_type"))
+            .and_then(Value::as_str)
+            .filter(|content_type| !content_type.is_empty())
+            .unwrap_or("video/mp4")
+            .to_string();
         let videos: Vec<VideoData> = if let Some(video) = raw_body
             .get("video")
             .and_then(|v| v.get("url"))
@@ -1303,12 +1311,12 @@ impl VideoModel for FalVideoModel {
         {
             vec![VideoData::Url {
                 url: video.to_string(),
-                media_type: "video/mp4".to_string(),
+                media_type,
             }]
         } else if let Some(url) = raw_body.get("url").and_then(|v| v.as_str()) {
             vec![VideoData::Url {
                 url: url.to_string(),
-                media_type: "video/mp4".to_string(),
+                media_type,
             }]
         } else {
             return Err(AiMuxError::invalid_response_data(
