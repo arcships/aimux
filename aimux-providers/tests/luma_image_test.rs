@@ -188,3 +188,82 @@ async fn should_throw_for_mask() {
     });
     assert!(model.do_generate(&opts).await.is_err());
 }
+
+fn url_file(url: &str) -> ImageFile {
+    ImageFile::Url {
+        url: url.to_string(),
+    }
+}
+
+/// `referenceType: 'character'` sends the images grouped by identity:
+/// `images[i].id`, default `identity0` (luma-image-model.ts getEditingOptions).
+#[tokio::test]
+async fn should_send_character_references_grouped_by_identity() {
+    for (images, expected) in [
+        (
+            json!(null),
+            json!({ "identity0": { "images": ["https://example.com/a.jpg", "https://example.com/b.jpg"] } }),
+        ),
+        (
+            json!([{ "id": "identity0" }, { "id": "identity1" }]),
+            json!({
+                "identity0": { "images": ["https://example.com/a.jpg"] },
+                "identity1": { "images": ["https://example.com/b.jpg"] },
+            }),
+        ),
+    ] {
+        let server = MockServer::start().await;
+        mock_luma(&server).await;
+        let config = LumaProviderSettings {
+            api_key: Some(Resolvable::Value("test-key".to_string())),
+            base_url: Some(server.uri().to_string()),
+            ..Default::default()
+        };
+        let model = create_luma(config).unwrap().image("photon-1");
+        let mut opts = options(PROMPT);
+        opts.files = Some(vec![
+            url_file("https://example.com/a.jpg"),
+            url_file("https://example.com/b.jpg"),
+        ]);
+        let mut luma = json!({ "referenceType": "character" });
+        if !images.is_null() {
+            luma["images"] = images;
+        }
+        opts.provider_options = serde_json::from_value(json!({ "luma": luma })).unwrap();
+        model.do_generate(&opts).await.unwrap();
+        let reqs = server.received_requests().await.unwrap();
+        let body: Value = serde_json::from_slice(&reqs[0].body).unwrap();
+        assert_eq!(body["character"], expected);
+        assert!(body.get("image").is_none(), "{body}");
+        assert!(body.get("images").is_none(), "{body}");
+        assert!(body.get("referenceType").is_none(), "{body}");
+    }
+}
+
+/// At most 4 images per identity.
+#[tokio::test]
+async fn should_reject_more_than_4_character_images_per_identity() {
+    let model = create_luma(LumaProviderSettings {
+        api_key: Some(Resolvable::Value("test-key".to_string())),
+        base_url: Some("http://127.0.0.1:9".to_string()),
+        ..Default::default()
+    })
+    .unwrap()
+    .image("photon-1");
+    let mut opts = options(PROMPT);
+    opts.files = Some(
+        (1..=5)
+            .map(|i| url_file(&format!("https://example.com/{i}.jpg")))
+            .collect(),
+    );
+    opts.provider_options =
+        serde_json::from_value(json!({ "luma": { "referenceType": "character" } })).unwrap();
+    let error = model.do_generate(&opts).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        aimux_core::error::AiMuxError::invalid_argument(
+            "Luma AI character supports up to 4 images per identity. Identity 'identity0' has 5 images."
+        )
+        .to_string()
+    );
+}

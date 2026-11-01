@@ -244,7 +244,7 @@ impl ImageModel for LumaImageModel {
             let default_weight = match reference_type {
                 "style" => 0.8,
                 "modify_image" => 1.0,
-                _ => 0.85, // image, character
+                _ => 0.85, // image; character sends no weight
             };
 
             match reference_type {
@@ -268,6 +268,39 @@ impl ImageModel for LumaImageModel {
                         })
                         .collect();
                     editing_opts.insert("style".into(), json!(arr));
+                }
+                "character" => {
+                    // luma-image-model.ts getEditingOptions: the images grouped by
+                    // `images[i].id` (default `identity0`), at most 4 per identity.
+                    let mut identities: Map<String, Value> = Map::new();
+                    for (i, f) in files.iter().enumerate() {
+                        let url = if let ImageFile::Url { url } = f {
+                            url.clone()
+                        } else {
+                            String::new()
+                        };
+                        let identity = image_configs
+                            .as_ref()
+                            .and_then(|c| c.get(i))
+                            .and_then(|c| c.get("id"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("identity0");
+                        let images = identities
+                            .entry(identity.to_string())
+                            .or_insert_with(|| json!({ "images": [] }));
+                        if let Some(list) = images["images"].as_array_mut() {
+                            list.push(json!(url));
+                        }
+                    }
+                    for (identity, images) in &identities {
+                        let count = images["images"].as_array().map_or(0, Vec::len);
+                        if count > 4 {
+                            return Err(AiMuxError::invalid_argument(format!(
+                                "Luma AI character supports up to 4 images per identity. Identity '{identity}' has {count} images."
+                            )));
+                        }
+                    }
+                    editing_opts.insert("character".into(), Value::Object(identities));
                 }
                 "modify_image" => {
                     if files.len() > 1 {
