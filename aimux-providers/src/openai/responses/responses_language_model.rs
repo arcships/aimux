@@ -157,18 +157,16 @@ impl OpenAIResponsesModel {
                 && let Some(effort) = profile
                     .namespace
                     .system_message_effort_update(provider_options.as_ref())?
-            {
-                if !content.is_empty()
+                && (!content.is_empty()
                     || !caps.supports_configuration_update
                     || update_incompatible
                     || caps
                         .supported_reasoning_efforts
-                        .is_some_and(|values| !values.contains(&effort))
-                {
-                    return Err(AiMuxError::UnsupportedFunctionality(
-                        "Message-level reasoningEffortUpdate".into(),
-                    ));
-                }
+                        .is_some_and(|values| !values.contains(&effort)))
+            {
+                return Err(AiMuxError::UnsupportedFunctionality(
+                    "Message-level reasoningEffortUpdate".into(),
+                ));
             }
             let (files, user) = match message {
                 LanguageModelMessage::User { content, .. } => (
