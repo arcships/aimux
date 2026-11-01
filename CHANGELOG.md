@@ -1508,6 +1508,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     SSRF guard; the operation is `{responseUrl, submitUrl}`, and a queue
     answer without the URL fails with `No response URL returned from queue
     endpoint`.
+  - A completed video takes its media type from the response's
+    `content_type` (else `video/mp4`), reads `video.url` only (an empty one
+    is an error, with the upstream `No video URL in response`), reports no
+    headers from the queue submission, and carries the upstream
+    `providerMetadata.fal` block: the video's url, width, height, duration,
+    fps and content type under `videos`, then `seed`, `timings`,
+    `has_nsfw_concepts` and a truthy `prompt`.
   - Errors read a validation error as one `loc: msg` line per entry instead
     of the first `msg`. Image metadata carries each image's `nsfw` flag, the
     multiple-files warning has the upstream wording, and image models report
