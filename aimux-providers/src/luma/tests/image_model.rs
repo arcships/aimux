@@ -3,15 +3,23 @@
 //! Harness: upstream builds `new LumaImageModel('test-model', { provider:
 //! 'luma', baseURL: 'https://api.example.com', headers })` against a test
 //! server; here the model is built from the same config with a fixed
-//! endpoint, and a [`RouteFetch`] answers the three URLs. A test that
-//! replaces one route's response (`server.urls[url].response = ...`) does
-//! so on its own [`Server`]. The test server reports `user-agent` apart from
-//! the request headers, so it is left out of the header comparison.
+//! endpoint, and a [`RouteFetch`] answers the submit and the poll. The
+//! download of the generated image is a validated download (`validateUrl`),
+//! which aimux sends through the download guard's own transport, never the
+//! provider's `fetch` (aimux-provider-utils `HttpRequest::fetch`). So the
+//! base URL is a local server that serves `/image.png`, and the image URL in
+//! the poll answer is on that origin (`trustedOrigin`), in place of
+//! upstream's `https://api.example.com`. A test that replaces one route's
+//! response (`server.urls[url].response = ...`) does so on its own
+//! [`Server`]. The test server reports `user-agent` apart from the request
+//! headers, so it is left out of the header comparison.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use aimux_core::error::AiMuxError;
 use aimux_core::image_model::{
@@ -25,14 +33,13 @@ use crate::shared::{Endpoint, EndpointConfig, ResolveEndpoint};
 use crate::test_support::mock_fetch::{Canned, RouteFetch, Seen};
 
 const PROMPT: &str = "A cute baby sea otter";
-const BASE_URL: &str = "https://api.example.com";
-const GENERATIONS_URL: &str = "https://api.example.com/dream-machine/v1/generations/image";
-const GENERATION_URL: &str =
-    "https://api.example.com/dream-machine/v1/generations/test-generation-id";
-const IMAGE_URL: &str = "https://api.example.com/image.png";
+const GENERATIONS_PATH: &str = "/dream-machine/v1/generations/image";
+const GENERATION_PATH: &str = "/dream-machine/v1/generations/test-generation-id";
+const IMAGE_PATH: &str = "/image.png";
 
 /// The base URL and the `headers` function of upstream's model config.
 struct StaticEndpoint {
+    base_url: String,
     headers: HeaderMapOpt,
 }
 
@@ -40,7 +47,7 @@ struct StaticEndpoint {
 impl ResolveEndpoint for StaticEndpoint {
     async fn resolve(&self) -> Result<Endpoint, AiMuxError> {
         Ok(Endpoint {
-            base_url: BASE_URL.to_string(),
+            base_url: self.base_url.clone(),
             headers: self.headers.clone(),
         })
     }
@@ -66,48 +73,27 @@ fn queued_generation() -> Value {
     })
 }
 
-/// The poll answer of upstream's test server, with `request` replaced when
-/// a test passes one.
-fn completed_generation(request: Option<Value>) -> Value {
-    json!({
-        "id": "test-generation-id",
-        "generation_type": "image",
-        "state": "completed",
-        "created_at": "2024-01-01T00:00:00Z",
-        "assets": { "image": "https://api.example.com/image.png" },
-        "model": "test-model",
-        "request": request.unwrap_or_else(|| json!({
-            "generation_type": "image",
-            "model": "test-model",
-            "prompt": "A cute baby sea otter",
-        })),
-    })
-}
-
-/// `createTestServer` with the three URLs of upstream's file.
+/// `createTestServer` with the three URLs of upstream's file: the submit and
+/// the poll through [`RouteFetch`], the image on a local server.
 struct Server {
-    routes: Arc<Mutex<HashMap<&'static str, Canned>>>,
+    base_url: String,
+    routes: Arc<Mutex<HashMap<String, Canned>>>,
     fetch: Arc<RouteFetch>,
+    images: MockServer,
 }
 
 impl Server {
-    fn new() -> Self {
-        let routes: Arc<Mutex<HashMap<&'static str, Canned>>> = Arc::new(Mutex::new(
-            [
-                (GENERATIONS_URL, json_value(&queued_generation())),
-                (GENERATION_URL, json_value(&completed_generation(None))),
-                (
-                    IMAGE_URL,
-                    Canned {
-                        status: 200,
-                        headers: Vec::new(),
-                        body: b"test-binary-content".to_vec(),
-                    },
-                ),
-            ]
-            .into_iter()
-            .collect(),
-        ));
+    async fn new() -> Self {
+        let images = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(IMAGE_PATH))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(b"test-binary-content".to_vec()),
+            )
+            .mount(&images)
+            .await;
+        let base_url = images.uri();
+        let routes: Arc<Mutex<HashMap<String, Canned>>> = Arc::new(Mutex::new(HashMap::new()));
         let table = Arc::clone(&routes);
         let fetch = RouteFetch::new(move |seen: &Seen| {
             table
@@ -121,15 +107,49 @@ impl Server {
                     body: b"Not found".to_vec(),
                 })
         });
-        Self { routes, fetch }
+        let server = Self {
+            base_url,
+            routes,
+            fetch,
+            images,
+        };
+        server.set(GENERATIONS_PATH, json_value(&queued_generation()));
+        server.set(
+            GENERATION_PATH,
+            json_value(&server.completed_generation(None)),
+        );
+        server
+    }
+
+    /// The URL of `path` on this server.
+    fn url(&self, path: &str) -> String {
+        format!("{}{path}", self.base_url)
+    }
+
+    /// The poll answer of upstream's test server, with `request` replaced
+    /// when a test passes one.
+    fn completed_generation(&self, request: Option<Value>) -> Value {
+        json!({
+            "id": "test-generation-id",
+            "generation_type": "image",
+            "state": "completed",
+            "created_at": "2024-01-01T00:00:00Z",
+            "assets": { "image": self.url(IMAGE_PATH) },
+            "model": "test-model",
+            "request": request.unwrap_or_else(|| json!({
+                "generation_type": "image",
+                "model": "test-model",
+                "prompt": "A cute baby sea otter",
+            })),
+        })
     }
 
     /// `server.urls[url].response = response`.
-    fn set(&self, url: &'static str, response: Canned) {
-        self.routes.lock().unwrap().insert(url, response);
+    fn set(&self, path: &str, response: Canned) {
+        self.routes.lock().unwrap().insert(self.url(path), response);
     }
 
-    /// `server.calls`.
+    /// `server.calls` for the submit and the poll.
     fn calls(&self) -> Vec<Seen> {
         self.fetch.seen()
     }
@@ -146,7 +166,10 @@ impl Server {
             "test-model".to_string(),
             EndpointConfig::new(
                 "luma".to_string(),
-                StaticEndpoint { headers },
+                StaticEndpoint {
+                    base_url: self.base_url.clone(),
+                    headers,
+                },
                 Some(self.fetch.transport()),
             ),
         )
@@ -195,7 +218,7 @@ async fn first_request_body(server: &Server, call: &ImageCallOptions) -> Value {
 
 /// `rejects.toThrow(message)`: the message contains `message`.
 async fn assert_throws(call: &ImageCallOptions, message: &str) {
-    let server = Server::new();
+    let server = Server::new().await;
     let error = server.model(None).do_generate(call).await.unwrap_err();
     assert!(error.to_string().contains(message), "{error}");
 }
@@ -243,7 +266,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › should pass the correct parameters including aspect ratio
         #[tokio::test]
         async fn should_pass_the_correct_parameters_including_aspect_ratio() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = ImageCallOptions {
                 aspect_ratio: Some(AspectRatio::new(16, 9)),
                 ..options(PROMPT, json!({ "luma": { "additional_param": "value" } }))
@@ -262,7 +285,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › should call the correct urls in sequence
         #[tokio::test]
         async fn should_call_the_correct_urls_in_sequence() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = ImageCallOptions {
                 aspect_ratio: Some(AspectRatio::new(16, 9)),
                 ..options(PROMPT, json!({}))
@@ -271,17 +294,19 @@ mod luma_image_model {
 
             let calls = server.calls();
             assert_eq!(calls[0].method, "POST");
-            assert_eq!(calls[0].url, GENERATIONS_URL);
+            assert_eq!(calls[0].url, server.url(GENERATIONS_PATH));
             assert_eq!(calls[1].method, "GET");
-            assert_eq!(calls[1].url, GENERATION_URL);
-            assert_eq!(calls[2].method, "GET");
-            assert_eq!(calls[2].url, IMAGE_URL);
+            assert_eq!(calls[1].url, server.url(GENERATION_PATH));
+            let downloads = server.images.received_requests().await.unwrap();
+            assert_eq!(downloads.len(), 1);
+            assert_eq!(downloads[0].method.as_str(), "GET");
+            assert_eq!(downloads[0].url.as_str(), server.url(IMAGE_PATH));
         }
 
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › should pass headers
         #[tokio::test]
         async fn should_pass_headers() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = ImageCallOptions {
                 headers: Some(
                     [(
@@ -315,7 +340,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › should not pass providerOptions.{pollIntervalMillis,maxPollAttempts}
         #[tokio::test]
         async fn should_not_pass_poll_interval_millis_or_max_poll_attempts() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = ImageCallOptions {
                 aspect_ratio: Some(AspectRatio::new(16, 9)),
                 ..options(
@@ -341,9 +366,9 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › should handle API errors
         #[tokio::test]
         async fn should_handle_api_errors() {
-            let server = Server::new();
+            let server = Server::new().await;
             server.set(
-                GENERATIONS_URL,
+                GENERATIONS_PATH,
                 Canned {
                     status: 400,
                     headers: Vec::new(),
@@ -361,7 +386,7 @@ mod luma_image_model {
             };
             assert_eq!(error.message, "Bad Request");
             assert_eq!(error.status_code, Some(400));
-            assert_eq!(error.url, GENERATIONS_URL);
+            assert_eq!(error.url, server.url(GENERATIONS_PATH));
             assert_eq!(error.request_body_values["prompt"], PROMPT);
             assert_eq!(error.response_body.as_deref(), Some("Bad Request"));
         }
@@ -369,9 +394,9 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › should handle failed generation state
         #[tokio::test]
         async fn should_handle_failed_generation_state() {
-            let server = Server::new();
+            let server = Server::new().await;
             server.set(
-                GENERATION_URL,
+                GENERATION_PATH,
                 json_value(&json!({
                     "id": "test-generation-id",
                     "generation_type": "image",
@@ -404,7 +429,7 @@ mod luma_image_model {
             /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › doGenerate › warnings › should return warnings for unsupported parameters
             #[tokio::test]
             async fn should_return_warnings_for_unsupported_parameters() {
-                let server = Server::new();
+                let server = Server::new().await;
                 let call = ImageCallOptions {
                     size: Some(Size::new(1024, 1024)),
                     seed: Some(123),
@@ -442,7 +467,7 @@ mod luma_image_model {
             /// the clock, so the timestamp is checked to fall within the call.
             #[tokio::test]
             async fn should_include_timestamp_headers_and_model_id_in_response() {
-                let server = Server::new();
+                let server = Server::new().await;
                 let before = aimux_core::Timestamp::now();
                 let result = server
                     .model(None)
@@ -466,9 +491,9 @@ mod luma_image_model {
         ///
         /// `specificationVersion` has no Rust counterpart (the trait is the
         /// version).
-        #[test]
-        fn should_expose_correct_provider_and_model_information() {
-            let model = Server::new().model(None);
+        #[tokio::test]
+        async fn should_expose_correct_provider_and_model_information() {
+            let model = Server::new().await.model(None);
 
             assert_eq!(model.provider(), "luma");
             assert_eq!(model.model_id(), "test-model");
@@ -482,7 +507,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should send image by default when URL file is provided
         #[tokio::test]
         async fn should_send_image_by_default_when_url_file_is_provided() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "A warrior with sunglasses",
                 vec![url_file("https://example.com/input.jpg")],
@@ -501,7 +526,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should send modify_image when referenceType is set
         #[tokio::test]
         async fn should_send_modify_image_when_reference_type_is_set() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "Transform flowers to sunflowers",
                 vec![url_file("https://example.com/input.jpg")],
@@ -520,7 +545,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should send style when referenceType is style
         #[tokio::test]
         async fn should_send_style_when_reference_type_is_style() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "A dog in this style",
                 vec![url_file("https://example.com/style.jpg")],
@@ -539,7 +564,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should send character when referenceType is character
         #[tokio::test]
         async fn should_send_character_when_reference_type_is_character() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "A warrior",
                 vec![
@@ -568,7 +593,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should send character with custom identity id from images config
         #[tokio::test]
         async fn should_send_character_with_custom_identity_id_from_images_config() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "A woman with a cat",
                 vec![url_file("https://example.com/person.jpg")],
@@ -592,7 +617,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should send character with multiple identities from images config
         #[tokio::test]
         async fn should_send_character_with_multiple_identities_from_images_config() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "Two people talking",
                 vec![
@@ -620,7 +645,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should support multiple images for image
         #[tokio::test]
         async fn should_support_multiple_images_for_image() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "Combine these concepts",
                 vec![
@@ -645,7 +670,7 @@ mod luma_image_model {
         /// upstream: @ai-sdk/luma src/luma-image-model.test.ts › LumaImageModel › Image Editing › should use custom weights from images config
         #[tokio::test]
         async fn should_use_custom_weights_from_images_config() {
-            let server = Server::new();
+            let server = Server::new().await;
             let call = editing_options(
                 "Styled image",
                 vec![url_file("https://example.com/input.jpg")],
@@ -738,10 +763,10 @@ mod luma_image_model {
         /// The poll answers with `request` set to `request`; the call
         /// succeeds with one image (upstream: `result.images` is defined).
         async fn parses_with_request(request: Value) {
-            let server = Server::new();
+            let server = Server::new().await;
             server.set(
-                GENERATION_URL,
-                json_value(&completed_generation(Some(request))),
+                GENERATION_PATH,
+                json_value(&server.completed_generation(Some(request))),
             );
             let result = server
                 .model(None)

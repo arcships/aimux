@@ -5,6 +5,9 @@
 //! one call through a scripted transport and reads the same settings off the
 //! model and the requests: the provider name from `provider()`, the base URL
 //! from the URLs, the headers and the fetch from what the transport saw.
+//! The poll answers `failed`, so the call ends before the image download:
+//! that download is validated and goes through the download guard's own
+//! transport, never the provider's `fetch`, so it would leave the test.
 
 use std::sync::Arc;
 
@@ -16,29 +19,13 @@ use aimux_provider_utils::Resolvable;
 use crate::luma::{LumaProviderSettings, create_luma};
 use crate::test_support::mock_fetch::{Canned, RouteFetch, Seen};
 
-/// Answers the submit, the poll and the download under any base URL.
+/// Answers the submit, and the poll with `failed`, under any base URL.
 fn transport() -> Arc<RouteFetch> {
     RouteFetch::new(|seen: &Seen| {
         if seen.url.ends_with("/dream-machine/v1/generations/image") {
             Canned::json(&json!({ "id": "test-generation-id", "state": "queued" }))
-        } else if seen
-            .url
-            .ends_with("/dream-machine/v1/generations/test-generation-id")
-        {
-            let base = seen
-                .url
-                .trim_end_matches("/dream-machine/v1/generations/test-generation-id");
-            Canned::json(&json!({
-                "id": "test-generation-id",
-                "state": "completed",
-                "assets": { "image": format!("{base}/image.png") },
-            }))
         } else {
-            Canned {
-                status: 200,
-                headers: Vec::new(),
-                body: b"image".to_vec(),
-            }
+            Canned::json(&json!({ "id": "test-generation-id", "state": "failed" }))
         }
     })
 }
@@ -66,7 +53,7 @@ mod create_luma {
             model
                 .do_generate(&ImageCallOptions::new("A cute baby sea otter"))
                 .await
-                .unwrap();
+                .unwrap_err();
             assert_eq!(
                 fetch.seen()[0].url,
                 "https://api.lumalabs.ai/dream-machine/v1/generations/image"
@@ -91,7 +78,7 @@ mod create_luma {
             model
                 .do_generate(&ImageCallOptions::new("A cute baby sea otter"))
                 .await
-                .unwrap();
+                .unwrap_err();
             let seen = fetch.seen();
             assert_eq!(
                 seen[0].url,
