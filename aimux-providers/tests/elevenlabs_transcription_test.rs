@@ -1,4 +1,4 @@
-﻿//! Rust translation of the ElevenLabs transcription model tests.
+//! Rust translation of the ElevenLabs transcription model tests.
 //! Source: `reference/ai/packages/elevenlabs/src/elevenlabs-transcription-model.test.ts`
 
 use std::collections::HashMap;
@@ -303,4 +303,35 @@ async fn should_reject_transcription_options_outside_the_schema() {
         );
         assert!(cause.is_some(), "{elevenlabs}");
     }
+}
+
+/// `streaming` options on a batch transcription are reported, not sent
+/// (elevenlabs-transcription-model.ts getArgs).
+#[tokio::test]
+async fn should_warn_about_streaming_options_on_a_batch_transcription() {
+    let server = MockServer::start().await;
+    mock_response(&server, &fixture_response(), &[]).await;
+    let provider = test_provider("test-api-key", server.uri(), None);
+    let mut call = options(mock_audio(), "audio/wav");
+    call.provider_options = Some(
+        serde_json::from_value(
+            json!({ "elevenlabs": { "streaming": { "includeTimestamps": true } } }),
+        )
+        .unwrap(),
+    );
+    let result = provider
+        .transcription("scribe_v1")
+        .do_generate(&call)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.warnings,
+        vec![aimux_core::shared::Warning::Unsupported {
+            feature: "providerOptions.elevenlabs.streaming".to_string(),
+            details: Some(
+                "ElevenLabs batch transcription does not support streaming options.".to_string()
+            ),
+        }]
+    );
 }

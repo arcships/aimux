@@ -941,7 +941,7 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
             )));
         }
 
-        let warnings: Vec<Warning> = Vec::new();
+        let mut warnings: Vec<Warning> = Vec::new();
 
         let audio_bytes = audio_input_to_bytes_stt(&options.audio)?;
         let file_extension = media_type_to_extension(&options.media_type);
@@ -955,6 +955,15 @@ impl TranscriptionModel for ElevenLabsTranscriptionModel {
         // elevenlabs-transcription-model.ts getArgs: the schema's defaults
         // apply when the namespace is present.
         if let Some(el) = parse_transcription_options(options.provider_options.as_ref())? {
+            if el.streaming.is_some() {
+                warnings.push(Warning::Unsupported {
+                    feature: "providerOptions.elevenlabs.streaming".to_string(),
+                    details: Some(
+                        "ElevenLabs batch transcription does not support streaming options."
+                            .to_string(),
+                    ),
+                });
+            }
             if let Some(v) = el.diarize {
                 form.text("diarize", &v.to_string())?;
             }
