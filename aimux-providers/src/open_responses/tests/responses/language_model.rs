@@ -3156,6 +3156,69 @@ async fn reads_the_reasoning_effort_provider_option() {
     );
 }
 
+/// aimux's own: `providerOptions.<name>` is parsed against
+/// `openResponsesLanguageModelOptions` with `parseProviderOptions`
+/// (open-responses-language-model.ts:333-337). A value outside the schema
+/// fails with the upstream message, naming the provider's options key, before
+/// anything is sent, for generate and stream alike.
+#[tokio::test]
+async fn a_provider_option_outside_the_schema_fails_before_sending() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let model = make_model(&server, "m");
+    for lmstudio in [
+        json!({ "reasoningEffort": 1 }),
+        json!({ "reasoningSummary": "short" }),
+        json!({ "reasoningSummary": true }),
+    ] {
+        let options: CallOptions = serde_json::from_value(json!({
+            "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+            "providerOptions": { "lmstudio": lmstudio },
+        }))
+        .unwrap();
+        let Err(generate_error) = model.do_generate(&options).await else {
+            panic!("generate with {lmstudio} fails");
+        };
+        let Err(stream_error) = model.do_stream(&options).await else {
+            panic!("stream with {lmstudio} fails");
+        };
+        for error in [generate_error, stream_error] {
+            let aimux_core::error::AiMuxError::InvalidArgument { message, cause } = &error else {
+                panic!("expected InvalidArgument for {lmstudio}, got {error:?}");
+            };
+            assert_eq!(
+                message,
+                "Invalid argument for parameter providerOptions: invalid lmstudio provider options",
+                "{lmstudio}"
+            );
+            assert!(cause.is_some(), "{lmstudio}");
+        }
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// aimux's own: both keys of `openResponsesLanguageModelOptions` are
+/// `.nullish()`, so `null` reads as absent and the top-level `reasoning`
+/// is mapped as without the option.
+#[tokio::test]
+async fn a_null_provider_option_reads_as_absent() {
+    let server = MockServer::start().await;
+    mock_json(&server, lmstudio_basic_json()).await;
+    let options: CallOptions = serde_json::from_value(json!({
+        "prompt": [{ "role": "user", "content": [{ "type": "text", "text": "Hello" }] }],
+        "reasoning": "medium",
+        "providerOptions": { "lmstudio": { "reasoningEffort": null, "reasoningSummary": null } }
+    }))
+    .unwrap();
+    make_model(&server, "m")
+        .do_generate(&options)
+        .await
+        .unwrap();
+    let request = &server.received_requests().await.unwrap()[0];
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["reasoning"], json!({ "effort": "medium" }));
+}
+
 /// TS: `doGenerate` (open-responses-language-model.ts:411-426): an `error` in
 /// a successful response body fails with status 400, not retryable, and the
 /// error object as `data`.
