@@ -29,10 +29,13 @@ struct GoogleEmbeddingOptions {
     output_dimensionality: Option<serde_json::Number>,
     #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     task_type: Option<TaskType>,
-    /// `z.array(z.array(googleEmbeddingContentPartSchema).min(1).nullable())`.
     #[serde(default, deserialize_with = "multimodal_content")]
-    content: Option<Vec<Option<Vec<ContentPart>>>>,
+    content: Option<MultimodalContent>,
 }
+
+/// `z.array(z.array(googleEmbeddingContentPartSchema).min(1).nullable())`:
+/// per value, its extra parts or `null`.
+type MultimodalContent = Vec<Option<Vec<ContentPart>>>;
 
 /// The `taskType` enum, sent under the same name.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -84,8 +87,8 @@ struct FileData {
 /// least one part (`.min(1)`).
 fn multimodal_content<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<Vec<Option<Vec<ContentPart>>>>, D::Error> {
-    let content = Vec::<Option<Vec<ContentPart>>>::deserialize(deserializer)?;
+) -> Result<Option<MultimodalContent>, D::Error> {
+    let content = MultimodalContent::deserialize(deserializer)?;
     if content.iter().flatten().any(Vec::is_empty) {
         return Err(serde::de::Error::custom(
             "each content entry has at least one part or is null",
