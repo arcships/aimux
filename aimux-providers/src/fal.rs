@@ -264,6 +264,64 @@ struct FalTranscriptionResponse {
     inferred_languages: Option<Vec<String>>,
 }
 
+/// `falTranscriptionModelOptionsSchema` (fal-transcription-model-options.ts),
+/// a plain `z.object`: unknown keys are dropped. Every key is `.nullish()`;
+/// a `.default()` fills a missing key and keeps an explicit `null`, as
+/// `#[serde(default = ...)]` on an `Option` does.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FalTranscriptionOptions {
+    #[serde(default = "FalTranscriptionOptions::default_language")]
+    language: Option<String>,
+    #[serde(default = "FalTranscriptionOptions::default_diarize")]
+    diarize: Option<bool>,
+    #[serde(default = "FalTranscriptionOptions::default_chunk_level")]
+    chunk_level: Option<FalChunkLevel>,
+    #[serde(default = "FalTranscriptionOptions::default_version")]
+    version: Option<FalWhisperVersion>,
+    #[serde(default = "FalTranscriptionOptions::default_batch_size")]
+    batch_size: Option<serde_json::Number>,
+    #[serde(default)]
+    num_speakers: Option<serde_json::Number>,
+}
+
+impl FalTranscriptionOptions {
+    fn default_language() -> Option<String> {
+        Some("en".to_string())
+    }
+
+    fn default_diarize() -> Option<bool> {
+        Some(true)
+    }
+
+    fn default_chunk_level() -> Option<FalChunkLevel> {
+        Some(FalChunkLevel::Segment)
+    }
+
+    fn default_version() -> Option<FalWhisperVersion> {
+        Some(FalWhisperVersion::Three)
+    }
+
+    fn default_batch_size() -> Option<serde_json::Number> {
+        Some(64.into())
+    }
+}
+
+/// `chunkLevel`: `z.enum(['segment', 'word'])`.
+#[derive(Debug, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum FalChunkLevel {
+    Segment,
+    Word,
+}
+
+/// `version`: `z.enum(['3'])`.
+#[derive(Debug, Deserialize, serde::Serialize)]
+enum FalWhisperVersion {
+    #[serde(rename = "3")]
+    Three,
+}
+
 // ── Model ───────────────────────────────────────────────────────────────────
 
 fn audio_input_to_base64(audio: &AudioInput) -> Result<String, AiMuxError> {
@@ -318,28 +376,30 @@ impl TranscriptionModel for FalTranscriptionModel {
         body.insert("chunk_level".to_string(), json!("word"));
         body.insert("audio_url".to_string(), json!(audio_url));
 
-        // Parse provider options.
-        let fal_options = options::fal_options(options.provider_options.as_ref());
-        if let Some(fal) = fal_options {
-            if let Some(v) = fal.get("language") {
-                body.insert("language".to_string(), v.clone());
+        // fal-transcription-model.ts getArgs: the parsed options, defaults
+        // included, go into the body only when `providerOptions.fal` is set.
+        if let Some(fal) = aimux_provider_utils::parse_provider_options::<FalTranscriptionOptions>(
+            options::NAMESPACE,
+            options.provider_options.as_ref(),
+        )? {
+            body.insert("language".to_string(), json!(fal.language));
+            if let Some(version) = fal.version {
+                body.insert("version".to_string(), json!(version));
             }
-            if let Some(v) = fal.get("version") {
-                body.insert("version".to_string(), v.clone());
+            if let Some(batch_size) = fal.batch_size {
+                body.insert("batch_size".to_string(), json!(batch_size));
             }
-            if let Some(v) = fal.get("batchSize") {
-                body.insert("batch_size".to_string(), v.clone());
+            if let Some(num_speakers) = fal.num_speakers {
+                body.insert("num_speakers".to_string(), json!(num_speakers));
             }
-            if let Some(v) = fal.get("numSpeakers") {
-                body.insert("num_speakers".to_string(), v.clone());
+            if let Some(diarize) = fal.diarize {
+                body.insert("diarize".to_string(), json!(diarize));
             }
-            if let Some(v) = fal.get("diarize").and_then(serde_json::Value::as_bool) {
-                body.insert("diarize".to_string(), json!(v));
-            }
-            if let Some(v) = fal.get("chunkLevel") {
-                body.insert("chunk_level".to_string(), v.clone());
+            if let Some(chunk_level) = fal.chunk_level {
+                body.insert("chunk_level".to_string(), json!(chunk_level));
             }
         }
+        let fal_options = options::fal_options(options.provider_options.as_ref());
 
         let exchange = self.config.exchange(options.headers.as_ref()).await?;
 
