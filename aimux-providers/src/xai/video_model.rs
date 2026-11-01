@@ -147,19 +147,21 @@ struct VideoOptions {
 
 /// `modeSchema`.
 #[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 enum VideoMode {
-    EditVideo,
-    ExtendVideo,
-    ReferenceToVideo,
+    #[serde(rename = "edit-video")]
+    Edit,
+    #[serde(rename = "extend-video")]
+    Extend,
+    #[serde(rename = "reference-to-video")]
+    ReferenceTo,
 }
 
 impl VideoMode {
     fn as_str(self) -> &'static str {
         match self {
-            Self::EditVideo => "edit-video",
-            Self::ExtendVideo => "extend-video",
-            Self::ReferenceToVideo => "reference-to-video",
+            Self::Edit => "edit-video",
+            Self::Extend => "extend-video",
+            Self::ReferenceTo => "reference-to-video",
         }
     }
 }
