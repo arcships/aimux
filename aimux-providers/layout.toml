@@ -3286,35 +3286,35 @@ package = "@ai-sdk/luma"
 
 [[luma.files]]
 upstream = "src/index.ts"
-rust = "luma.rs"
+rust = "luma/mod.rs"
 status = "mapped"
 
 [luma.files.tests]
 
 [[luma.files]]
 upstream = "src/luma-image-model-options.ts"
-rust = "luma/options.rs"
+rust = "luma/image_model_options.rs"
 status = "mapped"
 
 [luma.files.tests]
 
 [[luma.files]]
 upstream = "src/luma-image-model.ts"
-rust = "luma.rs"
+rust = "luma/image_model.rs"
 status = "mapped"
 
 [luma.files.tests]
 
 [[luma.files]]
 upstream = "src/luma-image-settings.ts"
-rust = "luma.rs"
+rust = "luma/image_model.rs"
 status = "mapped"
 
 [luma.files.tests]
 
 [[luma.files]]
 upstream = "src/luma-provider.ts"
-rust = "luma.rs"
+rust = "luma/provider.rs"
 status = "mapped"
 
 [luma.files.tests]
