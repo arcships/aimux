@@ -252,7 +252,9 @@ async fn list_models_carries_the_limits_the_provider_declares() {
             { "id": "meta/llama", "context_length": 131072,
               "top_provider": { "max_completion_tokens": null } },
             { "id": "odd/model", "context_length": "8k" },
-            { "id": "bare/model" }
+            { "id": "bare/model" },
+            { "id": "scoped/model",
+              "top_provider": { "context_length": 65536, "max_completion_tokens": 8192 } }
         ] }),
     )
     .await;
@@ -266,6 +268,11 @@ async fn list_models_carries_the_limits_the_provider_declares() {
     );
     assert_eq!(limits(&models, "odd/model"), Value::Null);
     assert_eq!(limits(&models, "bare/model"), Value::Null);
+    // A window declared only on `top_provider` is read from there.
+    assert_eq!(
+        limits(&models, "scoped/model"),
+        serde_json::json!({ "context": 65536, "output": 8192 })
+    );
 
     let models = listed(
         "vllm",

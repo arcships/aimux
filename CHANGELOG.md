@@ -1393,15 +1393,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `RuntimeModel.limits` (`ModelLimits`): the token limits a provider
   declares for a model in its own `/models` list, read where the list has
-  them: OpenRouter's `context_length` (`context`) and
+  them: OpenRouter's `context_length`, or `top_provider.context_length`
+  when the top level has none (`context`), and
   `top_provider.max_completion_tokens` (`output`), vLLM's `max_model_len`
   (`context`). Every OpenAI-compatible preset and the packages on the
   OpenAI-shaped list (Groq, DeepSeek, Mistral, xAI) read these keys; a value
   that is not an integer is ignored instead of failing the list. `None` when
   the provider declared none; nothing is inferred and the community
   catalogue (`ModelSpec`) is not merged in. Every binding's generated
-  `RuntimeModel` carries it. A struct literal of `RuntimeModel` must add the
-  field (#402).
+  `RuntimeModel` carries it. Source changes for callers: a Rust struct
+  literal of `RuntimeModel` must add the field, and the generated Java,
+  Kotlin and Swift `RuntimeModel` constructors take `limits` as a new
+  positional argument (#402).
 
 - `aimux_provider_utils` base64 and inline-file helpers, as
   `@ai-sdk/provider-utils` 5.0.55 (RFC-0046 R1): `convert_base64_to_uint8_array`,

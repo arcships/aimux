@@ -33,23 +33,28 @@ pub(crate) struct ModelListEntry {
     /// vLLM's `ModelCard.max_model_len`, its input plus output limit.
     #[serde(default)]
     max_model_len: Option<Value>,
-    /// OpenRouter's `top_provider.max_completion_tokens`.
+    /// OpenRouter's `top_provider`: `max_completion_tokens`, and its own
+    /// `context_length` for a list that declares the window only there.
     #[serde(default)]
     top_provider: Option<Value>,
 }
 
 impl From<ModelListEntry> for RuntimeModel {
     fn from(entry: ModelListEntry) -> Self {
+        let top_provider = |key: &str| {
+            entry
+                .top_provider
+                .as_ref()
+                .and_then(|top| top.get(key))
+                .and_then(Value::as_u64)
+        };
         let context = entry
             .context_length
             .as_ref()
             .and_then(Value::as_u64)
+            .or_else(|| top_provider("context_length"))
             .or_else(|| entry.max_model_len.as_ref().and_then(Value::as_u64));
-        let output = entry
-            .top_provider
-            .as_ref()
-            .and_then(|top| top.get("max_completion_tokens"))
-            .and_then(Value::as_u64);
+        let output = top_provider("max_completion_tokens");
         let limits = (context.is_some() || output.is_some()).then_some(ModelLimits {
             context,
             output,
