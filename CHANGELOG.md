@@ -1489,6 +1489,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - fal follows `@ai-sdk/fal` 3.0.54:
+  - An image call goes to `https://fal.run` by default, as `createFal`'s
+    `defaultBaseURL`; transcription and video stay on
+    `https://queue.fal.run`, which upstream hard-codes for them. An explicit
+    `base_url` still applies to all three (upstream ignores it for
+    transcription and video). Every model used the queue host before.
   - Image, transcription and video calls parse `providerOptions.fal` against
     the upstream schemas and fail with `invalid fal provider options` when a
     value is outside them. Transcription fills the schema defaults
