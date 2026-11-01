@@ -26,6 +26,28 @@ use aimux_provider_utils::is_valid_hostname_part;
 
 use super::provider_base::ProjectLocationSource;
 
+// ── Provider options ────────────────────────────────────────────────────────
+
+/// `googleVertexTranscriptionProviderOptionsSchema`
+/// (google-vertex-transcription-model-options.ts). Every key is
+/// `.optional()`: absent is `None`, `null` fails.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VertexTranscriptionOptions {
+    /// Defaults to `["auto"]`.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    language_codes: Option<Vec<String>>,
+    /// Defaults to `true`.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    enable_automatic_punctuation: Option<bool>,
+    /// Defaults to `true`.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    enable_word_time_offsets: Option<bool>,
+    /// Defaults to the provider's location.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    region: Option<String>,
+}
+
 // ── Response schema ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -158,41 +180,20 @@ impl TranscriptionModel for VertexTranscriptionModel {
     ) -> Result<TranscriptionResult, AiMuxError> {
         let warnings: Vec<Warning> = Vec::new();
 
-        // Parse provider options (`googleVertex`, then `google`).
+        // google-vertex-transcription-model.ts:101-111
+        let vertex_options: VertexTranscriptionOptions = Namespace::Vertex
+            .parse(options.provider_options.as_ref())?
+            .unwrap_or_default();
         let target = self.project_location.resolve().await?;
-        let mut region = target.location.clone();
-        let mut language_codes: Vec<String> = vec!["auto".to_string()];
-        let mut enable_word_time_offsets = true;
-        let mut enable_automatic_punctuation = true;
-
-        if let Some(ref po) = options.provider_options {
-            for key in Namespace::Vertex.read_keys() {
-                if let Some(gv) = po.get(*key) {
-                    if let Some(r) = gv.get("region").and_then(|v| v.as_str()) {
-                        region = r.to_string();
-                    }
-                    if let Some(lc) = gv.get("languageCodes").and_then(|v| v.as_array()) {
-                        language_codes = lc
-                            .iter()
-                            .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
-                            .collect();
-                    }
-                    if let Some(v) = gv
-                        .get("enableWordTimeOffsets")
-                        .and_then(serde_json::Value::as_bool)
-                    {
-                        enable_word_time_offsets = v;
-                    }
-                    if let Some(v) = gv
-                        .get("enableAutomaticPunctuation")
-                        .and_then(serde_json::Value::as_bool)
-                    {
-                        enable_automatic_punctuation = v;
-                    }
-                    break;
-                }
-            }
-        }
+        let region = vertex_options
+            .region
+            .unwrap_or_else(|| target.location.clone());
+        let language_codes = vertex_options
+            .language_codes
+            .unwrap_or_else(|| vec!["auto".to_string()]);
+        let enable_word_time_offsets = vertex_options.enable_word_time_offsets.unwrap_or(true);
+        let enable_automatic_punctuation =
+            vertex_options.enable_automatic_punctuation.unwrap_or(true);
 
         // google-vertex-transcription-model.ts:113-120
         if !is_valid_hostname_part(&region) {

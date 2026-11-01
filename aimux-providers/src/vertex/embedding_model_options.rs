@@ -4,75 +4,47 @@
 use crate::google::options::Namespace;
 use aimux_core::error::AiMuxError;
 use aimux_core::shared::SharedProviderOptions;
-use serde_json::Value;
 
+/// `googleVertexEmbeddingModelOptions`. Every key is `.optional()`: absent
+/// is `None`, `null` fails.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct VertexEmbeddingProviderOptions {
-    pub(super) output_dimensionality: Option<Value>,
-    pub(super) task_type: Option<String>,
+    /// `z.number()`, sent as given.
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    pub(super) output_dimensionality: Option<serde_json::Number>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
+    pub(super) task_type: Option<TaskType>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub(super) title: Option<String>,
+    #[serde(default, deserialize_with = "aimux_provider_utils::optional_field")]
     pub(super) auto_truncate: Option<bool>,
 }
 
-/// Parse Vertex embedding provider options.
+/// The `taskType` enum, sent under the same name.
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub(super) enum TaskType {
+    SemanticSimilarity,
+    Classification,
+    Clustering,
+    RetrievalDocument,
+    RetrievalQuery,
+    QuestionAnswering,
+    FactVerification,
+    CodeRetrievalQuery,
+}
+
+/// `parseProviderOptions` with `googleVertexEmbeddingModelOptions` under
+/// `googleVertex`, then `vertex`, then `google`
+/// (google-vertex-embedding-model.ts:70-90); all `None` when none is present.
 ///
-/// Tries `googleVertex`, then legacy `vertex`, then `google`.
+/// # Errors
+///
+/// `InvalidArgument` "invalid <namespace> provider options" when the first
+/// namespace present does not match the schema.
 pub(super) fn parse_vertex_provider_options(
     options: Option<&SharedProviderOptions>,
 ) -> Result<VertexEmbeddingProviderOptions, AiMuxError> {
-    let provider_opts = Namespace::Vertex.read(options);
-    if let Some(opts) = provider_opts {
-        for (name, valid) in [
-            (
-                "outputDimensionality",
-                opts.get("outputDimensionality")
-                    .is_none_or(Value::is_number),
-            ),
-            ("title", opts.get("title").is_none_or(Value::is_string)),
-            (
-                "autoTruncate",
-                opts.get("autoTruncate").is_none_or(Value::is_boolean),
-            ),
-            (
-                "taskType",
-                opts.get("taskType").is_none_or(|v| {
-                    v.as_str().is_some_and(|v| {
-                        matches!(
-                            v,
-                            "SEMANTIC_SIMILARITY"
-                                | "CLASSIFICATION"
-                                | "CLUSTERING"
-                                | "RETRIEVAL_DOCUMENT"
-                                | "RETRIEVAL_QUERY"
-                                | "QUESTION_ANSWERING"
-                                | "FACT_VERIFICATION"
-                                | "CODE_RETRIEVAL_QUERY"
-                        )
-                    })
-                }),
-            ),
-        ] {
-            if !valid {
-                return Err(AiMuxError::invalid_argument(format!(
-                    "Invalid Vertex embedding provider option: {name}"
-                )));
-            }
-        }
-    }
-
-    Ok(VertexEmbeddingProviderOptions {
-        output_dimensionality: provider_opts
-            .and_then(|o| o.get("outputDimensionality"))
-            .cloned(),
-        task_type: provider_opts
-            .and_then(|o| o.get("taskType"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        title: provider_opts
-            .and_then(|o| o.get("title"))
-            .and_then(|v| v.as_str())
-            .map(std::string::ToString::to_string),
-        auto_truncate: provider_opts
-            .and_then(|o| o.get("autoTruncate"))
-            .and_then(serde_json::Value::as_bool),
-    })
+    Ok(Namespace::Vertex.parse(options)?.unwrap_or_default())
 }

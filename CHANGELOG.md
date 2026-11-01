@@ -2029,6 +2029,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Vertex's embedding, transcription and video models parse their provider
+  options with `parse_provider_options` against the upstream schemas
+  (`googleVertexEmbeddingModelOptions`,
+  `googleVertexTranscriptionProviderOptionsSchema`,
+  `googleVertexVideoModelOptionsSchema`), reading the same namespaces as
+  before (`googleVertex`, then `vertex`, then `google` for embedding and
+  transcription; `googleVertex`, then `vertex` for video). A value outside a
+  schema fails with `Invalid argument for parameter providerOptions: invalid
+  <namespace> provider options` and the serde error as its cause, and nothing
+  is sent. Embedding used to fail with `Invalid Vertex embedding provider
+  option: <key>`; transcription dropped a value of the wrong type (and the
+  non-string entries of `languageCodes`); video forwarded it, or ignored it
+  for the poll settings. The requests for valid options are unchanged
+  (RFC-0046 R1).
+
 - A provider option of the wrong type for Azure transcription, DeepSeek chat,
   Google files, speech and transcription, Vertex Gemini transcription, Groq
   chat and transcription or OpenAI embeddings fails with `Invalid argument for
