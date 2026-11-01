@@ -148,8 +148,9 @@ mod do_generate {
 
         /// upstream: @ai-sdk/deepgram src/deepgram-transcription-model.test.ts › doGenerate › transcription › should pass headers
         ///
-        /// The user-agent part (`ai-sdk-deepgram/<version>`) is not sent by
-        /// aimux yet (layout.toml), so only the headers are compared.
+        /// The user-agent part (`ai-sdk-deepgram/<version>`) is not sent on
+        /// this branch; #444 adds it with its own test. Only the headers are
+        /// compared here.
         #[tokio::test]
         async fn should_pass_headers() {
             let fetch = fixture_fetch();
