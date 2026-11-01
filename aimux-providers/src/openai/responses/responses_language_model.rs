@@ -133,21 +133,13 @@ impl OpenAIResponsesModel {
             == Some(true);
         let caps =
             crate::openai::language_model_capabilities::get_model_capabilities(&self.model_id);
+        profile
+            .namespace
+            .validate(options.provider_options.as_ref())?;
         let provider_options = options
             .provider_options
             .as_ref()
             .and_then(|v| profile.namespace.find_in(v));
-        if provider_options
-            .and_then(|v| v.get("reasoningEffortUpdate"))
-            .is_some_and(|v| {
-                !matches!(
-                    v.as_str(),
-                    Some("none" | "low" | "medium" | "high" | "xhigh" | "max")
-                )
-            })
-        {
-            return Err(AiMuxError::invalid_argument("reasoningEffortUpdate"));
-        }
         let update_incompatible = provider_options.is_some_and(|v| {
             v.get("reasoningMode") == Some(&serde_json::json!("pro"))
                 || v.get("contextManagement").is_some()
@@ -879,7 +871,9 @@ fn apply_responses_reasoning_block(
 /// Build the OpenAI Responses API request body and warnings.
 ///
 /// # Errors
-/// Rejects unsupported prompt parts and invalid tool arguments.
+/// Rejects provider options outside `openaiLanguageModelResponsesOptionsSchema`
+/// (`InvalidArgument` `invalid <namespace> provider options`), unsupported
+/// prompt parts and invalid tool arguments.
 pub fn build_responses_request_body(
     model_id: &str,
     options: &CallOptions,
@@ -892,13 +886,16 @@ pub fn build_responses_request_body(
 /// namespace.
 ///
 /// # Errors
-/// Rejects unsupported prompt parts and invalid tool arguments.
+/// Rejects provider options outside `openaiLanguageModelResponsesOptionsSchema`
+/// (`InvalidArgument` `invalid <namespace> provider options`), unsupported
+/// prompt parts and invalid tool arguments.
 pub fn build_responses_request_body_for(
     ns: ResponsesNamespace,
     model_id: &str,
     options: &CallOptions,
     stream: bool,
 ) -> Result<ResponsesRequestBodyResult, AiMuxError> {
+    ns.validate(options.provider_options.as_ref())?;
     let mut warnings: Vec<Warning> = Vec::new();
     let caps = get_model_capabilities(model_id);
     let provider_opts = &options.provider_options;

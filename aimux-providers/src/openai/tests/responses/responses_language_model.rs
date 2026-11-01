@@ -14302,3 +14302,122 @@ mod older_upstream_e2e {
         );
     }
 }
+
+/// aimux's own: the first of the host's namespaces present (`openai`; for
+/// Azure `azure`, then `openai`) is parsed against
+/// `openaiLanguageModelResponsesOptionsSchema`
+/// (openai-responses-language-model.ts:324-339). A value outside the schema
+/// fails with the upstream message, naming that namespace, before anything is
+/// sent; a `.nullish()` key reads `null` as absent.
+mod provider_options_schema {
+    use super::*;
+    use crate::openai::responses::{ResponsesNamespace, build_responses_request_body_for};
+
+    fn assert_invalid(error: &AiMuxError, namespace: &str, case: &Value) {
+        let AiMuxError::InvalidArgument { message, cause } = error else {
+            panic!("expected InvalidArgument for {case}, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            &format!(
+                "Invalid argument for parameter providerOptions: invalid {namespace} provider options"
+            ),
+            "{case}"
+        );
+        assert!(cause.is_some(), "{case}");
+    }
+
+    #[tokio::test]
+    async fn a_value_outside_the_schema_fails_before_sending() {
+        for openai in [
+            json!({ "conversation": 1 }),
+            json!({ "include": ["code_interpreter_call.outputs"] }),
+            json!({ "includeWebSearchSources": null }),
+            json!({ "logprobs": 0 }),
+            json!({ "logprobs": 21 }),
+            json!({ "logprobs": "5" }),
+            json!({ "maxToolCalls": "10" }),
+            json!({ "promptCacheOptions": { "ttl": "1h" } }),
+            json!({ "promptCacheRetention": "1h" }),
+            json!({ "reasoningEffortUpdate": "minimal" }),
+            json!({ "reasoningMode": "fast" }),
+            json!({ "reasoningContext": "previous_turn" }),
+            json!({ "serviceTier": "scale" }),
+            json!({ "store": "false" }),
+            json!({ "textVerbosity": "max" }),
+            json!({ "truncation": "manual" }),
+            json!({ "systemMessageMode": "user" }),
+            json!({ "contextManagement": [{ "type": "compaction" }] }),
+            json!({ "contextManagement": [{ "type": "summary", "compactThreshold": 1000 }] }),
+            json!({ "allowedTools": { "toolNames": [] } }),
+            json!({ "allowedTools": { "toolNames": ["weather"], "mode": "none" } }),
+        ] {
+            let mock = MockFetch::new(vec![]);
+            let model = generate_provider(&mock).responses("gpt-5");
+            let options = generate_call_options(json!({
+                "prompt": test_prompt(),
+                "providerOptions": { "openai": openai },
+            }));
+            let Err(generate_error) = model.do_generate(&options).await else {
+                panic!("generate with {openai} fails");
+            };
+            assert_invalid(&generate_error, "openai", &openai);
+            let Err(stream_error) = model.do_stream(&options).await else {
+                panic!("stream with {openai} fails");
+            };
+            assert_invalid(&stream_error, "openai", &openai);
+            assert!(mock.seen().is_empty(), "{openai}");
+        }
+    }
+
+    #[test]
+    fn a_nullish_key_accepts_null() {
+        let options = generate_call_options(json!({
+            "prompt": test_prompt(),
+            "providerOptions": {
+                "openai": {
+                    "conversation": null,
+                    "include": null,
+                    "instructions": null,
+                    "maxToolCalls": null,
+                    "promptCacheRetention": null,
+                    "serviceTier": null,
+                    "store": null,
+                    "textVerbosity": null,
+                    "truncation": null,
+                    "contextManagement": null,
+                    "metadata": null,
+                },
+            },
+        }));
+        build_responses_request_body_for(ResponsesNamespace::OPENAI, "gpt-5", &options, false)
+            .expect("null passes a .nullish() key");
+    }
+
+    /// The Azure namespace is read before `openai`, and the error names the
+    /// one read.
+    #[test]
+    fn a_host_namespace_names_the_namespace_it_read() {
+        let azure = ResponsesNamespace::new(&["azure", "openai"], "azure");
+        for namespace in ["azure", "openai"] {
+            let options = generate_call_options(json!({
+                "prompt": test_prompt(),
+                "providerOptions": { namespace: { "serviceTier": "scale" } },
+            }));
+            let Err(error) = build_responses_request_body_for(azure, "gpt-5", &options, false)
+            else {
+                panic!("{namespace} fails");
+            };
+            assert_invalid(&error, namespace, &json!(namespace));
+        }
+        let options = generate_call_options(json!({
+            "prompt": test_prompt(),
+            "providerOptions": {
+                "azure": { "serviceTier": "flex" },
+                "openai": { "serviceTier": "scale" },
+            },
+        }));
+        build_responses_request_body_for(azure, "gpt-5", &options, false)
+            .expect("only azure is parsed");
+    }
+}
