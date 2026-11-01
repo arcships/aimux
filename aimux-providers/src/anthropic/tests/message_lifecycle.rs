@@ -159,7 +159,7 @@ mod strict_stream {
     fn strict_failure(parts: &[StreamPart]) -> Option<String> {
         match parts.last() {
             Some(StreamPart::Error {
-                error: AiMuxError::InvalidResponseData { message, .. },
+                error: AiMuxError::Other { message, .. },
             }) if message.starts_with("Strict stream: ") => Some(message.clone()),
             _ => None,
         }

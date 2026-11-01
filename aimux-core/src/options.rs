@@ -173,8 +173,8 @@ pub struct CallOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
 
-    /// Strict stream mode. When `Some(true)`, a streaming model fails the
-    /// stream with `InvalidResponseData` instead of finishing it when the
+    /// Strict stream mode. When `Some(true)`, a streaming model ends the
+    /// stream with a terminal error instead of finishing it when the
     /// protocol's evidence of a complete reply is missing: the stream ends
     /// without the protocol's terminal event (a `finish_reason`,
     /// `message_stop`, `messageStop`, `response.completed`, ...) or without a

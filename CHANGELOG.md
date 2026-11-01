@@ -1393,9 +1393,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Strict stream mode: `CallOptions.strict_stream` and
   `GenerateTextOptions.strict_stream` (`strictStream` in JSON), off by
-  default. When on, a language-model stream fails with
-  `InvalidResponseData` instead of finishing when the protocol's evidence of
-  a complete reply is missing: the stream ends without its terminal event
+  default. When on, a language-model stream ends with a terminal error
+  (`Other`, message `Strict stream: ...`, its cause the
+  `InvalidResponseData` found) instead of finishing when the protocol's
+  evidence of a complete reply is missing: the stream ends without its terminal event
   (OpenAI Chat and Completion, the OpenAI-compatible models, Groq, DeepSeek
   and Mistral: a `finish_reason`; Anthropic: `message_stop`; Bedrock:
   `messageStop`; Google: a candidate `finishReason`; Cohere: `message-end`;

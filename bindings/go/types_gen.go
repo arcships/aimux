@@ -3861,7 +3861,7 @@ type GenerateTextOptions struct {
 	// may be inferred from prompt-prefix continuation.
 	SessionID     *string  `json:"sessionId,omitzero"`
 	StopSequences []string `json:"stopSequences,omitzero"`
-	// Strict stream mode: fail the stream with `InvalidResponseData` when
+	// Strict stream mode: end the stream with a terminal error when
 	// the protocol's evidence of a complete reply is missing (the stream
 	// ends without its terminal event, a block delta arrives outside a
 	// started block, a block starts twice). Client tool calls are delivered
@@ -5300,7 +5300,7 @@ type Options struct {
 	// may be inferred from prompt-prefix continuation.
 	SessionID     *string  `json:"sessionId,omitzero"`
 	StopSequences []string `json:"stopSequences,omitzero"`
-	// Strict stream mode: fail the stream with `InvalidResponseData` when
+	// Strict stream mode: end the stream with a terminal error when
 	// the protocol's evidence of a complete reply is missing (the stream
 	// ends without its terminal event, a block delta arrives outside a
 	// started block, a block starts twice). Client tool calls are delivered

@@ -2852,7 +2852,7 @@ public struct GenerateTextOptions: Codable, Equatable, Sendable {
     /// may be inferred from prompt-prefix continuation.
     public var sessionId: String?
     public var stopSequences: [String]?
-    /// Strict stream mode: fail the stream with `InvalidResponseData` when
+    /// Strict stream mode: end the stream with a terminal error when
     /// the protocol's evidence of a complete reply is missing (the stream
     /// ends without its terminal event, a block delta arrives outside a
     /// started block, a block starts twice). Client tool calls are delivered
@@ -4248,7 +4248,7 @@ public struct Options: Codable, Equatable, Sendable {
     /// may be inferred from prompt-prefix continuation.
     public var sessionId: String?
     public var stopSequences: [String]?
-    /// Strict stream mode: fail the stream with `InvalidResponseData` when
+    /// Strict stream mode: end the stream with a terminal error when
     /// the protocol's evidence of a complete reply is missing (the stream
     /// ends without its terminal event, a block delta arrives outside a
     /// started block, a block starts twice). Client tool calls are delivered

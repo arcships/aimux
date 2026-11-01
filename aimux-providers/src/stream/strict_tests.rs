@@ -3,7 +3,7 @@
 
 use futures::StreamExt;
 
-use aimux_core::error::AiMuxError;
+use aimux_core::error::{AiMuxError, ErrorCause};
 use aimux_core::options::CallOptions;
 use aimux_core::result::StreamResult;
 use aimux_core::stream_part::StreamPart;
@@ -76,7 +76,17 @@ async fn run(parts: Vec<StreamPart>, strict: bool) -> Vec<String> {
                 .as_str()
                 .unwrap()
                 .to_owned(),
-            Err(AiMuxError::InvalidResponseData { message, .. }) => format!("failed: {message}"),
+            Err(AiMuxError::Other { message, cause }) => {
+                assert!(
+                    matches!(
+                        &cause,
+                        Some(ErrorCause::AiMux(error))
+                            if matches!(**error, AiMuxError::InvalidResponseData { .. })
+                    ),
+                    "{cause:?}"
+                );
+                format!("failed: {message}")
+            }
             Err(other) => format!("other error: {other:?}"),
         })
         .collect()

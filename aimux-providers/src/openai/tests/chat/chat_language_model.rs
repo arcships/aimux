@@ -1973,7 +1973,7 @@ mod do_stream {
                 .any(|part| matches!(part, Ok(StreamPart::Finish { .. }))),
             "{strict:?}"
         );
-        let Some(Err(AiMuxError::InvalidResponseData { message, .. })) = strict.last() else {
+        let Some(Err(AiMuxError::Other { message, .. })) = strict.last() else {
             panic!("expected the strict stream to fail: {strict:?}");
         };
         assert_eq!(

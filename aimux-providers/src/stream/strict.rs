@@ -13,9 +13,13 @@
 //!   and delivered right before it, or dropped when the stream finishes
 //!   with an error or fails.
 //!
-//! A failure is a terminal `InvalidResponseData` item: nothing follows it.
-//! The AI SDK has no such mode; with the option off the vendor stream is
-//! returned as it is.
+//! A failure is a terminal [`AiMuxError::Other`] item whose cause is the
+//! `InvalidResponseData` the check found: nothing follows it, and as it is
+//! not a recoverable frame error
+//! ([`AiMuxError::is_recoverable_stream_error`]) `stream_text` and
+//! `generate_text` end there too instead of finishing the step. The AI SDK
+//! has no such mode; with the option off the vendor stream is returned as it
+//! is.
 //!
 //! [`StreamContext::fail_without_terminal`]: super::StreamContext::fail_without_terminal
 
@@ -36,9 +40,14 @@ pub(crate) fn guard(mut result: StreamResult, options: &CallOptions) -> StreamRe
     result
 }
 
-/// The error a strict stream fails with.
+/// The error a strict stream fails with: terminal, so that the stream
+/// consumers in core stop at it, with the malformed response as its cause.
 pub(crate) fn strict_error(problem: impl std::fmt::Display) -> AiMuxError {
-    AiMuxError::invalid_response_data(format!("Strict stream: {problem}"))
+    let message = format!("Strict stream: {problem}");
+    AiMuxError::Other {
+        cause: Some(AiMuxError::invalid_response_data(message.clone()).into()),
+        message,
+    }
 }
 
 #[derive(Default)]

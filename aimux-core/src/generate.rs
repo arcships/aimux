@@ -179,7 +179,7 @@ pub struct GenerateTextOptions {
     /// Emit raw provider stream chunks as `StreamPart::Raw` (debugging aid).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_raw_chunks: Option<bool>,
-    /// Strict stream mode: fail the stream with `InvalidResponseData` when
+    /// Strict stream mode: end the stream with a terminal error when
     /// the protocol's evidence of a complete reply is missing (the stream
     /// ends without its terminal event, a block delta arrives outside a
     /// started block, a block starts twice). Client tool calls are delivered
